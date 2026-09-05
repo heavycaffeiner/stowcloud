@@ -8,23 +8,27 @@ import {
   type SectionGeometry
 } from './marquee'
 
-/** A list: rows 48px tall starting at document y=100, one column. */
+/** A list: rows 48px tall on a 48px pitch starting at document y=100, spanning
+ *  x 0..400, one column. */
 const list: SectionGeometry = {
   top: 100,
   left: 0,
   rowHeight: 48,
+  cellHeight: 48,
   columnPitch: 0,
-  cellWidth: 0,
+  cellWidth: 400,
   columns: 1,
   startIndex: 0,
   count: 10
 }
 
-/** A grid: 4 columns of 200px cells on a 212px pitch, rows 220px tall. */
+/** A grid: 4 columns of 200px cells on a 212px pitch, 208px cards on a 220px
+ *  row pitch. */
 const grid: SectionGeometry = {
   top: 500,
   left: 16,
   rowHeight: 220,
+  cellHeight: 208,
   columnPitch: 212,
   cellWidth: 200,
   columns: 4,
@@ -57,10 +61,17 @@ describe('indicesInRect over a list', () => {
     expect(indicesInRect({ left: 0, top: 110, right: 400, bottom: 120 }, list)).toEqual([0])
   })
 
-  // Rows span the width of the list, so a drag down its right-hand margin has
-  // still crossed them. Testing x here would select nothing at all.
-  it('ignores x', () => {
-    expect(indicesInRect({ left: 9000, top: 150, right: 9001, bottom: 200 }, list)).toEqual([1, 2])
+  // A drag down the margin beside the rows has not covered any of them. The
+  // rows are as wide as the list, so a drag over the list still takes them.
+  it('honours x in a single-column section', () => {
+    expect(indicesInRect({ left: 9000, top: 150, right: 9001, bottom: 200 }, list)).toEqual([])
+    expect(indicesInRect({ left: 380, top: 150, right: 420, bottom: 200 }, list)).toEqual([1, 2])
+  })
+
+  // Two rows sit edge to edge on this pitch, so a rectangle ending exactly on
+  // the boundary has covered area in the first row only.
+  it('does not take a row the rectangle only touches the edge of', () => {
+    expect(indicesInRect({ left: 0, top: 120, right: 400, bottom: 148 }, list)).toEqual([0])
   })
 
   it('clamps to the rows that exist', () => {
@@ -90,6 +101,12 @@ describe('indicesInRect over a grid', () => {
   // only ever sat in a gap has touched no card.
   it('does not take a card from the gap beside it', () => {
     expect(indicesInRect({ left: 430, top: 510, right: 436, bottom: 520 }, grid)).toEqual([])
+  })
+
+  // 12px of the 220px row pitch is the gap under the cards, on the same
+  // reading as the gap beside them.
+  it('does not take a card from the gap below it', () => {
+    expect(indicesInRect({ left: 0, top: 710, right: 9999, bottom: 718 }, grid)).toEqual([])
   })
 
   it('stops at the last entry of a short final row', () => {

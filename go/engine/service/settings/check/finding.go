@@ -156,6 +156,13 @@ type Input struct {
 	// only while enabling SMB. Leave empty to skip that probe.
 	SMBConfigDir string
 
+	// HasSecret reports whether the oidc client secret is already stored,
+	// for the section that owns one. It is a fact about the store, not the
+	// body: extractSecrets removes client_secret from Body before this ever
+	// runs, so checkOIDC could not otherwise tell "a secret was supplied on
+	// this save" from "no secret was ever stored" without it.
+	HasSecret bool
+
 	Lockout Lockout
 }
 

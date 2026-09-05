@@ -307,6 +307,53 @@ func TestIncompleteSingleSignOnIsRefused(t *testing.T) {
 	}
 }
 
+// A confidential client with no secret anywhere (not stored, not supplied on
+// this save) is refused: buildOIDCClient would have nothing to authenticate
+// with, and defect 8's whole complaint is that this used to save cleanly and
+// leave the provider silently off.
+func TestASecretlessConfidentialClientIsRefused(t *testing.T) {
+	got := Section(Input{
+		Section: "oidc",
+		Body: map[string]any{
+			"enabled": true, "issuer": "https://idp.example.test", "client_id": "stowcloud",
+		},
+	})
+	if f := mustFind(t, got, keyOIDCSecretRequired); !f.Blocking {
+		t.Error("a confidential client with no secret was accepted")
+	}
+}
+
+// A client declared public needs no secret: that is the entire point of
+// addition C, and public_client is the explicit switch rather than an
+// inference from an empty field.
+func TestAPublicClientNeedsNoSecret(t *testing.T) {
+	got := Section(Input{
+		Section: "oidc",
+		Body: map[string]any{
+			"enabled": true, "issuer": "https://idp.example.test", "client_id": "stowcloud",
+			"public_client": true,
+		},
+	})
+	mustNotFind(t, got, keyOIDCSecretRequired)
+	if Blocked(got) {
+		t.Errorf("a public client with everything else set was refused: %v", keysOf(got))
+	}
+}
+
+// A secret already stored satisfies the requirement without one being
+// resupplied on this save, which is what lets an administrator edit the
+// issuer alone without retyping the secret.
+func TestAConfidentialClientWithAStoredSecretPasses(t *testing.T) {
+	got := Section(Input{
+		Section: "oidc",
+		Body: map[string]any{
+			"enabled": true, "issuer": "https://idp.example.test", "client_id": "stowcloud",
+		},
+		HasSecret: true,
+	})
+	mustNotFind(t, got, keyOIDCSecretRequired)
+}
+
 // The token endpoint carries a client secret, so plain HTTP is refused.
 func TestAnIssuerMustBeHTTPS(t *testing.T) {
 	got := Section(Input{
@@ -324,6 +371,7 @@ func TestAnIssuerMustBeHTTPS(t *testing.T) {
 		Body: map[string]any{
 			"enabled": true, "client_id": "stowcloud", "issuer": "https://idp.example.test",
 		},
+		HasSecret: true,
 	})
 	if Blocked(ok) {
 		t.Errorf("a complete provider was refused: %v", keysOf(ok))

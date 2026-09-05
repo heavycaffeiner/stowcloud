@@ -114,6 +114,39 @@ func (c *Client) AuthorizeURL(ctx context.Context, redirectURI string, f FlowSec
 	return doc.AuthorizationEndpoint + sep + q.Encode(), nil
 }
 
+// EndSessionURL constructs the provider's RP-initiated logout URL, or
+// answers empty when the document names no end_session_endpoint: a provider
+// with no logout support leaves the caller with nothing to redirect to, and
+// today's local-only logout is exactly the right fallback for that case.
+//
+// idTokenHint is optional per the specification and is included whenever the
+// caller holds one, since it is what lets the provider end the specific
+// session this browser holds rather than every session the identity has.
+func (c *Client) EndSessionURL(ctx context.Context, idTokenHint, postLogoutRedirectURI string) (string, error) {
+	doc, err := c.FetchDiscovery(ctx)
+	if err != nil {
+		return "", err
+	}
+	if doc.EndSessionEndpoint == "" {
+		return "", nil
+	}
+
+	q := url.Values{}
+	q.Set("client_id", c.cfg.ClientID)
+	if idTokenHint != "" {
+		q.Set("id_token_hint", idTokenHint)
+	}
+	if postLogoutRedirectURI != "" {
+		q.Set("post_logout_redirect_uri", postLogoutRedirectURI)
+	}
+
+	sep := "?"
+	if strings.Contains(doc.EndSessionEndpoint, "?") {
+		sep = "&"
+	}
+	return doc.EndSessionEndpoint + sep + q.Encode(), nil
+}
+
 // scopes always includes the one that causes an identity token to be issued.
 // Omitting it leaves the provider authenticating and returning nothing this
 // server can verify, producing a flow incapable of succeeding.
@@ -135,14 +168,27 @@ const (
 	// authPost places the secret in the request body, for providers that do not
 	// support the preferred method.
 	authPost
+	// authNone sends no credential at all. Only a client declared public may
+	// use it, and only when the document advertises it: PKCE closes the code
+	// interception a public client is otherwise exposed to, but that does not
+	// make "none" a safe default for a client this deployment never marked
+	// public.
+	authNone
 )
 
 // clientAuthMethod chooses among the methods the document advertises.
 //
 // A missing or empty list selects the preferred method, which the specification
-// defines as the default rather than being a guess made here.
-func clientAuthMethod(doc *Discovery) (clientAuth, error) {
+// defines as the default rather than being a guess made here. public is
+// tested first and only wins the choice when the document also advertises
+// "none": a client not declared public keeps presenting a secret exactly as
+// before, and a public client pointed at a document that never lists "none"
+// falls through to the same basic/post ladder every other client uses.
+func clientAuthMethod(doc *Discovery, public bool) (clientAuth, error) {
 	advertised := doc.TokenEndpointAuthMethodsSupported
+	if public && slices.Contains(advertised, "none") {
+		return authNone, nil
+	}
 	switch {
 	case len(advertised) == 0:
 		return authBasic, nil
@@ -183,7 +229,7 @@ func (c *Client) Exchange(
 	if err != nil {
 		return "", err
 	}
-	method, err := clientAuthMethod(doc)
+	method, err := clientAuthMethod(doc, c.cfg.PublicClient)
 	if err != nil {
 		return "", err
 	}
@@ -204,6 +250,13 @@ func (c *Client) Exchange(
 	case authPost:
 		form.Set("client_id", c.cfg.ClientID)
 		form.Set("client_secret", string(c.cfg.ClientSecret.Reveal()))
+	case authNone:
+		// RFC 6749 §3.2.1: a client that does not authenticate at the token
+		// endpoint still identifies itself, and this is the one place that
+		// identification happens. No Authorization header, no client_secret:
+		// PKCE's code_verifier above is what proves this exchange belongs to
+		// the party that started the authorization request.
+		form.Set("client_id", c.cfg.ClientID)
 	}
 
 	body, err := c.postForm(ctx, doc.TokenEndpoint, form, basic)

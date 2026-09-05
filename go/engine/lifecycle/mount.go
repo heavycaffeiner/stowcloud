@@ -74,6 +74,13 @@ func (e *Engine) Mount() (*fiber.App, error) {
 	// handler, which runs too late for any step to read.
 	server.Announce(app, table)
 
+	// The public link surface declares what it requires here, before the
+	// chain: these paths are outside the table, so nothing else says that a
+	// link's own token is their authority, and the CSRF step reads that
+	// declaration. The handlers themselves are mounted after the chain with
+	// every other route.
+	e.declarePublicLinks(app)
+
 	// The chain goes on before the routes. Fiber runs what was mounted in
 	// mount order, so a step registered after a route never sees a request
 	// that route answers: the boundary, the limiter and the credential check
@@ -246,6 +253,8 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.adminLogsTimeline
 		case "admin.settings.get":
 			out[r.Name] = e.adminSettingsGet
+		case "admin.oidc.endpoints":
+			out[r.Name] = e.adminOIDCEndpoints
 		case "admin.settings.patch":
 			out[r.Name] = e.adminSettingsPatch
 		case "admin.system.restart":
@@ -351,7 +360,9 @@ func (e *Engine) health(c *fiber.Ctx) error {
 		reasons = append(reasons, handler.ReasonJournalDatabase)
 	}
 
-	return writeJSON(c, fiber.StatusOK, handler.HealthOf(status, reasons))
+	h := handler.HealthOf(status, reasons)
+	h.Revision = e.Revision
+	return writeJSON(c, fiber.StatusOK, h)
 }
 
 // writeJSON sends a value as an API response.

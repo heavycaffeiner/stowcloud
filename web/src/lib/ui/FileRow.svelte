@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Entry } from '../api/client'
   import { formatBytes } from '../format/bytes'
+  import { formatEntrySize } from '../format/entry-size'
   import { formatDateNs, t } from '../i18n'
   import { Checkbox, Icon } from 'm3-svelte'
   import { icons } from '../icons'
@@ -12,6 +13,7 @@
     selected: boolean
     focused: boolean
     domId: string
+    encrypted?: boolean
     /** Selects (`FileTable.onRowClick`), or extends/toggles with a modifier. */
     onclick: (e: MouseEvent) => void
     /** Opens. A double click is what enters a folder or shows a file. */
@@ -23,7 +25,7 @@
     ontogglecheck: () => void
   }
 
-  let { entry, rowIndex, selected, focused, domId, onclick, ondblclick, oncontextmenu, ontogglecheck }: Props = $props()
+  let { entry, rowIndex, selected, focused, domId, encrypted = false, onclick, ondblclick, oncontextmenu, ontogglecheck }: Props = $props()
   const iconName = $derived(
     entry.kind === 'dir'
       ? 'folder'
@@ -110,7 +112,7 @@
     {/if}
   </span>
   <span class="sc-row__cell sc-row__cell--size" role="gridcell">
-    {entry.kind === 'dir' ? '-' : formatBytes(entry.size)}
+    {entry.kind === 'dir' ? '-' : formatEntrySize(entry.size, encrypted)}
   </span>
   <span class="sc-row__cell sc-row__cell--mtime" role="gridcell">{formatDateNs(entry.mtime_ns)}</span>
 </div>

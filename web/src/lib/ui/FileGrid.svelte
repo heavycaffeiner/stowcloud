@@ -40,7 +40,7 @@
   import { ui } from '../store/ui.store'
   import { selection } from '../store/selection.store'
   import { view } from '../store/view.store'
-  import { formatBytes } from '../format/bytes'
+  import { formatEntrySize } from '../format/entry-size'
   import {
     computeScaleMapping,
     computeWindow,
@@ -65,12 +65,17 @@
     perms: Perms
     onopen: (entry: Entry) => void
     oncontextmenu: (entry: Entry, e: MouseEvent) => void
+    /** The entry whose row menu is open, so its kebab can say so. */
+    menuFor?: string | null
     onrename?: () => void
     ondelete?: () => void
     onsearchfocus?: () => void
+    /** The share encrypts what it stores, so `entry.size` is a ciphertext
+     *  size and the card derives the plaintext one. */
+    encrypted?: boolean
   }
 
-  let { entries, total, dirs, loading, loadingMore, requestMore, onopen, oncontextmenu, onrename, ondelete, onsearchfocus }: Props =
+  let { entries, total, dirs, loading, loadingMore, requestMore, onopen, oncontextmenu, menuFor = null, onrename, ondelete, onsearchfocus, encrypted = false }: Props =
     $props()
 
   // 4px-grid card metrics, keyed by the same density control that drives
@@ -317,6 +322,10 @@
    * the file cards have different heights and start at different places, which
    * is the same reason they get a window each.
    *
+   * Both origins are read here rather than taken from the `measure()` state,
+   * which only refreshes on scroll and resize: the selection bar appears the
+   * moment the first card is hit and moves both sections down mid-drag.
+   *
    * Only loaded rows can be named, so a rectangle thrown across an unfetched
    * gap picks up whatever is in memory. Same limit as `selection.range`.
    */
@@ -325,18 +334,22 @@
     // laid out from there on a `CARD.w + CARD.gap` pitch.
     const left = (viewportEl?.getBoundingClientRect().left ?? 0) + window.scrollX + 16
     const common = { left, columnPitch: cardW + CARD.gap, cellWidth: cardW, columns }
+    const foldersY = foldersEl ? foldersEl.getBoundingClientRect().top + window.scrollY : foldersTop
+    const filesY = filesEl ? filesEl.getBoundingClientRect().top + window.scrollY : filesTop
     const hits = [
       ...indicesInRect(rect, {
         ...common,
-        top: foldersTop,
+        top: foldersY,
         rowHeight: folderRowH,
+        cellHeight: CARD.folderH,
         startIndex: 0,
         count: folderCount
       }),
       ...indicesInRect(rect, {
         ...common,
-        top: filesTop,
+        top: filesY,
         rowHeight: fileRowH,
+        cellHeight: CARD.fileH,
         startIndex: folderCount,
         count: fileCount
       })
@@ -379,7 +392,15 @@
   }
 
   /** The kebab opens the same menu a right-click does, aimed at the same
-   *  rows -- one menu definition, one target rule (see `row-actions.ts`). */
+   *  rows -- one menu definition, one target rule (see `row-actions.ts`).
+   *
+   *  `aria-expanded` on the button is correct ARIA for a menu trigger on its
+   *  own. It is also the guard `Menu`'s outside-pointerdown dismisser reads,
+   *  and that dismisser is the suspected cause of the kebab opening nothing
+   *  under a real mouse: unverified here, since the reproduction needs a
+   *  pointer sequence this project's test setup cannot drive. The drawer's
+   *  Add button is the one menu trigger that works and the one that already
+   *  carries the attribute. */
   function onKebabClick(e: MouseEvent, entry: Entry): void {
     e.stopPropagation()
     oncontextmenu(entry, e)
@@ -606,6 +627,8 @@
                       type="button"
                       class="sc-file-grid__kebab"
                       tabindex="-1"
+                      aria-haspopup="menu"
+                      aria-expanded={menuFor === entry.name}
                       aria-label={t('grid.more_actions', { name: entry.name })}
                       onclick={(e) => onKebabClick(e, entry)}
                       ondblclick={(e) => e.stopPropagation()}
@@ -693,9 +716,11 @@
                         type="button"
                         class="sc-file-grid__kebab"
                         tabindex="-1"
+                        aria-haspopup="menu"
+                        aria-expanded={menuFor === entry.name}
                         aria-label={t('grid.more_actions', { name: entry.name })}
                         onclick={(e) => onKebabClick(e, entry)}
-                      ondblclick={(e) => e.stopPropagation()}
+                        ondblclick={(e) => e.stopPropagation()}
                       >
                         <Icon icon={icons['more-vert']} size={18} />
                       </button>
@@ -703,7 +728,7 @@
                     <div class="sc-file-grid__thumb">
                       <Thumbnail {entry} dim={THUMB_DIM} fallback={iconName(entry)} iconSize={40} />
                     </div>
-                    <span class="sc-file-grid__meta">{formatBytes(entry.size)}</span>
+                    <span class="sc-file-grid__meta">{formatEntrySize(entry.size, encrypted)}</span>
                   </div>
                 {:else}
                   <div class="sc-file-grid__card sc-file-grid__card--file sc-file-grid__skeleton" style:width="{cardW}px" aria-busy="true">

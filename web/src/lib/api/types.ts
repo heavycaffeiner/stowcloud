@@ -859,6 +859,16 @@ export interface OidcConfig {
   display_name: string
 }
 
+/** `GET /api/v1/admin/oidc/endpoints`: the two strings an operator has to
+ *  register at the identity provider, exactly as the server will send and
+ *  accept them, one entry per configured app host. Built from
+ *  `network.app_hosts` the same way `oidcRedirectURI` builds one per request
+ *  (`go/engine/lifecycle/oidc.go`), so what this shows is never a guess. */
+export interface OidcEndpoints {
+  redirect_uris: string[]
+  post_logout_redirect_uris: string[]
+}
+
 /** `GET /api/admin/users/{id}/oidc`. The *full* subject, unlike
  *  [`SessionOidc`]'s hint: an administrator working out why somebody cannot
  *  sign in needs the exact string to compare against what the IdP shows.
@@ -1546,11 +1556,15 @@ export interface WatchSettingsReq {
   full_threshold: number
 }
 
-/** `PATCH /api/admin/server-settings/oidc` body (`OidcPatch`): the eight
- *  rows §6-4 marks UI-editable. The provider is rebuilt when settings load,
- *  so a save applies without a restart.
+/** `PATCH /api/admin/server-settings/oidc` body (`OidcPatch`): the rows the
+ *  single sign-on card edits. The provider is rebuilt when settings load, so
+ *  a save applies without a restart.
  *
- *  The other two `oidc.*` settings are not here on purpose.
+ *  `redirect_uris` is gone: nothing in this build ever read it back, and the
+ *  effective redirect URI is derived from `app_hosts` instead (addition A),
+ *  never admin-entered.
+ *
+ *  Two other `oidc.*` settings are not here on purpose.
  *  `oidc.client_secret_file` is the path to a secret, and
  *  `oidc.local_password_login` would be unrecoverable if this screen could
  *  write it: an admin override beats the compiled-in default on every boot, so setting
@@ -1561,14 +1575,17 @@ export interface OidcSettingsReq {
   enabled: boolean
   issuer: string
   client_id: string
-  /** Each must match what is registered at the IdP byte for byte, start with
-   *  `https://`, and name a host `app_hosts` admits. The entry matching the
-   *  request's `Host` is used, the first otherwise. */
-  redirect_uris: string[]
   /** `openid` is always included server-side whether or not it is listed. */
   scopes: string[]
   display_name: string
   allow_private_endpoints: boolean
+  /** A self-signed or privately-issued provider's certificate, trusted in
+   *  place of the system pool. Empty keeps the system pool. */
+  ca_cert_file: string
+  /** No client secret is ever read back into this screen once stored
+   *  (`oidc.client_secret_file` stays server-only); this switch is the one
+   *  thing that changes whether one is required (addition C, defect 15). */
+  public_client: boolean
   /** `"block"` is the only accepted value (§4.3.6). */
   smb_policy: 'block'
 }

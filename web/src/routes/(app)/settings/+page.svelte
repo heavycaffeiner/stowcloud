@@ -89,14 +89,22 @@
   const logout = createMutation(() => logoutMutation())
 
   async function doLogout(): Promise<void> {
+    let endSessionUrl: string | undefined
     try {
-      await logout.mutateAsync()
+      endSessionUrl = (await logout.mutateAsync()).end_session_url
     } catch {
       // best-effort: fall through to the login screen either way, the
       // session cookie is either gone server-side or already unusable
-    } finally {
-      await goto('/login')
     }
+    // A session this browser opened through single sign-on: send it through
+    // RP-initiated logout so the provider's own session ends too (addition
+    // B), rather than leaving the next sign-in silent. A full navigation,
+    // not `goto`: the provider is a different origin entirely.
+    if (endSessionUrl) {
+      window.location.href = endSessionUrl
+      return
+    }
+    await goto('/login')
   }
 </script>
 

@@ -42,6 +42,19 @@ export function t(key: string, params?: Record<string, string | number>): string
   return s
 }
 
+/**
+ * Plural helper: selects `${key}_one` when count is 1, and `${key}_other`
+ * otherwise. The count is passed as `{count}` in params unless overridden.
+ */
+export function tp(
+  key: string,
+  count: number,
+  params?: Record<string, string | number>,
+): string {
+  const suffix = count === 1 ? '_one' : '_other'
+  return t(`${key}${suffix}`, { count, ...params })
+}
+
 /** BCP 47 tag for the current locale: what `Intl` takes, and what the root
  *  layout writes into `<html lang>`. */
 export function localeTag(): string {

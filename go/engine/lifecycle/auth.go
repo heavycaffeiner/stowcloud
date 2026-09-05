@@ -332,6 +332,15 @@ func searchTierName(hasIndex bool) string {
 // swallowing the failure is how a browser stops presenting a session that is
 // still live in the database: the person believes they signed out, and the
 // token in anything that copied the cookie keeps working.
+//
+// A session the provider established gets one thing more: the answer names
+// the provider's own end-session URL, so the client can send the browser
+// there next and end the provider's session too. Without this the provider
+// session outlives the local one and the next sign-in is silent, no consent
+// screen and no password prompt, because the browser is still authenticated
+// to the provider even though this server has forgotten it. A session
+// established locally answers exactly as before: no provider was ever
+// involved in establishing it, so there is nothing on that side to end.
 func (e *Engine) logout(c *fiber.Ctx) error {
 	cookie := c.Cookies(middleware.SessionCookieName)
 	if cookie == "" {
@@ -350,7 +359,12 @@ func (e *Engine) logout(c *fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusNoContent)
 	}
 
-	err = e.Auth.RevokeSession(c.UserContext(), secret.New(raw))
+	// Read before the revoke, not after: once the row is gone SessionAMR has
+	// nothing left to answer from.
+	token := secret.New(raw)
+	establishedByProvider := e.Auth.SessionAMR(c.UserContext(), token) == amrProvider
+
+	err = e.Auth.RevokeSession(c.UserContext(), token)
 	if err != nil && !errors.Is(err, auth.ErrCredentials) {
 		// The session is still live and the caller must not be told it is
 		// gone. ErrCredentials is different: the service is confirming there
@@ -359,6 +373,12 @@ func (e *Engine) logout(c *fiber.Ctx) error {
 	}
 
 	clearSessionCookie(c)
+
+	if establishedByProvider {
+		if endSessionURL, ok := e.oidcEndSessionURL(c); ok {
+			return writeJSON(c, fiber.StatusOK, handler.LogoutView{EndSessionURL: endSessionURL})
+		}
+	}
 	return c.SendStatus(fiber.StatusNoContent)
 }
 

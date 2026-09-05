@@ -329,6 +329,7 @@ func loadOIDC(d document, out *Values) {
 	d.stringOf("oidc", "ca_cert_file", func(v string) { c.CACertFile = v })
 	d.stringsOf("oidc", "scopes", func(v []string) { c.Scopes = v })
 	d.boolOf("oidc", "allow_private_endpoints", func(v bool) { c.AllowPrivateEndpoints = v })
+	d.boolOf("oidc", "public_client", func(v bool) { c.PublicClient = v })
 
 	if c.Issuer == "" || c.ClientID == "" {
 		d.log.Error("single sign-on is on and has no issuer or client id; it stays off")

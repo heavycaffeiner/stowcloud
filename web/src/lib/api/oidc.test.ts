@@ -15,9 +15,15 @@ import { describe, expect, it } from 'vitest'
 import { oidcErrorMessage, startOidcLogin } from './oidc'
 
 /** Every code the callback can actually put in `?oidc_error=`, taken from the
- *  handlers that emit one (`go/internal/httpapi/handler/oidc_flow.go`). An
+ *  handlers that emit one (`go/engine/lifecycle/oidc.go`). An
  *  expired flow and an unknown state are both `oidc.bad_state` there, so
- *  neither `oidc.expired` nor `oidc.already_linked` is in this list. */
+ *  neither `oidc.expired` nor `oidc.already_linked` is in this list. The
+ *  defect-15 discovery-time refusals (HS256-only, no usable client
+ *  authentication method) answer the existing `oidc.provider_unavailable`
+ *  rather than a code of their own.
+ *  `auth.invalid_credentials` (a callback whose token failed verification,
+ *  e.g. no `kid`) is a table B row too, not table A: it lands here via the
+ *  same `?oidc_error=` redirect, never as a JSON envelope. */
 const TABLE_B = [
   'oidc.disabled',
   'oidc.bad_request',
@@ -26,7 +32,8 @@ const TABLE_B = [
   'oidc.provider_unavailable',
   'oidc.access_denied',
   'oidc.link_session_changed',
-  'oidc.subject_already_linked'
+  'oidc.subject_already_linked',
+  'auth.invalid_credentials'
 ]
 
 describe('oidcErrorMessage', () => {

@@ -66,8 +66,9 @@ func knownReasons() map[HealthReason]bool {
 
 // Health is the entire response body.
 type Health struct {
-	Status  HealthStatus   `json:"status"`
-	Reasons []HealthReason `json:"reasons"`
+	Status   HealthStatus   `json:"status"`
+	Reasons  []HealthReason `json:"reasons"`
+	Revision string         `json:"revision,omitempty"`
 }
 
 // HealthOf builds the projection from what the services reported.

@@ -58,6 +58,10 @@ export class ShareTooLargeError extends Error {}
  *  distinct from "gone" so the page can show a password form instead of the
  *  generic not-found message. */
 export class SharePasswordRequiredError extends Error {}
+/** An unlock the server refused for a reason that is not the password: the
+ *  page must not report it as a wrong one, which is the message guaranteed to
+ *  send a visitor looking in the wrong place. */
+export class ShareUnlockFailedError extends Error {}
 
 const IS_MOCK = import.meta.env.VITE_API_MOCK === '1'
 // Deliberately NOT `/api`: see header comment. `/s/...` is a top-level
@@ -185,7 +189,16 @@ async function mockUnlockShare(token: string, password: string): Promise<boolean
  *  `Path=/s/{token}`-scoped cookie (`Secure`, requires HTTPS, so this
  *  never succeeds over a plain-`http://` dev origin even with the right
  *  password; that's a real constraint of testing this locally, not a bug),
- *  so a following `getShare(token)` call sees through the lock. */
+ *  so a following `getShare(token)` call sees through the lock.
+ *
+ *  No `Sc-Csrf` header: the link's own token is the authority, which the
+ *  server declares by mounting `/s/**` as a public route. A browser that is
+ *  also signed in sends its session cookie here regardless, and this bundle
+ *  has no session surface to read a token from.
+ *
+ *  Resolves false for a wrong password, and throws for a refusal that is not
+ *  one, so the page never reports "incorrect password" for something else.
+ */
 export function unlockShare(token: string, password: string): Promise<boolean> {
   if (IS_MOCK) return mockUnlockShare(token, password)
   return fetch(`${ORIGIN}/s/${encodeURIComponent(token)}/auth`, {
@@ -193,7 +206,12 @@ export function unlockShare(token: string, password: string): Promise<boolean> {
     credentials: 'include',
     headers: { 'Content-Type': 'application/json; charset=utf-8' },
     body: JSON.stringify({ password })
-  }).then((res) => res.ok)
+  }).then((res) => {
+    if (res.status === 401 || res.status === 403) return false
+    if (res.status === 404 || res.status === 410) throw new ShareNotFoundError(token)
+    if (!res.ok) throw new ShareUnlockFailedError(token)
+    return true
+  })
 }
 
 /** `GET /s/{token}/download?path=…`: one file under the link.
@@ -239,11 +257,10 @@ async function mockDropUpload(file: File): Promise<string> {
  * and the uploader has to be told which one is
  *  theirs.
  *
- *  No `Sc-Csrf` header, deliberately: `/s/**` is a public path, so
- *  `middleware::auth` returns before inserting `SessionToken` and
- *  `middleware::csrf` only enforces when that extension exists. Sending one
- *  would be ceremony, and this bundle has no session to read it from
- *  anyway. */
+ *  No `Sc-Csrf` header: the link's own token is the authority, and the
+ *  server declares `/s/**` public so a browser that happens to be signed in
+ *  is still admitted as a visitor. This bundle has no session surface to
+ *  read a token from in any case. */
 export function dropUpload(token: string, file: File): Promise<string> {
   if (IS_MOCK) return mockDropUpload(file)
   const url = `${ORIGIN}/s/${encodeURIComponent(token)}/drop?name=${encodeURIComponent(file.name)}`

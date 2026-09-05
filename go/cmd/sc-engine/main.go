@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"syscall"
@@ -60,6 +61,8 @@ func main() {
 			os.Exit(runHealthcheck(os.Args[2:]))
 		case "preview-worker":
 			os.Exit(runPreviewWorker())
+		case "version", "--version", "-version", "-v":
+			os.Exit(runVersion())
 		}
 	}
 
@@ -74,6 +77,30 @@ func main() {
 		slog.Error("sc-engine failed", "error", err)
 		os.Exit(1)
 	}
+}
+
+// revision is stamped into the binary at build time with -ldflags="-X main.revision=...".
+var revision string
+
+func buildRevision() string {
+	if revision != "" {
+		return revision
+	}
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, s := range info.Settings {
+			if s.Key == "vcs.revision" && s.Value != "" {
+				return s.Value
+			}
+		}
+	}
+	return "dev"
+}
+
+func runVersion() int {
+	if _, err := fmt.Println(buildRevision()); err != nil {
+		return 1
+	}
+	return 0
 }
 
 // defaultListen is where the server binds when neither the flag nor the
@@ -156,6 +183,7 @@ func run(addr, dataDir string, plain bool) error {
 		// restart compares the two to tell a change it can apply from one the
 		// kernel will not let it.
 		Hardening: values.Hardening,
+		Revision:  buildRevision(),
 	})
 	if err != nil {
 		return fmt.Errorf("opening the engine: %w", err)

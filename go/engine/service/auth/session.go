@@ -133,6 +133,25 @@ func (s *Service) RevokeSession(ctx context.Context, token secret.Secret) error 
 	return nil
 }
 
+// SessionAMR reports how a session was established, without touching its
+// last-seen stamp: this exists for logout to decide whether to route the
+// browser through the provider's own end-session endpoint, which is not an
+// authentication decision and must not extend the session's idle window.
+//
+// A token that no longer names a live row answers zero rather than an
+// error: by the time logout asks, the session may already be gone (an app
+// password logging out, a cookie the store never issued, a race with
+// expiry), and none of those cases should stop the cookie from being
+// cleared.
+func (s *Service) SessionAMR(ctx context.Context, token secret.Secret) int64 {
+	hash := sha256.Sum256(token.Reveal())
+	row, err := s.store.SessionByHash(ctx, hash[:])
+	if err != nil {
+		return 0
+	}
+	return row.AMR
+}
+
 // RevokeSessionByHash destroys one of an account's own sessions, named by the
 // stored digest. It is the "sign out this device" path: the client holds row
 // digests, not tokens, and the predicate carries the owner too.

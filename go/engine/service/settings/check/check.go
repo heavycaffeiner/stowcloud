@@ -48,6 +48,7 @@ const (
 	keySMBDirUnavailable   = "settings.smb_config_dir_unavailable"
 	keyAboveWatchLimit     = "settings.above_kernel_watch_limit"
 	keyWithinWatchLimit    = "settings.within_kernel_watch_limit"
+	keyOIDCSecretRequired  = "settings.oidc_client_secret_required"
 )
 
 // watchLimitFile is where the kernel reports what it will actually grant. It is
@@ -152,6 +153,14 @@ func checkDB(in Input) []Finding {
 // Enabling it without an issuer or client id ships a sign-in button that fails
 // for every user who tries it. Refusing the save surfaces the problem to the
 // one administrator who can still fix it.
+//
+// A confidential client with no secret stored is the same shape of failure:
+// buildOIDCClient has nothing to authenticate with, so it stays off with a
+// log line while the save reports success. Two signals settle whether one is
+// held: HasSecret, which the settings screen's path supplies after
+// extractSecrets has already sealed and stripped client_secret from Body, and
+// a client_secret still present in Body, which is how the emergency door's
+// path arrives here since it merges a section whole and never extracts one.
 func checkOIDC(in Input) []Finding {
 	on, ok := in.Body["enabled"].(bool)
 	if !ok || !on {
@@ -167,6 +176,19 @@ func checkOIDC(in Input) []Finding {
 		if u, err := url.Parse(v); err != nil || u.Scheme != "https" || u.Host == "" {
 			out = append(out, blocking(in.Section, "issuer", keyIssuerMustBeHTTPS, "value", v))
 		}
+	}
+
+	// A key the body does not carry reads as its zero value, which is the
+	// right answer for both: an absent `public_client` is not public, and an
+	// absent `client_secret` supplies nothing.
+	public, isPublic := in.Body["public_client"].(bool)
+	suppliedInBody, hasField := in.Body["client_secret"].(string)
+	public = isPublic && public
+	if !hasField {
+		suppliedInBody = ""
+	}
+	if !public && !in.HasSecret && strings.TrimSpace(suppliedInBody) == "" {
+		out = append(out, blocking(in.Section, "client_secret", keyOIDCSecretRequired))
 	}
 	return out
 }

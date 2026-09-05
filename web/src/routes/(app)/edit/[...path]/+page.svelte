@@ -52,10 +52,45 @@
   )
 
   // The unsaved buffer. `null` means "no local edits": the editor shows the
-  // query's own content, which is the baseline a save compares against.
+  // query's own content.
   let draft = $state<string | null>(null)
   const content = $derived(draft ?? file.data?.content ?? '')
   const dirty = $derived(draft !== null && draft !== (file.data?.content ?? ''))
+
+  // Baseline change token: the version the editor actually loaded its text from,
+  // captured once when the content is loaded and at each successful save.
+  // Held in local state so background refetches cannot mutate the comparison
+  // baseline out from under the open buffer.
+  let baselineEtag = $state<string | null>(null)
+  let initialEtag = $state<string | null>(null)
+  let loadedPath = $state<string | null>(null)
+  let editorRef = $state<ReturnType<typeof CodeEditor> | undefined>()
+
+  $effect(() => {
+    if (path !== loadedPath) {
+      loadedPath = path
+      baselineEtag = null
+      initialEtag = null
+      draft = null
+    }
+  })
+
+  $effect(() => {
+    if (initialEtag === null && meta.data?.etag) {
+      initialEtag = meta.data.etag
+    }
+  })
+
+  $effect(() => {
+    if (baselineEtag === null && file.isSuccess && initialEtag !== null) {
+      baselineEtag = initialEtag
+    }
+  })
+
+  function focusEditor(): void {
+    editorRef?.focus()
+    queueMicrotask(() => editorRef?.focus())
+  }
 
   const saveMutation = createMutation(() => writeFileMutation())
   const saving = $derived(saveMutation.isPending)
@@ -72,16 +107,19 @@
   async function save(): Promise<void> {
     if (!canSave) return
     try {
-      const latest = await queryClient.fetchQuery(statQuery(path))
-      if (meta.data && latest.etag !== meta.data.etag) {
+      const latest = await queryClient.fetchQuery({ ...statQuery(path), staleTime: 0 })
+      if (baselineEtag !== null && latest.etag !== baselineEtag) {
         conflictWeak = latest.etag_weak
         conflictOpen = true
         return
       }
       const updated = await saveMutation.mutateAsync({ path, content })
       queryClient.setQueryData(keys.pathStat(path), updated)
+      baselineEtag = updated.etag
+      initialEtag = updated.etag
       draft = null
       snackbarMsg = t('common.saved')
+      focusEditor()
     } catch (err) {
       snackbarMsg = describeApiError(err, t('common.could_not_save'))
     }
@@ -95,8 +133,11 @@
     try {
       const updated = await saveMutation.mutateAsync({ path, content })
       queryClient.setQueryData(keys.pathStat(path), updated)
+      baselineEtag = updated.etag
+      initialEtag = updated.etag
       draft = null
       snackbarMsg = t('editor.overwritten')
+      focusEditor()
     } catch (err) {
       snackbarMsg = describeApiError(err, t('common.could_not_save'))
     }
@@ -106,8 +147,22 @@
   async function reloadAfterConflict(): Promise<void> {
     conflictOpen = false
     draft = null
-    await Promise.all([meta.refetch(), file.refetch()])
+    baselineEtag = null
+    initialEtag = null
+    // A prefix, not an exact key: the content key carries the unlock state
+    // as its last element, and a reload has to clear whichever of those the
+    // editor happens to be holding.
+    queryClient.removeQueries({ queryKey: ['path', path, 'content'] })
+    const [freshMeta] = await Promise.all([
+      queryClient.fetchQuery({ ...statQuery(path), staleTime: 0 }),
+      file.refetch()
+    ])
+    if (freshMeta?.etag) {
+      baselineEtag = freshMeta.etag
+      initialEtag = freshMeta.etag
+    }
     snackbarMsg = t('editor.reloaded_newer_version')
+    focusEditor()
   }
 
   function goBack(): void {
@@ -151,7 +206,7 @@
     {:else if loadError}
       <p class="sc-edit__error" role="alert">{loadError}</p>
     {:else}
-      <CodeEditor value={content} filename={fileName} {readOnly} onchange={onContentChange} onsave={save} />
+      <CodeEditor bind:this={editorRef} value={content} filename={fileName} {readOnly} onchange={onContentChange} onsave={save} />
     {/if}
   </div>
 </div>
@@ -160,7 +215,10 @@
   weak={conflictWeak}
   open={conflictOpen}
   name={fileName}
-  onclose={() => (conflictOpen = false)}
+  onclose={() => {
+    conflictOpen = false
+    focusEditor()
+  }}
   onreload={reloadAfterConflict}
   onoverwrite={overwriteAfterConflict}
 />

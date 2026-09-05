@@ -76,10 +76,18 @@ interface FileState {
   /** Aborts every chunk of this file that is still in flight. */
   abort: AbortController
   sessionId: string
+  baseSentBytes: number
+  chunkProgress: Map<number, number>
   sentBytes: number
   lastPostAt: number
   lastPostBytes: number
   rate: number
+}
+
+function updateSentBytes(f: FileState): void {
+  let inflight = 0
+  for (const b of f.chunkProgress.values()) inflight += b
+  f.sentBytes = Math.min(f.file.size, f.baseSentBytes + inflight)
 }
 
 const files = new Map<string, FileState>()
@@ -215,6 +223,8 @@ async function addFile(item: AddItem): Promise<void> {
     status: 'uploading',
     abort: new AbortController(),
     sessionId,
+    baseSentBytes: resumeOffset,
+    chunkProgress: new Map(),
     sentBytes: resumeOffset,
     lastPostAt: 0,
     lastPostBytes: resumeOffset,
@@ -250,6 +260,8 @@ async function finalizeIfDone(f: FileState): Promise<boolean> {
   if (!complete) return false
 
   f.status = 'done'
+  f.baseSentBytes = f.file.size
+  f.chunkProgress.clear()
   f.sentBytes = f.file.size
   maybePostProgress(f, true)
   await deleteResumeRecord(resumeKey(f.file.name, f.file.size, f.file.lastModified)).catch(() => {})
@@ -278,15 +290,25 @@ async function sendChunk(task: ChunkDescriptor & { fileId: string }): Promise<vo
   inflightRequests++
   try {
     const blob = f.file.slice(task.offset, task.offset + task.length)
-    await transport.patchChunk(f.sessionId, task.offset, blob, f.abort.signal)
-    f.sentBytes = Math.min(f.file.size, f.sentBytes + task.length)
+    await transport.patchChunk(f.sessionId, task.offset, blob, f.abort.signal, (bytes) => {
+      const cur = files.get(task.fileId)
+      if (cur && cur.status === 'uploading') {
+        cur.chunkProgress.set(task.index, bytes)
+        updateSentBytes(cur)
+        maybePostProgress(cur)
+      }
+    })
+    f.chunkProgress.delete(task.index)
+    f.baseSentBytes = Math.min(f.file.size, f.baseSentBytes + task.length)
+    updateSentBytes(f)
     chunkRetries.delete(`${task.fileId}:${task.index}`)
     scheduler.complete(task.fileId, task.index)
     maybePostProgress(f)
     await finalizeIfDone(f)
   } catch (err) {
     scheduler.complete(task.fileId, task.index)
-
+    f.chunkProgress.delete(task.index)
+    updateSentBytes(f)
     // Cancel deletes the session, so every chunk still in flight fails right
     // after it. Those failures are the cancellation working, not a fault to
     // recover from: retrying them put the row back to "retrying" and left a
@@ -314,8 +336,10 @@ async function sendChunk(task: ChunkDescriptor & { fileId: string }): Promise<vo
         // The remaining bytes are re-planned at the smaller size, so the old
         // chunk indices no longer name anything.
         forgetChunkRetries(f.id)
+        f.chunkProgress.clear()
+        updateSentBytes(f)
         scheduler.removeFile(f.id)
-        scheduler.addFile({ id: f.id, totalSize: f.file.size, chunkSize: next, resumeOffset: f.sentBytes })
+        scheduler.addFile({ id: f.id, totalSize: f.file.size, chunkSize: next, resumeOffset: f.baseSentBytes })
       }
       return
     }

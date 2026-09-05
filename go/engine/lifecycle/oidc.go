@@ -179,6 +179,14 @@ const (
 	oidcErrAccessDenied         = "oidc.access_denied"
 	oidcErrLinkSessionChanged   = "oidc.link_session_changed"
 	oidcErrSubjectAlreadyLinked = "oidc.subject_already_linked"
+	// oidcErrInvalidToken is a token that came back and failed verification:
+	// a missing kid, a bad signature, a wrong issuer or audience, an expired
+	// or replayed claim set. Distinct from oidcErrProviderUnavailable, which
+	// is the back channel itself failing (unreachable, malformed answer, an
+	// exchange the provider refused): defect 15's no-kid case is a token
+	// that arrived and could not be trusted, not a provider that could not
+	// be reached.
+	oidcErrInvalidToken = "auth.invalid_credentials"
 	// oidcErrInternal never gets its own sentence: the client's default case
 	// covers it. Naming it rather than reusing a table code keeps a genuine
 	// server fault from being reported to the person as something they can
@@ -276,7 +284,7 @@ func (e *Engine) authOIDCCallback(c *fiber.Ctx) error {
 	claims, err := client.VerifyIDToken(c.UserContext(), rawToken, flow.Nonce)
 	if err != nil {
 		e.logger.Warn("an identity token did not verify", "error", err)
-		return oidcRedirectError(c, landing, oidcErrProviderUnavailable)
+		return oidcRedirectError(c, landing, oidcErrInvalidToken)
 	}
 
 	if flow.User != 0 {
@@ -434,6 +442,32 @@ func (e *Engine) oidcDisplayName() string {
 // wherever the client chose. The identical string has to reach the exchange,
 // which is why the flow row stores it rather than rebuilding it later.
 func (e *Engine) oidcRedirectURI(c *fiber.Ctx) (string, bool) {
+	origin, ok := e.oidcRequestOrigin(c)
+	if !ok {
+		return "", false
+	}
+	return origin + server.Base + "/auth/oidc/callback", true
+}
+
+// oidcPostLogoutRedirectURI builds the address the provider's own
+// end-session endpoint sends the browser back to, the same way
+// oidcRedirectURI builds the callback: from the host the boundary already
+// admitted, landing on the SPA's own login route, which needs no session to
+// render.
+func (e *Engine) oidcPostLogoutRedirectURI(c *fiber.Ctx) (string, bool) {
+	origin, ok := e.oidcRequestOrigin(c)
+	if !ok {
+		return "", false
+	}
+	return origin + oidcLoginPath, true
+}
+
+// oidcRequestOrigin resolves the scheme and host this request arrived on,
+// admitting only a declared app host once any are declared. Shared by every
+// URI this server hands the provider for a given request, so the redirect
+// URI and the post-logout URI can never name different hosts for the same
+// request.
+func (e *Engine) oidcRequestOrigin(c *fiber.Ctx) (string, bool) {
 	host := string(c.Request().Host())
 	if host == "" {
 		return "", false
@@ -454,7 +488,71 @@ func (e *Engine) oidcRedirectURI(c *fiber.Ctx) (string, bool) {
 	if c.Protocol() == "http" {
 		scheme = "http"
 	}
-	return scheme + "://" + host + server.Base + "/auth/oidc/callback", true
+	return scheme + "://" + host, true
+}
+
+// oidcEndSessionURL builds the provider's RP-initiated logout URL for the
+// browser completing this request, or reports false when there is nothing to
+// send it to: no provider configured, the provider names no
+// end_session_endpoint, or discovery could not be fetched.
+//
+// No id_token_hint: this server never keeps the raw identity token past
+// verifying it (Claims is what survives, not the JWS), so there is nothing
+// held to pass. The specification lists the hint as optional for exactly
+// this reason; the provider still ends the session named by its own
+// cookie on the browser making this request.
+func (e *Engine) oidcEndSessionURL(c *fiber.Ctx) (string, bool) {
+	client := e.oidc()
+	if client == nil {
+		return "", false
+	}
+	postLogout, ok := e.oidcPostLogoutRedirectURI(c)
+	if !ok {
+		return "", false
+	}
+	url, err := client.EndSessionURL(c.UserContext(), "", postLogout)
+	if err != nil || url == "" {
+		return "", false
+	}
+	return url, true
+}
+
+// adminOIDCEndpoints reports the exact strings this deployment will send the
+// provider, one pair per configured app host, so registering the client
+// stops being a guess: the redirect URI is invisible until the end of a
+// round trip through the provider, and getting it wrong meant discovering
+// that the hard way (addition A).
+//
+// Derived the same way oidcRedirectURI derives the redirect URI for a live
+// request, but for every declared app host at once rather than the one a
+// caller happened to arrive on. A deployment with no declared hosts yet (first
+// boot) has nothing to publish: the effective redirect URI depends on
+// whichever private address a caller reaches it on, which is not a stable
+// string to register anywhere.
+func (e *Engine) adminOIDCEndpoints(c *fiber.Ctx) error {
+	if _, ok, written := e.admin(c); !ok {
+		return written
+	}
+
+	e.settingsMu.RLock()
+	declared := e.appHosts.App
+	e.settingsMu.RUnlock()
+
+	redirects := make([]string, 0, len(declared))
+	postLogouts := make([]string, 0, len(declared))
+	for _, host := range declared {
+		// Always https in this listing: it is what an operator registers at
+		// the provider ahead of time, not a reflection of the scheme one
+		// particular request arrived over. oidcRedirectURI's http fallback
+		// exists only for the private, undeclared-host case this loop never
+		// reaches.
+		redirects = append(redirects, "https://"+host+server.Base+"/auth/oidc/callback")
+		postLogouts = append(postLogouts, "https://"+host+oidcLoginPath)
+	}
+	return writeJSON(c, fiber.StatusOK, handler.OIDCEndpointsView{
+		RedirectURIs:           redirects,
+		PostLogoutRedirectURIs: postLogouts,
+	})
 }
 
 // hostDeclared reports whether a host is one this deployment serves.
@@ -523,8 +621,13 @@ func (e *Engine) buildOIDCClient(ctx context.Context, cfg *oidcSettings) *oidc.C
 		e.logger.Error("the single sign-on secret could not be opened; sign-on stays off", "error", err)
 		return nil
 	}
-	if !ok {
-		e.logger.Error("single sign-on is configured with no client secret; it stays off")
+	if !ok && !cfg.PublicClient {
+		// checkOIDC refuses this combination at save time (settings.oidc_client_secret_required),
+		// so reaching it here means a document written before that check
+		// existed, or edited directly. Off with a line is still the safe
+		// answer: nothing here can authenticate to a provider that has not
+		// declared the client public.
+		e.logger.Error("single sign-on is configured with no client secret and is not a public client; it stays off")
 		return nil
 	}
 
@@ -535,6 +638,7 @@ func (e *Engine) buildOIDCClient(ctx context.Context, cfg *oidcSettings) *oidc.C
 		Scopes:                cfg.Scopes,
 		AllowPrivateEndpoints: cfg.AllowPrivateEndpoints,
 		CACertFile:            cfg.CACertFile,
+		PublicClient:          cfg.PublicClient,
 	}, e.clock)
 	if err != nil {
 		e.logger.Error("the single sign-on client would not build; it stays off", "error", err)
@@ -550,4 +654,5 @@ type oidcSettings struct {
 	Scopes                []string
 	AllowPrivateEndpoints bool
 	CACertFile            string
+	PublicClient          bool
 }

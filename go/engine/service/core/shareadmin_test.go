@@ -219,32 +219,110 @@ func TestUpdateShareAppliesOnlyThePatchedFields(t *testing.T) {
 	}
 }
 
-func TestUpdateShareKeepsTheRowWhenTheNewPathWillNotOpen(t *testing.T) {
+// A refused edit puts a serving share back, rather than leaving the operator
+// with neither the old share nor the new one.
+//
+// The mistake this defends against is a mistyped container passphrase: the
+// edit is refused, and before this the share was left marked broken, every
+// listing under it answered unavailable, and Retry re-ran the same rejected
+// definition. Only guessing which edit broke it undid the damage.
+func TestUpdateSharePutsAServingShareBackWhenTheEditIsRefused(t *testing.T) {
 	c, st := newCore(t)
 	ctx := context.Background()
-	created, err := c.CreateShare(ctx, ShareSpec{Name: "documents", Host: t.TempDir()})
+	host := t.TempDir()
+	created, err := c.CreateShare(ctx, ShareSpec{Name: "documents", Host: host})
 	if err != nil {
 		t.Fatalf("CreateShare: %v", err)
 	}
 
 	missing := filepath.Join(t.TempDir(), "gone")
-	if _, err := c.UpdateShare(ctx, created.ID, SharePatch{Host: &missing}); err == nil {
+	if _, uerr := c.UpdateShare(ctx, created.ID, SharePatch{Host: &missing}); uerr == nil {
 		t.Fatal("repointing at a missing path succeeded")
 	}
 
-	// The row stays written: dropping it would hide the edit that caused the
-	// failure, and refusing the write would make a repointed path unfixable
-	// when the old path is also gone.
+	// Still serving what it served before the attempt.
+	if broken := c.ShareBroken(created.ID); broken != nil {
+		t.Fatalf("a refused edit broke a working share: %v", broken)
+	}
+	live, ok := c.Share(created.ID)
+	if !ok {
+		t.Fatal("the share is gone after a refused edit")
+	}
+	if live.Host != host {
+		t.Fatalf("the live host is %q, want the one it was serving, %q", live.Host, host)
+	}
+
+	// And durably, so a restart serves the same thing this process does.
 	rows, lerr := st.ListShares(ctx)
 	if lerr != nil || len(rows) != 1 {
 		t.Fatalf("listing shares: %v (%d rows)", lerr, len(rows))
 	}
-	if rows[0].Host != missing {
-		t.Fatalf("the durable host is %q, want the edited one", rows[0].Host)
+	if rows[0].Host != host {
+		t.Fatalf("the durable host is %q, want the restored one, %q", rows[0].Host, host)
 	}
-	// And the share is visibly broken rather than silently gone.
+}
+
+// A share that was already broken keeps the failed edit and its reason.
+// There is nothing working to protect, and dropping the edit would hide the
+// attempt that was meant to fix it.
+func TestUpdateShareKeepsTheEditWhenTheShareWasAlreadyBroken(t *testing.T) {
+	c, _ := newCore(t)
+	ctx := context.Background()
+	host := filepath.Join(t.TempDir(), "never-there")
+	def := ShareDef{ID: 1_000_002, Name: "documents", Host: host, Policy: vfs.DefaultSharePolicy()}
+	c.RegisterBroken(def, errors.New("the disk was not there"))
+
+	stillMissing := filepath.Join(t.TempDir(), "also-gone")
+	if _, err := c.UpdateShare(ctx, def.ID, SharePatch{Host: &stillMissing}); err == nil {
+		t.Fatal("repointing a broken share at another missing path succeeded")
+	}
+	if c.ShareBroken(def.ID) == nil {
+		t.Fatal("the share stopped being broken after a failed edit")
+	}
+	live, ok := c.Share(def.ID)
+	if !ok {
+		t.Fatal("the share is gone after a failed edit")
+	}
+	if live.Host != stillMissing {
+		t.Fatalf("the live host is %q, want the edited one, %q", live.Host, stillMissing)
+	}
+}
+
+// When the old definition cannot be brought back either, the share is left
+// broken carrying the edit and its reason.
+//
+// This is the case the previous behaviour existed for: a share whose original
+// path has since gone is unfixable if a refused edit is silently undone, so
+// the failed restore has to fall through to the broken state rather than
+// pretend the share is still serving.
+func TestUpdateShareLeavesTheShareBrokenWhenItCannotBePutBack(t *testing.T) {
+	c, _ := newCore(t)
+	ctx := context.Background()
+	host := t.TempDir()
+	created, err := c.CreateShare(ctx, ShareSpec{Name: "documents", Host: host})
+	if err != nil {
+		t.Fatalf("CreateShare: %v", err)
+	}
+
+	// The path the share is serving disappears, so neither the edit nor the
+	// original can be registered.
+	if rerr := os.RemoveAll(host); rerr != nil {
+		t.Fatalf("removing the served path: %v", rerr)
+	}
+
+	missing := filepath.Join(t.TempDir(), "gone")
+	if _, uerr := c.UpdateShare(ctx, created.ID, SharePatch{Host: &missing}); uerr == nil {
+		t.Fatal("repointing at a missing path succeeded")
+	}
 	if c.ShareBroken(created.ID) == nil {
-		t.Fatal("the share is not marked broken after a failed repoint")
+		t.Fatal("a share that could not be put back is not marked broken")
+	}
+	live, ok := c.Share(created.ID)
+	if !ok {
+		t.Fatal("the share is gone entirely")
+	}
+	if live.Host != missing {
+		t.Fatalf("the live host is %q, want the edited one so the operator can fix it forward", live.Host)
 	}
 }
 

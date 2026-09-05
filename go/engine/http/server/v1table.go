@@ -337,6 +337,7 @@ func Table() []route.Route {
 	add("POST", "/admin/index/build", "admin.index.build", route.BodyJSON)
 	add("GET", "/admin/index/estimate", "admin.index.estimate", route.BodyNone)
 	add("GET", "/admin/settings", "admin.settings.get", route.BodyNone)
+	add("GET", "/admin/oidc/endpoints", "admin.oidc.endpoints", route.BodyNone)
 	add("PATCH", "/admin/settings/{section}", "admin.settings.patch", route.BodyJSON)
 	add("POST", "/admin/system/restart", "admin.system.restart", route.BodyNone)
 

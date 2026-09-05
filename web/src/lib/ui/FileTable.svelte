@@ -40,9 +40,12 @@
     onrename?: () => void
     ondelete?: () => void
     onsearchfocus?: () => void
+    /** The share encrypts what it stores, so the sizes in `entries` are
+     *  ciphertext sizes and each row derives the plaintext one. */
+    encrypted?: boolean
   }
 
-  let { entries, total, loading, loadingMore, requestMore, onopen, oncontextmenu, onrename, ondelete, onsearchfocus }: Props =
+  let { entries, total, loading, loadingMore, requestMore, onopen, oncontextmenu, onrename, ondelete, onsearchfocus, encrypted = false }: Props =
     $props()
 
   const ROW_HEIGHT = $derived({ compact: 40, comfortable: 48, spacious: 56 }[view.state.density])
@@ -176,17 +179,25 @@
    * where it is known; the gesture is there because it starts in the blank
    * space below this element.
    *
+   * The origin is read here rather than taken from `viewportDocumentTop`,
+   * which is only refreshed on scroll and resize: the selection bar appears
+   * the moment the first row is hit and moves this element down mid-drag,
+   * which would leave every later hit test a full band out of register.
+   *
    * Only loaded rows can be named, so a rectangle thrown across an unfetched
    * gap picks up whatever is in memory. Same limit as `selection.range`.
    */
   export function entriesInRect(rect: Rect): Entry[] {
+    const box = viewportEl?.getBoundingClientRect()
+    if (!box) return []
     const out: Entry[] = []
     for (const i of indicesInRect(rect, {
-      top: viewportDocumentTop,
-      left: 0,
+      top: box.top + window.scrollY,
+      left: box.left + window.scrollX,
       rowHeight: ROW_HEIGHT,
+      cellHeight: ROW_HEIGHT,
       columnPitch: 0,
-      cellWidth: 0,
+      cellWidth: box.width,
       columns: 1,
       startIndex: 0,
       count: total
@@ -312,6 +323,7 @@
               selected={selection.state.names.has(row.entry.name)}
               focused={focusedName === row.entry.name}
               domId={domId(row.entry.name)}
+              {encrypted}
               onclick={(e) => onRowClick(e, row.entry as Entry, row.index)}
               ondblclick={() => onopen(row.entry as Entry)}
               oncontextmenu={(e) => {

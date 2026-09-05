@@ -479,6 +479,39 @@ func TestAReadIsNotSubjectToTheOriginCheck(t *testing.T) {
 	}
 }
 
+// The settings read carries every field the screen keys its transition off.
+//
+// The screen has no engine to fall back on: it is the way into a deployment
+// whose engine did not come up. It reads this response, fills its form, and
+// moves to the editing step. A field it dereferences and this response omits
+// throws in the client before that step is reached, which showed up as a
+// door that took the password, took the second factor, and then sat on the
+// code form with no editor, no section picker and no save button.
+func TestTheSettingsReadCarriesWhatTheScreenNeeds(t *testing.T) {
+	_, _, h := signedIn(t)
+
+	w := ask(h, "GET", Prefix+"/api/settings", "", withCookie("01020304"))
+	if w.Code != http.StatusOK {
+		t.Fatalf("the settings read got %d, want 200", w.Code)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decoding the settings read: %v", err)
+	}
+	for _, field := range []string{"stored", "sections", "listen", "app_hosts"} {
+		if _, ok := body[field]; !ok {
+			t.Errorf("the settings read omits %q, which the screen reads before it can edit", field)
+		}
+	}
+	if _, ok := body["app_hosts"].([]any); !ok {
+		t.Errorf("app_hosts is %T, and the screen joins it as a list", body["app_hosts"])
+	}
+	if _, ok := body["listen"].(string); !ok {
+		t.Errorf("listen is %T, and the screen renders it as a string", body["listen"])
+	}
+}
+
 // A write to a section this build does not know is refused rather than stored,
 // because the store keeps whatever name it is given and the screen would then
 // show a setting no code reads.

@@ -119,6 +119,13 @@
       view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } })
     }
   })
+  export function focus(): void {
+    if (view) {
+      view.focus()
+    } else {
+      hostEl?.querySelector<HTMLElement>('.cm-content')?.focus()
+    }
+  }
 </script>
 
 <div class="sc-code-editor" bind:this={hostEl}>

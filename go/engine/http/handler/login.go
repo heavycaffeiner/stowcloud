@@ -73,6 +73,14 @@ type LimitsView struct {
 	Parallel int `json:"parallel"`
 }
 
+// LogoutView is what a session established by single sign-on gets back,
+// carrying the provider's own end-session URL. A session established
+// locally answers with no body at all (204), since there is no provider
+// session to end; this shape only appears in the 200 case (addition B).
+type LogoutView struct {
+	EndSessionURL string `json:"end_session_url"`
+}
+
 // FeaturesView says which surfaces this deployment actually serves, so the
 // interface draws the screens that lead somewhere.
 type FeaturesView struct {

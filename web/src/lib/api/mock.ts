@@ -61,6 +61,7 @@ import {
   type NetworkSettingsReq,
   type Hop,
   type OidcSettingsReq,
+  type OidcEndpoints,
   type Order,
   type SearchSettingsReq,
   type SessionInfo,
@@ -924,10 +925,19 @@ async function loginTotp(challenge: string, code: string): Promise<LoginResult> 
   throw new ApiError(401, { code: 'auth.invalid_credentials', message: 'invalid credentials' })
 }
 
-async function logout(): Promise<void> {
+/**
+ * The mock has no distinct "this session came from single sign-on" state:
+ * `login()` only ever authenticates by password, since there is no provider
+ * behind the mock to sign in through. `oidcLinked` is the nearest honest
+ * proxy for demonstrating RP-initiated logout (addition B) on the demo
+ * account, which starts linked.
+ */
+async function logout(): Promise<{ end_session_url?: string }> {
   await delay(10)
+  const endSessionUrl = mockAuthState.oidcLinked ? MOCK_OIDC_END_SESSION_URL : undefined
   mockAuthState.loggedIn = false
   mockAuthState.pendingChallenge = null
+  return endSessionUrl ? { end_session_url: endSessionUrl } : {}
 }
 
 async function session(): Promise<SessionInfo> {
@@ -976,6 +986,10 @@ async function session(): Promise<SessionInfo> {
 const MOCK_OIDC_SUBJECT = 'f81d4fae-7dec-11d0-a765-00a0c91e6bf6'
 const MOCK_OIDC_SUBJECT_HINT = 'f81d...6bf6'
 const MOCK_OIDC_LINKED_NS = String(BigInt(Date.UTC(2026, 6, 1)) * 1_000_000n)
+/** RP-initiated logout target for the demo account (addition B). Points
+ *  nowhere real: the mock has no provider behind it either, same as
+ *  `authorize_url` below. */
+const MOCK_OIDC_END_SESSION_URL = 'https://idp.example.com/realms/mock/protocol/openid-connect/logout'
 
 /**
  * Refuses with `oidc.provider_unavailable` *after* checking the password.
@@ -1038,6 +1052,20 @@ async function adminUnlinkUserOidc(id: number): Promise<void> {
   // used to report were never sent by it: an admin unlink has no plaintext
   // password to re-derive an NT hash from, and the session count was invented
   // here rather than counted anywhere.
+}
+
+/** `GET /api/v1/admin/oidc/endpoints` (addition A/B): one line per
+ *  configured app host, exactly what the server would send. Built the same
+ *  way `oidcRedirectURI` builds one per request
+ *  (`go/engine/lifecycle/oidc.go`): `https://{host}/api/v1/auth/oidc/callback`
+ *  for the redirect URI, `https://{host}/login` for the post-logout landing. */
+async function oidcEndpoints(): Promise<OidcEndpoints> {
+  await delay(20)
+  const hosts = mockServerSettings.network.app_hosts
+  return {
+    redirect_uris: hosts.map((h) => `https://${h}/api/v1/auth/oidc/callback`),
+    post_logout_redirect_uris: hosts.map((h) => `https://${h}/login`)
+  }
 }
 
 // ── settings ──
@@ -1379,10 +1407,11 @@ const mockServerSettings = {
     enabled: false,
     issuer: '',
     client_id: '',
-    redirect_uris: [] as string[],
     scopes: ['openid', 'profile'] as string[],
     display_name: '',
     allow_private_endpoints: false,
+    ca_cert_file: '',
+    public_client: false,
     smb_policy: 'block' as const
   }
 }
@@ -1500,10 +1529,11 @@ async function adminGetServerSettings(): Promise<SettingsSnapshot> {
       settingsField('oidc.enabled', s.oidc.enabled, false),
       settingsField('oidc.issuer', s.oidc.issuer, false),
       settingsField('oidc.client_id', s.oidc.client_id, false),
-      settingsField('oidc.redirect_uris', s.oidc.redirect_uris, false),
       settingsField('oidc.scopes', s.oidc.scopes, false),
       settingsField('oidc.display_name', s.oidc.display_name, false),
       settingsField('oidc.allow_private_endpoints', s.oidc.allow_private_endpoints, false),
+      settingsField('oidc.ca_cert_file', s.oidc.ca_cert_file, false),
+      settingsField('oidc.public_client', s.oidc.public_client, false),
       settingsField('oidc.smb_policy', s.oidc.smb_policy, false),
       // The two the process settles before anything is configurable. They carry their reason
       // here the same way the real bridge writes it, so the screen's
@@ -1710,54 +1740,49 @@ async function adminSetWatchSettings(req: WatchSettingsReq): Promise<ApplyOutcom
   ])
 }
 
-/** Reproduces the two refusals a browser could not have made for itself: a
- *  redirect URI naming a host this deployment does not answer for, and a
- *  client secret file only the server can try to read. Both keep OIDC
- *  switched off with everything else still running, so a screen that only
- *  found out at the next boot would be a screen that lies. */
-async function adminSetOidcSettings(req: OidcSettingsReq): Promise<ApplyOutcome> {
+/** Whether a client secret has ever been stored, standing in for the real
+ *  server's `oidc.client_secret_file`: write-only, so nothing in this file
+ *  reads it back, only whether it is set. Starts false, same as a fresh
+ *  deployment. */
+let mockOidcHasSecret = false
+
+/** Reproduces the one refusal a browser could not have made for itself: a
+ *  client secret file only the server can try to read. `checkOIDC`'s own
+ *  blocking finding (a client that is neither public nor holds a secret,
+ *  addition C, defect 15) is checked first and answered as a normal
+ *  `ApplyOutcome` with `stored`/`applied` both false, the same shape
+ *  `settings.issuer_must_be_https` uses; the secret-file case stays a
+ *  thrown `ApiError` because it stands in for an I/O failure the browser
+ *  could not have predicted, not a validation it could have run itself. */
+async function adminSetOidcSettings(req: OidcSettingsReq & { client_secret?: string }): Promise<ApplyOutcome> {
   await delay(30)
-  if (req.enabled) {
-    const notHttps = req.redirect_uris.find((u) => !u.trim().startsWith('https://'))
-    if (notHttps !== undefined) {
-      throw new ApiError(422, {
-        code: 'fs.invalid_name',
-        message: 'invalid name',
-        detail: {
-          reason: 'oidc.redirect_uris: must start with https://',
-          reason_key: 'settings.oidc_redirect_uri_must_be_https',
-          reason_params: { value: notHttps }
+  if (req.client_secret) mockOidcHasSecret = true
+  if (req.enabled && !req.public_client && !mockOidcHasSecret) {
+    return {
+      stored: false,
+      applied: false,
+      restart_required: false,
+      findings: [
+        {
+          section: 'oidc',
+          field: 'client_id',
+          reason: 'settings.oidc_client_secret_required',
+          blocking: true
         }
-      })
+      ]
     }
-    const hosts = mockServerSettings.network.app_hosts
-    const unserved = req.redirect_uris.find(
-      (u) => !hosts.some((h) => u.trim().slice('https://'.length).split(/[/:?#]/)[0].toLowerCase() === h.toLowerCase())
-    )
-    if (unserved !== undefined) {
-      throw new ApiError(422, {
-        code: 'fs.invalid_name',
-        message: 'invalid name',
-        detail: {
-          reason: 'oidc.redirect_uris: names a host app_hosts does not admit',
-          reason_key: 'settings.oidc_redirect_host_not_served',
-          reason_params: { value: unserved }
-        }
-      })
-    }
-    // The mock has no filesystem, so it stands in for "no readable secret
-    // file" with the one case it can represent: nothing configured at all.
-    throw new ApiError(422, {
-      code: 'fs.invalid_name',
-      message: 'invalid name',
-      detail: {
-        reason: 'oidc.client_secret_file is not set or cannot be read',
-        reason_key: 'settings.oidc_secret_file_missing',
-        reason_params: { path: '' }
-      }
-    })
   }
-  mockServerSettings.oidc = { ...req, smb_policy: 'block' }
+  mockServerSettings.oidc = {
+    enabled: req.enabled,
+    issuer: req.issuer,
+    client_id: req.client_id,
+    scopes: req.scopes,
+    display_name: req.display_name,
+    allow_private_endpoints: req.allow_private_endpoints,
+    ca_cert_file: req.ca_cert_file,
+    public_client: req.public_client,
+    smb_policy: 'block'
+  }
   mockOverriddenSections.add('oidc')
   // The provider is rebuilt when settings load, so a change here is live.
   return outcome(false)
@@ -2700,10 +2725,16 @@ export interface SearchHit {
   entry: Entry
 }
 
-/** The `done` event of `GET /api/search/stream`. `truncated` says the walk hit
- *  its deadline, so the hits that arrived are a prefix of the matches. */
+/** The `done` event of `GET /api/search/stream`.
+ *
+ *  `truncated` says the limit cut the list; `deadline` says the walk ran out
+ *  of time. Either way the hits that arrived are a prefix of the matches, and
+ *  a share slow enough to exhaust the deadline (a container, a bucket) is
+ *  missing from a result list that otherwise looks complete. */
 export interface SearchDone {
   truncated: boolean
+  /** The walk hit its time limit rather than its result limit. */
+  deadline?: boolean
   /** Which index tier answered, for a diagnostic. Absent when the stream
    *  ended without a parsable payload. */
   tier?: string
@@ -2910,6 +2941,7 @@ export const mockApi = {
   adminDeleteUser,
   adminGetUserOidc,
   adminUnlinkUserOidc,
+  oidcEndpoints,
   adminListShares,
   adminCreateShare,
   adminUpdateShare,

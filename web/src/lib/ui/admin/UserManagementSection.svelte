@@ -284,6 +284,7 @@
               >
                 <Switch
                   checked={!u.disabled}
+                  disabled={isLastActiveAdmin(u)}
                   label={t('user.enable_account', { name: u.name })}
                   showLabel={false}
                   onchange={(checked) => toggleDisabled(u, !checked)}

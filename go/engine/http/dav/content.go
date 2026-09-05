@@ -200,6 +200,16 @@ func (h *Handler) Put(w http.ResponseWriter, r *http.Request, res core.Resolved)
 		return
 	}
 
+	// A sync client declares its length, so an account over its cap learns
+	// that before it spends the transfer. A chunked PUT declares none and is
+	// settled by the ledger after the write lands.
+	if r.ContentLength > 0 {
+		if qerr := h.core.CheckQuota(r.Context(), res.User(), uint64(r.ContentLength)); qerr != nil {
+			h.fail(w, r, qerr)
+			return
+		}
+	}
+
 	body := r.Body
 	if body == nil {
 		body = http.NoBody

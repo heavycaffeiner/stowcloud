@@ -16,6 +16,7 @@
   import { createQueries } from '@tanstack/svelte-query'
   import { formatDateNs, t } from '../i18n'
   import { formatBytes } from '../format/bytes'
+  import { formatEntrySize } from '../format/entry-size'
   import { ApiError, type Entry } from '../api/client'
   import { joinPath } from '../api/path-utils'
   import { folderSizeQuery } from '../query/files'
@@ -38,9 +39,10 @@
     /** How many of those rows are folders. */
     dirs: number
     onclose: () => void
+    encrypted?: boolean
   }
 
-  let { path, selected, total, dirs, onclose }: Props = $props()
+  let { path, selected, total, dirs, encrypted = false, onclose }: Props = $props()
 
   let panelEl: HTMLElement | undefined = $state()
 
@@ -86,7 +88,7 @@
       const out: Field[] = [
         { key: 'type', label: t('details.type'), value: one.kind === 'dir' ? t('details.folder') : t('details.file') }
       ]
-      if (one.kind !== 'dir') out.push({ key: 'size', label: t('details.size'), value: formatBytes(one.size) })
+      if (one.kind !== 'dir') out.push({ key: 'size', label: t('details.size'), value: formatEntrySize(one.size, encrypted) })
       out.push({ key: 'modified', label: t('details.modified'), value: formatDateNs(one.mtime_ns) })
       out.push({ key: 'location', label: t('details.location'), value: location })
       if (one.link) {

@@ -355,6 +355,15 @@ func (e *Engine) filesWrite(c *fiber.Ctx) error {
 	if lerr := e.guardDavLock(c.UserContext(), uint32(r.Share()), r.Path().String(), int64(owner)); lerr != nil {
 		return refuse(c, apierr.Classified{Class: apierr.Locked, Key: "dav.locked"})
 	}
+
+	// The declared body length, checked before the bytes are taken. A
+	// chunked request declares none, and that write is settled by the ledger
+	// after it lands rather than refused here on a size nobody stated.
+	if declared := c.Request().Header.ContentLength(); declared > 0 {
+		if qerr := e.Core.CheckQuota(c.UserContext(), core.UserID(owner), uint64(declared)); qerr != nil {
+			return fail(c, qerr)
+		}
+	}
 	opts := vfs.DurableOpts{Mode: r.Root().Policy().ModeFile}
 	reader := requestBodyReader(c)
 	entry, err := e.Core.CreateFile(c.UserContext(), r, opts, ifMatchOf(c),

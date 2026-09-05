@@ -115,6 +115,14 @@ const (
 	FlowPending
 	FlowApproved
 	FlowTooSoon
+
+	// OIDCProviderUnavailable is the back channel itself failing: discovery
+	// names a document this build cannot use (an unreachable provider, no
+	// signing algorithm or client-authentication method it implements), or
+	// the token exchange failed. Distinct from AuthInvalid, which is a
+	// credential presented and rejected: nothing was presented here, the
+	// provider side of the conversation could not be completed at all.
+	OIDCProviderUnavailable
 )
 
 // classNames is what a class prints as, for logs and for test failures. It is
@@ -139,6 +147,7 @@ func classNames() []string {
 		"subsystem-unavailable", "not-implemented", "bad-gateway",
 		"setup-complete", "setup-expired", "setup-invalid-token",
 		"flow-unknown", "flow-pending", "flow-approved", "flow-too-soon",
+		"oidc-provider-unavailable",
 	}
 }
 

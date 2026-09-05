@@ -70,11 +70,15 @@
 
   async function loadSettings(): Promise<void> {
     const s = await emergencySettings()
-    sections = s.sections
-    listen = s.listen
-    appHosts = s.app_hosts
-    document_ = JSON.stringify(s.stored[section] ?? {}, null, 2)
+    // The step moves first. This screen is the way into a deployment whose
+    // engine did not come up, so a field an older build does not send must
+    // not be what keeps the editor closed: a read that succeeded is enough
+    // to edit, and anything missing renders as empty.
     step = 'editing'
+    sections = s.sections ?? []
+    listen = s.listen ?? ''
+    appHosts = s.app_hosts ?? []
+    document_ = JSON.stringify(s.stored?.[section] ?? {}, null, 2)
   }
 
   function pickSection(next: string): void {
@@ -201,7 +205,7 @@
         <dt>{t('server.bind_address')}</dt>
         <dd><code>{listen}</code></dd>
         <dt>{t('server.app_hosts_comma_separated')}</dt>
-        <dd><code>{appHosts.join(', ') || t('emergency.none')}</code></dd>
+        <dd><code>{appHosts?.join(', ') || t('emergency.none')}</code></dd>
       </dl>
 
       <form class="sc-emergency__form" onsubmit={save}>

@@ -37,8 +37,14 @@ export const keys = {
   pathList: (path: string, sort: Sort) => ['path', path, 'list', sort.key, sort.order] as const,
   pathStat: (path: string) => ['path', path, 'stat'] as const,
   pathSize: (path: string) => ['path', path, 'size'] as const,
-  pathContent: (path: string) => ['path', path, 'content'] as const,
+  /** `unlocked` distinguishes a read taken while an encrypted share was
+   *  locked, which fails, from one taken after it was unlocked. */
+  pathContent: (path: string, unlocked = true) => ['path', path, 'content', unlocked] as const,
   pathArchive: (path: string) => ['path', path, 'archive'] as const,
+  /** Keyed by share label, not by path: every path under one share shares
+   *  the answer, and re-fetching it per folder would be one request per
+   *  navigation for a value that changes only when a share does. */
+  shareEncryption: (label: string) => ['share-encryption', label] as const,
   recent: () => ['recent'] as const,
   trash: () => ['trash'] as const,
   shareLinks: (path?: string) => ['share-links', path ?? null] as const,
@@ -55,6 +61,7 @@ export const keys = {
   adminShares: () => ['admin', 'shares'] as const,
   adminGrants: (scope: GrantScope = {}) => ['admin', 'grants', scope] as const,
   adminSettings: () => ['admin', 'settings'] as const,
+  adminOidcEndpoints: () => ['admin', 'oidc-endpoints'] as const,
   adminStorage: () => ['admin', 'storage'] as const,
   adminIndexEstimate: () => ['admin', 'index-estimate'] as const,
   adminLogs: (query: AdminLogQuery) => ['admin', 'logs', query] as const,

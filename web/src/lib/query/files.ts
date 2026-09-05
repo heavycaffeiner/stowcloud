@@ -14,6 +14,7 @@ import {
   type Perms
 } from '../api/types'
 import { isWithin, parentOf } from '../api/path-utils'
+import { encryptionForLabel, shareLabelOf } from '../crypto/encrypted-shares'
 import { queryClient } from './client'
 import { keys, type Sort } from './keys'
 
@@ -29,6 +30,26 @@ export function dirListQuery(path: string, sort: Sort) {
     initialPageParam: null as string | null,
     getNextPageParam: (last: ListResponse) => last.cursor,
     // The WebSocket says when this directory changed, so time cannot.
+    staleTime: Infinity
+  })
+}
+
+/**
+ * The encryption row covering a path's share, or null when the share is not
+ * encrypted.
+ *
+ * A query rather than a bare call so the listing can render an encrypted
+ * share as encrypted: sizes on the wire are ciphertext sizes, and a row that
+ * shows one as the file's own size is telling the user a 27-byte note is 75
+ * bytes. `encryptionForLabel` fails closed, so a fetch that cannot complete
+ * leaves this in error rather than reporting "not encrypted".
+ */
+export function shareEncryptionQuery(path: string) {
+  const label = shareLabelOf(path)
+  return queryOptions({
+    queryKey: keys.shareEncryption(label),
+    queryFn: () => encryptionForLabel(label),
+    enabled: label !== '',
     staleTime: Infinity
   })
 }
@@ -78,9 +99,17 @@ export function folderSizeQuery(path: string, enabled = true) {
   })
 }
 
-export function fileContentQuery(entry: Entry | null | undefined) {
+/**
+ * One file's text.
+ *
+ * `unlocked` is part of the key because a read from an encrypted share fails
+ * while the session is locked, and a failure cached under a key that does not
+ * mention the lock survives the unlock: an open preview kept showing it until
+ * it was closed and reopened.
+ */
+export function fileContentQuery(entry: Entry | null | undefined, unlocked = true) {
   return queryOptions({
-    queryKey: keys.pathContent(entry?.path ?? ''),
+    queryKey: keys.pathContent(entry?.path ?? '', unlocked),
     queryFn: () => api.readFile(entry as Entry),
     enabled: entry !== null && entry !== undefined,
     staleTime: Infinity

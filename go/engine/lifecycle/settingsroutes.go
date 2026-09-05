@@ -132,6 +132,13 @@ func (e *Engine) adminSettingsPatch(c *fiber.Ctx) error {
 		SelfHost: check.HostOnly(string(c.Request().Host())),
 		DataDir:  e.dataDir,
 
+		// Whether a client secret is already sealed and stored, read fresh
+		// rather than from the patch body: extractSecrets above already
+		// consumed and removed client_secret from body, sealing it if it was
+		// present, so this is the one place left that can answer "does this
+		// configuration hold one" for checkOIDC.
+		HasSecret: section == "oidc" && e.HasConfigSecret(c.UserContext(), secretOIDCClient),
+
 		// Blocking, because the guard this section configures is already
 		// live: a change that locked the administrator out would take hold
 		// before any correction could be submitted, and the correction is

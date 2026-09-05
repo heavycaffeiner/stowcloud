@@ -44,6 +44,7 @@ func (e *Engine) loadSettings(ctx context.Context) {
 			Scopes:                values.OIDC.Scopes,
 			AllowPrivateEndpoints: values.OIDC.AllowPrivateEndpoints,
 			CACertFile:            values.OIDC.CACertFile,
+			PublicClient:          values.OIDC.PublicClient,
 		})
 	}
 

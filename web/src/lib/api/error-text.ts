@@ -41,6 +41,7 @@ const SERVER_KEYS = new Set<string>([
   /* i18n */ 'settings.guard_has_no_bound',
   /* i18n */ 'settings.required_when_enabled',
   /* i18n */ 'settings.issuer_must_be_https',
+  /* i18n */ 'settings.oidc_client_secret_required',
   /* i18n */ 'settings.bind_failed',
   /* i18n */ 'settings.must_be_a_string',
   /* i18n */ 'admin.share_rejected',

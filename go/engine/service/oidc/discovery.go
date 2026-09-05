@@ -42,6 +42,12 @@ type Discovery struct {
 	TokenEndpoint         string `json:"token_endpoint"`
 	JWKSURI               string `json:"jwks_uri"`
 
+	// EndSessionEndpoint is RP-initiated logout's target, optional by the
+	// specification: a provider that omits it supports no logout of its own,
+	// and this server's own logout then does exactly what it always has,
+	// dropping only the local session.
+	EndSessionEndpoint string `json:"end_session_endpoint"`
+
 	// Missing and empty carry identical meaning: the provider stated nothing.
 	// The specification designates a default method for that case, and an empty
 	// list is not valid anyway, so treating them alike loses nothing.
@@ -101,6 +107,14 @@ func (c *Client) FetchDiscovery(ctx context.Context) (*Discovery, error) {
 			return nil, cerr
 		}
 	}
+	// Optional, so only validated when the provider actually names one: an
+	// absent end_session_endpoint means no logout support, not a malformed
+	// document.
+	if doc.EndSessionEndpoint != "" {
+		if cerr := c.checkEndpoint("end_session_endpoint", doc.EndSessionEndpoint); cerr != nil {
+			return nil, cerr
+		}
+	}
 
 	// A provider that signs with nothing this build verifies is refused now
 	// rather than through a token that fails to verify later, which is the
@@ -115,7 +129,7 @@ func (c *Client) FetchDiscovery(ctx context.Context) (*Discovery, error) {
 	// The client-authentication method is settled here too, so a provider this
 	// deployment cannot talk to is a refusal at discovery rather than at the
 	// exchange, where a person is already waiting on a redirect.
-	if _, aerr := clientAuthMethod(&doc); aerr != nil {
+	if _, aerr := clientAuthMethod(&doc, c.cfg.PublicClient); aerr != nil {
 		return nil, aerr
 	}
 

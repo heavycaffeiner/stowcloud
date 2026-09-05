@@ -226,6 +226,40 @@ func TestAnUnknownTokenIsNotFound(t *testing.T) {
 	}
 }
 
+// A signed-in browser can answer a link's password and use a drop box.
+//
+// The browser attaches its session cookie to every request to this
+// deployment, including one to a link it is merely following. The CSRF step
+// enforces on a mutating request carrying a resolved session, so unless the
+// link routes declare that their own token is the authority, the unlock and
+// the drop are refused for every signed-in account, the owner included, and
+// the visitor is told "incorrect password" for a refusal that has nothing to
+// do with the password.
+//
+// The session has to be a real one. An unknown cookie value resolves to no
+// credential at all, and CSRF does not apply to that, so a made-up token
+// would pass this test with the fix reverted.
+func TestASignedInBrowserCanUnlockALinkAndDropIntoOne(t *testing.T) {
+	base, token, _ := linkEngineWithPassword(t, "note.txt", []byte("guarded"), "the-password")
+	sess := signIn(t, base, "alice", "a-long-enough-password")
+	cookie := sess.cookie.Name + "=" + sess.cookie.Value
+
+	status, _, body := anonymousWithCookie(t, http.MethodPost, base+"/s/"+token+"/auth",
+		cookie, []byte(`{"password":"the-password"}`)...)
+	if status != http.StatusNoContent {
+		t.Fatalf("the right password answered %d for a signed-in visitor: %s", status, body)
+	}
+
+	dropBase, dropToken := linkEngineOverFolder(t, acl.Create)
+	dropSess := signIn(t, dropBase, "alice", "a-long-enough-password")
+	dropCookie := dropSess.cookie.Name + "=" + dropSess.cookie.Value
+	up, _, ubody := anonymousWithCookie(t, http.MethodPost,
+		dropBase+"/s/"+dropToken+"/drop?name=dropped.txt", dropCookie, []byte("from a signed-in visitor")...)
+	if up != http.StatusCreated {
+		t.Fatalf("the drop answered %d for a signed-in visitor: %s", up, ubody)
+	}
+}
+
 // anonymous performs a request carrying no credential whatsoever.
 func anonymous(t *testing.T, method, url string, body []byte) (int, http.Header, []byte) {
 	t.Helper()

@@ -99,7 +99,13 @@ export interface CreatedSession {
 
 export interface Transport {
   createSession(p: CreateSessionParams): Promise<CreatedSession>
-  patchChunk(id: string, offset: number, body: Blob, signal?: AbortSignal): Promise<{ offset: number }>
+  patchChunk(
+    id: string,
+    offset: number,
+    body: Blob,
+    signal?: AbortSignal,
+    onProgress?: (bytesSent: number) => void
+  ): Promise<{ offset: number }>
   /** `chunkSize` is the session's server-fixed chunk size (`Sc-Chunk-Size`,
    * ): undefined only if the backend predates the
    *  header, in which case the caller falls back to its own remembered
@@ -114,7 +120,7 @@ function b64(s: string): string {
   return btoa(unescape(encodeURIComponent(s)))
 }
 
-class HttpTransport implements Transport {
+export class HttpTransport implements Transport {
   async createSession(p: CreateSessionParams): Promise<{ id: string; offset: number }> {
     const metaParts = [
       `filename ${b64(p.filename)}`,
@@ -153,7 +159,66 @@ class HttpTransport implements Transport {
     }, false)
   }
 
-  async patchChunk(id: string, offset: number, body: Blob, signal?: AbortSignal): Promise<{ offset: number }> {
+  async patchChunk(
+    id: string,
+    offset: number,
+    body: Blob,
+    signal?: AbortSignal,
+    onProgress?: (bytesSent: number) => void
+  ): Promise<{ offset: number }> {
+    // XMLHttpRequest exposes upload progress events inside dedicated workers.
+    if (typeof XMLHttpRequest !== 'undefined') {
+      const { promise, resolve, reject } = Promise.withResolvers<{ offset: number }>()
+      const xhr = new XMLHttpRequest()
+      xhr.open('PATCH', `${BASE}/uploads/${id}`)
+      xhr.withCredentials = true
+      xhr.setRequestHeader('Tus-Resumable', '1.0.0')
+      xhr.setRequestHeader('Content-Type', 'application/offset+octet-stream')
+      xhr.setRequestHeader('Upload-Offset', String(offset))
+      xhr.setRequestHeader('Sc-Csrf', csrfToken)
+
+      if (signal) {
+        if (signal.aborted) {
+          reject(new DOMException('The user aborted a request.', 'AbortError'))
+          return promise
+        }
+        signal.addEventListener('abort', () => xhr.abort(), { once: true })
+      }
+
+      if (xhr.upload && onProgress) {
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) onProgress(e.loaded)
+        }
+      }
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          const rawOffset = xhr.getResponseHeader('Upload-Offset')
+          resolve({ offset: Number(rawOffset ?? offset) })
+        } else {
+          const retryHeader = xhr.getResponseHeader('Retry-After')
+          reject(
+            new UploadHttpError(
+              xhr.status,
+              `patch failed: ${xhr.status}`,
+              retryAfterMs(retryHeader)
+            )
+          )
+        }
+      }
+
+      xhr.onerror = () => {
+        reject(new UploadHttpError(0, 'the connection failed'))
+      }
+
+      xhr.onabort = () => {
+        reject(new DOMException('The user aborted a request.', 'AbortError'))
+      }
+
+      xhr.send(body)
+      return promise
+    }
+
     const res = await send(`${BASE}/uploads/${id}`, {
       method: 'PATCH',
       credentials: 'include',
@@ -164,9 +229,6 @@ class HttpTransport implements Transport {
         'Sc-Csrf': csrfToken
       },
       body,
-      // Cancel aborts the transfer rather than letting it run to completion
-      // and fail afterwards. Without it a cancelled multi-gigabyte upload
-      // kept sending until every chunk in flight had finished.
       signal
     })
     if (!res.ok) {
@@ -256,11 +318,26 @@ class MockTransport implements Transport {
     return { id, offset: 0 }
   }
 
-  async patchChunk(id: string, offset: number, body: Blob, _signal?: AbortSignal): Promise<{ offset: number }> {
+  async patchChunk(
+    id: string,
+    offset: number,
+    body: Blob,
+    signal?: AbortSignal,
+    onProgress?: (bytesSent: number) => void
+  ): Promise<{ offset: number }> {
     const s = mockSessions.get(id)
     if (!s) throw new UploadHttpError(404, 'no such mock session')
     // simulate network latency proportional to chunk size (~50 MB/s)
-    await new Promise((r) => setTimeout(r, Math.max(5, body.size / (50 * 1024 * 1024)) * 1000))
+    const durationMs = Math.max(5, (body.size / (50 * 1024 * 1024)) * 1000)
+    const steps = Math.min(10, Math.max(1, Math.floor(durationMs / 5)))
+    const stepMs = durationMs / steps
+    for (let i = 1; i <= steps; i++) {
+      if (signal?.aborted) {
+        throw new DOMException('The user aborted a request.', 'AbortError')
+      }
+      await new Promise((r) => setTimeout(r, stepMs))
+      onProgress?.(Math.round((body.size * i) / steps))
+    }
     if (offset === s.received) {
       s.received += body.size
       absorbGaps(s)

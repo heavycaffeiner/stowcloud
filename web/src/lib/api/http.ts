@@ -44,12 +44,14 @@ import {
   type MoveReq,
   type NetworkSettingsReq,
   type OidcSettingsReq,
+  type OidcEndpoints,
   type FolderSize,
   type ReadFileResponse,
   type RecentHit,
   type RecentQuery,
   type SearchSettingsReq,
   type SessionInfo,
+  type SessionOidc,
   type SettingsSnapshot,
   type SettingsSectionId,
   type SystemHealth,
@@ -297,6 +299,7 @@ interface WireSession {
   }>
   limits: SessionInfo['limits']
   features: SessionInfo['features']
+  oidc: SessionOidc
 }
 
 async function session(): Promise<SessionInfo> {
@@ -332,10 +335,7 @@ async function session(): Promise<SessionInfo> {
     csrf: w.csrf,
     limits: w.limits,
     features: w.features,
-    // The engine serves no OIDC link state on the session yet. Reported as
-    // unlinked rather than omitted, so the settings screen renders its
-    // "not linked" state instead of failing on a missing object.
-    oidc: { linked: false }
+    oidc: w.oidc
   }
   return s
 }
@@ -352,8 +352,22 @@ async function loginTotp(challenge: string, code: string): Promise<LoginResult> 
   return request('/auth/login/totp', { method: 'POST', body: JSON.stringify({ challenge, code }) })
 }
 
-async function logout(): Promise<void> {
-  await requestNoContent('/auth/logout', { method: 'POST' })
+/**
+ * `POST /api/v1/auth/logout`. Answers a bare `204` for the ordinary case; when
+ * the session was established through single sign-on and a provider is
+ * still configured, it answers `200` with `end_session_url` instead, so the
+ * caller can send the browser through RP-initiated logout and end the
+ * provider's own session too (addition B). Without it, the caller behaves
+ * exactly as before: drop the local session and nothing else.
+ */
+async function logout(): Promise<{ end_session_url?: string }> {
+  const res = await send('/auth/logout', { method: 'POST' })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw errorFrom(res, body)
+  }
+  if (res.status === 204) return {}
+  return (await res.json().catch(() => ({}))) as { end_session_url?: string }
 }
 
 /**
@@ -1240,6 +1254,14 @@ async function adminUnlinkUserOidc(id: number): Promise<void> {
   return requestNoContent(`/admin/users/${id}/oidc`, { method: 'DELETE' })
 }
 
+/** `GET /api/v1/admin/oidc/endpoints`: the exact strings to register at the
+ *  provider (addition A/B), one line per configured app host. Admin-only,
+ *  the same as the rest of this section, because it names every host this
+ *  deployment answers for. */
+async function oidcEndpoints(): Promise<OidcEndpoints> {
+  return request('/admin/oidc/endpoints')
+}
+
 /** Storage as the wire sends it: byte counts are decimal strings, because a
  *  volume past 2^53 bytes is not exact as a JavaScript number. */
 interface WireStorage {
@@ -1384,9 +1406,12 @@ async function adminSetWatchSettings(req: WatchSettingsReq): Promise<ApplyOutcom
 }
 
 /** The provider is rebuilt when settings load, so a save applies without a
- *  restart. Two of the ten `oidc.*` settings are missing from the body on
+ *  restart. `client_secret` is write-only and optional: an empty save box
+ *  means "leave the stored one alone", so this widens past `OidcSettingsReq`
+ *  rather than adding the field there, where it would have to always be
+ *  sent. Two of the twelve `oidc.*` settings are missing from the body on
  *  purpose. See `OidcSettingsReq`. */
-async function adminSetOidcSettings(req: OidcSettingsReq): Promise<ApplyOutcome> {
+async function adminSetOidcSettings(req: OidcSettingsReq & { client_secret?: string }): Promise<ApplyOutcome> {
   return settingsPatch('/admin/settings/oidc', req)
 }
 
@@ -1896,10 +1921,13 @@ function toSearchHit(raw: RawSearchHit): SearchHit {
 }
 
 /**
- * `GET /api/v1/search/stream`. The `done` event carries `{truncated, tier}`:
- * truncated means the walk hit its deadline, so what arrived is a prefix of
- * the matches and not all of them. Discarding it made a cut-short search
- * render identically to a complete one.
+ * `GET /api/v1/search/stream`. The `done` event carries
+ * `{truncated, tier, deadline}`.
+ *
+ * `truncated` means the limit cut the list; `deadline` means the walk ran out
+ * of time. Both make what arrived a prefix rather than the answer, and the
+ * second is how a share the walk could not finish, a container or a bucket
+ * rather than a local folder, goes missing from a search that looks complete.
  */
 function searchStream(query: string, onHit: (hit: SearchHit) => void, onDone: (done: SearchDone) => void): () => void {
   const es = new EventSource(`${BASE}/search/stream${qs({ q: query })}`, { withCredentials: true })
@@ -1909,8 +1937,12 @@ function searchStream(query: string, onHit: (hit: SearchHit) => void, onDone: (d
   es.addEventListener('done', (ev: MessageEvent) => {
     let done: SearchDone = { truncated: false }
     try {
-      const raw = JSON.parse(ev.data) as { truncated?: unknown; tier?: unknown }
-      done = { truncated: raw.truncated === true, tier: typeof raw.tier === 'string' ? raw.tier : undefined }
+      const raw = JSON.parse(ev.data) as { truncated?: unknown; tier?: unknown; deadline?: unknown }
+      done = {
+        truncated: raw.truncated === true,
+        deadline: raw.deadline === true,
+        tier: typeof raw.tier === 'string' ? raw.tier : undefined
+      }
     } catch {
       // A `done` with no parsable payload still ends the search. Reporting
       // it as complete is the safe read: it claims less, not more.
@@ -2057,6 +2089,7 @@ export const httpApi = {
   adminSetUserPassword,
   adminGetUserOidc,
   adminUnlinkUserOidc,
+  oidcEndpoints,
   adminListShares,
   adminCreateShare,
   adminUpdateShare,

@@ -87,6 +87,9 @@ type Options struct {
 	// narrowed and never widened, so a save that loosens it cannot be served
 	// by replacing the image.
 	Hardening jail.Policy
+
+	// Revision is the git commit hash stamped into the binary at build time.
+	Revision string
 }
 
 // Engine is a constructed set of services, and the files they hold open.
@@ -103,6 +106,9 @@ type Engine struct {
 	ACL *acl.Evaluator
 	// Core is the domain root.
 	Core *core.Core
+
+	// Revision is the git commit hash stamped into the binary at build time.
+	Revision string
 	// Auth owns credentials and the master key.
 	Auth *auth.Service
 	// Flow runs the device login. Never nil: a deployment without an auth
@@ -272,6 +278,7 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 		clock:     clk,
 		hardening: opt.Hardening,
 		dataDir:   opt.DataDir,
+		Revision:  opt.Revision,
 		logger:    logger,
 		// Until settings are loaded, no proxy is trusted and no host is
 		// named. An empty host list is what first boot looks like, and the
@@ -412,6 +419,14 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	// this and the two would otherwise each need the other first.
 	if aerr := coreSvc.AttachHomeNames(e.Auth.NameOf); aerr != nil {
 		return fail(fmt.Errorf("attaching the home-name source: %w", aerr))
+	}
+
+	// The per-account byte ledger. Without it every quota this screen accepts
+	// is a number the server records and never enforces: the core's own
+	// charge and check paths are written and reached, and a nil sink makes
+	// each of them a no-op that answers "there is room".
+	if qerr := coreSvc.AttachQuotaSink(state.NewQuota(e.State)); qerr != nil {
+		return fail(fmt.Errorf("attaching the quota ledger: %w", qerr))
 	}
 
 	// The master key is opened before anything that mints or reads a secret.

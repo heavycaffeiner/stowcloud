@@ -138,6 +138,16 @@ func (e *Engine) uploadsCreate(c *fiber.Ctx) error {
 		spec.TotalLen = &total
 	}
 
+	// Checked before a byte is accepted, not after: the protocol declares its
+	// length up front, and an account over its cap is told so at the door
+	// rather than after spending the transfer. A deferred length cannot be
+	// checked here; the ledger settles it when the write commits.
+	if !length.Deferred {
+		if qerr := e.Core.CheckQuota(c.UserContext(), core.UserID(owner), length.Value); qerr != nil {
+			return fail(c, qerr)
+		}
+	}
+
 	sess, cerr := engine.Create(c.UserContext(), r, spec)
 	if cerr != nil {
 		return fail(c, cerr)

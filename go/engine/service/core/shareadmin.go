@@ -161,6 +161,10 @@ func (c *Core) UpdateShare(ctx context.Context, id ShareID, patch SharePatch) (S
 	if !ok {
 		return Share{}, ErrNotFound
 	}
+	// What this share is serving right now, kept whole so a refused edit can
+	// be put back exactly as it was rather than approximately.
+	before := def
+	served := before.BrokenReason == ""
 	if patch.Backend != nil {
 		backend, berr := ParseBackend(*patch.Backend)
 		if berr != nil {
@@ -198,9 +202,20 @@ func (c *Core) UpdateShare(ctx context.Context, id ShareID, patch SharePatch) (S
 		def.Secret = *patch.Secret
 	}
 	if err := c.RegisterShare(ctx, def); err != nil {
-		// The row stays written. Dropping the entry would hide the edit that
-		// caused the failure, and refusing the write would make a repointed
-		// path unfixable when the old path is also gone.
+		// A share that was serving before the edit goes back to serving it.
+		// The alternative costs an operator their share for a mistyped
+		// passphrase: the old root closes, every listing under it answers
+		// unavailable, and Retry re-runs the same rejected definition, so
+		// only guessing the edit that broke it undoes the damage.
+		//
+		// A share that was already broken keeps the new definition and the
+		// new reason. There is nothing working to protect, and dropping the
+		// edit would hide the attempt that was meant to fix it.
+		if served && c.restoreShare(ctx, id, before) {
+			c.warn("a share edit was refused and the share was put back",
+				"name", before.Name, "error", err)
+			return Share{}, &ShareBrokenError{Share: def.Name, Reason: RejectionKind(err)}
+		}
 		c.RegisterBroken(def, err)
 		c.warn("a share edit left it unservable", "name", def.Name, "error", err)
 		return Share{}, &ShareBrokenError{Share: def.Name, Reason: RejectionKind(err)}
@@ -208,6 +223,39 @@ func (c *Core) UpdateShare(ctx context.Context, id ShareID, patch SharePatch) (S
 	def.BrokenReason = ""
 	def.Source = c.backend.Describe(def)
 	return def, nil
+}
+
+// restoreShare puts a share back to the definition it was serving, reporting
+// whether it is serving again.
+//
+// Both halves have to land: the durable row and the live registration. A row
+// that went back without a registration would serve the new definition until
+// the next restart and the old one after it.
+func (c *Core) restoreShare(ctx context.Context, id ShareID, before ShareDef) bool {
+	if err := c.state.UpdateShare(ctx, rowIDOf(id), rowOf(before)); err != nil {
+		c.warn("restoring a refused share edit failed; the share is unservable",
+			"name", before.Name, "error", err)
+		return false
+	}
+	if before.Secret.Len() > 0 {
+		sealed, ver, serr := c.sealShareSecret(id, before.Secret.Reveal())
+		if serr != nil {
+			c.warn("resealing a restored share secret failed; the share is unservable",
+				"name", before.Name, "error", serr)
+			return false
+		}
+		if uerr := c.state.UpdateShareSecret(ctx, rowIDOf(id), sealed, ver); uerr != nil {
+			c.warn("restoring a refused share secret failed; the share is unservable",
+				"name", before.Name, "error", uerr)
+			return false
+		}
+	}
+	if err := c.RegisterShare(ctx, before); err != nil {
+		c.warn("re-registering a restored share failed; it is unservable",
+			"name", before.Name, "error", err)
+		return false
+	}
+	return true
 }
 
 // RetryShare re-runs the full registration a fixed path needs, so the

@@ -60,6 +60,13 @@ type Config struct {
 	// CACertFile replaces the trust anchors with a file of them. Empty takes
 	// the system's pool.
 	CACertFile string
+
+	// PublicClient records the operator declaring this client public: one that
+	// holds no secret, because the provider issued it none or none was ever
+	// stored here. It only ever widens clientAuthMethod's choice to include
+	// "none", and only when the document itself advertises it; a confidential
+	// deployment leaves this false and nothing about its behaviour changes.
+	PublicClient bool
 }
 
 // Client is the relying party. It is safe for concurrent use: the two caches

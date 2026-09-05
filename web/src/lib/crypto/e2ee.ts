@@ -110,6 +110,9 @@ export function isUnlocked(salt?: string): boolean {
 export function lock(): void {
   if (unlocked !== null) clean(unlocked.dataKey)
   unlocked = null
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('sc:lock'))
+  }
 }
 
 /** The unlocked key for the share `salt` names, or a refusal naming which of
@@ -276,6 +279,9 @@ export async function unlock(passphrase: string, salt: string, verifier: Uint8Ar
   }
   lock()
   unlocked = { salt, dataKey: keys.dataKey }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('sc:unlock', { detail: { salt } }))
+  }
 }
 
 /**
@@ -436,6 +442,18 @@ export function plaintextSizeFromCiphertextSize(ciphertextSize: number): number 
     throw new Error(`ciphertext of ${ciphertextSize} bytes ends with a ${tail}-byte remainder, too short to be a partial block`)
   }
   return tail === 0 ? fullBlocks * BLOCK_SIZE : fullBlocks * BLOCK_SIZE + (tail - 16)
+}
+
+/**
+ * Plaintext size derived from rclone-crypt ciphertext size, or null if the size
+ * cannot be derived (too short to hold the header, or an invalid block remainder).
+ */
+export function tryPlaintextSize(ciphertextSize: number): number | null {
+  try {
+    return plaintextSizeFromCiphertextSize(ciphertextSize)
+  } catch {
+    return null
+  }
 }
 
 /** A contiguous byte span within a whole ciphertext file: `offset` counts

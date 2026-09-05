@@ -53,7 +53,16 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   })
   const body = await res.json().catch(() => ({}))
   if (res.ok) return body as T
-  const err = (body as ApiErrorBody).error ?? { code: 'internal', message: res.statusText }
+  let err: ApiErrorBody['error'] = { code: 'internal', message: res.statusText }
+  if (body && typeof body === 'object') {
+    const rec = body as Record<string, unknown>
+    if (rec.error && typeof rec.error === 'object') {
+      err = rec.error as ApiErrorBody['error']
+    } else if (typeof rec.error === 'string') {
+      const msg = typeof rec.message === 'string' ? rec.message : rec.error
+      err = { code: rec.error, message: msg }
+    }
+  }
   throw new ApiError(res.status, err)
 }
 

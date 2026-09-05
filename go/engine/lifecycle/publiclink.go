@@ -30,6 +30,8 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/archive"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/handler"
+	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
+	"github.com/heavycaffeiner/stowcloud/go/engine/http/route"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/limits"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
@@ -47,12 +49,47 @@ var errArchiveBounded = errors.New("archive bounds reached")
 //
 // Registered directly rather than through the route table, because the table
 // carries the API's version prefix and these paths are the product's own.
+// What they require is declared in `declarePublicLinks`, which runs ahead of
+// the chain: a handler wrapper here would run after every step that reads it.
 func (e *Engine) mountPublicLinks(app *fiber.App) {
 	app.Get(PublicLinkPrefix+"/:token", e.linkLanding)
 	app.Post(PublicLinkPrefix+"/:token/auth", e.linkUnlock)
 	app.Get(PublicLinkPrefix+"/:token/download", e.linkDownload)
 	app.Get(PublicLinkPrefix+"/:token/zip", e.linkZip)
 	app.Post(PublicLinkPrefix+"/:token/drop", e.linkDrop)
+}
+
+// declarePublicLinks tells the chain what the link routes require, before the
+// chain runs.
+//
+// The link's own token is the authority on these paths. A visitor who also
+// holds a session cookie for this deployment is still a visitor following a
+// link, and without this declaration the CSRF step sees an ambient cookie on
+// a mutating request and refuses the unlock and the drop for every signed-in
+// browser, including the owner testing their own link.
+//
+// One app.Use rather than a registration per path, for the reason Announce
+// gives: app.Use matches without making the path "found", so an address
+// nothing serves still answers 404 rather than reaching a handler with
+// nothing after it. It matches the prefix, so the body class is chosen here
+// rather than by registration order.
+func (e *Engine) declarePublicLinks(app *fiber.App) {
+	app.Use(PublicLinkPrefix+"/:token", func(c *fiber.Ctx) error {
+		body := route.BodyNone
+		if c.Method() == fiber.MethodPost {
+			// The two mutating routes, and the only two that carry a body:
+			// the password answer is JSON, the drop upload is bytes.
+			switch {
+			case strings.HasSuffix(c.Path(), "/auth"):
+				body = route.BodyJSON
+			case strings.HasSuffix(c.Path(), "/drop"):
+				body = route.BodyStream
+			}
+		}
+		middleware.SetRequirement(c,
+			route.Requirement{Access: route.AccessPublic}, body, "public link")
+		return c.Next()
+	})
 }
 
 // linkFor turns a token into a link, or writes the refusal and reports false.

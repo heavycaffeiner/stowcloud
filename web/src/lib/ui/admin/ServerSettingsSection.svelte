@@ -15,7 +15,7 @@
   // a field this screen cannot edit is still visible, never invisible.
   import { t } from '../../i18n'
   import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query'
-  import { adminSettingsMutation, adminSettingsQuery } from '../../query/admin'
+  import { adminSettingsMutation, adminSettingsQuery, adminOidcEndpointsQuery } from '../../query/admin'
   import { keys } from '../../query/keys'
   import { describeApiError, serverKeyText } from '../../api/error-text'
   import { BYTES_PER_MB, bytesToMb } from '../../format/bytes'
@@ -62,7 +62,6 @@
    * A key with no catalogue entry falls back to itself, which is worse than
    * a translation and better than a blank row.
    */
-  //   /* i18n */ 'field.oidc_ca_cert_file'
   //   /* i18n */ 'field.smb_config_dir'
   //   /* i18n */ 'field.smb_agent_socket'
   //   /* i18n */ 'field.security_hardening'
@@ -204,6 +203,7 @@
   /* i18n */ 'settings.guard_has_no_bound'
   /* i18n */ 'settings.required_when_enabled'
   /* i18n */ 'settings.issuer_must_be_https'
+  /* i18n */ 'settings.oidc_client_secret_required'
   /* i18n */ 'settings.canonical_url_not_an_app_host'
   /* i18n */ 'settings.duplicate_host'
   /* i18n */ 'settings.host_role_conflict'
@@ -503,10 +503,11 @@
   let oidcIssuer = $state('')
   let oidcClientId = $state('')
   let oidcClientSecret = $state('')
-  let oidcRedirectUris = $state('')
   let oidcScopes = $state('')
   let oidcDisplayName = $state('')
   let oidcAllowPrivateEndpoints = $state(false)
+  let oidcCaCertFile = $state('')
+  let oidcPublicClient = $state(false)
   let oidcValidationError = $state<string | null>(null)
   const oidcMutation = createMutation(() => adminSettingsMutation())
   const oidcError = $derived(groupError(oidcValidationError, oidcMutation.error, t('server.could_not_save_oidc_settings')))
@@ -522,10 +523,11 @@
       enabled: oidcEnabled,
       issuer: oidcIssuer.trim(),
       client_id: oidcClientId.trim(),
-      redirect_uris: strToArr(oidcRedirectUris),
       scopes: strToArr(oidcScopes),
       display_name: oidcDisplayName,
       allow_private_endpoints: oidcAllowPrivateEndpoints,
+      ca_cert_file: oidcCaCertFile.trim(),
+      public_client: oidcPublicClient,
       smb_policy: 'block'
     }
     if (oidcClientSecret.trim()) req.client_secret = oidcClientSecret.trim()
@@ -538,6 +540,24 @@
         }
       }
     )
+  }
+
+  // ── addition A/B: the two strings an operator registers at the provider ──
+  //
+  // Read-only, derived from `app_hosts`, never admin-entered: the same
+  // reasoning as `Redirect URIs (comma-separated)` being removed above.
+  // Shown on this card because both have to be registered where the client
+  // is configured, not on the account-side card that merely links to it.
+  const oidcEndpoints = createQuery(() => adminOidcEndpointsQuery())
+  let oidcEndpointsAnnouncement = $state('')
+
+  async function copyEndpoint(text: string, name: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(text)
+      oidcEndpointsAnnouncement = t('settings.oidc_endpoint_copied', { name })
+    } catch {
+      // clipboard API unavailable: the value is still selectable as text
+    }
   }
 
   // ── everything else this screen doesn't have a dedicated control for,
@@ -574,10 +594,11 @@
     'oidc.enabled',
     'oidc.issuer',
     'oidc.client_id',
-    'oidc.redirect_uris',
     'oidc.scopes',
     'oidc.display_name',
     'oidc.allow_private_endpoints',
+    'oidc.ca_cert_file',
+    'oidc.public_client',
     'thumbnail.enabled',
     'thumbnail.dir'
   ])
@@ -650,10 +671,11 @@
     oidcEnabled = Boolean(field('oidc.enabled')?.value)
     oidcIssuer = String(field('oidc.issuer')?.value ?? '')
     oidcClientId = String(field('oidc.client_id')?.value ?? '')
-    oidcRedirectUris = arrToStr(field('oidc.redirect_uris')?.value)
     oidcScopes = arrToStr(field('oidc.scopes')?.value)
     oidcDisplayName = String(field('oidc.display_name')?.value ?? '')
     oidcAllowPrivateEndpoints = Boolean(field('oidc.allow_private_endpoints')?.value)
+    oidcCaCertFile = String(field('oidc.ca_cert_file')?.value ?? '')
+    oidcPublicClient = Boolean(field('oidc.public_client')?.value)
   })
 </script>
 
@@ -997,10 +1019,11 @@
         <TextField label={t('settings.oidc_issuer')} bind:value={oidcIssuer} />
         <TextField label={t('settings.oidc_client_id')} bind:value={oidcClientId} />
         <TextField label={t('common.password')} type="password" bind:value={oidcClientSecret} placeholder={t('settings.secret_is_write_only')} />
-        <TextField label={t('settings.oidc_redirect_uris')} bind:value={oidcRedirectUris} />
+        <Switch checked={oidcPublicClient} onchange={(v) => (oidcPublicClient = v)} label={t('settings.oidc_public_client')} />
         <TextField label={t('settings.oidc_scopes')} bind:value={oidcScopes} />
         <TextField label={t('settings.oidc_display_name')} bind:value={oidcDisplayName} />
         <Switch checked={oidcAllowPrivateEndpoints} onchange={(v) => (oidcAllowPrivateEndpoints = v)} label={t('settings.oidc_allow_private_endpoints')} />
+        <TextField label={t('field.oidc_ca_cert_file')} bind:value={oidcCaCertFile} />
         <p class="sc-admin-section__hint">{t('server.connected_accounts_cannot_use_smb')}</p>
         <Button variant="filled" onclick={saveOidc} loading={oidcMutation.isPending}>{t('common.save')}</Button>
         {#if oidcError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={oidcError}>{oidcError}</p>{/if}
@@ -1009,6 +1032,42 @@
           {@render findingsList(oidcOutcome)}
         {/if}
       </div>
+      <!-- Addition A/B: the exact strings to register at the provider, one
+           line per configured app host. Read-only and separate from the save
+           form above: nothing here is sent back, it only shows what the
+           server already computed from `app_hosts`. -->
+      {#if oidcEndpoints.data && (oidcEndpoints.data.redirect_uris.length || oidcEndpoints.data.post_logout_redirect_uris.length)}
+        <div class="sc-server-settings__endpoints">
+          <p class="sc-admin-section__hint">{t('settings.oidc_endpoints_hint')}</p>
+          <h5 class="sc-admin-section__subhead">{t('settings.oidc_effective_redirect_uris')}</h5>
+          {#each oidcEndpoints.data.redirect_uris as uri (uri)}
+            <div class="sc-server-settings__endpoint-row">
+              <code class="sc-server-settings__endpoint-uri">{uri}</code>
+              <Button
+                variant="text"
+                ariaLabel={t('common.copy_named', { name: uri })}
+                onclick={() => copyEndpoint(uri, t('settings.oidc_effective_redirect_uris'))}
+              >
+                {t('common.copy')}
+              </Button>
+            </div>
+          {/each}
+          <h5 class="sc-admin-section__subhead">{t('settings.oidc_post_logout_redirect_uris')}</h5>
+          {#each oidcEndpoints.data.post_logout_redirect_uris as uri (uri)}
+            <div class="sc-server-settings__endpoint-row">
+              <code class="sc-server-settings__endpoint-uri">{uri}</code>
+              <Button
+                variant="text"
+                ariaLabel={t('common.copy_named', { name: uri })}
+                onclick={() => copyEndpoint(uri, t('settings.oidc_post_logout_redirect_uris'))}
+              >
+                {t('common.copy')}
+              </Button>
+            </div>
+          {/each}
+          <p class="sc-server-settings__announce" aria-live="polite">{oidcEndpointsAnnouncement}</p>
+        </div>
+      {/if}
     </div>
 
     <!-- 10. Storage paths -->
@@ -1244,5 +1303,29 @@
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     @apply --m3-body-small;
+  }
+  .sc-server-settings__endpoints {
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 100%;
+  }
+  .sc-server-settings__endpoint-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .sc-server-settings__endpoint-uri {
+    font-family: var(--m3-font-mono, ui-monospace, monospace);
+    @apply --m3-body-small;
+    overflow-wrap: anywhere;
+    user-select: all;
+    flex: 1;
+  }
+  .sc-server-settings__announce {
+    margin: 0;
+    @apply --m3-body-small;
+    color: var(--m3c-on-surface-variant);
   }
 </style>

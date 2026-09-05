@@ -38,6 +38,7 @@ export type {
   SessionInfo,
   SessionOidc,
   OidcConfig,
+  OidcEndpoints,
   BatchResult,
   BatchItemResult,
   MoveReq,

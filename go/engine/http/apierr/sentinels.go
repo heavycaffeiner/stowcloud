@@ -18,6 +18,7 @@ package apierr
 import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/oidc"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/preview"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/upload"
 )
@@ -29,7 +30,27 @@ func sentinels() []classifier {
 	out = append(out, uploadSentinels()...)
 	out = append(out, previewSentinels()...)
 	out = append(out, storeSentinels()...)
+	out = append(out, oidcSentinels()...)
 	return out
+}
+
+// oidcSentinels is the relying-party client: discovery, the back-channel
+// exchange, address safety and token verification.
+//
+// ErrTokenVerify classifies as AuthInvalid rather than a class of its own: a
+// token that arrived and failed verification (missing kid, bad signature,
+// wrong issuer or audience) is a credential presented and rejected, the
+// same shape as any other failed credential, and defect 15's no-kid case is
+// exactly this path. Everything else here is the back channel failing to
+// produce a usable answer at all, which is OIDCProviderUnavailable.
+func oidcSentinels() []classifier {
+	return []classifier{
+		{oidc.ErrDiscovery, OIDCProviderUnavailable, "oidc.provider_unavailable"},
+		{oidc.ErrProvider, OIDCProviderUnavailable, "oidc.provider_unavailable"},
+		{oidc.ErrNoTrustAnchors, OIDCProviderUnavailable, "oidc.provider_unavailable"},
+		{oidc.ErrAddressBlocked, OIDCProviderUnavailable, "oidc.provider_unavailable"},
+		{oidc.ErrTokenVerify, AuthInvalid, "auth.invalid_credentials"},
+	}
 }
 
 // storeSentinels is the database layer, reached through the service tier.

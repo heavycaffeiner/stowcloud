@@ -107,6 +107,11 @@ export function oidcErrorMessage(code: string | null | undefined): string | null
       // is where the two are told apart.
       return t('oidc.account_not_connected_single_sign')
     case 'oidc.provider_unavailable':
+      // Also what the discovery-time refusals of defect 15 answer (a
+      // provider advertising HS256 only, or no client-authentication
+      // method this build implements): the server reuses this code rather
+      // than minting a separate one, since both mean the same thing to the
+      // person looking at the screen, a provider that cannot be used.
       return t('oidc.could_not_reach_identity_provider')
     case 'oidc.access_denied':
       return t('oidc.sign_cancelled_identity_provider')
@@ -114,6 +119,12 @@ export function oidcErrorMessage(code: string | null | undefined): string | null
       return t('oidc.you_signed_out_or_switched')
     case 'oidc.subject_already_linked':
       return t('oidc.identity_already_connected_another_account')
+    case 'auth.invalid_credentials':
+      // Defect 15's no-kid case: the token came back and failed
+      // verification, not a mistyped password. Reads the same as
+      // `bad_state`'s "could not be verified, start again": from the
+      // visitor's side both are "what came back could not be trusted".
+      return t('oidc.sign_could_not_verified_start')
     default:
       return t('oidc.single_sign_did_not_complete')
   }

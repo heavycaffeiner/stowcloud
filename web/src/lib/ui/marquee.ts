@@ -36,6 +36,10 @@ export function movedFar(ax: number, ay: number, bx: number, by: number): boolea
 /**
  * One run of same-height rows: a whole `FileTable`, or one of `FileGrid`'s two
  * card sections.
+ *
+ * The pitch numbers (`rowHeight`, `columnPitch`) carry the gap between cells;
+ * the drawn numbers (`cellHeight`, `cellWidth`) do not. Both are needed: the
+ * pitch places a cell, the drawn size decides whether the rectangle reached it.
  */
 export interface SectionGeometry {
   /** Document Y of the top of the section's first row. */
@@ -44,9 +48,11 @@ export interface SectionGeometry {
   left: number
   /** Row pitch: the drawn height plus whatever separates one row from the next. */
   rowHeight: number
+  /** Drawn height of one cell. The rest of the pitch is dead space. */
+  cellHeight: number
   /** Column pitch: cell width plus gap. Ignored when `columns` is 1. */
   columnPitch: number
-  /** Drawn width of one cell. The rest of the pitch is the gap between them. */
+  /** Drawn width of one cell. In a single-column section this is the row width. */
   cellWidth: number
   columns: number
   /** Where this section's first entry sits in the listing as a whole. */
@@ -55,32 +61,31 @@ export interface SectionGeometry {
 }
 
 /**
- * Every listing index whose cell the rectangle touches.
+ * Every listing index whose drawn cell the rectangle overlaps.
  *
- * A single-column section ignores the rectangle's x entirely: its rows span
- * the width of the list, so a drag anywhere across one has crossed it. Only a
- * real grid tests columns, and there the gaps between cards are dead space,
- * which is why the cell width and the column pitch are separate numbers.
+ * Overlap is by area, not by band: a rectangle that stops exactly on a cell's
+ * edge, or that lies wholly in the gap between two rows, has not covered
+ * either. Both axes are tested in every section, including a single-column
+ * list, so a drag down the margin beside the rows selects nothing rather than
+ * everything it drew past.
  */
 export function indicesInRect(rect: Rect, g: SectionGeometry): number[] {
   if (g.count <= 0 || g.columns <= 0 || g.rowHeight <= 0) return []
 
   const rowCount = Math.ceil(g.count / g.columns)
-  const firstRow = Math.floor((rect.top - g.top) / g.rowHeight)
-  const lastRow = Math.floor((rect.bottom - g.top) / g.rowHeight)
-  const from = Math.max(0, firstRow)
-  const to = Math.min(rowCount - 1, lastRow)
+  const from = Math.max(0, Math.floor((rect.top - g.top) / g.rowHeight))
+  const to = Math.min(rowCount - 1, Math.floor((rect.bottom - g.top) / g.rowHeight))
   if (to < from) return []
 
   const out: number[] = []
   for (let row = from; row <= to; row++) {
+    const cellTop = g.top + row * g.rowHeight
+    if (rect.top >= cellTop + g.cellHeight || rect.bottom <= cellTop) continue
     for (let col = 0; col < g.columns; col++) {
       const offset = row * g.columns + col
       if (offset >= g.count) break
-      if (g.columns > 1) {
-        const cellLeft = g.left + col * g.columnPitch
-        if (cellLeft + g.cellWidth < rect.left || cellLeft > rect.right) continue
-      }
+      const cellLeft = g.left + col * (g.columns > 1 ? g.columnPitch : 0)
+      if (rect.left >= cellLeft + g.cellWidth || rect.right <= cellLeft) continue
       out.push(g.startIndex + offset)
     }
   }

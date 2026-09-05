@@ -127,6 +127,7 @@ type OIDC struct {
 	Scopes                []string
 	AllowPrivateEndpoints bool
 	CACertFile            string
+	PublicClient          bool
 }
 
 // GuardConfig bounds the store's disk use.

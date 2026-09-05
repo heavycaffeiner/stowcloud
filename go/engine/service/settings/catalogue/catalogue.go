@@ -253,6 +253,19 @@ func Of(values runtimecfg.Values, stored map[string]any) Snapshot {
 		list("oidc.scopes", oidcScopes(values), false, ""),
 		boolean("oidc.allow_private_endpoints",
 			values.OIDC != nil && values.OIDC.AllowPrivateEndpoints, false),
+		boolean("oidc.public_client",
+			values.OIDC != nil && values.OIDC.PublicClient, false),
+		// smb_policy carries no state of its own: SMB by account password is
+		// always closed at link time (auth.Service.LinkOIDC), and "block" is
+		// the only value this build has ever implemented (§4.3.6 of the
+		// retired OIDC proposal). The field exists so a client confirms the
+		// policy it is relying on rather than discovering a silent mismatch
+		// later, and it is declared here so a save naming it is recognised
+		// rather than read as an unknown key that forces a restart: before
+		// this entry existed, every save from the real admin screen (which
+		// always sends it) needed a restart to take effect, no matter how
+		// live every other field in the section was.
+		choice("oidc.smb_policy", "block", []string{"block"}, false),
 
 		// Thumbnail generation can be toggled live; changing the storage
 		// directory requires a restart so Landlock can grant the new path.

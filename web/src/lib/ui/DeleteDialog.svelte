@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { t } from '../i18n'
+  import { t, tp } from '../i18n'
   import Button from './Button.svelte'
   import Dialog from './Dialog.svelte'
   import { Icon } from 'm3-svelte'
@@ -25,7 +25,7 @@
 
 <Dialog {open} title={t('delete.delete')} onclose={onclose}>
   <p>
-    {t('delete.deletes_items', { count })}
+    {tp('delete.deletes_items', count)}
     {#if trashEnabled}{t('delete.they_moved_trash')}{:else}{t('delete.folder_does_not_use_trash')}{/if}
   </p>
   {#if externalShare}

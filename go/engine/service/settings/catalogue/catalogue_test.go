@@ -39,6 +39,14 @@ func TestTheCatalogueDescribesEveryFieldTheLoaderReads(t *testing.T) {
 		if key == "search.name_index_enabled" {
 			continue
 		}
+		// smb_policy carries no state of its own: "block" is the only value
+		// this build has ever implemented, and the field exists so a save
+		// confirms the policy it is relying on rather than the loader
+		// resolving a choice. Nothing reads it back because there is nothing
+		// to vary.
+		if key == "oidc.smb_policy" {
+			continue
+		}
 		// The network fields are described by their bare names, which is what
 		// the screen addresses them by, and stored under the network section.
 		if !loaded[key] && !loaded["network."+key] {

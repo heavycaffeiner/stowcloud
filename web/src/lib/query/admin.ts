@@ -53,6 +53,17 @@ export function adminSettingsQuery() {
   return queryOptions({ queryKey: keys.adminSettings(), queryFn: () => api.adminGetServerSettings() })
 }
 
+/** The read-only endpoint strings the single sign-on card displays
+ *  (addition A/B). `staleTime: Infinity`: they change only when `app_hosts`
+ *  does, and that save already invalidates `keys.admin()`. */
+export function adminOidcEndpointsQuery() {
+  return queryOptions({
+    queryKey: keys.adminOidcEndpoints(),
+    queryFn: () => api.oidcEndpoints(),
+    staleTime: Infinity
+  })
+}
+
 export function adminStorageQuery() {
   return queryOptions({ queryKey: keys.adminStorage(), queryFn: () => api.adminStorage() })
 }
@@ -82,7 +93,10 @@ function invalidate(key: readonly unknown[]): void {
 export function adminUserMutation() {
   return mutationOptions({
     mutationFn: (action: AdminUserAction) => applyUserAction(action),
-    onSuccess: () => invalidate(keys.adminUsers())
+    // Settled, not succeeded: a refused write leaves the screen showing what
+    // the click proposed while the server still holds the old value, and the
+    // last-administrator refusal is exactly that case.
+    onSettled: () => invalidate(keys.adminUsers())
   })
 }
 
@@ -177,7 +191,9 @@ function applyShareAction(action: AdminShareAction): Promise<unknown> {
 export function adminShareMutation() {
   return mutationOptions({
     mutationFn: (action: AdminShareAction) => applyShareAction(action),
-    onSuccess: () => {
+    // Settled, not succeeded: a refused write must not leave a control
+    // showing what the click proposed while the server holds the old value.
+    onSettled: () => {
       invalidate(keys.adminShares())
       // A share is a root: the roots the session reports and every listing
       // built on them change with it.
@@ -267,7 +283,15 @@ function writeSettings(patch: SettingsPatch): Promise<ApplyOutcome> {
 export function adminSettingsMutation() {
   return mutationOptions({
     mutationFn: (patch: SettingsPatch) => writeSettings(patch),
-    onSuccess: () => invalidate(keys.adminSettings())
+    // Settled, not succeeded: every switch on these cards renders server
+    // state, so a refused save has to put the control back.
+    onSettled: () => {
+      invalidate(keys.adminSettings())
+      // The endpoint strings are derived from `app_hosts`, edited on the
+      // network card, not the single sign-on one: any save may have moved
+      // them.
+      invalidate(keys.adminOidcEndpoints())
+    }
   })
 }
 
@@ -285,7 +309,7 @@ export function adminUploadSettingsMutation() {
 export function adminIndexSettingsMutation() {
   return mutationOptions({
     mutationFn: (nameEnabled: boolean) => api.adminSetIndexSettings(nameEnabled),
-    onSuccess: () => invalidate(keys.adminSettings())
+    onSettled: () => invalidate(keys.adminSettings())
   })
 }
 

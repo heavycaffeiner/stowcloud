@@ -28,6 +28,14 @@ type OIDCStartView struct {
 	AuthorizeURL string `json:"authorize_url"`
 }
 
+// OIDCEndpointsView is what the single sign-on card shows an administrator to
+// register at the provider: the exact strings this server will send, one pair
+// per configured app host, so registering the client stops being a guess.
+type OIDCEndpointsView struct {
+	RedirectURIs           []string `json:"redirect_uris"`
+	PostLogoutRedirectURIs []string `json:"post_logout_redirect_uris"`
+}
+
 // SessionOidcView is the caller's own provider link, as `GET /auth/session`
 // reports it to the account holder.
 //

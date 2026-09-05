@@ -62,6 +62,14 @@ linters:
           - gochecknoglobals
           - gosec
 
+      # `revision` is written by the linker (-X main.revision=...), which is
+      # the only mechanism Go offers for stamping a build. It cannot be a
+      # const, and nothing at runtime writes it: it is read once to answer
+      # `sc-engine version` and to report what a deployment is running.
+      - path: cmd/sc-engine/main\.go
+        linters:
+          - gochecknoglobals
+
       # Test fixtures. G301, G302, G304 and G306 are about a mode or a path a
       # request can reach; a test that writes 0644 into t.TempDir and reads it
       # back is neither, and tightening the fixtures would stop them resembling
@@ -91,6 +99,22 @@ linters:
       # tree ships. G101 only ever matches the identifier, so it cannot tell
       # the two apart in a test either.
       - path: _test\.go
+        linters:
+          - gosec
+        text: "G101"
+
+      # A message key is a name the client looks up to find a sentence, not a
+      # value that opens anything. G101 reads the identifier, so a key named
+      # for the refusal it explains (invalid_credentials, secret_required)
+      # matches on the word rather than on what the constant holds. Both of
+      # these sit beside their siblings in a block of catalogue keys, and the
+      # strings they name are in web/src/lib/i18n.
+      - path: engine/lifecycle/oidc\.go
+        linters:
+          - gosec
+        text: "G101"
+
+      - path: engine/service/settings/check/check\.go
         linters:
           - gosec
         text: "G101"

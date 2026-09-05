@@ -35,6 +35,7 @@ func servicePackages() []string {
 		"../../service/auth",
 		"../../service/upload",
 		"../../service/preview",
+		"../../service/oidc",
 	}
 }
 
@@ -98,7 +99,7 @@ func classifiedNames(t *testing.T) map[string]bool {
 	}
 	out := map[string]bool{}
 	for _, line := range strings.Split(string(body), "\n") {
-		for _, pkg := range []string{"core.", "auth.", "upload.", "preview."} {
+		for _, pkg := range []string{"core.", "auth.", "upload.", "preview.", "oidc."} {
 			i := strings.Index(line, "{"+pkg+"Err")
 			if i < 0 {
 				continue

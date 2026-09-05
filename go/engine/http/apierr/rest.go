@@ -151,6 +151,10 @@ func restTable() map[Class]restEntry {
 		FlowPending:  {http.StatusAccepted, "flow.pending", "awaiting approval"},
 		FlowApproved: {http.StatusOK, "flow.approved", "approved"},
 		FlowTooSoon:  {http.StatusTooManyRequests, "flow.too_soon", "polled too soon"},
+
+		OIDCProviderUnavailable: {
+			http.StatusServiceUnavailable, "oidc.provider_unavailable", "the identity provider could not be reached",
+		},
 	}
 }
 

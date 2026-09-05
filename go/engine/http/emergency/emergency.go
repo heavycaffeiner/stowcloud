@@ -39,6 +39,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/settings/check"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/settings/runtimecfg"
 )
 
 // Prefix is the only path this package answers on.
@@ -330,9 +331,29 @@ func readSettings(d Deps) http.HandlerFunc {
 			refuse(w, http.StatusInternalServerError, "internal", "the settings could not be read")
 			return
 		}
+		listen := runtimecfg.DefaultListen
+		appHosts := []string{}
+		if net, ok := doc["network"].(map[string]any); ok {
+			if b, ok := net["bind"].(string); ok && b != "" {
+				listen = b
+			} else if l, ok := net["listen"].(string); ok && l != "" {
+				listen = l
+			}
+			if rawHosts, ok := net["app_hosts"].([]any); ok {
+				for _, h := range rawHosts {
+					if s, ok := h.(string); ok && s != "" {
+						appHosts = append(appHosts, s)
+					}
+				}
+			} else if strHosts, ok := net["app_hosts"].([]string); ok {
+				appHosts = append(appHosts, strHosts...)
+			}
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"stored":   doc,
-			"sections": check.Sections(),
+			"stored":    doc,
+			"sections":  check.Sections(),
+			"listen":    listen,
+			"app_hosts": appHosts,
 		})
 	}
 }
@@ -501,11 +522,18 @@ func refuse(w http.ResponseWriter, status int, code, msg string) {
 func renderFindings(fs []check.Finding) []map[string]any {
 	out := make([]map[string]any, 0, len(fs))
 	for _, f := range fs {
+		level := "warn"
+		if f.Blocking {
+			level = "block"
+		}
 		out = append(out, map[string]any{
-			"section": f.Section,
-			"field":   f.Field,
-			"reason":  f.ReasonKey,
-			"args":    f.Args,
+			"section":       f.Section,
+			"field":         f.Field,
+			"reason":        f.ReasonKey,
+			"reason_key":    f.ReasonKey,
+			"args":          f.Args,
+			"reason_params": f.Args,
+			"level":         level,
 		})
 	}
 	return out

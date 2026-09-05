@@ -36,9 +36,9 @@ function walk(dir, out = []) {
 // Literal-only by design: a key built at runtime cannot be extracted, and
 // silently missing one is worse than not allowing it.
 const CALL = /(?:^|[^\w.$])t\(\s*(['"])((?:\\.|(?!\1)[^\\])*)\1/g
+const TP_CALL = /(?:^|[^\w.$])tp\(\s*(['"])((?:\\.|(?!\1)[^\\])*)\1/g
 const DEFERRED = /\/\* i18n \*\/\s*(['"])((?:\\.|(?!\1)[^\\])*)\1/g
 const KEY_SHAPE = /^[a-z][a-z0-9_]*\.[a-z0-9_]+$/
-
 const used = new Map() // key -> first "file:line"
 
 for (const file of walk(SRC)) {
@@ -50,6 +50,20 @@ for (const file of walk(SRC)) {
       if (used.has(key)) continue
       const line = text.slice(0, m.index).split('\n').length
       used.set(key, `${relative(root, file).replace(/\\/g, '/')}:${line}`)
+    }
+  }
+  TP_CALL.lastIndex = 0
+  for (const m of text.matchAll(TP_CALL)) {
+    const baseKey = m[2].replace(/\\(['"\\])/g, '$1')
+    const line = text.slice(0, m.index).split('\n').length
+    const loc = `${relative(root, file).replace(/\\/g, '/')}:${line}`
+    if (!KEY_SHAPE.test(baseKey)) {
+      if (!used.has(baseKey)) used.set(baseKey, loc)
+      continue
+    }
+    for (const suffix of ['_one', '_other']) {
+      const key = `${baseKey}${suffix}`
+      if (!used.has(key)) used.set(key, loc)
     }
   }
 }

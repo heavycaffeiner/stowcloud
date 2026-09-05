@@ -2,7 +2,7 @@
   import { fade } from 'svelte/transition'
   import { goto } from '$app/navigation'
   import { page } from '$app/state'
-  import { createInfiniteQuery, createMutation, createQueries } from '@tanstack/svelte-query'
+  import { createInfiniteQuery, createMutation, createQueries, createQuery } from '@tanstack/svelte-query'
   import { ApiError, type BatchItemResult, type Entry, type OnConflict } from '../../../../lib/api/types'
   import { api } from '../../../../lib/api/client'
   import { baseName, joinPath, normalizePath, parentOf } from '../../../../lib/api/path-utils'
@@ -17,7 +17,8 @@
     invalidateDirs,
     mkdirMutation,
     moveMutation,
-    renameMutation
+    renameMutation,
+    shareEncryptionQuery
   } from '../../../../lib/query/files'
   import { createSession } from '../../../../lib/query/session'
   import { jobTray } from '../../../../lib/store/jobs.store'
@@ -108,6 +109,12 @@
   const dir = $derived(dirViewOf(listing.data?.pages))
   const entries = $derived(dir.entries)
   const names = $derived(new Set(entries.map((e) => e.name)))
+
+  // Whether this share encrypts what it stores. The listing's sizes are
+  // ciphertext sizes on an encrypted share, so a row that shows one as the
+  // file's own size overstates every file by the crypt framing.
+  const shareEncryption = createQuery(() => shareEncryptionQuery(path))
+  const encrypted = $derived(shareEncryption.data != null)
 
   /** The selection resolved against what is listed. A name the selection
    *  still holds for a row that has since gone simply matches nothing, which
@@ -386,6 +393,8 @@
   // The server stopped the walk at its deadline, so what is listed is a
   // prefix of the matches. Saying so beats a short list that reads complete.
   let searchTruncated = $state(false)
+  /** The walk ran out of time, so a share it could not finish is missing. */
+  let searchDeadline = $state(false)
   let searchInputEl: HTMLInputElement | undefined = $state()
   let fileInputEl: HTMLInputElement | undefined = $state()
   let dirInputEl: HTMLInputElement | undefined = $state()
@@ -921,6 +930,7 @@
     searchResults = []
     searchRan = false
     searchTruncated = false
+    searchDeadline = false
     searchCancel?.()
   }
   function onSearchInput(): void {
@@ -928,9 +938,11 @@
     searchResults = []
     searchRan = false
     searchTruncated = false
+    searchDeadline = false
     if (!searchQuery.trim()) return
     searchRan = true
     searchTruncated = false
+    searchDeadline = false
     searchCancel = api.searchStream(
       searchQuery,
       (hit) => {
@@ -938,6 +950,10 @@
       },
       (done) => {
         searchTruncated = done.truncated
+        // The walk ran out of time rather than out of room. A share too slow
+        // to finish inside the deadline, a container or a bucket rather than
+        // a local folder, contributes nothing and says nothing without this.
+        searchDeadline = done.deadline === true
       }
     )
   }
@@ -1149,6 +1165,15 @@
           {t('common.shared_with_other_services')}
         </span>
       {/if}
+      {#if encrypted}
+        <!-- Nothing else on this screen says the share is encrypted, and the
+             difference is load-bearing: the sizes shown are derived from
+             ciphertext, and the server holds no key for this content. -->
+        <span class="sc-browse__encrypted-badge" role="status">
+          <Icon icon={icons.lock} size={14} />
+          {t('browse.encrypted_badge')}
+        </span>
+      {/if}
       {#if rootBroken}
         <!-- The badge is on the folder rather than only in the failed
              listing, because the folder is still navigable from the root
@@ -1335,7 +1360,9 @@
           {searchRan ? t('browse.no_results') : t('browse.press_enter_to_search')}
         </li>
       {/each}
-      {#if searchTruncated && searchResults.length > 0}
+      {#if searchDeadline && searchResults.length > 0}
+        <li class="sc-browse__search-empty">{t('browse.search_hit_time_limit')}</li>
+      {:else if searchTruncated && searchResults.length > 0}
         <li class="sc-browse__search-empty">{t('browse.search_stopped_early')}</li>
       {/if}
     </ul>
@@ -1416,9 +1443,11 @@
             {requestMore}
             onopen={onOpen}
             oncontextmenu={openContextMenu}
+            menuFor={menuOpen ? (contextEntry?.name ?? null) : null}
             onrename={requestRename}
             ondelete={requestDelete}
             onsearchfocus={focusSearch}
+            {encrypted}
           />
         </div>
       {:else}
@@ -1441,6 +1470,7 @@
             onrename={requestRename}
             ondelete={requestDelete}
             onsearchfocus={focusSearch}
+            {encrypted}
           />
         </div>
       {/if}
@@ -1461,7 +1491,7 @@
       ></div>
     {/if}
     {#if ui.state.details}
-      <DetailsPanel {path} {selected} total={dir.total} dirs={dir.dirs} onclose={() => ui.setDetails(false)} />
+      <DetailsPanel {path} {selected} total={dir.total} dirs={dir.dirs} {encrypted} onclose={() => ui.setDetails(false)} />
     {/if}
   </div>
 
@@ -1683,6 +1713,20 @@
     border-radius: var(--m3-shape-full);
     background: var(--m3c-error-container);
     color: var(--m3c-on-error-container);
+    @apply --m3-label-small;
+    white-space: nowrap;
+  }
+  /* A property of the folder rather than a warning about it, so the neutral
+     surface container rather than the error or tertiary one. */
+  .sc-browse__encrypted-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 24px;
+    padding-inline: 8px;
+    border-radius: var(--m3-shape-full);
+    background: var(--m3c-surface-container-highest);
+    color: var(--m3c-on-surface-variant);
     @apply --m3-label-small;
     white-space: nowrap;
   }

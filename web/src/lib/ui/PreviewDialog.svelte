@@ -15,7 +15,8 @@
   import { describeApiError } from '../api/error-text'
   import { fileContentQuery, archiveEntriesQuery } from '../query/files'
   import { formatBytes } from '../format/bytes'
-  import { t } from '../i18n'
+  import { formatEntrySize } from '../format/entry-size'
+  import { t, tp } from '../i18n'
   import { Icon } from 'm3-svelte'
   import { icons } from '../icons'
   import IconButton from './IconButton.svelte'
@@ -83,7 +84,14 @@
   // Text and archive bodies are real reads; the key follows what is actually
   // shown, so switching to an image never keeps a stale text fetch running,
   // and each is disabled outright while the dialog is closed.
-  const textQuery = createQuery(() => ({ ...fileContentQuery(entry), enabled: open && body.kind === 'text' }))
+  //
+  // `unlocked` is part of the key so unlocking the share refetches rather
+  // than holding the failure it took while locked: an open preview used to
+  // keep showing that failure until it was closed and reopened.
+  const textQuery = createQuery(() => ({
+    ...fileContentQuery(entry, unlocked),
+    enabled: open && body.kind === 'text' && unlocked
+  }))
 
   // Whether the current entry's own share is end-to-end encrypted, resolved
   // once (encryptedShares(), encrypted-shares.ts, caches the whole set for
@@ -104,6 +112,15 @@
    *  which is a plain function call rather than a reactive source Svelte
    *  would otherwise know to recompute on. */
   let unlockGeneration = $state(0)
+  $effect(() => {
+    const onUnlock = () => { unlockGeneration++ }
+    window.addEventListener('sc:unlock', onUnlock)
+    window.addEventListener('sc:lock', onUnlock)
+    return () => {
+      window.removeEventListener('sc:unlock', onUnlock)
+      window.removeEventListener('sc:lock', onUnlock)
+    }
+  })
   const unlocked = $derived.by((): boolean => {
     void unlockGeneration
     return encryption === null || isUnlocked(encryption.salt)
@@ -137,8 +154,7 @@
   const locked = $derived(
     !!entry &&
       encryption !== null &&
-      !unlocked &&
-      (body.kind === 'image' || body.kind === 'video' || body.kind === 'archive')
+      !unlocked
   )
 
   /** Raised automatically the moment a body turns out to be locked, the
@@ -200,6 +216,10 @@
    */
   $effect(() => {
     void previewKey
+    void unlocked
+    imageOverride = null
+    imageGaveUp = false
+    videoGaveUp = false
     const currentEntry = entry
     mediaUrl = null
     mediaKind = 'idle'
@@ -209,7 +229,6 @@
       return
     }
     if (encryption === null || !unlocked) return // plain share, or the locked card above owns this
-
     let cancelled = false
     let token: string | null = null
     let objectUrl: string | null = null
@@ -292,12 +311,12 @@
   const truncated = $derived(archiveListing?.truncated ?? false)
 
   const failed = $derived.by((): string | null => {
-    if (body.kind === 'image' && imageGaveUp) return t('preview.cannot_preview')
-    if (body.kind === 'video' && videoGaveUp) return t('preview.cannot_preview')
+    if (body.kind === 'image' && imageGaveUp) return t('preview.failed')
+    if (body.kind === 'video' && videoGaveUp) return t('preview.failed')
     if ((body.kind === 'image' || body.kind === 'video') && encryption !== null && !locked) {
       if (mediaKind === 'too-large') return t('preview.encrypted_too_large_to_buffer')
       if (mediaKind === 'no-worker-video') return t('preview.encrypted_video_needs_worker')
-      if (mediaKind === 'failed') return t('preview.cannot_preview')
+      if (mediaKind === 'failed') return t('preview.failed')
     }
     if (body.kind === 'text' && textQuery.error) return describeApiError(textQuery.error, t('preview.failed'))
     if (body.kind === 'archive' && !locked && archiveError) return describeApiError(archiveError, t('preview.failed'))
@@ -412,7 +431,7 @@
     <header class="sc-preview__bar">
       <IconButton label={t('common.close')} onclick={onclose}><Icon icon={icons.close} /></IconButton>
       <span class="sc-preview__name" title={entry.name}>{entry.name}</span>
-      <span class="sc-preview__size">{formatBytes(entry.size)}</span>
+      <span class="sc-preview__size">{formatEntrySize(entry.size, encryption !== null)}</span>
       <span class="sc-preview__gap"></span>
       {#if body.kind === 'text' || body.kind === 'too-large-text'}
         <IconButton label={t('browse.open_text_editor')} onclick={() => onedit(entry)}>
@@ -458,10 +477,10 @@
           {@const entries = archive}
           <div class="sc-preview__archive">
             <p class="sc-preview__archive-count">
-              {t('preview.archive_entries', { count: entries.length })}
+              {tp('preview.archive_entries', level.length)}
               {#if skipped > 0}
                 <span class="sc-preview__archive-skipped">
-                  {t('preview.archive_skipped', { count: skipped })}
+                  {tp('preview.archive_skipped', skipped)}
                 </span>
               {/if}
               {#if truncated && archiveListing}
@@ -537,10 +556,12 @@
             <p class="sc-preview__card-reason">
               {#if locked}
                 {t('preview.locked_reason')}
-              {:else if failed}
+              {:else if failed && failed !== t('preview.cannot_preview')}
                 {failed}
               {:else if body.kind === 'too-large-text'}
                 {t('preview.too_large_for_text')}
+              {:else if failed}
+                {t('preview.failed')}
               {:else}
                 {t('preview.no_preview')}
               {/if}
