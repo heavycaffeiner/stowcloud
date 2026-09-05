@@ -12,6 +12,7 @@ import (
 	"fmt"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 )
 
@@ -78,6 +79,30 @@ func (s *Service) EnrollTOTP(ctx context.Context, userID int64, secretB32 string
 func (s *Service) DisableTOTP(ctx context.Context, userID int64) error {
 	if err := s.store.DisableTOTP(ctx, userID); err != nil {
 		return err
+	}
+	s.bumpGeneration()
+	return s.republishCredentials(ctx)
+}
+
+// DisableTOTPWithPassword removes the factor and its replay window, derives
+// and restores the account password as the SMB credential unless opted out,
+// and republishes.
+func (s *Service) DisableTOTPWithPassword(ctx context.Context, userID int64, pw secret.Secret) error {
+	if err := s.store.DisableTOTP(ctx, userID); err != nil {
+		return err
+	}
+	acct, err := s.store.AccountByID(ctx, userID)
+	if err != nil && !errors.Is(err, state.ErrNoSuchAccount) {
+		return err
+	}
+	if err == nil && !acct.SMBOptOut {
+		sealed, serr := s.sealNTFor(userID, pw)
+		if serr != nil {
+			return serr
+		}
+		if perr := s.store.PutSMBSecret(ctx, userID, sealed); perr != nil {
+			return perr
+		}
 	}
 	s.bumpGeneration()
 	return s.republishCredentials(ctx)

@@ -81,12 +81,15 @@ func (d *DB) AuditPage(ctx context.Context, before int64, limit int) (out []Audi
 	if before > 0 {
 		query, args = sqlSelectAuditPageBefore, []any{before, limit}
 	}
+	return d.queryAuditRecords(ctx, query, args...)
+}
+
+func (d *DB) queryAuditRecords(ctx context.Context, query string, args ...any) (out []AuditRecord, err error) {
 	rows, err := d.f.SQL().QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("reading the audit log: %w", err)
 	}
 	defer func() { err = errors.Join(err, rows.Close()) }()
-
 	for rows.Next() {
 		var (
 			r                  AuditRecord
@@ -123,4 +126,100 @@ func (d *DB) AuditPage(ctx context.Context, before int64, limit int) (out []Audi
 		return nil, fmt.Errorf("reading the audit log: %w", err)
 	}
 	return out, nil
+}
+
+// AuditBucketCount is one aggregated interval's outcome count.
+type AuditBucketCount struct {
+	BucketIdx int
+	OK        int
+	Failed    int
+}
+
+// AuditPageFiltered reads rows matching event and/or actor.
+func (d *DB) AuditPageFiltered(ctx context.Context, before int64, limit int, event string, actor *int64) ([]AuditRecord, error) {
+	if event != "" && actor == nil {
+		query, args := sqlSelectAuditPageEvent, []any{event, limit}
+		if before > 0 {
+			query, args = sqlSelectAuditPageBeforeEvent, []any{event, before, limit}
+		}
+		return d.queryAuditRecords(ctx, query, args...)
+	}
+	if actor != nil && event == "" {
+		query, args := sqlSelectAuditPageActor, []any{*actor, limit}
+		if before > 0 {
+			query, args = sqlSelectAuditPageBeforeActor, []any{*actor, before, limit}
+		}
+		return d.queryAuditRecords(ctx, query, args...)
+	}
+	return d.AuditPage(ctx, before, limit)
+}
+
+// AuditCountsAgg aggregates outcome counts using SQLite group-by.
+func (d *DB) AuditCountsAgg(ctx context.Context, startNs, endNs, widthNs int64, event string) ([]AuditBucketCount, error) {
+	query, args := sqlSelectAuditCounts, []any{startNs, widthNs, startNs, endNs}
+	if event != "" {
+		query, args = sqlSelectAuditCountsEvent, []any{startNs, widthNs, startNs, endNs, event}
+	}
+	rows, err := d.f.SQL().QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("aggregating audit counts: %w", err)
+	}
+	defer func() { err = errors.Join(err, rows.Close()) }()
+
+	bucketMap := make(map[int]*AuditBucketCount)
+	for rows.Next() {
+		var idx, result, count int
+		if err := rows.Scan(&idx, &result, &count); err != nil {
+			return nil, fmt.Errorf("reading audit count row: %w", err)
+		}
+		b, exists := bucketMap[idx]
+		if !exists {
+			b = &AuditBucketCount{BucketIdx: idx}
+			bucketMap[idx] = b
+		}
+		if result == 1 {
+			b.OK += count
+		} else {
+			b.Failed += count
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("aggregating audit counts: %w", err)
+	}
+	out := make([]AuditBucketCount, 0, len(bucketMap))
+	for _, b := range bucketMap {
+		out = append(out, *b)
+	}
+	return out, nil
+}
+
+// PruneAudit trims audit rows older than retentionNs, or when maxRows > 0,
+// ensures no more than maxRows of the newest entries remain.
+func (d *DB) PruneAudit(ctx context.Context, olderThanNs int64, maxRows int) (int64, error) {
+	if err := d.f.EnsureWritable(); err != nil {
+		return 0, err
+	}
+	var total int64
+	err := d.Write(ctx, func(tx *sql.Tx) error {
+		if olderThanNs > 0 {
+			res, err := tx.ExecContext(ctx, sqlDeleteAuditBefore, olderThanNs)
+			if err != nil {
+				return err
+			}
+			if n, rerr := res.RowsAffected(); rerr == nil {
+				total += n
+			}
+		}
+		if maxRows > 0 {
+			res, err := tx.ExecContext(ctx, sqlDeleteAuditOldestKeepN, maxRows)
+			if err != nil {
+				return err
+			}
+			if n, rerr := res.RowsAffected(); rerr == nil {
+				total += n
+			}
+		}
+		return nil
+	})
+	return total, err
 }

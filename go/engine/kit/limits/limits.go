@@ -250,6 +250,10 @@ const DirEntriesBuffered = 100_000
 // writer crashes mid-batch.
 const JournalRowsPerAccount = 1_000
 
+// AuditRetentionMaxRows caps how many rows the audit log keeps before oldest
+// entries are pruned.
+const AuditRetentionMaxRows = 100_000
+
 const (
 	// DavLocksPerUser rejects with status 507.
 	DavLocksPerUser = 256

@@ -68,7 +68,8 @@ type Options struct {
 	CPUs  int
 	// Index is optional, and nil disables it, which is the default. Enabling it
 	// is an escalation taken once measurement shows the walk is insufficient.
-	Index *index.NameIndex
+	Index       *index.NameIndex
+	Concurrency int
 }
 
 // Service answers queries.
@@ -98,21 +99,32 @@ func New(o Options) *Service {
 	if clk == nil {
 		clk = clock.System()
 	}
-	s := &Service{clk: clk, cpus: o.CPUs, ix: o.Index}
-	s.slots = make(chan struct{}, limits.ConcurrentSearches)
+	concurrency := o.Concurrency
+	if concurrency <= 0 {
+		concurrency = limits.ConcurrentSearches
+	}
+	s := &Service{
+		clk:         clk,
+		cpus:        o.CPUs,
+		ix:          o.Index,
+		concurrency: o.Concurrency,
+		slots:       make(chan struct{}, concurrency),
+	}
 	return s
 }
 
 // SetBounds adjusts the query bounds, which is what the settings screen's search
 // section drives. Zero leaves a field at the compiled-in default.
-//
-// The concurrency gate is not resized. It is a buffered channel established at
-// construction, and swapping it while queries are in flight would lose the slots
-// they hold. The new bound takes effect from the next start, which is what a
-// deployment changing it intends.
 func (s *Service) SetBounds(concurrency int, deadline time.Duration) {
 	s.mu.Lock()
 	s.concurrency, s.deadline = concurrency, deadline
+	targetCap := concurrency
+	if targetCap <= 0 {
+		targetCap = limits.ConcurrentSearches
+	}
+	if targetCap != cap(s.slots) {
+		s.slots = make(chan struct{}, targetCap)
+	}
 	s.mu.Unlock()
 }
 
@@ -194,15 +206,18 @@ func (s *Service) Query(ctx context.Context, sources []search.Source, opt QueryO
 
 	// The gate is acquired before any work begins, so a rejected search costs a
 	// channel send instead of a directory read.
+	s.mu.Lock()
+	slots := s.slots
+	s.mu.Unlock()
+
 	select {
-	case s.slots <- struct{}{}:
-		defer func() { <-s.slots }()
+	case slots <- struct{}{}:
+		defer func() { <-slots }()
 	case <-ctx.Done():
 		return Results{}, ErrCanceled
 	default:
 		return Results{}, ErrBusy
 	}
-
 	start := s.clk.Now()
 	needle := search.FoldString(opt.Query)
 

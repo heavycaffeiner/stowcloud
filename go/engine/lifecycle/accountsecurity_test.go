@@ -13,6 +13,7 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 )
 
 // signedIn returns a session cookie and its CSRF token for the standard
@@ -453,6 +454,14 @@ func TestDisablingTheSecondFactor(t *testing.T) {
 		map[string]string{"login": loginName, "password": loginPassword})
 	if after.sessionCookie() == nil {
 		t.Errorf("the password alone still does not sign in: %v", after.body)
+	}
+
+	smbState, err := e.Auth.SMBStateOf(context.Background(), id)
+	if err != nil {
+		t.Fatalf("SMBStateOf: %v", err)
+	}
+	if smbState.Credential != auth.SMBCredentialAccount {
+		t.Errorf("SMB credential was not restored after disabling TOTP: %+v", smbState)
 	}
 }
 

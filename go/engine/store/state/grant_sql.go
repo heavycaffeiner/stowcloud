@@ -9,6 +9,22 @@ const (
 SELECT id, user, "group", share, subpath, allow, deny, inherit, label, created_ns
 FROM "grant"`
 
+	sqlReadGrantsByUser = `
+SELECT id, user, "group", share, subpath, allow, deny, inherit, label, created_ns
+FROM "grant" WHERE user = ?`
+
+	sqlReadGrantsByGroup = `
+SELECT id, user, "group", share, subpath, allow, deny, inherit, label, created_ns
+FROM "grant" WHERE "group" = ?`
+
+	sqlReadGrantsByShare = `
+SELECT id, user, "group", share, subpath, allow, deny, inherit, label, created_ns
+FROM "grant" WHERE share = ?`
+
+	sqlReadGrantByID = `
+SELECT id, user, "group", share, subpath, allow, deny, inherit, label, created_ns
+FROM "grant" WHERE id = ?`
+
 	sqlReadMemberships = `SELECT user, "group" FROM membership`
 
 	sqlInsertGrant = `

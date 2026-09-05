@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/limits"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 )
 
@@ -58,7 +59,7 @@ type AuditRow struct {
 // which is why this reports rather than swallows. A caller whose write has
 // already committed uses Record instead.
 func (s *Service) Audit(ctx context.Context, actor *int64, event, target, ip, ua string, ok bool) error {
-	return s.store.AppendAudit(ctx, state.AuditEntry{
+	err := s.store.AppendAudit(ctx, state.AuditEntry{
 		TsNs:   s.now(),
 		Actor:  actor,
 		Event:  event,
@@ -67,6 +68,17 @@ func (s *Service) Audit(ctx context.Context, actor *int64, event, target, ip, ua
 		UA:     ua,
 		OK:     ok,
 	})
+	if err == nil {
+		if s.auditOps.Add(1)%1000 == 0 {
+			_, _ = s.store.PruneAudit(ctx, 0, limits.AuditRetentionMaxRows)
+		}
+	}
+	return err
+}
+
+// PruneAudit removes audit entries older than olderThanNs or caps to maxRows.
+func (s *Service) PruneAudit(ctx context.Context, olderThanNs int64, maxRows int) (int64, error) {
+	return s.store.PruneAudit(ctx, olderThanNs, maxRows)
 }
 
 // Record writes one row for an action that has already happened, and never
@@ -110,13 +122,17 @@ func (s *Service) AuditPage(ctx context.Context, f AuditFilter) ([]AuditRow, *in
 	if f.Limit <= 0 {
 		f.Limit = auditDefaultLimit
 	}
-	records, err := s.store.AuditPage(ctx, f.Before, f.Limit*auditOverscan)
+	var actor *int64
+	if f.Actor != 0 {
+		actor = &f.Actor
+	}
+	records, err := s.store.AuditPageFiltered(ctx, f.Before, f.Limit, f.Event, actor)
 	if err != nil {
 		return nil, nil, err
 	}
 	names := s.actorNames(ctx)
 
-	rows := make([]AuditRow, 0, f.Limit)
+	rows := make([]AuditRow, 0, len(records))
 	for _, rec := range records {
 		if !auditMatches(rec, f) {
 			continue
@@ -139,13 +155,10 @@ func (s *Service) AuditPage(ctx context.Context, f AuditFilter) ([]AuditRow, *in
 			}
 		}
 		rows = append(rows, row)
-		if len(rows) == f.Limit {
-			break
-		}
 	}
 	var next *int64
-	if len(rows) == f.Limit {
-		last := rows[len(rows)-1].RowID
+	if len(records) == f.Limit {
+		last := records[len(records)-1].RowID
 		next = &last
 	}
 	return rows, next, nil
@@ -185,9 +198,19 @@ func (s *Service) AuditCounts(
 		buckets[i].StartNs = startNs + int64(i)*widthNs
 	}
 
-	// The store pages newest first from the top, which is the only order it
-	// offers. The walk stops when it reaches rows older than the window, so a
-	// long log costs the window rather than its whole length.
+	endNs := startNs + int64(count)*widthNs
+	if f.Actor == 0 && f.SinceNs == 0 && f.UntilNs == 0 {
+		aggCounts, aerr := s.store.AuditCountsAgg(ctx, startNs, endNs, widthNs, f.Event)
+		if aerr == nil {
+			for _, b := range aggCounts {
+				if b.BucketIdx >= 0 && b.BucketIdx < count {
+					buckets[b.BucketIdx].OK += b.OK
+					buckets[b.BucketIdx].Failed += b.Failed
+				}
+			}
+			return buckets, false, nil
+		}
+	}
 	var before int64
 	last := count - 1
 	for seen := 0; seen < auditCountCeiling; {

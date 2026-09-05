@@ -355,18 +355,27 @@ func (e *Engine) filesWrite(c *fiber.Ctx) error {
 	if lerr := e.guardDavLock(c.UserContext(), uint32(r.Share()), r.Path().String(), int64(owner)); lerr != nil {
 		return refuse(c, apierr.Classified{Class: apierr.Locked, Key: "dav.locked"})
 	}
-	body := c.Body()
-	// The mode comes from the share's own policy rather than a constant here:
-	// a file this route creates has to be reachable on the same terms as one
-	// created by any other, and a second answer would differ by which route
-	// happened to make it.
 	opts := vfs.DurableOpts{Mode: r.Root().Policy().ModeFile}
+	reader := requestBodyReader(c)
 	entry, err := e.Core.CreateFile(c.UserContext(), r, opts, ifMatchOf(c),
 		func(f *vfs.File) error {
-			// WriteAt rather than a copy: vfs.File is positional, so a write
-			// does not depend on a shared offset.
-			_, werr := f.WriteAt(body, 0)
-			return werr
+			var off int64
+			buf := make([]byte, 256<<10)
+			for {
+				n, rerr := reader.Read(buf)
+				if n > 0 {
+					if _, werr := f.WriteAt(buf[:n], off); werr != nil {
+						return werr
+					}
+					off += int64(n)
+				}
+				if errors.Is(rerr, io.EOF) {
+					return f.Truncate(off)
+				}
+				if rerr != nil {
+					return rerr
+				}
+			}
 		})
 	if err != nil {
 		return fail(c, err)

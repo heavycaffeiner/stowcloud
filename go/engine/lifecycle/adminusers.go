@@ -17,6 +17,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/handler"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
 
 // admin answers who is calling, and stops here if they do not run this
@@ -199,7 +200,7 @@ func (e *Engine) adminUsersDelete(c *fiber.Ctx) error {
 	if target == caller {
 		return refuse(c, apierr.Classified{Class: apierr.Denied})
 	}
-
+	_ = e.Core.CleanupHome(c.UserContext(), core.UserID(target))
 	if err := e.Auth.DeleteUser(c.UserContext(), target); err != nil {
 		return failKnown(c, err)
 	}

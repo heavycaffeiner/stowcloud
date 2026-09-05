@@ -86,7 +86,7 @@ func (c *Core) ListSorted(ctx context.Context, r Resolved, cur Cursor, opt ListO
 			// cheaper than failing the directory over it.
 			continue
 		}
-		e := c.buildEntry(r, row.name, p)
+		e := c.buildEntryFromStat(r, row.name, p, row.st)
 		if e.Kind == vfs.KindOther {
 			// The stat could not type it, which is what a symlink under the
 			// deny policy looks like. The directory read is the one source
@@ -127,6 +127,7 @@ type listRow struct {
 	// group rather than dropping the row.
 	size  uint64
 	mtime int64
+	st    *vfs.Stat
 }
 
 // statAll stats every row once, in place. A name that cannot be joined or
@@ -142,6 +143,8 @@ func (c *Core) statAll(r Resolved, rows []listRow) {
 			continue
 		}
 		rows[i].size, rows[i].mtime = st.Size, st.MtimeNs
+		copyStat := st
+		rows[i].st = &copyStat
 	}
 }
 
@@ -219,11 +222,18 @@ func cursorOffset(cur Cursor) (int, error) {
 // directory that dies over one racing delete punishes everything else in it
 // for the one row.
 func (c *Core) buildEntry(r Resolved, name string, p vfs.SafePath) Entry {
-	st, err := r.root.Stat(p)
-	if err != nil {
-		return Entry{Name: name, Path: p.Share(), Perms: r.perms}
+	return c.buildEntryFromStat(r, name, p, nil)
+}
+
+func (c *Core) buildEntryFromStat(r Resolved, name string, p vfs.SafePath, st *vfs.Stat) Entry {
+	if st == nil {
+		s, err := r.root.Stat(p)
+		if err != nil {
+			return Entry{Name: name, Path: p.Share(), Perms: r.perms}
+		}
+		st = &s
 	}
-	etag, weak := FileETag(st)
+	etag, weak := FileETag(*st)
 	return Entry{
 		Name:     name,
 		Path:     p.Share(),
@@ -232,7 +242,7 @@ func (c *Core) buildEntry(r Resolved, name string, p vfs.SafePath) Entry {
 		Size:     st.Size,
 		MTimeNs:  st.MtimeNs,
 		BTimeNs:  st.BtimeNs,
-		Ident:    ident.Of(r.share, st),
+		Ident:    ident.Of(r.share, *st),
 		ETag:     etag,
 		ETagWeak: weak,
 		Perms:    r.perms,

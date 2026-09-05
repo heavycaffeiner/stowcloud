@@ -136,8 +136,20 @@ func (c *Core) TrashList(ctx context.Context, r Resolved) ([]TrashEntry, error) 
 			Size:        st.Size,
 			DeletedAtNs: ctimeOrMtime(st),
 		}
+		var origSafe vfs.SafePath
 		if orig, decoded := decodeOrigPath(rest); decoded {
+			origSafe = orig
 			row.OrigPath = orig.String()
+		} else if parsed, perr := vfs.ParseSafePath(rest); perr == nil {
+			origSafe = parsed
+		}
+		if r.user != 0 && origSafe.String() != "" {
+			at := acl.Vpath{Share: int64(r.share), Path: aclPath(origSafe)}
+			if !c.acl.Evaluate(int64(r.user), at, acl.Read).Allowed {
+				continue
+			}
+		} else if r.user != 0 && !r.path.IsRoot() {
+			continue
 		}
 		out = append(out, row)
 	}
@@ -171,6 +183,12 @@ func (c *Core) TrashRestore(ctx context.Context, r Resolved, id string) (vfs.Saf
 		dest, err = vfs.ParseSafePath(rest)
 		if err != nil {
 			return vfs.SafePath{}, errf(ErrNotFound, "a trash entry whose origin cannot be read")
+		}
+	}
+	if r.user != 0 {
+		at := acl.Vpath{Share: int64(r.share), Path: aclPath(dest)}
+		if !c.acl.Evaluate(int64(r.user), at, acl.Create).Allowed {
+			return vfs.SafePath{}, ErrDenied
 		}
 	}
 
@@ -251,6 +269,29 @@ func (c *Core) TrashPurge(ctx context.Context, r Resolved, id *string) error {
 	for _, e := range entries {
 		if id != nil && !strings.HasPrefix(e.Name, *id+"-") {
 			continue
+		}
+		_, rest, ok := splitTrashName(e.Name)
+		if ok && r.user != 0 {
+			var origSafe vfs.SafePath
+			if orig, decoded := decodeOrigPath(rest); decoded {
+				origSafe = orig
+			} else if parsed, perr := vfs.ParseSafePath(rest); perr == nil {
+				origSafe = parsed
+			}
+			if origSafe.String() != "" {
+				at := acl.Vpath{Share: int64(r.share), Path: aclPath(origSafe)}
+				if !c.acl.Evaluate(int64(r.user), at, acl.Delete).Allowed {
+					if id != nil {
+						return ErrDenied
+					}
+					continue
+				}
+			} else if !r.path.IsRoot() {
+				if id != nil {
+					return ErrDenied
+				}
+				continue
+			}
 		}
 		matched = true
 		p, jerr := dir.JoinExisting(e.Name)

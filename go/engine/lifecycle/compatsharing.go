@@ -100,20 +100,25 @@ func (e *Engine) compatCanManageGrant(user core.UserID, g core.Grant) bool {
 		return false
 	}
 	_, err = e.resolve(user, path.String(), acl.Share)
-	return err == nil
+	if err != nil {
+		return false
+	}
+	if p, perr := vfs.ParseSharePath(g.Subpath); perr != nil || p.IsRoot() {
+		isAdmin, _ := e.Auth.IsAdmin(context.Background(), int64(user))
+		return isAdmin
+	}
+	return true
 }
 
 func (e *Engine) compatManagedGrant(
 	ctx context.Context, user core.UserID, id int64,
 ) (core.Grant, bool, error) {
-	grants, err := e.Core.ListGrants(ctx, core.GrantFilter{})
+	grant, err := e.Core.GrantByID(ctx, id)
 	if err != nil {
-		return core.Grant{}, false, err
+		return core.Grant{}, false, nil
 	}
-	for _, grant := range grants {
-		if grant.ID == id && e.compatCanManageGrant(user, grant) {
-			return grant, true, nil
-		}
+	if e.compatCanManageGrant(user, grant) {
+		return grant, true, nil
 	}
 	return core.Grant{}, false, nil
 }
@@ -446,7 +451,6 @@ func (e *Engine) compatCreateShare(
 		spec.Allow = allow
 		spec.Inherit = isDir
 		spec.Label = req.Label
-
 		grant, gerr := e.Core.CreateGrant(ctx, spec)
 		if gerr != nil {
 			return compat.Val{}, false, compat.ServerError(gerr.Error())

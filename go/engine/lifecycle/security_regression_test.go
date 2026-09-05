@@ -3,13 +3,17 @@
 package lifecycle_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
+	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
@@ -297,5 +301,181 @@ func TestRegressionSMBGroupGrantsExpandedToMembers(t *testing.T) {
 	}
 	if !aliceShare2Deny {
 		t.Error("alice did not receive expanded group deny rule for share 2")
+	}
+}
+
+// SEC-TRASH-02: Subfolder grants must not leak other subfolders' trash entries, allow cross-subfolder restore or purge.
+func TestRegressionTrashSubfolderIsolation(t *testing.T) {
+	ctx := context.Background()
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = e.Close() })
+
+	adminID, err := e.Auth.CreateAdmin(ctx, "admin", "Admin", pwOf(loginPassword))
+	if err != nil {
+		t.Fatal(err)
+	}
+	aliceID, err := e.Auth.CreateUser(ctx, "alice", "Alice", pwOf(loginPassword))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	hostDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(hostDir, "public"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(hostDir, "confidential"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(hostDir, "confidential", "secret.txt"), []byte("secret data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	def, err := e.Core.CreateShare(ctx, core.ShareSpec{Name: "files", Host: hostDir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	def.TrashEnabled = true
+	if err := e.Core.RegisterShare(ctx, def); err != nil {
+		t.Fatal(err)
+	}
+
+	// Admin has whole-share access. Alice only has access to subfolder "public".
+	if _, err := e.Core.CreateGrant(ctx, core.GrantSpec{
+		User: &adminID, Share: def.ID, Allow: acl.Read | acl.Write | acl.Create | acl.Delete | acl.Download, Inherit: true, Label: "admin-files",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Core.CreateGrant(ctx, core.GrantSpec{
+		User: &aliceID, Share: def.ID, Subpath: "public", Allow: acl.Read | acl.Write | acl.Create | acl.Delete | acl.Download, Inherit: true, Label: "alice-public",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Admin deletes confidential file.
+	confPath, _ := vfs.ParseVpath("/admin-files/confidential/secret.txt")
+	resolved, err := e.Core.Resolve(core.UserID(adminID), confPath, acl.Delete)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Core.Delete(ctx, resolved, false); err != nil {
+		t.Fatal(err)
+	}
+
+	// Alice lists trash.
+	alicePath, _ := vfs.ParseVpath("/alice-public")
+	aliceResolved, err := e.Core.Resolve(core.UserID(aliceID), alicePath, acl.Read)
+	if err != nil {
+		t.Fatal(err)
+	}
+	aliceTrash, err := e.Core.TrashList(ctx, aliceResolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(aliceTrash) != 0 {
+		t.Fatalf("alice (restricted to public) saw confidential trash: %+v", aliceTrash)
+	}
+
+	// Admin lists trash and sees it.
+	adminPath, _ := vfs.ParseVpath("/admin-files")
+	adminResolved, err := e.Core.Resolve(core.UserID(adminID), adminPath, acl.Read)
+	if err != nil {
+	}
+	adminTrash, err := e.Core.TrashList(ctx, adminResolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(adminTrash) != 1 {
+		t.Fatalf("admin expected 1 trash entry, got %d", len(adminTrash))
+	}
+
+	// Alice attempts to purge the confidential trash entry directly -> must fail.
+	trashID := adminTrash[0].ID
+	if err := e.Core.TrashPurge(ctx, aliceResolved, &trashID); err == nil {
+		t.Fatal("alice purged confidential trash entry; expected ErrDenied")
+	}
+
+	// Alice attempts to restore the confidential trash entry -> must fail.
+	if _, err := e.Core.TrashRestore(ctx, aliceResolved, trashID); err == nil {
+		t.Fatal("alice restored confidential trash entry; expected ErrDenied")
+	}
+}
+
+// SEC-UPL-03: Public drop link must enforce RequestBody limit and refuse oversized bodies.
+func TestRegressionPublicDropLinkEnforcesRequestBodyLimit(t *testing.T) {
+	base, token, _ := linkEngineOverFolderAt(t, acl.Create)
+
+	// Body exceeding limits.RequestBody (1 MiB)
+	oversized := bytes.Repeat([]byte("A"), 1<<20+100)
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/s/%s/drop?name=big.txt", base, token), bytes.NewReader(oversized))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Length", strconv.Itoa(len(oversized)))
+	resp, err := testClient().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized drop returned %d (%s), want 413", resp.StatusCode, string(bodyBytes))
+	}
+}
+
+// SEC-AUTH-12: Re-creating a user with the same name must not inherit the previous user's home directory.
+func TestRegressionDeletedUserHomeDirectoryNotInherited(t *testing.T) {
+	ctx := context.Background()
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = e.Close() })
+
+	homesDir := t.TempDir()
+	if err := e.Core.EnableHomes(ctx, homesDir); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Create user bob and seed a private file in his home.
+	bob1, err := e.Auth.CreateUser(ctx, "bob", "Bob", pwOf(loginPassword))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bobHome, _ := vfs.ParseVpath("/Home/secret.txt")
+	bobRes, err := e.Core.Resolve(core.UserID(bob1), bobHome, acl.Write|acl.Create)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Core.CreateFile(ctx, bobRes, vfs.DurableOpts{}, nil, func(f *vfs.File) error {
+		_, w := f.WriteAt([]byte("confidential notes"), 0)
+		return w
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// 2. Delete user bob and clean his home.
+	if err := e.Core.CleanupHome(ctx, core.UserID(bob1)); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Auth.DeleteUser(ctx, int64(bob1)); err != nil {
+		t.Fatal(err)
+	}
+
+	// 3. Create a new user bob (new ID).
+	bob2, err := e.Auth.CreateUser(ctx, "bob", "Bob Second", pwOf(loginPassword))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bob2Res, err := e.Core.Resolve(core.UserID(bob2), bobHome, acl.Read)
+	if err == nil {
+		// If secret.txt can be opened, it means the old file was inherited!
+		_, stream, serr := e.Core.OpenStream(ctx, bob2Res, nil)
+		if serr == nil {
+			_ = stream.Close()
+			t.Fatal("new user bob inherited the deleted user's secret file")
+		}
 	}
 }

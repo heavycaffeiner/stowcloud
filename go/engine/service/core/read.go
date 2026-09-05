@@ -291,7 +291,7 @@ func (c *Core) walkArchive(ctx context.Context, r Resolved, rel string, visit fu
 			// A fresh evaluation at this path, not the root's bits: an
 			// unreadable subtree costs one directory row and nothing under
 			// it leaks.
-			if c.canRead(child) {
+			if child.perms.Has(acl.Read) {
 				if werr := c.walkArchive(ctx, child, childRel, visit); werr != nil {
 					return werr
 				}
@@ -299,7 +299,7 @@ func (c *Core) walkArchive(ctx context.Context, r Resolved, rel string, visit fu
 			continue
 		}
 
-		if !c.canRead(child) {
+		if !child.perms.Has(acl.Read) {
 			if verr := visit(WalkEntry{RelPath: childRel, Readable: false}, nil); verr != nil {
 				return verr
 			}
@@ -332,7 +332,7 @@ func (c *Core) walkArchive(ctx context.Context, r Resolved, rel string, visit fu
 // permissions the walk descended with.
 func (c *Core) canRead(r Resolved) bool {
 	at := acl.Vpath{Share: int64(r.share), Path: aclPath(r.path)}
-	return c.acl.Effective(int64(r.user), at).Has(acl.Read)
+	return c.acl.Evaluate(int64(r.user), at, acl.Read).Allowed
 }
 
 // firstErr prefers the visitor's error over the close that followed it: the

@@ -8,9 +8,10 @@
 package lifecycle
 
 import (
+	"bytes"
 	"errors"
+	"io"
 	"strconv"
-
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/apierr"
@@ -119,16 +120,9 @@ func operationID(c *fiber.Ctx) (core.OperationID, bool) {
 
 // fail renders a service error through the one classifier.
 //
-// Hidden visibility: a caller asking about a job that is not theirs learns the
-// same thing as one asking about a job that does not exist. Telling them apart
-// says whether another account has a job with that id.
-//
-// This is load-bearing wherever a service reports a denial: measured, a denial
-// under Hidden renders 404 and under Known renders 403. It happens to change
-// no answer for this family, because the operations service already folds a
-// foreign job into not-found before returning. That is the service's choice
-// and not this handler's, so the visibility is stated here rather than left to
-// whatever the service decides next.
+// Known visibility: an ACL permission denial (core.ErrDenied) is reported as
+// 403 Forbidden rather than disguised as not-found, while missing paths and
+// foreign shares without grants remain 404 Not Found.
 func fail(c *fiber.Ctx, err error) error {
 	// A refusal that names how long to wait says so on the wire. The cache
 	// carries a delay because what the caller waits for is a disk write
@@ -142,11 +136,20 @@ func fail(c *fiber.Ctx, err error) error {
 	// log still needs it: a 500 whose cause is written nowhere leaves an
 	// operator a status code and no next step.
 	middleware.SetCause(c, err)
-	return refuse(c, apierr.Classify(err, apierr.VisibilityHidden))
+	return refuse(c, apierr.Classify(err, apierr.VisibilityKnown))
 }
 
 // refuse writes a classified refusal.
 func refuse(c *fiber.Ctx, class apierr.Classified) error {
 	status, body := apierr.REST(class)
 	return writeJSON(c, status, body)
+}
+
+// requestBodyReader streams the request body directly when available, falling
+// back to buffered body bytes.
+func requestBodyReader(c *fiber.Ctx) io.Reader {
+	if stream := c.Context().RequestBodyStream(); stream != nil {
+		return stream
+	}
+	return bytes.NewReader(c.Body())
 }

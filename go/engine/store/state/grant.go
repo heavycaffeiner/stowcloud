@@ -121,13 +121,60 @@ func (d *DB) PersistGrant(ctx context.Context, g GrantRow, nowNs int64) (int64, 
 }
 
 // ListGrants yields the stored grants, restricted when asked.
+func (d *DB) GrantByID(ctx context.Context, id int64) (GrantRow, error) {
+	rows, err := d.f.SQL().QueryContext(ctx, sqlReadGrantByID, id)
+	if err != nil {
+		return GrantRow{}, fmt.Errorf("reading grant %d: %w", id, err)
+	}
+	defer func() { err = errors.Join(err, rows.Close()) }()
+	grants, err := scanGrantRows(rows)
+	if err != nil {
+		return GrantRow{}, err
+	}
+	if len(grants) == 0 {
+		return GrantRow{}, ErrNoSuchGrant
+	}
+	return grants[0], nil
+}
+
+// ListGrants yields the stored grants, restricted when asked.
 func (d *DB) ListGrants(ctx context.Context, filter GrantFilter) (out []GrantRow, err error) {
-	rows, err := d.f.SQL().QueryContext(ctx, sqlReadGrants)
+	query := sqlReadGrants
+	var args []any
+	switch {
+	case filter.User > 0:
+		query = sqlReadGrantsByUser
+		args = []any{filter.User}
+	case filter.Group > 0:
+		query = sqlReadGrantsByGroup
+		args = []any{filter.Group}
+	case filter.Share > 0:
+		query = sqlReadGrantsByShare
+		args = []any{filter.Share}
+	}
+
+	rows, err := d.f.SQL().QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("reading grants: %w", err)
 	}
 	defer func() { err = errors.Join(err, rows.Close()) }()
 
+	grants, err := scanGrantRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	out = make([]GrantRow, 0, len(grants))
+	for _, g := range grants {
+		if !keepGrant(g, filter) {
+			continue
+		}
+		out = append(out, g)
+	}
+	return out, nil
+}
+
+func scanGrantRows(rows *sql.Rows) ([]GrantRow, error) {
+	var out []GrantRow
 	for rows.Next() {
 		var (
 			g           GrantRow
@@ -140,9 +187,7 @@ func (d *DB) ListGrants(ctx context.Context, filter GrantFilter) (out []GrantRow
 			return nil, fmt.Errorf("reading a grant: %w", serr)
 		}
 		g.User, g.Group = user, group
-		// A stored bit set that no longer fits the permission width is a
-		// corrupt row, which is worth saying rather than truncating into a
-		// different set of permissions.
+		var err error
 		if g.Allow, err = num.Narrow[uint16](allow); err != nil {
 			return nil, fmt.Errorf("grant %d carries allow bits %d: %w", g.ID, allow, err)
 		}
@@ -151,9 +196,6 @@ func (d *DB) ListGrants(ctx context.Context, filter GrantFilter) (out []GrantRow
 		}
 		if label != nil {
 			g.Label = *label
-		}
-		if !keepGrant(g, filter) {
-			continue
 		}
 		out = append(out, g)
 	}

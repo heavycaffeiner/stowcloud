@@ -403,10 +403,13 @@ func TestAnUploadNeedsWritePermission(t *testing.T) {
 		map[string]string{
 			"Tus-Resumable":   "1.0.0",
 			"Upload-Length":   "10",
-			"Upload-Metadata": metadataFor(map[string]string{"path": "/" + share + "/denied.bin"}),
+			"Upload-Metadata": metadataFor(map[string]string{"dest": "/" + share, "filename": "denied.bin"}),
 		}, nil)
-	if status == http.StatusCreated {
-		t.Errorf("a read-only grant opened an upload session: %s", body)
+	if status != http.StatusForbidden {
+		t.Errorf("a read-only grant answered %d, want 403: %s", status, body)
+	}
+	if !strings.Contains(string(body), `"code":"fs.denied"`) {
+		t.Errorf("expected code fs.denied in %s", body)
 	}
 }
 

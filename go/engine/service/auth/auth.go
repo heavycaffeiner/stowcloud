@@ -121,6 +121,8 @@ type Service struct {
 	// per request without a write on every read.
 	stampMu sync.Mutex
 	stamped map[int64]int64
+	auditOps atomic.Int64
+
 
 	onMembership func()
 

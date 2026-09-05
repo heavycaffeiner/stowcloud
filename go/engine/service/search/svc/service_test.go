@@ -377,6 +377,18 @@ func TestSetBoundsIsReadBackAndMovesTheDeadline(t *testing.T) {
 	}
 }
 
+func TestSetBoundsChangesConcurrencyGate(t *testing.T) {
+	svc := New(Options{})
+	svc.SetBounds(2, 0)
+	svc.slots <- struct{}{}
+	svc.slots <- struct{}{}
+	missing := search.Source{Share: 1, Base: vfs.RootPath()}
+	_, err := svc.Query(t.Context(), []search.Source{missing}, QueryOptions{Query: "report"})
+	if !errors.Is(err, ErrBusy) {
+		t.Fatalf("expected ErrBusy with concurrency 2, got %v", err)
+	}
+}
+
 // The administrator's switch attaches and detaches the index at runtime.
 func TestSetIndexAttachesAndDetaches(t *testing.T) {
 	svc := New(Options{})

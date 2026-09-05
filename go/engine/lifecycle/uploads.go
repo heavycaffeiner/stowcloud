@@ -9,7 +9,6 @@
 package lifecycle
 
 import (
-	"bytes"
 	"errors"
 	"strconv"
 	"strings"
@@ -256,7 +255,7 @@ func (e *Engine) uploadsPatch(c *fiber.Ctx) error {
 	// anyway: it is the one the request proved, and it stays correct if Get
 	// ever stops checking.
 	next, perr := engine.PatchAt(c.UserContext(), root, id, owner,
-		offset, bytes.NewReader(c.Body()), sum)
+		offset, requestBodyReader(c), sum)
 	if perr != nil {
 		return failUpload(c, perr)
 	}

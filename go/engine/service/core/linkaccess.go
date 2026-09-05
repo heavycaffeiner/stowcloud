@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/limits"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 )
 
@@ -99,7 +100,7 @@ func (c *Core) linkTarget(link Link, sub string) (*vfs.ShareRoot, vfs.SafePath, 
 // linkResolvedAt mints the resolution a link's permissions grant at a path.
 // It is the one place a bearer's capability is turned into a Resolved.
 func linkResolvedAt(link Link, root *vfs.ShareRoot, p vfs.SafePath, perms acl.Perms) Resolved {
-	return Resolved{share: link.Share, root: root, path: p, perms: perms}
+	return Resolved{user: link.Owner, share: link.Share, root: root, path: p, perms: perms}
 }
 
 // LinkPublic resolves a token for a bearer, enforcing every liveness rule.
@@ -482,6 +483,9 @@ func (c *Core) LinkDropFile(ctx context.Context, link Link, name string, body io
 		for {
 			n, rerr := body.Read(buf)
 			if n > 0 {
+				if off+int64(n) > limits.RequestBody {
+					return limits.Exceed("drop file", limits.RequestBody, off+int64(n))
+				}
 				if _, werr := f.WriteAt(buf[:n], off); werr != nil {
 					return werr
 				}

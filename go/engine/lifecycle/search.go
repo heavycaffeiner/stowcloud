@@ -115,6 +115,10 @@ func (e *Engine) writeSearchStream(
 	view := handler.SearchResultsOf(results)
 	for _, hit := range view.Hits {
 		writeSSEEvent(w, "hit", hit, e)
+		if ferr := w.Flush(); ferr != nil {
+			cancel()
+			return
+		}
 	}
 	writeSSEEvent(w, "done", map[string]any{
 		"truncated": view.Truncated,

@@ -108,14 +108,14 @@ func (e *Engine) trashRestore(c *fiber.Ctx) error {
 		item := trashBatchItem{Path: raw}
 		r, id, err := e.resolveTrashID(owner, raw, acl.Create)
 		if err != nil {
-			w := apierr.WireOf(err, apierr.VisibilityHidden)
+			w := apierr.WireOf(err, apierr.VisibilityKnown)
 			item.Error = &w
 			results = append(results, item)
 			continue
 		}
 		restored, ferr := e.Core.TrashRestore(c.UserContext(), r, id)
 		if ferr != nil {
-			w := apierr.WireOf(ferr, apierr.VisibilityHidden)
+			w := apierr.WireOf(ferr, apierr.VisibilityKnown)
 			item.Error = &w
 			results = append(results, item)
 			continue
@@ -151,13 +151,13 @@ func (e *Engine) trashPurge(c *fiber.Ctx) error {
 		item := trashBatchItem{Path: raw}
 		r, id, err := e.resolveTrashID(owner, raw, acl.Delete)
 		if err != nil {
-			w := apierr.WireOf(err, apierr.VisibilityHidden)
+			w := apierr.WireOf(err, apierr.VisibilityKnown)
 			item.Error = &w
 			results = append(results, item)
 			continue
 		}
 		if err := e.Core.TrashPurge(c.UserContext(), r, &id); err != nil {
-			w := apierr.WireOf(err, apierr.VisibilityHidden)
+			w := apierr.WireOf(err, apierr.VisibilityKnown)
 			item.Error = &w
 			results = append(results, item)
 			continue

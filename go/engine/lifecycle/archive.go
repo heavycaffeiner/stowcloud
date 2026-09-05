@@ -12,6 +12,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -24,6 +25,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/archive"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/dav"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/handler"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/limits"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/preview"
@@ -192,8 +194,14 @@ func (e *Engine) buildArchive(ctx context.Context, w io.Writer, roots []core.Res
 	z := archive.NewWriter(w)
 
 	var failure error
+	var entries int64
+	var packed uint64
 	for _, r := range roots {
 		werr := e.Core.ArchiveWalk(ctx, r, func(entry core.WalkEntry, stream *core.Stream) error {
+			if entries >= limits.ArchivePackedEntries || packed >= limits.ArchivePackedBytes {
+				return errArchiveBounded
+			}
+			entries++
 			switch {
 			case entry.IsDir:
 				// A zip has no directory concept beyond a zero-length member
@@ -207,15 +215,20 @@ func (e *Engine) buildArchive(ctx context.Context, w io.Writer, roots []core.Res
 				e.logger.Warn("skipped an unreadable entry", "path", entry.RelPath)
 				return nil
 			default:
-				return z.AddFile(entry.RelPath, stream, time.Unix(0, entry.MTimeNs))
+				if aerr := z.AddFile(entry.RelPath, stream, time.Unix(0, entry.MTimeNs)); aerr != nil {
+					return aerr
+				}
+				packed += entry.Size
+				return nil
 			}
 		})
 		if werr != nil {
-			failure = werr
+			if !errors.Is(werr, errArchiveBounded) {
+				failure = werr
+			}
 			break
 		}
 	}
-
 	// Closed regardless, because a zip without its central directory is not
 	// a zip: the bytes already written are unreadable without it, and a
 	// client that saved them has a file nothing will open.

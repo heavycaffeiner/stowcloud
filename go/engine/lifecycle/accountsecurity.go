@@ -335,7 +335,7 @@ func (e *Engine) accountTOTPDisable(c *fiber.Ctx) error {
 		return rerr
 	}
 
-	if err := e.Auth.DisableTOTP(c.UserContext(), int64(owner)); err != nil {
+	if err := e.Auth.DisableTOTPWithPassword(c.UserContext(), int64(owner), secret.New([]byte(req.Current))); err != nil {
 		return failKnown(c, err)
 	}
 	return c.SendStatus(fiber.StatusNoContent)

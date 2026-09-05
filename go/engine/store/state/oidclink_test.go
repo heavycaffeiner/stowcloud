@@ -295,6 +295,66 @@ func TestTheAuditCursorPagesWhileRowsLandAhead(t *testing.T) {
 	}
 }
 
+func TestAuditFilteringAggregationAndPruning(t *testing.T) {
+	ctx := context.Background()
+	d, _ := open(t)
+
+	// Insert test entries across 3 timestamps
+	for i := 1; i <= 10; i++ {
+		evt := "login"
+		if i%2 == 0 {
+			evt = "logout"
+		}
+		ok := i%3 != 0
+		if err := d.AppendAudit(ctx, state.AuditEntry{
+			TsNs:  int64(i * 1000),
+			Event: evt,
+			OK:    ok,
+		}); err != nil {
+			t.Fatalf("AppendAudit: %v", err)
+		}
+	}
+
+	// Test AuditPageFiltered by event
+	logins, err := d.AuditPageFiltered(ctx, 0, 10, "login", nil)
+	if err != nil {
+		t.Fatalf("AuditPageFiltered(login): %v", err)
+	}
+	if len(logins) != 5 {
+		t.Fatalf("got %d login entries, want 5", len(logins))
+	}
+	for _, l := range logins {
+		if l.Event != "login" {
+			t.Fatalf("unexpected event: %s", l.Event)
+		}
+	}
+
+	// Test AuditCountsAgg
+	counts, err := d.AuditCountsAgg(ctx, 0, 15000, 5000, "")
+	if err != nil {
+		t.Fatalf("AuditCountsAgg: %v", err)
+	}
+	if len(counts) == 0 {
+		t.Fatal("expected non-empty audit counts aggregation")
+	}
+
+	// Test PruneAudit
+	pruned, err := d.PruneAudit(ctx, 0, 4)
+	if err != nil {
+		t.Fatalf("PruneAudit: %v", err)
+	}
+	if pruned != 6 {
+		t.Fatalf("pruned %d rows, want 6", pruned)
+	}
+	remaining, err := d.AuditPage(ctx, 0, 10)
+	if err != nil {
+		t.Fatalf("AuditPage after prune: %v", err)
+	}
+	if len(remaining) != 4 {
+		t.Fatalf("remaining rows = %d, want 4", len(remaining))
+	}
+}
+
 // One transaction over four tables: a row that will not open aborts it and
 // changes nothing, so the database never names a version some of its rows
 // were not brought to.

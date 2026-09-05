@@ -169,6 +169,19 @@ func TestEachWriteRouteNeedsItsOwnPermission(t *testing.T) {
 	}
 }
 
+// ACL permission denial on a known share returns 403 fs.denied.
+func TestWriteRoutesReturn403OnPermissionDenial(t *testing.T) {
+	base, sess, share := shareWith(t, everyPerm() &^ acl.Delete)
+	status, body := post(t, base+"/api/v1/files/delete", sess,
+		map[string]string{"path": "/" + share + "/existing.txt"})
+	if status != http.StatusForbidden {
+		t.Fatalf("delete without Delete permission answered %d, want 403: %s", status, body)
+	}
+	if !strings.Contains(string(body), `"code":"fs.denied"`) {
+		t.Errorf("delete response does not carry code fs.denied: %s", body)
+	}
+}
+
 // A write actually writes. Without this the permission tests above could pass
 // against a route that refuses everything.
 func TestMkdirCreatesARealDirectory(t *testing.T) {

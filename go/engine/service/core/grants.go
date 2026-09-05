@@ -72,6 +72,11 @@ func (c *Core) ListGrants(ctx context.Context, filter GrantFilter) ([]Grant, err
 	return c.state.ListGrants(ctx, filter)
 }
 
+// GrantByID reads one grant directly by ID.
+func (c *Core) GrantByID(ctx context.Context, id int64) (Grant, error) {
+	return c.state.GrantByID(ctx, id)
+}
+
 // UpdateGrant changes one grant's permissions and reloads the evaluator.
 //
 // The stored row is returned for the reason CreateGrant returns one: the
@@ -93,16 +98,7 @@ func (c *Core) UpdateGrant(
 	// subject, a share, a subpath and a creation stamp this call did not
 	// touch, and a screen rendering a half-built row would show blanks where
 	// those belong.
-	rows, err := c.state.ListGrants(ctx, GrantFilter{})
-	if err != nil {
-		return Grant{}, err
-	}
-	for _, row := range rows {
-		if row.ID == id {
-			return row, nil
-		}
-	}
-	return Grant{}, state.ErrNoSuchGrant
+	return c.state.GrantByID(ctx, id)
 }
 
 // GrantEveryShare gives one account every permission over every registered

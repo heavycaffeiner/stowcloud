@@ -487,8 +487,17 @@ func (e *Engine) linkDrop(c *fiber.Ctx) error {
 	if name == "" {
 		return refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "fs.link_no_name"})
 	}
+	if cl := c.Get(fiber.HeaderContentLength); cl != "" {
+		if n, err := strconv.ParseInt(cl, 10, 64); err == nil && n > limits.RequestBody {
+			return refuse(c, apierr.Classified{Class: apierr.BodyTooLarge, Key: "http.body_too_large"})
+		}
+	}
+	body := c.Body()
+	if len(body) > limits.RequestBody {
+		return refuse(c, apierr.Classified{Class: apierr.BodyTooLarge, Key: "http.body_too_large"})
+	}
 
-	entry, werr := e.Core.LinkDropFile(c.UserContext(), link, name, bytesReader(c.Body()))
+	entry, werr := e.Core.LinkDropFile(c.UserContext(), link, name, bytesReader(body))
 	if werr != nil {
 		return fail(c, werr)
 	}

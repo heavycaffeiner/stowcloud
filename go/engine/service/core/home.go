@@ -218,3 +218,22 @@ func (c *Core) createHomeGrant(ctx context.Context, user UserID, subpath string)
 	}
 	return c.ReloadGrants(ctx)
 }
+
+// CleanupHome removes an account's home directory tree when the account is deleted.
+func (c *Core) CleanupHome(ctx context.Context, user UserID) error {
+	root, ok := c.ShareRoot(homeShareID)
+	if !ok {
+		return nil
+	}
+	name := c.homeDirName(ctx, user)
+	subpath, err := vfs.ParseSafePath(name)
+	if err != nil {
+		return err
+	}
+	exists, err := pathExists(root, subpath)
+	if err != nil || !exists {
+		return err
+	}
+	home := Resolved{user: user, share: homeShareID, root: root, path: subpath, perms: homePerms}
+	return c.deleteRecursive(ctx, home)
+}
