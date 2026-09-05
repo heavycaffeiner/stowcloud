@@ -29,4 +29,4 @@ regexes = ['''XChaCha20-Poly1305''']
 [[allowlists]]
 description = "the TOTP reference vector is published, not a credential"
 regexTarget = "match"
-regexes = ['''GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ''']
+regexes = ['''GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ''', '''GEZDGNBVGY3TQOJQ''']
