@@ -19,37 +19,36 @@ import (
 // The reason keys. Named constants rather than inline strings, because the
 // client renders them and a typo here is a message that renders as its own key.
 const (
-	keyMustBeAtLeastOne    = "settings.must_be_at_least_one"
-	keyOutOfRange          = "settings.out_of_range"
-	keyCheckPassed         = "settings.check_passed"
-	keyUnknownHardening    = "settings.unknown_hardening_policy"
-	keyGuardHasNoBound     = "settings.guard_has_no_bound"
-	keyRequiredWhenEnabled = "settings.required_when_enabled"
-	keyIssuerMustBeHTTPS   = "settings.issuer_must_be_https"
-	keyHostListEmpty       = "settings.host_list_empty"
-	keyInvalidHost         = "settings.invalid_host"
-	keyHostRoleConflict    = "settings.host_role_conflict"
-	keyDuplicateHost       = "settings.duplicate_host"
-	keyInvalidOrigin       = "settings.invalid_origin"
-	keyCanonicalNotAppHost = "settings.canonical_url_not_an_app_host"
-	keyInvalidBindAddress  = "settings.invalid_bind_address"
-	keyWouldLockYouOut     = "settings.would_lock_you_out"
-	keyInvalidCIDR         = "settings.invalid_cidr"
-	keyProxyIsEverything   = "settings.proxy_range_is_everything"
-	keyPathMustBeAbsolute  = "settings.path_must_be_absolute"
-	keyDirDoesNotExist     = "settings.dir_does_not_exist"
-	keyDirNotWritable      = "settings.dir_not_writable"
-	keyDirWillBeCreated    = "settings.dir_will_be_created"
-	keyDirIsWritable       = "settings.dir_is_writable"
-	keyPathIsNotADirectory = "settings.path_is_not_a_directory"
-	keyUnknownTOTPPolicy   = "settings.unknown_totp_policy"
-	keyGIDZeroIsRoot       = "settings.gid_zero_is_root"
-	keySMBRenderFailed     = "settings.smb_render_failed"
-	keySMBDirUnavailable   = "settings.smb_config_dir_unavailable"
-	keyAboveWatchLimit     = "settings.above_kernel_watch_limit"
-	keyWithinWatchLimit    = "settings.within_kernel_watch_limit"
-	//nolint:gosec // G101 reads the name: this is an i18n key, not a credential.
-	keyOIDCSecretRequired = "settings.oidc_client_secret_required"
+	keyMustBeAtLeastOne      = "settings.must_be_at_least_one"
+	keyOutOfRange            = "settings.out_of_range"
+	keyCheckPassed           = "settings.check_passed"
+	keyUnknownHardening      = "settings.unknown_hardening_policy"
+	keyGuardHasNoBound       = "settings.guard_has_no_bound"
+	keyRequiredWhenEnabled   = "settings.required_when_enabled"
+	keyIssuerMustBeHTTPS     = "settings.issuer_must_be_https"
+	keyHostListEmpty         = "settings.host_list_empty"
+	keyInvalidHost           = "settings.invalid_host"
+	keyHostRoleConflict      = "settings.host_role_conflict"
+	keyDuplicateHost         = "settings.duplicate_host"
+	keyInvalidOrigin         = "settings.invalid_origin"
+	keyCanonicalNotAppHost   = "settings.canonical_url_not_an_app_host"
+	keyInvalidBindAddress    = "settings.invalid_bind_address"
+	keyWouldLockYouOut       = "settings.would_lock_you_out"
+	keyInvalidCIDR           = "settings.invalid_cidr"
+	keyProxyIsEverything     = "settings.proxy_range_is_everything"
+	keyPathMustBeAbsolute    = "settings.path_must_be_absolute"
+	keyDirDoesNotExist       = "settings.dir_does_not_exist"
+	keyDirNotWritable        = "settings.dir_not_writable"
+	keyDirWillBeCreated      = "settings.dir_will_be_created"
+	keyDirIsWritable         = "settings.dir_is_writable"
+	keyPathIsNotADirectory   = "settings.path_is_not_a_directory"
+	keyUnknownTOTPPolicy     = "settings.unknown_totp_policy"
+	keyGIDZeroIsRoot         = "settings.gid_zero_is_root"
+	keySMBRenderFailed       = "settings.smb_render_failed"
+	keySMBDirUnavailable     = "settings.smb_config_dir_unavailable"
+	keyAboveWatchLimit       = "settings.above_kernel_watch_limit"
+	keyWithinWatchLimit      = "settings.within_kernel_watch_limit"
+	keyOIDCClientAuthMissing = "settings.oidc_client_secret_required"
 )
 
 // watchLimitFile is where the kernel reports what it will actually grant. It is
@@ -187,7 +186,7 @@ func checkOIDC(in Input) []Finding {
 	declaredPublic := isPublic && public
 	suppliedNow := hasSecretField && strings.TrimSpace(supplied) != ""
 	if !declaredPublic && !in.HasSecret && !suppliedNow {
-		out = append(out, blocking(in.Section, "client_secret", keyOIDCSecretRequired))
+		out = append(out, blocking(in.Section, "client_secret", keyOIDCClientAuthMissing))
 	}
 	return out
 }

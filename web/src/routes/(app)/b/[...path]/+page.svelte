@@ -132,9 +132,12 @@
     }
   })
   const shareUnlocked = $derived.by(() => {
-    unlockTick
+    // Read into the comparison rather than as a bare statement, so the
+    // dependency cannot be dropped as a no-op expression: the counter is
+    // what re-runs this when the session locks or unlocks.
+    const seen = unlockTick
     const salt = shareEncryption.data?.salt
-    return salt !== undefined && isUnlocked(salt)
+    return seen >= 0 && salt !== undefined && isUnlocked(salt)
   })
 
   /** The selection resolved against what is listed. A name the selection
@@ -1758,15 +1761,6 @@
     @apply --m3-label-small;
     white-space: nowrap;
   }
-  /* The locked form is a real button: it is the only way into the passphrase
-     prompt on a share with no file to fail on. */
-  .sc-browse__encrypted-badge--locked {
-    border: none;
-    cursor: pointer;
-    background: var(--m3c-secondary-container);
-    color: var(--m3c-on-secondary-container);
-    font: inherit;
-  }
   /* A property of the folder rather than a warning about it, so the neutral
      surface container rather than the error or tertiary one. */
   .sc-browse__encrypted-badge {
@@ -1780,6 +1774,20 @@
     color: var(--m3c-on-surface-variant);
     @apply --m3-label-small;
     white-space: nowrap;
+  }
+  /* The locked form is a real button: it is the only way into the passphrase
+     prompt on a share with no file to fail on. After the base rule, not
+     before it: the two are the same specificity, so the later one wins. */
+  .sc-browse__encrypted-badge--locked {
+    border: none;
+    cursor: pointer;
+    background: var(--m3c-secondary-container);
+    color: var(--m3c-on-secondary-container);
+    font: inherit;
+  }
+  .sc-browse__encrypted-badge--locked:focus-visible {
+    outline: 2px solid var(--m3c-primary);
+    outline-offset: 2px;
   }
   .sc-browse__search {
     display: flex;

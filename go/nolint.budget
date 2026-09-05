@@ -505,13 +505,13 @@
 # reads the discarded error; the bind already failed and the listener is going
 # away with it.
 #
-# 119: the two message keys the single-sign-on work added. G101 reads the
-# identifier, and each of these names a sentence the client looks up rather
-# than a value that opens anything: `auth.invalid_credentials` is the code a
-# refused token is reported under, and `settings.oidc_client_secret_required`
-# is the finding raised when a client is neither declared public nor holds a
-# secret. The strings themselves live in web/src/lib/i18n. Scoped to the two
-# lines rather than to their files, because both files also handle the real
-# client secret and a file-wide exemption would stop reporting it.
+# 118: one message code the single-sign-on work added. The other was removed
+# at source by naming the constants for what they are: G101 matches on the
+# identifier, so `keyOIDCSecretRequired` became `keyOIDCClientAuthMissing`
+# and the finding went with the word rather than being suppressed. The one
+# that remains is `auth.invalid_credentials`, where the trigger is in the
+# wire code itself: the client maps that string to a sentence, and apierr
+# already carries the same literal in its own table. Scoped to the line
+# rather than the file, which also handles the real client secret.
 24
-119
+118

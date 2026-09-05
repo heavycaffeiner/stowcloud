@@ -179,15 +179,15 @@ const (
 	oidcErrAccessDenied         = "oidc.access_denied"
 	oidcErrLinkSessionChanged   = "oidc.link_session_changed"
 	oidcErrSubjectAlreadyLinked = "oidc.subject_already_linked"
-	// oidcErrInvalidToken is a token that came back and failed verification:
+	// oidcCodeBadToken is a token that came back and failed verification:
 	// a missing kid, a bad signature, a wrong issuer or audience, an expired
 	// or replayed claim set. Distinct from oidcErrProviderUnavailable, which
 	// is the back channel itself failing (unreachable, malformed answer, an
 	// exchange the provider refused): defect 15's no-kid case is a token
 	// that arrived and could not be trusted, not a provider that could not
 	// be reached.
-	//nolint:gosec // G101 reads the name: this is an i18n key, not a credential.
-	oidcErrInvalidToken = "auth.invalid_credentials"
+	//nolint:gosec // G101 matches the word in the code; this is the wire code the client maps to a sentence, not a credential.
+	oidcCodeBadToken = "auth.invalid_credentials"
 	// oidcErrInternal never gets its own sentence: the client's default case
 	// covers it. Naming it rather than reusing a table code keeps a genuine
 	// server fault from being reported to the person as something they can
@@ -285,7 +285,7 @@ func (e *Engine) authOIDCCallback(c *fiber.Ctx) error {
 	claims, err := client.VerifyIDToken(c.UserContext(), rawToken, flow.Nonce)
 	if err != nil {
 		e.logger.Warn("an identity token did not verify", "error", err)
-		return oidcRedirectError(c, landing, oidcErrInvalidToken)
+		return oidcRedirectError(c, landing, oidcCodeBadToken)
 	}
 
 	if flow.User != 0 {

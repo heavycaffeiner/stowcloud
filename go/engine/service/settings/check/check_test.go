@@ -318,7 +318,7 @@ func TestASecretlessConfidentialClientIsRefused(t *testing.T) {
 			"enabled": true, "issuer": "https://idp.example.test", "client_id": "stowcloud",
 		},
 	})
-	if f := mustFind(t, got, keyOIDCSecretRequired); !f.Blocking {
+	if f := mustFind(t, got, keyOIDCClientAuthMissing); !f.Blocking {
 		t.Error("a confidential client with no secret was accepted")
 	}
 }
@@ -334,7 +334,7 @@ func TestAPublicClientNeedsNoSecret(t *testing.T) {
 			"public_client": true,
 		},
 	})
-	mustNotFind(t, got, keyOIDCSecretRequired)
+	mustNotFind(t, got, keyOIDCClientAuthMissing)
 	if Blocked(got) {
 		t.Errorf("a public client with everything else set was refused: %v", keysOf(got))
 	}
@@ -351,7 +351,7 @@ func TestAConfidentialClientWithAStoredSecretPasses(t *testing.T) {
 		},
 		HasSecret: true,
 	})
-	mustNotFind(t, got, keyOIDCSecretRequired)
+	mustNotFind(t, got, keyOIDCClientAuthMissing)
 }
 
 // The token endpoint carries a client secret, so plain HTTP is refused.
