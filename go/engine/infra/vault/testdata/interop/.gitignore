@@ -1,0 +1,5 @@
+# The interop fixtures themselves are real VeraCrypt containers made by
+# scripts/gen-vault-interop-fixtures.sh, not by this package. The full
+# matrix is about 466 MiB, far past what is worth committing: run that
+# script locally before `go test ./engine/infra/vault/ -run Interop`.
+*.hc

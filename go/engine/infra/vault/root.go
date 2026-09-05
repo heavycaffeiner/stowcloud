@@ -29,7 +29,24 @@ import (
 type Config struct {
 	Container     string `json:"container"`
 	CreateSizeMiB uint64 `json:"create_size_mib"`
+	// PIM is VeraCrypt's Personal Iterations Multiplier. Zero means the
+	// container was created without one, which is the default. It is not a
+	// secret: it changes the iteration count, and a wrong one is
+	// indistinguishable from a wrong passphrase.
+	PIM uint32 `json:"pim,omitempty"`
+	// Hash names the container's key derivation, spelled as VeraCrypt's own
+	// command line spells it. Empty tries all of them, which is correct but
+	// slow: a container using the last one pays for every earlier
+	// derivation first, and two of those run 500000 iterations of a
+	// software hash.
+	Hash string `json:"hash,omitempty"`
 }
+
+// maxPIM bounds the multiplier a stored config may carry. VeraCrypt's own
+// dialog stops well below this; the ceiling is here because the value
+// becomes an iteration count and an Argon2id pass count, and both come
+// from a database column this package does not own.
+const maxPIM = 10_000
 
 // maxConfigBytes and maxContainerPathBytes bound a config blob before this
 // driver touches it: the blob arrived as a JSON column in the store, which
@@ -71,6 +88,12 @@ func ParseConfig(b []byte) (Config, error) {
 	if c.CreateSizeMiB != 0 && (c.CreateSizeMiB < minContainerDataMiB || c.CreateSizeMiB > maxContainerDataMiB) {
 		return Config{}, ErrContainerSize
 	}
+	if c.PIM > maxPIM {
+		return Config{}, fmt.Errorf("vault: PIM %d exceeds %d", c.PIM, maxPIM)
+	}
+	if _, err := headerKDFsFor(c.Hash); err != nil {
+		return Config{}, err
+	}
 	return c, nil
 }
 
@@ -108,7 +131,7 @@ type Root struct {
 	id           vfs.ShareID
 	container    string
 	dev          *volumeDevice
-	fs           *FS
+	fs           filesystem
 	scratch      *vfs.ShareRoot
 	policy       vfs.SharePolicy
 	logger       *slog.Logger
@@ -159,7 +182,7 @@ func Open(ctx context.Context, opt Options) (*Root, error) {
 		return nil, fmt.Errorf("vault: stat container %q: %w", opt.Config.Container, statErr)
 	}
 
-	dev, dataSize, err := openContainer(opt.Config.Container, opt.Password)
+	dev, dataSize, err := openContainer(opt.Config.Container, opt.Password, opt.Config.PIM, opt.Config.Hash)
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +200,7 @@ func Open(ctx context.Context, opt Options) (*Root, error) {
 			return nil, fmt.Errorf("vault: format new container: %w", ferr)
 		}
 	}
-	fsys, err := Mount(dev, dataSize, clk)
+	fsys, err := mountFilesystem(dev, dataSize, clk)
 	if err != nil {
 		return nil, err
 	}

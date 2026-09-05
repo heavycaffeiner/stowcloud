@@ -2,13 +2,10 @@ package vault
 
 import (
 	"bytes"
-	"crypto/aes"
 	"errors"
 	"os"
 	"path/filepath"
 	"testing"
-
-	"golang.org/x/crypto/xts"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 )
@@ -34,7 +31,7 @@ func TestHeaderRoundTripAndWrongPasswordVsCorruption(t *testing.T) {
 		t.Fatalf("createContainer: %v", err)
 	}
 
-	dev, dataSize, err := openContainer(path, correct)
+	dev, dataSize, err := openContainer(path, correct, 0, "")
 	if err != nil {
 		t.Fatalf("open with correct password: %v", err)
 	}
@@ -45,7 +42,12 @@ func TestHeaderRoundTripAndWrongPasswordVsCorruption(t *testing.T) {
 		t.Fatalf("close: %v", cerr)
 	}
 
-	if _, _, werr := openContainer(path, wrong); !errors.Is(werr, ErrWrongPassword) {
+	// Hinted at the KDF this container was written with. Unhinted, a wrong
+	// passphrase exhausts every derivation, including two software hashes
+	// at 500000 iterations and Argon2id at 416 MiB, which is the correct
+	// behaviour and far too slow for a suite that also runs under the race
+	// detector. What is under test here is the refusal, not the search.
+	if _, _, werr := openContainer(path, wrong, 0, "sha512"); !errors.Is(werr, ErrWrongPassword) {
 		t.Fatalf("open with wrong password: got %v, want ErrWrongPassword", werr)
 	}
 
@@ -70,7 +72,7 @@ func TestHeaderRoundTripAndWrongPasswordVsCorruption(t *testing.T) {
 		t.Fatalf("close corrupted container: %v", cerr)
 	}
 
-	_, _, err = openContainer(path, correct)
+	_, _, err = openContainer(path, correct, 0, "")
 	if !errors.Is(err, ErrHeaderCorrupt) {
 		t.Fatalf("open corrupted header with correct password: got %v, want ErrHeaderCorrupt", err)
 	}
@@ -87,7 +89,7 @@ func TestXTSDataUnitNumbering(t *testing.T) {
 		t.Fatalf("createContainer: %v", err)
 	}
 
-	dev, _, err := openContainer(path, pw)
+	dev, _, err := openContainer(path, pw, 0, "")
 	if err != nil {
 		t.Fatalf("openContainer: %v", err)
 	}
@@ -110,7 +112,7 @@ func TestXTSDataUnitNumbering(t *testing.T) {
 		t.Fatalf("close: %v", cerr)
 	}
 
-	dev2, _, err := openContainer(path, pw)
+	dev2, _, err := openContainer(path, pw, 0, "")
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
@@ -135,10 +137,12 @@ func TestXTSDataUnitNumbering(t *testing.T) {
 		t.Fatalf("interior bytes: got %q, want %q", gotInterior, wantInterior)
 	}
 
-	// Prove the tweak is the data-area-relative sector index, not the
-	// file-absolute one, by decrypting the raw container bytes by hand with
-	// exactly that convention and checking it agrees independently of the
-	// driver under test.
+	// Prove the tweak is the sector's absolute index in the container file,
+	// not its index within the data area, by decrypting the raw container
+	// bytes by hand with exactly that convention and checking it agrees
+	// independently of the driver under test. Both conventions agree on a
+	// container whose data area starts at offset zero, which no real
+	// container does, so this assertion is what keeps the two apart.
 	f, err := os.Open(path)
 	if err != nil {
 		t.Fatalf("open raw file: %v", err)
@@ -152,24 +156,29 @@ func TestXTSDataUnitNumbering(t *testing.T) {
 	if _, rerr := f.ReadAt(record, 0); rerr != nil {
 		t.Fatalf("read header record: %v", rerr)
 	}
-	fields, keys, err := decryptHeaderRecord(record, pw)
+	opened, err := decryptHeaderRecord(record, pw, 0, "")
 	if err != nil {
 		t.Fatalf("decryptHeaderRecord: %v", err)
 	}
-	cipher, err := xts.NewCipher(aes.NewCipher, keys[:])
-	if err != nil {
-		t.Fatalf("xts.NewCipher: %v", err)
+	dataOffset := mustNarrow[int64](opened.fields.dataAreaOffset, "data area offset")
+	if dataOffset == 0 {
+		t.Fatal("a container whose data area starts at offset zero cannot tell the two tweak conventions apart")
 	}
-	sector := interiorOff / dataUnitBytes
-	within := interiorOff % dataUnitBytes
+	cipher, err := newCascade(opened.alg, opened.keys[:])
+	if err != nil {
+		t.Fatalf("newCascade: %v", err)
+	}
+	fileOff := dataOffset + interiorOff
+	sector := fileOff / dataUnitBytes
+	within := fileOff % dataUnitBytes
 	rawSector := make([]byte, dataUnitBytes)
-	if _, err := f.ReadAt(rawSector, mustNarrow[int64](fields.dataAreaOffset, "data area offset")+sector*dataUnitBytes); err != nil {
+	if _, err := f.ReadAt(rawSector, sector*dataUnitBytes); err != nil {
 		t.Fatalf("read raw data sector: %v", err)
 	}
 	plainSector := make([]byte, dataUnitBytes)
-	cipher.Decrypt(plainSector, rawSector, uint64(sector))
+	cipher.Decrypt(plainSector, rawSector, mustNarrow[uint64](sector, "XTS tweak unit"))
 	got := plainSector[within : within+int64(len(wantInterior))]
 	if !bytes.Equal(got, wantInterior) {
-		t.Fatalf("manual data-area-relative decrypt = %q, want %q (tweak convention mismatch)", got, wantInterior)
+		t.Fatalf("manual file-absolute decrypt = %q, want %q (tweak convention mismatch)", got, wantInterior)
 	}
 }

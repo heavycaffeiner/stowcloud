@@ -1,7 +1,6 @@
 package vault
 
 import (
-	"crypto/aes"
 	"crypto/rand"
 	"errors"
 	"fmt"
@@ -10,17 +9,19 @@ import (
 	"os"
 	"path/filepath"
 
-	"golang.org/x/crypto/xts"
-
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 )
 
-// dataUnitBytes is the fixed 512-byte unit VeraCrypt's data area XTS tweak
-// counts in, independent of the header's own sector size field: the tweak
-// for the byte at data-area offset n is always n/512, which is what makes
-// this driver's data area interoperate with any real VeraCrypt build
-// regardless of what sector size the volume declares.
+// dataUnitBytes is the fixed 512-byte unit VeraCrypt's XTS tweak counts in,
+// independent of the header's own sector size field.
+//
+// The tweak for a byte is its absolute position in the container file
+// divided by 512, not its position within the data area: the first data
+// sector of an ordinary container is unit 256, since the data area starts
+// 128 KiB in. Getting this wrong reads every real container as garbage
+// while a container this driver wrote itself round-trips perfectly, which
+// is why it took a fixture made by VeraCrypt to catch.
 const dataUnitBytes = 512
 
 // volumeDevice is the decrypted, random-access byte space of one VeraCrypt
@@ -30,11 +31,11 @@ type volumeDevice struct {
 	f          *os.File
 	dataOffset int64
 	dataSize   int64
-	cipher     *xts.Cipher
+	cipher     *cascade
 }
 
-func openVolumeDevice(f *os.File, fields headerFields, keys [xtsKeySize]byte) (*volumeDevice, error) {
-	cipher, err := xts.NewCipher(aes.NewCipher, keys[:])
+func openVolumeDevice(f *os.File, fields headerFields, alg encryptionAlgorithm, keys []byte) (*volumeDevice, error) {
+	cipher, err := newCascade(alg, keys)
 	if err != nil {
 		return nil, fmt.Errorf("vault: build data area cipher: %w", err)
 	}
@@ -62,6 +63,14 @@ func unitRange(off, n int64) (alignedOff, alignedLen int64) {
 	return firstUnit * dataUnitBytes, (lastUnit - firstUnit + 1) * dataUnitBytes
 }
 
+// tweakUnit is the XTS data unit number for a data-area offset, which is
+// its absolute position in the container file over 512. dataOffset is a
+// multiple of the unit size on every container VeraCrypt writes, so this
+// stays exact.
+func (v *volumeDevice) tweakUnit(alignedOff int64) uint64 {
+	return mustNarrow[uint64]((v.dataOffset+alignedOff)/dataUnitBytes, "XTS tweak unit")
+}
+
 // ReadAt decrypts [off, off+len(p)) of the data area. A partial unit at
 // either end is decrypted whole and trimmed, since XTS only decrypts a
 // complete data unit.
@@ -86,7 +95,7 @@ func (v *volumeDevice) ReadAt(p []byte, off int64) (int, error) {
 	}
 	plainBuf := make([]byte, alignedLen)
 	units := alignedLen / dataUnitBytes
-	firstUnit := mustNarrow[uint64](alignedOff/dataUnitBytes, "XTS tweak unit")
+	firstUnit := v.tweakUnit(alignedOff)
 	for u := int64(0); u < units; u++ {
 		v.cipher.Decrypt(plainBuf[u*dataUnitBytes:(u+1)*dataUnitBytes], cipherBuf[u*dataUnitBytes:(u+1)*dataUnitBytes], firstUnit+uint64(u))
 	}
@@ -113,7 +122,7 @@ func (v *volumeDevice) WriteAt(p []byte, off int64) (int, error) {
 	}
 	alignedOff, alignedLen := unitRange(off, n)
 	units := alignedLen / dataUnitBytes
-	firstUnit := mustNarrow[uint64](alignedOff/dataUnitBytes, "XTS tweak unit")
+	firstUnit := v.tweakUnit(alignedOff)
 
 	plainBuf := make([]byte, alignedLen)
 	partial := off != alignedOff || off+n != alignedOff+alignedLen
@@ -148,20 +157,26 @@ var ErrContainerSize = errors.New("vault: container size must be between 16 MiB 
 
 // createContainer writes a genuine VeraCrypt container: a random salt and
 // random master keys, a header encrypted with PBKDF2-HMAC-SHA-512 at 500000
-// iterations, both CRC-32s valid, a backup header at the end, and the data
+// iterations, both CRC-32s valid, backup headers at the end, and the data
 // area filled with random bytes so no boundary in the file distinguishes
 // written content from empty space.
 //
-// It does not format the data area: the caller runs Format over the
-// resulting container once it is open, so the two concerns (a valid
-// encrypted container, and a valid filesystem inside it) are each testable
-// on their own.
+// The layout is VeraCrypt's own: a 128 KiB header group at each end, being
+// a 64 KiB header region followed by a 64 KiB slot a hidden volume's header
+// would occupy, and the data area between them. The hidden slot is random
+// here and stays random, which is what makes a container holding no hidden
+// volume indistinguishable from one that does.
+//
+// It does not format the data area: the caller runs the filesystem writer
+// over the resulting container once it is open, so the two concerns (a
+// valid encrypted container, and a valid filesystem inside it) are each
+// testable on their own.
 func createContainer(path string, sizeMiB uint64, password secret.Secret) error {
 	if sizeMiB < minContainerDataMiB || sizeMiB > maxContainerDataMiB {
 		return ErrContainerSize
 	}
 	dataSize := sizeMiB << 20
-	fileSize := headerRegionSize + dataSize + headerRegionSize
+	fileSize := headerGroupSize + dataSize + headerGroupSize
 
 	path = filepath.Clean(path)
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
@@ -191,11 +206,11 @@ func createContainer(path string, sizeMiB uint64, password secret.Secret) error 
 	if err != nil {
 		return err
 	}
-	var keys [xtsKeySize]byte
+	var keys [layerKeyBytes]byte
 	if _, rerr := rand.Read(keys[:]); rerr != nil {
 		return fmt.Errorf("vault: generate master keys: %w", rerr)
 	}
-	var padding [headerKeyAreaSize - xtsKeySize]byte
+	var padding [headerKeyAreaSize - layerKeyBytes]byte
 	if _, rerr := rand.Read(padding[:]); rerr != nil {
 		return fmt.Errorf("vault: generate key area padding: %w", rerr)
 	}
@@ -204,7 +219,7 @@ func createContainer(path string, sizeMiB uint64, password secret.Secret) error 
 		version:           5,
 		minProgramVersion: 0x0108,
 		volumeSize:        dataSize,
-		dataAreaOffset:    headerRegionSize,
+		dataAreaOffset:    headerGroupSize,
 		dataAreaSize:      dataSize,
 		flags:             0,
 		sectorSize:        512,
@@ -226,17 +241,21 @@ func createContainer(path string, sizeMiB uint64, password secret.Secret) error 
 	if _, err := f.WriteAt(record1, 0); err != nil {
 		return fmt.Errorf("vault: write primary header: %w", err)
 	}
-	if err := fillRandom(f, headerRecordSize, headerRegionSize-headerRecordSize); err != nil {
-		return fmt.Errorf("vault: fill header region padding: %w", err)
+	// Everything outside the two 512-byte header records is random, the
+	// hidden header slots included: a reader without the passphrase cannot
+	// tell a slot holding a hidden volume from one that never did.
+	if err := fillRandom(f, headerRecordSize, headerGroupSize-headerRecordSize); err != nil {
+		return fmt.Errorf("vault: fill header group padding: %w", err)
 	}
-	if err := fillRandom(f, headerRegionSize, dataSize); err != nil {
+	if err := fillRandom(f, headerGroupSize, dataSize); err != nil {
 		return fmt.Errorf("vault: fill data area: %w", err)
 	}
-	if _, err := f.WriteAt(record2, int64(fileSize-headerRegionSize)); err != nil {
+	backupOff := headerGroupSize + dataSize
+	if _, err := f.WriteAt(record2, mustNarrow[int64](backupOff, "backup header offset")); err != nil {
 		return fmt.Errorf("vault: write backup header: %w", err)
 	}
-	if err := fillRandom(f, fileSize-headerRegionSize+headerRecordSize, headerRegionSize-headerRecordSize); err != nil {
-		return fmt.Errorf("vault: fill backup header region padding: %w", err)
+	if err := fillRandom(f, backupOff+headerRecordSize, headerGroupSize-headerRecordSize); err != nil {
+		return fmt.Errorf("vault: fill backup header group padding: %w", err)
 	}
 	if err := f.Sync(); err != nil {
 		return fmt.Errorf("vault: sync container file: %w", err)
@@ -281,7 +300,7 @@ func fillRandom(f *os.File, off, n uint64) error {
 // the coordinate space fat.Mount bounds every header field against: the
 // Device this returns addresses only the data area, not the whole
 // container file.
-func openContainer(path string, password secret.Secret) (*volumeDevice, uint64, error) {
+func openContainer(path string, password secret.Secret, pim uint32, hashToken string) (*volumeDevice, uint64, error) {
 	path = filepath.Clean(path)
 	f, err := os.OpenFile(path, os.O_RDWR, 0)
 	if err != nil {
@@ -300,26 +319,68 @@ func openContainer(path string, password secret.Secret) (*volumeDevice, uint64, 
 	if err != nil {
 		return nil, 0, fmt.Errorf("vault: stat container file: %w", err)
 	}
+	// A dynamic container is a sparse file whose reported length is its
+	// declared capacity, so this is the same number for both kinds and the
+	// holes read back as zeroes the header bounds are checked against.
 	size := mustNarrow[uint64](stat.Size(), "container file size")
-	if size < headerRegionSize+minContainerDataMiB<<20+headerRegionSize {
+	if size < headerGroupSize+minContainerDataMiB<<20+headerGroupSize {
 		return nil, 0, fmt.Errorf("%w: container file too small to hold a header", ErrHeaderFieldsInvalid)
 	}
 
-	record := make([]byte, headerRecordSize)
-	if _, rerr := f.ReadAt(record, 0); rerr != nil {
-		return nil, 0, fmt.Errorf("vault: read primary header: %w", rerr)
-	}
-	fields, keys, err := decryptHeaderRecord(record, password)
+	opened, err := openEitherHeader(f, password, pim, hashToken)
 	if err != nil {
 		return nil, 0, err
 	}
-	if verr := validateHeaderFields(fields, size); verr != nil {
+	if verr := validateHeaderFields(opened.fields, size); verr != nil {
 		return nil, 0, verr
 	}
-	dev, err := openVolumeDevice(f, fields, keys)
+	dev, err := openVolumeDevice(f, opened.fields, opened.alg, opened.keys[:])
 	if err != nil {
 		return nil, 0, err
 	}
 	success = true
-	return dev, fields.dataAreaSize, nil
+	return dev, opened.fields.dataAreaSize, nil
+}
+
+// hiddenHeaderOffset is where a hidden volume's header sits. When there is
+// no hidden volume the same bytes are random, and are indistinguishable
+// from one without the passphrase.
+const hiddenHeaderOffset = headerRegionSize
+
+// openEitherHeader reads the outer header and then the hidden one, and
+// returns whichever the passphrase opens.
+//
+// Which volume a passphrase mounts is the passphrase's own answer, not a
+// choice the caller makes: that is the whole point of a hidden volume, so
+// both are tried and the operator gets the one their passphrase belongs
+// to. The outer goes first because a container with no hidden volume is
+// the common case and its 64 KiB of random bytes would otherwise cost a
+// full set of derivations before the real answer.
+//
+// A hidden volume needs nothing computed: its own header carries the
+// absolute offset of its data area, the same field the outer header uses,
+// and validateHeaderFields bounds it against the file either way.
+func openEitherHeader(f *os.File, password secret.Secret, pim uint32, hashToken string) (openedHeader, error) {
+	record := make([]byte, headerRecordSize)
+	if _, err := f.ReadAt(record, 0); err != nil {
+		return openedHeader{}, fmt.Errorf("vault: read primary header: %w", err)
+	}
+	outer, outerErr := decryptHeaderRecord(record, password, pim, hashToken)
+	if outerErr == nil {
+		return outer, nil
+	}
+	if !errors.Is(outerErr, ErrWrongPassword) {
+		return openedHeader{}, outerErr
+	}
+	if _, err := f.ReadAt(record, hiddenHeaderOffset); err != nil {
+		return openedHeader{}, fmt.Errorf("vault: read hidden volume header: %w", err)
+	}
+	hidden, hiddenErr := decryptHeaderRecord(record, password, pim, hashToken)
+	if hiddenErr != nil {
+		// The outer refusal is the one to report: a container with no
+		// hidden volume holds random bytes here, so this refusal says
+		// nothing an operator can act on.
+		return openedHeader{}, outerErr
+	}
+	return hidden, nil
 }

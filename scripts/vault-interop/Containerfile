@@ -1,0 +1,25 @@
+# Builds the rootfs for a throwaway VM (not a running container: this sandbox
+# has no loop-device access inside podman itself, only inside a nested VM
+# booted from this image's exported filesystem) that generates the VeraCrypt
+# interop fixtures under go/engine/infra/vault/testdata/interop.
+#
+# Nothing in this image runs at `go test` time: it is only used by
+# scripts/gen-vault-interop-fixtures.sh, by hand, to produce fixtures that
+# are regenerated on demand rather than committed (see that script's own
+# comments for why).
+FROM docker.io/library/debian:12-slim
+
+ARG VERACRYPT_VERSION=1.26.29
+ARG VERACRYPT_DEB=veracrypt-console-${VERACRYPT_VERSION}-Debian-12-amd64.deb
+
+# fuse and dosfstools back the mount/format steps the fixture generator drives;
+# linux-image-amd64 supplies a standard kernel plus initramfs and pulls in
+# kmod, since this rootfs is booted directly by qemu rather than run as a
+# container.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates wget fuse util-linux dosfstools linux-image-amd64 \
+    && wget -q "https://github.com/veracrypt/VeraCrypt/releases/download/VeraCrypt_${VERACRYPT_VERSION}/${VERACRYPT_DEB}" -O /tmp/veracrypt-console.deb \
+    && apt-get install -y --no-install-recommends /tmp/veracrypt-console.deb \
+    && rm -rf /tmp/veracrypt-console.deb /var/lib/apt/lists/*
+
+ENTRYPOINT ["/bin/bash"]

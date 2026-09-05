@@ -210,9 +210,12 @@ func TestOpenWrongPasswordRefused(t *testing.T) {
 		t.Fatalf("Close: %v", err)
 	}
 
+	// The hash is named for the same reason header_test.go names it: a
+	// wrong passphrase otherwise pays for every derivation this build
+	// implements, and the refusal is what this test is about.
 	_, err := Open(context.Background(), Options{
 		Share:      vfs.ShareID(1),
-		Config:     Config{Container: containerPath},
+		Config:     Config{Container: containerPath, Hash: "sha512"},
 		Password:   secret.New([]byte("not the right password")),
 		Create:     false,
 		ScratchDir: t.TempDir(),
