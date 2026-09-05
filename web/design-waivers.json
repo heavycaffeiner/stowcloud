@@ -191,15 +191,6 @@
       "expires": "2027-08-10"
     },
     {
-      "id": "m3-tabs-internals",
-      "layer": "runtime",
-      "check": "*",
-      "selector": ".m3-container:has(> .bar)",
-      "subtree": true,
-      "reason": "m3-svelte's tab bar. Its indicator deliberately overlaps the label row and its inputs are 13px, both of which are the framework's own layout; we pass it labels and nothing else.",
-      "expires": "2027-08-10"
-    },
-    {
       "id": "codemirror-internals",
       "layer": "runtime",
       "check": "*",
