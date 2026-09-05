@@ -6,10 +6,12 @@
   // decides when to show it by setting `open` from a save's own
   // `ApplyOutcome.restart_required`.
   //
-  // After confirming, the socket is expected to drop while the process
-  // re-execs itself, a failed `GET /api/v1/system/health` mid-wait is the
-  // signal to keep polling, not a failure to report. Only the poll running
-  // past its own bounded budget is worth surfacing.
+  // After confirming, the server keeps answering under its old image for a
+  // grace window before it tears down, so the first poll routinely lands
+  // before anything has actually happened; a failed `GET
+  // /api/v1/system/health` mid-wait is the real signal something is
+  // underway, and a success only counts once it follows one. See
+  // `restart-wait.ts` for why a bare healthy poll is not proof by itself.
   import { t } from '../../i18n'
   import { createMutation, createQuery } from '@tanstack/svelte-query'
   import { adminRestartMutation, systemHealthQuery } from '../../query/admin'
@@ -18,6 +20,7 @@
   import Button from '../Button.svelte'
   import Dialog from '../Dialog.svelte'
   import ProgressCircular from '../ProgressCircular.svelte'
+  import { nextRestartWaitStep } from './restart-wait'
 
   interface Props {
     open: boolean
@@ -38,7 +41,15 @@
   type Phase = 'confirm' | 'submitting' | 'waiting' | 'timeout' | 'success'
   let phase = $state<Phase>('confirm')
 
-  const POLL_INTERVAL_MS = 1_500
+  // The real outage a restart produces is brief, measured in a few hundred
+  // milliseconds: the answer to the confirm request is already sent by the
+  // time the process starts tearing down, and the exec that replaces it is
+  // followed by a fresh listener almost immediately. A slower interval than
+  // this would routinely poll straight through that window without ever
+  // landing inside it, which is exactly the failure mode this dialog exists
+  // to avoid: no outage ever recorded, so a restart that genuinely happened
+  // reports as a timeout forty-five seconds later instead of a success.
+  const POLL_INTERVAL_MS = 200
   const WAIT_BUDGET_MS = 45_000
   const WAIT_BUDGET_SECONDS = Math.round(WAIT_BUDGET_MS / 1000)
 
@@ -51,32 +62,45 @@
   )
 
   // The wait budget this poll is bounded by. `pollMs` is what actually
-  // drives the query's `refetchInterval`; it goes false the moment the
-  // server answers or the budget runs out, which is what stops the polling.
-  // `waitStartedAt` guards against a stale success: this query already ran
-  // once on mount (before any restart was ever asked for), so a plain
-  // `isSuccess` check would treat that leftover healthy answer as the
-  // server having already come back, without ever actually re-checking it.
+  // drives the query's `refetchInterval`; it goes false the moment the wait
+  // concludes, which is what stops the polling. `waitStartedAt` guards
+  // against a stale result: this query already ran once on mount (before any
+  // restart was ever asked for), so a plain `isSuccess`/`isError` check would
+  // read that leftover answer as something this wait observed, without ever
+  // actually re-checking it. `sawOutage` is `nextRestartWaitStep`'s own
+  // running state, carried here because the wait spans many ticks and the
+  // function itself is stateless.
   let deadline = $state<number | null>(null)
   let waitStartedAt = $state<number | null>(null)
   let pollMs = $state<number | false>(false)
+  let sawOutage = $state(false)
   const health = createQuery(() => systemHealthQuery(pollMs))
 
   function beginWaiting(): void {
     waitStartedAt = Date.now()
     deadline = Date.now() + WAIT_BUDGET_MS
+    sawOutage = false
     phase = 'waiting'
     pollMs = POLL_INTERVAL_MS
     void health.refetch()
   }
 
   $effect(() => {
-    if (phase !== 'waiting' || !open) return
-    // Both timestamps are read unconditionally so this effect re-runs on
-    // every poll tick, success or failure, not only the first of either.
-    const succeededAt = health.dataUpdatedAt
-    void health.errorUpdatedAt
-    if (health.isSuccess && waitStartedAt !== null && succeededAt >= waitStartedAt) {
+    if (phase !== 'waiting' || !open || waitStartedAt === null || deadline === null) return
+    // Every field this reads unconditionally, so the effect re-runs on every
+    // poll tick, success or failure, not only the first of either.
+    const step = nextRestartWaitStep(sawOutage, {
+      isSuccess: health.isSuccess,
+      succeededAt: health.dataUpdatedAt,
+      isError: health.isError,
+      erroredAt: health.errorUpdatedAt,
+      waitStartedAt,
+      now: Date.now(),
+      deadline
+    })
+    sawOutage = step.sawOutage
+
+    if (step.outcome === 'confirmed') {
       pollMs = false
       phase = 'success'
       onrestarted()
@@ -85,7 +109,7 @@
       }, 900)
       return () => clearTimeout(timer)
     }
-    if (deadline !== null && Date.now() >= deadline) {
+    if (step.outcome === 'timed-out') {
       pollMs = false
       phase = 'timeout'
       return
