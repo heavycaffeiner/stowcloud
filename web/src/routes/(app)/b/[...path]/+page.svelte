@@ -620,7 +620,12 @@
         }
         const failed = results.find((r) => !r.ok)
         if (failed) {
-          snackbarMsg = failed.error?.code === 'quota.exceeded' ? quotaMsg : failMsg
+          const bKey = batchErrorKey(failed.error)
+          snackbarMsg = failed.error?.code === 'quota.exceeded'
+            ? quotaMsg
+            : bKey
+              ? t(bKey.key, bKey.params)
+              : failMsg
           return
         }
         conflictOpen = false
@@ -645,7 +650,12 @@
       }
       const refused = results.find((r) => !r.ok)
       if (refused) {
-        snackbarMsg = refused.error?.code === 'quota.exceeded' ? quotaMsg : failMsg
+        const bKey = batchErrorKey(refused.error)
+        snackbarMsg = refused.error?.code === 'quota.exceeded'
+          ? quotaMsg
+          : bKey
+            ? t(bKey.key, bKey.params)
+            : failMsg
         return
       }
       conflictOpen = false
@@ -666,10 +676,14 @@
         .catch((err) => {
           const failures = err instanceof JobFailedError ? err.status.results : []
           const quota = failures.some((r) => r.error?.code === 'quota.exceeded')
+          const firstFail = failures.find((r) => !r.ok)?.error
+          const bKey = batchErrorKey(firstFail)
           snackbarMsg =
             quota || (err instanceof ApiError && err.code === 'quota.exceeded')
               ? quotaMsg
-              : describeApiError(err, failMsg)
+              : bKey
+                ? t(bKey.key, bKey.params)
+                : describeApiError(err, failMsg)
         })
     } catch (err) {
       snackbarMsg =
@@ -789,8 +803,12 @@
     e.preventDefault()
     dragOver = false
     if (!e.dataTransfer) return
-    const files = await pickedFilesFromDataTransfer(e.dataTransfer)
-    handleUploadEntries(files)
+    try {
+      const files = await pickedFilesFromDataTransfer(e.dataTransfer)
+      handleUploadEntries(files)
+    } catch {
+      snackbarMsg = t('upload.could_not_start_upload')
+    }
   }
 
   function focusSearch(): void {

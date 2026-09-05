@@ -65,7 +65,7 @@ export function createMeasureStore(): MeasureStore {
       })
     } catch (err) {
       if (store.getState().key !== targetKey) return
-      const reason = err instanceof ApiError && err.code === 'acl.denied' ? 'denied' : 'other'
+      const reason = err instanceof ApiError && (err.code === 'acl.denied' || err.code === 'fs.denied') ? 'denied' : 'other'
       store.setState({
         key: targetKey,
         state: { kind: 'failed', reason }

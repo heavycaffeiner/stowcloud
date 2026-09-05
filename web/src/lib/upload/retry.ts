@@ -20,8 +20,7 @@ const RETRY_AFTER_CEILING_MS = 60_000
 export type RetryVerdict =
   | { kind: 'retry'; afterMs: number }
   | { kind: 'shrink' }
-  | { kind: 'give-up'; reason: 'session-gone' | 'quota' | 'too-large' | 'conflict' | 'out-of-retries' }
-
+  | { kind: 'give-up'; reason: 'session-gone' | 'quota' | 'too-large' | 'conflict' | 'denied' | 'out-of-retries' }
 /**
  * Decides what to do about a failed request.
  *
@@ -44,6 +43,9 @@ export function classifyFailure(status: number, retriesSoFar: number): RetryVerd
 
   // A state conflict (e.g. duplicate file or offset conflict on non-random-access).
   if (status === 409) return { kind: 'give-up', reason: 'conflict' }
+  // Permission denied (ACL refusal).
+  if (status === 403) return { kind: 'give-up', reason: 'denied' }
+
 
   // Anything the server refused outright, other than the cases above, is a
   // refusal rather than a fault: 400, 401, 403 and their neighbours mean the

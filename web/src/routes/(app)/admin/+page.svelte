@@ -35,7 +35,7 @@
   import { t } from '../../../lib/i18n'
   import { replaceState } from '$app/navigation'
   import { page } from '$app/state'
-  import { VariableTabs } from 'm3-svelte'
+  import { Tabs } from 'm3-svelte'
   import { icons } from '../../../lib/icons'
   import { authState } from '../../../lib/state/auth.svelte'
   import { syncTabHash } from '../../../lib/state/tab-hash'
@@ -85,10 +85,10 @@
     </div>
   {:else}
     <div class="sc-admin__head">
-      <!-- Group name on the wrapper, not on `Tabs` — see the twin comment in
+      <!-- Group name on the wrapper, not on `Tabs`: see the twin comment in
            `/settings` for why an `aria-label` there names every radio. -->
       <div class="sc-admin__head-inner" role="radiogroup" aria-label={t('admin.admin_sections')}>
-        <VariableTabs bind:tab items={tabs} />
+        <Tabs bind:tab items={tabs} />
       </div>
     </div>
 
@@ -186,6 +186,7 @@
   }
   .sc-admin__head-inner {
     padding-inline: 0;
+    overflow-x: auto;
   }
   .sc-admin__inner {
     padding-block: 0 var(--sc-page-pad);

@@ -73,12 +73,16 @@ const SERVER_KEYS = new Set<string>([
 const CODE_KEYS: Record<string, string> = {
   'fs.not_found': /* i18n */ 'error.fs_not_found',
   'fs.conflict': /* i18n */ 'error.fs_conflict',
+  'fs.exists': /* i18n */ 'error.fs_conflict',
+  'fs.not_empty': /* i18n */ 'error.fs_conflict',
   'fs.precondition': /* i18n */ 'error.fs_precondition',
   'fs.invalid_name': /* i18n */ 'error.fs_invalid_name',
   'fs.gone': /* i18n */ 'error.fs_gone',
+  'fs.denied': /* i18n */ 'error.acl_denied',
   'acl.denied': /* i18n */ 'error.acl_denied',
   'quota.exceeded': /* i18n */ 'error.quota_exceeded',
   'share.broken': /* i18n */ 'error.share_broken',
+  'share.unavailable': /* i18n */ 'error.share_broken',
   'internal': /* i18n */ 'error.internal',
   'internal.not_implemented': /* i18n */ 'error.not_implemented'
 }

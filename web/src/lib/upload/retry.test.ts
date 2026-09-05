@@ -26,6 +26,10 @@ describe('classifyFailure', () => {
       expect(classifyFailure(status, 0)).toMatchObject({ kind: 'give-up' })
     }
   })
+  it('gives up with denied on 403 permission refusal', () => {
+    expect(classifyFailure(403, 0)).toEqual({ kind: 'give-up', reason: 'denied' })
+  })
+
 
   it('gives up when the session is gone, with nothing to resume from', () => {
     expect(classifyFailure(404, 0)).toEqual({ kind: 'give-up', reason: 'session-gone' })

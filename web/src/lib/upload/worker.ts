@@ -177,11 +177,17 @@ async function addFile(item: AddItem): Promise<void> {
         })
       } catch (err) {
         const status = err instanceof UploadHttpError ? err.status : 0
+        const isQuota = status === 507
+        const isDenied = status === 403
         post({
           t: 'error',
           id,
-          code: status === 507 ? 'upload.quota_exceeded' : 'upload.failed',
-          message: status === 507 ? /* i18n */ 'upload.not_enough_storage_space_start' : /* i18n */ 'upload.could_not_start_upload'
+          code: isQuota ? 'upload.quota_exceeded' : isDenied ? 'upload.denied' : 'upload.failed',
+          message: isQuota
+            ? /* i18n */ 'upload.not_enough_storage_space_start'
+            : isDenied
+              ? /* i18n */ 'error.acl_denied'
+              : /* i18n */ 'upload.could_not_start_upload'
         })
         return
       }
@@ -324,7 +330,9 @@ async function sendChunk(task: ChunkDescriptor & { fileId: string }): Promise<vo
             ? { code: 'upload.quota_exceeded', message: /* i18n */ 'upload.not_enough_storage_space_finish' }
             : verdict.reason === 'conflict'
               ? { code: 'upload.conflict', message: /* i18n */ 'upload.conflict' }
-              : { code: 'upload.failed', message: /* i18n */ 'upload.upload_failed_out_retries' }
+              : verdict.reason === 'denied'
+                ? { code: 'upload.denied', message: /* i18n */ 'error.acl_denied' }
+                : { code: 'upload.failed', message: /* i18n */ 'upload.upload_failed_out_retries' }
       post({ t: 'error', id: f.id, code: told.code, message: told.message })
       return
     }

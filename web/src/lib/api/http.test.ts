@@ -9,6 +9,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { httpApi } from './http'
 import { ApiError, type SessionInfo } from './types'
 import { authState, setAuthenticated } from '../state/auth.svelte'
+import { t } from '../i18n'
+import { batchErrorKey, describeApiError } from './error-text'
 
 /** A signed-in account, so a refusal has a live session to end. */
 const fakeSession: SessionInfo = {
@@ -459,5 +461,13 @@ describe('the wire widener', () => {
     expect('thumb' in got).toBe(false)
     expect('preview' in got).toBe(false)
     expect('btime_ns' in got).toBe(false)
+  })
+})
+
+describe('error-text mappings for fs.denied and batch errors', () => {
+  it('maps fs.denied to error.acl_denied', () => {
+    expect(batchErrorKey({ code: 'fs.denied' })).toEqual({ key: 'error.acl_denied', params: undefined })
+    const err = new ApiError(403, { code: 'fs.denied', message: 'not permitted' })
+    expect(describeApiError(err, 'fallback')).toBe(t('error.acl_denied'))
   })
 })

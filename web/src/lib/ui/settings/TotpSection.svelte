@@ -283,6 +283,8 @@
   <p>{t('totp.enter_your_current_password_continue')}</p>
   {#if smbDedicated}
     <p class="sc-totp__smb-warning">{t('smb.dedicated_will_be_replaced')}</p>
+  {:else}
+    <p class="sc-totp__smb-warning">{t('smb.remove_reverts_to_account')}</p>
   {/if}
   <TextField
     type="password"
@@ -371,11 +373,6 @@
   .sc-totp__recovery-count--low {
     color: var(--m3c-error);
     font-weight: 500;
-  }
-  .sc-totp__announce {
-    margin: 0;
-    color: var(--m3c-on-surface-variant);
-    @apply --m3-body-small;
   }
   .sc-totp__smb-warning {
     padding: 12px;
