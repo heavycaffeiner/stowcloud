@@ -785,23 +785,30 @@
                         /* i18n */ 'smb.agent_unreachable' -->
       {#if snapshot.smb_agent}
         {@const agent = snapshot.smb_agent}
+        <!-- Each list is read through `?? []`: a server that sends `null` for
+             an empty one would otherwise take this whole section down on
+             `.length`, and a settings screen that throws while rendering is a
+             tab that spins forever. -->
+        {@const shares = agent.shares ?? []}
+        {@const missingPaths = agent.missing_paths ?? []}
+        {@const missingPassdb = agent.missing_passdb ?? []}
         <div
           class={agent.ok ? 'sc-admin-section__hint' : 'sc-admin-section__warning'}
           role={agent.ok ? 'status' : 'alert'}
         >
           <p>
             {t(agent.key, {
-              shares: agent.shares.length,
+              shares: shares.length,
               interfaces: agent.interfaces,
               smbd: agent.smbd,
               error: agent.detail ?? ''
             })}
           </p>
-          {#if agent.missing_paths.length}
-            <p>{t('smb.agent_missing_paths', { paths: agent.missing_paths.join(', ') })}</p>
+          {#if missingPaths.length}
+            <p>{t('smb.agent_missing_paths', { paths: missingPaths.join(', ') })}</p>
           {/if}
-          {#if agent.missing_passdb.length}
-            <p>{t('smb.agent_missing_passdb', { users: agent.missing_passdb.join(', ') })}</p>
+          {#if missingPassdb.length}
+            <p>{t('smb.agent_missing_passdb', { users: missingPassdb.join(', ') })}</p>
           {/if}
           {#if agent.detail && !agent.ok}
             <p class="sc-server-settings__agent-detail">{agent.detail}</p>

@@ -460,3 +460,53 @@ describe('error-text mappings for fs.denied and batch errors', () => {
     expect(describeApiError(err, 'fallback')).toBe(t('error.acl_denied'))
   })
 })
+
+// The health probe is the one call whose body is read without going through
+// `request()`, because a `503 degraded` is a real answer rather than a
+// failure to reach the server. That also means it meets bodies `request()`
+// never sees: a proxy's HTML 404, or an older build with no such route.
+describe('the health probe', () => {
+  it('reports failing rather than throwing when the body is not JSON', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response('<!doctype html><title>404</title>', { status: 404 }))
+    )
+
+    // Throwing here left the restart dialog's poll neither settled nor
+    // renderable, which is a spinner that never stops.
+    const got = await httpApi.systemHealth()
+
+    expect(got.status).toBe('failing')
+    expect(got.reasons).toEqual([])
+  })
+
+  it('fills in an absent reason list', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { status: 'ok' })))
+
+    const got = await httpApi.systemHealth()
+
+    // The screen maps over this; `null` would take the card down with it.
+    expect(got.reasons).toEqual([])
+  })
+
+  it('passes a real answer through', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse(503, { status: 'degraded', reasons: ['smb_agent'] }))
+    )
+
+    const got = await httpApi.systemHealth()
+
+    expect(got).toEqual({ status: 'degraded', reasons: ['smb_agent'] })
+  })
+
+  // Load-bearing: the restart wait counts a rejection as the outage that
+  // proves the process went down, and only then can it confirm a restart.
+  // A probe that resolved through an unreachable server would leave every
+  // restart ending in a timeout.
+  it('still rejects when the server cannot be reached', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
+
+    await expect(httpApi.systemHealth()).rejects.toBeTruthy()
+  })
+})

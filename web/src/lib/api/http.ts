@@ -1438,11 +1438,24 @@ async function adminSystemRestart(): Promise<SystemRestartResult> {
  *  here to detect the process answering again after a restart. Not routed
  *  through `request()`: that helper's non-2xx path expects the wire error
  *  envelope, and a health probe answering `503 degraded` is still a real
- *  answer, not a failure to reach the server, so its body is read directly. */
+ *  answer, not a failure to reach the server, so its body is read directly.
+ *
+ *  A server that cannot be reached still rejects, and that rejection is
+ *  load-bearing: the restart wait treats it as the outage that proves the
+ *  process went down (`restart-wait.ts`), and a probe that resolved through
+ *  an outage could never confirm a restart.
+ *
+ *  What is tolerated is a reachable server whose body is not the shape this
+ *  reads: a proxy's HTML 404, or a build with no such route. `res.json()`
+ *  throwing on those left the poll neither settled nor renderable, which is
+ *  a spinner that never stops. */
 async function systemHealth(): Promise<SystemHealth> {
   const res = await fetch(`${BASE}/system/health`, { credentials: 'include' })
-  const body = await res.json()
-  return body as SystemHealth
+  const body = (await res.json().catch(() => null)) as SystemHealth | null
+  if (body === null || typeof body !== 'object' || typeof body.status !== 'string') {
+    return { status: 'failing', reasons: [] }
+  }
+  return { ...body, reasons: body.reasons ?? [] }
 }
 
 // ── admin: user management ──

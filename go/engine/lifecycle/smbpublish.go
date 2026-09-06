@@ -108,16 +108,27 @@ func (e *Engine) smbAgentView() *handler.SMBAgentView {
 		key = "smb.agent_applied_with_warnings"
 	}
 	return &handler.SMBAgentView{
-		Key:           key,
-		OK:            r.OK && r.Smbd != agent.ActionFailed,
-		Shares:        r.Shares,
-		Interfaces:    r.Interfaces,
-		HostsAllow:    r.HostsAllow,
-		Smbd:          string(r.Smbd),
-		MissingPaths:  r.MissingPaths,
-		MissingPassdb: r.MissingPassdb,
+		Key:        key,
+		OK:         r.OK && r.Smbd != agent.ActionFailed,
+		Shares:     listOf(r.Shares),
+		Interfaces: r.Interfaces,
+		HostsAllow: r.HostsAllow,
+		Smbd:       string(r.Smbd),
+		// Never null: a nil slice marshals as `null`, and the screen reads
+		// `.length` on each of these. One absent list took the whole settings
+		// section down, which reads as a tab that loads forever.
+		MissingPaths:  listOf(r.MissingPaths),
+		MissingPassdb: listOf(r.MissingPassdb),
 		Detail:        r.Error,
 	}
+}
+
+// listOf is a slice the JSON encoder writes as `[]` rather than `null`.
+func listOf(in []string) []string {
+	if in == nil {
+		return []string{}
+	}
+	return in
 }
 
 // smbSettings is what a push needs out of the settings document.

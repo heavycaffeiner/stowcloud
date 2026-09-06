@@ -3,12 +3,15 @@
 package lifecycle
 
 import (
+	"bytes"
+	"encoding/json"
 	"log/slog"
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/smb/agent"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 )
 
@@ -157,5 +160,27 @@ func TestAGroupGrantNamesNoAccount(t *testing.T) {
 	})
 	if got[0].User != 0 {
 		t.Errorf("a group grant named account %d", got[0].User)
+	}
+}
+
+// An absent list is sent as an empty list, never as null.
+//
+// The screen reads `.length` on each of these to decide whether to name what
+// is missing. A null there is not an empty section; it is a TypeError that
+// takes the whole server settings page down and leaves it showing a spinner
+// that never resolves.
+func TestTheAgentViewSendsEmptyListsRatherThanNull(t *testing.T) {
+	// What the sidecar reports when a push found nothing to complain about:
+	// every list absent rather than empty, which is how Go hands one back.
+	e := &Engine{}
+	e.smb = &smbPublisher{engine: e}
+	e.smb.recordReport(agent.Report{OK: true, Smbd: agent.ActionUnchanged})
+
+	b, err := json.Marshal(e.smbAgentView())
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if bytes.Contains(b, []byte("null")) {
+		t.Errorf("a list arrived as null, which the screen reads .length on: %s", b)
 	}
 }
