@@ -463,33 +463,10 @@ describe('error-text mappings for fs.denied and batch errors', () => {
 
 // The health probe is the one call whose body is read without going through
 // `request()`, because a `503 degraded` is a real answer rather than a
-// failure to reach the server. That also means it meets bodies `request()`
-// never sees: a proxy's HTML 404, or an older build with no such route.
+// failure to reach the server. Everything the restart wait concludes rests on
+// which answers count as the process being down.
 describe('the health probe', () => {
-  it('reports failing rather than throwing when the body is not JSON', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(new Response('<!doctype html><title>404</title>', { status: 404 }))
-    )
-
-    // Throwing here left the restart dialog's poll neither settled nor
-    // renderable, which is a spinner that never stops.
-    const got = await httpApi.systemHealth()
-
-    expect(got.status).toBe('failing')
-    expect(got.reasons).toEqual([])
-  })
-
-  it('fills in an absent reason list', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { status: 'ok' })))
-
-    const got = await httpApi.systemHealth()
-
-    // The screen maps over this; `null` would take the card down with it.
-    expect(got.reasons).toEqual([])
-  })
-
-  it('passes a real answer through', async () => {
+  it('passes a real answer through whatever status carried it', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(jsonResponse(503, { status: 'degraded', reasons: ['smb_agent'] }))
@@ -500,13 +477,29 @@ describe('the health probe', () => {
     expect(got).toEqual({ status: 'degraded', reasons: ['smb_agent'] })
   })
 
-  // Load-bearing: the restart wait counts a rejection as the outage that
-  // proves the process went down, and only then can it confirm a restart.
-  // A probe that resolved through an unreachable server would leave every
-  // restart ending in a timeout.
-  it('still rejects when the server cannot be reached', async () => {
+  // Both of these are the outage the restart wait needs. It accepts a success
+  // as a completed restart only after it has seen the process go down, so a
+  // probe that resolved on either would leave every restart timing out.
+  it('rejects when the server cannot be reached', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
 
     await expect(httpApi.systemHealth()).rejects.toBeTruthy()
+  })
+
+  it('rejects a body it cannot read, which is what a proxy answers mid-restart', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response('<html>502 Bad Gateway</html>', { status: 502 }))
+    )
+
+    await expect(httpApi.systemHealth()).rejects.toBeInstanceOf(ApiError)
+  })
+
+  // A 200 whose body is JSON but not this shape is still not an answer: read
+  // as one it says the server is up, which is the signal that ends the wait.
+  it('rejects a parsed body with no status', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { error: 'request_failed' })))
+
+    await expect(httpApi.systemHealth()).rejects.toBeInstanceOf(ApiError)
   })
 })

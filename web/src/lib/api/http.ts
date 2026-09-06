@@ -1438,24 +1438,25 @@ async function adminSystemRestart(): Promise<SystemRestartResult> {
  *  here to detect the process answering again after a restart. Not routed
  *  through `request()`: that helper's non-2xx path expects the wire error
  *  envelope, and a health probe answering `503 degraded` is still a real
- *  answer, not a failure to reach the server, so its body is read directly.
+ *  answer, not a failure to reach the server, so a body that parses is
+ *  returned whatever status carried it.
  *
- *  A server that cannot be reached still rejects, and that rejection is
- *  load-bearing: the restart wait treats it as the outage that proves the
- *  process went down (`restart-wait.ts`), and a probe that resolved through
- *  an outage could never confirm a restart.
- *
- *  What is tolerated is a reachable server whose body is not the shape this
- *  reads: a proxy's HTML 404, or a build with no such route. `res.json()`
- *  throwing on those left the poll neither settled nor renderable, which is
- *  a spinner that never stops. */
+ *  Everything else fails, and failing is the point. The restart wait reads a
+ *  rejection as the outage that proves the process went down
+ *  (`restart-wait.ts`), and only after seeing one will it accept a later
+ *  success as the restart completing. A reverse proxy answers HTML while the
+ *  process behind it is down, which is precisely that outage; resolving it as
+ *  a health answer would leave every restart ending in a timeout. */
 async function systemHealth(): Promise<SystemHealth> {
   const res = await fetch(`${BASE}/system/health`, { credentials: 'include' })
   const body = (await res.json().catch(() => null)) as SystemHealth | null
   if (body === null || typeof body !== 'object' || typeof body.status !== 'string') {
-    return { status: 'failing', reasons: [] }
+    throw new ApiError(res.status, {
+      code: 'server.malformed_response',
+      message: 'The health probe answered with a body that could not be read'
+    })
   }
-  return { ...body, reasons: body.reasons ?? [] }
+  return body
 }
 
 // ── admin: user management ──
