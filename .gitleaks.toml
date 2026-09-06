@@ -30,3 +30,20 @@ regexes = ['''XChaCha20-Poly1305''']
 description = "the TOTP reference vector is published, not a credential"
 regexTarget = "match"
 regexes = ['''GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ''', '''GEZDGNBVGY3TQOJQ''']
+
+# The Camellia key from RFC 3713's appendix A, which is that specification's
+# own worked example and is reproduced verbatim by every implementation that
+# checks itself against it. The high-entropy rule reads 64 hex characters as
+# a credential; this one opens nothing, and a driver that did not agree with
+# it would be the defect.
+[[allowlists]]
+description = "the Camellia reference key is published in RFC 3713, not a credential"
+regexTarget = "match"
+regexes = ['''0123456789abcdeffedcba987654321000112233445566778899aabbccddeeff''']
+
+# The Kuznyechik key from RFC 7801, GOST R 34.12-2015's own worked example,
+# reproduced here as the acceptance vector for the same reason.
+[[allowlists]]
+description = "the Kuznyechik reference key is published in RFC 7801, not a credential"
+regexTarget = "match"
+regexes = ['''8899aabbccddeeff0011223344556677fedcba98765432100123456789abcdef''']

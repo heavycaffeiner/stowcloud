@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
@@ -39,9 +40,22 @@ func interopFixturesDir(t *testing.T) string {
 		t.Skip("interop fixtures are checked in the unraced pass: the detector adds minutes and no coverage here")
 	}
 	dir := "testdata/interop"
+	// Counting fixtures rather than entries: the directory carries a
+	// committed .gitignore explaining why the containers are not in the
+	// repository, so a fresh checkout has one entry and no fixture. Reading
+	// that as "generated" is how this skipped locally and failed in CI.
 	entries, err := os.ReadDir(dir)
-	if err != nil || len(entries) == 0 {
+	if err != nil {
 		t.Skipf("interop fixtures not found at %s: run scripts/gen-vault-interop-fixtures.sh to generate them (they are not committed; see that script for why)", dir)
+	}
+	fixtures := 0
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".hc") {
+			fixtures++
+		}
+	}
+	if fixtures == 0 {
+		t.Skipf("no .hc fixtures in %s: run scripts/gen-vault-interop-fixtures.sh to generate them (they are not committed; see that script for why)", dir)
 	}
 	return dir
 }

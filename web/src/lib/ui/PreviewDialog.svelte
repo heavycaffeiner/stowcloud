@@ -81,18 +81,6 @@
     return entry.size > TEXT_MAX_BYTES ? { kind: 'too-large-text' } : { kind: 'text' }
   })
 
-  // Text and archive bodies are real reads; the key follows what is actually
-  // shown, so switching to an image never keeps a stale text fetch running,
-  // and each is disabled outright while the dialog is closed.
-  //
-  // `unlocked` is part of the key so unlocking the share refetches rather
-  // than holding the failure it took while locked: an open preview used to
-  // keep showing that failure until it was closed and reopened.
-  const textQuery = createQuery(() => ({
-    ...fileContentQuery(entry, unlocked),
-    enabled: open && body.kind === 'text' && unlocked
-  }))
-
   // Whether the current entry's own share is end-to-end encrypted, resolved
   // once (encryptedShares(), encrypted-shares.ts, caches the whole set for
   // the session) before anything below decides how to fetch this entry's
@@ -125,6 +113,18 @@
     void unlockGeneration
     return encryption === null || isUnlocked(encryption.salt)
   })
+
+  // Text and archive bodies are real reads; the key follows what is actually
+  // shown, so switching to an image never keeps a stale text fetch running,
+  // and each is disabled outright while the dialog is closed.
+  //
+  // `unlocked` is part of the key so unlocking the share refetches rather
+  // than holding the failure it took while locked: an open preview used to
+  // keep showing that failure until it was closed and reopened.
+  const textQuery = createQuery(() => ({
+    ...fileContentQuery(entry, unlocked),
+    enabled: open && body.kind === 'text' && unlocked
+  }))
 
   // Plain-share archive listing is disabled outright once this entry is
   // known to be encrypted, rather than left to run and 422: the server

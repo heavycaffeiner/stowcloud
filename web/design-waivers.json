@@ -223,6 +223,14 @@
       "selector": ".sc-logs__sources .m3-container",
       "reason": "m3-svelte's connected buttons draw a 2px seam between the segments of one control. We own neither the seam nor the segment box; the 8px between the two controls beside it is ours and is still checked.",
       "expires": "2027-08-10"
+    },
+    {
+      "id": "upload-progress-live-width",
+      "layer": "runtime",
+      "check": "grid-snap",
+      "selector": ".sc-upload-tray__item .m3-container .percent, .sc-upload-tray__item .m3-container .track",
+      "reason": "The two halves of a determinate progress bar are a measurement, not a layout choice: their widths are the fraction of the file that has been sent, which now moves within a chunk rather than only when one completes. Snapping either to 4px would round the reading. The bar's own box, and everything around it, is still checked.",
+      "expires": "2027-08-10"
     }
   ]
 }
