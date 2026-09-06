@@ -403,8 +403,13 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # like the same question while this box had no compiler on it, and they are
   # not: a race the detector can find is a race in portable code, and the host
   # that runs the tests every day is worth finding it on.
+  # `-timeout` because the default is 10 minutes per package and `lifecycle`
+  # spends about five of them under the detector on an unloaded box. A shared
+  # runner doubles that, so the default made this step a coin flip: the panic
+  # names whichever four tests happened to be in flight, which reads as a hang
+  # in one of them rather than as the package running out of budget.
   if have_cc; then
-    run "go test -race ($HOST)" ingo_cgo go test -race -count=1 ./...
+    run "go test -race ($HOST)" ingo_cgo go test -race -count=1 -timeout 30m ./...
   else
     skipped "go test -race" "no C compiler on PATH, and the detector needs cgo" \
             "${VERIFY_REQUIRE_RACE:-0}"
