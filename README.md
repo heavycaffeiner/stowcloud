@@ -417,7 +417,8 @@ not been audited by anyone outside this repository.
 
 [^root]: In the mobile app this is the auto-upload folder setting, and the
     folder you pick when uploading by hand: choose one inside a share, such as
-    `/Photos/Camera`, rather than accepting the default at the top level. A
-    desktop client syncs a share the same way. An upload aimed at the account
-    root answers 404, because that root is a list of shares rather than a
-    directory anything can be written into.
+    `/Photos/Camera`, rather than accepting the default at the top level. The
+    app creates that folder itself, so it need not exist first; only the share
+    above it does. A desktop client syncs a share the same way. An upload
+    aimed at the account root answers 404, because that root is a list of
+    shares rather than a directory anything can be written into.
