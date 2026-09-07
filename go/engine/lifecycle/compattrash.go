@@ -102,6 +102,13 @@ func (e *Engine) serveDavTrashList(w http.ResponseWriter, r *http.Request, p mid
 	buf = append(buf, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"...)
 	buf = append(buf, "<d:multistatus xmlns:d=\"DAV:\" xmlns:nc=\"http://nextcloud.org/ns\">\n"...)
 
+	// Members hang off the address the client used rather than a path built
+	// here. The client derives what it acts on by stripping its own account
+	// segment from the href and rebuilding, so an href spelled any other way
+	// names a resource it then cannot reach: an href without that segment
+	// left the strip a no-op and the delete arrived one segment short.
+	collection := strings.TrimSuffix(r.URL.Path, "/")
+
 	buf = append(buf, "  <d:response>\n"...)
 	buf = append(buf, "    <d:href>"+xmlEscapeString(r.URL.Path)+"</d:href>\n"...)
 	buf = append(buf, "    <d:propstat>\n"...)
@@ -123,7 +130,7 @@ func (e *Engine) serveDavTrashList(w http.ResponseWriter, r *http.Request, p mid
 		}
 
 		buf = append(buf, "  <d:response>\n"...)
-		buf = append(buf, "    <d:href>/remote.php/dav/trashbin/trash/"+xmlEscapeString(shareQualID)+"</d:href>\n"...)
+		buf = append(buf, "    <d:href>"+xmlEscapeString(collection+"/"+shareQualID)+"</d:href>\n"...)
 		buf = append(buf, "    <d:propstat>\n"...)
 		buf = append(buf, "      <d:prop>\n"...)
 		buf = append(buf, "        <d:resourcetype>"+resType+"</d:resourcetype>\n"...)
