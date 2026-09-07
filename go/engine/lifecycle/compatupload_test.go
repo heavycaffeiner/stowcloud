@@ -291,3 +291,54 @@ func TestCreatingAFolderReportsTheIdAListingWouldGive(t *testing.T) {
 		t.Errorf("the create reported id %q, which the listing does not repeat: %s", created, body)
 	}
 }
+
+// Publishing a chunked transfer reports the identity of the file it created.
+//
+// The reference sync client reads this off the assembly reply and abandons the
+// whole upload when it is absent, so the bytes land and the transfer is still
+// reported as failed. The value has to be the identity a listing gives, since
+// the client keys its journal on it and a second spelling makes the file it
+// just uploaded look like a different one on the next sync.
+func TestPublishingATransferReportsTheIdAListingWouldGive(t *testing.T) {
+	t.Parallel()
+	base, credential, client := uploadFixture(t)
+
+	folder := base + "/remote.php/dav/uploads/alice/transfer-id"
+	dest := base + "/remote.php/dav/files/alice/documents/clip.mp4"
+	open := map[string]string{"Destination": dest}
+
+	if code, body := davSend(t, client, credential, "MKCOL", folder, nil, open); code != http.StatusCreated {
+		t.Fatalf("opening the collection answered %d: %s", code, body)
+	}
+	if code, body := davSend(t, client, credential, http.MethodPut, folder+"/000001",
+		strings.NewReader("chunked-bytes"), open); code != http.StatusCreated {
+		t.Fatalf("the chunk answered %d: %s", code, body)
+	}
+
+	req := newReq(t, "MOVE", folder+"/.file", http.NoBody)
+	req.Header.Set("Authorization", credential)
+	req.Header.Set("Destination", dest)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("MOVE: %v", err)
+	}
+	defer closeRespBody(t, resp)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("publishing answered %d", resp.StatusCode)
+	}
+
+	published := resp.Header.Get("OC-FileId")
+	if published == "" {
+		t.Fatal("publishing reported no file id, so the client abandons an upload whose bytes landed")
+	}
+
+	listed := `<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:prop><oc:id/></d:prop></d:propfind>`
+	code, body := davSend(t, client, credential, "PROPFIND", dest, strings.NewReader(listed),
+		map[string]string{"Depth": "0", "Content-Type": "text/xml"})
+	if code != http.StatusMultiStatus {
+		t.Fatalf("listing the file answered %d: %s", code, body)
+	}
+	if !strings.Contains(body, ">"+published+"<") {
+		t.Errorf("publishing reported id %q, which the listing does not repeat: %s", published, body)
+	}
+}

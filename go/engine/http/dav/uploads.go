@@ -292,6 +292,10 @@ func (h *Handler) uploadAssemble(
 	tag := ETagHeader(entry.ETag, entry.ETagWeak)
 	w.Header().Set("ETag", tag)
 	w.Header().Set(h.uploadHeaders.ETag, tag)
+	// The published file's identity. A sync client keys its journal on this
+	// and treats an assembly reply without one as a failed upload, so the
+	// bytes would land and the transfer still be reported as broken.
+	h.setVendorID(w, r, res)
 	w.WriteHeader(http.StatusCreated)
 }
 

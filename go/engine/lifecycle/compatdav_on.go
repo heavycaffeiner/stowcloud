@@ -386,6 +386,12 @@ type davQuery struct {
 	video     bool
 	name      string
 	sinceNs   int64
+	// fileID is the identity a lookup names, and byID says one was asked for
+	// at all. They are separate because an id that does not parse is still a
+	// lookup: answering it with a listing would hand the client somebody
+	// else's file under the name it asked about.
+	fileID uint64
+	byID   bool
 	// limit is the row count the client asked for, zero when it named none.
 	// The reference client sends it as DAV:nresults inside DAV:limit and
 	// expects it honoured: dropping it made a recent listing that asked for a
@@ -418,6 +424,10 @@ func parseDavQuery(leaves []dav.Leaf, want []xml.Name) davQuery {
 			byName = true
 		case "getlastmodified":
 			byTime = true
+		case "fileid":
+			// The property names the question; the id itself arrives as the
+			// literal beside it, like every other filter here.
+			q.byID = true
 		case "nresults":
 			if n, err := strconv.Atoi(strings.TrimSpace(leaf.Value)); err == nil && n > 0 {
 				q.limit = n
@@ -441,6 +451,10 @@ func parseDavQuery(leaves []dav.Leaf, want []xml.Name) davQuery {
 		}
 		literal := leaf.Value
 		switch {
+		case q.byID:
+			if n, err := strconv.ParseUint(strings.TrimSpace(literal), 10, 64); err == nil {
+				q.fileID = n
+			}
 		case q.media && strings.HasPrefix(literal, "image/"):
 			q.image = true
 		case q.media && strings.HasPrefix(literal, "video/"):
@@ -484,6 +498,8 @@ func (s *compatQuerySource) Query(
 
 	q := parseDavQuery(leaves, want)
 	switch {
+	case q.byID:
+		return s.identifiedEntry(ctx, res, user, q), nil
 	case q.favorites:
 		return s.favoriteEntries(ctx, res, user), nil
 	case q.media:
@@ -492,6 +508,29 @@ func (s *compatQuerySource) Query(
 		return s.namedEntries(ctx, res, user, q.name), nil
 	}
 	return s.recentEntries(ctx, res, user, q.sinceNs, q.limit), nil
+}
+
+// identifiedEntry answers a lookup by file id with that file and nothing else.
+//
+// The client opening a notification or a deep link takes the first row without
+// checking it, so a listing of anything else is the wrong file presented as
+// the right one. An id that names nothing the caller may read answers empty,
+// which the client reports as not found.
+func (s *compatQuerySource) identifiedEntry(
+	ctx context.Context, res core.Resolved, user core.UserID, q davQuery,
+) []core.Entry {
+	if q.fileID == 0 {
+		return nil
+	}
+	vp, err := s.engine.locateCompatFile(ctx, user, q.fileID)
+	if err != nil {
+		return nil
+	}
+	entry, ok := s.entryAt(user, res, vp.String())
+	if !ok {
+		return nil
+	}
+	return []core.Entry{entry}
 }
 
 func (s *compatQuerySource) favoriteEntries(

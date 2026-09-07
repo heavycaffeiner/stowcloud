@@ -308,8 +308,16 @@ func (e *Engine) compatOtherUser(
 	if err != nil {
 		return compat.Val{}, false, compat.ServerError("could not read account")
 	}
+	// An account asking about itself by name gets what it would get from the
+	// current-user route, quota included. A client refreshes its stored
+	// profile from this answer, so the spending it holds would otherwise be
+	// overwritten with zero and the account read as full.
 	if info.LoginName == login {
-		return compat.OtherUser(compatUserInfoOf(info)), true, nil
+		self, quota, oerr := e.compatAccount(c, caller)
+		if oerr != nil {
+			return compat.Val{}, false, oerr
+		}
+		return compat.CurrentUser(self, quota), true, nil
 	}
 
 	other, ok, err := e.Auth.AccountInfoByLogin(c.UserContext(), int64(caller), login)
@@ -376,9 +384,14 @@ func compatQuotaOf(info auth.AccountInfo, free uint64) compat.Quota {
 // Read at a root the account can reach, because free space is a property of
 // a filesystem rather than of an account, and the home is where a client's
 // default upload goes.
+//
+// The paths carry no trailing slash: a vpath's components are split on it, so
+// "/files/" ends in an empty one and does not parse. Building the path that
+// way answered zero for every root, and a client that compares a file against
+// the free space it was told refuses to start the upload.
 func (e *Engine) compatFreeSpace(c *fiber.Ctx, user core.UserID) (uint64, error) {
 	for _, rt := range e.Core.Roots(user) {
-		vp, err := vfs.ParseVpath("/" + rt.Label + "/")
+		vp, err := vfs.ParseVpath("/" + rt.Label)
 		if err != nil {
 			continue
 		}
@@ -391,7 +404,7 @@ func (e *Engine) compatFreeSpace(c *fiber.Ctx, user core.UserID) (uint64, error)
 			return space.Available, nil
 		}
 	}
-	vp, err := vfs.ParseVpath("/files/")
+	vp, err := vfs.ParseVpath("/files")
 	if err == nil {
 		if r, rerr := e.Core.Resolve(user, vp, acl.Read); rerr == nil {
 			if space, serr := e.Core.FreeSpace(c.UserContext(), r); serr == nil {
