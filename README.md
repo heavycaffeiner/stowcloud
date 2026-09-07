@@ -193,7 +193,7 @@ shipping.
 | **Share links** | Send a folder to someone with no account. Optionally password-protected, expiring, download-capped, or upload-only so people can drop files in without seeing what is there. |
 | **Per-folder access** | Give an account one folder, or one subfolder inside it, with read and write decided separately. The default is that a new account sees nothing. |
 | **Network drive** | WebDAV (mount it in Windows Explorer, Finder, or Linux) and SMB through an optional sidecar container, off unless you turn it on. |
-| **Sync apps** | Existing Nextcloud desktop and mobile clients log in and sync against this server unmodified.[^tm] |
+| **Sync apps** | Existing Nextcloud desktop and mobile clients log in and sync against this server unmodified.[^tm] Point their uploads at a share rather than the account root: this server's root is the list of shares you were granted, not a folder, so an upload aimed there has nowhere to land.[^root] |
 | **Accounts** | Local passwords, single sign-on through OIDC (Keycloak, Authentik, and the like), authenticator-app codes, app passwords, recovery codes. |
 
 ### One tree, however deep it goes
@@ -414,3 +414,10 @@ not been audited by anyone outside this repository.
 [^tm]: Nextcloud is a registered trademark of Nextcloud GmbH. Stowcloud is not
     affiliated with, endorsed by, or sponsored by Nextcloud GmbH; the name is
     used only to state, factually, which clients interoperate.
+
+[^root]: In the mobile app this is the auto-upload folder setting, and the
+    folder you pick when uploading by hand: choose one inside a share, such as
+    `/Photos/Camera`, rather than accepting the default at the top level. A
+    desktop client syncs a share the same way. An upload aimed at the account
+    root answers 404, because that root is a list of shares rather than a
+    directory anything can be written into.
