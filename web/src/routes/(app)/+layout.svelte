@@ -74,18 +74,16 @@
   // a destination (its own route, its own list), not an action on the current
   // folder, and a restore path nobody can find is the same as no restore path.
   //
-  // Links is visible to everybody, admin or not: an ordinary account still
-  // has its own share links to review and revoke, and the screen itself
-  // narrows to "mine" versus "everyone's" off `session.data?.user.is_admin`
-  // (see `/links`), the same way this rail decides `admin` above rather than
-  // gating the route on the server's answer alone.
-  //
-  // Now 4-5 items (5 with admin), still inside MD3's 3-5 for a bottom bar.
+  // Links is deliberately absent here. This list feeds the bottom bar on a
+  // phone and the rail on a tablet, both of which MD3 bounds at three to five
+  // destinations, and a fifth entry beside the admin one pushed a signed-in
+  // administrator to six. It lives in the navigation drawer instead, which is
+  // where the less-travelled destinations belong: reviewing published links is
+  // something an account does occasionally, not on the way to a file.
   const navItems = $derived([
     { id: 'files', label: t('nav.files'), icon: icons.home },
     { id: 'recent', label: t('nav.recent'), icon: icons.recent, href: '/recent' },
     { id: 'trash', label: t('common.trash'), icon: icons.trash, href: '/trash' },
-    { id: 'links', label: t('nav.links'), icon: icons.link, href: '/links' },
     ...(session.data?.user.is_admin
       // `nav.admin`, not `common.administrator`: the rail gives a label a
       // 56px box, and "Administrator" needs 83 of them.

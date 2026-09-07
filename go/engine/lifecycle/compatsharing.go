@@ -315,33 +315,36 @@ func (e *Engine) compatListShares(
 		return compat.ListOf(shares), true, nil
 	}
 
-	// The overview an administrator reaches from the app: every published
-	// link, not only the caller's own. Gated on the caller's own admin
-	// status here rather than trusted from the query, so an ordinary
-	// account asking for it falls through to exactly the listing it would
-	// have gotten without the flag, never a refusal that would confirm the
-	// flag exists and never another account's links.
-	listOwn := true
-	if filter.AllLinks {
-		if admin, aerr := e.Auth.IsAdmin(ctx, int64(user)); aerr == nil && admin {
-			listOwn = false
-		}
-	}
-
-	var links []core.Link
-	if listOwn {
-		links, err = e.Core.ListLinks(ctx, user, nil)
-	} else {
-		links, err = e.Core.ListAllLinks(ctx)
-	}
+	// The caller's own links. There is deliberately no administrative variant
+	// here: this listing renders a link share by its token, and an overview
+	// crossing accounts must not hand an administrator every visitor's access,
+	// so such a listing would have to blank the token. The reference client
+	// reads the token of every public-link entry without checking whether it
+	// is there, so a blanked one crashes its parser and the whole screen
+	// reports a failed fetch against a 200. A listing that can only be shown
+	// by leaking credentials is one this surface does not offer; the
+	// administrative overview lives on the web interface, where it needs no
+	// token to be useful.
+	links, err := e.Core.ListLinks(ctx, user, nil)
 	if err != nil {
 		return compat.Val{}, false, compat.ServerError("could not read shares")
 	}
 	for _, link := range links {
-		if (listOwn && link.Owner != user) || hidden[link.Share] {
+		if link.Owner != user || hidden[link.Share] {
 			continue
 		}
 		share := e.formatLinkShare(ctx, c, link)
+		// A link whose token cannot be recovered is one this listing cannot
+		// describe. The reference client reads the token of every public-link
+		// entry without checking whether it is there, so an empty element is a
+		// crash inside its parser rather than a missing field: the whole
+		// listing fails and the screen reports that it could not be fetched,
+		// against a 200. A link minted before the token cipher was wired has
+		// none to recover, and dropping that one row is what keeps the other
+		// rows visible.
+		if share.Token == "" {
+			continue
+		}
 		if matchesPath(share) {
 			shares = append(shares, compat.FormatShare(share))
 		}

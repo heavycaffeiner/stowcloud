@@ -4,24 +4,34 @@ package lifecycle_test
 
 import (
 	"context"
+	"encoding/base64"
 	"net/http"
-	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
+	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 )
 
-// The Nextcloud app has only the OCS shares listing to reach an overview of
-// published links: there is no separate admin screen it knows how to call.
-// An administrator asking with all_links=true must see every account's
-// links, an ordinary account asking with the same flag must see only its
-// own, and a link into an encrypted share must stay hidden from both, the
-// same as the ordinary listing already guarantees.
-func TestCompatListSharesAllLinksIsAdminOnly(t *testing.T) {
+// The OCS share listing never carries a link share with an empty token.
+//
+// The reference client reads the token of every public-link entry without
+// checking whether it is there, and the exception that produces is caught
+// nowhere in its parser: it escapes as a failed operation, so the share screen
+// reports that it could not fetch anything against an HTTP 200 and shows the
+// user nothing at all. One unrenderable row therefore costs the whole listing,
+// which is why a row that cannot carry its token is left out instead.
+//
+// This is also why the listing has no administrative variant. An overview
+// crossing accounts must not hand an administrator every visitor's access, so
+// it would have to blank the tokens, and blanked tokens are exactly the shape
+// that takes the screen down. That overview lives on the web interface, where
+// it needs no token to be useful.
+func TestCompatShareListingOmitsALinkWithNoToken(t *testing.T) {
 	t.Parallel()
 	e, openErr := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: t.TempDir()})
 	if openErr != nil {
@@ -34,141 +44,80 @@ func TestCompatListSharesAllLinksIsAdminOnly(t *testing.T) {
 	})
 	ctx := context.Background()
 
-	plainDir := t.TempDir()
+	dir := t.TempDir()
 	if rerr := e.Core.RegisterShare(ctx, core.ShareDef{
-		ID: 1, Name: "openshare", Host: plainDir, Policy: vfs.DefaultSharePolicy(),
+		ID: 1, Name: "openshare", Host: dir, Policy: vfs.DefaultSharePolicy(),
 	}); rerr != nil {
-		t.Fatalf("registering the plain share: %v", rerr)
+		t.Fatalf("registering the share: %v", rerr)
 	}
-	cryptDir := t.TempDir()
-	if rerr := e.Core.RegisterShare(ctx, core.ShareDef{
-		ID: 2, Name: "cryptshare", Host: cryptDir, Policy: vfs.DefaultSharePolicy(),
-	}); rerr != nil {
-		t.Fatalf("registering the encrypted share: %v", rerr)
-	}
-	adminDir := t.TempDir()
-	if rerr := e.Core.RegisterShare(ctx, core.ShareDef{
-		ID: 3, Name: "adminshare", Host: adminDir, Policy: vfs.DefaultSharePolicy(),
-	}); rerr != nil {
-		t.Fatalf("registering the admin's own share: %v", rerr)
-	}
-
-	admin, aerr := e.Auth.CreateAdmin(ctx, "alice", "Alice", pwOf(loginPassword))
+	uid, aerr := e.Auth.CreateAdmin(ctx, "alice", "Alice", pwOf(loginPassword))
 	if aerr != nil {
-		t.Fatalf("creating admin: %v", aerr)
+		t.Fatalf("creating the account: %v", aerr)
 	}
-	bob, berr := e.Auth.CreateUser(ctx, "bob", "Bob", pwOf(loginPassword))
-	if berr != nil {
-		t.Fatalf("creating ordinary account: %v", berr)
+	if gerr := e.Core.GrantEveryShare(ctx, uid); gerr != nil {
+		t.Fatalf("granting: %v", gerr)
 	}
-	if gerr := e.Core.GrantEveryShare(ctx, admin); gerr != nil {
-		t.Fatalf("granting admin: %v", gerr)
-	}
-	if gerr := e.Core.GrantEveryShare(ctx, bob); gerr != nil {
-		t.Fatalf("granting bob: %v", gerr)
-	}
-
-	plainVp, pverr := vfs.ParseVpath("openshare")
-	if pverr != nil {
-		t.Fatalf("parsing the plain vpath: %v", pverr)
-	}
-	cryptVp, cverr := vfs.ParseVpath("cryptshare")
-	if cverr != nil {
-		t.Fatalf("parsing the encrypted vpath: %v", cverr)
-	}
-	adminVp, averr := vfs.ParseVpath("adminshare")
-	if averr != nil {
-		t.Fatalf("parsing the admin vpath: %v", averr)
-	}
-
-	// Bob owns the plain and the (later encrypted) link; alice owns a
-	// third, unrelated one. The administrative listing has to surface
-	// bob's plain link under alice's own request, which only happens by
-	// going through ListAllLinks rather than the caller's own, and bob's
-	// own listing must not surface alice's.
-	bobPlainRes, rerr := e.Core.Resolve(core.UserID(bob), plainVp, acl.Share)
-	if rerr != nil {
-		t.Fatalf("resolving the plain share for bob: %v", rerr)
-	}
-	bobCryptRes, rerr := e.Core.Resolve(core.UserID(bob), cryptVp, acl.Share)
-	if rerr != nil {
-		t.Fatalf("resolving the encrypted share for bob: %v", rerr)
-	}
-	adminRes, rerr := e.Core.Resolve(core.UserID(admin), adminVp, acl.Share)
-	if rerr != nil {
-		t.Fatalf("resolving admin's own share: %v", rerr)
-	}
-	if _, _, lerr := e.Core.CreateLink(ctx, bobPlainRes, core.LinkSpec{Perms: acl.Read, MaxDown: -1}); lerr != nil {
-		t.Fatalf("minting bob's plain link: %v", lerr)
-	}
-	if _, _, lerr := e.Core.CreateLink(ctx, bobCryptRes, core.LinkSpec{Perms: acl.Read, MaxDown: -1}); lerr != nil {
-		t.Fatalf("minting bob's link into the share that becomes encrypted: %v", lerr)
-	}
-	if _, _, lerr := e.Core.CreateLink(ctx, adminRes, core.LinkSpec{Perms: acl.Read, MaxDown: -1}); lerr != nil {
-		t.Fatalf("minting alice's own link: %v", lerr)
-	}
-	if eerr := e.Core.EnableEncryption(ctx, 2, encryptionSettingsForTest()); eerr != nil {
-		t.Fatalf("enabling encryption: %v", eerr)
+	token, terr := e.Auth.CreateAppPassword(ctx, uid, "phone",
+		auth.Scope{Perms: auth.SyncScopePerms}, 0)
+	if terr != nil {
+		t.Fatalf("minting the credential: %v", terr)
 	}
 
 	base := serveCompatEngine(t, e)
-	adminAuth := davAuth(t, e, base, admin)
-	bobToken, _, terr := e.Auth.CreateSyncCredential(ctx, bob, "bob device")
-	if terr != nil {
-		t.Fatalf("minting bob's credential: %v", terr)
-	}
+	client := compatClient()
+	t.Cleanup(client.CloseIdleConnections)
+	basic := "Basic " + base64.StdEncoding.EncodeToString([]byte("alice:"+token))
 
-	get := func(auth func(*http.Request)) []byte {
-		t.Helper()
-		req := newReq(t, http.MethodGet,
-			base+"/ocs/v2.php/apps/files_sharing/api/v1/shares?all_links=true", nil)
-		auth(req)
-		req.Header.Set("Accept", "application/json")
-		resp, err := compatClient().Do(req)
-		if err != nil || resp.StatusCode != http.StatusOK {
-			t.Fatalf("GET shares failed: %v", err)
+	for _, name := range []string{"good.txt", "legacy.txt"} {
+		if code, body := davSend(t, client, basic, http.MethodPut,
+			base+"/remote.php/dav/files/alice/openshare/"+name,
+			strings.NewReader("x"), nil); code != http.StatusCreated {
+			t.Fatalf("seeding %s: %d %s", name, code, body)
 		}
-		body := readAllBody(t, resp.Body)
-		closeRespBody(t, resp)
-		return body
 	}
 
-	// An administrator with the flag sees a link owned by another account.
-	adminBody := get(func(r *http.Request) { r.Header.Set("Authorization", adminAuth) })
-	if !strings.Contains(string(adminBody), "openshare") {
-		t.Errorf("administrator did not see bob's plain link: %s", adminBody)
+	// An ordinary link, whose token the cipher can recover.
+	r, rerr := e.Core.Resolve(core.UserID(uid), vpathOf(t, "openshare/good.txt"), acl.Share)
+	if rerr != nil {
+		t.Fatalf("resolving: %v", rerr)
 	}
-	if !strings.Contains(string(adminBody), "adminshare") {
-		t.Errorf("administrator did not see its own link: %s", adminBody)
-	}
-	if strings.Contains(string(adminBody), "cryptshare") {
-		t.Errorf("administrator saw the encrypted-share link: %s", adminBody)
-	}
-
-	// The invariant the whole branch rests on. formatLinkShare emits a token
-	// and a /s/<token> URL whenever the link carries one, and what keeps this
-	// listing clean is that ListAllLinks clears it two files away. An
-	// administrator reading every account's links would otherwise hold every
-	// visitor's access to every published file. The fields are still present
-	// and empty, which is the shape the client already handles; what must
-	// never appear is a value in either.
-	if regexp.MustCompile(`"token":"[^"]+"`).MatchString(string(adminBody)) {
-		t.Errorf("the cross-account listing carries a live token: %s", adminBody)
-	}
-	if regexp.MustCompile(`"url":"[^"]+"`).MatchString(string(adminBody)) {
-		t.Errorf("the cross-account listing carries an openable link URL: %s", adminBody)
+	if _, _, cerr := e.Core.CreateLink(ctx, r, core.LinkSpec{
+		Perms: acl.Read | acl.Download, MaxDown: -1,
+	}); cerr != nil {
+		t.Fatalf("minting the link: %v", cerr)
 	}
 
-	// An ordinary account with the same flag sees only its own links: bob's
-	// plain link, never alice's, and never the encrypted one.
-	bobBody := get(func(r *http.Request) { r.SetBasicAuth("bob", bobToken) })
-	if !strings.Contains(string(bobBody), "openshare") {
-		t.Errorf("bob did not see his own plain link: %s", bobBody)
+	// A link with no recoverable token, written straight to the store the way
+	// one minted before the token cipher was wired sits on disk: a hash that
+	// still authenticates a visitor's request, and no ciphertext to open. The
+	// projection reports Token nil for it, which is the row that renders as an
+	// empty element and takes the client's parser down.
+	if _, ierr := e.State.Insert(ctx, state.LinkRow{
+		TokenHash: []byte("a-hash-that-authenticates-a-request"),
+		Share:     1,
+		Path:      "legacy.txt",
+		Owner:     uid,
+		Perms:     uint16(acl.Read | acl.Download),
+		MaxDown:   nil,
+		CreatedNs: 1,
+	}); ierr != nil {
+		t.Fatalf("writing the legacy link: %v", ierr)
 	}
-	if strings.Contains(string(bobBody), "adminshare") {
-		t.Errorf("bob saw alice's link: %s", bobBody)
+
+	// The request the app's share screen sends: no format parameter, so the
+	// answer is the XML its own parser reads.
+	code, body := davSend(t, client, basic, http.MethodGet,
+		base+"/ocs/v2.php/apps/files_sharing/api/v1/shares?include_tags=true", nil,
+		map[string]string{"OCS-APIRequest": "true"})
+	if code != http.StatusOK {
+		t.Fatalf("the listing answered %d: %s", code, body)
 	}
-	if strings.Contains(string(bobBody), "cryptshare") {
-		t.Errorf("bob saw the encrypted-share link: %s", bobBody)
+	if strings.Contains(body, "<token/>") {
+		t.Errorf("the listing carries an empty token element, which crashes the client: %s", body)
+	}
+	// Dropping the unrenderable row must not drop the renderable one with it:
+	// the whole point is that one bad row no longer costs the listing.
+	if !strings.Contains(body, "good.txt") {
+		t.Errorf("the listing lost the link it can describe: %s", body)
 	}
 }

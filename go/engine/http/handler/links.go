@@ -21,7 +21,17 @@ import (
 // minted, by the mint response below; a listing that carried it would put a
 // live credential in every cache, log and screenshot of that page.
 type LinkView struct {
-	ID    string `json:"id"`
+	ID string `json:"id"`
+	// Path is the link's target as the owner's own client addresses it:
+	// "<label>/<rest>", the label being the projected root their grant puts
+	// the share under. The stored path is share-relative and carries the
+	// grant subpath instead, which names nothing a client can open: an
+	// account granted one folder saw the folder's own name as the whole path
+	// and every navigation from this listing landed somewhere else.
+	//
+	// Empty when the projection failed, which is a link whose share the owner
+	// can no longer reach. The row still lists, because it is still serving
+	// whoever holds its URL and revoking it is the point of the screen.
 	Path  string `json:"path"`
 	Share string `json:"share"`
 	Label string `json:"label,omitempty"`
@@ -69,11 +79,15 @@ type MintedLinkView struct {
 // LinkOf projects one link for its owner.
 //
 // nowNs decides expiry, passed in rather than read here so a listing renders
-// every row against one instant instead of drifting across the page.
-func LinkOf(l core.Link, nowNs int64) LinkView {
+// every row against one instant instead of drifting across the page. vpath is
+// the target as the owner's client addresses it, resolved by the caller: this
+// package cannot reach the core that projects a share-relative path onto a
+// label, and deriving one here from l.Path would reproduce the bug that made
+// every row navigate to the wrong place.
+func LinkOf(l core.Link, vpath string, nowNs int64) LinkView {
 	v := LinkView{
 		ID:          strconv.FormatInt(l.ID, 10),
-		Path:        l.Path.String(),
+		Path:        vpath,
 		Share:       strconv.FormatUint(uint64(l.Share), 10),
 		Label:       l.Label,
 		Note:        l.Note,
@@ -96,11 +110,17 @@ func LinkOf(l core.Link, nowNs int64) LinkView {
 	return v
 }
 
+// VpathOf resolves a link's target into the path its owner's client
+// addresses. Supplied by the caller because the projection lives in the core,
+// which this package may not import. An empty answer is a link whose share
+// the owner can no longer reach.
+type VpathOf func(l core.Link) string
+
 // LinksOf projects a listing.
-func LinksOf(links []core.Link, nowNs int64) []LinkView {
+func LinksOf(links []core.Link, vpathOf VpathOf, nowNs int64) []LinkView {
 	out := make([]LinkView, 0, len(links))
 	for _, l := range links {
-		out = append(out, LinkOf(l, nowNs))
+		out = append(out, LinkOf(l, vpathOf(l), nowNs))
 	}
 	return out
 }
@@ -128,11 +148,13 @@ type OwnedLinkView struct {
 // leaves the name empty rather than failing the listing: an account deleted
 // between the two reads is a link that still exists and still has to be
 // visible, since it is still serving whoever holds its URL.
-func OwnedLinksOf(links []core.Link, names map[int64]string, nowNs int64) []OwnedLinkView {
+func OwnedLinksOf(
+	links []core.Link, names map[int64]string, vpathOf VpathOf, nowNs int64,
+) []OwnedLinkView {
 	out := make([]OwnedLinkView, 0, len(links))
 	for _, l := range links {
 		out = append(out, OwnedLinkView{
-			LinkView:  LinkOf(l, nowNs),
+			LinkView:  LinkOf(l, vpathOf(l), nowNs),
 			Owner:     strconv.FormatInt(int64(l.Owner), 10),
 			OwnerName: names[int64(l.Owner)],
 		})
@@ -146,12 +168,12 @@ func OwnedLinksOf(links []core.Link, names map[int64]string, nowNs int64) []Owne
 // case the service reports with a nil token. The caller answers with the
 // listing shape instead of inventing a token or sending an empty one, since an
 // empty string in that field is a token a client would try to use.
-func MintedLinkOf(l core.Link, nowNs int64) (MintedLinkView, bool) {
+func MintedLinkOf(l core.Link, vpath string, nowNs int64) (MintedLinkView, bool) {
 	if l.Token == nil {
 		return MintedLinkView{}, false
 	}
 	return MintedLinkView{
-		Link:  LinkOf(l, nowNs),
+		Link:  LinkOf(l, vpath, nowNs),
 		Token: string(l.Token.Reveal()),
 	}, true
 }

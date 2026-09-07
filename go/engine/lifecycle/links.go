@@ -51,7 +51,26 @@ func (e *Engine) linksList(c *fiber.Ctx) error {
 	if err != nil {
 		return fail(c, err)
 	}
-	return writeJSON(c, fiber.StatusOK, handler.LinksOf(links, e.now()))
+	return writeJSON(c, fiber.StatusOK, handler.LinksOf(links, e.linkVpath, e.now()))
+}
+
+// linkVpath renders a link's target the way its owner's client addresses it.
+//
+// The stored path is share-relative and carries the grant subpath, which is
+// not what a client can open: an account granted one folder holds a link whose
+// stored path begins with that folder's own name, while the client addresses
+// it as the projected root. Navigating from the stored form landed on a path
+// that does not exist, at whatever depth the grant sits.
+//
+// An empty answer is a link whose share its owner can no longer reach. The row
+// still lists: it is still serving whoever holds the URL, and revoking it is
+// what the screen is for.
+func (e *Engine) linkVpath(l core.Link) string {
+	vp, err := e.Core.VpathFor(l.Owner, l.Share, l.Path)
+	if err != nil {
+		return ""
+	}
+	return vp.String()
 }
 
 // adminLinksList answers every link published from this deployment.
@@ -90,7 +109,8 @@ func (e *Engine) adminLinksList(c *fiber.Ctx) error {
 	} else {
 		e.logger.Warn("the link overview could not name its owners", "error", uerr)
 	}
-	return writeJSON(c, fiber.StatusOK, handler.OwnedLinksOf(links, names, e.now()))
+	return writeJSON(c, fiber.StatusOK,
+		handler.OwnedLinksOf(links, names, e.linkVpath, e.now()))
 }
 
 // createLinkRequest is what a client sends to mint one.
@@ -197,7 +217,7 @@ func (e *Engine) linksCreate(c *fiber.Ctx) error {
 		return fail(c, err)
 	}
 
-	view, ok := handler.MintedLinkOf(link, e.now())
+	view, ok := handler.MintedLinkOf(link, e.linkVpath(link), e.now())
 	if !ok {
 		// The projection refused to render a minted link. Answering with the
 		// token anyway would put it on the wire outside the shape a client
@@ -280,7 +300,7 @@ func (e *Engine) linksUpdate(c *fiber.Ctx) error {
 	if err != nil {
 		return fail(c, err)
 	}
-	return writeJSON(c, fiber.StatusOK, handler.LinkOf(link, e.now()))
+	return writeJSON(c, fiber.StatusOK, handler.LinkOf(link, e.linkVpath(link), e.now()))
 }
 
 // linkPatchOf reads the three-state fields.

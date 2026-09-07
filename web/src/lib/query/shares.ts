@@ -8,8 +8,12 @@ export function shareLinksQuery(path: string | undefined, enabled = true) {
   return queryOptions({ queryKey: keys.shareLinks(path), queryFn: () => api.sharesList(path), enabled })
 }
 
+// Both listings, because a link appears in two: the owner's own and the
+// administrative overview. Revoking from one screen left the other showing a
+// link that no longer exists.
 function invalidateShareLinks(): void {
   void queryClient.invalidateQueries({ queryKey: ['share-links'] })
+  void queryClient.invalidateQueries({ queryKey: keys.adminLinks() })
 }
 
 export function shareCreateMutation() {

@@ -16,9 +16,15 @@
   // address column for a link this screen cannot mint would imply it could
   // reopen a credential the server has already forgotten.
   //
-  // No row actions, so no virtualization concern beyond what `recent`
-  // already accepts: an owner's own link count is small by construction
-  // (one per share action), and the admin route has no separate cap either.
+  // A row opens the link's own manage dialog rather than navigating to the
+  // folder holding it. Navigating was the wrong destination twice over: it
+  // answered "where does this live" when the question a link list raises is
+  // "change or revoke this", and it sent the browser at a path this listing
+  // could not always spell, so an account whose grant projects a subfolder as
+  // its root landed on a path that does not exist.
+  //
+  // The dialog is the same one the file browser opens, so edit and revoke
+  // behave identically wherever they are reached from.
   import { goto } from '$app/navigation'
   import { createQuery } from '@tanstack/svelte-query'
   import { adminLinksQuery } from '../../../lib/query/admin'
@@ -26,12 +32,13 @@
   import { createSession } from '../../../lib/query/session'
   import type { OwnedShareLinkInfo, ShareLinkInfo } from '../../../lib/api/client'
   import { describeApiError } from '../../../lib/api/error-text'
-  import { parentOf } from '../../../lib/api/path-utils'
+  import { baseName, normalizePath } from '../../../lib/api/path-utils'
   import { formatDateNs, t } from '../../../lib/i18n'
   import { Icon } from 'm3-svelte'
   import { icons } from '../../../lib/icons'
   import IconButton from '../../../lib/ui/IconButton.svelte'
   import ProgressCircular from '../../../lib/ui/ProgressCircular.svelte'
+  import ShareManageDialog from '../../../lib/ui/ShareManageDialog.svelte'
 
   const session = createSession()
   const isAdmin = $derived(session.data?.user.is_admin ?? false)
@@ -70,9 +77,26 @@
     return link.max_downloads !== null && link.downloads >= link.max_downloads
   }
 
-  function open(link: ShareLinkInfo): void {
-    goto(`/b${parentOf(link.path)}`)
+  // Whether the caller owns a row, which decides whether it can be managed.
+  // The owner's own listing is all theirs; the administrative one crosses
+  // accounts, and the API refuses an edit or a revoke of somebody else's link
+  // by design. A row that opens a dialog which then shows nothing and can
+  // change nothing is worse than a row that does not open.
+  function isMine(l: ShareLinkInfo | OwnedShareLinkInfo): boolean {
+    return !isOwned(l) || l.owner === session.data?.user.id
   }
+
+  // The link whose dialog is open, or null. The dialog manages every link at
+  // one path, which is the unit it was built around, so the row hands it the
+  // path rather than the link id.
+  let managing = $state<ShareLinkInfo | OwnedShareLinkInfo | null>(null)
+
+  // The dialog offers the file-drop option only for a directory, and the
+  // listing carries no resourcetype. A drop link proves its target is one,
+  // since the server refuses to create a drop over a file; anything else is
+  // reported as a file, which costs a folder the option to gain a second,
+  // drop-shaped link from this screen and never mis-offers one on a file.
+  const managingIsDir = $derived(managing ? isDropLink(managing) : false)
 </script>
 
 <svelte:head><title>{t('links.title_stowcloud')}</title></svelte:head>
@@ -105,8 +129,14 @@
             <button
               type="button"
               class="sc-links__row"
-              aria-label={t('links.open_containing_folder', { path: link.path })}
-              onclick={() => open(link)}
+              class:sc-links__row--readonly={!isMine(link)}
+              aria-disabled={!isMine(link)}
+              aria-label={isMine(link)
+                ? t('links.manage_link', { path: link.path })
+                : t('links.owned_elsewhere', { path: link.path })}
+              onclick={() => {
+                if (isMine(link)) managing = link
+              }}
             >
               <span class="sc-links__icon">
                 <Icon icon={icons[link.has_password ? 'lock' : 'link']} size={20} />
@@ -139,6 +169,16 @@
     {/if}
   </div>
 </div>
+
+{#if managing}
+  <ShareManageDialog
+    open={true}
+    path={normalizePath(managing.path)}
+    targetName={baseName(managing.path) || managing.path}
+    targetIsDir={managingIsDir}
+    onclose={() => (managing = null)}
+  />
+{/if}
 
 <style>
   .sc-links {
@@ -182,6 +222,15 @@
   }
   .sc-links__row:hover {
     background: var(--m3c-surface-container);
+  }
+  /* A link somebody else published: shown because an operator needs to see
+     what this server is serving, not actionable because the API refuses an
+     edit or a revoke from anyone but its owner. */
+  .sc-links__row--readonly {
+    cursor: default;
+  }
+  .sc-links__row--readonly:hover {
+    background: none;
   }
   .sc-links__row:focus-visible {
     outline: 2px solid var(--m3c-primary);
