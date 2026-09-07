@@ -604,6 +604,59 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
     # empty to the caller's test.
     printf '%s' "$hits" | grep -v '^[[:space:]]*$' || true
   }
+  # The reference clients are cloned into .ref so their wire behaviour can be
+  # read. Their code is under a different licence, so a line of it reaching
+  # go/ is a licensing problem rather than a style one. Long lines only: a
+  # short one is shared vocabulary, not copied expression.
+  go_ref_contamination() {
+    [ -d .ref ] || return 0
+    scratch=$(mktemp -d) || return 0
+    # Three hazards, all of which fail silently by reporting a clean tree:
+    # iconv drops bytes that are not valid UTF-8, without which sed aborts the
+    # stream on the first one; grep -a keeps reading after a NUL instead of
+    # collapsing to "binary file matches"; LC_ALL=C keeps sort and comm
+    # agreeing on order.
+    find .ref -type f \( -name '*.java' -o -name '*.kt' -o -name '*.swift' \
+                        -o -name '*.cpp' -o -name '*.h' \) -print0 2>/dev/null \
+      | xargs -0 -r cat 2>/dev/null \
+      | tr -d '\r' \
+      | iconv -f UTF-8 -t UTF-8 -c 2>/dev/null \
+      | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
+      | grep -avE '^(//|\*|/\*|#|import|package|@)' \
+      | awk 'length($0) >= 60' \
+      | LC_ALL=C sort -u > "$scratch/ref.txt"
+    find go -name '*.go' -print0 2>/dev/null \
+      | xargs -0 -r cat 2>/dev/null \
+      | tr -d '\r' \
+      | iconv -f UTF-8 -t UTF-8 -c 2>/dev/null \
+      | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
+      | awk 'length($0) >= 60' \
+      | LC_ALL=C sort -u > "$scratch/go.txt"
+    # Name the file each surviving line sits in, so a hit is actionable
+    # rather than a bare string.
+    #
+    # A line of nothing but short quoted tokens is a list of names some other
+    # specification fixed, not expression: two servers refusing the same
+    # Windows device names write that list identically or are wrong. Prose
+    # and code carry lowercase words, so requiring one keeps the filter from
+    # excusing a real copy.
+    LC_ALL=C comm -12 "$scratch/ref.txt" "$scratch/go.txt" \
+      | grep -aE '[a-z]{3}' \
+      | while IFS= read -r line; do
+          [ -n "$line" ] || continue
+          where=$(grep -ralF -- "$line" go --include='*.go' 2>/dev/null | head -1)
+          printf '%s: %.90s\n' "${where:-go/}" "$line"
+        done
+    rm -rf "$scratch"
+  }
+  if [ -d .ref ]; then
+    REF_HITS=$(go_ref_contamination)
+    grep_gate "no reference source copied into go/" "$REF_HITS" \
+      "Read .ref for behaviour; never paste its code. It is licensed differently."
+  else
+    skipped "no reference source copied into go/" "no .ref checkout" 0
+  fi
+
   if [ -d go/engine/http/compat ]; then
     NC_HITS=$(go_compat_isolation)
     grep_gate "compat isolation (import graph, seam, text)" "$NC_HITS" \

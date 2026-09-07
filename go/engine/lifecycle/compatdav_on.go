@@ -385,7 +385,12 @@ type davQuery struct {
 	image     bool
 	video     bool
 	name      string
-	sinceNs   int64
+	// sinceNs opens the window and beforeNs closes it, both zero when the
+	// client named no bound. The gallery pages by narrowing the upper one on
+	// every scroll, so a listing that ignores it repeats the same rows and
+	// the screen never advances.
+	sinceNs  int64
+	beforeNs int64
 	// fileID is the identity a lookup names, and byID says one was asked for
 	// at all. They are separate because an id that does not parse is still a
 	// lookup: answering it with a listing would hand the client somebody
@@ -462,11 +467,6 @@ func parseDavQuery(leaves []dav.Leaf, want []xml.Name) davQuery {
 		case byName && q.name == "":
 			q.name = strings.Trim(literal, "%")
 		case byTime:
-			// Terms of one DAV:and, so the window opens at the greatest lower
-			// bound. DAV:lt closes the range and is not a start.
-			if leaf.Within.Local != "gt" && leaf.Within.Local != "gte" {
-				continue
-			}
 			// Epoch seconds when a range was picked, RFC 3339 for the client's
 			// own recent view.
 			var ns int64
@@ -475,8 +475,20 @@ func parseDavQuery(leaves []dav.Leaf, want []xml.Name) davQuery {
 			} else if secs, serr := strconv.ParseInt(strings.TrimSpace(literal), 10, 64); serr == nil && secs > 0 {
 				ns = secs * int64(time.Second)
 			}
-			if ns > q.sinceNs {
-				q.sinceNs = ns
+			if ns == 0 {
+				continue
+			}
+			// Terms of one DAV:and narrow each other, so the window opens at
+			// the greatest lower bound and closes at the least upper one.
+			switch leaf.Within.Local {
+			case "gt", "gte":
+				if ns > q.sinceNs {
+					q.sinceNs = ns
+				}
+			case "lt", "lte":
+				if q.beforeNs == 0 || ns < q.beforeNs {
+					q.beforeNs = ns
+				}
 			}
 		}
 	}
@@ -600,10 +612,19 @@ func extIn(name string, exts []string) bool {
 // of it: a photo library keeps its photos in folders. Each extension is one
 // index query, and the real extension is checked afterwards, so a name that
 // merely contains one is not reported as media.
+//
+// The window and the row count belong to the client. Its gallery pages by
+// narrowing the upper bound to the oldest row it was given and asking again,
+// so a listing that answers outside the window returns rows the screen
+// already holds and the scroll never reaches the end.
 func (s *compatQuerySource) mediaEntries(
 	ctx context.Context, res core.Resolved, user core.UserID, q davQuery,
 ) []core.Entry {
 	wanted := mediaExts(q.image, q.video)
+	ceiling := q.limit
+	if ceiling <= 0 || ceiling > limits.SearchResults {
+		ceiling = limits.SearchResults
+	}
 	if s.engine.Search == nil {
 		// Without an index the queried scope is what can be answered
 		// cheaply. One level, and honestly one level.
@@ -613,8 +634,15 @@ func (s *compatQuerySource) mediaEntries(
 		}
 		var out []core.Entry
 		for _, entry := range page.Entries {
-			if !entry.IsDir && extIn(entry.Name, wanted) {
-				out = append(out, entry)
+			if entry.IsDir || !extIn(entry.Name, wanted) {
+				continue
+			}
+			if !q.inWindow(entry.MTimeNs) {
+				continue
+			}
+			out = append(out, entry)
+			if len(out) >= ceiling {
+				break
 			}
 		}
 		return out
@@ -624,7 +652,7 @@ func (s *compatQuerySource) mediaEntries(
 	seen := make(map[string]struct{})
 	var out []core.Entry
 	for _, ext := range wanted {
-		if len(out) >= limits.SearchResults {
+		if len(out) >= ceiling {
 			break
 		}
 		results, err := s.engine.Search.Query(ctx, sources,
@@ -644,14 +672,29 @@ func (s *compatQuerySource) mediaEntries(
 			if !ok {
 				continue
 			}
+			if !q.inWindow(entry.MTimeNs) {
+				continue
+			}
 			seen[path] = struct{}{}
 			out = append(out, entry)
-			if len(out) >= limits.SearchResults {
+			if len(out) >= ceiling {
 				break
 			}
 		}
 	}
 	return out
+}
+
+// inWindow reports whether a modification time falls inside the range the
+// query named. An absent bound admits everything on that side.
+func (q davQuery) inWindow(mtimeNs int64) bool {
+	if q.sinceNs > 0 && mtimeNs < q.sinceNs {
+		return false
+	}
+	if q.beforeNs > 0 && mtimeNs > q.beforeNs {
+		return false
+	}
+	return true
 }
 
 // namedEntries answers a display-name filter, which is the client's search
