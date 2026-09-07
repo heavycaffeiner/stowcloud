@@ -400,7 +400,6 @@ type davQuery struct {
 // named "yes" is not a request for the starred set.
 func parseDavQuery(leaves []dav.Leaf, want []xml.Name) davQuery {
 	var q davQuery
-	var literals []string
 	byName := false
 	byTime := false
 
@@ -419,8 +418,6 @@ func parseDavQuery(leaves []dav.Leaf, want []xml.Name) davQuery {
 			byName = true
 		case "getlastmodified":
 			byTime = true
-		case "literal":
-			literals = append(literals, leaf.Value)
 		case "nresults":
 			if n, err := strconv.Atoi(strings.TrimSpace(leaf.Value)); err == nil && n > 0 {
 				q.limit = n
@@ -438,7 +435,11 @@ func parseDavQuery(leaves []dav.Leaf, want []xml.Name) davQuery {
 		return q
 	}
 
-	for _, literal := range literals {
+	for _, leaf := range leaves {
+		if leaf.Name.Local != "literal" {
+			continue
+		}
+		literal := leaf.Value
 		switch {
 		case q.media && strings.HasPrefix(literal, "image/"):
 			q.image = true
@@ -446,13 +447,20 @@ func parseDavQuery(leaves []dav.Leaf, want []xml.Name) davQuery {
 			q.video = true
 		case byName && q.name == "":
 			q.name = strings.Trim(literal, "%")
-		case byTime && q.sinceNs == 0:
-			// Two spellings, because the reference client sends both: an
-			// RFC 3339 instant for its own recent view, and bare epoch
-			// seconds when the search carries a start and end date. Reading
-			// only the first dropped the window on the query the app's
-			// recent screen actually sends, and the listing then fell back
-			// to the default window whatever the client asked for.
+		case byTime:
+			// The lower bound only. A search for a window sends two literals
+			// under the same property, and the one that opens it sits inside
+			// DAV:gt while DAV:lt closes it. Taking whichever came first took
+			// the upper bound, so the window read as "modified since the end
+			// of the range" and the listing was empty: the app's recent screen
+			// showed almost nothing while the interface showed the real list.
+			//
+			// Two spellings reach here. The reference client sends an RFC 3339
+			// instant for its own recent view and bare epoch seconds when the
+			// search carries a start and an end date.
+			if leaf.Within.Local != "gt" && leaf.Within.Local != "gte" {
+				continue
+			}
 			if t, err := time.Parse(time.RFC3339, literal); err == nil {
 				q.sinceNs = t.UnixNano()
 			} else if secs, serr := strconv.ParseInt(strings.TrimSpace(literal), 10, 64); serr == nil && secs > 0 {

@@ -30,6 +30,15 @@ type Leaf struct {
 	// Value is the element's text, when it had any. An element with none is a
 	// filter on presence and arrives empty.
 	Value string
+	// Within is the element enclosing this one, zero at the document element.
+	//
+	// A comparison carries its operator there and nowhere else: a search for a
+	// window sends two bounds under one property, distinguished only by
+	// sitting inside DAV:gt or DAV:lt. Without this a source sees two numbers
+	// in document order and has to guess which is the lower, and guessing took
+	// the upper bound as the start of the window: a listing of everything
+	// modified since the end of the range, which is nothing.
+	Within xml.Name
 }
 
 // ReportBody is what one report body said, in the two shapes a query body
@@ -86,6 +95,7 @@ func ParseReport(body io.Reader, lim Limits) (ReportBody, error) {
 		capturing bool
 		capName   xml.Name
 		capDepth  int
+		capWithin xml.Name
 		capText   []byte
 	)
 
@@ -134,6 +144,10 @@ func ParseReport(body io.Reader, lim Limits) (ReportBody, error) {
 					return ReportBody{}, ErrTooManyElements
 				}
 				capturing, capName, capDepth = true, t.Name, len(stack)
+				capWithin = xml.Name{}
+				if len(stack) > 0 {
+					capWithin = stack[len(stack)-1]
+				}
 				capText = capText[:0]
 				stack = append(stack, t.Name)
 				continue
@@ -148,7 +162,8 @@ func ParseReport(body io.Reader, lim Limits) (ReportBody, error) {
 				inProp = false
 			}
 			if capturing && len(stack) == capDepth {
-				out.Leaves = append(out.Leaves, Leaf{Name: capName, Value: string(capText)})
+				out.Leaves = append(out.Leaves,
+					Leaf{Name: capName, Value: string(capText), Within: capWithin})
 				capturing = false
 			}
 
