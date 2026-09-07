@@ -315,12 +315,30 @@ func (e *Engine) compatListShares(
 		return compat.ListOf(shares), true, nil
 	}
 
-	links, err := e.Core.ListLinks(ctx, user, nil)
+	// The overview an administrator reaches from the app: every published
+	// link, not only the caller's own. Gated on the caller's own admin
+	// status here rather than trusted from the query, so an ordinary
+	// account asking for it falls through to exactly the listing it would
+	// have gotten without the flag, never a refusal that would confirm the
+	// flag exists and never another account's links.
+	listOwn := true
+	if filter.AllLinks {
+		if admin, aerr := e.Auth.IsAdmin(ctx, int64(user)); aerr == nil && admin {
+			listOwn = false
+		}
+	}
+
+	var links []core.Link
+	if listOwn {
+		links, err = e.Core.ListLinks(ctx, user, nil)
+	} else {
+		links, err = e.Core.ListAllLinks(ctx)
+	}
 	if err != nil {
 		return compat.Val{}, false, compat.ServerError("could not read shares")
 	}
 	for _, link := range links {
-		if link.Owner != user || hidden[link.Share] {
+		if (listOwn && link.Owner != user) || hidden[link.Share] {
 			continue
 		}
 		share := e.formatLinkShare(ctx, c, link)

@@ -256,10 +256,17 @@ func (e *Engine) compatRecent(
 	if err != nil {
 		return compat.Val{}, false, compat.BadRequest(err.Error())
 	}
-
+	// The zero time means the client named no window. It is spelled out
+	// rather than passed through: UnixNano on a zero Time is a large
+	// negative number, not zero, so the shared policy would read it as an
+	// explicit instant and reach back to the account's first write.
+	var sinceNs int64
+	if !q.Since.IsZero() {
+		sinceNs = q.Since.UnixNano()
+	}
 	hits, rerr := e.Core.Recent(c.UserContext(), user, core.RecentQuery{
-		SinceNs: q.Since.UnixNano(),
-		Limit:   q.Limit,
+		SinceNs: core.RecentSinceOf(sinceNs, e.clock.Now()),
+		Limit:   core.RecentLimitOf(q.Limit),
 	})
 	if rerr != nil {
 		return compat.Val{}, false, compat.ServerError("the recency query failed")

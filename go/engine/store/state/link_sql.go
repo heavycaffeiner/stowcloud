@@ -25,6 +25,11 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`
 
 	sqlListLinksByOwner = `SELECT ` + linkColumns + ` FROM share_link WHERE owner = ? ORDER BY id`
 
+	// Every link, for the administrative overview. Ordered by owner first so
+	// one account's links stay together in the listing, then by id so the
+	// order within an account matches the per-owner query above.
+	sqlListAllLinks = `SELECT ` + linkColumns + ` FROM share_link ORDER BY owner, id`
+
 	// The ownership check and the delete are one statement, so the two
 	// cannot disagree about who owns the row.
 	sqlDeleteLink = `DELETE FROM share_link WHERE id = ? AND owner = ?`

@@ -86,6 +86,8 @@ func (e *Engine) newDavHandler() *dav.Handler {
 		UploadHeaders:   e.davUploadHeaders(),
 		Sources:         e.davSources(),
 		VendorProps:     e.davVendorProps(),
+		VendorID:        e.davVendorID(),
+		VendorIDHeader:  e.davVendorIDHeader(),
 		InfinityEntries: davDefaultInfinity,
 		Logger:          e.logger,
 	})

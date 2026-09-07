@@ -3,8 +3,11 @@
 package lifecycle_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -128,9 +131,15 @@ func TestAPaddedChunkNameIsRefused(t *testing.T) {
 	}
 }
 
-// A PROPFIND of the collection reports the members held, which is what a
-// resuming client reads to learn what is left to send.
-func TestTheCollectionListsTheChunksItHolds(t *testing.T) {
+// A PROPFIND of the collection reports what the client needs to resume: how
+// many bytes are held and the highest member name holding them.
+//
+// The client sums the lengths it is shown to decide the offset to send from,
+// and takes the highest name to decide what to call the next chunk. Members
+// already merged into the part file have no boundaries left on disk, so they
+// are reported as the one run they now are; what has to be true is the pair
+// of figures the client derives, not how many responses carry them.
+func TestTheCollectionReportsWhatAResumeNeeds(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	m := f.mounted()
@@ -149,13 +158,29 @@ func TestTheCollectionListsTheChunksItHolds(t *testing.T) {
 	if w.Code != http.StatusMultiStatus {
 		t.Fatalf("answered %d, want 207: %s", w.Code, w.Body.String())
 	}
-	for _, name := range []string{"/dav-uploads/tid-l/1", "/dav-uploads/tid-l/2"} {
-		if !strings.Contains(w.Body.String(), "<D:href>"+name+"</D:href>") {
-			t.Errorf("chunk %s is not listed: %s", name, w.Body.String())
+	body := w.Body.String()
+
+	// Six bytes arrived, so that is what the listing has to account for. A
+	// listing that named the members without their lengths summed to zero and
+	// had the client resend from the start under a later name, which repeats
+	// the opening bytes of the assembled file.
+	held := 0
+	for _, n := range regexp.MustCompile(
+		`<D:getcontentlength>(\d+)</D:getcontentlength>`).FindAllStringSubmatch(body, -1) {
+		size, cerr := strconv.Atoi(n[1])
+		if cerr != nil {
+			t.Fatalf("a member length does not parse: %v", cerr)
 		}
+		held += size
 	}
-	if strings.Contains(w.Body.String(), "/dav-uploads/tid-l/3") {
-		t.Errorf("a chunk never sent is listed: %s", w.Body.String())
+	if held != 6 {
+		t.Errorf("the listing accounts for %d bytes, want 6: %s", held, body)
+	}
+	if !strings.Contains(body, "<D:href>/dav-uploads/tid-l/2</D:href>") {
+		t.Errorf("the listing does not name the highest member held: %s", body)
+	}
+	if strings.Contains(body, "/dav-uploads/tid-l/3") {
+		t.Errorf("a chunk never sent is listed: %s", body)
 	}
 }
 
@@ -187,6 +212,61 @@ func TestDiscardingAbandonsTheSession(t *testing.T) {
 	}
 	if f.exists("out.bin") {
 		t.Error("a discarded session published a file")
+	}
+}
+
+// Reopening a collection whose session is no longer receiving starts a fresh
+// one under the same name.
+//
+// The alias outlives the session it names: aborting and expiring both leave
+// the row, and only a discard removes it. Reusing the alias without looking
+// at the session answered 201 to the open and then refused every chunk that
+// followed, which tells the client the collection is ready while nothing can
+// be written into it. The name a client keeps addressing has to go on
+// working.
+func TestReopeningADeadSessionStartsAFreshOne(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	m := f.mounted()
+
+	const dest = "/dav/files/revived.bin"
+	if w := f.throughHeaders(m, "MKCOL", uploadRoot+"/tid-dead", "", map[string]string{
+		"Destination": dest,
+	}); w.Code != http.StatusCreated {
+		t.Fatalf("the first open answered %d", w.Code)
+	}
+
+	// Abandon the session behind the mount's back, which is what an expiry
+	// sweep leaves: the alias stays, the session stops receiving.
+	alias, lerr := f.engine.Upload.LookupAlias(context.Background(), "tid-dead", testUser)
+	if lerr != nil {
+		t.Fatalf("looking up the alias: %v", lerr)
+	}
+	if aerr := f.engine.Upload.Abort(context.Background(), alias.Session, testUser); aerr != nil {
+		t.Fatalf("aborting: %v", aerr)
+	}
+
+	if w := f.throughHeaders(m, "MKCOL", uploadRoot+"/tid-dead", "", map[string]string{
+		"Destination": dest,
+	}); w.Code != http.StatusCreated {
+		t.Fatalf("reopening a dead session answered %d", w.Code)
+	}
+
+	// The point of the reopen: the collection actually takes bytes now.
+	if w := f.throughHeaders(m, http.MethodPut, uploadRoot+"/tid-dead/1", "revived",
+		map[string]string{"Destination": dest}); w.Code != http.StatusCreated {
+		t.Fatalf("a chunk after the reopen answered %d, so the open was a lie", w.Code)
+	}
+	// The collection itself, not the vendor's ".file" member: that spelling is
+	// the compatibility layer's vocabulary and this file runs without the tag
+	// that supplies it.
+	if w := f.throughHeaders(m, "MOVE", uploadRoot+"/tid-dead", "", map[string]string{
+		"Destination": dest, "OC-Total-Length": "7",
+	}); w.Code != http.StatusCreated {
+		t.Fatalf("publishing answered %d", w.Code)
+	}
+	if got := f.read(t, "revived.bin"); got != "revived" {
+		t.Errorf("the revived transfer holds %q", got)
 	}
 }
 

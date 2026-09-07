@@ -59,6 +59,7 @@ import {
   type BatchItemResult,
   type CopyResult,
   type ShareLinkCreateReq,
+  type OwnedShareLinkInfo,
   type ShareBackend,
   type ShareEncryption,
   type ShareLinkInfo,
@@ -840,6 +841,26 @@ function linkFromWire(w: WireLink, token?: string): ShareLinkInfo {
 async function sharesList(path?: string): Promise<ShareLinkInfo[]> {
   const rows = await request<WireLink[]>(`/links${qs({ path })}`)
   return (rows ?? []).map((r) => linkFromWire(r))
+}
+
+/** One link as `GET /api/v1/admin/links` sends it: `WireLink`'s fields plus
+ *  who owns it. `owner` is an account id and `owner_name` its display name;
+ *  the server omits the name for an account since deleted rather than
+ *  failing the whole listing. */
+interface WireOwnedLink extends WireLink {
+  owner: string
+  owner_name?: string
+}
+
+function ownedLinkFromWire(w: WireOwnedLink): OwnedShareLinkInfo {
+  return { ...linkFromWire(w), owner: Number(w.owner), owner_name: w.owner_name ?? '' }
+}
+
+/** `GET /api/v1/admin/links`: every share link on the deployment, whoever
+ *  owns it. Admin-only; the server answers 403 to anyone else. */
+async function adminListLinks(): Promise<OwnedShareLinkInfo[]> {
+  const rows = await request<WireOwnedLink[]>('/admin/links')
+  return (rows ?? []).map(ownedLinkFromWire)
 }
 
 async function shareCreate(req: ShareLinkCreateReq): Promise<ShareLinkInfo> {
@@ -2047,6 +2068,7 @@ export const httpApi = {
   trashRestore,
   trashPurge,
   sharesList,
+  adminListLinks,
   shareCreate,
   shareUpdate,
   shareDelete,

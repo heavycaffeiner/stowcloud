@@ -38,9 +38,38 @@ func NewDavUploads(engine *upload.Engine) dav.Uploads {
 // transfer id arrives from a client, so it is both guessable and prone to
 // collision; the binding is per account, which is what keeps one account from
 // naming its way into another's in-flight upload.
+//
+// Opening a collection the account already holds resumes it rather than
+// failing. The reference client re-runs the whole operation to resume, so it
+// opens the same collection again, reads back the chunks already there and
+// sends only what is missing. Refusing the second open ended every resumed
+// transfer before its first chunk, and a client that had lost the response to
+// the first open could never proceed at all. The resume is confined to a
+// session whose share and destination match: a collection naming somewhere
+// else is a different transfer that happens to share a name, and adopting it
+// would publish these bytes at that destination.
 func (a davUploads) Open(
 	ctx context.Context, res core.Resolved, name string, total *uint64,
 ) error {
+	if alias, lerr := a.engine.LookupAlias(ctx, name, res.User()); lerr == nil {
+		if alias.Share != res.Share() || alias.Dest != res.Path().String() {
+			return core.ErrExists
+		}
+		// The alias outlives the session it names: expiry and abort leave the
+		// row, and only a discard unbinds it. Reusing one of those would
+		// answer 201 to an open and then refuse every chunk that followed,
+		// which tells the client the collection is there while nothing can be
+		// written into it. A session that is no longer receiving is replaced
+		// instead, so the name the client keeps addressing goes on working.
+		if sess, gerr := a.engine.Get(ctx, alias.Session, res.User()); gerr == nil &&
+			sess.State == upload.StateReceiving {
+			return nil
+		}
+		if uerr := a.engine.UnbindAlias(ctx, name, res.User()); uerr != nil {
+			return translateUploadError(uerr)
+		}
+	}
+
 	spec := upload.SessionSpec{
 		TotalLen: total,
 		Mode:     upload.SpoolNameOrdered,
@@ -88,6 +117,11 @@ func (a davUploads) lookup(
 }
 
 // PutChunk stores one member.
+//
+// The engine's refusal is translated like every other: a chunk aimed at a
+// session that has expired or been abandoned is the client's to recover from
+// by opening a new collection, and reporting it as a server fault has a sync
+// client retry the whole file against a session that will never take it.
 func (a davUploads) PutChunk(
 	ctx context.Context, res core.Resolved, name string, member uint32, body io.Reader,
 ) error {
@@ -95,7 +129,8 @@ func (a davUploads) PutChunk(
 	if err != nil {
 		return err
 	}
-	return a.engine.PutNamed(ctx, res.Root(), id, res.User(), member, body, nil)
+	return translateUploadError(
+		a.engine.PutNamed(ctx, res.Root(), id, res.User(), member, body, nil))
 }
 
 // malformedUpload marks an engine refusal as the request's fault.
@@ -137,18 +172,30 @@ func (a davUploads) Discard(ctx context.Context, res core.Resolved, name string)
 	if aerr := a.engine.Abort(ctx, id, res.User()); aerr != nil {
 		return translateUploadError(aerr)
 	}
-	return a.engine.UnbindAlias(ctx, name, res.User())
+	return translateUploadError(a.engine.UnbindAlias(ctx, name, res.User()))
 }
 
-// Held lists the members stored so far.
+// Held lists the members stored so far, with the size of each.
+//
+// The size is what a resuming client sums to decide where to start, so it
+// crosses the seam beside the name rather than being left for the protocol
+// layer to guess at.
 func (a davUploads) Held(
 	ctx context.Context, res core.Resolved, name string,
-) ([]uint32, error) {
+) ([]dav.Chunk, error) {
 	id, err := a.lookup(ctx, res, name)
 	if err != nil {
 		return nil, err
 	}
-	return a.engine.ListChunks(ctx, id, res.User())
+	held, lerr := a.engine.ListChunks(ctx, res.Root(), id, res.User())
+	if lerr != nil {
+		return nil, translateUploadError(lerr)
+	}
+	out := make([]dav.Chunk, len(held))
+	for i, c := range held {
+		out[i] = dav.Chunk{Name: c.Name, Size: c.Size}
+	}
+	return out, nil
 }
 
 // The engine's refusals cross into the dav package through translation, not
@@ -160,12 +207,26 @@ func translateUploadError(err error) error {
 		return nil
 	case errors.Is(err, upload.ErrNotFound):
 		return core.ErrNotFound
-	case errors.Is(err, upload.ErrBadRequest):
+	case errors.Is(err, upload.ErrBadRequest), errors.Is(err, upload.ErrIncomplete),
+		errors.Is(err, upload.ErrChunkTooSmall), errors.Is(err, upload.ErrTooLarge),
+		errors.Is(err, upload.ErrAliasTaken), errors.Is(err, upload.ErrOffsetConflict),
+		errors.Is(err, upload.ErrChecksum), errors.Is(err, upload.ErrFragmented),
+		errors.Is(err, upload.ErrUnknownAlgo):
 		// There is no single bad-request sentinel on the dav side; the status
 		// table answers one for the client's faults it knows. The upload
 		// engine's message carries which rule broke, and losing it would tell
 		// the client only that something was wrong, so it travels wrapped.
+		//
+		// An assembly across a gap belongs here rather than in the default: a
+		// transfer missing a chunk is the client's to finish, and answering
+		// 500 tells it the server broke, which is what makes a sync client
+		// retry the whole file instead of sending the piece it still owes.
 		return markBadRequest(err)
+	case errors.Is(err, upload.ErrSessionExpired), errors.Is(err, upload.ErrSessionState):
+		// The session is gone as far as the client is concerned, and the
+		// collection it names no longer exists. Not-found is what makes it
+		// open a new one rather than retry into a spool that has been swept.
+		return core.ErrNotFound
 	default:
 		return err
 	}

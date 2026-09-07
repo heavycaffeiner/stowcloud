@@ -45,6 +45,10 @@ export function adminSharesQuery() {
   return queryOptions({ queryKey: keys.adminShares(), queryFn: () => api.adminListShares() })
 }
 
+export function adminLinksQuery() {
+  return queryOptions({ queryKey: keys.adminLinks(), queryFn: () => api.adminListLinks() })
+}
+
 export function adminGrantsQuery(scope: GrantScope = {}) {
   return queryOptions({ queryKey: keys.adminGrants(scope), queryFn: () => api.adminListGrants(scope) })
 }

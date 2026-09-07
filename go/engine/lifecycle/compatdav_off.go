@@ -28,6 +28,11 @@ func (e *Engine) davVendorProps() func(
 ) []dav.Prop {
 	return nil
 }
+
+func (e *Engine) davVendorID() func(ctx context.Context, res core.Resolved) string { return nil }
+
+func (e *Engine) davVendorIDHeader() string { return "" }
+
 func (e *Engine) davSources() []dav.QuerySource                                                  { return nil }
 func (e *Engine) serveDavTrash(http.ResponseWriter, *http.Request, middleware.Principal, string) {}
 

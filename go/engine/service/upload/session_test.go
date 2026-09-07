@@ -115,7 +115,7 @@ func TestEverySurfaceIsOwnerScoped(t *testing.T) {
 		bytes.NewReader([]byte("x")), nil); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("PatchAt returned %v", err)
 	}
-	if _, err := f.engine.ListChunks(ctx, sess.ID, stranger); !errors.Is(err, ErrNotFound) {
+	if _, err := f.engine.ListChunks(ctx, f.root(t), sess.ID, stranger); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("ListChunks returned %v", err)
 	}
 	if err := f.engine.Abort(ctx, sess.ID, stranger); !errors.Is(err, ErrNotFound) {

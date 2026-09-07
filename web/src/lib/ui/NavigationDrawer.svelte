@@ -208,6 +208,18 @@
           <span class="sc-nav-drawer__item-label">{t('common.trash')}</span>
         </button>
       </li>
+
+      <li class="sc-nav-drawer__entry">
+        <button
+          type="button"
+          class="sc-nav-drawer__item"
+          class:sc-nav-drawer__item--active={activeNav === 'links'}
+          onclick={() => handleNavClick({ id: 'links', label: t('nav.links'), icon: icons.link, href: '/links' })}
+        >
+          <span class="sc-nav-drawer__item-icon"><Icon icon={icons.link} size={20} /></span>
+          <span class="sc-nav-drawer__item-label">{t('nav.links')}</span>
+        </button>
+      </li>
     </ul>
 
     <!-- Section 2: SYSTEM -->

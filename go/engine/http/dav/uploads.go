@@ -56,9 +56,21 @@ type Uploads interface {
 	Assemble(ctx context.Context, res core.Resolved, name string, total uint64, mtimeNs *int64) (core.Entry, error)
 	// Discard abandons a session.
 	Discard(ctx context.Context, res core.Resolved, name string) error
-	// Held is which members are currently stored, for a PROPFIND that asks a
-	// resuming client what it still owes.
-	Held(ctx context.Context, res core.Resolved, name string) ([]uint32, error)
+	// Held is which members are currently stored and how large each is, for a
+	// PROPFIND that asks a resuming client what it still owes. The size is
+	// part of the answer rather than an extra call: a client works out where
+	// to resume by summing the members it is shown, so a listing without
+	// lengths has it resume at the start while numbering from the end, and
+	// the same bytes arrive twice.
+	Held(ctx context.Context, res core.Resolved, name string) ([]Chunk, error)
+}
+
+// Chunk is one member of an upload collection, as a listing reports it.
+type Chunk struct {
+	// Name is the member's number.
+	Name uint32
+	// Size is how many bytes it holds.
+	Size uint64
 }
 
 // UploadHeaders supplies the header names this collection looks for.
@@ -346,14 +358,25 @@ func (h *Handler) uploadPropfind(
 	}})
 
 	if depth != DepthZero {
-		for _, n := range held {
-			name := ChunkName(int64(n))
+		for _, c := range held {
+			name := ChunkName(int64(c.Name))
 			m.Response(EncodeHref(append(segs[:len(segs):len(segs)], name), false), []PropStat{{
 				Status: http.StatusOK,
 				// A member is a file, so its resourcetype is present and
 				// empty. Omitting it would leave a client unable to tell a
 				// chunk from another collection.
-				Props: []Prop{{Name: davName("resourcetype")}},
+				//
+				// The length travels beside it because that is how a resuming
+				// client works out where to start: it sums the members it is
+				// shown and sends from that offset under the next name. A
+				// listing without lengths sums to zero, so it resends the
+				// whole file from a name past the ones already stored, and
+				// the assembled result repeats its opening bytes.
+				Props: []Prop{
+					{Name: davName("resourcetype")},
+					{Name: davName("getcontentlength"),
+						Value: strconv.FormatUint(c.Size, 10)},
+				},
 			}})
 			if m.Err() != nil {
 				h.log(r).Warn("the member listing stopped early", "error", m.Err())

@@ -221,7 +221,22 @@ func (e *Engine) Assemble(
 	if herr != nil {
 		return core.Entry{}, herr
 	}
+	// A total the caller passed wins, then the one captured when the session
+	// was opened. Without the second, a transfer whose trailing chunk never
+	// arrived assembled cleanly: the spool is gap-free once the missing name
+	// is past the end, so the drain above finds nothing wrong, and adopting
+	// the write head as the length published a truncated file and answered
+	// 201. The client deletes its local copy on that answer.
+	if total == 0 {
+		if declared, ok := rw.totalLen(); ok {
+			total = declared
+		}
+	}
 	if total > 0 && head != total {
+		if head < total {
+			return core.Entry{}, fmt.Errorf("%w: %d of %d bytes assembled",
+				ErrIncomplete, head, total)
+		}
 		return core.Entry{}, fmt.Errorf("%w: %d bytes assembled against a declared total of %d",
 			ErrBadRequest, head, total)
 	}

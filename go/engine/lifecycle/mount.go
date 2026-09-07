@@ -201,6 +201,8 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.filesDownloadFetch
 		case "links.list":
 			out[r.Name] = e.linksList
+		case "admin.links.list":
+			out[r.Name] = e.adminLinksList
 		case "links.create":
 			out[r.Name] = e.linksCreate
 		case "links.delete":

@@ -614,32 +614,22 @@ func (e *Engine) filesRecent(c *fiber.Ctx) error {
 	// be resolved against somebody's clock and the two ends of this wire are
 	// frequently in different zones: the same request would mean two different
 	// windows depending on which side did the arithmetic. Unparseable reads as
-	// no window, which is what an absent one means.
+	// no window, which the shared policy resolves to the default one.
 	since, perr := strconv.ParseInt(c.Query("since"), 10, 64)
 	if perr != nil || since < 0 {
 		since = 0
 	}
+	limit, lerr := strconv.Atoi(c.Query("limit"))
+	if lerr != nil {
+		limit = 0
+	}
 	hits, err := e.Core.Recent(c.UserContext(), owner, core.RecentQuery{
-		SinceNs: since,
-		Limit:   recentLimit(c.Query("limit")),
+		SinceNs: core.RecentSinceOf(since, e.clock.Now()),
+		Limit:   core.RecentLimitOf(limit),
 		Scope:   c.Query("path"),
 	})
 	if err != nil {
 		return fail(c, err)
 	}
 	return writeJSON(c, fiber.StatusOK, handler.RecentListOf(hits))
-}
-
-// recentLimit bounds the window a client may ask for.
-//
-// An unbounded limit is a journal scan whose cost grows with how long the
-// account has been used, and the screen this feeds shows one page.
-func recentLimit(raw string) int {
-	const fallback, ceiling = 50, 500
-
-	n, err := strconv.Atoi(raw)
-	if err != nil || n <= 0 {
-		return fallback
-	}
-	return min(n, ceiling)
 }

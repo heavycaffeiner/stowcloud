@@ -105,6 +105,41 @@ func LinksOf(links []core.Link, nowNs int64) []LinkView {
 	return out
 }
 
+// OwnedLinkView is one link as an administrator reads it: the owner's listing
+// plus who owns it.
+//
+// A separate type rather than an optional field on LinkView, so the owner's
+// own listing cannot start reporting account ids it never carried, and so a
+// reader of either type knows which surface it belongs to. There is still no
+// token: an administrative overview crossing every account is the last place a
+// live credential belongs.
+type OwnedLinkView struct {
+	LinkView
+	// Owner is the account id the link belongs to, and OwnerName is what that
+	// account is called. The name is what the screen shows; the id is what a
+	// filter or a follow-up request uses, and it stays stable across a rename.
+	Owner     string `json:"owner"`
+	OwnerName string `json:"owner_name,omitempty"`
+}
+
+// OwnedLinksOf projects a listing that crosses accounts.
+//
+// names supplies the display name per account id. An id it does not carry
+// leaves the name empty rather than failing the listing: an account deleted
+// between the two reads is a link that still exists and still has to be
+// visible, since it is still serving whoever holds its URL.
+func OwnedLinksOf(links []core.Link, names map[int64]string, nowNs int64) []OwnedLinkView {
+	out := make([]OwnedLinkView, 0, len(links))
+	for _, l := range links {
+		out = append(out, OwnedLinkView{
+			LinkView:  LinkOf(l, nowNs),
+			Owner:     strconv.FormatInt(int64(l.Owner), 10),
+			OwnerName: names[int64(l.Owner)],
+		})
+	}
+	return out
+}
+
 // MintedLinkOf projects a link that was just created, with its token.
 //
 // Returns ok false when the token could not be recovered, which is the legacy

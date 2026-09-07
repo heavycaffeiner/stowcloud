@@ -431,8 +431,18 @@ func checkWithinDeclared(r *row, off, written uint64) error {
 // can be enlarged. Comparison uses the floor captured at creation rather than
 // the current value, so an administrator's write cannot retroactively reject a
 // chunk that was legal when sent.
+//
+// A name-ordered session is exempt entirely. The floor exists so an
+// offset-addressed client does not shred a transfer into a spool of tiny
+// ranges, and there the client chooses the offsets. A name-ordered client
+// chooses names instead: its trailing chunk is whatever the file length
+// leaves over, and it declares no total, so the exemption for a last chunk
+// can never fire and every transfer is refused on its final piece. The
+// out-of-order path already skips this check for the same reason, and
+// applying it only to the chunk that happens to arrive in order made the
+// refusal depend on arrival order rather than on the request.
 func checkChunkFloor(r *row, off, n uint64) error {
-	if r == nil || n == 0 {
+	if r == nil || n == 0 || r.mode() == SpoolNameOrdered {
 		return nil
 	}
 	floor, err := num.Narrow[uint64](r.sess.ChunkMinAtCreation)

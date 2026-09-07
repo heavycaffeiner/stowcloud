@@ -253,7 +253,24 @@ func (h *Handler) Mkcol(w http.ResponseWriter, r *http.Request, res core.Resolve
 		h.fail(w, r, err)
 		return
 	}
+	h.setVendorID(w, r, res)
 	w.WriteHeader(http.StatusCreated)
+}
+
+// setVendorID names the created resource in the vendor's own header.
+//
+// Written after the resource exists, because the identity is derived from what
+// is on disk: asking before the create would either answer nothing or answer
+// about whatever the path denoted before. A client stores this as the remote
+// id of the collection it just made, so an absent header leaves it holding a
+// folder with no identity until a later listing supplies one.
+func (h *Handler) setVendorID(w http.ResponseWriter, r *http.Request, res core.Resolved) {
+	if h.vendorID == nil || h.vendorIDHeader == "" {
+		return
+	}
+	if id := h.vendorID(r.Context(), res); id != "" {
+		w.Header().Set(h.vendorIDHeader, id)
+	}
 }
 
 // parentExists reports whether the enclosing collection is there. A share root

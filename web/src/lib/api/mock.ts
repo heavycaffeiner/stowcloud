@@ -71,6 +71,7 @@ import {
   type ShareLinkCreateReq,
   type ShareEncryption,
   type ShareLinkInfo,
+  type OwnedShareLinkInfo,
   type ShareLinkPatchReq,
   type SmbCredential,
   type SmbSettingsReq,
@@ -2723,6 +2724,82 @@ async function shareDelete(id: number): Promise<void> {
   mockShareLinks = mockShareLinks.filter((l) => l.id !== id)
 }
 
+
+// ── share links, administrator overview: mirrors `GET /api/v1/admin/links`
+// (`go/engine/http/handler/links.go`'s `OwnedLinkView`), every link on the
+// deployment, whoever owns it. Fixed rows attributed to four of the seeded
+// accounts (`mockUsers` above) so the owner column has something to show
+// beyond "me": one plain link, one already expired, one that has used up its
+// download cap, one belonging to a disabled account. The signed-in
+// account's own links (`mockShareLinks`) are folded in too, same as the real
+// listing crosses every account including the caller's.
+const mockOtherAccountLinks: OwnedShareLinkInfo[] = [
+  {
+    id: 5001,
+    path: '/home/Documents/제안서.docx',
+    perms: fullPerms({ read: true, download: true }),
+    expires_ns: null,
+    max_downloads: null,
+    downloads: 12,
+    label: '고객 검토용',
+    has_password: true,
+    created_ns: String(BigInt(Date.now() - 20 * 86_400_000) * 1_000_000n),
+    owner: 2,
+    owner_name: '김수진'
+  },
+  {
+    id: 5002,
+    path: '/home/Photos/휴가-2026-07-01.jpg',
+    perms: fullPerms({ read: true, download: true }),
+    expires_ns: String(BigInt(Date.now() - 5 * 86_400_000) * 1_000_000n),
+    max_downloads: null,
+    downloads: 3,
+    label: null,
+    has_password: false,
+    created_ns: String(BigInt(Date.now() - 40 * 86_400_000) * 1_000_000n),
+    owner: 3,
+    owner_name: '박민준'
+  },
+  {
+    id: 5003,
+    path: '/home/Videos/발표녹화.mp4',
+    perms: fullPerms({ read: true, download: true }),
+    expires_ns: String(BigInt(Date.now() + 10 * 86_400_000) * 1_000_000n),
+    max_downloads: 5,
+    downloads: 5,
+    label: '팀 공유',
+    has_password: false,
+    created_ns: String(BigInt(Date.now() - 8 * 86_400_000) * 1_000_000n),
+    owner: 4,
+    owner_name: '이서연 (프로젝트 관리)'
+  },
+  {
+    id: 5004,
+    path: '/home/Music/playlist.m3u',
+    perms: fullPerms({ read: true, download: true }),
+    expires_ns: String(BigInt(Date.now() + 90 * 86_400_000) * 1_000_000n),
+    max_downloads: null,
+    downloads: 0,
+    label: null,
+    has_password: true,
+    created_ns: String(BigInt(Date.now() - 2 * 86_400_000) * 1_000_000n),
+    owner: 5,
+    owner_name: ''
+  }
+]
+
+/** `GET /api/v1/admin/links`: the real route sorts `ORDER BY owner, id`, so
+ *  the mock does too, rather than newest-first like the owner listing. */
+async function adminListLinks(): Promise<OwnedShareLinkInfo[]> {
+  await delay(20)
+  const mine: OwnedShareLinkInfo[] = mockShareLinks.map(({ token: _token, url: _url, ...rest }) => ({
+    ...rest,
+    owner: 1,
+    owner_name: '데모 사용자'
+  }))
+  return [...mine, ...mockOtherAccountLinks].sort((a, b) => (a.owner !== b.owner ? a.owner - b.owner : a.id - b.id))
+}
+
 export interface SearchHit {
   path: string
   entry: Entry
@@ -2893,6 +2970,7 @@ export const mockApi = {
   trashRestore,
   trashPurge,
   sharesList,
+  adminListLinks,
   shareCreate,
   shareUpdate,
   shareDelete,

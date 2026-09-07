@@ -207,7 +207,7 @@ func TestAFailedChecksumIsRefusedOnBothNamedBranches(t *testing.T) {
 			}
 
 			// Nothing is recorded, so the client resends this same name.
-			names, lerr := f.engine.ListChunks(ctx, s.ID, testUser)
+			names, lerr := f.engine.ListChunks(ctx, f.root(t), s.ID, testUser)
 			if lerr != nil {
 				t.Fatalf("ListChunks: %v", lerr)
 			}
@@ -223,7 +223,7 @@ func TestAFailedChecksumIsRefusedOnBothNamedBranches(t *testing.T) {
 				bytes.NewReader(body), &Checksum{Algo: AlgoCRC32C, Digest: right}); rerr != nil {
 				t.Fatalf("the resend returned %v", rerr)
 			}
-			names, lerr = f.engine.ListChunks(ctx, s.ID, testUser)
+			names, lerr = f.engine.ListChunks(ctx, f.root(t), s.ID, testUser)
 			if lerr != nil {
 				t.Fatalf("ListChunks after the resend: %v", lerr)
 			}
@@ -315,12 +315,28 @@ func TestNamedChunksAssembleInNameOrder(t *testing.T) {
 			t.Fatalf("PutNamed(%d): %v", name, err)
 		}
 	}
-	names, err := f.engine.ListChunks(ctx, s.ID, testUser)
+	// All three merged, so the listing reports the assembled run as one member
+	// named for the last chunk in it: merging copies each chunk onto the end of
+	// the part file and unlinks it, leaving no boundaries inside the run to
+	// report. What a resuming client needs is the total, and that is what the
+	// summed size has to equal.
+	names, err := f.engine.ListChunks(ctx, f.root(t), s.ID, testUser)
 	if err != nil {
 		t.Fatalf("ListChunks: %v", err)
 	}
-	if len(names) != 3 {
-		t.Fatalf("the chunk list is %v", names)
+	var held uint64
+	var highest uint32
+	for _, c := range names {
+		held += c.Size
+		if c.Name > highest {
+			highest = c.Name
+		}
+	}
+	if held != uint64(chunk*3) {
+		t.Fatalf("the listing accounts for %d bytes, want %d: %v", held, chunk*3, names)
+	}
+	if highest != 3 {
+		t.Fatalf("the listing's highest member is %d, want 3: %v", highest, names)
 	}
 
 	entry, err := f.engine.Assemble(ctx, f.resolve(t, "named.bin"), s.ID, uint64(chunk*3), nil)
@@ -379,12 +395,17 @@ func TestARepeatedChunkNameIsARetry(t *testing.T) {
 			t.Fatalf("PutNamed attempt %d: %v", i, err)
 		}
 	}
-	names, err := f.engine.ListChunks(ctx, s.ID, testUser)
+	names, err := f.engine.ListChunks(ctx, f.root(t), s.ID, testUser)
 	if err != nil {
 		t.Fatalf("ListChunks: %v", err)
 	}
-	if len(names) != 1 || names[0] != 2 {
+	if len(names) != 1 || names[0].Name != 2 {
 		t.Fatalf("the repeated name is held %v", names)
+	}
+	// The retry overwrote rather than accumulating: a member reported at twice
+	// its size would have a resuming client skip bytes it never sent.
+	if names[0].Size != uint64(chunk) {
+		t.Fatalf("the retried chunk is reported as %d bytes, want %d", names[0].Size, chunk)
 	}
 }
 

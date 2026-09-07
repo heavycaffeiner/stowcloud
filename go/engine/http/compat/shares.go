@@ -257,6 +257,7 @@ type ShareFilter struct {
 	Reshares     bool
 	Subfiles     bool
 	SharedWithMe bool
+	AllLinks     bool
 }
 
 // ParseShareFilter reads share filter parameters.
@@ -266,6 +267,7 @@ func ParseShareFilter(get func(string) string) ShareFilter {
 		Reshares:     get("reshares") == "true",
 		Subfiles:     get("subfiles") == "true",
 		SharedWithMe: get("shared_with_me") == "true",
+		AllLinks:     get("all_links") == "true",
 	}
 }
 

@@ -142,6 +142,42 @@ func (e *Engine) davVendorProps() func(
 	}
 }
 
+// davVendorIDHeader is the response header a created resource's identity
+// travels in. The other product's clients read this after creating a folder
+// and store it as that folder's remote id.
+func (e *Engine) davVendorIDHeader() string { return "OC-FileId" }
+
+// davVendorID renders the identity of a resource that has just been created.
+//
+// The same derivation the sync properties report, so the id a client stores
+// from the create is the id the next listing shows it: two spellings of one
+// identity would have the client treat the folder it made as a different one
+// the moment it syncs.
+//
+// Every failure answers the empty string rather than a placeholder. The header
+// is then absent, which the client already handles by reading the id from a
+// listing; a fabricated one would key its journal to a folder that does not
+// exist.
+func (e *Engine) davVendorID() func(ctx context.Context, res core.Resolved) string {
+	instance, err := e.State.InstanceID(context.Background())
+	if err != nil {
+		e.logger.Warn("the instance id could not be read; created resources carry no id",
+			"error", err)
+		return nil
+	}
+	return func(ctx context.Context, res core.Resolved) string {
+		entry, serr := e.Core.Stat(ctx, res)
+		if serr != nil {
+			return ""
+		}
+		fileID, ferr := e.compatFileID(ctx, entry)
+		if ferr != nil {
+			return ""
+		}
+		return compat.DavID(fileID, instance)
+	}
+}
+
 // favoritesOf caches a user's favorites once per PROPFIND request context.
 func (e *Engine) favoritesOf(ctx context.Context, user int64) []state.Favorite {
 	if val, ok := e.favCache.Load(ctx); ok {
@@ -350,6 +386,11 @@ type davQuery struct {
 	video     bool
 	name      string
 	sinceNs   int64
+	// limit is the row count the client asked for, zero when it named none.
+	// The reference client sends it as DAV:nresults inside DAV:limit and
+	// expects it honoured: dropping it made a recent listing that asked for a
+	// hundred rows answer with whatever this server felt like.
+	limit int
 }
 
 // parseDavQuery reads the filter terms.
@@ -380,6 +421,10 @@ func parseDavQuery(leaves []dav.Leaf, want []xml.Name) davQuery {
 			byTime = true
 		case "literal":
 			literals = append(literals, leaf.Value)
+		case "nresults":
+			if n, err := strconv.Atoi(strings.TrimSpace(leaf.Value)); err == nil && n > 0 {
+				q.limit = n
+			}
 		}
 	}
 	// A property named in DAV:prop rather than as a term still selects the
@@ -402,8 +447,16 @@ func parseDavQuery(leaves []dav.Leaf, want []xml.Name) davQuery {
 		case byName && q.name == "":
 			q.name = strings.Trim(literal, "%")
 		case byTime && q.sinceNs == 0:
+			// Two spellings, because the reference client sends both: an
+			// RFC 3339 instant for its own recent view, and bare epoch
+			// seconds when the search carries a start and end date. Reading
+			// only the first dropped the window on the query the app's
+			// recent screen actually sends, and the listing then fell back
+			// to the default window whatever the client asked for.
 			if t, err := time.Parse(time.RFC3339, literal); err == nil {
 				q.sinceNs = t.UnixNano()
+			} else if secs, serr := strconv.ParseInt(strings.TrimSpace(literal), 10, 64); serr == nil && secs > 0 {
+				q.sinceNs = secs * int64(time.Second)
 			}
 		}
 	}
@@ -432,7 +485,7 @@ func (s *compatQuerySource) Query(
 	case q.name != "":
 		return s.namedEntries(ctx, res, user, q.name), nil
 	}
-	return s.recentEntries(ctx, res, user, q.sinceNs), nil
+	return s.recentEntries(ctx, res, user, q.sinceNs, q.limit), nil
 }
 
 func (s *compatQuerySource) favoriteEntries(
@@ -584,17 +637,17 @@ func (s *compatQuerySource) namedEntries(
 // recentEntries answers a modification-time filter, and is what an
 // unrecognised filter falls back to: the reference's own recent view.
 //
-// sinceNs of zero takes the default window, which is what a report shape with
-// no comparable literal asks for.
+// The window and the row count come from the shared policy, so this answers
+// the same list the interface shows. It did not: this took fifty rows over a
+// fixed fortnight while the interface asked for a hundred over all time, and
+// the same account saw two different lists depending on which client it
+// opened.
 func (s *compatQuerySource) recentEntries(
-	ctx context.Context, res core.Resolved, user core.UserID, sinceNs int64,
+	ctx context.Context, res core.Resolved, user core.UserID, sinceNs int64, limit int,
 ) []core.Entry {
-	if sinceNs <= 0 {
-		sinceNs = s.engine.clk().Now().Add(-14 * 24 * time.Hour).UnixNano()
-	}
 	hits, err := s.engine.Core.Recent(ctx, user, core.RecentQuery{
-		SinceNs: sinceNs,
-		Limit:   50,
+		SinceNs: core.RecentSinceOf(sinceNs, s.engine.clk().Now()),
+		Limit:   core.RecentLimitOf(limit),
 	})
 	if err != nil {
 		return nil

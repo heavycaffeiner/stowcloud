@@ -59,6 +59,7 @@ export const keys = {
   adminUserOidc: (id: number) => ['admin', 'users', id, 'oidc'] as const,
   adminGroups: () => ['admin', 'groups'] as const,
   adminShares: () => ['admin', 'shares'] as const,
+  adminLinks: () => ['admin', 'links'] as const,
   adminGrants: (scope: GrantScope = {}) => ['admin', 'grants', scope] as const,
   adminSettings: () => ['admin', 'settings'] as const,
   adminOidcEndpoints: () => ['admin', 'oidc-endpoints'] as const,

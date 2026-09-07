@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
@@ -56,6 +57,54 @@ type RecentQuery struct {
 	// Scope confines results to one virtual subtree, written as the client
 	// spells a path. Empty covers everywhere the account can read.
 	Scope string
+}
+
+// The recent listing's shared shape.
+//
+// Every surface that answers "what changed lately" reads the same journal, so
+// they have to agree about which window and how many rows, or the same account
+// sees a different list depending on which client it opened. They did not: the
+// interface asked for 100 rows with no window, the app's OCS route defaulted
+// to 30 rows over 14 days, and the search route it actually uses took 50 rows
+// over 14 days and ignored the window and count the client asked for.
+const (
+	// RecentWindow is how far back a listing reaches when the caller names no
+	// window. Fourteen days is the reference client's own default, and the
+	// interface had no window at all, which made its list the longer of the
+	// two for no reason a person could see.
+	RecentWindow = 14 * 24 * time.Hour
+	// RecentLimit is how many rows a listing carries when the caller asks for
+	// no particular number.
+	RecentLimit = 100
+	// RecentMaxLimit bounds what a caller may ask for. An unbounded limit is a
+	// journal scan whose cost grows with how long the account has been used,
+	// and it is a parameter the caller controls entirely.
+	RecentMaxLimit = 500
+)
+
+// RecentLimitOf bounds a requested row count against the shared policy.
+//
+// Zero and negative mean the caller expressed no preference, which is the
+// default rather than an error: a client that omits the parameter and one that
+// sends nonsense both want a listing.
+func RecentLimitOf(n int) int {
+	if n <= 0 {
+		return RecentLimit
+	}
+	return min(n, RecentMaxLimit)
+}
+
+// RecentSinceOf resolves the window a listing covers.
+//
+// A caller that named no instant gets the default window measured back from
+// now, rather than no window at all: "recent" that reaches the account's first
+// write is not recent, and it is the difference that had two clients showing
+// two different lists of the same account.
+func RecentSinceOf(sinceNs int64, now time.Time) int64 {
+	if sinceNs > 0 {
+		return sinceNs
+	}
+	return now.Add(-RecentWindow).UnixNano()
 }
 
 // Recent enumerates this account's writes.

@@ -420,21 +420,23 @@ func ParsePreviewQuery(get func(string) string) PreviewQuery {
 }
 
 // RecentQuery describes a request for recently modified files.
+//
+// Zero means the client expressed no preference, in both fields. The defaults
+// and the ceiling belong to the caller that runs the query, because three
+// surfaces answer this listing from one journal and a default applied here
+// would be a fourth opinion about what "recent" means.
 type RecentQuery struct {
 	Since time.Time
 	Limit int
 }
 
 // ParseRecentQuery reads recent entries query parameters.
-func ParseRecentQuery(rawLimit, rawSince string, now time.Time) (RecentQuery, error) {
-	q := RecentQuery{Limit: 30, Since: now.Add(-14 * 24 * time.Hour)}
+func ParseRecentQuery(rawLimit, rawSince string, _ time.Time) (RecentQuery, error) {
+	var q RecentQuery
 	if rawLimit != "" {
 		n, err := strconv.Atoi(rawLimit)
 		if err != nil || n <= 0 {
 			return RecentQuery{}, fmt.Errorf("invalid limit: %s", rawLimit)
-		}
-		if n > 200 {
-			n = 200
 		}
 		q.Limit = n
 	}

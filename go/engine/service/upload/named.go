@@ -289,9 +289,27 @@ func (e *Engine) mergeChunk(root vfs.Root, r *row, name uint32) error {
 	return nil
 }
 
-// ListChunks returns the chunk names a name-ordered session holds, covering both
+// Chunk is one member of a name-ordered session, as a listing reports it.
+type Chunk struct {
+	// Name is the member's number.
+	Name uint32
+	// Size is how many bytes that member contributed.
+	Size uint64
+}
+
+// ListChunks returns the members a name-ordered session holds, covering both
 // what is already assembled and what remains spooled.
-func (e *Engine) ListChunks(ctx context.Context, id SessionID, user core.UserID) ([]uint32, error) {
+//
+// The assembled prefix comes back as a single member carrying the whole of it,
+// named for the last chunk merged. Merging copies a chunk onto the end of the
+// part file and unlinks it, so the boundaries inside that run no longer exist
+// to report; what does survive is the write head, and that is the figure a
+// resuming client needs. It sums the members it is shown to decide where to
+// start and takes the highest name to decide what to call the next chunk, so
+// both answers are right while no member's size is invented.
+func (e *Engine) ListChunks(
+	ctx context.Context, root vfs.Root, id SessionID, user core.UserID,
+) ([]Chunk, error) {
 	r, err := e.load(ctx, id)
 	if err != nil {
 		return nil, err
@@ -306,11 +324,46 @@ func (e *Engine) ListChunks(ctx context.Context, id SessionID, user core.UserID)
 	if nerr != nil {
 		return nil, nerr
 	}
-	out := make([]uint32, 0, int(next)+len(r.sess.SpooledNames))
-	for n := uint32(1); n < next; n++ {
-		out = append(out, n)
+	head, herr := num.Narrow[uint64](r.sess.WriteHead)
+	if herr != nil {
+		return nil, herr
 	}
-	out = append(out, r.sess.SpooledNames...)
-	slices.Sort(out)
-	return slices.Compact(out), nil
+
+	out := make([]Chunk, 0, len(r.sess.SpooledNames)+1)
+	if next > 1 {
+		out = append(out, Chunk{Name: next - 1, Size: head})
+	}
+	for _, n := range r.sess.SpooledNames {
+		if next > 1 && n == next-1 {
+			// Already covered by the assembled run above; counting it twice
+			// would have the client resume past bytes it never sent.
+			continue
+		}
+		size, serr := e.spooledChunkSize(root, r, n)
+		if serr != nil {
+			return nil, serr
+		}
+		out = append(out, Chunk{Name: n, Size: size})
+	}
+	slices.SortFunc(out, func(a, b Chunk) int { return int(a.Name) - int(b.Name) })
+	return out, nil
+}
+
+// spooledChunkSize measures one out-of-order member still awaiting its
+// predecessor. A chunk whose file has gone answers zero rather than failing
+// the listing: the client resends that name, which is the recovery either way.
+func (e *Engine) spooledChunkSize(root vfs.Root, r *row, name uint32) (uint64, error) {
+	dir, err := e.spoolDirOf(r)
+	if err != nil {
+		return 0, err
+	}
+	file, err := dir.JoinControl(chunkFileName(name))
+	if err != nil {
+		return 0, err
+	}
+	st, serr := root.Stat(file)
+	if serr != nil {
+		return 0, nil
+	}
+	return st.Size, nil
 }

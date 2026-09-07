@@ -54,6 +54,45 @@ func (e *Engine) linksList(c *fiber.Ctx) error {
 	return writeJSON(c, fiber.StatusOK, handler.LinksOf(links, e.now()))
 }
 
+// adminLinksList answers every link published from this deployment.
+//
+// The administrative counterpart to linksList: that one answers "what have I
+// published", this one answers "what is published from this server". An
+// operator asked to take a leaked link down cannot find it through the
+// owner's listing without first knowing whose it is, which is the question
+// they are trying to answer.
+//
+// No token, here or anywhere: the service strips it, and this listing crosses
+// every account, so a token in it would hand the reader every visitor's
+// access to every published file.
+func (e *Engine) adminLinksList(c *fiber.Ctx) error {
+	if _, ok, written := e.admin(c); !ok {
+		return written
+	}
+
+	links, err := e.Core.ListAllLinks(c.UserContext())
+	if err != nil {
+		return fail(c, err)
+	}
+
+	// The owning account's name, so the screen shows who published a link
+	// rather than an account id. A failure here costs the names and not the
+	// listing: an operator looking for a link to revoke still needs to see it.
+	names := map[int64]string{}
+	if rows, uerr := e.Auth.ListUsers(c.UserContext()); uerr == nil {
+		for _, row := range rows {
+			display := row.Display
+			if display == "" {
+				display = row.Name
+			}
+			names[row.ID] = display
+		}
+	} else {
+		e.logger.Warn("the link overview could not name its owners", "error", uerr)
+	}
+	return writeJSON(c, fiber.StatusOK, handler.OwnedLinksOf(links, names, e.now()))
+}
+
 // createLinkRequest is what a client sends to mint one.
 type createLinkRequest struct {
 	Path     string  `json:"path"`

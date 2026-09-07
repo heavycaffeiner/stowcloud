@@ -1122,6 +1122,18 @@ export interface ShareLinkInfo {
   url?: string
 }
 
+/** `GET /api/v1/admin/links`: one link as an administrator reads it
+ *  (`go/engine/http/handler/links.go`'s `OwnedLinkView`). Everything
+ *  `ShareLinkInfo` carries, plus which account it belongs to: `owner` is the
+ *  account id and `owner_name` its display name at read time, empty when the
+ *  account has since been deleted. Never carries a token, the same as
+ *  `ShareLinkInfo` itself: an overview crossing every account is the last
+ *  place a live credential belongs. */
+export interface OwnedShareLinkInfo extends ShareLinkInfo {
+  owner: number
+  owner_name: string
+}
+
 /** `POST /api/shares` body (`go/internal/httpapi/handler/shares.go`). */
 export interface ShareLinkCreateReq {
   path: string

@@ -178,6 +178,31 @@ func (d *DB) ListByOwner(ctx context.Context, owner int64) (out []LinkRow, err e
 	return out, nil
 }
 
+// ListAll returns every link in the deployment, owner-major then id.
+//
+// The administrative overview reads this. Ownership is not a parameter
+// because there is nothing to scope it to: the caller has already been
+// checked as an administrator, and a filter here would suggest otherwise.
+func (d *DB) ListAll(ctx context.Context) (out []LinkRow, err error) {
+	rows, err := d.f.SQL().QueryContext(ctx, sqlListAllLinks)
+	if err != nil {
+		return nil, fmt.Errorf("listing every share link: %w", err)
+	}
+	defer func() { err = errors.Join(err, rows.Close()) }()
+
+	for rows.Next() {
+		row, _, serr := scanLinkRow(rows)
+		if serr != nil {
+			return nil, serr
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("listing every share link: %w", err)
+	}
+	return out, nil
+}
+
 // Delete removes the row only when both the id and the owner match.
 func (d *DB) Delete(ctx context.Context, id, owner int64) error {
 	return d.Write(ctx, func(tx *sql.Tx) error {

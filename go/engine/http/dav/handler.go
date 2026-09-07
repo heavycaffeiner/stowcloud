@@ -77,6 +77,15 @@ type Options struct {
 	// requests; a name the source does not answer falls through to the
 	// missing list, which reports it as a 404 inside the document.
 	VendorProps func(ctx context.Context, res core.Resolved, e core.Entry, want []xml.Name) []Prop
+	// VendorID renders the stable identity a created resource is known by, and
+	// VendorIDHeader names the response header carrying it. A client stores
+	// that value as the resource's remote id when it creates a collection, so
+	// without it the folder it just made has no identity until something
+	// lists it again. Both travel together: a name with no source emits
+	// nothing, and a source with no name has nowhere to go. The empty string
+	// from VendorID means this resource has no id to report.
+	VendorID       func(ctx context.Context, res core.Resolved) string
+	VendorIDHeader string
 	// Limits bound what one request may carry. The zero value takes
 	// DefaultLimits, because a zero bound is not "unbounded" here: several of
 	// these are counts a parser compares against, so leaving them at zero
@@ -100,6 +109,8 @@ type Handler struct {
 	uploadHeaders   UploadHeaders
 	sources         []QuerySource
 	vendorProps     func(ctx context.Context, res core.Resolved, e core.Entry, want []xml.Name) []Prop
+	vendorID        func(ctx context.Context, res core.Resolved) string
+	vendorIDHeader  string
 	limits          Limits
 	infinityEntries int
 	logger          *slog.Logger
@@ -131,6 +142,8 @@ func New(opt Options) *Handler {
 		uploadHeaders:   opt.UploadHeaders,
 		sources:         opt.Sources,
 		vendorProps:     opt.VendorProps,
+		vendorID:        opt.VendorID,
+		vendorIDHeader:  opt.VendorIDHeader,
 		limits:          limits,
 		infinityEntries: infinity,
 		logger:          logger,

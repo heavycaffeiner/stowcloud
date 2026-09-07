@@ -65,6 +65,7 @@ export type {
   ReadFileResponse,
   TrashEntry,
   ShareLinkInfo,
+  OwnedShareLinkInfo,
   ShareLinkCreateReq,
   ShareLinkPatchReq,
   PermsReq,

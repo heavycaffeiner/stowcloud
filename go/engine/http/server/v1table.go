@@ -329,6 +329,7 @@ func Table() []route.Route {
 	add("PATCH", "/admin/shares/{id}", "admin.shares.update", route.BodyJSON)
 	add("DELETE", "/admin/shares/{id}", "admin.shares.delete", route.BodyNone)
 	add("POST", "/admin/shares/{id}/retry", "admin.shares.retry", route.BodyNone)
+	add("GET", "/admin/links", "admin.links.list", route.BodyNone)
 	add("GET", "/admin/audit", "admin.audit", route.BodyNone)
 	add("GET", "/admin/logs", "admin.logs.list", route.BodyNone)
 	add("GET", "/admin/logs/timeline", "admin.logs.timeline", route.BodyNone)

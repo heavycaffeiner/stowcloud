@@ -110,6 +110,7 @@ type LinkStore interface {
 	ByID(ctx context.Context, id int64) (LinkRow, bool, error)
 	ByHash(ctx context.Context, tokenHash []byte) (LinkRow, bool, error)
 	ListByOwner(ctx context.Context, owner int64) ([]LinkRow, error)
+	ListAll(ctx context.Context) ([]LinkRow, error)
 	Delete(ctx context.Context, id, owner int64) error
 	ConsumeDownload(ctx context.Context, id int64) (bool, error)
 	PasswordHash(ctx context.Context, id int64) (*string, error)
@@ -422,6 +423,38 @@ func (c *Core) ListLinks(ctx context.Context, owner UserID, at *Resolved) ([]Lin
 		if at != nil && (l.Share != at.share || l.Path.String() != at.path.String()) {
 			continue
 		}
+		out = append(out, l)
+	}
+	return out, nil
+}
+
+// ListAllLinks returns every link in the deployment, whoever owns it.
+//
+// For the administrative overview, which answers "what is published from this
+// server" rather than "what have I published". The caller is checked as an
+// administrator before this runs; there is no owner to scope against here.
+//
+// The token is cleared on every row. An owner's own listing already omits it,
+// and a listing that crosses accounts is the last place a live credential
+// belongs: an administrator reading this screen would be holding every
+// visitor's access to every published file. Opening a link is still the
+// owner's to hand out.
+func (c *Core) ListAllLinks(ctx context.Context) ([]Link, error) {
+	store, err := c.links()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := store.ListAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Link, 0, len(rows))
+	for _, row := range rows {
+		l, cerr := c.linkOf(row)
+		if cerr != nil {
+			return nil, cerr
+		}
+		l.Token = nil
 		out = append(out, l)
 	}
 	return out, nil
