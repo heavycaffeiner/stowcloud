@@ -448,23 +448,31 @@ func parseDavQuery(leaves []dav.Leaf, want []xml.Name) davQuery {
 		case byName && q.name == "":
 			q.name = strings.Trim(literal, "%")
 		case byTime:
-			// The lower bound only. A search for a window sends two literals
-			// under the same property, and the one that opens it sits inside
-			// DAV:gt while DAV:lt closes it. Taking whichever came first took
-			// the upper bound, so the window read as "modified since the end
-			// of the range" and the listing was empty: the app's recent screen
-			// showed almost nothing while the interface showed the real list.
+			// Lower bounds only, and the greatest of them. The reference
+			// client's recent view sends three time literals under one
+			// property: DAV:lt closing the range, DAV:gt opening it, and a
+			// third DAV:gt holding its own fixed "last seven days" instant.
+			// They are terms of one DAV:and, so the window they describe
+			// starts at the latest lower bound; taking whichever arrived
+			// last would let element order decide the answer.
 			//
-			// Two spellings reach here. The reference client sends an RFC 3339
-			// instant for its own recent view and bare epoch seconds when the
-			// search carries a start and an end date.
+			// Reading DAV:lt as the start was the defect this guards: the
+			// window began where the range ended and the tab listed nothing
+			// while the interface listed the real files.
 			if leaf.Within.Local != "gt" && leaf.Within.Local != "gte" {
 				continue
 			}
+			// Two spellings arrive: an RFC 3339 instant for the client's own
+			// recent view, bare epoch seconds when a start and end date were
+			// picked.
+			var ns int64
 			if t, err := time.Parse(time.RFC3339, literal); err == nil {
-				q.sinceNs = t.UnixNano()
+				ns = t.UnixNano()
 			} else if secs, serr := strconv.ParseInt(strings.TrimSpace(literal), 10, 64); serr == nil && secs > 0 {
-				q.sinceNs = secs * int64(time.Second)
+				ns = secs * int64(time.Second)
+			}
+			if ns > q.sinceNs {
+				q.sinceNs = ns
 			}
 		}
 	}
