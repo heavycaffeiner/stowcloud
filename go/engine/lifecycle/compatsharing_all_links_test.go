@@ -5,6 +5,7 @@ package lifecycle_test
 import (
 	"context"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -142,6 +143,20 @@ func TestCompatListSharesAllLinksIsAdminOnly(t *testing.T) {
 	}
 	if strings.Contains(string(adminBody), "cryptshare") {
 		t.Errorf("administrator saw the encrypted-share link: %s", adminBody)
+	}
+
+	// The invariant the whole branch rests on. formatLinkShare emits a token
+	// and a /s/<token> URL whenever the link carries one, and what keeps this
+	// listing clean is that ListAllLinks clears it two files away. An
+	// administrator reading every account's links would otherwise hold every
+	// visitor's access to every published file. The fields are still present
+	// and empty, which is the shape the client already handles; what must
+	// never appear is a value in either.
+	if regexp.MustCompile(`"token":"[^"]+"`).MatchString(string(adminBody)) {
+		t.Errorf("the cross-account listing carries a live token: %s", adminBody)
+	}
+	if regexp.MustCompile(`"url":"[^"]+"`).MatchString(string(adminBody)) {
+		t.Errorf("the cross-account listing carries an openable link URL: %s", adminBody)
 	}
 
 	// An ordinary account with the same flag sees only its own links: bob's
