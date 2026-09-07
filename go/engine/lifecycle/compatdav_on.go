@@ -448,23 +448,13 @@ func parseDavQuery(leaves []dav.Leaf, want []xml.Name) davQuery {
 		case byName && q.name == "":
 			q.name = strings.Trim(literal, "%")
 		case byTime:
-			// Lower bounds only, and the greatest of them. The reference
-			// client's recent view sends three time literals under one
-			// property: DAV:lt closing the range, DAV:gt opening it, and a
-			// third DAV:gt holding its own fixed "last seven days" instant.
-			// They are terms of one DAV:and, so the window they describe
-			// starts at the latest lower bound; taking whichever arrived
-			// last would let element order decide the answer.
-			//
-			// Reading DAV:lt as the start was the defect this guards: the
-			// window began where the range ended and the tab listed nothing
-			// while the interface listed the real files.
+			// Terms of one DAV:and, so the window opens at the greatest lower
+			// bound. DAV:lt closes the range and is not a start.
 			if leaf.Within.Local != "gt" && leaf.Within.Local != "gte" {
 				continue
 			}
-			// Two spellings arrive: an RFC 3339 instant for the client's own
-			// recent view, bare epoch seconds when a start and end date were
-			// picked.
+			// Epoch seconds when a range was picked, RFC 3339 for the client's
+			// own recent view.
 			var ns int64
 			if t, err := time.Parse(time.RFC3339, literal); err == nil {
 				ns = t.UnixNano()

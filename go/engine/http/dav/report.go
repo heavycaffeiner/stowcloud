@@ -31,13 +31,9 @@ type Leaf struct {
 	// filter on presence and arrives empty.
 	Value string
 	// Within is the element enclosing this one, zero at the document element.
-	//
-	// A comparison carries its operator there and nowhere else: a search for a
-	// window sends two bounds under one property, distinguished only by
-	// sitting inside DAV:gt or DAV:lt. Without this a source sees two numbers
-	// in document order and has to guess which is the lower, and guessing took
-	// the upper bound as the start of the window: a listing of everything
-	// modified since the end of the range, which is nothing.
+	// A comparison carries its operator there and nowhere else: bounds sent
+	// under one property are told apart only by sitting inside DAV:gt or
+	// DAV:lt.
 	Within xml.Name
 }
 
