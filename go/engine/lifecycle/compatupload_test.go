@@ -366,6 +366,48 @@ func TestATransferIDIsReusableAfterItsUploadIsPublished(t *testing.T) {
 	}
 }
 
+// An assembly that received nothing is refused, unless the transfer said it
+// was storing an empty file.
+//
+// Publishing on an empty spool answers 201 for a transfer that sent no bytes,
+// and both reference clients read that as "uploaded" and drop their local
+// copy: an assembly racing an abandoned or retargeted collection would destroy
+// the file it was meant to store. A transfer that means to store an empty file
+// names a length of zero, and the bytes it sent agree with it, so that one
+// still lands.
+func TestAnAssemblyThatReceivedNothingIsRefusedUnlessItSaidSo(t *testing.T) {
+	t.Parallel()
+	base, credential, client := uploadFixture(t)
+
+	silent := base + "/remote.php/dav/uploads/alice/transfer-silent"
+	lost := base + "/remote.php/dav/files/alice/documents/must-not-appear.bin"
+	if code, body := davSend(t, client, credential, "MKCOL", silent, nil,
+		map[string]string{"Destination": lost}); code != http.StatusCreated {
+		t.Fatalf("opening answered %d: %s", code, body)
+	}
+	if code, _ := davSend(t, client, credential, "MOVE", silent+"/.file", nil,
+		map[string]string{"Destination": lost}); code == http.StatusCreated {
+		t.Error("a transfer that sent nothing published a file, which the client reads as a stored upload")
+	}
+	if code, _ := davSend(t, client, credential, http.MethodGet, lost, nil, nil); code != http.StatusNotFound {
+		t.Errorf("the refused assembly left a file behind: %d", code)
+	}
+
+	// The same shape, with the transfer declaring that it holds nothing.
+	declared := base + "/remote.php/dav/uploads/alice/transfer-declared-empty"
+	empty := base + "/remote.php/dav/files/alice/documents/empty.txt"
+	opts := map[string]string{"Destination": empty, "OC-Total-Length": "0"}
+	if code, body := davSend(t, client, credential, "MKCOL", declared, nil, opts); code != http.StatusCreated {
+		t.Fatalf("opening the declared-empty transfer answered %d: %s", code, body)
+	}
+	if code, body := davSend(t, client, credential, "MOVE", declared+"/.file", nil, opts); code != http.StatusCreated {
+		t.Fatalf("a declared-empty transfer answered %d: %s", code, body)
+	}
+	if code, got := davSend(t, client, credential, http.MethodGet, empty, nil, nil); code != http.StatusOK || got != "" {
+		t.Errorf("the empty file answered %d holding %q", code, got)
+	}
+}
+
 // Creating a folder names it in the header the client stores as its remote id.
 //
 // The reference operation reads OC-FileId from its own MKCOL response and

@@ -321,7 +321,13 @@ func TestTheSameIDAgainstAnotherDestinationStartsAFreshCollection(t *testing.T) 
 	// The bytes written under the first destination are gone with the session
 	// they belonged to: a listing of the reopened collection holds no member,
 	// so nothing the first transfer sent can be published at the second.
-	listed := f.throughHeaders(m, "PROPFIND", uploadRoot+"/tid-c", "", map[string]string{"Depth": "1"})
+	listed := f.throughHeaders(m, "PROPFIND", uploadRoot+"/tid-c", allprop, map[string]string{
+		"Destination": "/dav/files/two.bin",
+		"Depth":       "1",
+	})
+	if listed.Code != http.StatusMultiStatus {
+		t.Fatalf("listing the reopened collection answered %d, want 207: %s", listed.Code, listed.Body.String())
+	}
 	if strings.Contains(listed.Body.String(), "/tid-c/1") {
 		t.Errorf("the first destination's chunk survived the retarget: %s", listed.Body.String())
 	}

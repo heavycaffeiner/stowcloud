@@ -227,6 +227,7 @@ func (e *Engine) Assemble(
 	// is past the end, so the drain above finds nothing wrong, and adopting
 	// the write head as the length published a truncated file and answered
 	// 201. The client deletes its local copy on that answer.
+	_, declaredLen := rw.totalLen()
 	if total == 0 {
 		if declared, ok := rw.totalLen(); ok {
 			total = declared
@@ -241,13 +242,16 @@ func (e *Engine) Assemble(
 			ErrBadRequest, head, total)
 	}
 	if total == 0 {
-		// Nothing was declared and nothing arrived. Publishing here would
-		// answer 201 for a transfer that sent no bytes, and both reference
+		// Nothing arrived, and no length was ever named. Publishing here would
+		// answer 201 for a transfer that sent nothing, and both reference
 		// clients read that as "uploaded" and drop their local copy, so an
 		// assembly racing an abandoned or retargeted collection would destroy
-		// the file it was meant to store. A transfer that genuinely holds an
-		// empty file declares a length of zero and takes the branch above.
-		if head == 0 {
+		// the file it was meant to store.
+		//
+		// A transfer that means to store an empty file says so, either at open
+		// or at assembly, and that one publishes: the length it named and the
+		// bytes it sent agree.
+		if head == 0 && !declaredLen {
 			return core.Entry{}, fmt.Errorf("%w: no bytes were received", ErrIncomplete)
 		}
 		total = head
