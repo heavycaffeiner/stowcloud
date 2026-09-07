@@ -286,10 +286,19 @@ func TestAnotherAccountsCollectionDoesNotResolve(t *testing.T) {
 	}
 }
 
-// The same transfer id from two callers must not reach one session. The alias
-// is scoped by account, but the collection is also addressed against a
-// destination, and the pair is what identifies the session.
-func TestTheSameIDAgainstAnotherDestinationIsASeparateCollection(t *testing.T) {
+// The same transfer id opened against a second destination starts a fresh
+// collection rather than adopting the first one's bytes.
+//
+// The client picks the transfer id, and both reference clients derive it from
+// the file rather than the destination: Android from the file's MD5, the
+// desktop from a stored transfer number it reuses across retries. Refusing the
+// second open answered 405, which the Android operation reads as "the folder
+// is already there" and the desktop treats as a hard failure, so a transfer
+// that had merely been retargeted could never start. What must not happen is
+// the opposite mistake: adopting the session would publish one file's bytes at
+// the other's destination, so the old session is abandoned and its members go
+// with it.
+func TestTheSameIDAgainstAnotherDestinationStartsAFreshCollection(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	m := f.mounted()
@@ -305,8 +314,16 @@ func TestTheSameIDAgainstAnotherDestinationIsASeparateCollection(t *testing.T) {
 		"Destination":     "/dav/files/two.bin",
 		"OC-Total-Length": "5",
 	})
-	if w.Code == http.StatusCreated {
-		t.Error("the same transfer id rebound to a second destination")
+	if w.Code != http.StatusCreated {
+		t.Fatalf("retargeting the transfer id answered %d, want 201", w.Code)
+	}
+
+	// The bytes written under the first destination are gone with the session
+	// they belonged to: a listing of the reopened collection holds no member,
+	// so nothing the first transfer sent can be published at the second.
+	listed := f.throughHeaders(m, "PROPFIND", uploadRoot+"/tid-c", "", map[string]string{"Depth": "1"})
+	if strings.Contains(listed.Body.String(), "/tid-c/1") {
+		t.Errorf("the first destination's chunk survived the retarget: %s", listed.Body.String())
 	}
 }
 

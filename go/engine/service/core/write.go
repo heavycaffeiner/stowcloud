@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
@@ -82,6 +83,44 @@ func (c *Core) Mkdir(ctx context.Context, r Resolved) (Entry, error) {
 	c.markDirty(ctx, r.share, r.path)
 	c.record(ctx, r, journal.OpUpload)
 	return c.buildEntry(r, r.path.Name(), r.path), nil
+}
+
+// MkdirParents creates every missing directory above the resolved path.
+//
+// The resolution names a file, and what this makes is the tree it will sit in.
+// A component already present as a directory is left alone; one present as a
+// file is a conflict, since the caller asked for a folder where a file is.
+//
+// Separate from Mkdir because that one creates the resolved path itself and
+// answers for a single component. A protocol layer cannot walk the tree
+// itself: the components and the share root are this package's to touch.
+func (c *Core) MkdirParents(ctx context.Context, r Resolved) error {
+	if err := r.Require(acl.Create); err != nil {
+		return err
+	}
+	parent := r.path.Parent()
+	if parent.IsRoot() {
+		return nil
+	}
+	cur := vfs.SafePath{}
+	for _, comp := range parent.Components() {
+		next, err := cur.Join(comp)
+		if err != nil {
+			return mapVFSErr(err)
+		}
+		cur = next
+		if st, serr := r.root.Stat(cur); serr == nil {
+			if !st.Kind.IsDir() {
+				return ErrExists
+			}
+			continue
+		}
+		if merr := r.root.Mkdir(cur); merr != nil && !errors.Is(merr, vfs.ErrExists) {
+			return mapVFSErr(merr)
+		}
+		c.markDirty(ctx, r.share, cur)
+	}
+	return nil
 }
 
 // WriteStream writes a file's whole content from a reader.

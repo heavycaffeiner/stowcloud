@@ -202,7 +202,7 @@
     void swReady()
   })
 
-  function navigateTo(id: string) {
+  function navigateTo(id: string, href?: string) {
     if (id === 'files') {
       if (ui.state.compact) {
         setDrawerOpen(!drawerOpen)
@@ -215,8 +215,11 @@
       }
       return
     }
-    const item = navItems.find((n) => n.id === id)
-    if (item && 'href' in item && item.href) void goto(item.href)
+    const target = href ?? navItems.find((n) => n.id === id)?.href
+    if (target) {
+      void goto(target)
+      if (ui.state.compact) drawerOpen = false
+    }
   }
 
   // The tray stack and the browse page's FAB are both fixed to the bottom
@@ -269,7 +272,7 @@
         items={rootItems}
         active={currentRoot ?? ''}
         onselect={selectRoot}
-        onnavselect={(item) => navigateTo(item.id)}
+        onnavselect={(item) => navigateTo(item.id, item.href)}
       />
     {/if}
     <main
@@ -287,7 +290,7 @@
           items={rootItems}
           active={currentRoot ?? ''}
           onselect={selectRoot}
-          onnavselect={(item) => navigateTo(item.id)}
+          onnavselect={(item) => navigateTo(item.id, item.href)}
           overlay
           onclose={() => (drawerOpen = false)}
         />

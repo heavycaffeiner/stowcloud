@@ -6,12 +6,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
-
-	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
 
 // KeyOf is how a caller turns an entry into the key its store understands.
@@ -209,10 +208,13 @@ func (h *Handler) Put(w http.ResponseWriter, r *http.Request, res core.Resolved)
 			return
 		}
 	}
-
 	body := r.Body
 	if body == nil {
 		body = http.NoBody
+	}
+	if aerr := h.autoMkcol(r, res); aerr != nil {
+		h.fail(w, r, aerr)
+		return
 	}
 	entry, err := h.core.WriteStream(r.Context(), res, body, ifMatch)
 	if err != nil {
@@ -302,6 +304,20 @@ func parentExists(res core.Resolved) bool {
 	}
 	st, err := res.Root().Stat(p.Parent())
 	return err == nil && st.Kind.IsDir()
+}
+
+// autoMkcol creates the directories above the target when the client asked for
+// them by header.
+//
+// The reference iOS client sets X-NC-WebDAV-Auto-Mkcol on every upload and
+// accepts only a 2xx, so a picture whose folder does not exist yet failed with
+// nothing the person holding the phone could do about it. The walk itself
+// belongs to the domain: a share root is not this tier's to touch.
+func (h *Handler) autoMkcol(r *http.Request, res core.Resolved) error {
+	if r.Header.Get("X-NC-WebDAV-Auto-Mkcol") != "1" {
+		return nil
+	}
+	return h.core.MkdirParents(r.Context(), res)
 }
 
 // Delete removes a resource.

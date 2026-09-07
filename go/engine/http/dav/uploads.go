@@ -283,6 +283,10 @@ func (h *Handler) uploadAssemble(
 		return
 	}
 
+	if aerr := h.autoMkcol(r, res); aerr != nil {
+		h.fail(w, r, aerr)
+		return
+	}
 	entry, aerr := h.uploads.Assemble(r.Context(), res, up.Session, declared, mtime)
 	if aerr != nil {
 		h.fail(w, r, aerr)

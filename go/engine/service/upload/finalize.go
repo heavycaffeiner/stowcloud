@@ -241,6 +241,15 @@ func (e *Engine) Assemble(
 			ErrBadRequest, head, total)
 	}
 	if total == 0 {
+		// Nothing was declared and nothing arrived. Publishing here would
+		// answer 201 for a transfer that sent no bytes, and both reference
+		// clients read that as "uploaded" and drop their local copy, so an
+		// assembly racing an abandoned or retargeted collection would destroy
+		// the file it was meant to store. A transfer that genuinely holds an
+		// empty file declares a length of zero and takes the branch above.
+		if head == 0 {
+			return core.Entry{}, fmt.Errorf("%w: no bytes were received", ErrIncomplete)
+		}
 		total = head
 	}
 

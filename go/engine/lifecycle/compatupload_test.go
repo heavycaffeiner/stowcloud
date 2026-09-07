@@ -224,13 +224,17 @@ func TestReopeningAnUploadCollectionResumesIt(t *testing.T) {
 	}
 }
 
-// A collection name the account already holds against a different destination
-// is refused rather than adopted.
+// A collection reopened against a different destination starts over rather
+// than adopting what the first transfer sent.
 //
-// The transfer id is chosen by the client, so two files can collide on it.
-// Adopting the existing session would publish one file's bytes at the other's
-// destination.
-func TestReopeningAgainstADifferentDestinationIsRefused(t *testing.T) {
+// The transfer id is the client's, and both reference clients derive it from
+// the file rather than from where it is going: the Android operation uses the
+// file's MD5, so the same picture sent to two folders collides on it. Refusing
+// the second open answered 405, which that operation reports as "the folder
+// already exists" and the transfer never begins. Reopening therefore succeeds,
+// and the session behind it is replaced so one file's bytes cannot be
+// published at the other's destination.
+func TestReopeningAgainstADifferentDestinationStartsOver(t *testing.T) {
 	t.Parallel()
 	base, credential, client := uploadFixture(t)
 
@@ -242,13 +246,123 @@ func TestReopeningAgainstADifferentDestinationIsRefused(t *testing.T) {
 		map[string]string{"Destination": first}); code != http.StatusCreated {
 		t.Fatalf("the first open answered %d: %s", code, body)
 	}
-	code, body := davSend(t, client, credential, "MKCOL", folder, nil,
-		map[string]string{"Destination": second})
-	if code == http.StatusCreated {
-		t.Fatalf("a collection bound to %s was reopened against %s", first, second)
+	if code, body := davSend(t, client, credential, http.MethodPut, folder+"/000001",
+		strings.NewReader("first-destination-bytes"),
+		map[string]string{"Destination": first}); code != http.StatusCreated {
+		t.Fatalf("the first chunk answered %d: %s", code, body)
 	}
-	if code == http.StatusInternalServerError {
-		t.Errorf("the collision answered 500, which reads as a broken server: %s", body)
+
+	if code, body := davSend(t, client, credential, "MKCOL", folder, nil,
+		map[string]string{"Destination": second}); code != http.StatusCreated {
+		t.Fatalf("reopening against a second destination answered %d: %s", code, body)
+	}
+
+	// Nothing the first transfer sent is left to publish, so an assembly with
+	// no fresh chunk cannot land the first file's bytes on the second name.
+	if code, _ := davSend(t, client, credential, "MOVE", folder+"/.file", nil,
+		map[string]string{"Destination": second}); code == http.StatusCreated {
+		t.Fatal("the retargeted collection published the first transfer's bytes")
+	}
+	if code, _ := davSend(t, client, credential, http.MethodGet, second, nil, nil); code != http.StatusNotFound {
+		t.Errorf("the second destination exists after a refused assembly: %d", code)
+	}
+
+	// A fresh transfer under the reopened id lands its own bytes.
+	if code, body := davSend(t, client, credential, http.MethodPut, folder+"/000001",
+		strings.NewReader("second"), map[string]string{"Destination": second}); code != http.StatusCreated {
+		t.Fatalf("the retargeted chunk answered %d: %s", code, body)
+	}
+	if code, body := davSend(t, client, credential, "MOVE", folder+"/.file", nil,
+		map[string]string{"Destination": second}); code != http.StatusCreated {
+		t.Fatalf("publishing the retargeted transfer answered %d: %s", code, body)
+	}
+	if _, got := davSend(t, client, credential, http.MethodGet, second, nil, nil); got != "second" {
+		t.Errorf("the second destination holds %q", got)
+	}
+}
+
+// An upload asking the server to make its parents lands, and one that does not
+// ask is still refused.
+//
+// The reference iOS client sets X-NC-WebDAV-Auto-Mkcol on every upload and
+// accepts only a 2xx, so a picture whose folder does not exist yet failed with
+// nothing the person holding the phone could do about it. The header is the
+// client asking for the folders it named to be created; without it a missing
+// parent stays an error, since a PUT that silently invents directories is how
+// a mistyped path becomes a tree nobody meant to make.
+func TestAnUploadCanAskForItsParentsToBeCreated(t *testing.T) {
+	t.Parallel()
+	base, credential, client := uploadFixture(t)
+
+	dest := base + "/remote.php/dav/files/alice/documents/Camera/2026/09/photo.jpg"
+
+	if code, _ := davSend(t, client, credential, http.MethodPut, dest,
+		strings.NewReader("jpeg"), nil); code != http.StatusNotFound {
+		t.Fatalf("an upload into a missing folder answered %d, want 404", code)
+	}
+
+	if code, body := davSend(t, client, credential, http.MethodPut, dest,
+		strings.NewReader("jpeg-bytes"),
+		map[string]string{"X-NC-WebDAV-Auto-Mkcol": "1"}); code != http.StatusCreated {
+		t.Fatalf("the upload answered %d: %s", code, body)
+	}
+	if _, got := davSend(t, client, credential, http.MethodGet, dest, nil, nil); got != "jpeg-bytes" {
+		t.Errorf("the uploaded file holds %q", got)
+	}
+
+	// The folders it made are real collections, not just a path that happened
+	// to resolve: a client lists them straight after uploading into them.
+	ask := `<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/></d:prop></d:propfind>`
+	code, listed := davSend(t, client, credential, "PROPFIND",
+		base+"/remote.php/dav/files/alice/documents/Camera/2026", strings.NewReader(ask),
+		map[string]string{"Depth": "0", "Content-Type": "text/xml"})
+	if code != http.StatusMultiStatus {
+		t.Fatalf("listing a created parent answered %d: %s", code, listed)
+	}
+	if !strings.Contains(listed, "collection") {
+		t.Errorf("the created parent is not a collection: %s", listed)
+	}
+}
+
+// A transfer id is reusable once the transfer it named has been published.
+//
+// The Android operation derives the id from the file's own MD5, so sending the
+// same picture again, or sending it somewhere else afterwards, arrives under
+// the id that just finished. The alias has to be released when the collection
+// is published, or that second send opens a collection bound to a session that
+// no longer exists and the transfer cannot proceed.
+func TestATransferIDIsReusableAfterItsUploadIsPublished(t *testing.T) {
+	t.Parallel()
+	base, credential, client := uploadFixture(t)
+
+	folder := base + "/remote.php/dav/uploads/alice/transfer-reused"
+	first := base + "/remote.php/dav/files/alice/documents/copy-one.bin"
+	second := base + "/remote.php/dav/files/alice/documents/copy-two.bin"
+
+	publish := func(dest, body string) {
+		t.Helper()
+		opts := map[string]string{"Destination": dest}
+		if code, out := davSend(t, client, credential, "MKCOL", folder, nil, opts); code != http.StatusCreated {
+			t.Fatalf("opening for %s answered %d: %s", dest, code, out)
+		}
+		if code, out := davSend(t, client, credential, http.MethodPut, folder+"/000001",
+			strings.NewReader(body), opts); code != http.StatusCreated {
+			t.Fatalf("the chunk for %s answered %d: %s", dest, code, out)
+		}
+		if code, out := davSend(t, client, credential, "MOVE", folder+"/.file", nil, opts); code != http.StatusCreated {
+			t.Fatalf("publishing %s answered %d: %s", dest, code, out)
+		}
+	}
+
+	publish(first, "one")
+	// The same id again, which is what the client sends for the same file.
+	publish(second, "two")
+
+	if _, got := davSend(t, client, credential, http.MethodGet, first, nil, nil); got != "one" {
+		t.Errorf("the first upload holds %q", got)
+	}
+	if _, got := davSend(t, client, credential, http.MethodGet, second, nil, nil); got != "two" {
+		t.Errorf("the reused id published %q, so the second transfer did not land its own bytes", got)
 	}
 }
 

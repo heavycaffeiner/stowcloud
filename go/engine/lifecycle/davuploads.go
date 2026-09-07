@@ -52,18 +52,23 @@ func (a davUploads) Open(
 	ctx context.Context, res core.Resolved, name string, total *uint64,
 ) error {
 	if alias, lerr := a.engine.LookupAlias(ctx, name, res.User()); lerr == nil {
-		if alias.Share != res.Share() || alias.Dest != res.Path().String() {
-			return core.ErrExists
+		if alias.Share == res.Share() && alias.Dest == res.Path().String() {
+			if sess, gerr := a.engine.Get(ctx, alias.Session, res.User()); gerr == nil &&
+				sess.State == upload.StateReceiving {
+				return nil
+			}
 		}
-		// The alias outlives the session it names: expiry and abort leave the
-		// row, and only a discard unbinds it. Reusing one of those would
-		// answer 201 to an open and then refuse every chunk that followed,
-		// which tells the client the collection is there while nothing can be
-		// written into it. A session that is no longer receiving is replaced
-		// instead, so the name the client keeps addressing goes on working.
-		if sess, gerr := a.engine.Get(ctx, alias.Session, res.User()); gerr == nil &&
-			sess.State == upload.StateReceiving {
-			return nil
+		// A transfer naming somewhere else, or one that is no longer receiving
+		// (assembled, aborted, or expired). The old session is abandoned so its
+		// spool is freed, and the alias unbound so the name can carry the new
+		// transfer.
+		//
+		// A session already gone is the state this wanted, so only a live
+		// failure is reported: leaving one behind would keep a spool the client
+		// can no longer name, and the next open would silently inherit it.
+		if aerr := a.engine.Abort(ctx, alias.Session, res.User()); aerr != nil &&
+			!errors.Is(aerr, upload.ErrNotFound) {
+			return translateUploadError(aerr)
 		}
 		if uerr := a.engine.UnbindAlias(ctx, name, res.User()); uerr != nil {
 			return translateUploadError(uerr)
@@ -147,6 +152,11 @@ func (m malformedUpload) BadRequest() bool { return true }
 func markBadRequest(err error) error { return malformedUpload{cause: err} }
 
 // Assemble publishes the collection onto the destination.
+//
+// The alias outlives the publish. Releasing it here would be the tidier shape,
+// but Open already replaces a stale one, and the session row the alias names is
+// deleted by the publish itself, so a name reused after a completed transfer
+// opens a fresh collection either way.
 func (a davUploads) Assemble(
 	ctx context.Context, res core.Resolved, name string,
 	total uint64, mtimeNs *int64,
