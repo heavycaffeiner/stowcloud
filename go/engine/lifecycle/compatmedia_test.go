@@ -5,8 +5,10 @@ package lifecycle_test
 import (
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 // mediaSearch is the body the photo tab sends: the image-or-video disjunction
@@ -32,6 +34,14 @@ func mediaSearch(sinceNs, beforeNs int64, rows int) string {
   <d:limit><d:nresults>%d</d:nresults></d:limit>
  </d:basicsearch>
 </d:searchrequest>`, beforeNs, sinceNs, rows)
+}
+
+// mediaSearchWithMtime is the same body asking for the timestamp back, which
+// is what the client pages on.
+func mediaSearchWithMtime(sinceNs, beforeNs int64, rows int) string {
+	return strings.Replace(mediaSearch(sinceNs, beforeNs, rows),
+		"<d:prop><d:getetag/></d:prop>",
+		"<d:prop><d:getetag/><d:getlastmodified/></d:prop>", 1)
 }
 
 // The photo tab gets back no more rows than it asked for.
@@ -92,5 +102,66 @@ func TestMediaSearchHonoursTheWindowsUpperBound(t *testing.T) {
 	}
 	if got := strings.Count(out, "<D:response>"); got != 0 {
 		t.Errorf("a window ending in the past reported %d rows: %s", got, out)
+	}
+}
+
+// A truncated media answer is the newest rows, in order.
+//
+// The client pages by narrowing the window to the timestamp of the oldest row
+// it holds, so a truncated answer has to be the newest rows and has to arrive
+// newest first. Truncating an unordered set hands back an arbitrary subset,
+// and the next request, keyed on that subset's oldest member, never names the
+// rows that were dropped.
+func TestATruncatedMediaAnswerIsTheNewestRowsInOrder(t *testing.T) {
+	t.Parallel()
+	base, credential, client := uploadFixture(t)
+	// Distinct extensions so the answer cannot come out ordered by accident of
+	// the per-extension index walk. Written oldest first with a pause between
+	// each, because a plain PUT stamps the file with the time of the write:
+	// the last written is the newest, and the gaps are wide enough that the
+	// one-second resolution of the wire format still separates them.
+	names := []string{"a.jpg", "b.png", "c.mp4", "d.jpg", "e.png", "f.mp4"}
+	for i, name := range names {
+		if i > 0 {
+			time.Sleep(1100 * time.Millisecond)
+		}
+		url := base + "/remote.php/dav/files/alice/documents/" + name
+		if code, body := davSend(t, client, credential, http.MethodPut, url,
+			strings.NewReader(name), nil); code != http.StatusCreated {
+			t.Fatalf("writing %s answered %d: %s", name, code, body)
+		}
+	}
+
+	const perPage = 3
+	code, out := davSend(t, client, credential, "SEARCH",
+		base+"/remote.php/dav/files/alice",
+		strings.NewReader(mediaSearchWithMtime(1, 1<<62, perPage)),
+		map[string]string{"Content-Type": "text/xml"})
+	if code != http.StatusMultiStatus {
+		t.Fatalf("the media search answered %d: %s", code, out)
+	}
+
+	stamps := regexp.MustCompile(`<D:getlastmodified>([^<]*)</D:getlastmodified>`).
+		FindAllStringSubmatch(out, -1)
+	if len(stamps) != perPage {
+		t.Fatalf("asked for %d rows and got %d: %s", perPage, len(stamps), out)
+	}
+	prev := int64(1) << 62
+	for i, s := range stamps {
+		when, perr := http.ParseTime(s[1])
+		if perr != nil {
+			t.Fatalf("row %d carries an unparsable timestamp %q: %v", i, s[1], perr)
+		}
+		if when.Unix() > prev {
+			t.Errorf("row %d is newer than the one before it, so the answer is not ordered", i)
+		}
+		prev = when.Unix()
+	}
+
+	// The three newest were written last, so the three oldest must be absent.
+	for _, gone := range names[:3] {
+		if strings.Contains(out, gone) {
+			t.Errorf("%s is older than the rows that fit and was returned anyway", gone)
+		}
 	}
 }

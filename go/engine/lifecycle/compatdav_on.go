@@ -21,6 +21,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 	"net/http"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -637,24 +638,17 @@ func (s *compatQuerySource) mediaEntries(
 			if entry.IsDir || !extIn(entry.Name, wanted) {
 				continue
 			}
-			if !q.inWindow(entry.MTimeNs) {
-				continue
-			}
-			out = append(out, entry)
-			if len(out) >= ceiling {
-				break
+			if q.inWindow(entry.MTimeNs) {
+				out = append(out, entry)
 			}
 		}
-		return out
+		return newestFirst(out, ceiling)
 	}
 
 	sources := searchSourcesOf(s.engine.Core.UserScanSources(user), user, s.engine.Core)
 	seen := make(map[string]struct{})
 	var out []core.Entry
 	for _, ext := range wanted {
-		if len(out) >= ceiling {
-			break
-		}
 		results, err := s.engine.Search.Query(ctx, sources,
 			svc.QueryOptions{Query: ext, Limit: limits.SearchResults})
 		if err != nil {
@@ -677,12 +671,32 @@ func (s *compatQuerySource) mediaEntries(
 			}
 			seen[path] = struct{}{}
 			out = append(out, entry)
-			if len(out) >= ceiling {
+			if len(out) >= limits.SearchResults {
 				break
 			}
 		}
 	}
-	return out
+	return newestFirst(out, ceiling)
+}
+
+// newestFirst orders by modification time, newest first, and keeps at most
+// the requested count.
+//
+// The order is the client's paging key: it asks for the next page by naming
+// the timestamp of the oldest row it was given. Truncating an unordered set
+// would drop rows newer than that one, and asking again would never return
+// them, so the file would be missing from the screen for good.
+func newestFirst(entries []core.Entry, ceiling int) []core.Entry {
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].MTimeNs != entries[j].MTimeNs {
+			return entries[i].MTimeNs > entries[j].MTimeNs
+		}
+		return entries[i].Name < entries[j].Name
+	})
+	if ceiling > 0 && len(entries) > ceiling {
+		entries = entries[:ceiling]
+	}
+	return entries
 }
 
 // inWindow reports whether a modification time falls inside the range the
