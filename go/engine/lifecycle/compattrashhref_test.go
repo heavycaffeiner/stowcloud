@@ -66,18 +66,28 @@ func TestATrashRowIsReachableAtTheHrefItWasListedAt(t *testing.T) {
 			base+"/remote.php/dav/files/alice/files/"+name, nil, nil); code != http.StatusNoContent {
 			t.Fatalf("deleting %s answered %d: %s", name, code, body)
 		}
-		ask := `<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:nc="http://nextcloud.org/ns"><d:prop><nc:trashbin-filename/></d:prop></d:propfind>`
+		// The row is matched by the name it was trashed under, not by
+		// position: the second lookup runs with two rows in the bin, and
+		// taking whichever came first would let one assertion act on the
+		// other's file while still passing.
+		ask := `<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:nc="http://nextcloud.org/ns"><d:prop><nc:trashbin-title/></d:prop></d:propfind>`
 		code, body := davSend(t, client, credential, "PROPFIND", trash,
 			strings.NewReader(ask), map[string]string{"Depth": "1", "Content-Type": "text/xml"})
 		if code != http.StatusMultiStatus {
 			t.Fatalf("listing the trash answered %d: %s", code, body)
 		}
-		for _, m := range regexp.MustCompile(`<d:href>([^<]*)</d:href>`).FindAllStringSubmatch(body, -1) {
-			if strings.Contains(m[1], ":") {
-				return m[1]
+		rows := regexp.MustCompile(`(?s)<d:response>(.*?)</d:response>`).FindAllStringSubmatch(body, -1)
+		for _, row := range rows {
+			if !strings.Contains(row[1], "<nc:trashbin-title>"+name+"</nc:trashbin-title>") {
+				continue
 			}
+			href := regexp.MustCompile(`<d:href>([^<]*)</d:href>`).FindStringSubmatch(row[1])
+			if href == nil {
+				t.Fatalf("the row for %s carried no href: %s", name, row[1])
+			}
+			return href[1]
 		}
-		t.Fatalf("the trash listing carried no member: %s", body)
+		t.Fatalf("the trash listing has no row titled %s: %s", name, body)
 		return ""
 	}
 
@@ -108,5 +118,16 @@ func TestATrashRowIsReachableAtTheHrefItWasListedAt(t *testing.T) {
 	if code, got := davSend(t, client, credential, http.MethodGet,
 		base+"/remote.php/dav/files/alice/files/restore-me.txt", nil, nil); code != http.StatusOK || got != "bytes" {
 		t.Errorf("the restored file answered %d holding %q", code, got)
+	}
+
+	// The other half of what the client derives from the same href: the name
+	// it strips its own account segment out of, which is what the trash
+	// screen navigates a folder by. An href missing that segment leaves the
+	// strip a no-op, so the screen carries a whole DAV path where it expects
+	// a bare row name.
+	stripped := rowHref("look-at-me.txt")
+	path := strings.SplitN(stripped, "/remote.php/dav", 2)[1]
+	if got := strings.Replace(path, "/trashbin/alice/trash", "", 1); strings.Contains(got, "trashbin") {
+		t.Errorf("the client strips its own trash prefix to %q, which still names the mount", got)
 	}
 }
