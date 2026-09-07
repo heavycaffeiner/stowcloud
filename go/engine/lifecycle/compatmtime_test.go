@@ -26,10 +26,21 @@ func TestAPlainPutKeepsTheDeclaredModificationTime(t *testing.T) {
 	want := time.Unix(1_600_000_000, 0).UTC()
 
 	url := base + "/remote.php/dav/files/alice/documents/holiday.jpg"
-	if code, body := davSend(t, client, credential, http.MethodPut, url,
-		strings.NewReader("jpeg-bytes"),
-		map[string]string{"X-OC-Mtime": declared}); code != http.StatusCreated {
-		t.Fatalf("writing answered %d: %s", code, body)
+	req := newReq(t, http.MethodPut, url, strings.NewReader("jpeg-bytes"))
+	req.Header.Set("Authorization", credential)
+	req.Header.Set("X-OC-Mtime", declared)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("writing: %v", err)
+	}
+	defer closeRespBody(t, resp)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("writing answered %d", resp.StatusCode)
+	}
+	// The desktop client reads this literal and otherwise reports that the
+	// server does not support the header at all.
+	if got := resp.Header.Get("X-OC-Mtime"); got != "accepted" {
+		t.Errorf("the upload answered X-OC-Mtime %q, want \"accepted\"", got)
 	}
 
 	ask := `<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:getlastmodified/></d:prop></d:propfind>`

@@ -228,8 +228,15 @@ func (h *Handler) Put(w http.ResponseWriter, r *http.Request, res core.Resolved)
 		if serr := res.Root().SetTimes(res.Path(), *mtime); serr != nil {
 			h.logger.Warn("could not apply the client's modification time",
 				"path", r.URL.Path, "error", serr)
-		} else if st, sterr := res.Root().Stat(res.Path()); sterr == nil {
-			entry = h.core.EntryAt(res, st)
+		} else {
+			// The desktop client reads this literal to decide whether the
+			// stamp it asked for was honoured, and says the server does not
+			// support the header when it is absent. Set only on the branch
+			// where it actually landed, so the answer stays true.
+			w.Header().Set(h.uploadHeaders.MTime, "accepted")
+			if st, sterr := res.Root().Stat(res.Path()); sterr == nil {
+				entry = h.core.EntryAt(res, st)
+			}
 		}
 	}
 
