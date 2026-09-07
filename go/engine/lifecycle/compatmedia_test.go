@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
-	"time"
 )
 
 // mediaSearch is the body the photo tab sends: the image-or-video disjunction
@@ -116,18 +116,16 @@ func TestATruncatedMediaAnswerIsTheNewestRowsInOrder(t *testing.T) {
 	t.Parallel()
 	base, credential, client := uploadFixture(t)
 	// Distinct extensions so the answer cannot come out ordered by accident of
-	// the per-extension index walk. Written oldest first with a pause between
-	// each, because a plain PUT stamps the file with the time of the write:
-	// the last written is the newest, and the gaps are wide enough that the
-	// one-second resolution of the wire format still separates them.
+	// the per-extension index walk, and a day between each so "newest" has one
+	// answer. Declared rather than slept for: the wire carries whole seconds,
+	// and waiting out six of them would be the slowest test here.
 	names := []string{"a.jpg", "b.png", "c.mp4", "d.jpg", "e.png", "f.mp4"}
 	for i, name := range names {
-		if i > 0 {
-			time.Sleep(1100 * time.Millisecond)
-		}
 		url := base + "/remote.php/dav/files/alice/documents/" + name
+		stamp := strconv.Itoa(1_600_000_000 + i*86_400)
 		if code, body := davSend(t, client, credential, http.MethodPut, url,
-			strings.NewReader(name), nil); code != http.StatusCreated {
+			strings.NewReader(name),
+			map[string]string{"X-OC-Mtime": stamp}); code != http.StatusCreated {
 			t.Fatalf("writing %s answered %d: %s", name, code, body)
 		}
 	}

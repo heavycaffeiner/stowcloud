@@ -220,6 +220,19 @@ func (h *Handler) Put(w http.ResponseWriter, r *http.Request, res core.Resolved)
 		return
 	}
 
+	// The phone clients declare the file's own modification time on a plain
+	// PUT, not only on a chunked publish. Without this the gallery orders a
+	// camera roll by when it happened to sync rather than when the pictures
+	// were taken, and a sync client sees a file that changed after it sent it.
+	if mtime, merr := h.uploadMTime(r); merr == nil && mtime != nil {
+		if serr := res.Root().SetTimes(res.Path(), *mtime); serr != nil {
+			h.logger.Warn("could not apply the client's modification time",
+				"path", r.URL.Path, "error", serr)
+		} else if st, sterr := res.Root().Stat(res.Path()); sterr == nil {
+			entry = h.core.EntryAt(res, st)
+		}
+	}
+
 	w.Header().Set("ETag", ETagHeader(entry.ETag, entry.ETagWeak))
 	if existed {
 		w.WriteHeader(http.StatusNoContent)
