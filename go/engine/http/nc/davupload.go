@@ -37,7 +37,12 @@ import (
 // without an engine behind it would accept bytes it could never assemble.
 func (s *Server) davUpload(w http.ResponseWriter, r *http.Request, p Principal, t Target) {
 	if s.deps.Uploads == nil {
-		s.davMethodNotAllowed(w)
+		// Not a wrong method: the collection is absent from this deployment.
+		// The capabilities document already says chunking is unavailable, and
+		// one client ignores that and tries anyway, so the refusal it gets
+		// has to name the real reason rather than blame the verb.
+		WriteDAVError(w, http.StatusNotImplemented,
+			"Sabre\\DAV\\Exception\\NotImplemented", "This server has no chunked upload collection")
 		return
 	}
 	switch r.Method {
