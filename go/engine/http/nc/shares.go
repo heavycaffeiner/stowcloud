@@ -82,8 +82,21 @@ func (s *Server) listShares(c *fiber.Ctx, p Principal) (Val, bool, *Error) {
 		return List(s.grantsSharedWith(ctx, owner)...), true, nil
 	}
 
-	path := c.Query("path")
+	// The path a client sends is its own spelling, and a folder always carries
+	// a trailing separator there. Resolution splits on that separator, so the
+	// spelling arrived as a path with an empty last component and answered as
+	// absent: the sharing panel of every folder reported that it could not
+	// read the folder's shares, and the share screen it fronts never opened.
+	path := strings.Trim(c.Query("path"), "/")
 	if path == "" {
+		// The account root, addressed either as nothing or as the separator
+		// alone. It holds no shares of its own: what it holds is the shares
+		// themselves, so with subfiles asked for the answer is theirs, and
+		// without it the answer is everything this caller administers, which
+		// is what a client asking about the root is looking for.
+		if queryBool(c.Query("subfiles")) {
+			return List(s.sharesUnderRoot(c, p)...), true, nil
+		}
 		items := make([]Val, 0)
 		links, err := s.deps.Core.ListLinks(ctx, owner, nil)
 		if err != nil {
@@ -122,6 +135,23 @@ func (s *Server) listShares(c *fiber.Ctx, p Principal) (Val, bool, *Error) {
 		items = append(items, s.sharesAtResolved(c, child)...)
 	}
 	return List(items...), true, nil
+}
+
+// sharesUnderRoot answers the shares that sit on the account root's own
+// children, which are the shares this caller may reach. A client asking about
+// the root with subfiles is asking which of the folders it can see are
+// shared.
+func (s *Server) sharesUnderRoot(c *fiber.Ctx, p Principal) []Val {
+	ctx := c.UserContext()
+	items := make([]Val, 0)
+	for _, rt := range s.roots(ctx, p) {
+		res, err := s.resolve(ctx, p, rt.Label, acl.Read)
+		if err != nil {
+			continue
+		}
+		items = append(items, s.sharesAtResolved(c, res)...)
+	}
+	return items
 }
 
 // sharesAtResolved answers every link and grant the caller owns exactly at
@@ -250,7 +280,10 @@ func (s *Server) grantsSharedWith(ctx context.Context, caller core.UserID) []Val
 // createShare answers POST .../shares.
 func (s *Server) createShare(c *fiber.Ctx, p Principal) (Val, bool, *Error) {
 	ctx := c.UserContext()
-	path := shareFormValue(c, "path")
+	// Trimmed for the same reason the listing trims it: a client spells a
+	// folder with a trailing separator, and the path it shares is the path it
+	// shows.
+	path := strings.Trim(shareFormValue(c, "path"), "/")
 	if path == "" {
 		return Val{}, false, BadRequest("path is required")
 	}

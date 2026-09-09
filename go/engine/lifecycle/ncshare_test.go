@@ -50,6 +50,122 @@ func xmlField(t *testing.T, body, name string) string {
 	return rest[:j]
 }
 
+// A client spells a folder with a trailing separator, and the path it asks
+// about is the path it shows. The panel that fronts sharing reads the shares
+// of that path before it opens, so a refusal here closed the whole screen
+// with "unable to fetch sharees" and no folder could be shared at all.
+func TestASharePathIsAcceptedInEverySpellingAClientSends(t *testing.T) {
+	t.Parallel()
+	f := newNCFixture(t, []byte("hello"))
+
+	for _, path := range []string{
+		"/" + f.share + "/",        // a share root, as a folder is spelled
+		"/" + f.share,              // the same folder without the separator
+		"/" + f.share + "/sub/",    // a folder inside it
+		"/" + f.share + "/doc.bin", // a file
+		"/",                        // the account root
+		"",                         // no path at all
+	} {
+		resp, body := f.request(t, "GET",
+			f.base+sharesPath+"?path="+url.QueryEscape(path)+"&reshares=true&subfiles=false",
+			nil, nil)
+		if resp.StatusCode != 200 {
+			t.Errorf("listing the shares of %q answered %d\n%s", path, resp.StatusCode, body)
+			continue
+		}
+		if got := xmlField(t, string(body), "statuscode"); got != "200" {
+			t.Errorf("listing the shares of %q reported %s", path, got)
+		}
+	}
+}
+
+// And a share is created on the same spelling: the client posts the path it
+// showed, separator and all.
+func TestAFolderIsSharedUnderTheSpellingAClientSends(t *testing.T) {
+	t.Parallel()
+	f := newNCFixture(t, []byte("hello"))
+
+	status, body := createLink(t, f, "/"+f.share+"/sub/", nil)
+	if status != 200 {
+		t.Fatalf("creating answered %d\n%s", status, body)
+	}
+	if got := xmlField(t, body, "item_type"); got != "folder" {
+		t.Errorf("item_type is %q", got)
+	}
+	if xmlField(t, body, "token") == "" {
+		t.Error("no token, so no client can build the link")
+	}
+
+	// The panel for that folder now finds the share it just made, which is
+	// the round trip the screen actually performs.
+	resp, listed := f.request(t, "GET",
+		f.base+sharesPath+"?path="+url.QueryEscape("/"+f.share+"/sub/")+"&reshares=true&subfiles=false",
+		nil, nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("the panel's listing answered %d\n%s", resp.StatusCode, listed)
+	}
+	if !strings.Contains(string(listed), "<element>") {
+		t.Errorf("the folder's own share is missing from its panel:\n%s", listed)
+	}
+}
+
+// The shared-files screen lists what the account shared and then reads each
+// path back. Both halves have to agree about how a folder is spelled, or the
+// screen lists a row it cannot open.
+func TestTheSharedScreenListsAndThenReadsEachShare(t *testing.T) {
+	t.Parallel()
+	f := newNCFixture(t, []byte("hello"))
+
+	if status, body := createLink(t, f, "/"+f.share+"/sub", nil); status != 200 {
+		t.Fatalf("sharing the folder answered %d\n%s", status, body)
+	}
+	if status, body := createLink(t, f, "/"+f.share+"/doc.bin", nil); status != 200 {
+		t.Fatalf("sharing the file answered %d\n%s", status, body)
+	}
+
+	resp, body := f.request(t, "GET", f.base+sharesPath+"?include_tags=true", nil, nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("the screen's listing answered %d\n%s", resp.StatusCode, body)
+	}
+	doc := string(body)
+	if got := strings.Count(doc, "<element>"); got != 2 {
+		t.Fatalf("the screen lists %d shares, want 2\n%s", got, doc)
+	}
+
+	// Every path the screen was given resolves, which is what it does next.
+	for _, path := range pathsIn(doc) {
+		resp, read := f.request(t, "PROPFIND", f.davRoot()+pathEscape(path),
+			strings.NewReader(propfindBody),
+			map[string]string{"Depth": "0", "Content-Type": "application/xml"})
+		if resp.StatusCode != 207 {
+			t.Errorf("reading %q back answered %d\n%s", path, resp.StatusCode, read)
+		}
+	}
+}
+
+// pathsIn reads every share path out of a share list.
+func pathsIn(doc string) []string {
+	var out []string
+	for _, part := range strings.Split(doc, "<path>")[1:] {
+		if i := strings.Index(part, "</path>"); i >= 0 {
+			out = append(out, part[:i])
+		}
+	}
+	return out
+}
+
+// pathEscape spells a share path as a URL path, one component at a time.
+func pathEscape(path string) string {
+	out := ""
+	for _, comp := range strings.Split(strings.Trim(path, "/"), "/") {
+		out += "/" + url.PathEscape(comp)
+	}
+	if strings.HasSuffix(path, "/") {
+		out += "/"
+	}
+	return out
+}
+
 // The whole point of the feature: a link is created, its URL is absolute, and
 // a stranger holding it reaches the file.
 func TestAPublicLinkServesTheFileToAStranger(t *testing.T) {
