@@ -300,9 +300,9 @@ func chunkBytes(v uint64) int64 {
 // featuresView says which screens lead somewhere on this deployment.
 func (e *Engine) featuresView() handler.FeaturesView {
 	return handler.FeaturesView{
-		// mountDav claims /dav, /dav-uploads, /dav-trash and every compat
-		// alias unconditionally, so the surface is always there to point a
-		// client at. SMB is conditional because it needs a publisher.
+		// mountDav claims /dav unconditionally, so the surface is always
+		// there to point a client at. SMB is conditional because it needs a
+		// publisher.
 		WebDAV: true,
 		SMB:    e.smbPublisherOf() != nil,
 

@@ -118,8 +118,8 @@ var sideways = map[string]map[string]bool{
 
 	// The presentation tier's own order, which its overview states as a list:
 	// apierr, archive, route and spa are independent leaves; middleware sits on
-	// apierr and route; dav on apierr; compat on dav; handler on apierr,
-	// archive and middleware; server on everything.
+	// apierr and route; dav on apierr; nc on apierr and middleware; handler on
+	// apierr, archive and middleware; server on everything.
 	//
 	// route is a leaf here rather than in the overview's list because it holds
 	// only metadata: what a route is and what credential it demands, with no
@@ -127,7 +127,7 @@ var sideways = map[string]map[string]bool{
 	// or guards a route reads it.
 	"http/middleware": {"http/apierr": true, "http/route": true},
 	"http/dav":        {"http/apierr": true},
-	"http/compat":     {"http/dav": true, "http/apierr": true},
+	"http/nc":         {"http/apierr": true, "http/middleware": true},
 	"http/handler": {
 		"http/apierr": true, "http/archive": true,
 		"http/middleware": true, "http/route": true,
@@ -135,7 +135,7 @@ var sideways = map[string]map[string]bool{
 	"http/server": {
 		"http/apierr": true, "http/archive": true, "http/route": true,
 		"http/middleware": true, "http/handler": true,
-		"http/dav": true, "http/compat": true, "http/spa": true,
+		"http/dav": true, "http/nc": true, "http/spa": true,
 		"http/emergency": true,
 	},
 }

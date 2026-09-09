@@ -18,7 +18,6 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
-	uploadsvc "github.com/heavycaffeiner/stowcloud/go/engine/service/upload"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/cache"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/dbfile"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
@@ -90,29 +89,6 @@ func newFixture(t *testing.T) *fixture { return build(t, nil, 0) }
 func newFixtureReadOnly(t *testing.T) *fixture {
 	f := build(t, nil, 0)
 	regrant(t, f, acl.Read|acl.Download)
-	return f
-}
-
-// newFixtureNoUploads builds one with no upload engine, which is a deployment
-// that does not offer the chunked upload collection.
-func newFixtureNoUploads(t *testing.T) *fixture {
-	f := build(t, nil, 0)
-	f.engine.Upload = nil
-	// Rebuild the handler, since the adapter was wired when it was made.
-	uploads := dav.Uploads(nil)
-	if f.engine.Upload != nil {
-		uploads = lifecycle.NewDavUploads(f.engine.Upload)
-	}
-	f.h = dav.New(dav.Options{
-		Core:    f.core,
-		Taker:   f.real,
-		Uploads: uploads,
-		UploadHeaders: dav.UploadHeaders{
-			TotalLength: "OC-Total-Length",
-			MTime:       "X-OC-Mtime",
-			ETag:        "OC-ETag",
-		},
-	})
 	return f
 }
 
@@ -196,20 +172,6 @@ func build(t *testing.T, held []string, infinityEntries int) *fixture {
 	props := lifecycle.NewDavProps(st)
 	real := lifecycle.NewDavLocks(st, clock.System(), nil)
 
-	// The upload engine, so the collection tests drive the real spool rather
-	// than a stub of the seam. A stub would be a second implementation of the
-	// thing under test: what the collection does is translate requests into
-	// engine calls, so the engine has to be the real one.
-	upEngine, uerr := uploadsvc.New(ctx, c, st, uploadsvc.Options{
-		// A test chunk of a few bytes beats a 5 MiB minimum, which is what the
-		// compiled-in seed would demand of every PUT below.
-		ChunkMin:     1,
-		ChunkDefault: 1,
-	})
-	if uerr != nil {
-		t.Fatalf("building the upload engine: %v", uerr)
-	}
-
 	return &fixture{
 		h: dav.New(dav.Options{
 			Core:  c,
@@ -228,19 +190,13 @@ func build(t *testing.T, held []string, infinityEntries int) *fixture {
 			InfinityEntries: infinityEntries,
 			Store:           props,
 			KeyOf:           lifecycle.DavKeyOf,
-			Uploads:         lifecycle.NewDavUploads(upEngine),
-			UploadHeaders: dav.UploadHeaders{
-				TotalLength: "OC-Total-Length",
-				MTime:       "X-OC-Mtime",
-				ETag:        "OC-ETag",
-			},
 		}),
 		core:   c,
 		dir:    shareDir,
 		locks:  locks,
 		props:  props,
 		real:   real,
-		engine: &lifecycle.Engine{Core: c, State: st, Cache: ca, Upload: upEngine},
+		engine: &lifecycle.Engine{Core: c, State: st, Cache: ca},
 		state:  st,
 	}
 }

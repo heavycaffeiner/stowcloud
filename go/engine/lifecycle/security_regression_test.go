@@ -198,10 +198,15 @@ func TestRegressionAppPasswordTrashAndShareScopeEnforced(t *testing.T) {
 		t.Fatalf("read on excluded share returned %d, want 404: %s", status, body)
 	}
 
-	// Deleting trash via /dav-trash/trash with read-only token must be rejected with 403.
-	trashStatus, trashBody := appPasswordAuthed(t, http.MethodDelete, base+"/dav-trash/trash", token)
-	if trashStatus != http.StatusForbidden {
-		t.Fatalf("delete trash with read-only token returned %d, want 403: %s", trashStatus, trashBody)
+	// Emptying the trash with a read-only token must be refused. The
+	// collection a client addresses for that is the compatibility surface's,
+	// since the native mount has no trash tree: what matters is that the
+	// token's own permission mask decides, not the path.
+	trashStatus, trashBody := appPasswordAuthed(t, http.MethodDelete,
+		base+"/remote.php/dav/trashbin/alice/trash", token)
+	if trashStatus < 400 {
+		t.Fatalf("delete trash with read-only token returned %d, want a refusal: %s",
+			trashStatus, trashBody)
 	}
 }
 

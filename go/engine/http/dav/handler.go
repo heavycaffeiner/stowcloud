@@ -4,7 +4,6 @@ package dav
 
 import (
 	"context"
-	"encoding/xml"
 	"io"
 	"log/slog"
 	"net/http"
@@ -61,31 +60,6 @@ type Options struct {
 	// KeyOf names the resource a property belongs to. Nil disables the
 	// property store, since rows nothing can key are rows nothing can read.
 	KeyOf KeyOf
-	// Uploads backs the chunked upload collection. Nil is a deployment
-	// without one, which answers 405 there rather than half-serving it.
-	Uploads Uploads
-	// UploadHeaders names the headers that collection reads. A partly filled
-	// set disables it, since honouring one header and ignoring another is how
-	// a client's declared length disappears without a word.
-	UploadHeaders UploadHeaders
-	// Sources answer SEARCH and REPORT for the vocabularies they claim. Empty
-	// is a deployment that answers neither, which the method refusal states
-	// rather than an empty result hiding.
-	Sources []QuerySource
-	// VendorProps contributes properties in vocabularies this package does
-	// not own, such as a sync client's namespace. Consulted for named
-	// requests; a name the source does not answer falls through to the
-	// missing list, which reports it as a 404 inside the document.
-	VendorProps func(ctx context.Context, res core.Resolved, e core.Entry, want []xml.Name) []Prop
-	// VendorID renders the stable identity a created resource is known by, and
-	// VendorIDHeader names the response header carrying it. A client stores
-	// that value as the resource's remote id when it creates a collection, so
-	// without it the folder it just made has no identity until something
-	// lists it again. Both travel together: a name with no source emits
-	// nothing, and a source with no name has nowhere to go. The empty string
-	// from VendorID means this resource has no id to report.
-	VendorID       func(ctx context.Context, res core.Resolved) string
-	VendorIDHeader string
 	// Limits bound what one request may carry. The zero value takes
 	// DefaultLimits, because a zero bound is not "unbounded" here: several of
 	// these are counts a parser compares against, so leaving them at zero
@@ -105,12 +79,6 @@ type Handler struct {
 	tokensAt        func(ctx context.Context, share uint32, path string) []string
 	locksAt         func(ctx context.Context, share uint32, path string) []Lock
 	taker           LockTaker
-	uploads         Uploads
-	uploadHeaders   UploadHeaders
-	sources         []QuerySource
-	vendorProps     func(ctx context.Context, res core.Resolved, e core.Entry, want []xml.Name) []Prop
-	vendorID        func(ctx context.Context, res core.Resolved) string
-	vendorIDHeader  string
 	limits          Limits
 	infinityEntries int
 	logger          *slog.Logger
@@ -138,12 +106,6 @@ func New(opt Options) *Handler {
 		tokensAt:        opt.TokensAt,
 		locksAt:         opt.LocksAt,
 		taker:           opt.Taker,
-		uploads:         opt.Uploads,
-		uploadHeaders:   opt.UploadHeaders,
-		sources:         opt.Sources,
-		vendorProps:     opt.VendorProps,
-		vendorID:        opt.VendorID,
-		vendorIDHeader:  opt.VendorIDHeader,
 		limits:          limits,
 		infinityEntries: infinity,
 		logger:          logger,

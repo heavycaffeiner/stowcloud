@@ -108,7 +108,7 @@ func (e *Engine) Mount() (*fiber.App, error) {
 	// vocabulary on the wire differs. A build without the tag mounts nothing
 	// here, which is what makes the tag a build fact rather than a runtime
 	// flag.
-	e.mountCompatTagged(app)
+	e.mountNCTagged(app)
 
 	// The interface, last of all: it answers what nothing else claimed.
 	if err := e.mountFrontend(app); err != nil {

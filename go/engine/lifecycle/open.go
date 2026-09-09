@@ -109,6 +109,11 @@ type Engine struct {
 
 	// Revision is the git commit hash stamped into the binary at build time.
 	Revision string
+	// instanceID is this deployment's identity, minted once by the store and
+	// never changing. Read at open because a protocol that carries it renders
+	// it on every listing, and a query per response would be a database read
+	// on a path that has nothing to learn.
+	instanceID string
 	// Auth owns credentials and the master key.
 	Auth *auth.Service
 	// Flow runs the device login. Never nil: a deployment without an auth
@@ -178,10 +183,8 @@ type Engine struct {
 	claimKey      handler.ClaimKey
 	linkLimiter   *linkLimiter
 	totpLimiter   *linkLimiter
-	favCache      sync.Map
 	indexBuilding atomic.Bool
 	davLocks      *DavLocks
-	fileIDCache   sync.Map
 	// The provider client, rebuilt when the settings change. Nil is off, and
 	// off is the ordinary state: a deployment without single sign-on is one
 	// where people use passwords.
@@ -427,6 +430,15 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	// each of them a no-op that answers "there is room".
 	if qerr := coreSvc.AttachQuotaSink(state.NewQuota(e.State)); qerr != nil {
 		return fail(fmt.Errorf("attaching the quota ledger: %w", qerr))
+	}
+
+	// The deployment's identity, read once. A failure leaves it empty, which
+	// is what a protocol carrying it already handles: the field is a tag
+	// beside an id, not the id itself.
+	if id, ierr := e.State.InstanceID(ctx); ierr == nil {
+		e.instanceID = id
+	} else {
+		e.log().Warn("the instance identity could not be read", "error", ierr)
 	}
 
 	// The master key is opened before anything that mints or reads a secret.

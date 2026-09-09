@@ -40,11 +40,8 @@ func StatusOf(err error) (int, xml.Name) {
 		errors.Is(err, ErrBadDepth), errors.Is(err, ErrBadIf),
 		errors.Is(err, ErrBadEscape), errors.Is(err, ErrEncodedSeparator),
 		errors.Is(err, ErrNUL), errors.Is(err, ErrDotSegment),
-		errors.Is(err, ErrChunkNotDecimal), errors.Is(err, ErrChunkLeadingZero),
-		errors.Is(err, ErrChunkRange), errors.Is(err, ErrNoDestination),
-		errors.Is(err, ErrChunkOnCollection), errors.Is(err, ErrNoUploadLength),
-		errors.Is(err, ErrBadUploadLength), errors.Is(err, ErrBadUploadMTime),
-		errors.Is(err, ErrNoBody), errors.Is(err, ErrNoLockToken), errors.Is(err, ErrNoElements),
+		errors.Is(err, ErrNoDestination),
+		errors.Is(err, ErrNoLockToken), errors.Is(err, ErrNoElements),
 		errors.Is(err, ErrBadLockDepth):
 		return http.StatusBadRequest, xml.Name{}
 
@@ -104,9 +101,6 @@ func StatusOf(err error) (int, xml.Name) {
 	// against the resource it tried.
 	case errors.Is(err, ErrNoPropertyStore):
 		return http.StatusConflict, xml.Name{}
-
-	case errors.Is(err, ErrNoQuerySource):
-		return http.StatusNotImplemented, xml.Name{}
 
 	// A deployment that records no locks does not implement LOCK, and Allow
 	// leaves the method out. 405 rather than 501 for the same reason as above:

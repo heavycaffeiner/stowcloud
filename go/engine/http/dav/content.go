@@ -212,34 +212,10 @@ func (h *Handler) Put(w http.ResponseWriter, r *http.Request, res core.Resolved)
 	if body == nil {
 		body = http.NoBody
 	}
-	if aerr := h.autoMkcol(r, res); aerr != nil {
-		h.fail(w, r, aerr)
-		return
-	}
 	entry, err := h.core.WriteStream(r.Context(), res, body, ifMatch)
 	if err != nil {
 		h.fail(w, r, err)
 		return
-	}
-
-	// The phone clients declare the file's own modification time on a plain
-	// PUT, not only on a chunked publish. Without this the gallery orders a
-	// camera roll by when it happened to sync rather than when the pictures
-	// were taken, and a sync client sees a file that changed after it sent it.
-	if mtime, merr := h.uploadMTime(r); merr == nil && mtime != nil {
-		if serr := res.Root().SetTimes(res.Path(), *mtime); serr != nil {
-			h.logger.Warn("could not apply the client's modification time",
-				"path", r.URL.Path, "error", serr)
-		} else {
-			// The desktop client reads this literal to decide whether the
-			// stamp it asked for was honoured, and says the server does not
-			// support the header when it is absent. Set only on the branch
-			// where it actually landed, so the answer stays true.
-			w.Header().Set(h.uploadHeaders.MTime, "accepted")
-			if st, sterr := res.Root().Stat(res.Path()); sterr == nil {
-				entry = h.core.EntryAt(res, st)
-			}
-		}
 	}
 
 	w.Header().Set("ETag", ETagHeader(entry.ETag, entry.ETagWeak))
@@ -275,24 +251,7 @@ func (h *Handler) Mkcol(w http.ResponseWriter, r *http.Request, res core.Resolve
 		h.fail(w, r, err)
 		return
 	}
-	h.setVendorID(w, r, res)
 	w.WriteHeader(http.StatusCreated)
-}
-
-// setVendorID names the created resource in the vendor's own header.
-//
-// Written after the resource exists, because the identity is derived from what
-// is on disk: asking before the create would either answer nothing or answer
-// about whatever the path denoted before. A client stores this as the remote
-// id of the collection it just made, so an absent header leaves it holding a
-// folder with no identity until a later listing supplies one.
-func (h *Handler) setVendorID(w http.ResponseWriter, r *http.Request, res core.Resolved) {
-	if h.vendorID == nil || h.vendorIDHeader == "" {
-		return
-	}
-	if id := h.vendorID(r.Context(), res); id != "" {
-		w.Header().Set(h.vendorIDHeader, id)
-	}
 }
 
 // parentExists reports whether the enclosing collection is there. A share root
@@ -304,20 +263,6 @@ func parentExists(res core.Resolved) bool {
 	}
 	st, err := res.Root().Stat(p.Parent())
 	return err == nil && st.Kind.IsDir()
-}
-
-// autoMkcol creates the directories above the target when the client asked for
-// them by header.
-//
-// The reference iOS client sets X-NC-WebDAV-Auto-Mkcol on every upload and
-// accepts only a 2xx, so a picture whose folder does not exist yet failed with
-// nothing the person holding the phone could do about it. The walk itself
-// belongs to the domain: a share root is not this tier's to touch.
-func (h *Handler) autoMkcol(r *http.Request, res core.Resolved) error {
-	if r.Header.Get("X-NC-WebDAV-Auto-Mkcol") != "1" {
-		return nil
-	}
-	return h.core.MkdirParents(r.Context(), res)
 }
 
 // Delete removes a resource.

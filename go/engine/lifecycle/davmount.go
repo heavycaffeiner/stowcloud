@@ -9,6 +9,7 @@ package lifecycle
 
 import (
 	"context"
+	"encoding/xml"
 	"errors"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/adaptor"
@@ -19,7 +20,6 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/dav"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
-	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
@@ -27,48 +27,11 @@ import (
 // DavPrefix is the mount point. Everything under it is WebDAV.
 const DavPrefix = "/dav"
 
-// DavUploadPrefix is where the chunked upload collection lives.
-//
-// Outside the share tree on purpose: the collection is addressed by session
-// name, and a session is not a directory under a share. A path inside a share
-// named "uploads" would collide with it.
-const DavUploadPrefix = "/dav-uploads"
-
-// DavTrashPrefix is where the compatibility trash collection lives.
-const DavTrashPrefix = "/dav-trash"
-
 type davContextKey string
 
 const keyDavPath davContextKey = "dav_path"
 
-// keyDavCompat carries whether the request arrived through a Nextcloud or
-// ownCloud compatibility prefix, alongside keyDavPath. Downstream code that
-// only holds a context by the time it asks reads this through davIsCompat
-// rather than re-deriving the answer from the URL.
-const keyDavCompat davContextKey = "dav_compat"
-
-// DavAlias is an alternative mount point addressing the same tree.
-type DavAlias struct {
-	// Prefix is the path the other client addresses this server with.
-	Prefix string
-	// Mount is the local prefix the rewrite lands on. The share tree and the
-	// chunked upload collection are separate mounts, and the other product
-	// addresses both under one prefix of its own, so the alias has to say
-	// which one it means.
-	Mount string
-	// DropSegments is how many segments after the prefix name something other
-	// than a file, such as the account the client believes it is browsing.
-	//
-	// Dropped rather than checked: resolution runs against the caller's own
-	// roots, so a name in the URL cannot widen what the credential allows.
-	DropSegments int
-}
-
 // newDavHandler builds the protocol handler over the engine's services.
-//
-// The vocabulary that varies by build, the compatibility header names and the
-// vendor property source, arrives through the hooks rather than here, so this
-// file stays out of the tag's business.
 func (e *Engine) newDavHandler() *dav.Handler {
 	if e.davLocks == nil {
 		e.davLocks = NewDavLocks(e.State, e.clock, e.logger)
@@ -82,12 +45,6 @@ func (e *Engine) newDavHandler() *dav.Handler {
 		Taker:           locks,
 		Store:           NewDavProps(e.State),
 		KeyOf:           DavKeyOf,
-		Uploads:         NewDavUploads(e.Upload),
-		UploadHeaders:   e.davUploadHeaders(),
-		Sources:         e.davSources(),
-		VendorProps:     e.davVendorProps(),
-		VendorID:        e.davVendorID(),
-		VendorIDHeader:  e.davVendorIDHeader(),
 		InfinityEntries: davDefaultInfinity,
 		Logger:          e.logger,
 	})
@@ -106,33 +63,19 @@ func (e *Engine) guardDavLock(ctx context.Context, share uint32, path string, pr
 // bare number in the constructor.
 const davDefaultInfinity = 10_000
 
-// mountDav claims the WebDAV prefixes.
+// mountDav claims the WebDAV prefix.
 //
 // The chain has already run by the time a request reaches the bridge, so the
 // principal it resolved travels in the request context, which is what the
-// mount reads. The bridge is built once: it is stateless, and one conversion
-// path for every prefix is what keeps the wire behaviour identical however a
-// client addresses the tree.
+// mount reads. The bridge is built once: it is stateless.
 func (e *Engine) mountDav(app *fiber.App) {
-	bridge := adaptor.HTTPHandler(e.DavHandler(e.newDavHandler(), e.davAliases()))
-
-	prefixes := []string{DavPrefix, DavUploadPrefix, DavTrashPrefix}
-	for _, a := range e.davAliases() {
-		prefixes = append(prefixes, strings.TrimSuffix(a.Prefix, "/"))
-	}
-	for _, p := range prefixes {
-		prefix := p
-		app.All(prefix, bridge)
-		app.All(prefix+"/*", bridge)
-	}
+	bridge := adaptor.HTTPHandler(e.DavHandler(e.newDavHandler()))
+	app.All(DavPrefix, bridge)
+	app.All(DavPrefix+"/*", bridge)
 }
 
 // DavHandler serves the WebDAV mount.
-//
-// aliases may be empty, which is a deployment serving only its own prefix. The
-// chunked upload collection is served when the engine has an upload engine;
-// without one the collection answers 405 rather than half-serving it.
-func (e *Engine) DavHandler(h *dav.Handler, aliases []DavAlias) http.Handler {
+func (e *Engine) DavHandler(h *dav.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// No credential needed to discover: a client establishes that the
 		// server speaks this protocol before it will authenticate, so demanding
@@ -143,13 +86,8 @@ func (e *Engine) DavHandler(h *dav.Handler, aliases []DavAlias) http.Handler {
 		for strings.Contains(path, "//") {
 			path = strings.ReplaceAll(path, "//", "/")
 		}
-		isAliased := false
-		if rewritten, aliased := davAlias(path, aliases); aliased {
-			path = rewritten
-			isAliased = true
-		}
 
-		if r.Method == http.MethodOptions && (davIsRoot(r.URL.EscapedPath()) || davIsRoot(path)) {
+		if r.Method == http.MethodOptions && davIsRoot(path) {
 			h.MountOptions(w)
 			return
 		}
@@ -166,9 +104,9 @@ func (e *Engine) DavHandler(h *dav.Handler, aliases []DavAlias) http.Handler {
 		}
 
 		r = r.WithContext(context.WithValue(r.Context(), keyDavPath, path))
-		r = r.WithContext(context.WithValue(r.Context(), keyDavCompat, isAliased))
 
 		// Nothing on disk corresponds to the virtual root, so resolution has
+		// no path to be handed. PROPFIND answers the caller's shares; a sync
 		// client lists it to confirm the account it has just signed in as, and
 		// a 404 at that moment reads as a server that cannot be reached, right
 		// after a sign-in that succeeded.
@@ -178,133 +116,12 @@ func (e *Engine) DavHandler(h *dav.Handler, aliases []DavAlias) http.Handler {
 				h.RootPropfind(w, r, baseProps, children)
 				return
 			}
-			if r.Method == "REPORT" || r.Method == "SEARCH" {
-				roots := e.Core.Roots(user)
-				// A compatibility client must not find an encrypted share by
-				// searching for it either, so the same set that hides it from
-				// the root listing hides it here. A failure reading the set
-				// fails closed: every share is left out rather than risking
-				// one that is encrypted slipping through unfiltered.
-				var hidden map[core.ShareID]bool
-				if isAliased {
-					set, eerr := e.encryptedShareSet(r.Context())
-					if eerr != nil {
-						roots = nil
-					} else {
-						hidden = set
-					}
-				}
-				scopes := make([]dav.RootScope, 0, len(roots))
-				for _, rt := range roots {
-					if hidden != nil && hiddenShare(hidden, rt.Share) {
-						continue
-					}
-					vp, perr := vfs.ParseVpath("/" + rt.Label)
-					if perr != nil {
-						continue
-					}
-					if res, rerr := e.Core.Resolve(user, vp, acl.Read); rerr == nil {
-						scopes = append(scopes, dav.RootScope{Label: rt.Label, Resolved: res})
-					}
-				}
-				h.RootQuery(w, r, scopes)
-				return
-			}
 			if r.Method == http.MethodHead || r.Method == http.MethodGet {
 				w.Header().Set("DAV", "1, 2")
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
 				w.WriteHeader(http.StatusOK)
 				return
 			}
-		}
-
-		// The chunked upload collection lives under its own prefix, outside the
-		// share tree: it is addressed by session name, and a session is not a
-		// directory under a share. The permission lives at the destination,
-		// which the collection resolves through the same header COPY and MOVE
-		// use. A deployment with no upload engine matches anyway and lets the
-		// handler refuse: half-serving the collection would be the worse
-		// answer, and a 405 says exactly what is missing.
-		if rest, ok := strings.CutPrefix(path, DavUploadPrefix); ok {
-			// The assembly member first, because it is not a chunk and the
-			// parser would refuse it as a name that is not a number. A client
-			// publishes a transfer by moving that member rather than the
-			// collection, so this is the shape every real assembly arrives in;
-			// both mean the collection itself.
-			session, member, found := strings.Cut(strings.TrimPrefix(rest, "/"), "/")
-			if found {
-				if e.davIsAssemblyMember(member) {
-					rest = "/" + session
-				} else if isAliased && isDigits(member) {
-					trimmed := strings.TrimLeft(member, "0")
-					if trimmed == "" {
-						trimmed = "0"
-					}
-					rest = "/" + session + "/" + trimmed
-				}
-			}
-			up, uerr := dav.ParseUploadPath(rest)
-			if uerr != nil {
-				// The dav package's own writer, since the refusal is the
-				// protocol's: the shared mapper does not know its sentinels
-				// and would answer 500 for a malformed member name.
-				if werr := dav.WriteError(w, uerr); werr != nil {
-					e.logger.Warn("the refusal did not reach the client", "error", werr)
-				}
-				return
-			}
-			// The destination is what the session binds to, and every method
-			// against the collection needs it: a chunk PUT has to reach the
-			// session that holds it, and both go through the alias scoped by
-			// the destination's share. Assembling is the one that publishes
-			// there. Clients that name the file only at the end send the
-			// header from the start; one that omits it has named nothing to
-			// upload into.
-			var target core.Resolved
-			if r.Method == "MKCOL" || r.Method == "MOVE" || r.Header.Get("Destination") != "" {
-				dest, terr := e.davDestination(user, r, aliases)
-				if terr != nil {
-					apierr.Write(w, terr, apierr.VisibilityHidden)
-					return
-				}
-				target = dest.Resolved
-			} else if e.Upload != nil {
-				alias, aerr := e.Upload.LookupAlias(r.Context(), up.Session, user)
-				if aerr != nil {
-					apierr.Write(w, core.ErrNotFound, apierr.VisibilityHidden)
-					return
-				}
-				sp, sperr := vfs.ParseSharePath(alias.Dest)
-				if sperr != nil {
-					apierr.Write(w, core.ErrNotFound, apierr.VisibilityHidden)
-					return
-				}
-				vp, verr := e.Core.VpathFor(user, alias.Share, sp)
-				if verr != nil {
-					apierr.Write(w, core.ErrNotFound, apierr.VisibilityHidden)
-					return
-				}
-				res, rerr := e.Core.Resolve(user, vp, acl.Write|acl.Create)
-				if rerr != nil {
-					apierr.Write(w, rerr, apierr.VisibilityHidden)
-					return
-				}
-				target = res
-			} else {
-				w.WriteHeader(http.StatusMethodNotAllowed)
-				return
-			}
-			h.ServeUpload(w, r, target, up)
-			return
-		}
-		if rest, ok := strings.CutPrefix(path, DavTrashPrefix); ok {
-			p, pok := r.Context().Value(middleware.KeyCredential).(middleware.Principal)
-			if !pok || p.UserID == 0 {
-				w.WriteHeader(http.StatusUnauthorized)
-				return
-			}
-			e.serveDavTrash(w, r, p, rest)
-			return
 		}
 
 		// Read is the gate, not the method's own need. Resolution keeps the
@@ -316,9 +133,8 @@ func (e *Engine) DavHandler(h *dav.Handler, aliases []DavAlias) http.Handler {
 		res, err := e.resolveDav(r, user, path, acl.Read)
 		if err != nil {
 			// Logged here as well as in the protocol handler: a write refused
-			// by resolution never reaches one, and an upload to a path that
-			// names no share is exactly that. Without this the operator
-			// looking for the failed upload finds nothing at all.
+			// by resolution never reaches one. Without this the operator
+			// looking for the failed write finds nothing at all.
 			e.davRefused(r, path, err)
 			apierr.Write(w, err, apierr.VisibilityHidden)
 			return
@@ -329,7 +145,7 @@ func (e *Engine) DavHandler(h *dav.Handler, aliases []DavAlias) http.Handler {
 			// The destination arrives as a URL in a header. Turning that into
 			// a second resolution is this layer's work, which is why these two
 			// are separate entry points.
-			target, terr := e.davDestination(user, r, aliases)
+			target, terr := e.davDestination(user, r)
 			if terr != nil {
 				apierr.Write(w, terr, apierr.VisibilityHidden)
 				return
@@ -356,7 +172,7 @@ func (e *Engine) davRefused(r *http.Request, path string, err error) {
 		return
 	}
 	switch r.Method {
-	case http.MethodGet, http.MethodHead, "PROPFIND", "SEARCH", "REPORT", "OPTIONS":
+	case http.MethodGet, http.MethodHead, "PROPFIND", "OPTIONS":
 		return
 	}
 	e.log().Warn("the write was refused before it reached the protocol",
@@ -377,51 +193,6 @@ func davUser(r *http.Request) (core.UserID, bool) {
 	return core.UserID(p.UserID), true
 }
 
-// davIsCompat reports whether a request arrived through a Nextcloud or
-// ownCloud compatibility prefix rather than this server's own mount.
-//
-// Carried in the context beside keyDavPath, so code that only holds a
-// context by the time it asks answers what the request means rather than
-// re-deriving it from the URL a second time.
-func davIsCompat(ctx context.Context) bool {
-	compat, ok := ctx.Value(keyDavCompat).(bool)
-	return ok && compat
-}
-
-// encryptedShareSet reads the whole encrypted-share set as a lookup.
-//
-// Read once per request rather than once per share: a compatibility
-// client's virtual-root listing and search both ask this question against
-// every share in one pass, and one query answers every share in it rather
-// than risking two different answers mid-listing.
-func (e *Engine) encryptedShareSet(ctx context.Context) (map[core.ShareID]bool, error) {
-	ids, err := e.Core.EncryptedShares(ctx)
-	if err != nil {
-		return nil, err
-	}
-	set := make(map[core.ShareID]bool, len(ids))
-	for _, id := range ids {
-		set[id] = true
-	}
-	return set, nil
-}
-
-// hiddenShare reports whether an int64 share id, as a store row carries it,
-// names a share in the given encrypted set.
-//
-// A row's share id is wider than ShareID because the column is a generic
-// foreign key; narrowing it here rather than at every call site keeps the
-// conversion and its failure mode in one place. An id too wide for ShareID
-// is a corrupt row, and it is treated as hidden: the safe side of not
-// knowing whether it is encrypted.
-func hiddenShare(hidden map[core.ShareID]bool, id int64) bool {
-	sid, err := num.Narrow[uint32](id)
-	if err != nil {
-		return true
-	}
-	return hidden[core.ShareID(sid)]
-}
-
 // davIsRoot reports whether a path names the virtual root.
 //
 // Two spellings are accepted. A client addressing a collection may append the
@@ -432,58 +203,6 @@ func davIsRoot(path string) bool {
 		rest = rest[1:]
 	}
 	return rest == ""
-}
-
-// davAlias maps one of the alternative mount points back onto this server's.
-//
-// The prefix was the whole difference. Method, body and credential belong to
-// the protocol and pass through untouched. A path matching no alias reports
-// false.
-//
-// Longest prefix first, because one alias can be a prefix of another: the
-// vendor addresses chunked uploads under the same root as the share tree, and
-// the shorter match would send a transfer into the tree as a directory named
-// "uploads".
-func davAlias(urlPath string, aliases []DavAlias) (string, bool) {
-	best := -1
-	for i, a := range aliases {
-		prefixNoSlash := strings.TrimSuffix(a.Prefix, "/")
-		if urlPath != prefixNoSlash && !strings.HasPrefix(urlPath, a.Prefix) {
-			continue
-		}
-		if best < 0 || len(a.Prefix) > len(aliases[best].Prefix) {
-			best = i
-		}
-	}
-	if best < 0 {
-		return "", false
-	}
-
-	a := aliases[best]
-	rest := ""
-	if strings.HasPrefix(urlPath, a.Prefix) {
-		rest = strings.TrimPrefix(urlPath, a.Prefix)
-	}
-	for range a.DropSegments {
-		rest = strings.TrimPrefix(rest, "/")
-		i := strings.IndexByte(rest, '/')
-		if i < 0 {
-			rest = ""
-			break
-		}
-		rest = rest[i:]
-	}
-	mount := a.Mount
-	if mount == "" {
-		mount = DavPrefix
-	}
-	for strings.Contains(rest, "//") {
-		rest = strings.ReplaceAll(rest, "//", "/")
-	}
-	if strings.HasSuffix(mount, "/") && strings.HasPrefix(rest, "/") {
-		rest = rest[1:]
-	}
-	return mount + rest, true
 }
 
 // resolveDav turns a mount-relative URL into a resolution.
@@ -509,18 +228,6 @@ func (e *Engine) resolveDav(
 		return res, rerr
 	}
 
-	// A compatibility client must not reach an encrypted share by path even
-	// after it disappears from the virtual root: a client that mounted the
-	// share before encryption was turned on still holds the path and keeps
-	// asking for it. Answered exactly like a path that is not there, so the
-	// two are indistinguishable to a client that already suspects one.
-	if davIsCompat(r.Context()) {
-		if enc, eerr := e.Core.ShareEncrypted(r.Context(), res.Share()); eerr != nil {
-			return core.Resolved{}, eerr
-		} else if enc {
-			return core.Resolved{}, core.ErrNotFound
-		}
-	}
 	if p, ok := r.Context().Value(middleware.KeyCredential).(middleware.Principal); ok {
 		if len(p.Shares) > 0 && len(parts) > 0 {
 			allowed := false
@@ -545,13 +252,7 @@ func (e *Engine) resolveDav(
 }
 
 // davDestination resolves the header a MOVE or a COPY names its target with.
-//
-// The aliases are the mount's own: a client addressing this server through an
-// alias names its destination the same way, and a destination that skipped the
-// rewrite resolves somewhere else or not at all.
-func (e *Engine) davDestination(
-	user core.UserID, r *http.Request, aliases []DavAlias,
-) (dav.Target, error) {
+func (e *Engine) davDestination(user core.UserID, r *http.Request) (dav.Target, error) {
 	// The protocol package parses the header, including refusing one that
 	// names another host. Taking the path alone would make a COPY to
 	// https://elsewhere.example/dav/docs/x copy to /dav/docs/x here: a request
@@ -567,12 +268,7 @@ func (e *Engine) davDestination(
 		return dav.Target{}, apierr.BadRequest("dav.bad_destination", "Destination")
 	}
 
-	// Back to a path so the alias rewrite and the mount prefix are stripped the
-	// one way, rather than this growing its own copy of both.
 	path := "/" + strings.Join(segments, "/")
-	if rewritten, aliased := davAlias(path, aliases); aliased {
-		path = rewritten
-	}
 
 	// Read here too, for the reason the request path uses it: the copy and the
 	// move check what they need against the resolution they are handed.
@@ -586,14 +282,17 @@ func (e *Engine) davDestination(
 	}, nil
 }
 
-func isDigits(s string) bool {
-	if s == "" {
-		return false
+// davRootProps lists the caller's shares as the virtual root's children.
+func (e *Engine) davRootProps(ctx context.Context, user core.UserID) ([]dav.Prop, []dav.RootChild) {
+	roots := e.Core.Roots(user)
+	children := make([]dav.RootChild, 0, len(roots))
+	for _, rt := range roots {
+		children = append(children, dav.RootChild{
+			Label: rt.Label,
+			Props: []dav.Prop{
+				{Name: xml.Name{Space: "DAV:", Local: "displayname"}, Value: rt.Label},
+			},
+		})
 	}
-	for i := range len(s) {
-		if s[i] < '0' || s[i] > '9' {
-			return false
-		}
-	}
-	return true
+	return nil, children
 }

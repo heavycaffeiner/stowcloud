@@ -116,7 +116,7 @@ func TestMoveDiffersFromCopyByTheSourceDelete(t *testing.T) {
 // A read method never demands a write bit, and a write method never runs on
 // read alone. This is the whole table, checked as a property.
 func TestReadMethodsNeverDemandWrite(t *testing.T) {
-	readOnly := []string{"GET", "HEAD", "PROPFIND", "SEARCH", "REPORT"}
+	readOnly := []string{"GET", "HEAD", "PROPFIND"}
 	writing := []string{"PUT", "MKCOL", "PROPPATCH", "LOCK", "UNLOCK", "DELETE", "MOVE"}
 
 	const mutating = acl.Write | acl.Create | acl.Delete
@@ -158,33 +158,6 @@ func TestOnlyCopyAndMoveHaveADestination(t *testing.T) {
 		if req.HasDest() != wantDest {
 			t.Errorf("%s: destination endpoint %v, want %v", m, req.HasDest(), wantDest)
 		}
-	}
-}
-
-// An unregistered vocabulary is not advertised. A client reading Allow would
-// otherwise send a method the server refuses.
-func TestAllowAdvertisesOnlyRegisteredVocabularies(t *testing.T) {
-	base := AllowHeader(AllowSet{Locking: true})
-	for _, m := range []string{"SEARCH", "REPORT"} {
-		if strings.Contains(base, m) {
-			t.Errorf("%s is advertised with nothing registered: %q", m, base)
-		}
-	}
-
-	with := AllowHeader(AllowSet{Locking: true, Extra: []string{"SEARCH"}})
-	if !strings.Contains(with, "SEARCH") {
-		t.Errorf("SEARCH was registered but is not advertised: %q", with)
-	}
-	if strings.Contains(with, "REPORT") {
-		t.Errorf("REPORT is advertised without being registered: %q", with)
-	}
-}
-
-// A name Allow does not know is not smuggled into the header.
-func TestAllowIgnoresAnUnknownMethod(t *testing.T) {
-	got := AllowHeader(AllowSet{Extra: []string{"BREW", "SEARCH"}})
-	if strings.Contains(got, "BREW") {
-		t.Errorf("an unknown method reached the header: %q", got)
 	}
 }
 
@@ -238,65 +211,6 @@ func TestAllowHidesLockingWithoutATable(t *testing.T) {
 	for _, m := range []string{"LOCK", "UNLOCK"} {
 		if strings.Contains(got, m) {
 			t.Errorf("%s is advertised with no lock table: %q", m, got)
-		}
-	}
-}
-
-// Canonical decimal: one number, one name. Every padded spelling is refused
-// rather than accepted as an alias for the same chunk.
-func TestOnlyOneSpellingOfAChunkNumber(t *testing.T) {
-	r := ChunkRange{Min: 1, Max: 10000}
-
-	for _, name := range []string{"00001", "01", "0001", "000"} {
-		if _, err := ParseChunkName(name, r); !errors.Is(err, ErrChunkLeadingZero) {
-			t.Errorf("%q: want a leading-zero refusal, got %v", name, err)
-		}
-	}
-
-	for _, name := range []string{"", " 1", "1 ", "+1", "-1", "1.0", "0x1", "1e3", "\u0661"} {
-		if _, err := ParseChunkName(name, r); !errors.Is(err, ErrChunkNotDecimal) {
-			t.Errorf("%q: want a non-decimal refusal, got %v", name, err)
-		}
-	}
-
-	for _, name := range []string{"0", "10001", "99999999999999999999"} {
-		if _, err := ParseChunkName(name, r); !errors.Is(err, ErrChunkRange) {
-			t.Errorf("%q: want a range refusal, got %v", name, err)
-		}
-	}
-
-	for _, name := range []string{"1", "9", "10", "10000"} {
-		if _, err := ParseChunkName(name, r); err != nil {
-			t.Errorf("%q was refused: %v", name, err)
-		}
-	}
-}
-
-// Zero is spelled "0" where a collection admits it, and the leading-zero rule
-// does not refuse the number zero itself.
-func TestZeroIsSpelledZeroWhereItIsAllowed(t *testing.T) {
-	r := ChunkRange{Min: 0, Max: 9}
-
-	n, err := ParseChunkName("0", r)
-	if err != nil {
-		t.Fatalf("zero was refused by a collection that admits it: %v", err)
-	}
-	if n != 0 {
-		t.Errorf("got %d, want 0", n)
-	}
-}
-
-// The renderer writes the one spelling the parser takes back.
-func TestChunkNamesRoundTrip(t *testing.T) {
-	r := ChunkRange{Min: 0, Max: 10000}
-	for _, n := range []int64{0, 1, 9, 10, 999, 10000} {
-		got, err := ParseChunkName(ChunkName(n), r)
-		if err != nil {
-			t.Errorf("%d rendered to a name its own parser refuses: %v", n, err)
-			continue
-		}
-		if got != n {
-			t.Errorf("%d round tripped to %d", n, got)
 		}
 	}
 }

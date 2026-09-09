@@ -66,8 +66,8 @@ func (h *Handler) Propfind(w http.ResponseWriter, r *http.Request, res core.Reso
 
 	// The namespaces a request named, so a property the client asked for can
 	// be written back. The writer drops anything in a namespace it was not
-	// told about, which for a vendor property means the answer silently omits
-	// exactly what was requested.
+	// told about, which for a stored property means the answer silently
+	// omits exactly what was requested.
 	m := NewMultistatus(w, requestedNamespaces(req))
 	self := h.core.EntryAt(res, st)
 	// The client can only use hrefs it can request back, so every href in
@@ -187,17 +187,7 @@ func (h *Handler) writeEntry(
 		}
 	}
 
-	// Vendor properties are consulted for named requests only. The source
-	// answers the names it owns and leaves the rest, which the assemble below
-	// reports as missing: a vendor property that is asked for and absent is
-	// the client's signal to skip the entry, and hiding that behind an empty
-	// value would have it believe the property is blank.
-	var vendor []Prop
-	if h.vendorProps != nil && req.Mode == ModeNamed {
-		vendor = h.vendorProps(ctx, res, e, req.Names)
-	}
-
-	found, missing := assemble(req, resource, dead, vendor)
+	found, missing := assemble(req, resource, dead)
 
 	groups := []PropStat{{Status: http.StatusOK, Props: found}}
 	if len(missing) > 0 {
@@ -222,11 +212,9 @@ type deadProp struct {
 
 // assemble produces the properties one response carries.
 //
-// vendor carries the properties a registered source contributed. They sit in
-// the order between live and dead: a live property is this package's answer,
-// a vendor property is a claimed namespace's, and a dead one is what was
+// A live property is this package's answer, and a dead one is what was
 // stored against the resource.
-func assemble(req PropFind, r Resource, dead []deadProp, vendor []Prop) (found []Prop, missing []xml.Name) {
+func assemble(req PropFind, r Resource, dead []deadProp) (found []Prop, missing []xml.Name) {
 	switch req.Mode {
 	case ModePropName:
 		// Names with no values, live and dead alike.
@@ -246,10 +234,6 @@ func assemble(req PropFind, r Resource, dead []deadProp, vendor []Prop) (found [
 				found = append(found, p)
 				continue
 			}
-			if p, ok := findVendor(vendor, n); ok {
-				found = append(found, p)
-				continue
-			}
 			if d, ok := findDead(dead, n); ok {
 				found = append(found, Prop{Name: d.Name, Value: d.Value})
 				continue
@@ -260,16 +244,6 @@ func assemble(req PropFind, r Resource, dead []deadProp, vendor []Prop) (found [
 		}
 	}
 	return found, missing
-}
-
-// findVendor returns the contributed property a name asked for.
-func findVendor(vendor []Prop, n xml.Name) (Prop, bool) {
-	for _, p := range vendor {
-		if p.Name == n {
-			return p, true
-		}
-	}
-	return Prop{}, false
 }
 
 func findDead(dead []deadProp, n xml.Name) (deadProp, bool) {

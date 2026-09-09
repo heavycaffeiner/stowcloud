@@ -10,13 +10,12 @@ import (
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
-	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
 
-// mounted builds the mount, optionally with aliases.
-func (f *fixture) mounted(aliases ...lifecycle.DavAlias) http.Handler {
-	return f.engine.DavHandler(f.h, aliases)
+// mounted builds the mount.
+func (f *fixture) mounted() http.Handler {
+	return f.engine.DavHandler(f.h)
 }
 
 // asDavUser attaches the principal the chain would have put there.
@@ -282,66 +281,6 @@ func TestAnAbsoluteDestinationOnThisHostWorks(t *testing.T) {
 	}
 }
 
-// An alias addresses the same tree under another prefix, dropping the segments
-// that name something other than a file.
-func TestAnAliasReachesTheSameTree(t *testing.T) {
-	t.Parallel()
-	f := newFixture(t)
-	f.write(t, "a.txt", "contents")
-	m := f.mounted(lifecycle.DavAlias{Prefix: "/remote.php/dav/files", DropSegments: 1})
-
-	w := f.through(m, http.MethodGet, "/remote.php/dav/files/someaccount/files/a.txt", "")
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("answered %d, want 200: %s", w.Code, w.Body.String())
-	}
-	if w.Body.String() != "contents" {
-		t.Errorf("served %q", w.Body.String())
-	}
-}
-
-// The account segment in an alias is dropped rather than trusted. Resolution
-// runs against the caller's own roots, so naming another account reaches that
-// caller's tree and not the named one.
-func TestAnAliasIgnoresTheAccountItNames(t *testing.T) {
-	t.Parallel()
-	f := newFixture(t)
-	f.write(t, "a.txt", "contents")
-	m := f.mounted(lifecycle.DavAlias{Prefix: "/remote.php/dav/files", DropSegments: 1})
-
-	mine := f.through(m, http.MethodGet, "/remote.php/dav/files/me/files/a.txt", "")
-	theirs := f.through(m, http.MethodGet, "/remote.php/dav/files/somebodyelse/files/a.txt", "")
-
-	if mine.Code != http.StatusOK || theirs.Code != http.StatusOK {
-		t.Fatalf("the two answered %d and %d, want both 200", mine.Code, theirs.Code)
-	}
-	if mine.Body.String() != theirs.Body.String() {
-		t.Error("the account segment changed which tree was served")
-	}
-}
-
-// A destination sent through an alias is rewritten the same way the request
-// path is. Otherwise a COPY through an alias resolves nowhere.
-func TestADestinationThroughAnAliasIsRewritten(t *testing.T) {
-	t.Parallel()
-	f := newFixture(t)
-	f.write(t, "a.txt", "contents")
-	m := f.mounted(lifecycle.DavAlias{Prefix: "/remote.php/dav/files", DropSegments: 1})
-
-	w := httptest.NewRecorder()
-	r := asDavUser(request("COPY", "/remote.php/dav/files/me/files/a.txt", "", map[string]string{
-		"Destination": "/remote.php/dav/files/me/files/b.txt",
-	}))
-	m.ServeHTTP(w, r)
-
-	if w.Code != http.StatusCreated {
-		t.Fatalf("answered %d, want 201: %s", w.Code, w.Body.String())
-	}
-	if got := f.read(t, "b.txt"); got != "contents" {
-		t.Errorf("the copy holds %q", got)
-	}
-}
-
 // A write method is checked as a write at resolution, before the operation
 // starts, so a reader is refused rather than stopped part way through.
 func TestAWriteMethodIsCheckedAsAWrite(t *testing.T) {
@@ -432,31 +371,5 @@ func TestNativeGetInsideAnEncryptedShareStillReturnsBytes(t *testing.T) {
 	}
 	if w.Body.String() != "ciphertext-bytes" {
 		t.Errorf("served %q", w.Body.String())
-	}
-}
-
-// A compatibility client must not be able to tell an encrypted share's path
-// apart from one that plain does not exist: hiding it from the root listing
-// is not enough on its own, since a client that mounted the share before
-// encryption was turned on still holds the path and keeps asking for it.
-func TestCompatPathIntoAnEncryptedShareAnswersLikeMissing(t *testing.T) {
-	t.Parallel()
-	f := newFixture(t)
-	if err := f.core.EnableEncryption(context.Background(), testShare, encryptionSettingsForTest()); err != nil {
-		t.Fatalf("enabling encryption: %v", err)
-	}
-	f.write(t, "secret.bin", "ciphertext-bytes")
-	m := f.mounted(lifecycle.DavAlias{Prefix: "/remote.php/dav/files", DropSegments: 1})
-
-	encrypted := f.through(m, http.MethodGet, "/remote.php/dav/files/me/files/secret.bin", "")
-	missing := f.through(m, http.MethodGet, "/remote.php/dav/files/me/files/does-not-exist.bin", "")
-
-	if encrypted.Code != missing.Code {
-		t.Fatalf("an encrypted-share path answered %d, a missing path answered %d, want the same",
-			encrypted.Code, missing.Code)
-	}
-	if encrypted.Body.String() != missing.Body.String() {
-		t.Errorf("an encrypted-share path and a missing path answered different bodies: %q vs %q",
-			encrypted.Body.String(), missing.Body.String())
 	}
 }

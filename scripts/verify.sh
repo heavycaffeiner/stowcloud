@@ -550,8 +550,11 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # from parts passes it while doing exactly what it exists to prevent.
   go_compat_isolation() {
     # G6: the same two rules over the rebuilt engine. Vendor vocabulary lives
-    # only under engine/http/compat, and that package imports no service,
-    # store or infra type: its ports are declared for assembly to implement.
+    # only under engine/http/nc, and that package reaches no further down than
+    # the services: no store, no infra, no assembly. What it cannot reach it
+    # declares as a port for the assembly to satisfy, which is why a path
+    # parser or a reverse index arrives through a function rather than an
+    # import.
     #
     # Code only, not comments. A package may name the compatibility layer to
     # explain why a boundary exists without being on the wrong side of it, and
@@ -592,11 +595,11 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
                      | grep -v '_test\.go:' \
                      | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)' || true)"
       fi
-      if [ -d go/engine/http/compat ]; then
+      if [ -d go/engine/http/nc ]; then
         hits="$hits$(ingo go list -tags compat_nc -f '{{range .Imports}}{{.}}{{"\n"}}{{end}}' \
-                     ./engine/http/compat/... 2>/dev/null \
+                     ./engine/http/nc/... 2>/dev/null \
                      | grep 'stowcloud/go/engine/' \
-                     | grep -vE 'engine/http/(dav|apierr)$|engine/kit/' || true)"
+                     | grep -vE 'engine/http/(dav|apierr|middleware|route)$|engine/kit/|engine/service/' || true)"
       fi
     fi
     # Blank lines only means no hit. Several of the scans above end with a
@@ -657,7 +660,7 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
     skipped "no reference source copied into go/" "no .ref checkout" 0
   fi
 
-  if [ -d go/engine/http/compat ]; then
+  if [ -d go/engine/http/nc ]; then
     NC_HITS=$(go_compat_isolation)
     grep_gate "compat isolation (import graph, seam, text)" "$NC_HITS" \
       "Compat wire vocabulary belongs behind the compat layer."
@@ -670,19 +673,19 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
     # stripped tree checks none of this phase's behaviour.
     #
     # Both packages, because the vocabulary and the mount are tested in
-    # different places: `http/compat` holds the wire format and
-    # `lifecycle` holds the routes, the DAV aliases and the client flows that
-    # exercise them. Naming only the first left every mounted route untested,
-    # which is how an Engine assembled without a clock reached a released
-    # handler. The repeated untagged cases cost about a minute; a shipped
-    # surface with no gate costs more.
+    # different places: `http/nc` holds the wire format and
+    # `lifecycle` holds the routes and the client flows that exercise them.
+    # Naming only the first left every mounted route untested, which is how
+    # an Engine assembled without a clock reached a released handler. The
+    # repeated untagged cases cost about a minute; a shipped surface with no
+    # gate costs more.
     #
     # Only where the host is the shipping target. This layer is Linux-only,
     # like everything it wraps, so off Linux the pattern matches no packages
     # and go reports that as an error: a gate step failing because the code it
     # names does not exist on this OS says nothing about the code.
     if [ "$HOST" = linux ]; then
-      run "go test -tags compat_nc"    ingo_host go test -tags compat_nc ./engine/http/compat/... ./engine/lifecycle/...
+      run "go test -tags compat_nc"    ingo_host go test -tags compat_nc ./engine/http/nc/... ./engine/lifecycle/...
       run "fuzz seed corpus (compat)"  ingo_host go test -tags compat_nc -run '^Fuzz' -count=1 ./engine/...
     else
       skipped "go test -tags compat_nc" "the compat layer is Linux only" 0
@@ -690,7 +693,7 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
     fi
   else
     skipped "compat isolation (import graph, seam, text)" \
-            "go/engine/http/compat does not exist yet" "${VERIFY_REQUIRE_COMPAT:-0}"
+            "go/engine/http/nc does not exist yet" "${VERIFY_REQUIRE_COMPAT:-0}"
   fi
 
   # The single-binary build. `//go:embed` reads the bundle with a real

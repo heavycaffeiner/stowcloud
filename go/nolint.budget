@@ -513,5 +513,16 @@
 # wire code itself: the client maps that string to a sentence, and apierr
 # already carries the same literal in its own table. Scoped to the line
 # rather than the file, which also handles the real client secret.
+#
+# Deleting the old Nextcloud compatibility layer removed three: the compat
+# prefix list and the compat feature matrix, both read-only lookup tables
+# gochecknoglobals exempted, and the trashbin listing's XML write, whose
+# escaping and logging comment went with the handler it guarded.
+#
+# The rewritten layer adds one back: the trash entry's synthetic identity
+# hashes a byte slice, and hash.Hash.Write reports an error it cannot
+# produce. The whole vocabulary table beside it is functions rather than
+# variables for the same reason, so this is the only exception the package
+# needs.
 24
-118
+116

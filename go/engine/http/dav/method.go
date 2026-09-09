@@ -33,8 +33,6 @@ var methodPerms = map[string]Requirement{
 	"GET":      {Source: acl.Read},
 	"HEAD":     {Source: acl.Read},
 	"PROPFIND": {Source: acl.Read},
-	"SEARCH":   {Source: acl.Read},
-	"REPORT":   {Source: acl.Read},
 
 	"PUT":       {Source: acl.Write},
 	"MKCOL":     {Source: acl.Write},
@@ -81,9 +79,6 @@ type AllowSet struct {
 	// Locking is whether this deployment records locks. Advertising LOCK
 	// without a table would have a client take one it believes is recorded.
 	Locking bool
-	// Extra names methods an extension registered, such as SEARCH. One that
-	// is not a served method is dropped rather than advertised.
-	Extra []string
 }
 
 // AllowHeader renders what a resource accepts.
@@ -94,16 +89,6 @@ func AllowHeader(set AllowSet) string {
 	served := map[string]bool{}
 	for _, m := range Methods() {
 		served[m] = true
-	}
-
-	// SEARCH and REPORT exist only when something claims their vocabulary, so
-	// they leave the base set and return through Extra.
-	delete(served, "SEARCH")
-	delete(served, "REPORT")
-	for _, m := range set.Extra {
-		if _, known := methodPerms[m]; known {
-			served[m] = true
-		}
 	}
 
 	if !set.Locking {
