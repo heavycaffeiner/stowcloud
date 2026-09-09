@@ -89,7 +89,9 @@ func (s *Server) capabilities() Val {
 			// No re-share chain exists past the owner's own grant.
 			P("resharing", Bool(false)),
 			P("default_permissions", Int(f.DefaultSharePerms)),
-			P("group_sharing", Bool(f.UserGroupSharing)),
+			// Sharing with an account or a group is an acl grant this
+			// deployment's administration writes, never a client.
+			P("group_sharing", Bool(false)),
 			P("sharee", Obj(
 				P("query_lookup_default", Bool(false)),
 				P("always_show_unique", Bool(true)),
@@ -123,20 +125,6 @@ func (s *Server) capabilities() Val {
 				// that a policy exists and is enforced.
 				caps = append(caps, P("password_policy", Obj()))
 			}
-		}
-		if f.UserGroupSharing {
-			// Grants carry no expiry field, so a user or group share can
-			// never expire here, whatever a link share can do.
-			sharing = append(sharing,
-				P("user", Obj(
-					P("send_mail", Bool(false)),
-					P("expire_date", Obj(P("enabled", Bool(false)))),
-				)),
-				P("group", Obj(
-					P("enabled", Bool(true)),
-					P("expire_date", Obj(P("enabled", Bool(false)))),
-				)),
-			)
 		}
 		caps = append(caps, P("files_sharing", Obj(sharing...)))
 	}

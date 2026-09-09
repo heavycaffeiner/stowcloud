@@ -10,7 +10,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
 
 // Public links, from the client's request to a stranger fetching the file.
@@ -395,8 +397,10 @@ func TestAnotherAccountsShareIsNotFound(t *testing.T) {
 	}
 }
 
-// The share picker needs a directory to search, and one client reads several
-// of the response's arrays without checking they are there.
+// The share picker opens before the panel that also fronts public links, and
+// one client reads several of the response's arrays without checking they are
+// there. It offers nobody: sharing with an account is not something a client
+// does here.
 func TestTheShareePickerAnswersEveryGroupItReads(t *testing.T) {
 	t.Parallel()
 	f := newNCFixture(t, []byte("hello"))
@@ -428,18 +432,29 @@ func TestTheShareePickerAnswersEveryGroupItReads(t *testing.T) {
 		if _, present := groups[key]; !present {
 			t.Errorf("exact.%s is absent, and one client reads it without checking", key)
 		}
-		if _, present := doc.OCS.Data[key]; !present {
+		raw, present := doc.OCS.Data[key]
+		if !present {
 			t.Errorf("%s is absent from the top level", key)
+			continue
+		}
+		var candidates []json.RawMessage
+		if err := json.Unmarshal(raw, &candidates); err != nil {
+			t.Errorf("%s does not parse as a list: %v", key, err)
+			continue
+		}
+		if len(candidates) != 0 {
+			t.Errorf("the picker offers %d %s to share with", len(candidates), key)
 		}
 	}
 }
 
-// grantTo shares a path with an account rather than by link.
-func grantTo(t *testing.T, f ncFixture, path, login string) (int, string) {
+// grantTo shares a path with an account rather than by link, which is what
+// this surface refuses.
+func grantTo(t *testing.T, f ncFixture, path, login string, shareType int) (int, string) {
 	t.Helper()
 	form := url.Values{}
 	form.Set("path", path)
-	form.Set("shareType", "0")
+	form.Set("shareType", strconv.Itoa(shareType))
 	form.Set("shareWith", login)
 	resp, body := f.request(t, "POST", f.base+sharesPath, strings.NewReader(form.Encode()),
 		map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
@@ -457,72 +472,124 @@ func idsIn(doc string) []string {
 	return out
 }
 
-// The shared-files screen reads a share id with a 32-bit parse, and one id
-// past that ceiling costs the whole document rather than the one entry: the
-// screen reports an error and lists nothing at all. A grant's id sits in its
-// own range, offset above the links, which is where an id that large came
-// from.
-func TestEveryShareIDFitsTheParseAClientReadsItWith(t *testing.T) {
-	t.Parallel()
-	f := newNCFixture(t, []byte("hello"))
-	if _, err := f.e.Auth.CreateUser(context.Background(), "bob", "Bob",
-		secret.New([]byte("another-long-password"))); err != nil {
+// grantAnAccount hands a second account access to the fixture's share the
+// way this deployment's administration does, straight through the engine.
+func grantAnAccount(t *testing.T, f ncFixture, login string) {
+	t.Helper()
+	ctx := context.Background()
+	id, err := f.e.Auth.CreateUser(ctx, login, login, secret.New([]byte("another-long-password")))
+	if err != nil {
 		t.Fatalf("creating the second account: %v", err)
 	}
+	mine, err := f.e.Core.ListGrants(ctx, core.GrantFilter{User: f.user})
+	if err != nil || len(mine) == 0 {
+		t.Fatalf("reading the account's own grants: %v", err)
+	}
+	share, nerr := num.Narrow[core.ShareID](mine[0].Share)
+	if nerr != nil {
+		t.Fatalf("reading the share id: %v", nerr)
+	}
+	if _, gerr := f.e.Core.CreateGrant(ctx, core.GrantSpec{
+		User: &id, Share: share, Allow: ncEveryPerm(), Inherit: true, Label: f.share,
+	}); gerr != nil {
+		t.Fatalf("granting the second account: %v", gerr)
+	}
+}
 
+// An access grant is not a share. It is how this deployment hands an account
+// the share in the first place, and the shared-files screen lists what the
+// account published, so a grant reported there shows a person their own
+// access as something they shared out.
+func TestAnAccessGrantIsNeverListedAsAShare(t *testing.T) {
+	t.Parallel()
+	f := newNCFixture(t, []byte("hello"))
+	grantAnAccount(t, f, "bob")
+
+	for _, query := range []string{
+		"?include_tags=true",                               // the shared-files screen
+		"?shared_with_me=true",                             // what other people shared with me
+		"?path=" + url.QueryEscape("/"+f.share),            // one folder's sharing panel
+		"?path=" + url.QueryEscape("/") + "&subfiles=true", // the root, folder by folder
+	} {
+		resp, body := f.request(t, "GET", f.base+sharesPath+query, nil, nil)
+		if resp.StatusCode != 200 {
+			t.Errorf("listing %s answered %d\n%s", query, resp.StatusCode, body)
+			continue
+		}
+		if strings.Contains(string(body), "<element>") {
+			t.Errorf("listing %s reports a grant as a share:\n%s", query, body)
+		}
+	}
+
+	// The screen is empty because nothing is published, not because the
+	// listing is broken: a link lands in it.
 	if status, body := createLink(t, f, "/"+f.share+"/doc.bin", nil); status != 200 {
 		t.Fatalf("sharing by link answered %d\n%s", status, body)
 	}
-	status, created := grantTo(t, f, "/"+f.share+"/sub", "bob")
-	if status != 200 {
-		t.Fatalf("sharing with an account answered %d\n%s", status, created)
+	resp, body := f.request(t, "GET", f.base+sharesPath+"?include_tags=true", nil, nil)
+	if got := strings.Count(string(body), "<element>"); got != 1 {
+		t.Fatalf("the screen lists %d shares, want the one link\n%s", got, body)
 	}
+	if resp.StatusCode != 200 {
+		t.Fatalf("the screen's listing answered %d", resp.StatusCode)
+	}
+	if got := xmlField(t, string(body), "share_type"); got != "3" {
+		t.Errorf("the listed share is type %q, want a link", got)
+	}
+}
 
+// And it cannot be created either. A share a client can write but never see
+// again is worse than one it cannot write: the account would believe it had
+// shared something that no screen of theirs will ever show.
+func TestSharingWithAnAccountIsRefused(t *testing.T) {
+	t.Parallel()
+	f := newNCFixture(t, []byte("hello"))
+	grantAnAccount(t, f, "bob")
+	ctx := context.Background()
+
+	before, err := f.e.Core.ListGrants(ctx, core.GrantFilter{})
+	if err != nil {
+		t.Fatalf("reading the grants: %v", err)
+	}
+	for _, shareType := range []int{0, 1} {
+		status, body := grantTo(t, f, "/"+f.share+"/sub", "bob", shareType)
+		if status != 403 {
+			t.Errorf("share type %d answered %d, want a refusal\n%s", shareType, status, body)
+		}
+	}
+	after, err := f.e.Core.ListGrants(ctx, core.GrantFilter{})
+	if err != nil {
+		t.Fatalf("reading the grants back: %v", err)
+	}
+	if len(after) != len(before) {
+		t.Errorf("the refusal still wrote a grant: %d grants, was %d", len(after), len(before))
+	}
+}
+
+// The shared-files screen reads a share id with a 32-bit parse, and one id
+// past that ceiling costs the whole document rather than the one entry: the
+// screen reports an error and lists nothing at all.
+func TestEveryShareIDFitsTheParseAClientReadsItWith(t *testing.T) {
+	t.Parallel()
+	f := newNCFixture(t, []byte("hello"))
+
+	status, created := createLink(t, f, "/"+f.share+"/doc.bin", nil)
+	if status != 200 {
+		t.Fatalf("sharing by link answered %d\n%s", status, created)
+	}
 	resp, body := f.request(t, "GET", f.base+sharesPath+"?include_tags=true", nil, nil)
 	if resp.StatusCode != 200 {
 		t.Fatalf("the screen's listing answered %d\n%s", resp.StatusCode, body)
 	}
-	ids := idsIn(string(body))
-	if len(ids) < 2 {
-		t.Fatalf("the listing carries %d shares, want the link and the grant\n%s", len(ids), body)
-	}
 	for _, doc := range []string{created, string(body)} {
-		for _, id := range idsIn(doc) {
+		ids := idsIn(doc)
+		if len(ids) == 0 {
+			t.Fatalf("no id to read in\n%s", doc)
+		}
+		for _, id := range ids {
 			if _, err := strconv.ParseInt(id, 10, 32); err != nil {
 				t.Errorf("the id %s does not fit a 32-bit parse, so the whole document is lost", id)
 			}
-		}
-	}
-}
-
-// A share carrying a url is a public link to a client, whatever share_type
-// said. So a grant must not carry one: the row would claim the account
-// published a link it never made, and offer a link with no token behind it.
-func TestAGrantIsNotReportedAsAPublicLink(t *testing.T) {
-	t.Parallel()
-	f := newNCFixture(t, []byte("hello"))
-	if _, err := f.e.Auth.CreateUser(context.Background(), "bob", "Bob",
-		secret.New([]byte("another-long-password"))); err != nil {
-		t.Fatalf("creating the second account: %v", err)
-	}
-
-	if status, body := grantTo(t, f, "/"+f.share+"/sub", "bob"); status != 200 {
-		t.Fatalf("sharing with an account answered %d\n%s", status, body)
-	}
-
-	resp, body := f.request(t, "GET",
-		f.base+sharesPath+"?path="+url.QueryEscape("/"+f.share+"/sub")+"&reshares=true&subfiles=false",
-		nil, nil)
-	if resp.StatusCode != 200 {
-		t.Fatalf("the panel's listing answered %d\n%s", resp.StatusCode, body)
-	}
-	doc := string(body)
-	if got := xmlField(t, doc, "share_type"); got != "0" {
-		t.Errorf("share_type is %q, want 0", got)
-	}
-	for _, name := range []string{"url", "share_with_link"} {
-		if strings.Contains(doc, "<"+name+">") {
-			t.Errorf("the grant carries %s, which files it under public links:\n%s", name, doc)
 		}
 	}
 }

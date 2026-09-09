@@ -36,9 +36,6 @@ type Features struct {
 	Sharing bool
 	// PublicLinks reports whether a link share can be minted.
 	PublicLinks bool
-	// UserGroupSharing reports whether a share with an account or a group can
-	// be minted.
-	UserGroupSharing bool
 	// PublicUpload reports whether a link may accept uploads.
 	PublicUpload bool
 	// LinkPasswordEnforced reports that a link without a password is refused,

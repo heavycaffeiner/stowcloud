@@ -352,7 +352,8 @@ def main():
             assert share_id and share_url and share_token
             print(f"  Share created: id={share_id}, token={share_token}, url={share_url}")
 
-        # 11b. Share picker directory search: every array the client parses must exist
+        # 11b. Share picker: every array the client parses must exist, and it
+        # offers nobody, since this server shares by link only.
         print("Testing OCS sharee directory search...")
         sharees_req = urllib.request.Request(
             f"{base_url}/ocs/v2.php/apps/files_sharing/api/v1/sharees"
@@ -365,10 +366,9 @@ def main():
             for key in ("users", "groups", "remotes", "remote_groups", "emails"):
                 assert isinstance(sharee_data.get(key), list), f"sharees.{key} missing"
                 assert isinstance(sharee_data["exact"].get(key), list), f"sharees.exact.{key} missing"
-            # The caller is never offered as a target of their own share dialog.
-            assert all(u["value"]["shareWith"] != app_user
-                       for u in sharee_data["users"] + sharee_data["exact"]["users"])
-            print("  sharee document shape OK (all lists present, self excluded).")
+                assert not sharee_data[key], f"sharees.{key} offers a target"
+                assert not sharee_data["exact"][key], f"sharees.exact.{key} offers a target"
+            print("  sharee document shape OK (all lists present, nobody offered).")
 
         # 11c. subfiles: the shares of a folder's children in one call
         print("Testing OCS shares?subfiles=true...")

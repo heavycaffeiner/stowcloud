@@ -100,10 +100,9 @@ func (e *Engine) ncFeatures() nc.Features {
 		Chunking:   e.Upload != nil,
 		Favorites:  true,
 
-		Sharing:          true,
-		PublicLinks:      true,
-		UserGroupSharing: true,
-		PublicUpload:     true,
+		Sharing:      true,
+		PublicLinks:  true,
+		PublicUpload: true,
 
 		DefaultSharePerms: nc.SharePermRead,
 	}
