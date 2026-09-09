@@ -24,10 +24,15 @@ import (
 // Wire id scheme: a link and a grant both number their rows from 1 in their
 // own tables, so a bare id is ambiguous between them. The wire id encodes
 // which kind it names by a fixed offset: a link's wire id is its own row
-// id, unchanged; a grant's wire id is its row id plus grantIDOffset, which
-// is far larger than any row count a deployment will reach. getShare,
-// updateShare and deleteShare invert the offset to learn which store to
-// consult.
+// id, unchanged; a grant's wire id is its row id plus grantIDOffset.
+// getShare, updateShare and deleteShare invert the offset to learn which
+// store to consult.
+//
+// The offset has to leave the whole range inside a signed 32-bit integer:
+// one client reads this id with a 32-bit parse, and a single id past that
+// ceiling makes it discard the entire listing it arrived in, not just the
+// one entry. So links get the first billion ids and grants the second, and
+// a deployment reaching either is far past what a share table holds.
 //
 // A grant carries no creator column: this engine's grant table records who
 // it applies to (User or Group) and what it allows, never who wrote it. So
@@ -41,8 +46,9 @@ import (
 // credential's mask and share allowlist in force for this decision the
 // same as for every other one in this package.
 
-// grantIDOffset separates the grant wire-id range from the link range.
-const grantIDOffset = int64(1) << 32
+// grantIDOffset separates the grant wire-id range from the link range,
+// with both halves inside a signed 32-bit integer.
+const grantIDOffset = int64(1) << 30
 
 func wireLinkID(id int64) int64  { return id }
 func wireGrantID(id int64) int64 { return id + grantIDOffset }
@@ -1064,8 +1070,9 @@ func (s *Server) grantShareValAt(ctx context.Context, viewer core.UserID, g core
 		P("storage_id", Str("")),
 		P("share_with", Str(shareWith)),
 		P("share_with_displayname", Str(shareWithDisplay)),
-		P("share_with_link", Str("")),
-		P("url", Str("")),
+		// No url and no share_with_link: a client that finds either one
+		// re-types the share as a public link whatever share_type said,
+		// and a grant has no link to name.
 		P("mail_send", Bool(false)),
 		P("hide_download", Bool(!perms.Has(acl.Download))),
 		P("note", Str("")),

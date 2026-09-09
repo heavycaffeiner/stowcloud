@@ -3,10 +3,14 @@
 package lifecycle_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 )
 
 // Public links, from the client's request to a stranger fetching the file.
@@ -426,6 +430,99 @@ func TestTheShareePickerAnswersEveryGroupItReads(t *testing.T) {
 		}
 		if _, present := doc.OCS.Data[key]; !present {
 			t.Errorf("%s is absent from the top level", key)
+		}
+	}
+}
+
+// grantTo shares a path with an account rather than by link.
+func grantTo(t *testing.T, f ncFixture, path, login string) (int, string) {
+	t.Helper()
+	form := url.Values{}
+	form.Set("path", path)
+	form.Set("shareType", "0")
+	form.Set("shareWith", login)
+	resp, body := f.request(t, "POST", f.base+sharesPath, strings.NewReader(form.Encode()),
+		map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
+	return resp.StatusCode, string(body)
+}
+
+// idsIn reads every share id out of a share document.
+func idsIn(doc string) []string {
+	var out []string
+	for _, part := range strings.Split(doc, "<id>")[1:] {
+		if i := strings.Index(part, "</id>"); i >= 0 {
+			out = append(out, part[:i])
+		}
+	}
+	return out
+}
+
+// The shared-files screen reads a share id with a 32-bit parse, and one id
+// past that ceiling costs the whole document rather than the one entry: the
+// screen reports an error and lists nothing at all. A grant's id sits in its
+// own range, offset above the links, which is where an id that large came
+// from.
+func TestEveryShareIDFitsTheParseAClientReadsItWith(t *testing.T) {
+	t.Parallel()
+	f := newNCFixture(t, []byte("hello"))
+	if _, err := f.e.Auth.CreateUser(context.Background(), "bob", "Bob",
+		secret.New([]byte("another-long-password"))); err != nil {
+		t.Fatalf("creating the second account: %v", err)
+	}
+
+	if status, body := createLink(t, f, "/"+f.share+"/doc.bin", nil); status != 200 {
+		t.Fatalf("sharing by link answered %d\n%s", status, body)
+	}
+	status, created := grantTo(t, f, "/"+f.share+"/sub", "bob")
+	if status != 200 {
+		t.Fatalf("sharing with an account answered %d\n%s", status, created)
+	}
+
+	resp, body := f.request(t, "GET", f.base+sharesPath+"?include_tags=true", nil, nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("the screen's listing answered %d\n%s", resp.StatusCode, body)
+	}
+	ids := idsIn(string(body))
+	if len(ids) < 2 {
+		t.Fatalf("the listing carries %d shares, want the link and the grant\n%s", len(ids), body)
+	}
+	for _, doc := range []string{created, string(body)} {
+		for _, id := range idsIn(doc) {
+			if _, err := strconv.ParseInt(id, 10, 32); err != nil {
+				t.Errorf("the id %s does not fit a 32-bit parse, so the whole document is lost", id)
+			}
+		}
+	}
+}
+
+// A share carrying a url is a public link to a client, whatever share_type
+// said. So a grant must not carry one: the row would claim the account
+// published a link it never made, and offer a link with no token behind it.
+func TestAGrantIsNotReportedAsAPublicLink(t *testing.T) {
+	t.Parallel()
+	f := newNCFixture(t, []byte("hello"))
+	if _, err := f.e.Auth.CreateUser(context.Background(), "bob", "Bob",
+		secret.New([]byte("another-long-password"))); err != nil {
+		t.Fatalf("creating the second account: %v", err)
+	}
+
+	if status, body := grantTo(t, f, "/"+f.share+"/sub", "bob"); status != 200 {
+		t.Fatalf("sharing with an account answered %d\n%s", status, body)
+	}
+
+	resp, body := f.request(t, "GET",
+		f.base+sharesPath+"?path="+url.QueryEscape("/"+f.share+"/sub")+"&reshares=true&subfiles=false",
+		nil, nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("the panel's listing answered %d\n%s", resp.StatusCode, body)
+	}
+	doc := string(body)
+	if got := xmlField(t, doc, "share_type"); got != "0" {
+		t.Errorf("share_type is %q, want 0", got)
+	}
+	for _, name := range []string{"url", "share_with_link"} {
+		if strings.Contains(doc, "<"+name+">") {
+			t.Errorf("the grant carries %s, which files it under public links:\n%s", name, doc)
 		}
 	}
 }
