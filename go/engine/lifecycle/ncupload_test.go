@@ -20,6 +20,42 @@ import (
 // resume, send the parts under zero-padded numeric names, then move the
 // assembly member onto the destination.
 
+// Before it sends a byte, one client probes the target folder with HEAD and
+// accepts only 200, 401 or 403. Anything else, and it abandons the upload
+// with whatever the probe said: a folder answering "method not allowed" made
+// every upload into that folder fail before it started.
+func TestTheFolderProbeThatPrecedesAnUploadSucceeds(t *testing.T) {
+	t.Parallel()
+	f := newNCFixture(t, []byte("hello"))
+
+	for _, target := range []string{f.filePath(""), f.filePath("sub")} {
+		resp, body := f.request(t, "HEAD", target, nil, nil)
+		if resp.StatusCode != 200 {
+			t.Fatalf("the probe of %s answered %d, want 200\n%s", target, resp.StatusCode, body)
+		}
+		if len(body) != 0 {
+			t.Errorf("the probe of %s returned %d bytes", target, len(body))
+		}
+		if resp.Header.Get("ETag") == "" {
+			t.Errorf("the probe of %s carried no validator", target)
+		}
+	}
+
+	// And the upload that follows the probe lands, which is the sequence the
+	// client actually runs.
+	if resp, body := f.request(t, "PUT", f.filePath("sub/probed.txt"),
+		strings.NewReader("after the probe"), nil); resp.StatusCode != 201 {
+		t.Fatalf("the upload after the probe answered %d\n%s", resp.StatusCode, body)
+	}
+	onDisk, err := os.ReadFile(filepath.Join(f.host, "sub", "probed.txt"))
+	if err != nil {
+		t.Fatalf("reading the uploaded file: %v", err)
+	}
+	if string(onDisk) != "after the probe" {
+		t.Errorf("the file holds %q", onDisk)
+	}
+}
+
 // A plain upload creates the file and reports back what the client needs to
 // record it: both etag spellings and the file id. One client fails an upload
 // that already succeeded when the identity header is missing.

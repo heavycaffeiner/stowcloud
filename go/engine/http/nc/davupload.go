@@ -27,10 +27,10 @@ import (
 //
 // The session's own destination, captured at bind time, is what a chunk
 // write and a listing resolve through. The Destination header a client
-// repeats on every chunk PUT is consulted only as a fallback, when that
-// share can no longer be resolved: preferring a header over the bound
-// destination would let a chunk land through a share the session was never
-// opened against.
+// repeats on every chunk PUT is ignored: the upload engine places a
+// session's part file beside the destination it was opened against, so a
+// root taken from a header is one where the assembly would not find the
+// bytes.
 
 // davUpload serves the whole chunked upload collection. Deps.Uploads absent
 // means this deployment has nowhere to put a chunk, and a session half-served

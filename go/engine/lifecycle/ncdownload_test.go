@@ -116,18 +116,26 @@ func TestAHeadAnswersMetadataWithoutBytes(t *testing.T) {
 	}
 }
 
-// A GET of a collection is refused with the list of what the collection does
-// take: one client shows the reason phrase to whoever is holding it.
-func TestAGetOfACollectionIsRefusedWithAnAllowHeader(t *testing.T) {
+// A collection answers a read with 200 and no body. It has no bytes to send,
+// but it does exist, and one client probes a folder this way before every
+// upload into it and accepts only 200: a refusal here aborts the transfer
+// before it starts.
+func TestReadingACollectionAnswersItsMetadata(t *testing.T) {
 	t.Parallel()
 	f := newNCFixture(t, []byte("hello"))
 
-	resp, _ := f.request(t, "GET", f.filePath(""), nil, nil)
-	if resp.StatusCode != 405 {
-		t.Fatalf("answered %d, want 405", resp.StatusCode)
+	resp, body := f.request(t, "GET", f.filePath(""), nil, nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("answered %d, want 200", resp.StatusCode)
 	}
-	if !strings.Contains(resp.Header.Get("Allow"), "PROPFIND") {
-		t.Errorf("Allow is %q", resp.Header.Get("Allow"))
+	if len(body) != 0 {
+		t.Errorf("a collection returned %d bytes", len(body))
+	}
+	if resp.Header.Get("ETag") == "" {
+		t.Error("a collection read carried no validator")
+	}
+	if got := resp.Header.Get("Content-Type"); got != "httpd/unix-directory" {
+		t.Errorf("the content type is %q", got)
 	}
 }
 

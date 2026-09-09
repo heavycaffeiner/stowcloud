@@ -47,10 +47,16 @@ func (s *Server) davGet(w http.ResponseWriter, r *http.Request, p Principal, t T
 		return
 	}
 	if entry.IsDir {
-		// RFC 4918 defines no body for a GET of a collection, and every
-		// client here treats one as a file transfer, not a directory
-		// listing.
-		s.davMethodNotAllowed(w)
+		// A collection carries no body to send, but it does exist, and one
+		// client asks exactly this question before every upload: it probes
+		// the target folder with HEAD and accepts only 200. Answering the
+		// method as not allowed failed that probe, and the upload was
+		// abandoned before a single byte was sent. So the answer is the
+		// entry's own headers and nothing else.
+		s.setEntryHeaders(ctx, w, entry)
+		w.Header().Set("Content-Type", ContentTypeOf(true, entry.Name))
+		w.Header().Set("Content-Length", "0")
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 	token := entry.ETag
