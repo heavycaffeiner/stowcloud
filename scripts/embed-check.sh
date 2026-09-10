@@ -24,8 +24,19 @@ if [ "$(uname -s)" != Linux ]; then
   exit 0
 fi
 
-echo "==> building the frontend"
-(cd web && pnpm build >/dev/null)
+# One bundle build per gate run. `SC_BUNDLE_FRESH=1` says the bundle in the
+# tree is the current build, which is what verify.sh sets after building it
+# once for this check and the browser run together.
+if [ "${SC_BUNDLE_FRESH:-0}" = 1 ]; then
+  echo "==> the frontend was built already"
+  if [ ! -f "$BUNDLE_DIR/index.html" ]; then
+    echo "FAIL: SC_BUNDLE_FRESH is set, but $BUNDLE_DIR/index.html is not there" >&2
+    exit 1
+  fi
+else
+  echo "==> building the frontend"
+  (cd web && pnpm build >/dev/null)
+fi
 
 WANT=$(grep -o 'app/immutable/entry/app[A-Za-z0-9._-]*\.js' "$BUNDLE_DIR/index.html" | head -1)
 if [ -z "$WANT" ]; then
@@ -66,7 +77,18 @@ echo '{"hardening":"off"}' \
 "$BIN" -data "$DIR/data" > "$DIR/log" 2>&1 &
 SERVER=$!
 trap 'kill "$SERVER" 2>/dev/null || true' EXIT
-sleep 4
+# Ready when it answers, not after a fixed wait. Four seconds was tuned on one
+# machine; on a loaded one the curl below read nothing and the empty result
+# reported as a bundle mismatch.
+READY=0
+DEADLINE=$(( SECONDS + 30 ))
+while [ "$SECONDS" -lt "$DEADLINE" ]; do
+  kill -0 "$SERVER" 2>/dev/null || break
+  if curl -skf -o /dev/null -H "Host: localhost" https://127.0.0.1:18500/; then
+    READY=1; break
+  fi
+  sleep 0.1
+done
 
 # A server that died rather than answered is reported as that, with its own
 # output. Without this the pipeline below produces an empty result and the
@@ -74,6 +96,11 @@ sleep 4
 # a bundle mismatch, which cost a debugging session.
 if ! kill -0 "$SERVER" 2>/dev/null; then
   echo "FAIL: the server exited instead of serving" >&2
+  sed -n '1,40p' "$DIR/log" >&2
+  exit 1
+fi
+if [ "$READY" -ne 1 ]; then
+  echo "FAIL: the server did not answer within 30s" >&2
   sed -n '1,40p' "$DIR/log" >&2
   exit 1
 fi

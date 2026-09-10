@@ -34,16 +34,50 @@ esac
 pass=0; fail=0; skip=0
 failed_names=()
 
+# now_ms -- the wall clock in milliseconds. EPOCHREALTIME is bash 5; SECONDS
+# is the fallback, at whole-second resolution, for an older shell.
+now_ms() {
+  local t=${EPOCHREALTIME:-}
+  if [ -n "$t" ]; then
+    t=${t/,/.}
+    printf '%s' "$(( ${t%%.*} * 1000 + 10#${t#*.} / 1000 ))"
+  else
+    printf '%s' "$(( SECONDS * 1000 ))"
+  fi
+}
+
+# mark -- the time since the last reported step, and the new mark. Every line
+# below carries it, which is what makes a slow step visible in the log the run
+# printed instead of something to reconstruct from timestamps afterwards.
+#
+# Timed between reported lines rather than around each command: a grep gate's
+# evidence is computed by its caller before the gate is called, so a clock
+# inside grep_gate would report the printf and nothing else.
+step_ms=0
+run_ms=0
+MARK=
+# Sets MARK rather than printing it: called as `$(mark)` the assignment below
+# would happen in a subshell, every line would carry the time since the run
+# started, and the numbers would look plausible while being cumulative.
+mark() {
+  local now d
+  now=$(now_ms); d=$(( now - step_ms ))
+  [ "$d" -lt 0 ] && d=0
+  step_ms=$now
+  MARK="$((d / 1000)).$(( (d % 1000) / 100 ))s"
+}
+
 # run <name> <cmd...> -- on failure, print the command and its ENTIRE output.
 run() {
   local name="$1"; shift
   printf '%-60s' "$name"
   local out rc
   out=$("$@" 2>&1); rc=$?
+  mark
   if [ "$rc" -eq 0 ]; then
-    printf 'PASS\n'; pass=$((pass+1)); return 0
+    printf 'PASS %8s\n' "$MARK"; pass=$((pass+1)); return 0
   fi
-  printf 'FAIL (exit %s)\n' "$rc"
+  printf 'FAIL (exit %s) %s\n' "$rc" "$MARK"
   fail=$((fail+1)); failed_names+=("$name")
   printf '\n----- %s: full output -----\n$ %s\n\n%s\n----- end %s -----\n\n' \
     "$name" "$*" "$out" "$name"
@@ -53,12 +87,13 @@ run() {
 # skipped <name> <why> -- or a failure, when the caller declared it required.
 skipped() {
   local name="$1" why="$2" required="$3"
+  mark
   if [ "$required" = 1 ]; then
-    printf '%-60sFAIL\n' "$name"
+    printf '%-60sFAIL %8s\n' "$name" "$MARK"
     fail=$((fail+1)); failed_names+=("$name")
     printf '      required here, but: %s\n\n' "$why"
   else
-    printf '%-60sSKIP (%s)\n' "$name" "$why"
+    printf '%-60sSKIP %8s (%s)\n' "$name" "$MARK" "$why"
     skip=$((skip+1))
   fi
 }
@@ -67,14 +102,17 @@ skipped() {
 grep_gate() {
   local name="$1" hits="$2" hint="$3"
   printf '%-60s' "$name"
-  if [ -z "$hits" ]; then printf 'PASS\n'; pass=$((pass+1)); return 0; fi
-  printf 'FAIL\n'; fail=$((fail+1)); failed_names+=("$name")
+  mark
+  if [ -z "$hits" ]; then printf 'PASS %8s\n' "$MARK"; pass=$((pass+1)); return 0; fi
+  printf 'FAIL %8s\n' "$MARK"; fail=$((fail+1)); failed_names+=("$name")
   printf '\n----- %s -----\n%s\n\n%s\n----- end %s -----\n\n' "$name" "$hits" "$hint" "$name"
   return 1
 }
 
 echo "=== verifying: $LABEL ==="
 echo "    host: $HOST   go: $(go version 2>/dev/null || echo 'go NOT FOUND')"
+run_ms=$(now_ms)
+step_ms=$run_ms
 
 echo
 
@@ -207,58 +245,6 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   echo "=== go: $(go version) ==="
   echo
 
-  # Both architectures the image publishes. arm64 is not a formality: an
-  # earlier build shipped an arm64 image whose process seccomp filter was an
-  # empty list, and nothing in its gate compiled that path.
-  run "go build (linux/amd64)" ingo env GOARCH=amd64 go build ./...
-  run "go build (linux/arm64)" ingo env GOARCH=arm64 go build ./...
-  run "go vet (linux)"         ingo go vet ./...
-
-  # The gate builds two architectures and one OS, so a package that stops
-  # compiling off Linux reaches CI instead of this script. It happened: files
-  # naming Linux-only types were added to packages without the build tag their
-  # neighbours carry, and the Windows job found it after the push.
-  #
-  # Nothing here ships for Windows. What is checked is that the tags are
-  # consistent, which is a property of this tree rather than of that target.
-  # Packages excluded in full are the expected outcome, not a failure, so only
-  # a real type error fails this.
-  # vet, package by package, rather than a build of ./...: a build resolves
-  # the whole import graph first and stops at the command, which imports
-  # packages that are excluded here in full, so it never reaches the package
-  # that does not compile. vet type-checks each one on its own.
-  #
-  # Matched on the shape of a compiler error, because the excluded-package
-  # paragraphs are the expected outcome and are not failures.
-  # One package at a time, because a single unresolvable import anywhere in
-  # the set aborts the whole run before any package is type-checked, and the
-  # command imports packages that are excluded here in full. Vetting each on
-  # its own means an excluded neighbour costs one skipped package rather than
-  # the entire check.
-  # Both tag sets, because the compat build is a separate set of files and
-  # broke the same way independently.
-  #
-  # A test build rather than a vet: what the Windows job runs is go test, and
-  # tagging a package Linux-only without tagging what imports it turns a clean
-  # vet into a "setup failed" there. Compiling the test binaries is what
-  # surfaces that.
-  #
-  # -o /dev/null, not -run with a pattern that matches nothing: this host is
-  # Linux and the binaries are Windows ones, so running them is an exec format
-  # error for every package. They are built and thrown away.
-  run "the build tags hold off Linux" bash -c '
-    cd go
-    fail=0
-    for tags in "" "-tags compat_nc"; do
-      # "?" lines name a package with no tests, and "go: downloading" is the
-      # module cache filling on a clean checkout. Both go to stderr and
-      # neither is a failure.
-      out=$(CGO_ENABLED=0 GOOS=windows go test $tags -o /dev/null -c ./... 2>&1 |
-              grep -vE "^(\?[[:space:]]|go: downloading )")
-      if [ -n "$out" ]; then printf "%s\n" "$out"; fail=1; fi
-    done
-    exit $fail'
-
   # The two in-tree analysers and the text scan. They run for the host's own
   # OS because `go run` has to execute what it built, and each one is pointed
   # at the shipping target from the inside.
@@ -385,58 +371,6 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   run "layercheck (the engine's tiers hold)" ingo_host go run ./tools/layercheck ./engine
   FMT=$(cd go && gofmt -l . 2>/dev/null)
   grep_gate "gofmt" "$FMT" "Run: cd go && gofmt -w ."
-
-  if LINT=$(go_tool golangci-lint "$GOLANGCI"); then
-    run "golangci-lint run" native_tool "$LINT" run ./...
-  else
-    skipped "golangci-lint run" "not on PATH and could not be installed" \
-            "${VERIFY_REQUIRE_GOTOOLS:-0}"
-  fi
-
-  run "go test ($HOST)" ingo_host go test -count=1 ./...
-
-  # D17. The detector needs cgo and cgo needs a C compiler, so this is the one
-  # step whose environment differs from the shipping build's. The binary it
-  # produces is a test binary and is never shipped.
-  #
-  # The condition is "is there a compiler", not "is this Linux". Those looked
-  # like the same question while this box had no compiler on it, and they are
-  # not: a race the detector can find is a race in portable code, and the host
-  # that runs the tests every day is worth finding it on.
-  # `-timeout` because the default is 10 minutes per package and `lifecycle`
-  # spends about five of them under the detector on an unloaded box. A shared
-  # runner doubles that, so the default made this step a coin flip: the panic
-  # names whichever four tests happened to be in flight, which reads as a hang
-  # in one of them rather than as the package running out of budget.
-  # Both tag sets, because the compatibility layer is where the detector had
-  # nothing to say for as long as this line ran untagged: the request context
-  # it handed to database/sql outlived the handler for months without the one
-  # step that would have said so.
-  if have_cc; then
-    run "go test -race ($HOST)" ingo_cgo go test -race -count=1 -timeout 30m ./...
-    run "go test -race -tags compat_nc ($HOST)" \
-        ingo_cgo go test -race -tags compat_nc -count=1 -timeout 30m ./...
-  else
-    skipped "go test -race" "no C compiler on PATH, and the detector needs cgo" \
-            "${VERIFY_REQUIRE_RACE:-0}"
-  fi
-
-  # D16. The gate runs the committed seed corpus; the nightly job runs the
-  # fuzzer.
-  #
-  # The pattern is '^Fuzz' and not 'Fuzz.*/corpus'. Go names a seed entry after
-  # the file it came from, or "seed#N" for one added in code, so the second
-  # pattern selects no subtest at all and the step passed while running nothing
-  # -- the same shape as a gate that reports PASS whatever the tree contains.
-  run "fuzz seed corpus" ingo_host go test -run '^Fuzz' -count=1 ./...
-
-  if VULN=$(go_tool govulncheck "$GOVULN"); then
-    run "govulncheck" native_tool "$VULN" ./...
-  else
-    skipped "govulncheck" "not on PATH and could not be installed" \
-            "${VERIFY_REQUIRE_GOTOOLS:-0}"
-  fi
-
   # D18. The module graph against the checked-in allowlist, so a new direct
   # dependency is a diff to a file rather than a line in go.mod nobody reads.
   DEPS_WANT=$(grep -vE '^[[:space:]]*(#|$)' go/deps.allow | sort)
@@ -670,36 +604,155 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
     NC_HITS=$(go_compat_isolation)
     grep_gate "compat isolation (import graph, seam, text)" "$NC_HITS" \
       "Compat wire vocabulary belongs behind the compat layer."
-    # G4: the stripped build, which is stronger than the feature flag it
-    # replaces: with no tag the packages are not compiled at all.
-    run "go build (compat stripped)" ingo go build ./...
-    run "go build -tags compat_nc"   ingo go build -tags compat_nc ./...
-    # The layer's own tests, which the untagged run above cannot see: with no
-    # tag those files are not compiled at all, so a build that only checks the
-    # stripped tree checks none of this phase's behaviour.
-    #
-    # Both packages, because the vocabulary and the mount are tested in
-    # different places: `http/nc` holds the wire format and
-    # `lifecycle` holds the routes and the client flows that exercise them.
-    # Naming only the first left every mounted route untested, which is how
-    # an Engine assembled without a clock reached a released handler. The
-    # repeated untagged cases cost about a minute; a shipped surface with no
-    # gate costs more.
-    #
-    # Only where the host is the shipping target. This layer is Linux-only,
-    # like everything it wraps, so off Linux the pattern matches no packages
-    # and go reports that as an error: a gate step failing because the code it
-    # names does not exist on this OS says nothing about the code.
-    if [ "$HOST" = linux ]; then
-      run "go test -tags compat_nc"    ingo_host go test -tags compat_nc ./engine/http/nc/... ./engine/lifecycle/...
-      run "fuzz seed corpus (compat)"  ingo_host go test -tags compat_nc -run '^Fuzz' -count=1 ./engine/...
-    else
-      skipped "go test -tags compat_nc" "the compat layer is Linux only" 0
-      skipped "fuzz seed corpus (compat)" "the compat layer is Linux only" 0
-    fi
   else
     skipped "compat isolation (import graph, seam, text)" \
             "go/engine/http/nc does not exist yet" "${VERIFY_REQUIRE_COMPAT:-0}"
+  fi
+
+  # --- everything above is text, and everything below compiles -------------
+  # The order is deliberate: every check that reads the tree rather than
+  # building it runs first, so a formatting slip or a banned import fails in
+  # seconds instead of after the test suite. It used to be the other way
+  # around, and a gofmt failure cost ten minutes to see.
+  # Both architectures the image publishes. arm64 is not a formality: an
+  # earlier build shipped an arm64 image whose process seccomp filter was an
+  # empty list, and nothing in its gate compiled that path.
+  run "go build (linux/amd64)" ingo env GOARCH=amd64 go build ./...
+  run "go build (linux/arm64)" ingo env GOARCH=arm64 go build ./...
+  run "go vet (linux)"         ingo go vet ./...
+
+  # The gate builds two architectures and one OS, so a package that stops
+  # compiling off Linux reaches CI instead of this script. It happened: files
+  # naming Linux-only types were added to packages without the build tag their
+  # neighbours carry, and the Windows job found it after the push.
+  #
+  # Nothing here ships for Windows. What is checked is that the tags are
+  # consistent, which is a property of this tree rather than of that target.
+  # Packages excluded in full are the expected outcome, not a failure, so only
+  # a real type error fails this.
+  # vet, package by package, rather than a build of ./...: a build resolves
+  # the whole import graph first and stops at the command, which imports
+  # packages that are excluded here in full, so it never reaches the package
+  # that does not compile. vet type-checks each one on its own.
+  #
+  # Matched on the shape of a compiler error, because the excluded-package
+  # paragraphs are the expected outcome and are not failures.
+  # One package at a time, because a single unresolvable import anywhere in
+  # the set aborts the whole run before any package is type-checked, and the
+  # command imports packages that are excluded here in full. Vetting each on
+  # its own means an excluded neighbour costs one skipped package rather than
+  # the entire check.
+  # Both tag sets, because the compat build is a separate set of files and
+  # broke the same way independently.
+  #
+  # A test build rather than a vet: what the Windows job runs is go test, and
+  # tagging a package Linux-only without tagging what imports it turns a clean
+  # vet into a "setup failed" there. Compiling the test binaries is what
+  # surfaces that.
+  #
+  # -o /dev/null, not -run with a pattern that matches nothing: this host is
+  # Linux and the binaries are Windows ones, so running them is an exec format
+  # error for every package. They are built and thrown away.
+  run "the build tags hold off Linux" bash -c '
+    cd go
+    fail=0
+    for tags in "" "-tags compat_nc"; do
+      # "?" lines name a package with no tests, and "go: downloading" is the
+      # module cache filling on a clean checkout. Both go to stderr and
+      # neither is a failure.
+      out=$(CGO_ENABLED=0 GOOS=windows go test $tags -o /dev/null -c ./... 2>&1 |
+              grep -vE "^(\?[[:space:]]|go: downloading )")
+      if [ -n "$out" ]; then printf "%s\n" "$out"; fail=1; fi
+    done
+    exit $fail'
+
+  # The compat layer builds both ways. With no tag its packages are not
+  # compiled at all, which is stronger than the feature flag it replaces.
+  if [ -d go/engine/http/nc ]; then
+    run "go build (compat stripped)" ingo go build ./...
+    run "go build -tags compat_nc"   ingo go build -tags compat_nc ./...
+  fi
+
+  if LINT=$(go_tool golangci-lint "$GOLANGCI"); then
+    run "golangci-lint run" native_tool "$LINT" run ./...
+  else
+    skipped "golangci-lint run" "not on PATH and could not be installed" \
+            "${VERIFY_REQUIRE_GOTOOLS:-0}"
+  fi
+
+  run "go test ($HOST)" ingo_host go test -count=1 ./...
+
+  # The compat layer's own tests, which the untagged run above cannot see:
+  # with no tag those files are not compiled at all, so a build that only
+  # checks the stripped tree checks none of that phase's behaviour. Both
+  # packages, because the vocabulary and the mount are tested in different
+  # places: `http/nc` holds the wire format and `lifecycle` holds the routes
+  # and the client flows. Naming only the first left every mounted route
+  # untested, which is how an Engine assembled without a clock reached a
+  # released handler.
+  #
+  # The whole lifecycle package under the tag, not only the 71 cases the tag
+  # adds. Running the other 500 a second time is what proves the compat mount
+  # does not shadow or reorder the native surface it is mounted beside, and
+  # after the tests were parallelized the repeat costs 8 s rather than the
+  # minute it used to. A `-run` list of the tagged names was tried and
+  # reverted: it bought those 8 s by dropping that property on any host
+  # without a C compiler, where the tagged race pass below does not run.
+  #
+  # Only where the host is the shipping target. This layer is Linux-only,
+  # like everything it wraps, so off Linux the pattern matches no packages
+  # and go reports that as an error: a step failing because the code it names
+  # does not exist on this OS says nothing about the code.
+  if [ -d go/engine/http/nc ]; then
+    if [ "$HOST" = linux ]; then
+      run "go test -tags compat_nc" \
+          ingo_host go test -tags compat_nc -count=1 ./engine/http/nc/... ./engine/lifecycle/...
+    else
+      skipped "go test -tags compat_nc" "the compat layer is Linux only" 0
+    fi
+  fi
+
+  # D17. The detector needs cgo and cgo needs a C compiler, so this is the one
+  # step whose environment differs from the shipping build's. The binary it
+  # produces is a test binary and is never shipped.
+  #
+  # The condition is "is there a compiler", not "is this Linux". Those looked
+  # like the same question while this box had no compiler on it, and they are
+  # not: a race the detector can find is a race in portable code, and the host
+  # that runs the tests every day is worth finding it on.
+  #
+  # One pass, tagged. The tag adds files and removes only a no-op mount stub,
+  # so the tagged build runs every test the untagged one does; the two passes
+  # this replaces spent a second full race run to re-prove that.
+  #
+  # No `-parallel`: four whole-suite passes on a 16-thread box came out at
+  # 158, 159 s with `-parallel 4` and 157, 152 s without, and peak memory was
+  # 3.1 to 3.7 GB either way. Within one package the detector does prefer
+  # four, but a suite run overlaps packages instead, and on a 4-vCPU runner
+  # the flag is what GOMAXPROCS already says.
+  #
+  # `-timeout` because the default is 10 minutes per package, and a shared
+  # runner used to make that a coin flip: the panic names whichever tests
+  # happened to be in flight, which reads as a hang rather than as the
+  # package running out of budget.
+  if have_cc; then
+    run "go test -race -tags compat_nc ($HOST)" \
+        ingo_cgo go test -race -tags compat_nc -count=1 -timeout 30m ./...
+  else
+    skipped "go test -race" "no C compiler on PATH, and the detector needs cgo" \
+            "${VERIFY_REQUIRE_RACE:-0}"
+  fi
+
+  # The seed corpus needs no step of its own: `go test` runs every fuzz
+  # target's committed seeds as ordinary cases, so the two `-run '^Fuzz'`
+  # steps that used to sit here re-executed every test binary to prove what
+  # the runs above already proved.
+
+  if VULN=$(go_tool govulncheck "$GOVULN"); then
+    run "govulncheck" native_tool "$VULN" ./...
+  else
+    skipped "govulncheck" "not on PATH and could not be installed" \
+            "${VERIFY_REQUIRE_GOTOOLS:-0}"
   fi
 
   # The single-binary build. `//go:embed` reads the bundle with a real
@@ -708,6 +761,16 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # lives inside the embedding package because //go:embed cannot name a path
   # outside it, and refuses a symlink that points out.
   if [ -f go/engine/http/spa/build/index.html ]; then
+    # One bundle build for the two checks below, which each used to run their
+    # own. `SC_BUNDLE_FRESH` tells them the tree's bundle is the current
+    # build, so they serve it instead of rebuilding it; CI sets it too,
+    # because its own workflow step builds the frontend before this script.
+    if command -v pnpm >/dev/null 2>&1; then
+      if [ "${SC_BUNDLE_FRESH:-0}" != 1 ]; then
+        run "the frontend bundle builds" bash -c 'cd web && pnpm build >/dev/null'
+      fi
+      export SC_BUNDLE_FRESH=1
+    fi
     run "go build -tags embed_ui" ingo go build -tags embed_ui ./...
     # And the served bundle is the one that was built, which is the property
     # the dependency edge exists for. It needs node, so it only runs where the
@@ -753,5 +816,7 @@ if [ "$fail" -ne 0 ]; then
   echo "--- failed steps ---"
   for n in "${failed_names[@]}"; do echo "      $n"; done
 fi
-echo "--- $pass passed, $fail failed, $skip skipped ---"
+TOTAL_MS=$(( $(now_ms) - run_ms ))
+printf -- '--- %s passed, %s failed, %s skipped in %ss ---\n' \
+  "$pass" "$fail" "$skip" "$((TOTAL_MS / 1000))"
 [ "$fail" -eq 0 ]

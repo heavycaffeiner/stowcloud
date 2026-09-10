@@ -149,6 +149,23 @@ async function evalJs(client, pageId, fn, waitForStableDom = true) {
   return parseEvalResult(text)
 }
 
+/** Waits for a `data-testid` to exist, up to a deadline.
+ *
+ *  The client renders the settings page after the navigation resolves, so a
+ *  query issued the moment the URL changed reads a document holding only the
+ *  root node. That is what it read once the server stopped being waited on
+ *  with a fixed sleep and started answering as soon as it was ready. */
+async function waitForTestId(client, pageId, testId, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const present = await evalJs(client, pageId,
+      `() => document.querySelector('[data-testid="${testId}"]') !== null`)
+    if (present === true) return true
+    if (Date.now() >= deadline) return false
+    await new Promise((resolve) => setTimeout(resolve, 200))
+  }
+}
+
 /** The API as the browser sees it: same origin, same cookies, same guard.
  *  `evaluate_script`'s `args` only accepts element uids, not arbitrary data,
  *  so the request is built as source text instead of passed as a closure
@@ -297,13 +314,12 @@ try {
     console.log('the webdav connection guide')
     await client.callTool('navigate_page', { pageId, type: 'url', url: `${BASE}/settings#connections` })
 
+    const guidePresent = await waitForTestId(client, pageId, 'webdav-guide')
+    check('the webdav guide section (data-testid=webdav-guide) is present', guidePresent === true)
+
     const snapshot = await client.callTool('take_snapshot', { pageId })
     check('the settings page produced an accessibility snapshot', snapshot.includes('RootWebArea'),
       snapshot.slice(0, 200))
-
-    const guidePresent = await evalJs(client, pageId,
-      "() => document.querySelector('[data-testid=\"webdav-guide\"]') !== null")
-    check('the webdav guide section (data-testid=webdav-guide) is present', guidePresent === true)
 
     const origin = await evalJs(client, pageId, '() => location.origin')
     const baseUrlText = await evalJs(client, pageId,

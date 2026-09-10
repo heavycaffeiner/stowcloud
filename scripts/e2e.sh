@@ -38,8 +38,19 @@ chromium.launch().then(b => b.close()).then(
   exit 0
 fi
 
-echo "==> building the frontend"
-(cd web && pnpm build >/dev/null)
+# One bundle build per gate run. `SC_BUNDLE_FRESH=1` says the bundle in the
+# tree is the current build, which is what verify.sh sets after building it
+# once for this run and the embed check together.
+if [ "${SC_BUNDLE_FRESH:-0}" = 1 ]; then
+  echo "==> the frontend was built already"
+  if [ ! -f go/engine/http/spa/build/index.html ]; then
+    echo "FAIL: SC_BUNDLE_FRESH is set, but the bundle is not there" >&2
+    exit 1
+  fi
+else
+  echo "==> building the frontend"
+  (cd web && pnpm build >/dev/null)
+fi
 
 echo "==> building the binary"
 BIN=$(mktemp -d)/sc-engine
@@ -65,10 +76,26 @@ echo "==> serving"
 "$BIN" -data "$DIR/data" > "$DIR/log" 2>&1 &
 SERVER=$!
 trap 'kill "$SERVER" 2>/dev/null || true' EXIT
-sleep 6
+# Ready when it answers, not after a fixed wait. Six seconds was a guess with
+# no relation to what the server does, and the first spec's sign-in failing
+# against a server still opening its databases reads as a product bug.
+READY=0
+DEADLINE=$(( SECONDS + 30 ))
+while [ "$SECONDS" -lt "$DEADLINE" ]; do
+  kill -0 "$SERVER" 2>/dev/null || break
+  if curl -skf -o /dev/null -H "Host: localhost" https://127.0.0.1:18900/; then
+    READY=1; break
+  fi
+  sleep 0.1
+done
 
 if ! kill -0 "$SERVER" 2>/dev/null; then
   echo "FAIL: the server exited instead of serving" >&2
+  sed -n '1,40p' "$DIR/log" >&2
+  exit 1
+fi
+if [ "$READY" -ne 1 ]; then
+  echo "FAIL: the server did not answer within 30s" >&2
   sed -n '1,40p' "$DIR/log" >&2
   exit 1
 fi
