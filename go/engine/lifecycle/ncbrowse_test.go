@@ -3,13 +3,22 @@
 package lifecycle_test
 
 import (
+	"context"
 	"encoding/json"
 	"encoding/xml"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
+
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/search"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/search/svc"
 )
 
 // Browsing, as the three clients do it.
@@ -581,6 +590,56 @@ func TestASearchStaysInsideItsScope(t *testing.T) {
 		if !strings.Contains(href, "target-dir-3/") {
 			t.Errorf("a hit outside the scope: %s", href)
 		}
+	}
+}
+
+// A search the engine turned away is a refusal, not an empty answer.
+//
+// The engine runs a bounded number of searches at once. Answering the one it
+// declined with an empty multistatus tells a sync client the files are not
+// there, and a client that acts on that deletes its local copies.
+func TestASearchRefusedForBeingBusySaysSo(t *testing.T) {
+	f := newNCFixture(t, []byte("hello"))
+	writeHostFile(t, f.host, "busy-target.txt", []byte("x"))
+
+	// One slot, held by a search that blocks in its own callback until this
+	// test lets go.
+	f.e.Search.SetBounds(1, 0)
+	sources := search.SourcesOf(f.e.Core.UserScanSources(core.UserID(f.user)))
+	release := make(chan struct{})
+	held := make(chan struct{})
+	var once sync.Once
+	task.Go(context.Background(), "test: hold the search slot", func() {
+		if _, qerr := f.e.Search.Query(context.Background(), sources, svc.QueryOptions{
+			Query: "busy-target",
+			Stream: func([]search.Hit) {
+				once.Do(func() { close(held) })
+				<-release
+			},
+		}); qerr != nil {
+			t.Errorf("the occupying search failed: %v", qerr)
+		}
+	})
+	select {
+	case <-held:
+	case <-time.After(10 * time.Second):
+		close(release)
+		t.Fatal("the occupying search never reached its callback")
+	}
+	defer close(release)
+
+	resp, body := f.request(t, "SEARCH", f.base+"/remote.php/dav",
+		strings.NewReader(searchBody(f.login, "", "busy-target", 0)),
+		map[string]string{"Content-Type": "text/xml"})
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("a refused search answered %d, want 503\n%s", resp.StatusCode, body)
+	}
+
+	resp, body = f.request(t, "GET",
+		f.base+"/ocs/v2.php/search/providers/files/search?term=busy-target&limit=25&format=json",
+		nil, map[string]string{"Accept": "application/json"})
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("the unified search answered %d, want 503\n%s", resp.StatusCode, body)
 	}
 }
 

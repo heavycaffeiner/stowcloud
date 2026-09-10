@@ -4,6 +4,7 @@ package nc
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/url"
 	"sort"
@@ -171,7 +172,15 @@ func (s *Server) davSearch(w http.ResponseWriter, r *http.Request, p Principal, 
 			if hasIsCollection(sq.Where) {
 				kind = search.KindDir
 			}
-			entries = s.searchByName(ctx, p, scopeVpath, lit, kind, limit, complete)
+			found, serr := s.searchByName(ctx, p, scopeVpath, lit, kind, limit, complete)
+			if serr != nil {
+				// Before the multistatus is opened, so there is still a
+				// status to refuse with: an empty 207 would read as "no
+				// such files" and a sync client would act on that.
+				s.failDav(w, r, searchRefusal(serr), apierr.VisibilityKnown)
+				return
+			}
+			entries = found
 		}
 
 	case hasTimeComparison(sq.Where):
@@ -252,6 +261,20 @@ func scopeComponents(href string) []string {
 	return out
 }
 
+// searchRefusal is how a search that could not run is reported.
+//
+// A gate that turned this one away is a "try again", not a failure and
+// certainly not an empty result: the engine runs a bounded number of
+// searches at once, and a sync client told "no matches" acts on that.
+func searchRefusal(err error) error {
+	if errors.Is(err, svc.ErrBusy) {
+		// The class alone: this surface answers a DAV status and a reason
+		// phrase, and the class already carries both.
+		return &apierr.ClassifiedError{Classified: apierr.Classified{Class: apierr.ResourceExhausted}}
+	}
+	return err
+}
+
 // searchRowsOf reads a client-supplied row count.
 //
 // A stated count is honoured as stated, since the client is paging and knows
@@ -292,26 +315,30 @@ func (s *Server) searchByFileID(ctx context.Context, p Principal, literal string
 
 // searchByName answers d:like on d:displayname, inside the scope the request
 // named and to the end when the request named no limit.
+//
+// A refusal is returned rather than swallowed. The engine runs a bounded
+// number of searches at once, and answering the one it turned away with an
+// empty multistatus tells a sync client there are no such files.
 func (s *Server) searchByName(
 	ctx context.Context, p Principal, scopeVpath, literal string, kind search.Kind, limit int, complete bool,
-) []searchHit {
+) ([]searchHit, error) {
 	pattern := strings.Trim(literal, "%")
 	if pattern == "" {
-		return nil
+		return nil, nil
 	}
 	folded := strings.ToLower(pattern)
 
 	if s.deps.Search != nil {
 		sources, ok := s.searchSourcesUnder(ctx, p, scopeVpath)
 		if !ok {
-			return nil
+			return nil, nil
 		}
 		results, err := s.deps.Search.Query(ctx, sources, svc.QueryOptions{
 			Query: pattern, Limit: limit, Complete: complete, Scope: scopeVpath,
 			Filter: search.Filter{Kind: kind},
 		})
 		if err != nil {
-			return nil
+			return nil, err
 		}
 		out := make([]searchHit, 0, len(results.Hits))
 		for _, h := range results.Hits {
@@ -324,7 +351,7 @@ func (s *Server) searchByName(
 				break
 			}
 		}
-		return out
+		return out, nil
 	}
 
 	roots := s.searchScopeRoots(ctx, p, scopeVpath)
@@ -339,7 +366,7 @@ func (s *Server) searchByName(
 	if !complete && len(hits) > limit {
 		hits = hits[:limit]
 	}
-	return hits
+	return hits, nil
 }
 
 // searchSourcesUnder is the set of trees one search may walk.

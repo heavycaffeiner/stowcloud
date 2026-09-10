@@ -43,6 +43,7 @@ const (
 	StatusBadRequest   = 400
 	StatusForbidden    = 403
 	StatusNotFound     = 404
+	StatusUnavailable  = 503
 	StatusUnauthorized = 997
 	StatusFailure      = 999
 )
@@ -147,6 +148,13 @@ func BadRequest(message string) *Error { return &Error{Code: StatusBadRequest, M
 func Forbidden(message string) *Error  { return &Error{Code: StatusForbidden, Message: message} }
 func NotFound(message string) *Error   { return &Error{Code: StatusNotFound, Message: message} }
 func Failure(message string) *Error    { return &Error{Code: StatusFailure, Message: message} }
+
+// Unavailable is a refusal worth retrying: the code passes through to the
+// HTTP status, so a client reads 503 rather than a failure it should not
+// repeat.
+func Unavailable(message string) *Error {
+	return &Error{Code: StatusUnavailable, Message: message}
+}
 func Unauthorized(message string) *Error {
 	return &Error{Code: StatusUnauthorized, Message: message}
 }

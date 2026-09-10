@@ -4,6 +4,7 @@ package nc
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 
@@ -81,6 +82,11 @@ func (s *Server) searchFilesByName(c *fiber.Ctx, p Principal) (Val, bool, *Error
 	limit := parseSearchLimit(c.Query("limit"))
 	results, err := s.deps.Search.Query(ctx, sources, svc.QueryOptions{Query: term, Limit: limit})
 	if err != nil {
+		if errors.Is(err, svc.ErrBusy) {
+			// A gate that turned this query away is a "try again". An empty
+			// entry list here is the panel saying nothing matched.
+			return Val{}, false, Unavailable("too many searches are already running")
+		}
 		return searchResultVal(name, nil), true, nil
 	}
 
