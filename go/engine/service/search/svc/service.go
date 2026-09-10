@@ -271,13 +271,11 @@ func (s *Service) Query(ctx context.Context, sources []search.Source, opt QueryO
 
 // indexCanAnswer reports whether the index is allowed to answer this query.
 //
-// Two queries it cannot. Folders are never indexed, so a folders-only query
-// asked of the index comes back empty rather than short. And the index is a
-// cache that trails the filesystem: a file created since the updater last ran
-// is not in it, which a bounded query can live with and a complete one, whose
-// whole promise is every match, cannot. Both walk.
+// It is a cache that trails the filesystem: a file created since the updater
+// last ran is not in it, which a bounded query can live with and a complete
+// one, whose whole promise is every match, cannot.
 func indexCanAnswer(opt QueryOptions) bool {
-	return !opt.Complete && opt.Filter.Kind != search.KindDir
+	return !opt.Complete
 }
 
 func (s *Service) walk(

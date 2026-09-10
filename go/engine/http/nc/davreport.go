@@ -164,7 +164,14 @@ func (s *Server) davSearch(w http.ResponseWriter, r *http.Request, p Principal, 
 
 	case hasNameLike(sq.Where):
 		if lit, ok := findNameLike(sq.Where); ok {
-			entries = s.searchByName(ctx, p, scopeVpath, lit, limit, complete)
+			// d:is-collection beside the name is the folder picker asking
+			// for somewhere to put something. Answering it with files is a
+			// list of destinations that cannot hold anything.
+			kind := search.KindAny
+			if hasIsCollection(sq.Where) {
+				kind = search.KindDir
+			}
+			entries = s.searchByName(ctx, p, scopeVpath, lit, kind, limit, complete)
 		}
 
 	case hasTimeComparison(sq.Where):
@@ -286,7 +293,7 @@ func (s *Server) searchByFileID(ctx context.Context, p Principal, literal string
 // searchByName answers d:like on d:displayname, inside the scope the request
 // named and to the end when the request named no limit.
 func (s *Server) searchByName(
-	ctx context.Context, p Principal, scopeVpath, literal string, limit int, complete bool,
+	ctx context.Context, p Principal, scopeVpath, literal string, kind search.Kind, limit int, complete bool,
 ) []searchHit {
 	pattern := strings.Trim(literal, "%")
 	if pattern == "" {
@@ -301,6 +308,7 @@ func (s *Server) searchByName(
 		}
 		results, err := s.deps.Search.Query(ctx, sources, svc.QueryOptions{
 			Query: pattern, Limit: limit, Complete: complete, Scope: scopeVpath,
+			Filter: search.Filter{Kind: kind},
 		})
 		if err != nil {
 			return nil
@@ -320,7 +328,11 @@ func (s *Server) searchByName(
 	}
 
 	roots := s.searchScopeRoots(ctx, p, scopeVpath)
+	filter := search.Filter{Kind: kind}
 	hits := s.walkForSearch(ctx, roots, func(e core.Entry) bool {
+		if !filter.Admits(e.Name, e.IsDir) {
+			return false
+		}
 		return strings.Contains(strings.ToLower(e.Name), folded)
 	})
 	sort.Slice(hits, func(i, j int) bool { return hits[i].entry.Name < hits[j].entry.Name })
@@ -370,7 +382,8 @@ func (s *Server) searchByMedia(
 ) []searchHit {
 	roots := s.searchScopeRoots(ctx, p, scopeVpath)
 	hits := s.walkForSearch(ctx, roots, func(e core.Entry) bool {
-		if !withinWindow(e.MTimeNs, lowerNs, upperNs) {
+		// A folder is not a picture, whatever its name ends in.
+		if e.IsDir || !withinWindow(e.MTimeNs, lowerNs, upperNs) {
 			return false
 		}
 		ct := ContentTypeOf(false, e.Name)
@@ -461,8 +474,9 @@ func (s *Server) searchScopeRoots(ctx context.Context, p Principal, scopeVpath s
 
 // walkForSearch descends every (vpath, resolution) root, bounded by
 // davSearchWalkCeiling total entries visited across the whole call,
-// collecting the files match accepts. A directory is never itself a match:
-// every query this walk answers is a query for files.
+// collecting whatever match accepts. Folders are offered to match like any
+// other entry: a name search reports the folder someone named, and a query
+// that wants files only says so in its own predicate.
 func (s *Server) walkForSearch(
 	ctx context.Context, roots []searchRoot, match func(core.Entry) bool,
 ) []searchHit {
@@ -671,6 +685,20 @@ func hasContentTypeLike(t SearchTerm) bool {
 }
 
 // hasNameLike reports whether a where clause tests d:displayname anywhere.
+// hasIsCollection reports whether the clause carries d:is-collection, the
+// element a folder-only search is narrowed with.
+func hasIsCollection(t SearchTerm) bool {
+	if t.Op == "is-collection" {
+		return true
+	}
+	for _, c := range t.Terms {
+		if hasIsCollection(c) {
+			return true
+		}
+	}
+	return false
+}
+
 func hasNameLike(t SearchTerm) bool {
 	_, ok := findNameLike(t)
 	return ok

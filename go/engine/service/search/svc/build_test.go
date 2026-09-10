@@ -30,8 +30,9 @@ func TestBuildThenQueryRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
-	if progress.Files != 3 {
-		t.Errorf("indexed %d files, want 3", progress.Files)
+	// Three files and the two folders holding them.
+	if progress.Files != 5 {
+		t.Errorf("indexed %d entries, want 5", progress.Files)
 	}
 	if progress.Dirs < 3 {
 		t.Errorf("visited %d directories, want at least 3", progress.Dirs)
@@ -53,9 +54,10 @@ func TestBuildThenQueryRoundTrip(t *testing.T) {
 	}
 }
 
-// Directories are not indexed: the build indexes files and descends through
-// directories, so a name in the index always resolves to a file.
-func TestBuildIndexesFilesAndNotDirectories(t *testing.T) {
+// Folders are indexed beside the files they hold. A name search reports the
+// folder someone named, so an index without folders answers a shorter list
+// than the walk does for the same query.
+func TestBuildIndexesFoldersAndFiles(t *testing.T) {
 	ix := newIndex(t)
 	svc := New(Options{Index: ix})
 	src, _ := corpus(t, 1, "dir/inside.txt")
@@ -63,8 +65,25 @@ func TestBuildIndexesFilesAndNotDirectories(t *testing.T) {
 	if _, err := svc.Build(t.Context(), []search.Source{src}, nil, nil); err != nil {
 		t.Fatalf("Build: %v", err)
 	}
-	if got := ix.Stats().Entries; got != 1 {
-		t.Errorf("the index holds %d entries, want only the file", got)
+	if got := ix.Stats().Entries; got != 2 {
+		t.Errorf("the index holds %d entries, want the folder and the file", got)
+	}
+
+	res, err := svc.Query(t.Context(), []search.Source{src}, QueryOptions{Query: "dir"})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if res.Tier != TierIndex {
+		t.Fatalf("the query was answered by the %v tier", res.Tier)
+	}
+	var folder bool
+	for _, h := range res.Hits {
+		if h.IsDir && h.Path == "dir" {
+			folder = true
+		}
+	}
+	if !folder {
+		t.Errorf("the index answered %v, without the folder", hitPaths(res.Hits))
 	}
 }
 

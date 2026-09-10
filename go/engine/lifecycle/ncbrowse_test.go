@@ -584,6 +584,34 @@ func TestASearchStaysInsideItsScope(t *testing.T) {
 	}
 }
 
+// The folder picker asks for folders only, with d:is-collection beside the
+// name comparison. A list of files is a list of destinations that cannot
+// hold anything.
+func TestAFolderOnlySearchAnswersFoldersOnly(t *testing.T) {
+	t.Parallel()
+	f := newNCFixture(t, []byte("hello"))
+	_, dirs := seedSearchCorpus(t, f.host)
+
+	body := `<?xml version="1.0"?><d:searchrequest xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">` +
+		`<d:basicsearch><d:select><d:prop><d:displayname/><d:resourcetype/></d:prop></d:select>` +
+		`<d:from><d:scope><d:href>/files/` + f.login + `</d:href><d:depth>infinity</d:depth></d:scope></d:from>` +
+		`<d:where><d:and><d:is-collection/>` +
+		`<d:like><d:prop><d:displayname/></d:prop><d:literal>%target%</d:literal></d:like>` +
+		`</d:and></d:where><d:orderby/></d:basicsearch></d:searchrequest>`
+
+	resp, out := f.request(t, "SEARCH", f.base+"/remote.php/dav", strings.NewReader(body),
+		map[string]string{"Content-Type": "text/xml"})
+	if resp.StatusCode != 207 {
+		t.Fatalf("the search answered %d, want 207\n%s", resp.StatusCode, out)
+	}
+
+	hrefs, collections := searchResponses(t, out)
+	if len(hrefs) != dirs || collections != dirs {
+		t.Errorf("a folders-only search answered %d rows of which %d are folders, want %d of each",
+			len(hrefs), collections, dirs)
+	}
+}
+
 // The unified search panel reads a title, a path and a folder to open. A
 // folder is a result like any other there, and the path has to be the one
 // the account navigates: the share-relative one opens a folder that does

@@ -149,7 +149,6 @@ func (b *builder) walkSource(ctx context.Context, src search.Source) (bool, erro
 			}
 			if e.Kind.IsDir() {
 				stack = append(stack, child)
-				continue
 			}
 			if b.progress.Files >= b.ceiling {
 				// The bound has been reached. What was indexed remains, and
@@ -163,6 +162,11 @@ func (b *builder) walkSource(ctx context.Context, src search.Source) (bool, erro
 				return true, nil
 			}
 
+			// Folders are indexed too, and descended into. A name search
+			// reports the folder someone named, so an index that held only
+			// files answered the same question with a shorter list than the
+			// walk did, and which one a client got depended on whether an
+			// administrator had turned the index on.
 			b.progress.Files++
 			b.batch = append(b.batch, index.Entry{Share: src.Share, Path: child.String()})
 			if len(b.batch) >= buildBatch {

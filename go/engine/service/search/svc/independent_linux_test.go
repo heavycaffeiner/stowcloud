@@ -50,13 +50,14 @@ func runTool(tool string, args ...string) *exec.Cmd {
 }
 
 // findNames runs GNU find over dir and returns the share-relative paths of
-// files whose own name contains needle, case-insensitively.
+// entries whose own name contains needle, case-insensitively.
 //
-// -iname with surrounding wildcards is find's own substring match. Nothing here
-// touches this project's code, which is the point.
+// Files and folders both, since the index holds both. -iname with surrounding
+// wildcards is find's own substring match, and -mindepth 1 drops the search
+// root itself. Nothing here touches this project's code, which is the point.
 func findNames(t *testing.T, tool, dir, needle string) []string {
 	t.Helper()
-	out, err := runTool(tool, dir, "-type", "f", "-iname", "*"+needle+"*").Output()
+	out, err := runTool(tool, dir, "-mindepth", "1", "-iname", "*"+needle+"*").Output()
 	if err != nil {
 		t.Fatalf("find: %v", err)
 	}
@@ -66,9 +67,9 @@ func findNames(t *testing.T, tool, dir, needle string) []string {
 // fdNames does the same through fd, which is a different implementation again.
 func fdNames(t *testing.T, tool, dir, needle string) []string {
 	t.Helper()
-	// --fixed-strings so a needle is a literal rather than a pattern, and
-	// --type file to match find's -type f.
-	cmd := runTool(tool, "--fixed-strings", "--ignore-case", "--type", "file",
+	// --fixed-strings so a needle is a literal rather than a pattern. Both
+	// kinds of entry, matching find above and what the index now holds.
+	cmd := runTool(tool, "--fixed-strings", "--ignore-case",
 		"--no-ignore", "--hidden", needle, dir)
 	out, err := cmd.Output()
 	if err != nil {

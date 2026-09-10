@@ -202,9 +202,10 @@ func TestTheIndexMatchesThePathAndTheWalkMatchesTheName(t *testing.T) {
 
 	indexed, walked := bothTiers(t, s, []search.Source{src}, "holiday")
 
-	// The index returns the files beneath the folder, because their stored
-	// paths contain the needle.
+	// The index returns the folder and the files beneath it, because every
+	// one of their stored paths contains the needle.
 	wantIndexed := []string{
+		"photos/holiday",
 		"photos/holiday/beach-2.jpg",
 		"photos/holiday/beach.jpg",
 		"photos/holiday/sunset.jpg",
@@ -221,9 +222,10 @@ func TestTheIndexMatchesThePathAndTheWalkMatchesTheName(t *testing.T) {
 	}
 }
 
-// The second divergence, pinned: the walk can return a directory hit and the
-// index never does.
-func TestTheWalkMatchesDirectoriesAndTheIndexDoesNot(t *testing.T) {
+// Both tiers return a folder matched by name. They used to disagree, so
+// whether a folder appeared in a search depended on whether an
+// administrator had built an index.
+func TestBothTiersMatchAFolderByName(t *testing.T) {
 	s, src, _ := built(t)
 
 	indexed, walked := bothTiers(t, s, []search.Source{src}, "quarterly")
@@ -235,13 +237,17 @@ func TestTheWalkMatchesDirectoriesAndTheIndexDoesNot(t *testing.T) {
 		}
 	}
 	if !walkedDir {
-		t.Error("the walk no longer matches a directory by name, which changes the contract this pins")
+		t.Error("the walk no longer matches a directory by name")
 	}
 
+	var indexedDir bool
 	for _, h := range indexed.Hits {
-		if h.IsDir {
-			t.Errorf("the index now holds a directory name (%s), which is the change the family document describes", h.Path)
+		if h.IsDir && strings.HasSuffix(h.Path, "quarterly") {
+			indexedDir = true
 		}
+	}
+	if !indexedDir {
+		t.Errorf("the index answered %v, without the folder the walk found", hitPaths(indexed.Hits))
 	}
 }
 

@@ -221,13 +221,8 @@ func (u *Updater) reconcile(ctx context.Context, ix *index.NameIndex, src search
 	entries, rerr := src.Root.ReadDir(dirPath, vfs.HideReserved)
 	if rerr == nil {
 		for _, e := range entries {
-			if e.Kind.IsDir() {
-				// Directories go unindexed. The build indexes files while
-				// descending through directories, so keeping one here would
-				// place a name in the index that a query returns and a stat
-				// then resolves to a directory the walk never offered.
-				continue
-			}
+			// Folders count, the same as they do in a build: a name search
+			// reports the folder someone named it after.
 			child, jerr := dirPath.JoinExisting(e.Name)
 			if jerr != nil {
 				continue
