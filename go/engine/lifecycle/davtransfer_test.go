@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/dav"
 )
@@ -188,6 +189,19 @@ func TestARecursiveCopyBecomesAJob(t *testing.T) {
 
 	if w.Code != http.StatusAccepted {
 		t.Errorf("answered %d, want 202", w.Code)
+	}
+
+	// The job writes into the fixture's directory after this handler
+	// returned, so the test waits for it. Without the wait the temporary
+	// directory is removed while the copy is still writing into it, which
+	// fails the run with "directory not empty" rather than with anything
+	// about copying.
+	deadline := time.Now().Add(5 * time.Second)
+	for !f.exists("copy/deep/file.txt") {
+		if time.Now().After(deadline) {
+			t.Fatal("the copy job never produced the destination")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
