@@ -151,6 +151,18 @@ func (e *Engine) OnBindChange(current string, pinned bool, fn func(addr string))
 	e.onBind = fn
 }
 
+// BindPinned reports that the address this process listens on came from its
+// command line, so a stored one does not move it.
+//
+// The settings surface asks, because storing an address that will not take
+// effect and answering "applied" is the same lie the pin exists to remove,
+// moved from the socket to the screen.
+func (e *Engine) BindPinned() bool {
+	e.bindMu.Lock()
+	defer e.bindMu.Unlock()
+	return e.bindPinned
+}
+
 // parsePrefixes reads the operator's proxy list into the form the client
 // resolver compares against.
 //

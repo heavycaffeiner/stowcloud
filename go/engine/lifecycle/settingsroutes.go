@@ -181,7 +181,18 @@ func (e *Engine) adminSettingsPatch(c *fiber.Ctx) error {
 		e.publishSMBSettings(c.UserContext())
 	}
 
-	out := handler.ApplyOutcomeOf(true, !restart, restart, findings)
+	// A stored bind address does not move a socket this process was told to
+	// bind on its command line, and a restart of this image re-reads the same
+	// argument, so it will not apply then either. Stored, then, but not
+	// applied, and the finding says why: answering "applied" would move the
+	// lie the pin removed from the socket onto the screen.
+	applied := !restart
+	if pin := e.pinnedBindFinding(section, body); pin != nil {
+		applied = false
+		findings = append(findings, *pin)
+	}
+
+	out := handler.ApplyOutcomeOf(true, applied, restart, findings)
 	if restart {
 		// What a restart would interrupt, so the operator decides rather than
 		// the server deciding for them. An in-flight upload loses whichever
@@ -191,6 +202,28 @@ func (e *Engine) adminSettingsPatch(c *fiber.Ctx) error {
 		out = out.WithActiveWork(uploads, jobs)
 	}
 	return writeJSON(c, fiber.StatusOK, out)
+}
+
+// pinnedBindFinding reports a stored bind address that will not take effect.
+//
+// Nil unless this save names one and the process was started with an address
+// of its own. The finding is not blocking: the value is worth storing, since
+// a start without the flag will use it. What it must not do is read as
+// applied while the socket is somewhere else.
+func (e *Engine) pinnedBindFinding(section string, body map[string]any) *check.Finding {
+	if section != "network" || !e.BindPinned() {
+		return nil
+	}
+	stored, named := body["bind"].(string)
+	if !named || stored == "" {
+		return nil
+	}
+	return &check.Finding{
+		Section:   section,
+		Field:     "bind",
+		ReasonKey: "settings.bind_pinned_by_flag",
+		Args:      []string{"stored", stored},
+	}
 }
 
 // activeWork counts what a restart would interrupt.

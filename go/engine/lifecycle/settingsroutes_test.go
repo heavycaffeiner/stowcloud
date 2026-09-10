@@ -702,3 +702,75 @@ func TestAStoredListenAddressStillMovesTheListener(t *testing.T) {
 		t.Error("a saved address never reached the hook")
 	}
 }
+
+// Storing an address a pinned process will not use says so.
+//
+// The save is worth keeping, since a start without the argument uses it. What
+// it must not do is answer "applied" while the socket is somewhere else,
+// which is the same lie the pin removed, moved onto the screen.
+func TestSavingABindAddressOnAPinnedProcessIsStoredNotApplied(t *testing.T) {
+	t.Parallel()
+	e, base, cookie, csrf := bindEngine(t)
+	e.OnBindChange("127.0.0.1:19999", true, func(string) {})
+
+	status, body := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/network",
+		cookie, csrf, map[string]any{"bind": "0.0.0.0:8443"})
+	if status != http.StatusOK {
+		t.Fatalf("saving answered %d: %v", status, body)
+	}
+	if !boolField(body, "stored") {
+		t.Errorf("the address was not stored: %v", body)
+	}
+	if boolField(body, "applied") {
+		t.Errorf("the save claims the address is in effect: %v", body)
+	}
+
+	var named bool
+	for _, f := range findingsOf(t, body) {
+		if f["reason"] == "settings.bind_pinned_by_flag" {
+			named = true
+			if f["field"] != "bind" {
+				t.Errorf("the finding names field %v", f["field"])
+			}
+		}
+	}
+	if !named {
+		t.Errorf("nothing says why it is not in effect: %v", body)
+	}
+}
+
+// An unpinned process answers the same save as applied, which is the case
+// this must not have broken.
+func TestSavingABindAddressWithoutAPinIsApplied(t *testing.T) {
+	t.Parallel()
+	e, base, cookie, csrf := bindEngine(t)
+	e.OnBindChange("127.0.0.1:19999", false, func(string) {})
+
+	status, body := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/network",
+		cookie, csrf, map[string]any{"bind": "127.0.0.1:19997"})
+	if status != http.StatusOK {
+		t.Fatalf("saving answered %d: %v", status, body)
+	}
+	if !boolField(body, "applied") {
+		t.Errorf("a stored address that does move the listener reads as not applied: %v", body)
+	}
+}
+
+// findingsOf reads the outcome's findings as maps, which is the shape the
+// screen iterates.
+func findingsOf(t *testing.T, body map[string]any) []map[string]any {
+	t.Helper()
+	raw, ok := body["findings"].([]any)
+	if !ok {
+		t.Fatalf("the outcome carries no findings list: %v", body)
+	}
+	out := make([]map[string]any, 0, len(raw))
+	for _, entry := range raw {
+		f, fok := entry.(map[string]any)
+		if !fok {
+			t.Fatalf("a finding is %T, not an object", entry)
+		}
+		out = append(out, f)
+	}
+	return out
+}

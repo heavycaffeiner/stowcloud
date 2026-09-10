@@ -746,6 +746,7 @@
   "settings.asks_6_digit_code_from": "Asks for a 6-digit code from your authenticator app when you sign in. Turning it off does not sign you out: your password confirms it on the spot.",
   "settings.at_least_10_characters_changing": "At least 10 characters. Changing it updates your SMB credentials too.",
   "settings.bind_failed": "The listener could not move to that address. The old one is still serving.",
+  "settings.bind_pinned_by_flag": "Stored, but not in effect: this server was started with a listen address of its own and keeps using it. {stored} applies on a start without that argument.",
   "settings.canonical_url_not_an_app_host": "{value} does not name one of the app hosts above.",
   "settings.choosing_system_follows_your_device": "Choosing System follows your device's dark mode setting.",
   "settings.connections": "Connections",

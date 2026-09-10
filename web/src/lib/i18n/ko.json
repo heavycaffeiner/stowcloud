@@ -746,6 +746,7 @@
   "settings.asks_6_digit_code_from": "로그인 시 인증 앱의 6자리 코드를 추가로 요구합니다. 해제해도 로그아웃되지 않으며 비밀번호로 즉시 확인합니다.",
   "settings.at_least_10_characters_changing": "최소 10자. 변경하면 SMB 자격 증명도 함께 갱신됩니다.",
   "settings.bind_failed": "리스너를 그 주소로 옮기지 못했습니다. 기존 주소가 계속 서비스 중입니다.",
+  "settings.bind_pinned_by_flag": "저장했지만 적용되지 않았습니다. 이 서버는 실행할 때 지정된 주소를 계속 사용합니다. {stored}는 그 인수 없이 시작할 때 적용됩니다.",
   "settings.canonical_url_not_an_app_host": "{value} 는 위의 앱 호스트 중 어느 것도 아닙니다.",
   "settings.choosing_system_follows_your_device": "시스템을 고르면 기기의 다크 모드 설정을 따라갑니다.",
   "settings.connections": "연결",
