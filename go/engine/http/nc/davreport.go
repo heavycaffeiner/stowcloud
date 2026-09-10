@@ -15,6 +15,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/limits"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/search"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/search/svc"
 )
 
@@ -133,7 +134,10 @@ func (s *Server) davSearch(w http.ResponseWriter, r *http.Request, p Principal, 
 	}
 
 	scopeVpath := joinComponents(scopeComponents(sq.ScopeHref))
-	limit := boundSearchLimit(sq.Limit)
+	// A body that names no row count is asking for the answer, not for the
+	// first page of it: the phone's own search sends exactly that, and a
+	// hundred rows of a thousand matches reads as "this is all there is".
+	limit, complete := searchRowsOf(sq.Limit)
 	href := searchHrefTarget(t, s.loginNameOf(ctx, p))
 	ownerID, ownerName := s.ownerNames(ctx, p)
 	favSet := s.favoriteSet(ctx, p, query)
@@ -156,16 +160,16 @@ func (s *Server) davSearch(w http.ResponseWriter, r *http.Request, p Principal, 
 
 	case hasContentTypeLike(sq.Where):
 		lower, upper := searchWindow(sq.Where)
-		entries = s.searchByMedia(ctx, p, scopeVpath, lower, upper, limit, sq.Descending)
+		entries = s.searchByMedia(ctx, p, scopeVpath, lower, upper, limit, complete, sq.Descending)
 
 	case hasNameLike(sq.Where):
 		if lit, ok := findNameLike(sq.Where); ok {
-			entries = s.searchByName(ctx, p, scopeVpath, lit, limit)
+			entries = s.searchByName(ctx, p, scopeVpath, lit, limit, complete)
 		}
 
 	case hasTimeComparison(sq.Where):
 		lower, _ := searchWindow(sq.Where)
-		entries = s.searchByModTime(ctx, p, scopeVpath, lower, limit, sq.Descending)
+		entries = s.searchByModTime(ctx, p, scopeVpath, lower, limit, complete, sq.Descending)
 	}
 
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
@@ -241,14 +245,20 @@ func scopeComponents(href string) []string {
 	return out
 }
 
-// boundSearchLimit applies the shared search ceiling to a client-supplied
-// row count, the same policy the unified search endpoints use: an absent
-// limit asks for a page, never for everything a query matches.
-func boundSearchLimit(n int) int {
+// searchRowsOf reads a client-supplied row count.
+//
+// A stated count is honoured as stated, since the client is paging and knows
+// what it asked for. An absent one asks for everything the query matches,
+// which is what the reference server answers and what the phone's search
+// screen expects: it sends no count at all.
+//
+// The second value says which of the two happened, because "no ceiling" is
+// not a number a limit field can hold.
+func searchRowsOf(n int) (limit int, complete bool) {
 	if n <= 0 {
-		return searchLimitDefault
+		return 0, true
 	}
-	return min(n, searchLimitMax)
+	return n, false
 }
 
 // searchByFileID answers oc:fileid = eq, the one query the client opens the
@@ -273,9 +283,11 @@ func (s *Server) searchByFileID(ctx context.Context, p Principal, literal string
 	return []searchHit{{res: res, entry: entry, vpath: vpath}}
 }
 
-// searchByName answers d:like on d:displayname: the index when one is
-// wired, a bounded scoped walk otherwise.
-func (s *Server) searchByName(ctx context.Context, p Principal, scopeVpath, literal string, limit int) []searchHit {
+// searchByName answers d:like on d:displayname, inside the scope the request
+// named and to the end when the request named no limit.
+func (s *Server) searchByName(
+	ctx context.Context, p Principal, scopeVpath, literal string, limit int, complete bool,
+) []searchHit {
 	pattern := strings.Trim(literal, "%")
 	if pattern == "" {
 		return nil
@@ -283,21 +295,24 @@ func (s *Server) searchByName(ctx context.Context, p Principal, scopeVpath, lite
 	folded := strings.ToLower(pattern)
 
 	if s.deps.Search != nil {
-		sources := s.searchSourcesOf(user(p))
+		sources, ok := s.searchSourcesUnder(ctx, p, scopeVpath)
+		if !ok {
+			return nil
+		}
 		results, err := s.deps.Search.Query(ctx, sources, svc.QueryOptions{
-			Query: pattern, Limit: limit, Scope: scopeVpath,
+			Query: pattern, Limit: limit, Complete: complete, Scope: scopeVpath,
 		})
 		if err != nil {
 			return nil
 		}
 		out := make([]searchHit, 0, len(results.Hits))
 		for _, h := range results.Hits {
-			res, entry, ok := s.searchResolveAt(ctx, p, h.Path)
-			if !ok {
+			res, entry, rok := s.searchResolveAt(ctx, p, h.Path)
+			if !rok {
 				continue
 			}
 			out = append(out, searchHit{res: res, entry: entry, vpath: h.Path})
-			if len(out) >= limit {
+			if !complete && len(out) >= limit {
 				break
 			}
 		}
@@ -309,17 +324,49 @@ func (s *Server) searchByName(ctx context.Context, p Principal, scopeVpath, lite
 		return strings.Contains(strings.ToLower(e.Name), folded)
 	})
 	sort.Slice(hits, func(i, j int) bool { return hits[i].entry.Name < hits[j].entry.Name })
-	if len(hits) > limit {
+	if !complete && len(hits) > limit {
 		hits = hits[:limit]
 	}
 	return hits
+}
+
+// searchSourcesUnder is the set of trees one search may walk.
+//
+// The scope a SEARCH body names is a confinement, not a hint: a client
+// asking about one folder must not be answered with matches from its
+// siblings, which is what a ranking-only scope did. Without a scope the
+// answer is every share the caller reads.
+//
+// False reports that the scope names nothing this caller can search, which
+// is an empty answer rather than an account-wide one.
+func (s *Server) searchSourcesUnder(ctx context.Context, p Principal, scopeVpath string) ([]search.Source, bool) {
+	all := s.searchSourcesOf(user(p))
+	if scopeVpath == "" {
+		return all, true
+	}
+	res, err := s.resolve(ctx, p, scopeVpath, acl.Read)
+	if err != nil {
+		return nil, false
+	}
+	for _, src := range all {
+		if src.Share != uint32(res.Share()) {
+			continue
+		}
+		// Only the starting point moves. A walked path stays relative to the
+		// share root, so the prefix that turns it back into a vpath is still
+		// the share's own label: narrowing it too spelled every hit as
+		// "/Files/reports/reports/file", which resolves to nothing.
+		src.Base = res.Path()
+		return []search.Source{src}, true
+	}
+	return nil, false
 }
 
 // searchByMedia answers the image/video gallery query: a bounded scoped walk
 // filtered by content type and the modification-time window, newest first
 // unless the client asked for the other order.
 func (s *Server) searchByMedia(
-	ctx context.Context, p Principal, scopeVpath string, lowerNs, upperNs int64, limit int, descending bool,
+	ctx context.Context, p Principal, scopeVpath string, lowerNs, upperNs int64, limit int, complete bool, descending bool,
 ) []searchHit {
 	roots := s.searchScopeRoots(ctx, p, scopeVpath)
 	hits := s.walkForSearch(ctx, roots, func(e core.Entry) bool {
@@ -330,7 +377,7 @@ func (s *Server) searchByMedia(
 		return strings.HasPrefix(ct, "image/") || strings.HasPrefix(ct, "video/")
 	})
 	sortByMTime(hits, descending)
-	if len(hits) > limit {
+	if !complete && len(hits) > limit {
 		hits = hits[:limit]
 	}
 	return hits
@@ -339,7 +386,7 @@ func (s *Server) searchByMedia(
 // searchByModTime answers a plain modification-time query through the
 // journal-backed recent listing.
 func (s *Server) searchByModTime(
-	ctx context.Context, p Principal, scopeVpath string, lowerNs int64, limit int, descending bool,
+	ctx context.Context, p Principal, scopeVpath string, lowerNs int64, limit int, complete bool, descending bool,
 ) []searchHit {
 	q := core.RecentQuery{
 		SinceNs: core.RecentSinceOf(lowerNs, s.clk.Now()),
@@ -359,7 +406,7 @@ func (s *Server) searchByModTime(
 		out = append(out, searchHit{res: res, entry: entry, vpath: row.Vpath.String()})
 	}
 	sortByMTime(out, descending)
-	if len(out) > limit {
+	if !complete && len(out) > limit {
 		out = out[:limit]
 	}
 	return out

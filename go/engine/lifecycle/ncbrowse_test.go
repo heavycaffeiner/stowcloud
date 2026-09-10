@@ -3,8 +3,11 @@
 package lifecycle_test
 
 import (
+	"encoding/json"
 	"encoding/xml"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -441,5 +444,194 @@ func TestABadlyNamedFileDoesNotBreakTheListing(t *testing.T) {
 	}
 	if names != 2 {
 		t.Errorf("the listing named %d of the two files:\n%s", names, body)
+	}
+}
+
+// searchResponses decodes a multistatus into the hrefs it named and how many
+// of them are collections.
+func searchResponses(t *testing.T, body []byte) (hrefs []string, collections int) {
+	t.Helper()
+	var doc struct {
+		Responses []struct {
+			Href     string `xml:"href"`
+			Propstat []struct {
+				Prop struct {
+					ResourceType struct {
+						Collection *struct{} `xml:"collection"`
+					} `xml:"resourcetype"`
+				} `xml:"prop"`
+			} `xml:"propstat"`
+		} `xml:"response"`
+	}
+	if err := xml.Unmarshal(body, &doc); err != nil {
+		t.Fatalf("the search is not well formed: %v\n%s", err, body)
+	}
+	for _, r := range doc.Responses {
+		hrefs = append(hrefs, r.Href)
+		for _, ps := range r.Propstat {
+			if ps.Prop.ResourceType.Collection != nil {
+				collections++
+				break
+			}
+		}
+	}
+	return hrefs, collections
+}
+
+// searchBody spells the request the phone's search screen sends: a name
+// LIKE over a scope, and a row count only when the client states one.
+func searchBody(login, scope, literal string, rows int) string {
+	limit := ""
+	if rows > 0 {
+		limit = `<d:limit><d:nresults>` + strconv.Itoa(rows) + `</d:nresults></d:limit>`
+	}
+	return `<?xml version="1.0"?><d:searchrequest xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">` +
+		`<d:basicsearch><d:select><d:prop><d:displayname/><d:resourcetype/></d:prop></d:select>` +
+		`<d:from><d:scope><d:href>/files/` + login + scope + `</d:href><d:depth>infinity</d:depth></d:scope></d:from>` +
+		`<d:where><d:like><d:prop><d:displayname/></d:prop><d:literal>%` + literal + `%</d:literal></d:like></d:where>` +
+		`<d:orderby/>` + limit + `</d:basicsearch></d:searchrequest>`
+}
+
+// seedSearchCorpus writes folders and files whose names all match "target",
+// more of them than the old hundred-row page.
+func seedSearchCorpus(t *testing.T, host string) (files, dirs int) {
+	t.Helper()
+	for i := range 12 {
+		dir := filepath.Join(host, "target-dir-"+strconv.Itoa(i))
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatalf("seeding a folder: %v", err)
+		}
+		dirs++
+		for j := range 12 {
+			name := filepath.Join(dir, "target-"+strconv.Itoa(i)+"-"+strconv.Itoa(j)+".txt")
+			if err := os.WriteFile(name, []byte("x"), 0o600); err != nil {
+				t.Fatalf("seeding a file: %v", err)
+			}
+			files++
+		}
+	}
+	return files, dirs
+}
+
+// The phone's search screen states no row count, and it means it: every
+// match belongs in the answer. A hundred rows of a hundred and fifty reads
+// as the whole answer, and the app has no way to ask for the rest.
+func TestASearchWithNoStatedLimitAnswersEveryMatch(t *testing.T) {
+	t.Parallel()
+	f := newNCFixture(t, []byte("hello"))
+	files, dirs := seedSearchCorpus(t, f.host)
+
+	resp, body := f.request(t, "SEARCH", f.base+"/remote.php/dav",
+		strings.NewReader(searchBody(f.login, "", "target", 0)),
+		map[string]string{"Content-Type": "text/xml"})
+	if resp.StatusCode != 207 {
+		t.Fatalf("the search answered %d, want 207", resp.StatusCode)
+	}
+
+	hrefs, collections := searchResponses(t, body)
+	if len(hrefs) != files+dirs {
+		t.Errorf("the search reported %d of %d matches", len(hrefs), files+dirs)
+	}
+	// Folders match a name search too: someone typing a folder's name is
+	// looking for the folder.
+	if collections != dirs {
+		t.Errorf("the search reported %d folders, want %d", collections, dirs)
+	}
+}
+
+// A stated row count is still honoured exactly: a client that pages asked
+// for a page.
+func TestASearchHonoursAStatedLimit(t *testing.T) {
+	t.Parallel()
+	f := newNCFixture(t, []byte("hello"))
+	seedSearchCorpus(t, f.host)
+
+	resp, body := f.request(t, "SEARCH", f.base+"/remote.php/dav",
+		strings.NewReader(searchBody(f.login, "", "target", 7)),
+		map[string]string{"Content-Type": "text/xml"})
+	if resp.StatusCode != 207 {
+		t.Fatalf("the search answered %d, want 207", resp.StatusCode)
+	}
+	if hrefs, _ := searchResponses(t, body); len(hrefs) != 7 {
+		t.Errorf("a search limited to 7 answered %d rows", len(hrefs))
+	}
+}
+
+// The scope in the body is a confinement, not a hint. A folder picker asks
+// about one subtree, and offering it destinations from a sibling is an
+// answer to a question nobody asked.
+func TestASearchStaysInsideItsScope(t *testing.T) {
+	t.Parallel()
+	f := newNCFixture(t, []byte("hello"))
+	seedSearchCorpus(t, f.host)
+
+	scope := "/" + f.share + "/target-dir-3"
+	resp, body := f.request(t, "SEARCH", f.base+"/remote.php/dav",
+		strings.NewReader(searchBody(f.login, scope, "target", 0)),
+		map[string]string{"Content-Type": "text/xml"})
+	if resp.StatusCode != 207 {
+		t.Fatalf("the search answered %d, want 207", resp.StatusCode)
+	}
+
+	hrefs, _ := searchResponses(t, body)
+	if len(hrefs) != 12 {
+		t.Errorf("the scoped search reported %d rows, want the 12 files in that folder", len(hrefs))
+	}
+	for _, href := range hrefs {
+		if !strings.Contains(href, "target-dir-3/") {
+			t.Errorf("a hit outside the scope: %s", href)
+		}
+	}
+}
+
+// The unified search panel reads a title, a path and a folder to open. A
+// folder is a result like any other there, and the path has to be the one
+// the account navigates: the share-relative one opens a folder that does
+// not exist.
+func TestTheUnifiedSearchNamesFoldersAndNavigablePaths(t *testing.T) {
+	t.Parallel()
+	f := newNCFixture(t, []byte("hello"))
+	if err := os.MkdirAll(filepath.Join(f.host, "target-dir"), 0o700); err != nil {
+		t.Fatalf("seeding a folder: %v", err)
+	}
+	writeHostFile(t, f.host, "target-file.txt", []byte("x"))
+
+	resp, body := f.request(t, "GET",
+		f.base+"/ocs/v2.php/search/providers/files/search?term=target&limit=50&format=json",
+		nil, map[string]string{"Accept": "application/json"})
+	if resp.StatusCode != 200 {
+		t.Fatalf("the unified search answered %d\n%s", resp.StatusCode, body)
+	}
+
+	var doc struct {
+		OCS struct {
+			Data struct {
+				Entries []struct {
+					Title      string `json:"title"`
+					Subline    string `json:"subline"`
+					Attributes struct {
+						Path string `json:"path"`
+					} `json:"attributes"`
+				} `json:"entries"`
+			} `json:"data"`
+		} `json:"ocs"`
+	}
+	if err := json.Unmarshal(body, &doc); err != nil {
+		t.Fatalf("the answer does not parse: %v\n%s", err, body)
+	}
+
+	byTitle := map[string]string{}
+	for _, e := range doc.OCS.Data.Entries {
+		byTitle[e.Title] = e.Attributes.Path
+	}
+	folder, hasFolder := byTitle["target-dir"]
+	if !hasFolder {
+		t.Errorf("the folder is missing from the results: %v", byTitle)
+	}
+	if want := "/" + f.share + "/target-dir"; hasFolder && folder != want {
+		t.Errorf("the folder is at %q, want %q", folder, want)
+	}
+	if file, ok := byTitle["target-file.txt"]; !ok || file != "/"+f.share+"/target-file.txt" {
+		t.Errorf("the file is at %q, want %q", file, "/"+f.share+"/target-file.txt")
 	}
 }

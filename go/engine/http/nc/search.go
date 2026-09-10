@@ -86,9 +86,9 @@ func (s *Server) searchFilesByName(c *fiber.Ctx, p Principal) (Val, bool, *Error
 
 	entries := make([]Val, 0, len(results.Hits))
 	for _, h := range results.Hits {
-		if h.IsDir {
-			continue
-		}
+		// Folders included. A name search that answers with files alone
+		// leaves the folder someone typed the name of out of its own
+		// result list, which reads as "no such folder".
 		if v, ok := s.searchEntryAt(ctx, p, h.Path); ok {
 			entries = append(entries, v)
 		}
@@ -164,7 +164,10 @@ func (s *Server) searchEntryAt(ctx context.Context, p Principal, vpath string) (
 	}
 	id := s.fileID(ctx, entry)
 
-	path := "/" + res.Path().String()
+	// The vpath, not the share-relative path a resolution carries: a result
+	// under the share labelled "Files" lives at "/Files/reports/x.pdf", and
+	// reporting "/reports/x.pdf" sent the app to a folder that is not there.
+	path := "/" + strings.Trim(vpath, "/")
 	parent := parentOf(path)
 	return Obj(
 		P("thumbnailUrl", Str(previewURL(id))),

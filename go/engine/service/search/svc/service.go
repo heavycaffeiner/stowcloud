@@ -176,10 +176,15 @@ type QueryOptions struct {
 	WithMetadata bool
 	// Filter narrows what is reported. The zero value reports everything.
 	Filter search.Filter
-	// Stream receives hits as they are found, and changes what a query is: it
-	// runs to completion, with no result ceiling and no deadline, because a
-	// caller reading matches as they arrive has nothing to gain from being cut
-	// off partway. Results then carries no hits, they all went to the callback.
+	// Complete asks for every match: no result ceiling, no deadline, and the
+	// walk rather than the index, which holds no folders and trails the
+	// filesystem. It is what a caller with somewhere to put the whole answer
+	// and no way to ask for a second page needs.
+	Complete bool
+	// Stream receives hits as they are found. It implies Complete, since a
+	// caller reading matches as they arrive has nothing to gain from being
+	// cut off partway; Results then carries no hits, they all went to the
+	// callback.
 	//
 	// Calls are serialised and block the walk, which is how a consumer that
 	// stops reading stops the search.
@@ -211,9 +216,10 @@ func (s *Service) Query(ctx context.Context, sources []search.Source, opt QueryO
 		return Results{}, limits.Exceed("search query", limits.SearchQueryBytes, int64(len(opt.Query)))
 	}
 	if opt.Stream != nil {
-		// A ceiling on a stream would be a "load more" the caller cannot ask
-		// for: the connection is already open and every further match is one
-		// more frame down it.
+		opt.Complete = true
+	}
+	if opt.Complete {
+		// A ceiling here would be a "load more" the caller cannot ask for.
 		opt.Limit = 0
 	} else if opt.Limit <= 0 || opt.Limit > limits.SearchResults {
 		opt.Limit = limits.SearchResults
@@ -268,10 +274,10 @@ func (s *Service) Query(ctx context.Context, sources []search.Source, opt QueryO
 // Two queries it cannot. Folders are never indexed, so a folders-only query
 // asked of the index comes back empty rather than short. And the index is a
 // cache that trails the filesystem: a file created since the updater last ran
-// is not in it, which a bounded query can live with and a streamed one, whose
+// is not in it, which a bounded query can live with and a complete one, whose
 // whole promise is every match, cannot. Both walk.
 func indexCanAnswer(opt QueryOptions) bool {
-	return opt.Stream == nil && opt.Filter.Kind != search.KindDir
+	return !opt.Complete && opt.Filter.Kind != search.KindDir
 }
 
 func (s *Service) walk(
@@ -284,6 +290,7 @@ func (s *Service) walk(
 		Needle:       needle,
 		Filter:       opt.Filter,
 		Limit:        opt.Limit,
+		Unbounded:    opt.Complete,
 		Scope:        opt.Scope,
 		Threads:      threadsFor(s.cpus),
 		WithMetadata: opt.WithMetadata,
@@ -310,14 +317,15 @@ func (s *Service) walk(
 	}, nil
 }
 
-// walkContext bounds the walk in time, except for a streamed one.
+// walkContext bounds the walk in time, except for a complete one.
 //
 // The deadline exists to keep an interactive request from waiting on a whole
-// tree. A stream is not waiting: its first hits are already on the client's
-// screen, so cutting it off partway would discard the rest of an answer that
-// was arriving. The caller's own cancellation still stops it.
+// tree, and it answers with whatever was found so far. A caller that asked
+// for every match has no use for that: a list cut at three seconds looks
+// exactly like a list of everything there is. The caller's own cancellation
+// still stops it.
 func (s *Service) walkContext(ctx context.Context, opt QueryOptions) (context.Context, context.CancelFunc) {
-	if opt.Stream != nil {
+	if opt.Complete {
 		return context.WithCancel(ctx)
 	}
 	return context.WithTimeout(ctx, s.walkDeadline())

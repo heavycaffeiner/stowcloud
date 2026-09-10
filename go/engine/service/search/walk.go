@@ -47,10 +47,15 @@ type WalkOptions struct {
 	// Filter narrows which matched entries are reported. The zero value
 	// reports every one of them.
 	Filter Filter
-	// Limit bounds the result set. A truncated result declares itself rather than
-	// appearing complete. Ignored when Emit is set, since a caller reading hits
-	// as they are found has nothing for a ceiling to shorten.
+	// Limit bounds the result set. A truncated result declares itself rather
+	// than appearing complete. Zero takes the compiled-in ceiling, which is
+	// why an unbounded walk says so with the field below rather than with a
+	// zero here.
 	Limit int
+	// Unbounded reports every match, however many there are. The caller has
+	// somewhere to put them and nothing to page with, which is what a
+	// streamed search and a client-stated "no limit" both mean.
+	Unbounded bool
 	// Scope names the directory the caller is searching from, feeding the
 	// ranking's in-scope term.
 	Scope string
@@ -113,7 +118,7 @@ func Walk(ctx context.Context, sources []Source, opt WalkOptions) (WalkResult, e
 	if opt.Threads <= 0 {
 		opt.Threads = 1
 	}
-	if opt.Limit <= 0 {
+	if opt.Limit <= 0 && !opt.Unbounded {
 		opt.Limit = limits.SearchResults
 	}
 
@@ -358,7 +363,7 @@ func (w *walker) finish() WalkResult {
 	hits := w.hitsOf(w.pending)
 
 	SortHits(hits)
-	if len(hits) > w.opt.Limit {
+	if !w.opt.Unbounded && len(hits) > w.opt.Limit {
 		hits = hits[:w.opt.Limit]
 		out.Truncated = true
 	}
