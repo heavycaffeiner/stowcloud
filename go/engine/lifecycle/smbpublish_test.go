@@ -21,6 +21,7 @@ import (
 // daemon runs. To a client that is a share which exists and refuses, which is
 // harder to understand than a share that is simply absent while its disk is.
 func TestABrokenShareIsNotRendered(t *testing.T) {
+	t.Parallel()
 	defs := []core.ShareDef{
 		{ID: 1, Name: "documents", Host: "/srv/documents"},
 		{ID: 2, Name: "archive", Host: "/srv/archive", BrokenReason: "not_found"},
@@ -39,6 +40,7 @@ func TestABrokenShareIsNotRendered(t *testing.T) {
 // exporting the share would hand out ciphertext under a name that looks like
 // an ordinary document.
 func TestAnEncryptedShareIsNotRendered(t *testing.T) {
+	t.Parallel()
 	defs := []core.ShareDef{
 		{ID: 1, Name: "documents", Host: "/srv/documents"},
 		{ID: 2, Name: "secrets", Host: "/srv/secrets"},
@@ -56,6 +58,7 @@ func TestAnEncryptedShareIsNotRendered(t *testing.T) {
 // A non-local share has no host path for this format to render into a share
 // stanza, so it is excluded the same way a broken share is.
 func TestANonLocalShareIsNotRendered(t *testing.T) {
+	t.Parallel()
 	defs := []core.ShareDef{
 		{ID: 1, Name: "documents", Host: "/srv/documents"},
 		{ID: 2, Name: "bucket", Backend: core.BackendS3},
@@ -73,6 +76,7 @@ func TestANonLocalShareIsNotRendered(t *testing.T) {
 // The share's creation modes travel with it, since the daemon applies them to
 // what it creates and a zero there would write files nobody can read.
 func TestARenderedShareCarriesItsModes(t *testing.T) {
+	t.Parallel()
 	got := publishShares([]core.ShareDef{{
 		ID: 1, Name: "documents", Host: "/srv/documents",
 		Policy:           vfs.SharePolicy{ModeFile: 0o640, ModeDir: 0o750},
@@ -98,6 +102,7 @@ func TestARenderedShareCarriesItsModes(t *testing.T) {
 // The protocol has no view-only mode. Rendering such a grant as readable would
 // hand over the file the web interface refuses to send.
 func TestAViewOnlyGrantIsNotReadableOverTheProtocol(t *testing.T) {
+	t.Parallel()
 	user := int64(7)
 	rows := []state.GrantRow{
 		{ID: 1, User: &user, Share: 1, Allow: uint16(acl.Read)},
@@ -121,6 +126,7 @@ func TestAViewOnlyGrantIsNotReadableOverTheProtocol(t *testing.T) {
 // The format has no way to express a permission that starts below the root, so
 // rendering one as whole-share would grant the entire share.
 func TestASubpathGrantIsNotWholeShare(t *testing.T) {
+	t.Parallel()
 	user := int64(7)
 	got := grantsOf([]state.GrantRow{
 		{ID: 1, User: &user, Share: 1, Subpath: "", Allow: uint16(acl.Read | acl.Download)},
@@ -139,6 +145,7 @@ func TestASubpathGrantIsNotWholeShare(t *testing.T) {
 // The renderer drops such a user from that share entirely, because this format
 // is additive and cannot express a denial that survives the other lists.
 func TestAnyDenyBitMarksTheGrant(t *testing.T) {
+	t.Parallel()
 	user := int64(7)
 	got := grantsOf([]state.GrantRow{
 		{ID: 1, User: &user, Share: 1, Allow: uint16(acl.Read | acl.Download)},
@@ -154,6 +161,7 @@ func TestAnyDenyBitMarksTheGrant(t *testing.T) {
 
 // A group grant carries no account, which this format cannot express.
 func TestAGroupGrantNamesNoAccount(t *testing.T) {
+	t.Parallel()
 	group := int64(3)
 	got := grantsOf([]state.GrantRow{
 		{ID: 1, Group: &group, Share: 1, Allow: uint16(acl.Read | acl.Download)},
@@ -170,6 +178,7 @@ func TestAGroupGrantNamesNoAccount(t *testing.T) {
 // takes the whole server settings page down and leaves it showing a spinner
 // that never resolves.
 func TestTheAgentViewSendsEmptyListsRatherThanNull(t *testing.T) {
+	t.Parallel()
 	// What the sidecar reports when a push found nothing to complain about:
 	// every list absent rather than empty, which is how Go hands one back.
 	e := &Engine{}

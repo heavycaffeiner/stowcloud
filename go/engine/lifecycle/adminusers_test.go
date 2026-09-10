@@ -23,7 +23,7 @@ func adminEngine(t *testing.T) (base string, adminCookie *http.Cookie, adminCSRF
 	t.Helper()
 	ctx := context.Background()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -64,6 +64,7 @@ func adminEngine(t *testing.T) (base string, adminCookie *http.Cookie, adminCSRF
 // the routes it happens to know about: a route added without the gate fails
 // here on the day it is added.
 func TestNoAdminRouteAnswersAnOrdinaryAccount(t *testing.T) {
+	t.Parallel()
 	base, adminCookie, adminCSRF, plainCookie, plainCSRF := adminEngine(t)
 
 	var checked int
@@ -121,6 +122,7 @@ func concretePath(pattern string) string {
 // able to create accounts. The chain decides this, not the handlers, so it is
 // checked separately from the identity gate above.
 func TestAnAppPasswordCannotReachAdmin(t *testing.T) {
+	t.Parallel()
 	base, token, _ := bootWithUser(t)
 
 	status, body := appPasswordAuthed(t, http.MethodGet, base+"/api/v1/admin/users", token)
@@ -131,6 +133,7 @@ func TestAnAppPasswordCannotReachAdmin(t *testing.T) {
 
 // An administrator lists accounts, and no credential material appears.
 func TestListingAccounts(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	status, raw := withCookie(t, http.MethodGet, base+"/api/v1/admin/users", cookie)
@@ -168,6 +171,7 @@ func TestListingAccounts(t *testing.T) {
 
 // Creating an account produces one that can sign in.
 func TestCreatingAnAccount(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	status, body := mutate(t, http.MethodPost, base+"/api/v1/admin/users", cookie, csrf,
@@ -204,6 +208,7 @@ func TestCreatingAnAccount(t *testing.T) {
 // to bypass it in the old tree: one name the credential file cannot carry
 // costs every account its file-sharing access.
 func TestAnInvalidAccountNameIsRefused(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	for _, name := range []string{"", "-leading", "Upper", "with space", "sym!bol",
@@ -218,6 +223,7 @@ func TestAnInvalidAccountNameIsRefused(t *testing.T) {
 
 // A password under the floor is refused when an administrator sets it too.
 func TestAWeakPasswordIsRefusedOnCreate(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	status, _ := mutate(t, http.MethodPost, base+"/api/v1/admin/users", cookie, csrf,
@@ -229,6 +235,7 @@ func TestAWeakPasswordIsRefusedOnCreate(t *testing.T) {
 
 // Disabling an account stops it signing in.
 func TestDisablingAnAccount(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, plainCookie, _ := adminEngine(t)
 
 	id := accountID(t, base, cookie, loginName)
@@ -282,6 +289,7 @@ func accountID(t *testing.T, base string, cookie *http.Cookie, login string) str
 // deliberately and which nobody else can undo if they were the only one
 // paying attention.
 func TestAnAdministratorCannotLockThemselvesOut(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	id := accountID(t, base, cookie, "root")
@@ -307,6 +315,7 @@ func TestAnAdministratorCannotLockThemselvesOut(t *testing.T) {
 
 // Deleting an account removes it.
 func TestDeletingAnAccount(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	id := accountID(t, base, cookie, loginName)
@@ -325,6 +334,7 @@ func TestDeletingAnAccount(t *testing.T) {
 
 // Groups can be made, renamed, filled and emptied.
 func TestTheGroupLifecycle(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	status, created := mutate(t, http.MethodPost, base+"/api/v1/admin/groups", cookie, csrf,
@@ -375,6 +385,7 @@ func TestTheGroupLifecycle(t *testing.T) {
 // rendered "could not rename", and the name had in fact changed. This fails
 // against that.
 func TestRenamingAGroupAnswersTheWholeGroup(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	status, created := mutate(t, http.MethodPost, base+"/api/v1/admin/groups", cookie, csrf,
@@ -454,6 +465,7 @@ func groupHasMember(t *testing.T, base string, cookie *http.Cookie, group, user 
 
 // The audit log records a sign-in and never carries a credential.
 func TestTheAuditLog(t *testing.T) {
+	t.Parallel()
 	base, cookie, _, _, _ := adminEngine(t)
 
 	status, raw := withCookie(t, http.MethodGet, base+"/api/v1/admin/audit", cookie)
@@ -489,6 +501,7 @@ func TestTheAuditLog(t *testing.T) {
 // event the deployment has ever recorded, and the parameter is one a caller
 // controls entirely.
 func TestTheAuditLimitIsBounded(t *testing.T) {
+	t.Parallel()
 	base, cookie, _, _, _ := adminEngine(t)
 
 	for _, limit := range []string{"1", "999999", "-5", "0", "abc"} {
@@ -524,9 +537,10 @@ func TestTheAuditLimitIsBounded(t *testing.T) {
 // and only this check stands between an operator and deleting the account
 // they are signed in as.
 func TestAnAdministratorCannotDeleteThemselvesWithASecondPresent(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -576,9 +590,10 @@ func TestAnAdministratorCannotDeleteThemselvesWithASecondPresent(t *testing.T) {
 
 // The same, for disabling.
 func TestAnAdministratorCannotDisableThemselvesWithASecondPresent(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatal(err)
 	}

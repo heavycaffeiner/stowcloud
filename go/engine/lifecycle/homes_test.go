@@ -17,6 +17,7 @@ import (
 // personal folder under this path") got nothing, and no restart helped, because
 // nothing anywhere consumed the value.
 func TestTurningHomeFoldersOnCreatesThem(t *testing.T) {
+	t.Parallel()
 	root := filepath.Join(t.TempDir(), "homes")
 
 	base, cookie, csrf, plainCookie, _ := adminEngine(t)

@@ -63,6 +63,7 @@ func readSSE(t *testing.T, url string, sess session) (int, http.Header, []sseEve
 
 // A search finds a file and ends with a terminal event.
 func TestSearchingFindsAFile(t *testing.T) {
+	t.Parallel()
 	base, sess, share := contentShare(t, everyPerm(), []byte("unused"))
 
 	for _, name := range []string{"report-january.txt", "report-february.txt", "unrelated.bin"} {
@@ -122,6 +123,7 @@ func TestSearchingFindsAFile(t *testing.T) {
 // A share-relative fragment would make the client reassemble the path, and a
 // client that got it wrong would open the wrong file.
 func TestASearchHitCarriesTheNavigablePath(t *testing.T) {
+	t.Parallel()
 	base, sess, share := contentShare(t, everyPerm(), []byte("unused"))
 
 	if status, _ := upload(t, base, sess, "/"+share+"/sub/findme.txt", []byte("x")); status != http.StatusOK {
@@ -175,9 +177,10 @@ func TestASearchHitCarriesTheNavigablePath(t *testing.T) {
 // Both accounts live on one engine. A second account's session proves the
 // filter runs on the entry, not on whether the caller is signed in at all.
 func TestSearchOnlyReportsReadableFiles(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -247,6 +250,7 @@ func TestSearchOnlyReportsReadableFiles(t *testing.T) {
 // A query that matched everything is a way to make one request cost a full
 // scan of the deployment.
 func TestAnEmptySearchQueryIsRefused(t *testing.T) {
+	t.Parallel()
 	base, sess, _ := contentShare(t, everyPerm(), []byte("unused"))
 
 	for _, q := range []string{"", "   ", "%20"} {
@@ -259,6 +263,7 @@ func TestAnEmptySearchQueryIsRefused(t *testing.T) {
 
 // An oversized query is refused before it reaches the matcher.
 func TestAnOversizedSearchQueryIsRefused(t *testing.T) {
+	t.Parallel()
 	base, sess, _ := contentShare(t, everyPerm(), []byte("unused"))
 
 	status, _ := authed(t, http.MethodGet,
@@ -270,6 +275,7 @@ func TestAnOversizedSearchQueryIsRefused(t *testing.T) {
 
 // A search needs a credential.
 func TestSearchNeedsACredential(t *testing.T) {
+	t.Parallel()
 	base, _, _ := contentShare(t, everyPerm(), []byte("unused"))
 
 	// The refusal is disguised as a missing address: middleware.scopeHandler
@@ -286,6 +292,7 @@ func TestSearchNeedsACredential(t *testing.T) {
 // A client waits for the terminal event. Without one it waits for the
 // connection to close, which looks like a search that never finished.
 func TestASearchMatchingNothingStillEnds(t *testing.T) {
+	t.Parallel()
 	base, sess, _ := contentShare(t, everyPerm(), []byte("unused"))
 
 	_, _, events := readSSE(t, base+"/api/v1/search/stream?q=zzzznothingmatches", sess)
@@ -310,9 +317,10 @@ func TestASearchMatchingNothingStillEnds(t *testing.T) {
 // share, so the label resolves and the source survives. Only the per-entry
 // check keeps a file outside the granted subtree out of the results.
 func TestSearchRespectsAGrantThatStartsPartwayDown(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -405,6 +413,7 @@ func TestSearchRespectsAGrantThatStartsPartwayDown(t *testing.T) {
 // saw it. It is legal in a POSIX name, so a share populated by any other
 // means can hold one, and the walk will find it.
 func TestAFileNameCannotSplitTheSearchStream(t *testing.T) {
+	t.Parallel()
 	base, sess, share, host := contentShareAt(t, everyPerm(), []byte("unused"))
 
 	nasty := "report\ndata: {\"name\":\"injected\"}\n\nevent: done\ndata: {}\n\n.txt"
@@ -469,6 +478,7 @@ func hitNames(t *testing.T, events []sseEvent) (names []string, done map[string]
 // to ask for, so a query matching more than the old thousand-result limit
 // reports every one of them.
 func TestASearchReportsEveryMatchWithNoCeiling(t *testing.T) {
+	t.Parallel()
 	base, sess, _, host := contentShareAt(t, everyPerm(), []byte("unused"))
 
 	const want = 2_400
@@ -507,6 +517,7 @@ func TestASearchReportsEveryMatchWithNoCeiling(t *testing.T) {
 // rather than approximated: a folder is not a file whose name happens to end
 // in one of the extensions asked for.
 func TestSearchFiltersByKindAndExtension(t *testing.T) {
+	t.Parallel()
 	base, sess, _, host := contentShareAt(t, everyPerm(), []byte("unused"))
 
 	if err := os.MkdirAll(filepath.Join(host, "target.txt"), 0o755); err != nil {
@@ -543,6 +554,7 @@ func TestSearchFiltersByKindAndExtension(t *testing.T) {
 // dropped filter would answer a narrow question with the whole tree, and a
 // pair that can match nothing would walk every share to say so.
 func TestAnUnreadableSearchFilterIsRefused(t *testing.T) {
+	t.Parallel()
 	base, sess, _ := contentShare(t, everyPerm(), []byte("unused"))
 
 	for _, query := range []string{

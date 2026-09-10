@@ -16,6 +16,7 @@ import (
 // them spends seconds doing it while testing the same arithmetic. The handler
 // test covers that the parameter reaches this function at all.
 func TestTheAuditLimitIsAlwaysBounded(t *testing.T) {
+	t.Parallel()
 	for _, raw := range []string{
 		"", "0", "-1", "-999999", "abc", "1", "99", "100", "1000", "1001",
 		"999999999", "9223372036854775807", "99999999999999999999",
@@ -44,6 +45,7 @@ func TestTheAuditLimitIsAlwaysBounded(t *testing.T) {
 // The bound lives in the core now, because three surfaces answer this listing
 // and a ceiling enforced by only one of them is not a ceiling.
 func TestTheRecentLimitIsAlwaysBounded(t *testing.T) {
+	t.Parallel()
 	for _, n := range []int{
 		0, -1, 1, 500, 501, 999999999, math.MaxInt32, math.MaxInt,
 	} {

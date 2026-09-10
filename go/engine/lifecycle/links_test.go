@@ -30,6 +30,7 @@ func mintLink(t *testing.T, base string, sess session, share string) []byte {
 // string, the permissions travel as names, and a drop link is the same request
 // with create alone over a directory.
 func TestTheCreateBodyTheInterfaceSendsMintsALink(t *testing.T) {
+	t.Parallel()
 	base, sess, share := shareWith(t, everyPerm())
 
 	// A fixed instant in 2100, the same spelling the patch tests use. The
@@ -83,6 +84,7 @@ func TestTheCreateBodyTheInterfaceSendsMintsALink(t *testing.T) {
 // held: opening it on a folder showed the link belonging to a file shared
 // earlier, under a heading naming the folder.
 func TestTheLinkListingIsNarrowedToThePathAsked(t *testing.T) {
+	t.Parallel()
 	base, sess, share := shareWith(t, everyPerm())
 
 	if status, body := post(t, base+"/api/v1/links", sess,
@@ -131,6 +133,7 @@ func TestTheLinkListingIsNarrowedToThePathAsked(t *testing.T) {
 // anyone holding it reaches the file, so a listing that carried it would put
 // every link's secret behind one read of the listing.
 func TestALinkTokenIsReturnedOnceAndNeverListed(t *testing.T) {
+	t.Parallel()
 	base, sess, share := shareWith(t, everyPerm())
 
 	minted := mintLink(t, base, sess, share)
@@ -174,6 +177,7 @@ func TestALinkTokenIsReturnedOnceAndNeverListed(t *testing.T) {
 // a different act from reading it, and an account that may read a share is not
 // thereby allowed to publish it.
 func TestMintingALinkNeedsShare(t *testing.T) {
+	t.Parallel()
 	// Everything except Share.
 	base, sess, share := shareWith(t, everyPerm()&^acl.Share)
 
@@ -194,6 +198,7 @@ func TestMintingALinkNeedsShare(t *testing.T) {
 
 // The link a person gets back is theirs, and appears in their own listing.
 func TestAMintedLinkAppearsInItsOwnersListing(t *testing.T) {
+	t.Parallel()
 	base, sess, share := shareWith(t, everyPerm())
 
 	mintLink(t, base, sess, share)
@@ -218,6 +223,7 @@ func TestAMintedLinkAppearsInItsOwnersListing(t *testing.T) {
 // Deleting a link removes it. A revoke that reported success while leaving the
 // link live is how a person believes they unpublished a file.
 func TestDeletingALinkRemovesIt(t *testing.T) {
+	t.Parallel()
 	base, sess, share := shareWith(t, everyPerm())
 
 	minted := mintLink(t, base, sess, share)
@@ -252,6 +258,7 @@ func TestDeletingALinkRemovesIt(t *testing.T) {
 // The link routes need a credential. A link listing served anonymously is
 // every published URL on the deployment served anonymously.
 func TestTheLinkRoutesNeedACredential(t *testing.T) {
+	t.Parallel()
 	base, _, share := shareWith(t, everyPerm())
 
 	// The refusal is disguised as a missing address: middleware.scopeHandler
@@ -271,6 +278,7 @@ func TestTheLinkRoutesNeedACredential(t *testing.T) {
 
 // A link over a path this account cannot reach is refused.
 func TestALinkCannotBeMintedOverAnUnreachablePath(t *testing.T) {
+	t.Parallel()
 	base, sess, _ := shareWith(t, everyPerm())
 
 	for _, path := range []string{"/../etc/passwd", "/nothing/here", "/work/../../tmp"} {
@@ -288,6 +296,7 @@ func TestALinkCannotBeMintedOverAnUnreachablePath(t *testing.T) {
 // A client told a revoke succeeded stops trying, and believes a URL it never
 // unpublished is dead.
 func TestDeletingAnAbsentLinkIsRefused(t *testing.T) {
+	t.Parallel()
 	base, sess, _ := shareWith(t, everyPerm())
 
 	status, body := authed(t, http.MethodDelete, base+"/api/v1/links/999999", sess)
@@ -302,6 +311,7 @@ func TestDeletingAnAbsentLinkIsRefused(t *testing.T) {
 // One account cannot delete another's link. Publishing is the owner's decision
 // and so is withdrawing it.
 func TestOneAccountCannotDeleteAnothersLink(t *testing.T) {
+	t.Parallel()
 	base, sess, share := shareWith(t, everyPerm())
 
 	minted := mintLink(t, base, sess, share)
@@ -407,6 +417,7 @@ func patchLink(t *testing.T, base string, sess session, id, body string) (int, [
 
 // An update changes the label without touching anything else.
 func TestUpdatingALinkLabel(t *testing.T) {
+	t.Parallel()
 	base, sess, share := shareWith(t, everyPerm())
 	id := linkID(t, base, sess, share)
 
@@ -427,6 +438,7 @@ func TestUpdatingALinkLabel(t *testing.T) {
 // cosmetic: for a password, "leave it" and "remove it" are opposite decisions
 // about who can open the link.
 func TestAbsentAndNullMeanDifferentThings(t *testing.T) {
+	t.Parallel()
 	base, sess, share := shareWith(t, everyPerm())
 	id := linkID(t, base, sess, share)
 
@@ -475,6 +487,7 @@ func TestAbsentAndNullMeanDifferentThings(t *testing.T) {
 // It is a credential in a URL, returned once when the link is minted. A patch
 // response carrying it would put every link's secret behind an ordinary edit.
 func TestAnUpdateNeverReturnsTheToken(t *testing.T) {
+	t.Parallel()
 	base, sess, share := shareWith(t, everyPerm())
 
 	minted := mintLink(t, base, sess, share)
@@ -509,6 +522,7 @@ func TestAnUpdateNeverReturnsTheToken(t *testing.T) {
 // update could add write, a URL handed to somebody would become a way to
 // change the file, which is not what handing one out means.
 func TestAnUpdateCannotWidenALink(t *testing.T) {
+	t.Parallel()
 	base, sess, share := shareWith(t, everyPerm())
 	id := linkID(t, base, sess, share)
 
@@ -550,6 +564,7 @@ func stringsOf(t *testing.T, body map[string]any, name string) []string {
 
 // One account cannot edit another's link.
 func TestUpdatingAnothersLinkIsRefused(t *testing.T) {
+	t.Parallel()
 	base, sess, share := shareWith(t, everyPerm())
 	linkID(t, base, sess, share)
 
@@ -570,6 +585,7 @@ func TestUpdatingAnothersLinkIsRefused(t *testing.T) {
 // back makes the two directions disagree: a client that reads a link, edits
 // its label and sends the object back is refused on a field it never touched.
 func TestABigNumberIsAcceptedInBothSpellings(t *testing.T) {
+	t.Parallel()
 	base, sess, share := shareWith(t, everyPerm())
 
 	// Past 2^53, which is where a JavaScript number stops being exact, and
@@ -605,6 +621,7 @@ func TestABigNumberIsAcceptedInBothSpellings(t *testing.T) {
 // Zero is a real instant in 1970, so a link that took it would read as
 // expired for ever while the caller was told the edit succeeded.
 func TestANonNumericExpiryIsRefused(t *testing.T) {
+	t.Parallel()
 	base, sess, share := shareWith(t, everyPerm())
 	id := linkID(t, base, sess, share)
 
@@ -630,6 +647,7 @@ func TestANonNumericExpiryIsRefused(t *testing.T) {
 
 // A download cap past its width is refused rather than wrapping.
 func TestAnOversizedDownloadCapIsRefused(t *testing.T) {
+	t.Parallel()
 	base, sess, share := shareWith(t, everyPerm())
 	id := linkID(t, base, sess, share)
 
@@ -654,6 +672,7 @@ func TestAnOversizedDownloadCapIsRefused(t *testing.T) {
 // therefore mints a link nobody can ever open, and the response says the link
 // was created.
 func TestALinkMintedWithoutACapIsNotCappedAtZero(t *testing.T) {
+	t.Parallel()
 	base, sess, share := shareWith(t, everyPerm())
 	id := linkID(t, base, sess, share)
 
@@ -669,6 +688,7 @@ func TestALinkMintedWithoutACapIsNotCappedAtZero(t *testing.T) {
 // would be the same defect pointing the other way: a link the owner limited
 // to one download would serve for ever.
 func TestAnExplicitDownloadCapIsKept(t *testing.T) {
+	t.Parallel()
 	base, sess, share := shareWith(t, everyPerm())
 
 	status, body := post(t, base+"/api/v1/links", sess, map[string]any{
@@ -700,6 +720,7 @@ func TestAnExplicitDownloadCapIsKept(t *testing.T) {
 // is how a link is disabled without being deleted. The absent case must not
 // swallow it.
 func TestAnExplicitZeroCapIsKept(t *testing.T) {
+	t.Parallel()
 	base, sess, share := shareWith(t, everyPerm())
 
 	status, body := post(t, base+"/api/v1/links", sess, map[string]any{

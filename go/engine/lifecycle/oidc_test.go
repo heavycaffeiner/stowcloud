@@ -17,6 +17,7 @@ import (
 // Public, because a caller with no session is exactly who is looking at that
 // screen and deciding whether to draw the button.
 func TestSignOnConfigIsPublicAndSaysOffByDefault(t *testing.T) {
+	t.Parallel()
 	base := boot(t)
 
 	resp, err := testClient().Get(base + "/api/v1/auth/oidc/config")
@@ -46,6 +47,7 @@ func TestSignOnConfigIsPublicAndSaysOffByDefault(t *testing.T) {
 // It is the one response an unauthenticated caller can read, so what it says
 // about the deployment is what anybody can learn about it.
 func TestSignOnConfigRevealsNothingAboutTheProvider(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	if status, body := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/oidc",
@@ -81,6 +83,7 @@ func TestSignOnConfigRevealsNothingAboutTheProvider(t *testing.T) {
 
 // Starting a flow with no provider configured is refused, not crashed.
 func TestStartingSignOnWithNoProviderIsRefused(t *testing.T) {
+	t.Parallel()
 	base, _, sess := bootWithUser(t)
 
 	status, _ := authed(t, http.MethodGet, base+"/api/v1/auth/oidc/start", sess)
@@ -91,6 +94,7 @@ func TestStartingSignOnWithNoProviderIsRefused(t *testing.T) {
 
 // A callback carrying no state is refused before anything is consumed.
 func TestACallbackWithoutAStateIsRefused(t *testing.T) {
+	t.Parallel()
 	base := boot(t)
 
 	for _, query := range []string{"", "?code=abc", "?state=abc", "?error=access_denied"} {
@@ -113,6 +117,7 @@ func TestACallbackWithoutAStateIsRefused(t *testing.T) {
 // return path and the redirect URI from the stored flow, so a browser
 // arriving with an invented state has nothing to consume.
 func TestAnInventedStateCompletesNothing(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	if status, _ := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/oidc",
@@ -151,6 +156,7 @@ func TestAnInventedStateCompletesNothing(t *testing.T) {
 // would let somebody who walked past an unlocked screen change how the
 // account authenticates.
 func TestDetachingASignOnLinkNeedsThePassword(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootForLogin(t)
 	cookie, csrf := signedIn(t, base)
 
@@ -174,6 +180,7 @@ func TestDetachingASignOnLinkNeedsThePassword(t *testing.T) {
 // who walked past an unlocked screen could leave themselves a way back in
 // after the session is gone.
 func TestAttachingASignOnLinkNeedsThePassword(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootForLogin(t)
 	cookie, csrf := signedIn(t, base)
 
@@ -197,6 +204,7 @@ func TestAttachingASignOnLinkNeedsThePassword(t *testing.T) {
 // An administrator reads whether an account is linked, and the answer carries
 // no token.
 func TestReadingAnAccountsSignOnLink(t *testing.T) {
+	t.Parallel()
 	base, cookie, _, _, _ := adminEngine(t)
 
 	id := accountID(t, base, cookie, loginName)
@@ -224,6 +232,7 @@ func TestReadingAnAccountsSignOnLink(t *testing.T) {
 
 // The sign-on routes an administrator owns need an administrator.
 func TestTheSignOnAdminRoutesNeedAnAdministrator(t *testing.T) {
+	t.Parallel()
 	base, adminCookie, _, plainCookie, plainCSRF := adminEngine(t)
 
 	id := accountID(t, base, adminCookie, loginName)
@@ -246,10 +255,11 @@ func TestTheSignOnAdminRoutesNeedAnAdministrator(t *testing.T) {
 // unreachable issuer fails the start. What this checks is that the client was
 // built at all, which is what the stored secret makes possible.
 func TestAConfiguredProviderBuildsAClient(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -268,7 +278,7 @@ func TestAConfiguredProviderBuildsAClient(t *testing.T) {
 		t.Fatalf("closing: %v", cerr)
 	}
 
-	reopened, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	reopened, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("reopening: %v", err)
 	}
@@ -304,10 +314,11 @@ func TestAConfiguredProviderBuildsAClient(t *testing.T) {
 // An exchange needs the secret, so a client built without one produces a flow
 // that cannot complete. Off with a line beats a button that always fails.
 func TestAProviderWithoutASecretStaysOff(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -320,7 +331,7 @@ func TestAProviderWithoutASecretStaysOff(t *testing.T) {
 		t.Fatalf("closing: %v", cerr)
 	}
 
-	reopened, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	reopened, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("reopening: %v", err)
 	}

@@ -23,8 +23,9 @@ import (
 
 // SEC-AUTH-07: Admin OIDC unlink must not assign a hardcoded fallback password.
 func TestRegressionAdminOIDCUnlinkDoesNotSetHardcodedPassword(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,6 +68,7 @@ func TestRegressionAdminOIDCUnlinkDoesNotSetHardcodedPassword(t *testing.T) {
 
 // SEC-AUTH-08: Self-service OIDC unlink must verify user password.
 func TestRegressionSelfOIDCUnlinkRequiresPassword(t *testing.T) {
+	t.Parallel()
 	base, e, uid := bootForLogin(t)
 	cookie, csrf := signedIn(t, base)
 	ctx := context.Background()
@@ -102,6 +104,7 @@ func TestRegressionSelfOIDCUnlinkRequiresPassword(t *testing.T) {
 
 // SEC-AUTH-09: Failed TOTP re-enrollment must preserve existing factor.
 func TestRegressionFailedTOTPReEnrollmentPreservesExistingFactor(t *testing.T) {
+	t.Parallel()
 	base, e, uid := bootForLogin(t)
 	cookie, csrf := signedIn(t, base)
 	ctx := context.Background()
@@ -146,6 +149,7 @@ func TestRegressionFailedTOTPReEnrollmentPreservesExistingFactor(t *testing.T) {
 
 // SEC-AUTH-10: WebDAV trash mount must enforce credential permission mask and allowed shares.
 func TestRegressionAppPasswordTrashAndShareScopeEnforced(t *testing.T) {
+	t.Parallel()
 	base, e, uid := bootForLogin(t)
 	ctx := context.Background()
 
@@ -212,6 +216,7 @@ func TestRegressionAppPasswordTrashAndShareScopeEnforced(t *testing.T) {
 
 // SEC-AUTH-11: App password with excessive expiration days must be rejected, preventing overflow.
 func TestRegressionAppPasswordExcessiveExpiryRefused(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootForLogin(t)
 	cookie, csrf := signedIn(t, base)
 
@@ -227,8 +232,9 @@ func TestRegressionAppPasswordExcessiveExpiryRefused(t *testing.T) {
 
 // SEC-SMB-01: Group grants and group deny rules must expand to group members in SMB publication.
 func TestRegressionSMBGroupGrantsExpandedToMembers(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,8 +317,9 @@ func TestRegressionSMBGroupGrantsExpandedToMembers(t *testing.T) {
 
 // SEC-TRASH-02: Subfolder grants must not leak other subfolders' trash entries, allow cross-subfolder restore or purge.
 func TestRegressionTrashSubfolderIsolation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -424,6 +431,7 @@ func TestRegressionTrashSubfolderIsolation(t *testing.T) {
 
 // SEC-UPL-03: Public drop link must enforce RequestBody limit and refuse oversized bodies.
 func TestRegressionPublicDropLinkEnforcesRequestBodyLimit(t *testing.T) {
+	t.Parallel()
 	base, token, _ := linkEngineOverFolderAt(t, acl.Create)
 
 	// Body exceeding limits.RequestBody (1 MiB)
@@ -451,8 +459,9 @@ func TestRegressionPublicDropLinkEnforcesRequestBodyLimit(t *testing.T) {
 
 // SEC-AUTH-12: Re-creating a user with the same name must not inherit the previous user's home directory.
 func TestRegressionDeletedUserHomeDirectoryNotInherited(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -22,6 +22,7 @@ import (
 // zip that only its own author can open is not a zip, and the thing a person
 // does with this response is hand it to their operating system.
 func TestAnArchiveOfASubtree(t *testing.T) {
+	t.Parallel()
 	base, sess, share := contentShare(t, everyPerm(), []byte("root file"))
 
 	// Something to put in it, including a nested directory so the entry
@@ -166,6 +167,7 @@ func fetchArchive(t *testing.T, base string, sess session, body any) (int, http.
 // nothing to hold and the browser saves bytes as they arrive. The cost is a
 // download with no declared length, which is the trade this surface takes.
 func TestAnArchiveIsStreamed(t *testing.T) {
+	t.Parallel()
 	base, sess, share := contentShare(t, everyPerm(), []byte("root file"))
 
 	if status, _ := upload(t, base, sess, "/"+share+"/sub/one.txt", []byte("first")); status != http.StatusOK {
@@ -194,6 +196,7 @@ func TestAnArchiveIsStreamed(t *testing.T) {
 // Without a credential on the fetch, sharing that history would share the
 // files.
 func TestAnArchiveTicketNeedsACredential(t *testing.T) {
+	t.Parallel()
 	base, sess, share := contentShare(t, everyPerm(), []byte("private"))
 
 	status, _, raw := postRaw(t, base+"/api/v1/files/archive", sess,
@@ -233,6 +236,7 @@ func TestAnArchiveTicketNeedsACredential(t *testing.T) {
 // reads files the account may no longer reach. The fetch re-resolves for
 // exactly this.
 func TestARevokedGrantRefusesTheFetch(t *testing.T) {
+	t.Parallel()
 	base, sess, share, _, e, grant := contentShareGrant(t, everyPerm(), []byte("private"))
 
 	status, _, raw := postRaw(t, base+"/api/v1/files/archive", sess,
@@ -272,6 +276,7 @@ func TestARevokedGrantRefusesTheFetch(t *testing.T) {
 
 // An archive of several roots holds all of them.
 func TestAnArchiveOfSeveralPaths(t *testing.T) {
+	t.Parallel()
 	base, sess, share := contentShare(t, everyPerm(), []byte("the root file"))
 
 	if status, _ := upload(t, base, sess, "/"+share+"/sub/nested.txt", []byte("nested")); status != http.StatusOK {
@@ -315,6 +320,7 @@ func TestAnArchiveOfSeveralPaths(t *testing.T) {
 // A partial archive is worse than none: the person saves it, sees files, and
 // has no way to know which ones are missing.
 func TestAnArchiveWithAnUnreadablePathIsRefused(t *testing.T) {
+	t.Parallel()
 	base, sess, share := contentShare(t, everyPerm(), []byte("readable"))
 
 	status, _, body := postRaw(t, base+"/api/v1/files/archive", sess, map[string]any{
@@ -327,6 +333,7 @@ func TestAnArchiveWithAnUnreadablePathIsRefused(t *testing.T) {
 
 // An empty selection is refused rather than producing an empty zip.
 func TestAnEmptyArchiveSelectionIsRefused(t *testing.T) {
+	t.Parallel()
 	base, sess, _ := contentShare(t, everyPerm(), []byte("x"))
 
 	status, _, _ := postRaw(t, base+"/api/v1/files/archive", sess,
@@ -341,6 +348,7 @@ func TestAnEmptyArchiveSelectionIsRefused(t *testing.T) {
 // The name reaches Content-Disposition. A quote or a newline in it could end
 // the field and start another, which is a header the client never asked for.
 func TestAnArchiveNameCannotInjectAHeader(t *testing.T) {
+	t.Parallel()
 	base, sess, share := contentShare(t, everyPerm(), []byte("x"))
 
 	for _, name := range []string{
@@ -364,6 +372,7 @@ func TestAnArchiveNameCannotInjectAHeader(t *testing.T) {
 
 // An absent name still produces something a person can open.
 func TestAnArchiveWithoutANameGetsADefault(t *testing.T) {
+	t.Parallel()
 	base, sess, share := contentShare(t, everyPerm(), []byte("x"))
 
 	status, header, _ := fetchArchive(t, base, sess,
@@ -379,6 +388,7 @@ func TestAnArchiveWithoutANameGetsADefault(t *testing.T) {
 
 // The listing reads an existing zip's own directory.
 func TestListingInsideAnArchive(t *testing.T) {
+	t.Parallel()
 	base, sess, share := contentShare(t, everyPerm(), []byte("unused"))
 
 	// Built with the standard library, so the listing is proven against a zip
@@ -444,6 +454,7 @@ func TestListingInsideAnArchive(t *testing.T) {
 // Whether a file this account cannot see happens to be a zip is not something
 // the answer should disclose.
 func TestListingANonArchiveIsIndistinguishableFromAbsence(t *testing.T) {
+	t.Parallel()
 	base, sess, share := contentShare(t, everyPerm(), []byte("not a zip at all"))
 
 	notZip, notZipBody := authed(t, http.MethodGet,
@@ -465,6 +476,7 @@ func TestListingANonArchiveIsIndistinguishableFromAbsence(t *testing.T) {
 // only guard, but an archive carrying ../ is one that overwrites files
 // outside the directory a person extracted it into.
 func TestArchiveEntryNamesDoNotEscape(t *testing.T) {
+	t.Parallel()
 	base, sess, share := contentShare(t, everyPerm(), []byte("root"))
 
 	if status, _ := upload(t, base, sess, "/"+share+"/sub/inner.txt", []byte("inner")); status != http.StatusOK {
@@ -497,6 +509,7 @@ func TestArchiveEntryNamesDoNotEscape(t *testing.T) {
 // slash. Without one the directory vanishes on extraction, and a person who
 // archived a tree gets back a different tree.
 func TestAnEmptyDirectorySurvivesTheArchive(t *testing.T) {
+	t.Parallel()
 	base, sess, share := contentShare(t, everyPerm(), []byte("root"))
 
 	status, body := post(t, base+"/api/v1/files/mkdir", sess,
@@ -532,6 +545,7 @@ func TestAnEmptyDirectorySurvivesTheArchive(t *testing.T) {
 // archive over one entry means a single stray permission bit makes a folder
 // undownloadable, with nothing saying which file caused it.
 func TestAnUnreadableEntryDoesNotLoseTheArchive(t *testing.T) {
+	t.Parallel()
 	base, sess, share, host := contentShareAt(t, everyPerm(), []byte("root"))
 
 	for name, body := range map[string]string{
@@ -586,6 +600,7 @@ func TestAnUnreadableEntryDoesNotLoseTheArchive(t *testing.T) {
 // encrypted share holds only ciphertext this server has no key for. The
 // mint step refuses before any token exists, so the fetch below never runs.
 func TestAServerBuiltArchiveOfAnEncryptedShareIsRefused(t *testing.T) {
+	t.Parallel()
 	base, sess, share, _, _ := encryptedShare(t, everyPerm(), "")
 
 	if status, body := upload(t, base, sess, "/"+share+"/doc.txt", []byte("hello")); status != http.StatusOK {
@@ -604,6 +619,7 @@ func TestAServerBuiltArchiveOfAnEncryptedShareIsRefused(t *testing.T) {
 // "not an archive" case, and only after opening the file. The guard answers
 // before that open happens.
 func TestListingInsideAnEncryptedArchiveIsRefused(t *testing.T) {
+	t.Parallel()
 	base, sess, share, _, _ := encryptedShare(t, everyPerm(), "")
 
 	// A real zip, built with the standard library. What this test is about

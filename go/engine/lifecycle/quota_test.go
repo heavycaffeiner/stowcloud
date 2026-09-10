@@ -32,6 +32,7 @@ func aliceID(t *testing.T, e *lifecycle.Engine) int64 {
 // attached one to the other, so a 1 MB account uploaded 3 MB twice over and
 // still reported zero bytes used.
 func TestAnUploadPastTheQuotaIsRefused(t *testing.T) {
+	t.Parallel()
 	base, sess, share, _, e, _ := contentShareGrant(t, everyPerm(), []byte("unused"))
 	ctx := context.Background()
 
@@ -62,6 +63,7 @@ func TestAnUploadPastTheQuotaIsRefused(t *testing.T) {
 // The other half of the same wiring: a ledger that refused everything would
 // pass the test above and make the product unusable.
 func TestAnUploadInsideTheQuotaIsServedAndCharged(t *testing.T) {
+	t.Parallel()
 	want := payload()
 	base, sess, share, _, e, _ := contentShareGrant(t, everyPerm(), []byte("unused"))
 	ctx := context.Background()
@@ -99,6 +101,7 @@ func TestAnUploadInsideTheQuotaIsServedAndCharged(t *testing.T) {
 // every size rather than fall into the refusal path the two tests above
 // exercise.
 func TestAnAccountWithNoQuotaUploadsFreely(t *testing.T) {
+	t.Parallel()
 	base, sess, share, _, _, _ := contentShareGrant(t, acl.Read|acl.Write|acl.Create, []byte("unused"))
 
 	if location := createUpload(t, base, sess, "/"+share+"/unbounded.bin", 3<<20); location == "" {
@@ -112,6 +115,7 @@ func TestAnAccountWithNoQuotaUploadsFreely(t *testing.T) {
 // small file and the editor take. Enforcing only the resumable path would
 // leave the cap trivially avoidable by sending the bytes the other way.
 func TestADirectWritePastTheQuotaIsRefused(t *testing.T) {
+	t.Parallel()
 	base, sess, share, _, e, _ := contentShareGrant(t, everyPerm(), []byte("unused"))
 	ctx := context.Background()
 

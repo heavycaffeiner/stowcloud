@@ -22,6 +22,7 @@ import (
 // not something a session alone should decide: somebody who walked past an
 // unlocked screen would otherwise give themselves a mount.
 func TestSettingTheProtocolPasswordNeedsTheAccountPassword(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootForLogin(t)
 	cookie, csrf := signedIn(t, base)
 
@@ -39,6 +40,7 @@ func TestSettingTheProtocolPasswordNeedsTheAccountPassword(t *testing.T) {
 
 // The credential is set, and the state says the protocol works.
 func TestSettingTheProtocolPassword(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootForLogin(t)
 	cookie, csrf := signedIn(t, base)
 
@@ -74,6 +76,7 @@ func TestSettingTheProtocolPassword(t *testing.T) {
 
 // A password under the floor is refused here too.
 func TestAWeakProtocolPasswordIsRefused(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootForLogin(t)
 	cookie, csrf := signedIn(t, base)
 
@@ -89,6 +92,7 @@ func TestAWeakProtocolPasswordIsRefused(t *testing.T) {
 // Clearing is sometimes losing that access entirely, and a bare success there
 // reads as "nothing changed" to somebody who has just lost a mount.
 func TestClearingTheProtocolPasswordSaysWhetherAccessSurvives(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootForLogin(t)
 	cookie, csrf := signedIn(t, base)
 
@@ -127,6 +131,7 @@ func TestClearingTheProtocolPasswordSaysWhetherAccessSurvives(t *testing.T) {
 // password. A flag that were always true would say the opposite here, which
 // is why this case exists alongside the ordinary one above.
 func TestClearingIsNotRevertibleForAnOptedOutAccount(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootForLogin(t)
 	cookie, csrf := signedIn(t, base)
 
@@ -159,6 +164,7 @@ func TestClearingIsNotRevertibleForAnOptedOutAccount(t *testing.T) {
 // cannot be live, so a state reporting both would be describing something
 // that cannot exist.
 func TestOptingOutForcesTheProtocolOff(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootForLogin(t)
 	cookie, csrf := signedIn(t, base)
 
@@ -183,6 +189,7 @@ func TestOptingOutForcesTheProtocolOff(t *testing.T) {
 
 // The access switches need the account password as well.
 func TestTheProtocolAccessSwitchesNeedThePassword(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootForLogin(t)
 	cookie, csrf := signedIn(t, base)
 
@@ -195,6 +202,7 @@ func TestTheProtocolAccessSwitchesNeedThePassword(t *testing.T) {
 
 // The index estimate measures the corpus and says what an index would cost.
 func TestTheIndexEstimate(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 	makeShare(t, base, cookie, csrf, "docs")
 
@@ -233,6 +241,7 @@ func TestTheIndexEstimate(t *testing.T) {
 
 // The index estimate needs an administrator.
 func TestTheIndexEstimateNeedsAnAdministrator(t *testing.T) {
+	t.Parallel()
 	base, _, _, plainCookie, _ := adminEngine(t)
 
 	status, _ := withCookie(t, http.MethodGet,
@@ -249,12 +258,13 @@ func TestTheIndexEstimateNeedsAnAdministrator(t *testing.T) {
 // one: every enrolled account kept the protocol access the operator had just
 // revoked, and the settings screen showed the revocation as applied.
 func TestTheStoredSecondFactorPolicyBlocksTheProtocol(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dir := t.TempDir()
 
 	// Saved before the engine that serves it opens, which is the ordinary
 	// order: an operator configures, the server restarts, the value applies.
-	first, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	first, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -273,7 +283,7 @@ func TestTheStoredSecondFactorPolicyBlocksTheProtocol(t *testing.T) {
 
 	// A second engine over the same directory, so the policy is read from the
 	// document rather than from anything left in memory.
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("reopening: %v", err)
 	}
@@ -329,10 +339,11 @@ func TestTheStoredSecondFactorPolicyBlocksTheProtocol(t *testing.T) {
 // the accounts an operator with an unusual value may have been trying to shut
 // out.
 func TestAnUnknownSecondFactorPolicyBlocks(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	first, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	first, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -349,7 +360,7 @@ func TestAnUnknownSecondFactorPolicyBlocks(t *testing.T) {
 		t.Fatalf("closing: %v", cerr)
 	}
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("reopening: %v", err)
 	}
@@ -395,10 +406,11 @@ func TestAnUnknownSecondFactorPolicyBlocks(t *testing.T) {
 // above pass either way; only this one notices when the permissive branch
 // stops being reachable.
 func TestThePermissivePolicyKeepsProtocolAccess(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	first, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	first, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -415,7 +427,7 @@ func TestThePermissivePolicyKeepsProtocolAccess(t *testing.T) {
 		t.Fatalf("closing: %v", cerr)
 	}
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("reopening: %v", err)
 	}
@@ -468,7 +480,7 @@ func bootWithSidecar(t *testing.T) (*lifecycle.Engine, string) {
 	dir := t.TempDir()
 	configDir := filepath.Join(t.TempDir(), "smb")
 
-	first, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	first, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -485,7 +497,7 @@ func bootWithSidecar(t *testing.T) (*lifecycle.Engine, string) {
 		t.Fatalf("closing: %v", cerr)
 	}
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("reopening: %v", err)
 	}
@@ -508,11 +520,12 @@ func bootWithSidecar(t *testing.T) (*lifecycle.Engine, string) {
 // Driven through the settings route rather than the engine, because that is
 // where the defect was: the save stored the value and never pushed it.
 func TestTurningFileSharingOffReachesTheSidecar(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dir := t.TempDir()
 	configDir := filepath.Join(t.TempDir(), "smb")
 
-	first, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	first, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -528,7 +541,7 @@ func TestTurningFileSharingOffReachesTheSidecar(t *testing.T) {
 		t.Fatalf("closing: %v", cerr)
 	}
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("reopening: %v", err)
 	}
@@ -585,12 +598,13 @@ func TestTurningFileSharingOffReachesTheSidecar(t *testing.T) {
 // Only a restart repaired it, and turning sharing on is exactly the moment
 // nobody expects to need one.
 func TestEnablingSharingLaterStillWritesCredentials(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dir := t.TempDir()
 	configDir := filepath.Join(t.TempDir(), "smb")
 
 	// Configured but off, which is what makes the path empty at startup.
-	first, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	first, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -606,7 +620,7 @@ func TestEnablingSharingLaterStillWritesCredentials(t *testing.T) {
 		t.Fatalf("closing: %v", cerr)
 	}
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("reopening: %v", err)
 	}
@@ -665,6 +679,7 @@ func readCredentialFile(t *testing.T, configDir string) string {
 // against the last file that was published, which left a withdrawn credential
 // serving until something else happened to publish one.
 func TestSettingTheProtocolPasswordReachesTheRenderedFile(t *testing.T) {
+	t.Parallel()
 	e, configDir := bootWithSidecar(t)
 	base := serve(t, e)
 	cookie, csrf := signedIn(t, base)
@@ -696,6 +711,7 @@ func TestSettingTheProtocolPasswordReachesTheRenderedFile(t *testing.T) {
 // reads, so the daemon would go on accepting a credential the account has
 // given up.
 func TestOptingOutRemovesTheAccountFromTheRenderedFile(t *testing.T) {
+	t.Parallel()
 	e, configDir := bootWithSidecar(t)
 	base := serve(t, e)
 	cookie, csrf := signedIn(t, base)
@@ -724,6 +740,7 @@ func TestOptingOutRemovesTheAccountFromTheRenderedFile(t *testing.T) {
 
 // Clearing the separate credential removes the record too.
 func TestClearingTheProtocolPasswordReachesTheRenderedFile(t *testing.T) {
+	t.Parallel()
 	e, configDir := bootWithSidecar(t)
 	base := serve(t, e)
 	cookie, csrf := signedIn(t, base)
@@ -756,6 +773,7 @@ func TestClearingTheProtocolPasswordReachesTheRenderedFile(t *testing.T) {
 // import produce nothing for that account and the only symptom is a client
 // that cannot connect.
 func TestTheRenderedFilesAgreeOnEveryAccount(t *testing.T) {
+	t.Parallel()
 	e, configDir := bootWithSidecar(t)
 	base := serve(t, e)
 	cookie, csrf := signedIn(t, base)
@@ -800,6 +818,7 @@ func TestTheRenderedFilesAgreeOnEveryAccount(t *testing.T) {
 
 // A deployment with no sidecar says so rather than reporting an apply.
 func TestTheApplyRouteRefusesWithoutASidecar(t *testing.T) {
+	t.Parallel()
 	base, adminCookie, adminCSRF, _, _ := adminEngine(t)
 
 	status, body := mutate(t, http.MethodPost, base+"/api/v1/admin/smb/apply",
@@ -829,6 +848,7 @@ func reasonKey(body map[string]any) string {
 
 // The apply route is an administrator's.
 func TestTheApplyRouteNeedsAnAdministrator(t *testing.T) {
+	t.Parallel()
 	base, _, _, plainCookie, plainCSRF := adminEngine(t)
 
 	status, _ := mutate(t, http.MethodPost, base+"/api/v1/admin/smb/apply",
@@ -845,6 +865,7 @@ func TestTheApplyRouteNeedsAnAdministrator(t *testing.T) {
 // nothing applies them, so there is no socket to ask and nothing to report
 // failing.
 func TestAnApplyRendersTheConfigurationWithoutAnAgent(t *testing.T) {
+	t.Parallel()
 	e, configDir := bootWithSidecar(t)
 	base := serve(t, e)
 
@@ -883,6 +904,7 @@ func TestAnApplyRendersTheConfigurationWithoutAnAgent(t *testing.T) {
 // as the sink: without it one file drops the account and the other keeps it,
 // leaving the pair disagreeing about who exists.
 func TestAWithdrawalReachesBothRenderedFiles(t *testing.T) {
+	t.Parallel()
 	e, configDir := bootWithSidecar(t)
 	base := serve(t, e)
 	cookie, csrf := signedIn(t, base)

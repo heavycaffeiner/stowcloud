@@ -22,7 +22,7 @@ func bootUnconfigured(t *testing.T) (base, dataDir string, e *lifecycle.Engine) 
 	t.Helper()
 	dataDir = t.TempDir()
 
-	e, err := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: dataDir})
+	e, err := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: dataDir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -50,6 +50,7 @@ func setupToken(t *testing.T, dataDir string) string {
 // a first-run screen that never appears: the client reads the absence as
 // false and sends the person to sign in to an account nobody has created.
 func TestAFreshDeploymentReportsThatSetupIsRequired(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootUnconfigured(t)
 
 	status, raw := get(t, base+"/api/v1/system/setup")
@@ -68,6 +69,7 @@ func TestAFreshDeploymentReportsThatSetupIsRequired(t *testing.T) {
 // The state is readable without a credential, because there is no account to
 // hold one yet.
 func TestTheSetupStateNeedsNoCredential(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootUnconfigured(t)
 
 	status, _ := get(t, base+"/api/v1/system/setup")
@@ -82,8 +84,9 @@ func TestTheSetupStateNeedsNoCredential(t *testing.T) {
 // No listener here. The token is written during Open, and this test reads a
 // file rather than making a request.
 func TestAFirstBootPublishesASetupToken(t *testing.T) {
+	t.Parallel()
 	dataDir := t.TempDir()
-	e, err := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: dataDir})
+	e, err := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: dataDir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -111,6 +114,7 @@ func TestAFirstBootPublishesASetupToken(t *testing.T) {
 // The whole first run: the token is spent, the administrator exists, and the
 // account can reach the shares it was granted.
 func TestCompletingSetupCreatesAnAdministratorWhoCanSignIn(t *testing.T) {
+	t.Parallel()
 	base, dataDir, _ := bootUnconfigured(t)
 
 	// The host list names the address this test actually reaches the server
@@ -158,6 +162,7 @@ func TestCompletingSetupCreatesAnAdministratorWhoCanSignIn(t *testing.T) {
 // The host list names the address this test browses on, so the boundary keeps
 // admitting it and the account can actually be used afterwards.
 func TestTheAccountSetupCreatesIsAWorkingAdministrator(t *testing.T) {
+	t.Parallel()
 	base, dataDir, _ := bootUnconfigured(t)
 
 	if resp := postJSON(t, base+"/api/v1/system/setup", map[string]any{
@@ -184,6 +189,7 @@ func TestTheAccountSetupCreatesIsAWorkingAdministrator(t *testing.T) {
 // A token recovered from a log or a backup after setup is worth nothing,
 // because the account count is the authority rather than the token.
 func TestSetupRefusesOnceAnAccountExists(t *testing.T) {
+	t.Parallel()
 	base, dataDir, _ := bootUnconfigured(t)
 	token := setupToken(t, dataDir)
 
@@ -222,6 +228,7 @@ func TestSetupRefusesOnceAnAccountExists(t *testing.T) {
 // Spending it would leave an operator whose single token was consumed by
 // somebody else's guess.
 func TestAWrongSetupTokenCreatesNothingAndSpendsNothing(t *testing.T) {
+	t.Parallel()
 	base, dataDir, _ := bootUnconfigured(t)
 
 	bad := postJSON(t, base+"/api/v1/system/setup", map[string]any{
@@ -248,6 +255,7 @@ func TestAWrongSetupTokenCreatesNothingAndSpendsNothing(t *testing.T) {
 // The refusal is the account rule rather than the gate's, so the operator
 // corrects the password and submits the same token again.
 func TestAWeakSetupPasswordIsRefusedAndTheTokenSurvives(t *testing.T) {
+	t.Parallel()
 	base, dataDir, _ := bootUnconfigured(t)
 	token := setupToken(t, dataDir)
 
@@ -274,6 +282,7 @@ func TestAWeakSetupPasswordIsRefusedAndTheTokenSurvives(t *testing.T) {
 // One rule, applied at creation. A name this rule admits and the credential
 // file cannot carry would cost every account its file-sharing access.
 func TestASetupUsernameMustPassTheAccountRule(t *testing.T) {
+	t.Parallel()
 	base, dataDir, _ := bootUnconfigured(t)
 
 	for _, name := range []string{"Root", "has space", "-leading", "has:colon"} {
@@ -293,12 +302,13 @@ func TestASetupUsernameMustPassTheAccountRule(t *testing.T) {
 // without the grant pass the account signs in to an empty interface with no
 // way to give itself anything.
 func TestTheFirstAdministratorIsGrantedTheExistingShares(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dataDir := t.TempDir()
 
 	// A share registered before the first account, which is the order an
 	// operator restoring a configuration lands in.
-	first, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dataDir})
+	first, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dataDir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -309,7 +319,7 @@ func TestTheFirstAdministratorIsGrantedTheExistingShares(t *testing.T) {
 		t.Fatalf("closing: %v", cerr)
 	}
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dataDir})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dataDir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("reopening: %v", err)
 	}
@@ -351,6 +361,7 @@ func TestTheFirstAdministratorIsGrantedTheExistingShares(t *testing.T) {
 // share the only account cannot reach, and the first thing anybody does
 // after finishing the form answers 404.
 func TestTheShareNamedAtSetupIsGrantedToTheAdministrator(t *testing.T) {
+	t.Parallel()
 	base, dataDir, _ := bootUnconfigured(t)
 	host := t.TempDir()
 
@@ -382,6 +393,7 @@ func TestTheShareNamedAtSetupIsGrantedToTheAdministrator(t *testing.T) {
 // The account password is what the created administrator signs in with, so a
 // setup that stored something else would be undetectable until first use.
 func TestTheSetupPasswordIsTheOneStored(t *testing.T) {
+	t.Parallel()
 	base, dataDir, _ := bootUnconfigured(t)
 
 	if resp := postJSON(t, base+"/api/v1/system/setup", map[string]any{
@@ -421,6 +433,7 @@ func hostOf(t *testing.T, base string) string {
 // up, and no rule separates it from the typo it resembles. The 421 afterwards
 // is the boundary enforcing exactly what the form asked for.
 func TestAHostListThatExcludesTheCallerIsSavedWithAWarning(t *testing.T) {
+	t.Parallel()
 	base, dataDir, _ := bootUnconfigured(t)
 
 	resp := postJSON(t, base+"/api/v1/system/setup", map[string]any{

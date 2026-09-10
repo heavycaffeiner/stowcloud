@@ -18,10 +18,11 @@ import (
 // the only reason it was not a hole is that first boot admits private clients
 // only.
 func TestASavedHostListIsEnforced(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -39,7 +40,7 @@ func TestASavedHostListIsEnforced(t *testing.T) {
 
 	// A second engine over the same directory, so the value is read from the
 	// document rather than from anything left in memory.
-	reopened, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	reopened, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("reopening: %v", err)
 	}
@@ -90,10 +91,11 @@ func hostRequest(t *testing.T, base, host string) int {
 // must not be trusted, or any caller could name whatever address they liked
 // and be rate-limited, logged and admitted as that address instead.
 func TestASavedProxyRangeDecidesWhoIsBelieved(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -111,7 +113,7 @@ func TestASavedProxyRangeDecidesWhoIsBelieved(t *testing.T) {
 		t.Fatalf("closing: %v", cerr)
 	}
 
-	reopened, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	reopened, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("reopening: %v", err)
 	}
@@ -155,6 +157,7 @@ func TestASavedProxyRangeDecidesWhoIsBelieved(t *testing.T) {
 // the trusted set, which trusts every proxy on the internet: any caller could
 // then name whatever address they liked and have it believed.
 func TestAnUnparseableProxyRangeIsDropped(t *testing.T) {
+	t.Parallel()
 	trusted := lifecycle.ParsePrefixesForTest([]string{
 		"127.0.0.1", "10.0.0.0/8", "not-an-address", "", "999.999.999.999", "10.0.0.0/99",
 	})
@@ -191,10 +194,11 @@ func TestAnUnparseableProxyRangeIsDropped(t *testing.T) {
 // operator chose. The two numbers differ on purpose, which is what makes this
 // observable.
 func TestTheStoredRateLimitIsApplied(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -210,7 +214,7 @@ func TestTheStoredRateLimitIsApplied(t *testing.T) {
 		t.Fatalf("closing: %v", cerr)
 	}
 
-	reopened, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	reopened, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("reopening: %v", err)
 	}

@@ -38,7 +38,7 @@ func linksOverview(t *testing.T) string {
 	t.Helper()
 	ctx := context.Background()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -107,6 +107,7 @@ func signInAs(t *testing.T, base, login string) *http.Cookie {
 
 // An administrator sees every account's links, with the owner named.
 func TestTheLinkOverviewCrossesAccounts(t *testing.T) {
+	t.Parallel()
 	base := linksOverview(t)
 
 	status, body := withCookie(t, http.MethodGet, base+"/api/v1/admin/links",
@@ -149,6 +150,7 @@ func TestTheLinkOverviewCrossesAccounts(t *testing.T) {
 // shares the caller was never granted, so the administrative gate is the whole
 // of what keeps one account's publishing private from another's.
 func TestTheLinkOverviewRefusesANonAdministrator(t *testing.T) {
+	t.Parallel()
 	base := linksOverview(t)
 
 	status, body := withCookie(t, http.MethodGet, base+"/api/v1/admin/links",

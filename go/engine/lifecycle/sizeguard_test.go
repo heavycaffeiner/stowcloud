@@ -23,6 +23,7 @@ import (
 // allocate a node id, so it passes under a tripped guard and would have
 // reported this working while it did nothing.
 func TestTheSizeGuardRefusesWritesPastItsCeiling(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	n := 0

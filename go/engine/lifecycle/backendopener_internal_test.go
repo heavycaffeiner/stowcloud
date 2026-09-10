@@ -20,6 +20,7 @@ import (
 // build cannot read and a file that is not a container are four different
 // things to go and fix.
 func TestEachContainerRefusalCarriesItsOwnKind(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		err  error
 		kind string
@@ -45,6 +46,7 @@ func TestEachContainerRefusalCarriesItsOwnKind(t *testing.T) {
 // A container file that is genuinely absent is a missing path, and the
 // filesystem layer's own answer for that is better than a vault-specific one.
 func TestAnUnrecognisedFailureIsNotClaimedByTheVaultClassifier(t *testing.T) {
+	t.Parallel()
 	other := errors.New("some other failure")
 	if got := classifyVaultOpen(other); !errors.Is(got, other) {
 		t.Errorf("an unrelated failure was rewritten to %v", got)

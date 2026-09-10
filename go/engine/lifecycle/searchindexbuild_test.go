@@ -26,7 +26,7 @@ func indexEngine(t *testing.T) (base, dataDir string, cookie *http.Cookie, csrf 
 	ctx := context.Background()
 	dataDir = t.TempDir()
 
-	first, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dataDir})
+	first, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dataDir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -40,7 +40,7 @@ func indexEngine(t *testing.T) (base, dataDir string, cookie *http.Cookie, csrf 
 		t.Fatalf("closing: %v", cerr)
 	}
 
-	opened, oerr := lifecycle.Open(ctx, lifecycle.Options{DataDir: dataDir})
+	opened, oerr := lifecycle.Open(ctx, lifecycle.Options{DataDir: dataDir, PasswordParams: fastPasswordParams()})
 	if oerr != nil {
 		t.Fatalf("reopening: %v", oerr)
 	}
@@ -90,6 +90,7 @@ func awaitJob(t *testing.T, base string, cookie *http.Cookie, id string) map[str
 // is handed a job id and polls it, which is what makes a long build observable
 // rather than a request that has yet to answer.
 func TestBuildingTheIndexRunsAsAJob(t *testing.T) {
+	t.Parallel()
 	base, _, cookie, csrf, _ := indexEngine(t)
 	share := makeShare(t, base, cookie, csrf, "docs")
 	_ = share
@@ -116,6 +117,7 @@ func TestBuildingTheIndexRunsAsAJob(t *testing.T) {
 // A deployment with the index switched off refuses rather than reporting a
 // build that wrote nothing.
 func TestBuildingWithTheIndexOffIsRefused(t *testing.T) {
+	t.Parallel()
 	base, adminCookie, adminCSRF, _, _ := adminEngine(t)
 
 	status, body := mutate(t, http.MethodPost,
@@ -130,6 +132,7 @@ func TestBuildingWithTheIndexOffIsRefused(t *testing.T) {
 
 // Building is an administrator's: it walks every share on the deployment.
 func TestBuildingTheIndexNeedsAnAdministrator(t *testing.T) {
+	t.Parallel()
 	base, _, _, plainCookie, plainCSRF := adminEngine(t)
 
 	status, _ := mutate(t, http.MethodPost,
@@ -145,6 +148,7 @@ func TestBuildingTheIndexNeedsAnAdministrator(t *testing.T) {
 // boot, which is what makes a build worth spending: an index that had to be
 // rebuilt on every start would cost more than the walk it replaces.
 func TestTheBuiltIndexSurvivesARestart(t *testing.T) {
+	t.Parallel()
 	base, dataDir, cookie, csrf, first := indexEngine(t)
 
 	// A share with a file in it. An empty corpus indexes nothing, so the
@@ -180,7 +184,7 @@ func TestTheBuiltIndexSurvivesARestart(t *testing.T) {
 
 	// A second engine over the same directory finds it rather than starting
 	// from nothing.
-	second, oerr := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: dataDir})
+	second, oerr := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: dataDir, PasswordParams: fastPasswordParams()})
 	if oerr != nil {
 		t.Fatalf("reopening: %v", oerr)
 	}
@@ -197,7 +201,8 @@ func TestTheBuiltIndexSurvivesARestart(t *testing.T) {
 // A deployment that never enabled the index opens none, so an index directory
 // left behind does not come back on its own.
 func TestTheIndexIsNotOpenedWhenTheSettingIsOff(t *testing.T) {
-	e, err := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: t.TempDir()})
+	t.Parallel()
+	e, err := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -214,6 +219,7 @@ func TestTheIndexIsNotOpenedWhenTheSettingIsOff(t *testing.T) {
 // Turning the setting off through a live save detaches the index rather than
 // leaving it running under a setting that now says off.
 func TestASaveDetachesTheIndexWhenTheSettingGoesOff(t *testing.T) {
+	t.Parallel()
 	base, _, cookie, csrf, e := indexEngine(t)
 
 	if !e.Search.HasIndex() {

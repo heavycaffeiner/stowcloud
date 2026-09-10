@@ -69,7 +69,7 @@ func bootWithUser(t *testing.T) (string, string, session) {
 	t.Helper()
 	ctx := context.Background()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -166,6 +166,7 @@ func appPasswordAuthed(t *testing.T, method, url, token string) (int, []byte) {
 // runs: the chain resolves the session, the route metadata admits it, the
 // handler calls the core and the projection encodes the answer.
 func TestAnAuthenticatedRequestReachesTheService(t *testing.T) {
+	t.Parallel()
 	base, _, sess := bootWithUser(t)
 
 	status, body := authed(t, http.MethodGet, base+"/api/v1/jobs", sess)
@@ -191,6 +192,7 @@ func TestAnAuthenticatedRequestReachesTheService(t *testing.T) {
 // middleware.scopeHandler answers every refusal with 404 rather than 401 or
 // 403, so a stranger probing the surface cannot map which routes exist.
 func TestAnUnauthenticatedRequestIsRefused(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootWithUser(t)
 
 	status, body := get(t, base+"/api/v1/jobs")
@@ -216,6 +218,7 @@ func TestAnUnauthenticatedRequestIsRefused(t *testing.T) {
 // than distinguishing itself from an absent one, so this drives a session
 // carrying a cookie value nothing issued.
 func TestAWrongCredentialIsRefusedTheSameWay(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootWithUser(t)
 	wrongSession := session{cookie: &http.Cookie{
 		Name: middleware.SessionCookieName, Value: "not-a-real-token",
@@ -236,6 +239,7 @@ func TestAWrongCredentialIsRefusedTheSameWay(t *testing.T) {
 // A job that does not exist and a job belonging to someone else answer the
 // same way. Telling them apart says whether another account has that id.
 func TestAnAbsentJobIsIndistinguishableFromAForeignOne(t *testing.T) {
+	t.Parallel()
 	base, _, sess := bootWithUser(t)
 
 	absent, absentBody := authed(t, http.MethodGet, base+"/api/v1/jobs/999999", sess)
@@ -257,6 +261,7 @@ func TestAnAbsentJobIsIndistinguishableFromAForeignOne(t *testing.T) {
 // Cancelling a job nobody owns is refused rather than reported as done. A
 // client told a cancel succeeded stops watching.
 func TestCancellingAnAbsentJobIsRefused(t *testing.T) {
+	t.Parallel()
 	base, _, sess := bootWithUser(t)
 
 	status, body := authed(t, http.MethodPost, base+"/api/v1/jobs/999999/cancel", sess)
@@ -272,6 +277,7 @@ func TestCancellingAnAbsentJobIsRefused(t *testing.T) {
 // so no listing can return one, and a test that reads the bytes is what keeps
 // a future field from carrying one by accident.
 func TestNoCredentialListingCarriesACredential(t *testing.T) {
+	t.Parallel()
 	base, token, sess := bootWithUser(t)
 
 	for _, path := range []string{"/api/v1/account/sessions", "/api/v1/account/app-passwords"} {
@@ -300,6 +306,7 @@ func TestNoCredentialListingCarriesACredential(t *testing.T) {
 // An app password lists itself, so the listing is real rather than empty for a
 // reason that would also hide a leak.
 func TestAnAppPasswordAppearsInItsOwnListing(t *testing.T) {
+	t.Parallel()
 	base, _, sess := bootWithUser(t)
 
 	status, body := withCookie(t, http.MethodGet, base+"/api/v1/account/app-passwords", sess.cookie)
@@ -322,9 +329,10 @@ func TestAnAppPasswordAppearsInItsOwnListing(t *testing.T) {
 // One account never sees another's credentials. This is the property the whole
 // family rests on.
 func TestOneAccountNeverSeesAnothersCredentials(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -381,9 +389,10 @@ func TestOneAccountNeverSeesAnothersCredentials(t *testing.T) {
 // works afterwards. A revoke that reported success while doing nothing is how
 // a person believes they have locked someone out.
 func TestRevokingAnothersCredentialIsRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -467,6 +476,7 @@ func TestRevokingAnothersCredentialIsRefused(t *testing.T) {
 // bound set rather than one route, because the check is per handler and a
 // handler added later would be the one that forgot.
 func TestEveryCredentialledRouteRefusesAnonymously(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootWithUser(t)
 
 	paths := []string{

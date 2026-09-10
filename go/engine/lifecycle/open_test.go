@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 )
 
 // The engine opens against a real empty directory, which is what a first boot
@@ -19,9 +20,10 @@ import (
 // This is the first thing in the rebuilt tree that runs the services together
 // rather than one at a time under their own tests.
 func TestTheEngineOpensOnAnEmptyDirectory(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
-	e, err := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: dir})
+	e, err := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("the engine did not open: %v", err)
 	}
@@ -60,10 +62,11 @@ func TestTheEngineOpensOnAnEmptyDirectory(t *testing.T) {
 // silently started fresh would present an empty server to a user whose files
 // are still on disk.
 func TestASecondOpenFindsTheSameDeployment(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	ctx := context.Background()
 
-	first, ferr := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	first, ferr := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if ferr != nil {
 		t.Fatalf("the first open failed: %v", ferr)
 	}
@@ -71,7 +74,7 @@ func TestASecondOpenFindsTheSameDeployment(t *testing.T) {
 		t.Fatalf("closing the first: %v", cerr)
 	}
 
-	second, serr := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	second, serr := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if serr != nil {
 		t.Fatalf("the second open failed: %v", serr)
 	}
@@ -82,6 +85,7 @@ func TestASecondOpenFindsTheSameDeployment(t *testing.T) {
 
 // A directory the process cannot write is refused rather than half-opened.
 func TestAnUnwritableDirectoryIsRefused(t *testing.T) {
+	t.Parallel()
 	if os.Geteuid() == 0 {
 		t.Skip("running as root, which can write a mode-0500 directory")
 	}
@@ -92,7 +96,7 @@ func TestAnUnwritableDirectoryIsRefused(t *testing.T) {
 		t.Fatalf("preparing the directory: %v", err)
 	}
 
-	e, err := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: locked})
+	e, err := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: locked, PasswordParams: fastPasswordParams()})
 	if err == nil {
 		if cerr := e.Close(); cerr != nil {
 			t.Errorf("closing: %v", cerr)
@@ -104,7 +108,8 @@ func TestAnUnwritableDirectoryIsRefused(t *testing.T) {
 // An empty data directory is refused. Defaulting it would put a deployment's
 // databases wherever the process happened to be started.
 func TestAnEmptyDataDirectoryIsRefused(t *testing.T) {
-	e, err := lifecycle.Open(context.Background(), lifecycle.Options{})
+	t.Parallel()
+	e, err := lifecycle.Open(context.Background(), lifecycle.Options{PasswordParams: fastPasswordParams()})
 	if err == nil {
 		if cerr := e.Close(); cerr != nil {
 			t.Errorf("closing: %v", cerr)
@@ -116,7 +121,8 @@ func TestAnEmptyDataDirectoryIsRefused(t *testing.T) {
 // Closing twice is safe, since a caller unwinding from a failure may reach the
 // same defer twice.
 func TestClosingTwiceIsSafe(t *testing.T) {
-	e, err := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: t.TempDir()})
+	t.Parallel()
+	e, err := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,10 +139,11 @@ func TestClosingTwiceIsSafe(t *testing.T) {
 // servers reading and writing them would combine one instant's user with
 // another instant's grants.
 func TestASecondEngineOnTheSameDataDirectoryIsRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	first, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	first, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("the first engine: %v", err)
 	}
@@ -146,7 +153,7 @@ func TestASecondEngineOnTheSameDataDirectoryIsRefused(t *testing.T) {
 		}
 	})
 
-	_, err = lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	_, err = lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err == nil {
 		t.Fatal("a second engine opened the same data directory")
 	}
@@ -159,10 +166,11 @@ func TestASecondEngineOnTheSameDataDirectoryIsRefused(t *testing.T) {
 // process. A lock that survived its own Close would be one that needed a
 // reboot to clear.
 func TestClosingReleasesTheDataDirectory(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	first, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	first, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("the first engine: %v", err)
 	}
@@ -170,11 +178,19 @@ func TestClosingReleasesTheDataDirectory(t *testing.T) {
 		t.Fatalf("closing the first engine: %v", cerr)
 	}
 
-	second, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	second, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("reopening the same directory: %v", err)
 	}
 	if err := second.Close(); err != nil {
 		t.Errorf("closing the second engine: %v", err)
 	}
+}
+
+// fastPasswordParams are cheap Argon2id parameters for a test-built engine,
+// so the lifecycle suite is not paying the real deployment cost on every
+// boot. auth.New refuses parameters this weak outside a test binary, which
+// is what keeps a deployment from being lowered by whatever constructed it.
+func fastPasswordParams() auth.Params {
+	return auth.Params{MemoryKiB: 8192, Iterations: 1, Parallelism: 1, KeyLen: 32}
 }

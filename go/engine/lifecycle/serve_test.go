@@ -26,7 +26,7 @@ import (
 func boot(t *testing.T) string {
 	t.Helper()
 
-	e, err := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: t.TempDir()})
+	e, err := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening the engine: %v", err)
 	}
@@ -120,6 +120,7 @@ func get(t *testing.T, url string) (int, []byte) {
 // check that the store opens, the services construct, the route table
 // registers and a client gets an answer, all in one process.
 func TestTheEngineServesARealRequest(t *testing.T) {
+	t.Parallel()
 	base := boot(t)
 
 	status, body := get(t, base+"/api/v1/system/health")
@@ -147,6 +148,7 @@ func TestTheEngineServesARealRequest(t *testing.T) {
 // which is the concealment working: this test would pass against a server
 // with no routes at all if it asked anonymously.
 func TestEveryDeclaredRouteAnswers(t *testing.T) {
+	t.Parallel()
 	base, _, sess := bootWithUser(t)
 
 	// Public: served to anybody, and the one route that must answer before a
@@ -184,6 +186,7 @@ func TestEveryDeclaredRouteAnswers(t *testing.T) {
 
 // A path the table does not name is a 404 rather than a hang or a crash.
 func TestAnUnknownPathIsNotFound(t *testing.T) {
+	t.Parallel()
 	base := boot(t)
 
 	status, _ := get(t, base+"/api/v1/nothing/here")
@@ -195,6 +198,7 @@ func TestAnUnknownPathIsNotFound(t *testing.T) {
 // Every response is JSON, including a failure. The framework's own error page
 // is HTML, and an HTML body in an API response is one a client cannot read.
 func TestEveryAnswerIsJSON(t *testing.T) {
+	t.Parallel()
 	base := boot(t)
 
 	for _, path := range []string{
@@ -222,6 +226,7 @@ func TestEveryAnswerIsJSON(t *testing.T) {
 // fallback, and a client discovering it would read a refusal rather than a
 // success for an endpoint that did nothing.
 func TestEveryTableRouteIsBound(t *testing.T) {
+	t.Parallel()
 	unbound := lifecycle.UnboundRoutesForTest()
 	if len(unbound) != 0 {
 		t.Errorf("the table names %d routes with no binding: %v", len(unbound), unbound)
@@ -231,7 +236,8 @@ func TestEveryTableRouteIsBound(t *testing.T) {
 // Mounting reports a broken assembly before anything binds, so a defect
 // surfaces at startup rather than at a request.
 func TestMountingChecksTheAssembly(t *testing.T) {
-	e, err := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: t.TempDir()})
+	t.Parallel()
+	e, err := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -260,6 +266,7 @@ func TestMountingChecksTheAssembly(t *testing.T) {
 // Without this, removing the check from Mount changes nothing observable and
 // every defect it exists to catch reaches a request instead.
 func TestABrokenAssemblyIsRefused(t *testing.T) {
+	t.Parallel()
 	table := server.Table()
 
 	full := make(server.Handlers, len(table))
@@ -349,10 +356,11 @@ func dropOne(in server.Handlers, name string) server.Handlers {
 // Closing releases the files. A boot that failed and left its databases open
 // holds the data directory against the next attempt.
 func TestClosingReleasesTheDatabases(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	ctx := context.Background()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -385,6 +393,7 @@ func TestClosingReleasesTheDatabases(t *testing.T) {
 // chain produces. A chain that was built and not mounted leaves the routes
 // answering exactly as they do now, so nothing but its effects proves it.
 func TestTheMiddlewareChainIsLive(t *testing.T) {
+	t.Parallel()
 	base := boot(t)
 
 	resp, err := testClient().Get(base + "/api/v1/system/health")
@@ -417,6 +426,7 @@ func TestTheMiddlewareChainIsLive(t *testing.T) {
 // The rate limiter throttles. Its absence is invisible until something is
 // hammering the server, which is exactly when nobody is reading tests.
 func TestTheRateLimiterThrottles(t *testing.T) {
+	t.Parallel()
 	base := boot(t)
 	client := testClient()
 
@@ -455,6 +465,7 @@ func TestTheRateLimiterThrottles(t *testing.T) {
 // so a chain registered afterwards never sees a request that a route answers,
 // and every step would be skipped for exactly the paths it guards.
 func TestTheChainRunsBeforeTheRoutes(t *testing.T) {
+	t.Parallel()
 	base := boot(t)
 
 	// A route's own response carries the headers the chain sets. If the chain
@@ -482,7 +493,8 @@ func TestTheChainRunsBeforeTheRoutes(t *testing.T) {
 // to the not-implemented default, and the route would look served while doing
 // nothing. The count is what catches that.
 func TestEveryRouteHasExactlyOneHandler(t *testing.T) {
-	e, err := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: t.TempDir()})
+	t.Parallel()
+	e, err := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -520,6 +532,7 @@ func TestEveryRouteHasExactlyOneHandler(t *testing.T) {
 // binding from a misspelled one, which falls through to the default and looks
 // served while doing nothing.
 func TestABoundRouteIsNotTheDefault(t *testing.T) {
+	t.Parallel()
 	base, _, sess := bootWithUser(t)
 
 	// Every route bound so far that takes no path parameter and no share.

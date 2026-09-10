@@ -16,6 +16,7 @@ import (
 
 // A section saves and the document reports it back.
 func TestSavingASettingsSection(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	status, body := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/rate",
@@ -57,6 +58,7 @@ func TestSavingASettingsSection(t *testing.T) {
 // and this is what makes both visible: the observed peer, whether it is
 // trusted, and whether a forwarding header arrived at all.
 func TestTheSettingsReportTheHopTheRequestArrivedOver(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	// A private forwarded address, so the answer is about the hop rather than
@@ -156,6 +158,7 @@ func describedFields(t *testing.T, raw []byte) map[string]map[string]any {
 // them together is how an administrator spends an afternoon on a setting that
 // was stored and never running.
 func TestASaveSaysWhetherItIsLive(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	live, liveBody := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/rate",
@@ -196,6 +199,7 @@ func TestASaveSaysWhetherItIsLive(t *testing.T) {
 // name them. Every save from that screen answered 422 with a generic refusal
 // and the numbers on it never changed.
 func TestTheUploadSettingsSectionIsSavable(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	const megabyte = 1 << 20
@@ -235,6 +239,7 @@ func TestTheUploadSettingsSectionIsSavable(t *testing.T) {
 // down. That is what an operator sees as "some settings only apply after a
 // restart".
 func TestAProviderChangeAppliesWithoutARestart(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	status, body := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/oidc",
@@ -255,6 +260,7 @@ func TestAProviderChangeAppliesWithoutARestart(t *testing.T) {
 // This is the claim the "applied" field makes, so it is checked by observing
 // the behaviour rather than by reading the field back.
 func TestALiveSaveTakesEffectImmediately(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	// A burst small enough that a short loop crosses it. The engine boots at
@@ -281,6 +287,7 @@ func TestALiveSaveTakesEffectImmediately(t *testing.T) {
 // Storing it would leave a document holding a section nothing reads, and the
 // client would report a change that never happens.
 func TestAnUnknownSectionIsRefused(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	for _, section := range []string{"nosuch", "", "rate/../db", "RATE"} {
@@ -298,6 +305,7 @@ func TestAnUnknownSectionIsRefused(t *testing.T) {
 // the administrator would take effect before any correction could be sent,
 // and the correction is what would then be rejected.
 func TestALockoutIsRefusedAndStoresNothing(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	status, body := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/network",
@@ -331,6 +339,7 @@ func TestALockoutIsRefusedAndStoresNothing(t *testing.T) {
 
 // An ordinary account cannot read or write the settings.
 func TestTheSettingsNeedAnAdministrator(t *testing.T) {
+	t.Parallel()
 	base, _, _, plainCookie, plainCSRF := adminEngine(t)
 
 	read, _ := withCookie(t, http.MethodGet, base+"/api/v1/admin/settings", plainCookie)
@@ -350,6 +359,7 @@ func TestTheSettingsNeedAnAdministrator(t *testing.T) {
 // A client that had to test the field before iterating it is a client that
 // will forget once.
 func TestTheOutcomeAlwaysCarriesFindings(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	_, body := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/rate",
@@ -370,6 +380,7 @@ func TestTheOutcomeAlwaysCarriesFindings(t *testing.T) {
 // job halts where it stands. Both recover, but neither should happen to
 // somebody unannounced, so the operator is told before they decide.
 func TestARestartRequiredSaveReportsActiveWork(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	status, body := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/security",
@@ -396,6 +407,7 @@ func TestARestartRequiredSaveReportsActiveWork(t *testing.T) {
 // Nothing is going to be interrupted, so reporting the figures would invite a
 // warning about a restart that is not happening.
 func TestALiveSaveReportsNoActiveWork(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	status, body := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/rate",
@@ -413,11 +425,12 @@ func TestALiveSaveReportsNoActiveWork(t *testing.T) {
 // An upload in flight has to appear, or the warning is a field that is always
 // zero and an operator learns to ignore it.
 func TestTheActiveWorkCountsAreReal(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dir := t.TempDir()
 	host := t.TempDir()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -468,6 +481,7 @@ func TestTheActiveWorkCountsAreReal(t *testing.T) {
 // authenticates this server to a provider is not something to hand them, so
 // it is stripped on the way in and sealed under the master key.
 func TestAClientSecretIsNeverInTheDocument(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	const secret = "a-provider-issued-secret-value"
@@ -507,9 +521,10 @@ func TestAClientSecretIsNeverInTheDocument(t *testing.T) {
 
 // The stored secret opens again, which is what makes sealing it useful.
 func TestAStoredClientSecretOpensAgain(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -557,6 +572,7 @@ func TestAStoredClientSecretOpensAgain(t *testing.T) {
 // A patch names the fields it changes. An administrator editing the issuer
 // must not silently clear the credential and break sign-in.
 func TestAnOmittedSecretIsNotCleared(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	if status, body := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/oidc",
@@ -594,6 +610,7 @@ func TestAnOmittedSecretIsNotCleared(t *testing.T) {
 
 // A non-string secret is refused rather than coerced.
 func TestANonStringSecretIsRefused(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	for _, value := range []any{42, true, map[string]any{}, []any{"a"}} {

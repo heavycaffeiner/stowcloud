@@ -43,7 +43,7 @@ func contentShareGrant(t *testing.T, perms acl.Perms, content []byte) (
 	t.Helper()
 	ctx := context.Background()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -117,6 +117,7 @@ func download(t *testing.T, base string, sess session, path, rangeHeader string)
 // client composes a download URL out of a path. One that did composed it
 // wrong: an account granted a folder inside a share saw its own label twice.
 func TestADownloadTicketFetchesTheFileAsAnAttachment(t *testing.T) {
+	t.Parallel()
 	base, sess, share := contentShare(t, acl.Read|acl.Download, []byte("payload"))
 
 	status, body := post(t, base+"/api/v1/files/download", sess,
@@ -185,6 +186,7 @@ func fetchTicket(t *testing.T, base string, sess session, ticketURL string) (int
 // A ticket is a capability, so it belongs to the account that minted it and
 // answers a stranger the same way a token that never existed does.
 func TestADownloadTicketDoesNotCrossAccounts(t *testing.T) {
+	t.Parallel()
 	base, sess, share, _, e, _ := contentShareGrant(t, acl.Read|acl.Download, []byte("private"))
 
 	status, body := post(t, base+"/api/v1/files/download", sess,
@@ -221,6 +223,7 @@ func TestADownloadTicketDoesNotCrossAccounts(t *testing.T) {
 // between the two requests has to refuse the download, not serve it on a
 // check that passed a moment ago.
 func TestADownloadTicketIsRefusedAfterTheGrantGoes(t *testing.T) {
+	t.Parallel()
 	base, sess, share, _, e, grant := contentShareGrant(t, acl.Read|acl.Download, []byte("private"))
 
 	status, body := post(t, base+"/api/v1/files/download", sess,
@@ -247,6 +250,7 @@ func TestADownloadTicketIsRefusedAfterTheGrantGoes(t *testing.T) {
 // A folder is the archive pair's business. Minting a file ticket for one would
 // hand back a token that streams nothing.
 func TestADownloadTicketRefusesAFolder(t *testing.T) {
+	t.Parallel()
 	base, sess, share := contentShare(t, acl.Read|acl.Download, []byte("payload"))
 
 	status, body := post(t, base+"/api/v1/files/download", sess,
@@ -259,6 +263,7 @@ func TestADownloadTicketRefusesAFolder(t *testing.T) {
 // A path the account cannot reach answers as a missing one, which is the same
 // answer every other surface gives for a path outside every grant.
 func TestADownloadTicketRefusesAnUnreachablePath(t *testing.T) {
+	t.Parallel()
 	base, sess, _ := contentShare(t, acl.Read|acl.Download, []byte("payload"))
 
 	status, _ := post(t, base+"/api/v1/files/download", sess,
@@ -276,6 +281,7 @@ func TestADownloadTicketRefusesAnUnreachablePath(t *testing.T) {
 // Without that comparison any signed-in account could replay a reference it
 // found in a history or a screenshot and read another account's file.
 func TestAContentReferenceDoesNotCrossAccounts(t *testing.T) {
+	t.Parallel()
 	base, sess, share, _, e, _ := contentShareGrant(t, acl.Read|acl.Download, []byte("private"))
 	ref := contentRef(t, base, sess, "/"+share+"/doc.bin")
 
@@ -302,6 +308,7 @@ func TestAContentReferenceDoesNotCrossAccounts(t *testing.T) {
 // changed in transit. Every refusal answers as a missing file, because telling
 // them apart tells a caller which part of a forged reference to fix.
 func TestAForgedContentReferenceIsRefused(t *testing.T) {
+	t.Parallel()
 	base, sess, share := contentShare(t, acl.Read|acl.Download, []byte("private"))
 	ref := contentRef(t, base, sess, "/"+share+"/doc.bin")
 
@@ -332,6 +339,7 @@ func TestAForgedContentReferenceIsRefused(t *testing.T) {
 // Without the parameter there is no attachment header: the same endpoint feeds
 // the text editor and the preview, which render rather than save.
 func TestAPlainReadIsNotAnAttachment(t *testing.T) {
+	t.Parallel()
 	base, sess, share := contentShare(t, acl.Read|acl.Download, []byte("hello"))
 
 	status, header, body := readWithQuery(t, base, sess, "/"+share+"/doc.bin", "")
@@ -403,6 +411,7 @@ func payload() []byte {
 
 // A read returns the file's bytes exactly.
 func TestReadingAFile(t *testing.T) {
+	t.Parallel()
 	want := payload()
 	base, sess, share := contentShare(t, everyPerm(), want)
 
@@ -426,6 +435,7 @@ func TestReadingAFile(t *testing.T) {
 
 // A range returns exactly that slice, and says which slice it is.
 func TestReadingARange(t *testing.T) {
+	t.Parallel()
 	want := payload()
 	base, sess, share := contentShare(t, everyPerm(), want)
 
@@ -454,6 +464,7 @@ func TestReadingARange(t *testing.T) {
 
 // An open-ended range runs to the end of the file.
 func TestReadingAnOpenEndedRange(t *testing.T) {
+	t.Parallel()
 	want := payload()
 	base, sess, share := contentShare(t, everyPerm(), want)
 
@@ -470,6 +481,7 @@ func TestReadingAnOpenEndedRange(t *testing.T) {
 
 // A suffix range returns the last N bytes.
 func TestReadingASuffixRange(t *testing.T) {
+	t.Parallel()
 	want := payload()
 	base, sess, share := contentShare(t, everyPerm(), want)
 
@@ -487,6 +499,7 @@ func TestReadingASuffixRange(t *testing.T) {
 // A range past the end is refused with the real size, so a client can ask
 // again correctly rather than guessing.
 func TestARangePastTheEndIsRefused(t *testing.T) {
+	t.Parallel()
 	want := payload()
 	base, sess, share := contentShare(t, everyPerm(), want)
 
@@ -505,6 +518,7 @@ func TestARangePastTheEndIsRefused(t *testing.T) {
 // went wrong, assembles a file out of what it received and finds the damage
 // later.
 func TestAMultiRangeRequestIsRefused(t *testing.T) {
+	t.Parallel()
 	base, sess, share := contentShare(t, everyPerm(), payload())
 
 	status, _, body := download(t, base, sess, "/"+share+"/doc.bin", "bytes=0-99,200-299")
@@ -515,6 +529,7 @@ func TestAMultiRangeRequestIsRefused(t *testing.T) {
 
 // Reading needs the Download bit, and a grant without it refuses.
 func TestReadingNeedsTheDownloadPermission(t *testing.T) {
+	t.Parallel()
 	base, sess, share := contentShare(t, acl.Read, payload())
 
 	status, _, body := download(t, base, sess, "/"+share+"/doc.bin", "")
@@ -525,6 +540,7 @@ func TestReadingNeedsTheDownloadPermission(t *testing.T) {
 
 // A write puts the bytes on disk and a read returns them.
 func TestWritingAFile(t *testing.T) {
+	t.Parallel()
 	base, sess, share := contentShare(t, everyPerm(), []byte("original"))
 
 	want := payload()
@@ -573,6 +589,7 @@ func upload(t *testing.T, base string, sess session, path string, content []byte
 // than writing over an edit nobody has seen. Without it the last save silently
 // wins and the earlier one is gone with no trace that it existed.
 func TestAConditionalWriteIsRefusedAfterTheFileChanges(t *testing.T) {
+	t.Parallel()
 	base, sess, share, host := contentShareAt(t, everyPerm(), []byte("original"))
 	path := "/" + share + "/doc.bin"
 
@@ -624,6 +641,7 @@ func TestAConditionalWriteIsRefusedAfterTheFileChanges(t *testing.T) {
 // conflict screen can show it. Dropping the condition is the only way past,
 // which puts the decision with the person doing the overwrite.
 func TestEveryConditionalWriteIsRefusedAndReportsTheCurrentToken(t *testing.T) {
+	t.Parallel()
 	base, sess, share := contentShare(t, everyPerm(), []byte("original"))
 	path := "/" + share + "/doc.bin"
 
@@ -678,6 +696,7 @@ func uploadIfMatch(t *testing.T, base string, sess session, path string, content
 
 // A move relocates the entry: gone from one place, present at the other.
 func TestMovingAFile(t *testing.T) {
+	t.Parallel()
 	want := payload()
 	base, sess, share := contentShare(t, everyPerm(), want)
 
@@ -708,6 +727,7 @@ func TestMovingAFile(t *testing.T) {
 // A move onto a taken name is refused by default, and the destination keeps
 // its own contents.
 func TestAMoveOntoATakenNameIsRefused(t *testing.T) {
+	t.Parallel()
 	base, sess, share := contentShare(t, everyPerm(), []byte("source"))
 
 	if status, body := upload(t, base, sess, "/"+share+"/sub/taken.bin", []byte("destination")); status != http.StatusOK {
@@ -737,6 +757,7 @@ func TestAMoveOntoATakenNameIsRefused(t *testing.T) {
 // An unknown conflict policy is refused rather than quietly treated as the
 // default. The two differ by whether a file survives.
 func TestAnUnknownConflictPolicyIsRefused(t *testing.T) {
+	t.Parallel()
 	base, sess, share := contentShare(t, everyPerm(), []byte("source"))
 
 	status, body := post(t, base+"/api/v1/files/move", sess, map[string]string{
@@ -761,6 +782,7 @@ func TestAnUnknownConflictPolicyIsRefused(t *testing.T) {
 // every duplicate before the rename happened: the button answered 404 and
 // nothing was written.
 func TestDuplicatingAFile(t *testing.T) {
+	t.Parallel()
 	want := payload()
 	base, sess, share := contentShare(t, everyPerm(), want)
 
@@ -841,6 +863,7 @@ func listNames(t *testing.T, base string, sess session, path string) []string {
 
 // A copy is accepted as a job and leaves both files in place.
 func TestCopyingAFile(t *testing.T) {
+	t.Parallel()
 	want := payload()
 	base, sess, share := contentShare(t, everyPerm(), want)
 
@@ -905,6 +928,7 @@ func awaitJobToken(t *testing.T, base string, sess session, id string) {
 
 // The rollup reports what is beneath a directory.
 func TestTheRecursiveSize(t *testing.T) {
+	t.Parallel()
 	content := payload()
 	base, sess, share := contentShare(t, everyPerm(), content)
 
@@ -940,6 +964,7 @@ func TestTheRecursiveSize(t *testing.T) {
 
 // The recent listing reports a write that just happened.
 func TestTheRecentListing(t *testing.T) {
+	t.Parallel()
 	base, sess, share := contentShare(t, everyPerm(), []byte("x"))
 
 	if status, body := upload(t, base, sess, "/"+share+"/fresh.bin", payload()); status != http.StatusOK {
@@ -976,6 +1001,7 @@ func TestTheRecentListing(t *testing.T) {
 // An empty recent listing encodes as an array, never null. A client iterating
 // a null gets a runtime error rather than zero rows.
 func TestAnEmptyRecentListingIsAnArray(t *testing.T) {
+	t.Parallel()
 	base, _, sess := bootWithUser(t)
 
 	status, body := authed(t, http.MethodGet, base+"/api/v1/files/recent", sess)
@@ -993,9 +1019,10 @@ func TestAnEmptyRecentListingIsAnArray(t *testing.T) {
 // refuse the ordinary case: taking a copy of something you may read but not
 // modify. The destination is a separate share the account can write.
 func TestCopyingFromAShareWithoutMoveRights(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1067,6 +1094,7 @@ func TestCopyingFromAShareWithoutMoveRights(t *testing.T) {
 // An unbounded limit is a journal scan whose cost grows with how long the
 // account has been used, and it is a query a caller controls entirely.
 func TestTheRecentLimitIsBounded(t *testing.T) {
+	t.Parallel()
 	base, sess, share := contentShare(t, everyPerm(), []byte("x"))
 
 	// More writes than the ceiling, so an unbounded limit would return more

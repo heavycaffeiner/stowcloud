@@ -29,7 +29,7 @@ func shareWith(t *testing.T, perms acl.Perms) (base string, sess session, share 
 	t.Helper()
 	ctx := context.Background()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -118,6 +118,7 @@ func post(t *testing.T, url string, sess session, body any) (int, []byte) {
 // one is served by an account that was never granted it, which is the whole
 // reason the bits are separate.
 func TestEachWriteRouteNeedsItsOwnPermission(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		route   string
@@ -171,6 +172,7 @@ func TestEachWriteRouteNeedsItsOwnPermission(t *testing.T) {
 
 // ACL permission denial on a known share returns 403 fs.denied.
 func TestWriteRoutesReturn403OnPermissionDenial(t *testing.T) {
+	t.Parallel()
 	base, sess, share := shareWith(t, everyPerm()&^acl.Delete)
 	status, body := post(t, base+"/api/v1/files/delete", sess,
 		map[string]string{"path": "/" + share + "/existing.txt"})
@@ -185,6 +187,7 @@ func TestWriteRoutesReturn403OnPermissionDenial(t *testing.T) {
 // A write actually writes. Without this the permission tests above could pass
 // against a route that refuses everything.
 func TestMkdirCreatesARealDirectory(t *testing.T) {
+	t.Parallel()
 	base, sess, share := shareWith(t, everyPerm())
 
 	status, body := post(t, base+"/api/v1/files/mkdir", sess,
@@ -206,6 +209,7 @@ func TestMkdirCreatesARealDirectory(t *testing.T) {
 
 // A delete removes the entry from the listing.
 func TestDeleteRemovesTheEntry(t *testing.T) {
+	t.Parallel()
 	base, sess, share := shareWith(t, everyPerm())
 
 	status, body := post(t, base+"/api/v1/files/delete", sess,
@@ -224,6 +228,7 @@ func TestDeleteRemovesTheEntry(t *testing.T) {
 // A write to a path outside every held share is refused, and refused the same
 // way a missing one is.
 func TestAWriteOutsideTheSharesIsRefused(t *testing.T) {
+	t.Parallel()
 	base, sess, _ := shareWith(t, everyPerm())
 
 	escapes := []string{"/../etc/newdir", "/work/../../tmp/newdir", "/nothing/newdir"}
@@ -241,6 +246,7 @@ func TestAWriteOutsideTheSharesIsRefused(t *testing.T) {
 
 // A write route needs a credential.
 func TestTheWriteRoutesNeedACredential(t *testing.T) {
+	t.Parallel()
 	base, _, _ := shareWith(t, everyPerm())
 
 	for _, route := range []string{
@@ -262,6 +268,7 @@ func TestTheWriteRoutesNeedACredential(t *testing.T) {
 // A body that is not JSON is refused as malformed rather than acted on with
 // zero values. A mkdir with an empty path is a request nobody made.
 func TestAMalformedBodyIsRefused(t *testing.T) {
+	t.Parallel()
 	base, sess, _ := shareWith(t, everyPerm())
 
 	req, err := http.NewRequest(http.MethodPost, base+"/api/v1/files/mkdir",
@@ -291,9 +298,10 @@ func TestAMalformedBodyIsRefused(t *testing.T) {
 // a permanent delete: a caller that could ask for one could bypass a
 // deployment's own retention, which is what the trash is for.
 func TestADeleteGoesToTheTrashWhereTheShareHasOne(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -370,6 +378,7 @@ func vpathOf(t *testing.T, s string) vfs.Vpath {
 // would make a mkdir with an empty path into a request nobody sent, and the
 // refusal is what keeps a malformed request from becoming a well-formed one.
 func TestAMalformedBodyNeverReachesTheService(t *testing.T) {
+	t.Parallel()
 	base, sess, share := shareWith(t, everyPerm())
 
 	bodies := []string{"this is not json", "{", "[]", `{"path":`, ""}

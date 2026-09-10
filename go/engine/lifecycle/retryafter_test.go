@@ -19,6 +19,7 @@ import (
 // a batch of uploads that all guess the same short one comes back together and
 // is refused together.
 func TestASpoolRefusalCarriesItsOwnDelay(t *testing.T) {
+	t.Parallel()
 	app := fiber.New()
 	app.Get("/full", func(c *fiber.Ctx) error {
 		return fail(c, &upload.CacheFullError{RetryAfterSeconds: 7})

@@ -23,7 +23,7 @@ func trashShare(t *testing.T, perms acl.Perms) (base string, sess session, share
 	t.Helper()
 	ctx := context.Background()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -105,6 +105,7 @@ func trashOne(t *testing.T, base string, sess session, share string) string {
 // destination could move a file anywhere it can write, using a delete as the
 // first half of the move.
 func TestARestoreReturnsTheEntryToItsOrigin(t *testing.T) {
+	t.Parallel()
 	base, sess, share := trashShare(t, everyPerm())
 
 	id := trashOne(t, base, sess, share)
@@ -142,6 +143,7 @@ func TestARestoreReturnsTheEntryToItsOrigin(t *testing.T) {
 // The restore request carries no destination. A field a caller could set would
 // be one they could point anywhere they can write.
 func TestARestoreRequestNamesNoDestination(t *testing.T) {
+	t.Parallel()
 	base, sess, share := trashShare(t, everyPerm())
 
 	id := trashOne(t, base, sess, share)
@@ -162,6 +164,7 @@ func TestARestoreRequestNamesNoDestination(t *testing.T) {
 
 // Purging one entry removes it and leaves the rest.
 func TestPurgingOneEntryLeavesTheRest(t *testing.T) {
+	t.Parallel()
 	base, sess, share := trashShare(t, everyPerm())
 
 	// Two entries, so "removed one" is distinguishable from "emptied".
@@ -196,6 +199,7 @@ func TestPurgingOneEntryLeavesTheRest(t *testing.T) {
 
 // An empty trash lists as an empty array, not null.
 func TestAnEmptyTrashListsAsAnArray(t *testing.T) {
+	t.Parallel()
 	base, sess, share := trashShare(t, everyPerm())
 
 	status, body := authed(t, http.MethodGet,
@@ -219,6 +223,7 @@ func TestAnEmptyTrashListsAsAnArray(t *testing.T) {
 // Restoring needs Create, because a restore adds a file to the tree. An
 // account that may remove things is not thereby allowed to put them back.
 func TestRestoringNeedsCreate(t *testing.T) {
+	t.Parallel()
 	base, sess, share := trashShare(t, everyPerm())
 	id := trashOne(t, base, sess, share)
 
@@ -255,6 +260,7 @@ func TestRestoringNeedsCreate(t *testing.T) {
 // The trash routes need a credential. Another account's deleted files are
 // still their files.
 func TestTheTrashRoutesNeedACredential(t *testing.T) {
+	t.Parallel()
 	base, _, share := trashShare(t, everyPerm())
 
 	// Refused as an address that is not there, so a stranger cannot map the
@@ -276,6 +282,7 @@ func TestTheTrashRoutesNeedACredential(t *testing.T) {
 
 // A trash operation on a share this account cannot reach is refused.
 func TestTrashOutsideTheSharesIsRefused(t *testing.T) {
+	t.Parallel()
 	base, sess, _ := trashShare(t, everyPerm())
 
 	for _, path := range []string{"/../etc", "/nothing", "/bin/../../tmp"} {
@@ -293,6 +300,7 @@ func TestTrashOutsideTheSharesIsRefused(t *testing.T) {
 // client told the entry is gone stops showing it, and the next listing brings
 // it back.
 func TestPurgingAnAbsentEntryIsRefused(t *testing.T) {
+	t.Parallel()
 	base, sess, share := trashShare(t, everyPerm())
 	trashOne(t, base, sess, share)
 
@@ -330,6 +338,7 @@ func TestPurgingAnAbsentEntryIsRefused(t *testing.T) {
 // The client names the entries it wants gone; a body that named none of them
 // has asked for nothing, so the answer is an empty result set.
 func TestAnEmptyPurgeBatchIsANoOp(t *testing.T) {
+	t.Parallel()
 	base, sess, _ := trashShare(t, everyPerm())
 
 	status, body := post(t, base+"/api/v1/trash/purge", sess,

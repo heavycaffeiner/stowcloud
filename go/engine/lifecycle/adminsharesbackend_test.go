@@ -12,6 +12,7 @@ import (
 // An empty secret_access_key in a patch is refused rather than treated as
 // clearing the stored credential: a share with no credential cannot serve.
 func TestApplyS3PatchRefusesAnEmptyCredential(t *testing.T) {
+	t.Parallel()
 	cfg := objstore.Config{Bucket: "photos", Region: "us-east-1"}
 
 	if _, err := applyS3Patch(&cfg, &shareS3Request{
@@ -36,6 +37,7 @@ func TestApplyS3PatchRefusesAnEmptyCredential(t *testing.T) {
 // A present, non-empty secret is reported so the caller can seal and store
 // it as the share's new credential.
 func TestApplyS3PatchReportsANewCredential(t *testing.T) {
+	t.Parallel()
 	cfg := objstore.Config{Bucket: "photos", Region: "us-east-1"}
 	plain, err := applyS3Patch(&cfg, &shareS3Request{SecretAccessKey: new("new-key")})
 	if err != nil {
@@ -48,6 +50,7 @@ func TestApplyS3PatchReportsANewCredential(t *testing.T) {
 
 // The same refusal for veracrypt's password.
 func TestApplyVeracryptPatchRefusesAnEmptyCredential(t *testing.T) {
+	t.Parallel()
 	cfg := vault.Config{Container: "/srv/vaults/v.hc"}
 	if _, err := applyVeracryptPatch(&cfg, &shareVeracryptRequest{
 		Password: new(""),
@@ -60,6 +63,7 @@ func TestApplyVeracryptPatchRefusesAnEmptyCredential(t *testing.T) {
 // naming either is refused rather than silently ignored or, worse, acted
 // on again against a container already in use.
 func TestApplyVeracryptPatchRefusesCreateFields(t *testing.T) {
+	t.Parallel()
 	cfg := vault.Config{Container: "/srv/vaults/v.hc"}
 	if _, err := applyVeracryptPatch(&cfg, &shareVeracryptRequest{
 		Create: new(true), SizeMiB: new(uint64(256)),
@@ -71,6 +75,7 @@ func TestApplyVeracryptPatchRefusesCreateFields(t *testing.T) {
 // shareSpecOf refuses an s3 object carried alongside backend local, rather
 // than silently ignoring it and storing a local share with no s3 fields.
 func TestShareSpecOfRefusesAnS3ObjectAgainstBackendLocal(t *testing.T) {
+	t.Parallel()
 	_, err := shareSpecOf(createShareRequest{
 		Name: "docs", Host: "/srv/docs", Backend: "local",
 		S3: &shareS3Request{Bucket: new("photos")},
@@ -83,6 +88,7 @@ func TestShareSpecOfRefusesAnS3ObjectAgainstBackendLocal(t *testing.T) {
 // A veracrypt backend with no password is refused on creation: this server
 // cannot open, let alone create, a container it holds no password for.
 func TestShareSpecOfRefusesVeracryptWithNoPassword(t *testing.T) {
+	t.Parallel()
 	_, err := shareSpecOf(createShareRequest{
 		Name: "vault", Backend: "veracrypt",
 		Veracrypt: &shareVeracryptRequest{

@@ -74,6 +74,7 @@ func mutate(t *testing.T, method, url string, cookie *http.Cookie, csrf string, 
 // Without the reconfirmation they could set a new password and own the
 // account outright.
 func TestChangingAPasswordNeedsTheCurrentOne(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootForLogin(t)
 	cookie, csrf := signedIn(t, base)
 
@@ -101,6 +102,7 @@ func TestChangingAPasswordNeedsTheCurrentOne(t *testing.T) {
 
 // The correct current password changes it, and the new one is what signs in.
 func TestChangingAPassword(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootForLogin(t)
 	cookie, csrf := signedIn(t, base)
 
@@ -123,6 +125,7 @@ func TestChangingAPassword(t *testing.T) {
 
 // A password under the floor is refused, and the old one keeps working.
 func TestAWeakPasswordIsRefused(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootForLogin(t)
 	cookie, csrf := signedIn(t, base)
 
@@ -141,6 +144,7 @@ func TestAWeakPasswordIsRefused(t *testing.T) {
 // Minting an app password returns the token once, it is live on the file
 // protocol, and it is refused on the native API.
 func TestMintingAnAppPassword(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootForLogin(t)
 	cookie, csrf := signedIn(t, base)
 
@@ -209,6 +213,7 @@ func containsToken(body, token string) bool {
 // Minting needs the current password too. The credential outlives the session
 // that created it, so a session alone must not be able to mint one.
 func TestMintingAnAppPasswordNeedsTheCurrentPassword(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootForLogin(t)
 	cookie, csrf := signedIn(t, base)
 
@@ -227,6 +232,7 @@ func TestMintingAnAppPasswordNeedsTheCurrentPassword(t *testing.T) {
 
 // A session can be signed out by the handle the listing published.
 func TestRevokingOneSession(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootForLogin(t)
 
 	doomed, _ := signedIn(t, base)
@@ -275,9 +281,10 @@ func TestRevokingOneSession(t *testing.T) {
 
 // A handle belonging to another account revokes nothing.
 func TestRevokingAnotherAccountsSessionIsRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,6 +333,7 @@ func TestRevokingAnotherAccountsSessionIsRefused(t *testing.T) {
 // Enrolling a second factor requires a working code, and issues recovery
 // codes that actually sign in.
 func TestEnrollingASecondFactor(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootForLogin(t)
 	cookie, csrf := signedIn(t, base)
 
@@ -374,6 +382,7 @@ func TestEnrollingASecondFactor(t *testing.T) {
 // was misconfigured would be locked out of their own account by a screen that
 // told them the code was wrong.
 func TestAFailedEnrolmentLeavesTheFactorOff(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootForLogin(t)
 	cookie, csrf := signedIn(t, base)
 
@@ -403,6 +412,7 @@ func TestAFailedEnrolmentLeavesTheFactorOff(t *testing.T) {
 
 // Disabling needs the current password and then really turns it off.
 func TestDisablingTheSecondFactor(t *testing.T) {
+	t.Parallel()
 	base, e, id := bootForLogin(t)
 	enrol(t, e, id)
 	ctx := context.Background()
@@ -477,6 +487,7 @@ func hexOf(t secret.Secret) string { return hex.EncodeToString(t.Reveal()) }
 // is ever marked, that screen signs the person out of the device they are
 // holding, and the listing looks correct while doing it.
 func TestTheSessionListingMarksTheCurrentOne(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootForLogin(t)
 
 	first, _ := signedIn(t, base)
@@ -546,6 +557,7 @@ func markedHandle(t *testing.T, base string, cookie *http.Cookie) string {
 // browser's own surface, and a token that could read the session list could
 // also revoke the session that created it.
 func TestAnAppPasswordCannotReachTheSessionList(t *testing.T) {
+	t.Parallel()
 	base, token, _ := bootWithUser(t)
 
 	code, listed := appPasswordAuthed(t, http.MethodGet, base+"/api/v1/account/sessions", token)
@@ -561,6 +573,7 @@ func TestAnAppPasswordCannotReachTheSessionList(t *testing.T) {
 // prefix stops answering not-found names a live session. An empty handle
 // under that comparison matches the first row outright.
 func TestAPartialSessionHandleRevokesNothing(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootForLogin(t)
 
 	victim, _ := signedIn(t, base)
@@ -598,6 +611,7 @@ func TestAPartialSessionHandleRevokesNothing(t *testing.T) {
 // the past, and the store would accept it: the caller gets a token in a 201
 // response that authenticates nothing.
 func TestANegativeExpiryIsRefused(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootForLogin(t)
 	cookie, csrf := signedIn(t, base)
 
@@ -613,6 +627,7 @@ func TestANegativeExpiryIsRefused(t *testing.T) {
 
 // A credential minted with an expiry still authenticates before it lapses.
 func TestAnExpiringCredentialWorksUntilItLapses(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootForLogin(t)
 	cookie, csrf := signedIn(t, base)
 
@@ -648,6 +663,7 @@ func TestAnExpiringCredentialWorksUntilItLapses(t *testing.T) {
 // the person's side: they save what the screen showed and find out it is
 // worthless on the day they have lost their authenticator.
 func TestEnrolmentIssuesUsableRecoveryCodes(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootForLogin(t)
 	cookie, csrf := signedIn(t, base)
 

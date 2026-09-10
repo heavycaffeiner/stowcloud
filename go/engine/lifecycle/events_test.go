@@ -39,7 +39,7 @@ func eventsEngine(t *testing.T) (base string, admin, plain *http.Cookie, e *life
 
 	// Saved before the engine that serves it opens: the host list is read at
 	// construction, which is the order an operator configures in anyway.
-	first, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	first, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -61,7 +61,7 @@ func eventsEngine(t *testing.T) (base string, admin, plain *http.Cookie, e *life
 	// Not closed by a cleanup: one test closes it itself, and a second close
 	// of an engine whose files are already released reports an error the test
 	// did not cause.
-	opened, oerr := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	opened, oerr := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if oerr != nil {
 		t.Fatalf("reopening: %v", oerr)
 	}
@@ -293,6 +293,7 @@ func awaitFrame(t *testing.T, conn *websocket.Conn, within time.Duration) (frame
 // The change channel needs a credential, like every other authenticated
 // surface. It is not a second way in.
 func TestTheChangeChannelNeedsACredential(t *testing.T) {
+	t.Parallel()
 	base, _, _, e := eventsEngine(t)
 	defer closeEngine(t, e)
 
@@ -325,6 +326,7 @@ func TestTheChangeChannelNeedsACredential(t *testing.T) {
 // A plain GET is a client that has not upgraded, and is told so rather than
 // left on a stream that will never carry a frame.
 func TestAPlainGetOnTheChangeChannelAsksForAnUpgrade(t *testing.T) {
+	t.Parallel()
 	base, adminCookie, _, e := eventsEngine(t)
 	defer closeEngine(t, e)
 
@@ -337,6 +339,7 @@ func TestAPlainGetOnTheChangeChannelAsksForAnUpgrade(t *testing.T) {
 // A write under a subscribed directory produces one invalidation naming the
 // path the client subscribed to.
 func TestAChangeUnderASubscribedPathIsDelivered(t *testing.T) {
+	t.Parallel()
 	base, cookie, _, e := eventsEngine(t)
 	defer closeEngine(t, e)
 	share, hostDir := watchedShare(t, base, cookie, "docs")
@@ -373,6 +376,7 @@ func TestAChangeUnderASubscribedPathIsDelivered(t *testing.T) {
 // is what made this read as a display bug: the browser showed a folder full of
 // files whose total size was zero.
 func TestAnOutsideChangeInvalidatesTheCachedRollup(t *testing.T) {
+	t.Parallel()
 	base, cookie, _, e := eventsEngine(t)
 	defer closeEngine(t, e)
 	share, hostDir := watchedShare(t, base, cookie, "docs")
@@ -432,6 +436,7 @@ func TestAnOutsideChangeInvalidatesTheCachedRollup(t *testing.T) {
 // caller holds now. Pushing content would deliver what the subscriber was
 // entitled to when they subscribed.
 func TestAnInvalidationCarriesNoContent(t *testing.T) {
+	t.Parallel()
 	base, cookie, _, e := eventsEngine(t)
 	defer closeEngine(t, e)
 	share, hostDir := watchedShare(t, base, cookie, "docs")
@@ -477,6 +482,7 @@ func TestAnInvalidationCarriesNoContent(t *testing.T) {
 // while its tab was open, which is a revocation the client never learns about
 // and the server keeps ignoring.
 func TestRevokingAGrantStopsDelivery(t *testing.T) {
+	t.Parallel()
 	base, adminCookie, plainCookie, e := eventsEngine(t)
 	defer closeEngine(t, e)
 	share, hostDir := watchedShare(t, base, adminCookie, "docs")
@@ -611,6 +617,7 @@ func hostPost(t *testing.T, base, path string, cookie *http.Cookie, body string)
 // Silently, because the alternative tells the caller whether a directory they
 // may not read exists.
 func TestSubscribingToAnUnreadablePathDeliversNothing(t *testing.T) {
+	t.Parallel()
 	base, adminCookie, plainCookie, e := eventsEngine(t)
 	defer closeEngine(t, e)
 	share, hostDir := watchedShare(t, base, adminCookie, "docs")
@@ -631,6 +638,7 @@ func TestSubscribingToAnUnreadablePathDeliversNothing(t *testing.T) {
 
 // A ping is answered, which is what keeps a connection through an idle proxy.
 func TestAPingIsAnswered(t *testing.T) {
+	t.Parallel()
 	base, cookie, _, e := eventsEngine(t)
 	defer closeEngine(t, e)
 
@@ -648,6 +656,7 @@ func TestAPingIsAnswered(t *testing.T) {
 
 // An unreadable frame ends the conversation rather than being skipped.
 func TestAMalformedFrameClosesTheConnection(t *testing.T) {
+	t.Parallel()
 	base, cookie, _, e := eventsEngine(t)
 	defer closeEngine(t, e)
 
@@ -675,6 +684,7 @@ func TestAMalformedFrameClosesTheConnection(t *testing.T) {
 
 // Unsubscribing stops delivery.
 func TestUnsubscribingStopsDelivery(t *testing.T) {
+	t.Parallel()
 	base, cookie, _, e := eventsEngine(t)
 	defer closeEngine(t, e)
 	share, hostDir := watchedShare(t, base, cookie, "docs")
@@ -697,6 +707,7 @@ func TestUnsubscribingStopsDelivery(t *testing.T) {
 // Closing the engine with a socket open releases everything rather than
 // hanging on a connection nobody is reading.
 func TestClosingTheEngineReleasesOpenSockets(t *testing.T) {
+	t.Parallel()
 	base, cookie, _, e := eventsEngine(t)
 	dialEvents(t, base, cookie)
 
@@ -759,6 +770,7 @@ func closeEngine(t *testing.T, e *lifecycle.Engine) {
 // removed the socket and left the pins, so every tab that closed cost a kernel
 // watch for the life of the process.
 func TestADisconnectReleasesEverySubscription(t *testing.T) {
+	t.Parallel()
 	base, cookie, _, e := eventsEngine(t)
 	defer closeEngine(t, e)
 	share, _ := watchedShare(t, base, cookie, "docs")
@@ -794,6 +806,7 @@ func TestADisconnectReleasesEverySubscription(t *testing.T) {
 // subscribed to carries no kernel watch, so it emits nothing at all and the
 // match is never reached.
 func TestAChangeIsReportedAgainstTheShareItHappenedIn(t *testing.T) {
+	t.Parallel()
 	base, cookie, _, e := eventsEngine(t)
 	defer closeEngine(t, e)
 
@@ -823,6 +836,7 @@ func TestAChangeIsReportedAgainstTheShareItHappenedIn(t *testing.T) {
 // take a reference the single unsubscribe never returns: the directory would
 // stay in the half nothing evicts for the life of the process.
 func TestSubscribingTwiceTakesOnePin(t *testing.T) {
+	t.Parallel()
 	base, cookie, _, e := eventsEngine(t)
 	defer closeEngine(t, e)
 	share, _ := watchedShare(t, base, cookie, "docs")
@@ -855,6 +869,7 @@ func TestSubscribingTwiceTakesOnePin(t *testing.T) {
 // separates them: a client told its subdirectory changed when the write landed
 // beside it re-fetches the wrong folder and misses nothing it was watching.
 func TestAChangeIsReportedAgainstTheDirectoryItHappenedIn(t *testing.T) {
+	t.Parallel()
 	base, cookie, _, e := eventsEngine(t)
 	defer closeEngine(t, e)
 	share, hostDir := watchedShare(t, base, cookie, "docs")
@@ -887,6 +902,7 @@ func TestAChangeIsReportedAgainstTheDirectoryItHappenedIn(t *testing.T) {
 
 // A change inside the subscribed directory is delivered, naming it.
 func TestAChangeInsideTheSubscribedDirectoryIsDelivered(t *testing.T) {
+	t.Parallel()
 	base, cookie, _, e := eventsEngine(t)
 	defer closeEngine(t, e)
 	share, hostDir := watchedShare(t, base, cookie, "docs")

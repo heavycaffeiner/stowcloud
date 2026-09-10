@@ -39,6 +39,7 @@ func enableEncryptionBody() map[string]any {
 // types into rclone, and the verifier through base64, since JSON has no
 // binary type.
 func TestShareEncryptionEnableThenReadRoundTrips(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 	share := makeShare(t, base, cookie, csrf, "vault")
 
@@ -93,6 +94,7 @@ func TestShareEncryptionEnableThenReadRoundTrips(t *testing.T) {
 // A scheme this server does not record is refused, not silently accepted as
 // whatever the client meant.
 func TestShareEncryptionEnableRefusesWrongScheme(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 	share := makeShare(t, base, cookie, csrf, "vault")
 
@@ -110,6 +112,7 @@ func TestShareEncryptionEnableRefusesWrongScheme(t *testing.T) {
 // A salt of the wrong length or alphabet does not carry the entropy the
 // design assumes, so it is refused rather than stored.
 func TestShareEncryptionEnableRefusesMalformedSalt(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		salt string
@@ -137,6 +140,7 @@ func TestShareEncryptionEnableRefusesMalformedSalt(t *testing.T) {
 // A verifier that is not 67 bytes beginning with rclone's own magic is
 // refused, whether it fails to decode at all or decodes to the wrong shape.
 func TestShareEncryptionEnableRefusesMalformedVerifier(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name     string
 		verifier string
@@ -166,6 +170,7 @@ func TestShareEncryptionEnableRefusesMalformedVerifier(t *testing.T) {
 // on: plaintext already written under it would sit beside ciphertext with
 // nothing on disk saying which was which.
 func TestShareEncryptionEnableRefusesNonEmptyShare(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 	share := makeShare(t, base, cookie, csrf, "vault")
 
@@ -186,6 +191,7 @@ func TestShareEncryptionEnableRefusesNonEmptyShare(t *testing.T) {
 // An id naming no share at all is not found, the same as every other
 // admin/{id} route on this surface.
 func TestShareEncryptionEnableRefusesUnknownShare(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	status, body := mutate(t, http.MethodPost, base+"/api/v1/encryption/999999", cookie, csrf, enableEncryptionBody())
@@ -198,6 +204,7 @@ func TestShareEncryptionEnableRefusesUnknownShare(t *testing.T) {
 // was and now is not, both answer success rather than the caller having to
 // know which case it is in before asking.
 func TestShareEncryptionDisableIsIdempotent(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 	share := makeShare(t, base, cookie, csrf, "vault")
 
@@ -226,6 +233,7 @@ func TestShareEncryptionDisableIsIdempotent(t *testing.T) {
 // Neither route reaches the service for an account that does not administer
 // this deployment, the same gate every admin/* mutation demands.
 func TestShareEncryptionEnableAndDisableRefuseNonAdmin(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, plainCookie, plainCSRF := adminEngine(t)
 	share := makeShare(t, base, cookie, csrf, "vault")
 
@@ -243,6 +251,7 @@ func TestShareEncryptionEnableAndDisableRefuseNonAdmin(t *testing.T) {
 // own grants project: an encrypted share nobody granted them stays invisible,
 // the same rule the file listing enforces.
 func TestShareEncryptionListFiltersByGrant(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, plainCookie, _ := adminEngine(t)
 
 	visible := makeShare(t, base, cookie, csrf, "visible")

@@ -19,7 +19,7 @@ func engineWithUser(t *testing.T) (*lifecycle.Engine, int64) {
 	t.Helper()
 	ctx := context.Background()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -39,6 +39,7 @@ func engineWithUser(t *testing.T) (*lifecycle.Engine, int64) {
 // A real session resolves to the account it was minted for, carrying every
 // permission: a session is the account itself rather than a delegation of it.
 func TestASessionResolvesToItsAccount(t *testing.T) {
+	t.Parallel()
 	e, userID := engineWithUser(t)
 	ctx := context.Background()
 
@@ -77,6 +78,7 @@ func TestASessionResolvesToItsAccount(t *testing.T) {
 // difference between a delegation and the account, and reading it as a session
 // would hand every app password full control.
 func TestAnAppPasswordCarriesOnlyItsScope(t *testing.T) {
+	t.Parallel()
 	e, userID := engineWithUser(t)
 	ctx := context.Background()
 
@@ -110,6 +112,7 @@ func TestAnAppPasswordCarriesOnlyItsScope(t *testing.T) {
 // The same token in the other header form resolves the same way. WebDAV and
 // sync clients send whichever their library prefers.
 func TestBothAppPasswordHeaderFormsResolve(t *testing.T) {
+	t.Parallel()
 	e, userID := engineWithUser(t)
 	ctx := context.Background()
 
@@ -137,6 +140,7 @@ func TestBothAppPasswordHeaderFormsResolve(t *testing.T) {
 // Nothing that is not a live credential resolves. Each of these would be an
 // account taken over by someone holding no secret at all.
 func TestNothingElseResolves(t *testing.T) {
+	t.Parallel()
 	e, userID := engineWithUser(t)
 	ctx := context.Background()
 
@@ -185,6 +189,7 @@ func TestNothingElseResolves(t *testing.T) {
 // A revoked session stops resolving. A session that outlived its revocation is
 // a sign-out that did not sign anyone out.
 func TestARevokedSessionStopsResolving(t *testing.T) {
+	t.Parallel()
 	e, userID := engineWithUser(t)
 	ctx := context.Background()
 
@@ -212,6 +217,7 @@ func TestARevokedSessionStopsResolving(t *testing.T) {
 // One account's credential never resolves to another. This is the property
 // every other one rests on.
 func TestACredentialNeverCrossesAccounts(t *testing.T) {
+	t.Parallel()
 	e, alice := engineWithUser(t)
 	ctx := context.Background()
 

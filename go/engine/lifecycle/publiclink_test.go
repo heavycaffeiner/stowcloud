@@ -28,6 +28,7 @@ import (
 // The file a link points at downloads, as an attachment, to a caller holding
 // nothing but the address.
 func TestAPublicLinkDownloadsWithoutACredential(t *testing.T) {
+	t.Parallel()
 	base, token, _ := linkEngine(t, "note.txt", []byte("shared bytes"), acl.Read|acl.Download)
 
 	status, header, body := anonymous(t, http.MethodGet, base+"/s/"+token+"/download", nil)
@@ -44,6 +45,7 @@ func TestAPublicLinkDownloadsWithoutACredential(t *testing.T) {
 
 // The landing endpoint describes the link so the page can draw itself.
 func TestAPublicLinkDescribesItself(t *testing.T) {
+	t.Parallel()
 	base, token, _ := linkEngine(t, "note.txt", []byte("shared"), acl.Read|acl.Download)
 
 	status, _, body := anonymous(t, http.MethodGet, base+"/s/"+token, nil)
@@ -74,6 +76,7 @@ func TestAPublicLinkDescribesItself(t *testing.T) {
 // is one where the password only guards the bytes, and the name of a file is
 // frequently the sensitive part.
 func TestALockedLinkRevealsNothingUntilUnlocked(t *testing.T) {
+	t.Parallel()
 	base, token, _ := linkEngineWithPassword(t, "salary-2026.pdf", []byte("%PDF"), "the-password")
 
 	status, _, body := anonymous(t, http.MethodGet, base+"/s/"+token, nil)
@@ -104,6 +107,7 @@ func TestALockedLinkRevealsNothingUntilUnlocked(t *testing.T) {
 
 // The password opens the link, and the wrong one does not.
 func TestThePasswordUnlocksALinkAndAWrongOneDoesNot(t *testing.T) {
+	t.Parallel()
 	base, token, _ := linkEngineWithPassword(t, "note.txt", []byte("guarded"), "the-password")
 
 	wrong, _, _ := anonymous(t, http.MethodPost, base+"/s/"+token+"/auth",
@@ -143,6 +147,7 @@ func TestThePasswordUnlocksALinkAndAWrongOneDoesNot(t *testing.T) {
 
 // A folder link packs a zip a visitor can actually open.
 func TestAPublicFolderLinkPacksAZip(t *testing.T) {
+	t.Parallel()
 	base, token := linkEngineOverFolder(t, acl.Read|acl.Download)
 
 	status, header, body := anonymous(t, http.MethodGet, base+"/s/"+token+"/zip", nil)
@@ -177,6 +182,7 @@ func TestAPublicFolderLinkPacksAZip(t *testing.T) {
 // something in and cannot see what is already there. A landing that listed the
 // folder would reveal exactly what the link exists not to.
 func TestADropLinkAcceptsAFileAndListsNothing(t *testing.T) {
+	t.Parallel()
 	base, token, host := linkEngineOverFolderAt(t, acl.Create)
 
 	status, _, body := anonymous(t, http.MethodGet, base+"/s/"+token, nil)
@@ -218,6 +224,7 @@ func TestADropLinkAcceptsAFileAndListsNothing(t *testing.T) {
 
 // A token that names no link is not found, and says nothing else.
 func TestAnUnknownTokenIsNotFound(t *testing.T) {
+	t.Parallel()
 	base, _, _ := linkEngine(t, "note.txt", []byte("x"), acl.Read|acl.Download)
 
 	status, _, _ := anonymous(t, http.MethodGet, base+"/s/nosuchtokenatall", nil)
@@ -240,6 +247,7 @@ func TestAnUnknownTokenIsNotFound(t *testing.T) {
 // credential at all, and CSRF does not apply to that, so a made-up token
 // would pass this test with the fix reverted.
 func TestASignedInBrowserCanUnlockALinkAndDropIntoOne(t *testing.T) {
+	t.Parallel()
 	base, token, _ := linkEngineWithPassword(t, "note.txt", []byte("guarded"), "the-password")
 	sess := signIn(t, base, "alice", "a-long-enough-password")
 	cookie := sess.cookie.Name + "=" + sess.cookie.Value
@@ -379,7 +387,7 @@ func linkFixture(t *testing.T) (*lifecycle.Engine, int64, core.Share, string) {
 	t.Helper()
 	ctx := context.Background()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}

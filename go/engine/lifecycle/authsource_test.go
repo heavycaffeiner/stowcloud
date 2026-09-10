@@ -22,6 +22,7 @@ import (
 // out, and the token in anything that copied the cookie keeps working. Both
 // orderings answer 204 to the client, so no response tells them apart.
 func TestLogoutClearsTheCookieAfterTheRevoke(t *testing.T) {
+	t.Parallel()
 	body := logoutBody(t)
 
 	clearAt, revokeAt := -1, -1

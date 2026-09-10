@@ -17,6 +17,7 @@ import (
 // engine reports that a restart is wanted and the process it is mounted on
 // decides how, which is what keeps this testable at all.
 func TestARestartIsAnsweredBeforeItHappens(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	status, body := mutate(t, http.MethodPost, base+"/api/v1/admin/system/restart",
@@ -49,6 +50,7 @@ func TestARestartIsAnsweredBeforeItHappens(t *testing.T) {
 // per route category, so a new one that forgot would be a denial of service
 // available to anybody who can log in.
 func TestARestartNeedsAnAdministrator(t *testing.T) {
+	t.Parallel()
 	base, _, _, plain, plainCSRF := adminEngine(t)
 
 	status, body := mutate(t, http.MethodPost, base+"/api/v1/admin/system/restart",
@@ -60,6 +62,7 @@ func TestARestartNeedsAnAdministrator(t *testing.T) {
 
 // And not an anonymous caller's either.
 func TestARestartRefusesAnonymously(t *testing.T) {
+	t.Parallel()
 	base, _, _, _, _ := adminEngine(t)
 
 	status, _ := get(t, base+"/api/v1/admin/system/restart")
@@ -81,6 +84,7 @@ func TestARestartRefusesAnonymously(t *testing.T) {
 // exit would apply the change and leave the server down for as long as it
 // takes somebody to notice.
 func TestARestartRefusesToLoosenTheSandbox(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	// The test process installed nothing, which is the strictest reading the

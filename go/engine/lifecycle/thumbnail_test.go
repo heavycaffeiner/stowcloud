@@ -32,6 +32,14 @@ import (
 // A closure over sync.OnceValues rather than three package variables: the
 // cache is what the memoisation is for, and nothing outside this file has any
 // business reading it.
+//
+// CGO_ENABLED=0, which is how the image builds it. With cgo on the binary
+// links glibc, and glibc's thread bring-up issues clone3, rseq and
+// set_robust_list, none of which the shipped worker makes or the jail admits;
+// clone3 cannot be gated at all, since its flags live in a struct seccomp
+// cannot read. Inherited from the race step, which runs with cgo on, that
+// built a worker the sandbox killed the moment a thread started: an
+// intermittent 503 with "bad system call" and nothing else to read.
 var buildJailedWorker = sync.OnceValues(func() (string, error) { //nolint:gochecknoglobals // one build per test binary, which is what the memoisation is for.
 	dir, err := os.MkdirTemp("", "jailedworker")
 	if err != nil {
@@ -41,6 +49,7 @@ var buildJailedWorker = sync.OnceValues(func() (string, error) { //nolint:gochec
 	//nolint:gosec // G204: every argument is this test's own constant.
 	cmd := exec.Command("go", "build", "-o", bin,
 		"github.com/heavycaffeiner/stowcloud/go/engine/service/preview/worker/jailedworker")
+	cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
 	if out, berr := cmd.CombinedOutput(); berr != nil {
 		return "", errors.New(string(out))
 	}
@@ -86,13 +95,18 @@ func samplePNG(t *testing.T, w, h int) []byte {
 }
 
 // thumbShare serves a share holding one image, with the decoder wired.
+//
+// Each test builds its own engine and its own decoder pool, so they run in
+// parallel like the rest of the package; the pool refuses rather than queues,
+// but no two tests share one.
 func thumbShare(t *testing.T, perms acl.Perms, img []byte) (base string, sess session, share, host string) {
 	t.Helper()
 	ctx := context.Background()
 
 	e, err := lifecycle.Open(ctx, lifecycle.Options{
-		DataDir:       t.TempDir(),
-		PreviewWorker: jailedWorker(t),
+		DataDir:        t.TempDir(),
+		PreviewWorker:  jailedWorker(t),
+		PasswordParams: fastPasswordParams(),
 	})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
@@ -178,6 +192,7 @@ func thumbnailClaim(
 // is still bytes: the interface would show a broken image and the route would
 // have reported success.
 func TestAThumbnailIsADecodablePNG(t *testing.T) {
+	t.Parallel()
 	base, sess, share, _ := thumbShare(t, everyPerm(), samplePNG(t, 400, 300))
 
 	status, header, body := thumbnail(t, base, sess, "/"+share+"/photo.png", "")
@@ -239,6 +254,7 @@ func TestAThumbnailIsADecodablePNG(t *testing.T) {
 // came back rotated, mirrored, or of a different file would still decode, so
 // the corner is what proves the pixels are the ones that went in.
 func TestAThumbnailKeepsTheImageOrientation(t *testing.T) {
+	t.Parallel()
 	base, sess, share, _ := thumbShare(t, everyPerm(), samplePNG(t, 400, 300))
 
 	status, _, body := thumbnail(t, base, sess, "/"+share+"/photo.png", "")
@@ -271,6 +287,7 @@ func TestAThumbnailKeepsTheImageOrientation(t *testing.T) {
 
 // A file nothing can decode is refused rather than answered with a broken image.
 func TestAThumbnailOfAnUndecodableFileIsRefused(t *testing.T) {
+	t.Parallel()
 	base, sess, share, host := thumbShare(t, everyPerm(), samplePNG(t, 64, 64))
 
 	if werr := os.WriteFile(filepath.Join(host, "notes.txt"),
@@ -289,6 +306,7 @@ func TestAThumbnailOfAnUndecodableFileIsRefused(t *testing.T) {
 // It derives from the bytes, so serving one to an account that may not read
 // them hands over a downscaled copy of a file it cannot open.
 func TestAThumbnailNeedsTheFilesPermission(t *testing.T) {
+	t.Parallel()
 	// Listing without downloading: the grant shows the name and withholds the
 	// bytes, which is exactly the case a thumbnail would leak.
 	base, sess, share, _ := thumbShare(t, acl.Read, samplePNG(t, 200, 200))
@@ -309,6 +327,7 @@ func TestAThumbnailNeedsTheFilesPermission(t *testing.T) {
 // that: the path yields no reference, and a value the server did not seal is
 // refused.
 func TestAThumbnailCannotEscapeTheShare(t *testing.T) {
+	t.Parallel()
 	base, sess, share, _ := thumbShare(t, everyPerm(), samplePNG(t, 64, 64))
 
 	for _, p := range []string{
@@ -338,6 +357,7 @@ func TestAThumbnailCannotEscapeTheShare(t *testing.T) {
 
 // An unknown size is refused rather than rounded to the nearest.
 func TestAnUnknownThumbnailSizeIsRefused(t *testing.T) {
+	t.Parallel()
 	base, sess, share, _ := thumbShare(t, everyPerm(), samplePNG(t, 200, 200))
 
 	status, _, _ := thumbnail(t, base, sess, "/"+share+"/photo.png", "enormous")
@@ -348,6 +368,7 @@ func TestAnUnknownThumbnailSizeIsRefused(t *testing.T) {
 
 // The three defined sizes differ, so asking for one is not asking for another.
 func TestTheThumbnailSizesDiffer(t *testing.T) {
+	t.Parallel()
 	base, sess, share, _ := thumbShare(t, everyPerm(), samplePNG(t, 800, 600))
 
 	seen := make(map[string]image.Point, 3)
@@ -373,6 +394,7 @@ func TestTheThumbnailSizesDiffer(t *testing.T) {
 
 // A thumbnail needs a credential.
 func TestAThumbnailNeedsACredential(t *testing.T) {
+	t.Parallel()
 	base, _, share, _ := thumbShare(t, everyPerm(), samplePNG(t, 64, 64))
 
 	// The refusal is disguised as a missing address: middleware.scopeHandler
@@ -394,10 +416,12 @@ func TestAThumbnailNeedsACredential(t *testing.T) {
 // route it exercises is the native API's, which now admits only the browser
 // session, so that is the surface this test is actually about.
 func TestThumbnailSettingCanBeToggledOff(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	e, err := lifecycle.Open(ctx, lifecycle.Options{
-		DataDir:       t.TempDir(),
-		PreviewWorker: jailedWorker(t),
+		DataDir:        t.TempDir(),
+		PreviewWorker:  jailedWorker(t),
+		PasswordParams: fastPasswordParams(),
 	})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
@@ -472,6 +496,7 @@ func TestThumbnailSettingCanBeToggledOff(t *testing.T) {
 // instead of decoding a PNG that is actually sitting there. Only a guard
 // placed before every cache interaction passes both halves.
 func TestAnEncryptedThumbnailIsRefusedWithoutPoisoningTheNegativeCache(t *testing.T) {
+	t.Parallel()
 	worker := jailedWorker(t)
 	base, sess, share, e, owner := encryptedShare(t, everyPerm(), worker)
 

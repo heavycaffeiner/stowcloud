@@ -24,6 +24,7 @@ import (
 // handler asks it rather than doing its own thing: every one of these reaches
 // the route as a query parameter a caller controls entirely.
 func TestNoPathEscapesTheVirtualRoot(t *testing.T) {
+	t.Parallel()
 	base, _, sess := bootWithUser(t)
 
 	escapes := []string{
@@ -55,6 +56,7 @@ func TestNoPathEscapesTheVirtualRoot(t *testing.T) {
 // An unparseable path and an absent one answer identically, byte for byte.
 // A difference between them is a way to probe what exists.
 func TestAMalformedPathIsIndistinguishableFromAnAbsentOne(t *testing.T) {
+	t.Parallel()
 	base, _, sess := bootWithUser(t)
 
 	malformed, malformedBody := authed(t, http.MethodGet,
@@ -74,6 +76,7 @@ func TestAMalformedPathIsIndistinguishableFromAnAbsentOne(t *testing.T) {
 // with no grants is nothing. An empty listing is an empty array, not null: a
 // client iterating a null gets a runtime error rather than zero rows.
 func TestTheVirtualRootListsThisAccountsShares(t *testing.T) {
+	t.Parallel()
 	base, _, sess := bootWithUser(t)
 
 	for _, path := range []string{"", "/"} {
@@ -104,6 +107,7 @@ func TestTheVirtualRootListsThisAccountsShares(t *testing.T) {
 // listing and the resolve have to agree: one showing what the other refuses is
 // a client that can see a name it cannot open.
 func TestAnUngrantedShareIsNeitherListedNorReachable(t *testing.T) {
+	t.Parallel()
 	base, _, sess := bootWithUser(t)
 
 	status, body := authed(t, http.MethodGet,
@@ -126,6 +130,7 @@ func TestAnUngrantedShareIsNeitherListedNorReachable(t *testing.T) {
 // scope refusal as a path that is not there, so a stranger probing the
 // surface cannot map which routes exist from the status code alone.
 func TestTheFileRoutesNeedACredential(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootWithUser(t)
 
 	for _, path := range []string{"/api/v1/files/list", "/api/v1/files/stat"} {
@@ -170,7 +175,7 @@ func engineWithShare(t *testing.T) (base string, sess session, share string) {
 	t.Helper()
 	ctx := context.Background()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -218,6 +223,7 @@ func engineWithShare(t *testing.T) (base string, sess session, share string) {
 
 // A granted share lists its real contents. Without this every refusal above
 func TestAGrantedShareListsItsContents(t *testing.T) {
+	t.Parallel()
 	base, sess, share := engineWithShare(t)
 
 	status, body := authed(t, http.MethodGet,
@@ -253,6 +259,7 @@ func TestAGrantedShareListsItsContents(t *testing.T) {
 // because the property is that the path resolves, not that it is spelled a
 // particular way.
 func TestEveryListedPathResolvesOnTheNextRequest(t *testing.T) {
+	t.Parallel()
 	base, sess, share := engineWithShare(t)
 
 	status, body := authed(t, http.MethodGet,
@@ -295,6 +302,7 @@ func TestEveryListedPathResolvesOnTheNextRequest(t *testing.T) {
 // Stat's own reference round-trips too. It is a separate projection call site,
 // and the one the details panel and the preview dialog address a file by.
 func TestStatsReferenceResolvesOnTheNextRequest(t *testing.T) {
+	t.Parallel()
 	base, sess, share := engineWithShare(t)
 
 	status, body := authed(t, http.MethodGet,
@@ -329,6 +337,7 @@ func TestStatsReferenceResolvesOnTheNextRequest(t *testing.T) {
 // rows. Core has supported all three since it was written; the route did not
 // pass them.
 func TestAListingSortsAndWindowsAsAsked(t *testing.T) {
+	t.Parallel()
 	base, sess, share := engineWithManyFiles(t)
 
 	names := func(query string) []string {
@@ -375,6 +384,7 @@ func TestAListingSortsAndWindowsAsAsked(t *testing.T) {
 
 // A cursor walks the whole directory without repeating or skipping a row.
 func TestACursorWalksEveryEntryExactlyOnce(t *testing.T) {
+	t.Parallel()
 	base, sess, share := engineWithManyFiles(t)
 
 	seen := map[string]int{}
@@ -422,7 +432,7 @@ func engineWithManyFiles(t *testing.T) (base string, sess session, share string)
 	t.Helper()
 	ctx := context.Background()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -466,6 +476,7 @@ func engineWithManyFiles(t *testing.T) (base string, sess session, share string)
 // The virtual root shows the granted share, so the listing and the resolve
 // agree about what this account can reach.
 func TestTheRootShowsAGrantedShare(t *testing.T) {
+	t.Parallel()
 	base, sess, share := engineWithShare(t)
 
 	status, body := authed(t, http.MethodGet, base+"/api/v1/files/list?path=%2F", sess)
@@ -480,6 +491,7 @@ func TestTheRootShowsAGrantedShare(t *testing.T) {
 // Stat reads the real file, so the read path is exercised rather than only its
 // refusals.
 func TestStatReadsARealFile(t *testing.T) {
+	t.Parallel()
 	base, sess, share := engineWithShare(t)
 
 	status, body := authed(t, http.MethodGet,
@@ -508,6 +520,7 @@ func TestStatReadsARealFile(t *testing.T) {
 // is the case the earlier corpus could not reach, because that account had no
 // share to escape from.
 func TestATraversalOutOfAHeldShareIsRefused(t *testing.T) {
+	t.Parallel()
 	base, sess, share := engineWithShare(t)
 
 	escapes := []string{
@@ -532,9 +545,10 @@ func TestATraversalOutOfAHeldShareIsRefused(t *testing.T) {
 // route needs is what makes this refuse: a resolve asking for nothing would
 // hand back a location the grant never allowed reading.
 func TestAShareGrantedWithoutReadIsNotReadable(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}

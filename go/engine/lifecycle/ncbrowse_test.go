@@ -599,6 +599,7 @@ func TestASearchStaysInsideItsScope(t *testing.T) {
 // declined with an empty multistatus tells a sync client the files are not
 // there, and a client that acts on that deletes its local copies.
 func TestASearchRefusedForBeingBusySaysSo(t *testing.T) {
+	t.Parallel()
 	f := newNCFixture(t, []byte("hello"))
 	writeHostFile(t, f.host, "busy-target.txt", []byte("x"))
 

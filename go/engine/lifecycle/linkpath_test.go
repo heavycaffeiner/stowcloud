@@ -25,9 +25,10 @@ import (
 // Game, and every navigation from the screen landed on a path that does not
 // exist. The projection the rest of the product uses is the one answer.
 func TestALinkListingReportsANavigablePath(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}

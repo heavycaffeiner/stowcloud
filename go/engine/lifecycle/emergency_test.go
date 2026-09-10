@@ -15,6 +15,7 @@ import (
 // chain's own configuration is what is broken. A door behind the boundary
 // check it exists to repair is a door nobody can open on the day it matters.
 func TestTheRepairDoorIsReachable(t *testing.T) {
+	t.Parallel()
 	base := boot(t)
 
 	status, body := doorRequest(t, http.MethodGet, base+"/emergency/api/state", nil, "")
@@ -82,6 +83,7 @@ func doorRequest(t *testing.T, method, url string, body []byte, forwarded string
 // one has to be refused. Reading the peer instead would put the repair door in
 // front of the whole internet on every such deployment.
 func TestTheDoorRefusesAnInternetVisitorBehindALocalProxy(t *testing.T) {
+	t.Parallel()
 	base := boot(t)
 
 	plain, _ := doorRequest(t, http.MethodGet, base+"/emergency/api/state", nil, "")
@@ -108,6 +110,7 @@ func TestTheDoorRefusesAnInternetVisitorBehindALocalProxy(t *testing.T) {
 // from it, or an unauthenticated caller on the loopback would have a second
 // entrance into the product with none of the checks.
 func TestTheDoorServesNothingElse(t *testing.T) {
+	t.Parallel()
 	base := boot(t)
 
 	for _, path := range []string{
@@ -134,6 +137,7 @@ func TestTheDoorServesNothingElse(t *testing.T) {
 // `/api/settings`, which the door does not route, and passed on the 405: it
 // proved the method was wrong rather than that anything was guarded.
 func TestTheDoorStillRequiresACredentialForSettings(t *testing.T) {
+	t.Parallel()
 	base := boot(t)
 
 	read, readBody := doorRequest(t, http.MethodGet, base+"/emergency/api/settings", nil, "")
@@ -161,6 +165,7 @@ func TestTheDoorStillRequiresACredentialForSettings(t *testing.T) {
 // every other route would stop working, and mounting it before the chain is
 // exactly the kind of change that could do that.
 func TestMountingTheDoorLeavesTheAPIAlone(t *testing.T) {
+	t.Parallel()
 	base, _, sess := bootWithUser(t)
 
 	status, body := authed(t, http.MethodGet, base+"/api/v1/files/list?path=/", sess)

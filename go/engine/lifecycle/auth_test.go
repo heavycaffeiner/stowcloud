@@ -32,7 +32,7 @@ func bootForLogin(t *testing.T) (string, *lifecycle.Engine, int64) {
 	t.Helper()
 	ctx := context.Background()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -115,6 +115,7 @@ func postJSON(t *testing.T, url string, body any) answer {
 
 // A correct password without a second factor produces a session.
 func TestSigningInWithAPassword(t *testing.T) {
+	t.Parallel()
 	base, _, id := bootForLogin(t)
 
 	resp := postJSON(t, base+"/api/v1/auth/login",
@@ -153,6 +154,7 @@ func TestSigningInWithAPassword(t *testing.T) {
 // The cookie's attributes are what stop it being stolen or sent cross-site.
 // Each one is checked, because a missing flag weakens the session silently.
 func TestTheSessionCookieIsProtected(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootForLogin(t)
 
 	resp := postJSON(t, base+"/api/v1/auth/login",
@@ -186,6 +188,7 @@ func TestTheSessionCookieIsProtected(t *testing.T) {
 
 // The session the cookie names is real: it authenticates a later request.
 func TestTheSessionCookieAuthenticates(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootForLogin(t)
 
 	resp := postJSON(t, base+"/api/v1/auth/login",
@@ -244,6 +247,7 @@ func withCookie(t *testing.T, method, url string, cookie *http.Cookie) (int, []b
 // A wrong password is refused, and the refusal says nothing about whether the
 // account exists.
 func TestAWrongPasswordIsRefused(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootForLogin(t)
 
 	wrong := postJSON(t, base+"/api/v1/auth/login",
@@ -273,6 +277,7 @@ func TestAWrongPasswordIsRefused(t *testing.T) {
 
 // An enrolled account is asked for a code rather than signed in.
 func TestAnEnrolledAccountIsAskedForACode(t *testing.T) {
+	t.Parallel()
 	base, e, id := bootForLogin(t)
 	enrol(t, e, id)
 
@@ -318,6 +323,7 @@ func enrol(t *testing.T, e *lifecycle.Engine, id int64) string {
 
 // The two steps together produce a session.
 func TestTheCodeStepCompletesTheSignIn(t *testing.T) {
+	t.Parallel()
 	base, e, id := bootForLogin(t)
 	secretB32 := enrol(t, e, id)
 
@@ -345,6 +351,7 @@ func TestTheCodeStepCompletesTheSignIn(t *testing.T) {
 // This is the whole reason the challenge is signed: without a valid signature,
 // anyone holding a code could name any account and sign in as it.
 func TestAForgedChallengeIsRefused(t *testing.T) {
+	t.Parallel()
 	base, e, id := bootForLogin(t)
 	secretB32 := enrol(t, e, id)
 	code := referenceCode(t, secretB32, nowStep())
@@ -365,6 +372,7 @@ func TestAForgedChallengeIsRefused(t *testing.T) {
 // A challenge whose signature was altered is refused, which is the same
 // property from the other side: the body is genuine and the MAC is not.
 func TestATamperedChallengeIsRefused(t *testing.T) {
+	t.Parallel()
 	base, e, id := bootForLogin(t)
 	secretB32 := enrol(t, e, id)
 
@@ -413,6 +421,7 @@ func forgeChallenge(userID, nowUnix int64) string {
 
 // A wrong code does not complete a sign-in.
 func TestAWrongCodeIsRefused(t *testing.T) {
+	t.Parallel()
 	base, e, id := bootForLogin(t)
 	enrol(t, e, id)
 
@@ -435,6 +444,7 @@ func TestAWrongCodeIsRefused(t *testing.T) {
 // Clearing the cookie alone leaves the token live for anything that copied it,
 // while the person believes they signed out.
 func TestLoggingOutRevokesTheSession(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootForLogin(t)
 
 	resp := postJSON(t, base+"/api/v1/auth/login",
@@ -495,6 +505,7 @@ func logout(t *testing.T, base string, cookie *http.Cookie, csrf string) (int, [
 // A mutation without the CSRF token is refused, so a cross-site page cannot
 // sign a person out or act as them.
 func TestAMutationWithoutTheCSRFTokenIsRefused(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootForLogin(t)
 
 	resp := postJSON(t, base+"/api/v1/auth/login",
@@ -563,6 +574,7 @@ func base64Raw(s string) string {
 // caller separate "this field was empty" from "this account was not there",
 // and the empty-field answer is reachable without guessing anything.
 func TestAnEmptyCredentialFieldAnswersLikeAWrongOne(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootForLogin(t)
 
 	wrong := postJSON(t, base+"/api/v1/auth/login",
@@ -593,6 +605,7 @@ func TestAnEmptyCredentialFieldAnswersLikeAWrongOne(t *testing.T) {
 // them before the TOTP would burn one on every fumbled six digits, and an
 // account would run out without anyone doing anything wrong.
 func TestAMistypedCodeDoesNotSpendARecoveryCode(t *testing.T) {
+	t.Parallel()
 	base, e, id := bootForLogin(t)
 	enrol(t, e, id)
 	ctx := context.Background()
@@ -628,6 +641,7 @@ func TestAMistypedCodeDoesNotSpendARecoveryCode(t *testing.T) {
 
 // A recovery code completes a sign-in and is spent exactly once.
 func TestARecoveryCodeSignsInOnce(t *testing.T) {
+	t.Parallel()
 	base, e, id := bootForLogin(t)
 	enrol(t, e, id)
 	ctx := context.Background()
@@ -669,9 +683,10 @@ func TestARecoveryCodeSignsInOnce(t *testing.T) {
 // which is what a disk fault or an exhausted handle table looks like to the
 // auth service: measured, the revoke then returns "sql: database is closed".
 func TestALogoutWhoseRevokeFailsIsReported(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -716,6 +731,7 @@ func TestALogoutWhoseRevokeFailsIsReported(t *testing.T) {
 // and sends it back, so a wrong value means every mutation fails with nothing
 // on screen explaining why. Checked by using it, not by looking at it.
 func TestTheReportedCSRFTokenAuthorizesAMutation(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootForLogin(t)
 
 	resp := postJSON(t, base+"/api/v1/auth/login",
@@ -751,6 +767,7 @@ func TestTheReportedCSRFTokenAuthorizesAMutation(t *testing.T) {
 // cookie would be a value that validates for nobody: a client that trusted it
 // would send it and be refused.
 func TestAnAppPasswordGetsNoCSRFToken(t *testing.T) {
+	t.Parallel()
 	base, token, _ := bootWithUser(t)
 
 	// The native API is session-only now, so an app password cannot read a

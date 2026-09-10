@@ -186,7 +186,7 @@ func newOIDCFixture(t *testing.T) *oidcFixture {
 	t.Helper()
 	ctx := context.Background()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -330,6 +330,7 @@ func callbackRequest(base, state string, binding *http.Cookie, session *http.Coo
 // test for that defect: before the fix, every one of these answered 200 or
 // 4xx with a JSON body and no Location header at all.
 func TestCallbackFailuresRedirectRatherThanAnsweringJSON(t *testing.T) {
+	t.Parallel()
 	f := newOIDCFixture(t)
 	fp := newFakeProvider(t)
 	f.configureProvider(t, fp, "stowcloud")
@@ -392,6 +393,7 @@ func TestCallbackFailuresRedirectRatherThanAnsweringJSON(t *testing.T) {
 // and TouchOIDCLink was never called at all so an account signing in every
 // day still reported "never" for its last use.
 func TestSuccessfulSignOnRedirectsAndEstablishesASession(t *testing.T) {
+	t.Parallel()
 	f := newOIDCFixture(t)
 	fp := newFakeProvider(t)
 	f.configureProvider(t, fp, "stowcloud")
@@ -441,6 +443,7 @@ func TestSuccessfulSignOnRedirectsAndEstablishesASession(t *testing.T) {
 // in: the provider authenticates, and only the local database decides who
 // may have an account.
 func TestUnlinkedIdentityIsRefusedAtSignOn(t *testing.T) {
+	t.Parallel()
 	f := newOIDCFixture(t)
 	fp := newFakeProvider(t)
 	f.configureProvider(t, fp, "stowcloud")
@@ -477,6 +480,7 @@ func TestUnlinkedIdentityIsRefusedAtSignOn(t *testing.T) {
 // A successful link attaches the identity and lands the browser back where
 // it started.
 func TestSuccessfulLinkRedirectsToReturnTo(t *testing.T) {
+	t.Parallel()
 	f := newOIDCFixture(t)
 	fp := newFakeProvider(t)
 	f.configureProvider(t, fp, "stowcloud")
@@ -524,6 +528,7 @@ func TestSuccessfulLinkRedirectsToReturnTo(t *testing.T) {
 // now. Before this check, completing the callback with no session at all, or
 // a different one, still attached the identity to whoever started the flow.
 func TestALinkWhoseSessionChangedIsRefused(t *testing.T) {
+	t.Parallel()
 	f := newOIDCFixture(t)
 	fp := newFakeProvider(t)
 	f.configureProvider(t, fp, "stowcloud")
@@ -565,6 +570,7 @@ func TestALinkWhoseSessionChangedIsRefused(t *testing.T) {
 // An identity already linked to a different account is refused, and the
 // account attempting the link stays unlinked.
 func TestALinkToAnAlreadyLinkedIdentityIsRefused(t *testing.T) {
+	t.Parallel()
 	f := newOIDCFixture(t)
 	fp := newFakeProvider(t)
 	f.configureProvider(t, fp, "stowcloud")
@@ -614,6 +620,7 @@ func TestALinkToAnAlreadyLinkedIdentityIsRefused(t *testing.T) {
 // screen always read `linked` as false regardless of the account's real
 // state, and could never show the disconnect flow to somebody who needed it.
 func TestSessionReportsTheAccountsOwnSignOnLink(t *testing.T) {
+	t.Parallel()
 	f := newOIDCFixture(t)
 	ctx := context.Background()
 

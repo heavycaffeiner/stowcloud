@@ -74,6 +74,7 @@ func metadataFor(pairs map[string]string) string {
 // this to find out whether resumable uploads exist here before it has
 // anything to present.
 func TestUploadDiscoveryIsPublic(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootWithUser(t)
 
 	status, header, body := tusRequest(t, http.MethodOptions,
@@ -95,6 +96,7 @@ func TestUploadDiscoveryIsPublic(t *testing.T) {
 // rather than asserted against a session row: a session that reports the
 // right offset while writing the wrong bytes would pass any lesser check.
 func TestAResumableUploadDeliversTheFile(t *testing.T) {
+	t.Parallel()
 	want := payload()
 	base, sess, share := contentShare(t, everyPerm(), []byte("unused"))
 
@@ -163,6 +165,7 @@ func createUpload(t *testing.T, base string, sess session, dest string, length i
 
 // A resume asks where the server is and continues from there.
 func TestAnInterruptedUploadResumes(t *testing.T) {
+	t.Parallel()
 	want := payload()
 	base, sess, share := contentShare(t, everyPerm(), []byte("unused"))
 
@@ -219,6 +222,7 @@ func TestAnInterruptedUploadResumes(t *testing.T) {
 // Accepting it puts bytes at a position the client did not mean, and the file
 // that results is corrupt with nothing reporting a failure.
 func TestAChunkAtTheWrongOffsetIsRefused(t *testing.T) {
+	t.Parallel()
 	want := payload()
 	base, sess, share := contentShare(t, everyPerm(), []byte("unused"))
 
@@ -249,6 +253,7 @@ func TestAChunkAtTheWrongOffsetIsRefused(t *testing.T) {
 // The header is how a client says which contract its request is written
 // against. Guessing would mean serving a request whose meaning is unknown.
 func TestAnUploadWithoutTheVersionHeaderIsRefused(t *testing.T) {
+	t.Parallel()
 	base, sess, share := contentShare(t, everyPerm(), []byte("unused"))
 
 	status, _, body := tusRequest(t, http.MethodPost, base+"/api/v1/uploads", sess,
@@ -278,6 +283,7 @@ func TestAnUploadWithoutTheVersionHeaderIsRefused(t *testing.T) {
 // The checksum exists so a corrupted transfer is caught at the chunk rather
 // than at the end, when the whole file has to be sent again.
 func TestAChunkWithABadChecksumIsRefused(t *testing.T) {
+	t.Parallel()
 	want := payload()
 	base, sess, share := contentShare(t, everyPerm(), []byte("unused"))
 
@@ -308,6 +314,7 @@ func TestAChunkWithABadChecksumIsRefused(t *testing.T) {
 
 // A correct digest is accepted, so the check is not refusing everything.
 func TestAChunkWithAGoodChecksumIsAccepted(t *testing.T) {
+	t.Parallel()
 	want := payload()
 	base, sess, share := contentShare(t, everyPerm(), []byte("unused"))
 
@@ -328,6 +335,7 @@ func TestAChunkWithAGoodChecksumIsAccepted(t *testing.T) {
 // An upload needs a credential, and one account cannot touch another's
 // session.
 func TestAnUploadSessionBelongsToItsOwner(t *testing.T) {
+	t.Parallel()
 	base, sess, share := contentShare(t, everyPerm(), []byte("unused"))
 
 	location := createUpload(t, base, sess, "/"+share+"/owned.bin", 100)
@@ -352,6 +360,7 @@ func TestAnUploadSessionBelongsToItsOwner(t *testing.T) {
 
 // Aborting discards the session.
 func TestAbortingAnUpload(t *testing.T) {
+	t.Parallel()
 	base, sess, share := contentShare(t, everyPerm(), []byte("unused"))
 
 	location := createUpload(t, base, sess, "/"+share+"/abandoned.bin", 4096)
@@ -380,6 +389,7 @@ func TestAbortingAnUpload(t *testing.T) {
 // The protocol fixes the type, and a request describing different content
 // from what it carries is one whose framing cannot be trusted.
 func TestAChunkWithTheWrongContentTypeIsRefused(t *testing.T) {
+	t.Parallel()
 	base, sess, share := contentShare(t, everyPerm(), []byte("unused"))
 
 	location := createUpload(t, base, sess, "/"+share+"/typed.bin", 100)
@@ -397,6 +407,7 @@ func TestAChunkWithTheWrongContentTypeIsRefused(t *testing.T) {
 
 // A session cannot be opened over a path the account may not write.
 func TestAnUploadNeedsWritePermission(t *testing.T) {
+	t.Parallel()
 	base, sess, share := contentShare(t, acl.Read|acl.Download, []byte("unused"))
 
 	status, _, body := tusRequest(t, http.MethodPost, base+"/api/v1/uploads", sess,
@@ -415,6 +426,7 @@ func TestAnUploadNeedsWritePermission(t *testing.T) {
 
 // A session opened over an escaping path is refused, like every other route.
 func TestAnUploadPathCannotEscape(t *testing.T) {
+	t.Parallel()
 	base, sess, _ := contentShare(t, everyPerm(), []byte("unused"))
 
 	for _, path := range []string{"/../etc/passwd", "../etc", "/share/../../etc"} {
@@ -432,6 +444,7 @@ func TestAnUploadPathCannotEscape(t *testing.T) {
 
 // A create without a destination is refused rather than defaulting anywhere.
 func TestAnUploadWithoutADestinationIsRefused(t *testing.T) {
+	t.Parallel()
 	base, sess, _ := contentShare(t, everyPerm(), []byte("unused"))
 
 	status, _, body := tusRequest(t, http.MethodPost, base+"/api/v1/uploads", sess,
@@ -456,6 +469,7 @@ func crc32cOf(b []byte) []byte {
 // A client that guessed would compute a digest for every chunk and have every
 // one refused, with nothing saying which algorithm to use instead.
 func TestDiscoveryNamesTheChecksumAlgorithms(t *testing.T) {
+	t.Parallel()
 	base, _, _ := bootWithUser(t)
 
 	_, header, _ := tusRequest(t, http.MethodOptions, base+"/api/v1/uploads", session{}, nil, nil)

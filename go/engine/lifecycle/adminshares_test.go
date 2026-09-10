@@ -26,6 +26,7 @@ import (
 // that learns the server's layout learns the first thing worth knowing to
 // anyone trying to reach past the shares they were given.
 func TestTheAdminListingCarriesTheHostPath(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, plainCookie, _ := adminEngine(t)
 
 	host := t.TempDir()
@@ -72,6 +73,7 @@ func TestTheAdminListingCarriesTheHostPath(t *testing.T) {
 // whole request is refused rather than the s3 object being silently
 // ignored.
 func TestCreatingAShareRefusesAnS3ObjectWithBackendLocal(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	status, body := mutate(t, http.MethodPost, base+"/api/v1/admin/shares", cookie, csrf,
@@ -103,6 +105,7 @@ func TestCreatingAShareRefusesAnS3ObjectWithBackendLocal(t *testing.T) {
 // A veracrypt object asking to create a container needs a password: this
 // server cannot open, let alone create, one without it.
 func TestCreatingAVeracryptShareWithNoPasswordIsRefused(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	status, body := mutate(t, http.MethodPost, base+"/api/v1/admin/shares", cookie, csrf,
@@ -127,6 +130,7 @@ func TestCreatingAVeracryptShareWithNoPasswordIsRefused(t *testing.T) {
 // reads as the registration having failed, and the only way out was to hand
 // yourself a grant from another screen.
 func TestANewShareIsReachableByTheAdministratorWhoAddedIt(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	host := t.TempDir()
@@ -165,6 +169,7 @@ func TestANewShareIsReachableByTheAdministratorWhoAddedIt(t *testing.T) {
 // row reads the permission arrays. An id alone left those undefined, which
 // threw while rendering and left the dialog spinning.
 func TestCreatingAGrantAnswersTheWholeGrant(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	host := t.TempDir()
@@ -205,6 +210,7 @@ func TestCreatingAGrantAnswersTheWholeGrant(t *testing.T) {
 // field off nothing: it threw, its own catch rendered "could not save", and
 // the permission had in fact been applied. This fails against that.
 func TestUpdatingAGrantAnswersTheWholeGrant(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	host := t.TempDir()
@@ -283,6 +289,7 @@ func assertNoHostPath(t *testing.T, body, host string) {
 
 // A share can be registered, renamed, have its trash toggled and be removed.
 func TestTheShareLifecycle(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	status, created := mutate(t, http.MethodPost, base+"/api/v1/admin/shares", cookie, csrf,
@@ -329,6 +336,7 @@ func TestTheShareLifecycle(t *testing.T) {
 
 // A grant is created with named permissions and read back with the same ones.
 func TestCreatingAGrant(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	share := makeShare(t, base, cookie, csrf, "docs")
@@ -369,6 +377,7 @@ func TestCreatingAGrant(t *testing.T) {
 // placeholder built from the share's id, so a share called "Share" appeared
 // as "share-1000001" to the person who had just named it.
 func TestAnUnlabelledGrantReadsAsTheShareName(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, plainCookie, _ := adminEngine(t)
 
 	share := makeShare(t, base, cookie, csrf, "Photos")
@@ -405,6 +414,7 @@ func TestAnUnlabelledGrantReadsAsTheShareName(t *testing.T) {
 // resolver still matched the placeholder, so clicking the folder that had
 // just been shown answered 404 with nothing on screen explaining it.
 func TestAListedRootCanBeOpened(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, plainCookie, _ := adminEngine(t)
 
 	share := makeShare(t, base, cookie, csrf, "Photos")
@@ -513,6 +523,7 @@ func stringsField(t *testing.T, body map[string]any, name string) []string {
 // the difference is silent: the screen shows the name that was typed while
 // the system holds a set without it.
 func TestAnUnknownPermissionRefusesTheGrant(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	share := makeShare(t, base, cookie, csrf, "docs")
@@ -537,6 +548,7 @@ func TestAnUnknownPermissionRefusesTheGrant(t *testing.T) {
 
 // A grant must name exactly one subject.
 func TestAGrantNamesExactlyOneSubject(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	share := makeShare(t, base, cookie, csrf, "docs")
@@ -573,6 +585,7 @@ func TestAGrantNamesExactlyOneSubject(t *testing.T) {
 // leaves the row gone and the access intact. Nobody would notice until a
 // restart, which is exactly the window a revocation is meant to close.
 func TestRevokingAGrantTakesEffectNow(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, plainCookie, _ := adminEngine(t)
 
 	share := makeShare(t, base, cookie, csrf, "docs")
@@ -610,6 +623,7 @@ func TestRevokingAGrantTakesEffectNow(t *testing.T) {
 
 // Narrowing a grant takes effect immediately too.
 func TestNarrowingAGrantTakesEffectNow(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, plainCookie, _ := adminEngine(t)
 
 	share := makeShare(t, base, cookie, csrf, "docs")
@@ -650,6 +664,7 @@ func TestNarrowingAGrantTakesEffectNow(t *testing.T) {
 // and dropped deny would widen every grant it touched while the screen showed
 // the restriction the administrator had just applied.
 func TestADeniedPermissionIsRemovedOnUpdate(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, plainCookie, _ := adminEngine(t)
 
 	share := makeShare(t, base, cookie, csrf, "docs")
@@ -701,6 +716,7 @@ func TestADeniedPermissionIsRemovedOnUpdate(t *testing.T) {
 
 // A deny is honoured on create too.
 func TestADeniedPermissionIsRemovedOnCreate(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, plainCookie, _ := adminEngine(t)
 
 	share := makeShare(t, base, cookie, csrf, "docs")
@@ -728,6 +744,7 @@ func TestADeniedPermissionIsRemovedOnCreate(t *testing.T) {
 // than narrowing wraps: 4294967297 becomes 1, so a mistyped number would
 // delete or rename whichever share happens to hold the wrapped value.
 func TestAnOversizedShareIDNamesNothing(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 
 	first := makeShare(t, base, cookie, csrf, "docs")
@@ -776,6 +793,7 @@ func TestAnOversizedShareIDNamesNothing(t *testing.T) {
 
 // The storage accounting reports the database and every share.
 func TestTheStorageAccounting(t *testing.T) {
+	t.Parallel()
 	base, cookie, csrf, _, _ := adminEngine(t)
 	makeShare(t, base, cookie, csrf, "docs")
 
@@ -835,6 +853,7 @@ func TestTheStorageAccounting(t *testing.T) {
 
 // An ordinary account cannot read the storage accounting.
 func TestTheStorageAccountingNeedsAnAdministrator(t *testing.T) {
+	t.Parallel()
 	base, _, _, plainCookie, _ := adminEngine(t)
 
 	status, _ := withCookie(t, http.MethodGet, base+"/api/v1/admin/storage", plainCookie)
@@ -855,11 +874,12 @@ func TestTheStorageAccountingNeedsAnAdministrator(t *testing.T) {
 // not produce this, because the measurement goes through a descriptor the
 // root already holds.
 func TestAnUnmeasurableShareIsListedWithoutFigures(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dir := t.TempDir()
 	host := t.TempDir()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -876,7 +896,7 @@ func TestAnUnmeasurableShareIsListedWithoutFigures(t *testing.T) {
 		t.Fatalf("removing the backing directory: %v", rerr)
 	}
 
-	reopened, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	reopened, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("reopening: %v", err)
 	}
@@ -937,11 +957,12 @@ func TestAnUnmeasurableShareIsListedWithoutFigures(t *testing.T) {
 // from a restarted server, taking every grant over it with it, while the rows
 // sat in the database.
 func TestSharesSurviveARestart(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dir := t.TempDir()
 	host := t.TempDir()
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -955,7 +976,7 @@ func TestSharesSurviveARestart(t *testing.T) {
 		t.Fatalf("closing: %v", cerr)
 	}
 
-	reopened, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	reopened, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("reopening: %v", err)
 	}
