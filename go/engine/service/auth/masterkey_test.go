@@ -52,6 +52,7 @@ func TestTheDefaultKeyPathIsInsideTheDataDirectoryAndTheNamedOneNeedNotBe(t *tes
 // A file of exactly one key's worth of bytes is what a pre-ring deployment
 // wrote; reading it as version 1 is what upgrades that deployment in place.
 func TestALegacyRawKeyFileReadsAsVersionOne(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "master.key")
 	raw := bytes.Repeat([]byte{7}, 32)
@@ -70,6 +71,7 @@ func TestALegacyRawKeyFileReadsAsVersionOne(t *testing.T) {
 }
 
 func TestAMalformedKeyFileRefuses(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	for name, body := range map[string][]byte{
 		"neither a raw key nor a ring": []byte("hello"),
@@ -91,6 +93,7 @@ func TestAMalformedKeyFileRefuses(t *testing.T) {
 
 // A missing file is not an error: the caller decides whether to generate one.
 func TestAMissingKeyFileIsNotAnError(t *testing.T) {
+	t.Parallel()
 	_, found, err := auth.LoadKeyRing(filepath.Join(t.TempDir(), "absent"))
 	if err != nil || found {
 		t.Fatalf("LoadKeyRing on a missing file returned found=%v, %v", found, err)
@@ -101,6 +104,7 @@ func TestAMissingKeyFileIsNotAnError(t *testing.T) {
 // neighbour of the data directory. Linux-only: Windows has no POSIX
 // permission bits and reports 0666 for every regular file.
 func TestAGeneratedKeyFileIsPrivate(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS != "linux" {
 		t.Skip("permission bits are POSIX; this server is Linux-only")
 	}
@@ -117,6 +121,7 @@ func TestAGeneratedKeyFileIsPrivate(t *testing.T) {
 // Serving on a key that cannot open what is on disk would surface as failing
 // logins with no common cause.
 func TestStartupRefusesAKeyTheDatabaseDoesNotName(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 
@@ -129,6 +134,7 @@ func TestStartupRefusesAKeyTheDatabaseDoesNotName(t *testing.T) {
 }
 
 func TestAFreshDeploymentEstablishesTheKeyVersion(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 
@@ -144,6 +150,7 @@ func TestAFreshDeploymentEstablishesTheKeyVersion(t *testing.T) {
 // A rotation re-seals every kind and compacts the ring, and the report says
 // how many rows moved rather than only that it finished.
 func TestRotationResealsEveryKindAndCompactsTheRing(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	id := f.account(t, "alice")
@@ -206,6 +213,7 @@ func TestRotationResealsEveryKindAndCompactsTheRing(t *testing.T) {
 // A ciphertext cannot be moved between records or replayed across a
 // rotation, because both are bound as additional authenticated data.
 func TestASealedValueIsBoundToItsRecordAndVersion(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 
 	blob, ver, err := f.svc.SealConfigSecret("oidc.client_secret", []byte("shhh"))
@@ -227,6 +235,7 @@ func TestASealedValueIsBoundToItsRecordAndVersion(t *testing.T) {
 // A blob shorter than a nonce is corruption rather than an authentication
 // failure, and the two must stay distinguishable in a log.
 func TestATruncatedCiphertextIsNamedAsCorruption(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	blob, ver, err := f.svc.SealConfigSecret("name", []byte("value"))
 	if err != nil {
@@ -240,6 +249,7 @@ func TestATruncatedCiphertextIsNamedAsCorruption(t *testing.T) {
 // Sessions are durable, so a process-random key would strand every live
 // session's token on each restart, and a restart is not a security event.
 func TestTheCSRFKeyIsStableAcrossRestartsAndDiffersBetweenDeployments(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 
@@ -274,6 +284,7 @@ func TestTheCSRFKeyIsStableAcrossRestartsAndDiffersBetweenDeployments(t *testing
 
 // A capability minted for one purpose must not be presentable as another.
 func TestASealedPresentationValueIsPurposeAndVersionBound(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 
@@ -297,6 +308,7 @@ func TestASealedPresentationValueIsPurposeAndVersionBound(t *testing.T) {
 // stops opening. That bound is what keeps a leaked one from outliving the
 // rotation that was meant to end it.
 func TestASealedPresentationValueDoesNotSurviveACompactedRotation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 

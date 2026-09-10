@@ -16,6 +16,7 @@ import (
 )
 
 func TestAHashVerifiesAndIsNotStaleUnderCurrentParameters(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 
@@ -30,7 +31,7 @@ func TestAHashVerifiesAndIsNotStaleUnderCurrentParameters(t *testing.T) {
 	if ok, _, err = f.svc.Verify(ctx, enc, pw("wrong password entirely")); err != nil || ok {
 		t.Fatalf("a wrong password verified: %v, %v", ok, err)
 	}
-	if auth.Stale(enc) {
+	if f.svc.Stale(enc) {
 		t.Fatal("a fresh hash reports itself stale")
 	}
 }
@@ -38,6 +39,7 @@ func TestAHashVerifiesAndIsNotStaleUnderCurrentParameters(t *testing.T) {
 // A stored hash is self-describing, so raising the cost still verifies every
 // password already on file; the caller is told to rehash instead.
 func TestAHashUnderOlderParametersVerifiesAndReportsStale(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 
@@ -51,7 +53,7 @@ func TestAHashUnderOlderParametersVerifiesAndReportsStale(t *testing.T) {
 	if !ok || !stale {
 		t.Fatalf("Verify = %v, stale %v, want a match reported stale", ok, stale)
 	}
-	if !auth.Stale(old) {
+	if !f.svc.Stale(old) {
 		t.Fatal("Stale did not report the older parameters")
 	}
 }
@@ -59,6 +61,7 @@ func TestAHashUnderOlderParametersVerifiesAndReportsStale(t *testing.T) {
 // A corrupt row must fail that login and nothing else, and must be replaced
 // the moment its owner proves the password through another path.
 func TestAMalformedHashRefusesWithoutAnErrorAndReportsStale(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 
@@ -115,6 +118,7 @@ func TestTheGateBoundsConcurrentInvocations(t *testing.T) {
 // picks either ready case, so a cancelled caller could still pay for an
 // invocation nobody is waiting for.
 func TestACancelledCallerIsNeverAdmittedToTheGate(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 
 	ctx, cancel := context.WithCancel(context.Background())

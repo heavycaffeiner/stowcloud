@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"testing"
 
 	"golang.org/x/crypto/argon2"
 
@@ -35,6 +36,36 @@ type Params struct {
 // practice.
 func CurrentParams() Params {
 	return Params{MemoryKiB: 49152, Iterations: 3, Parallelism: 1, KeyLen: 32}
+}
+
+// resolvePasswordParams is New's one-time floor check on Config.Params.
+//
+// The zero value, or any zero field within it, takes CurrentParams(): a
+// caller naming no parameters gets the real ones rather than an all-zero
+// Argon2 invocation. Outside a test binary, anything weaker than
+// CurrentParams() in any of the four is refused and CurrentParams() is used
+// instead, so a deployment's cost cannot be lowered by whatever constructed
+// it. All four, because three of them are a cost and the fourth is the
+// derived length: a set naming the real memory and iterations with KeyLen 1
+// passes a check that only reads the first two.
+func resolvePasswordParams(p Params) Params {
+	return resolvePasswordParamsFor(p, testing.Testing())
+}
+
+// resolvePasswordParamsFor is the rule resolvePasswordParams applies, with
+// the test-binary check taken as a parameter rather than read directly, so
+// the floor itself can be exercised without depending on testing.Testing.
+func resolvePasswordParamsFor(p Params, inTestBinary bool) Params {
+	if p.MemoryKiB == 0 || p.Iterations == 0 || p.Parallelism == 0 || p.KeyLen == 0 {
+		return CurrentParams()
+	}
+	current := CurrentParams()
+	weaker := p.MemoryKiB < current.MemoryKiB || p.Iterations < current.Iterations ||
+		p.Parallelism < current.Parallelism || p.KeyLen < current.KeyLen
+	if !inTestBinary && weaker {
+		return current
+	}
+	return p
 }
 
 // GateConcurrency is how many Argon2 invocations may run at once. There is
@@ -103,7 +134,8 @@ func (g *gate) raiseHighWater(c int32) {
 // has admitted, which is what the concurrency test asserts against.
 func (s *Service) PeakConcurrency() int32 { return s.gate.highWater.Load() }
 
-// Hash derives a fresh hash under CurrentParams, through the gate.
+// Hash derives a fresh hash under the service's resolved parameters, through
+// the gate.
 func (s *Service) Hash(ctx context.Context, pw secret.Secret) (string, error) {
 	release, err := s.gate.acquire(ctx)
 	if err != nil {
@@ -115,7 +147,7 @@ func (s *Service) Hash(ctx context.Context, pw secret.Secret) (string, error) {
 	if _, rerr := rand.Read(salt); rerr != nil {
 		return "", fmt.Errorf("salting the password: %w", rerr)
 	}
-	p := CurrentParams()
+	p := s.params
 	key := argon2.IDKey(pw.Reveal(), salt, p.Iterations, p.MemoryKiB, p.Parallelism, p.KeyLen)
 	defer zero(key)
 	return encodePHC(p, salt, key), nil
@@ -123,8 +155,8 @@ func (s *Service) Hash(ctx context.Context, pw secret.Secret) (string, error) {
 
 // Verify checks pw against enc under the parameters the stored hash names, so
 // a hash made with older costs still validates. stale reports that those
-// parameters differ from the current ones, which is the caller's signal to
-// rehash.
+// parameters differ from the service's resolved ones, which is the caller's
+// signal to rehash.
 //
 // A malformed stored hash answers false rather than an error: a corrupt row
 // fails that login and nothing else. It also answers stale, so the row is
@@ -145,18 +177,18 @@ func (s *Service) Verify(ctx context.Context, enc string, pw secret.Secret) (ok,
 	defer zero(derived)
 	matches := len(derived) == len(stored.key) &&
 		subtle.ConstantTimeCompare(derived, stored.key) == 1
-	return matches, stored.params != CurrentParams(), nil
+	return matches, stored.params != s.params, nil
 }
 
-// Stale reports whether a stored hash's parameters differ from the current
-// ones. It is the standalone half of Verify for a caller that only needs the
-// rehash decision.
-func Stale(enc string) bool {
+// Stale reports whether a stored hash's parameters differ from this
+// service's resolved ones. It is the standalone half of Verify for a caller
+// that only needs the rehash decision.
+func (s *Service) Stale(enc string) bool {
 	stored, valid := parsePHC(enc)
 	if !valid {
 		return true
 	}
-	return stored.params != CurrentParams()
+	return stored.params != s.params
 }
 
 // parsedPHC holds a single decoded password hash.

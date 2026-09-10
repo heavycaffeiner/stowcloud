@@ -90,9 +90,9 @@ func newFixtureWithClock(t *testing.T, clk clock.Clock) fixture {
 	})
 	svc.SetAccessChangeSink(sink)
 
-	// The environment must not name a key: the tests run in one process and a
-	// leaked variable from another test would be a refusal nobody expected.
-	t.Setenv("SC_MASTER_KEY_FILE", filepath.Join(dir, "master.key"))
+	// StoreDir alone already resolves to this path with no environment
+	// variable involved, which is what keeps this fixture safe to build from
+	// parallel tests: nothing here mutates process-wide state.
 	if _, err := svc.OpenMasterKey(context.Background()); err != nil {
 		t.Fatalf("OpenMasterKey: %v", err)
 	}

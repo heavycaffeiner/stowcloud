@@ -12,6 +12,7 @@ import (
 )
 
 func TestLoginMintsASessionAndRecordsIt(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	id := f.account(t, "alice")
@@ -45,6 +46,7 @@ func TestLoginMintsASessionAndRecordsIt(t *testing.T) {
 // A response identical in content but faster is still an oracle, so an
 // unknown account pays for the same memory-hard invocation a real one does.
 func TestAnUnknownAccountAndAWrongPasswordAnswerAlikeAndCostAlike(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	f.account(t, "alice")
@@ -92,6 +94,7 @@ func TestAnUnknownAccountAndAWrongPasswordAnswerAlikeAndCostAlike(t *testing.T) 
 // The disabled answer comes after the password verified, so it never tells a
 // stranger that an account exists.
 func TestADisabledAccountAnswersByWhetherThePasswordWasRight(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	f.admin(t, "admin")
@@ -113,6 +116,7 @@ func TestADisabledAccountAnswersByWhetherThePasswordWasRight(t *testing.T) {
 // The budget refuses the eleventh attempt inside the window. The window is
 // per client address, so one client cannot exhaust another's.
 func TestTheLimiterRefusesPastItsBudgetAndIsPerAddress(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	f.account(t, "alice")
@@ -137,6 +141,7 @@ func TestTheLimiterRefusesPastItsBudgetAndIsPerAddress(t *testing.T) {
 // guarded its map with nothing, and two logins arriving together could write
 // it at the same time, which ends the process.
 func TestTheLimiterSurvivesConcurrentAttempts(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	f.account(t, "alice")
@@ -167,6 +172,7 @@ func TestTheLimiterSurvivesConcurrentAttempts(t *testing.T) {
 // told the person their credentials were wrong while they held a session
 // that worked.
 func TestALoginSurvivesAnAuditLogItCannotWrite(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	f.account(t, "alice")
@@ -187,6 +193,7 @@ func TestALoginSurvivesAnAuditLogItCannotWrite(t *testing.T) {
 // Raising the cost protects existing accounts only because a successful
 // verification under older parameters rehashes.
 func TestALoginUnderStaleParametersRehashes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	id := f.account(t, "alice")
@@ -206,12 +213,13 @@ func TestALoginUnderStaleParametersRehashes(t *testing.T) {
 	if acct.PwHash == old {
 		t.Fatal("the stale hash was not replaced")
 	}
-	if auth.Stale(acct.PwHash) {
+	if f.svc.Stale(acct.PwHash) {
 		t.Fatal("the replacement is still stale")
 	}
 }
 
 func TestSessionsExpireAbsolutelyAndWhenIdle(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	clk := &steppingClock{at: start}
@@ -239,6 +247,7 @@ func TestSessionsExpireAbsolutelyAndWhenIdle(t *testing.T) {
 
 // The stamp refreshes on use, so an active client stays signed in.
 func TestUsingASessionRefreshesItsIdleWindow(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	clk := &steppingClock{at: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
 	f := newFixtureWithClock(t, clk)
@@ -259,6 +268,7 @@ func TestUsingASessionRefreshesItsIdleWindow(t *testing.T) {
 // Revocation is immediate because the generation counter invalidates every
 // cached decision, not because a lifetime elapsed.
 func TestARevokedSessionRefusesImmediately(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	id := f.account(t, "alice")
@@ -283,6 +293,7 @@ func TestARevokedSessionRefusesImmediately(t *testing.T) {
 // holding one is signed out at the moment the write commits rather than when
 // its window happens to elapse.
 func TestDisablingAnAccountEndsItsLiveSessions(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	f.admin(t, "admin")
@@ -303,6 +314,7 @@ func TestDisablingAnAccountEndsItsLiveSessions(t *testing.T) {
 // another process, still refuses, and says why: the lookup checks the account
 // and not only the row.
 func TestASessionOfADisabledAccountRefusesWithItsOwnReason(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	f.admin(t, "admin")
@@ -322,6 +334,7 @@ func TestASessionOfADisabledAccountRefusesWithItsOwnReason(t *testing.T) {
 // The client holds row digests rather than tokens, so the revocation is
 // scoped to the owner in the same predicate.
 func TestRevokingByHashRefusesAnotherOwnersSession(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	alice := f.account(t, "alice")

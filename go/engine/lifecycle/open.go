@@ -90,6 +90,12 @@ type Options struct {
 
 	// Revision is the git commit hash stamped into the binary at build time.
 	Revision string
+
+	// PasswordParams sets the Argon2id parameters auth writes new password
+	// hashes under. The zero value means auth.CurrentParams(). A test build
+	// passes cheap ones here to keep its own suite fast; auth itself refuses
+	// anything weaker outside a test binary.
+	PasswordParams auth.Params
 }
 
 // Engine is a constructed set of services, and the files they hold open.
@@ -384,6 +390,7 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 		StoreDir: opt.DataDir,
 		Clock:    clk,
 		Logger:   logger,
+		Params:   opt.PasswordParams,
 		// Without these two a revocation stops at the database while the
 		// sidecar keeps authenticating against the last file that was
 		// written, which is a withdrawn credential that still works.

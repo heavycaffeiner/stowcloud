@@ -69,6 +69,13 @@ type Config struct {
 	// free of a dependency on it.
 	OnMembership func()
 
+	// Params sets the Argon2id parameters new password hashes are written
+	// with. The zero value means CurrentParams(). Outside a test binary,
+	// anything weaker than CurrentParams() in memory cost or iterations is
+	// refused in favour of CurrentParams(), so an importer cannot lower a
+	// deployment's real cost.
+	Params Params
+
 	// Logger receives what this package could not do without failing what the
 	// caller asked for. Nil takes the default.
 	Logger *slog.Logger
@@ -82,6 +89,10 @@ type Service struct {
 	dir   string
 	clk   clock.Clock
 	log   *slog.Logger
+
+	// params is what Hash and the staleness comparisons use, resolved once
+	// at construction by resolvePasswordParams.
+	params Params
 
 	gate  *gate
 	cache *caches
@@ -153,6 +164,7 @@ func New(cfg Config) *Service {
 		dir:          cfg.StoreDir,
 		clk:          clk,
 		log:          log,
+		params:       resolvePasswordParams(cfg.Params),
 		gate:         newGate(),
 		cache:        newCaches(clk),
 		limit:        newLimiter(loginWindow, loginMaxAttempts, clk.Nanos),

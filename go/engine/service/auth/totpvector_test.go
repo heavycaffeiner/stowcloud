@@ -42,6 +42,7 @@ func totpCode(t *testing.T, secretB32 string, step int64) string {
 // The published test vector, so a change to the derivation is caught against
 // the specification and not only against this tree's own arithmetic.
 func TestTheReferenceVectorFromRFC6238(t *testing.T) {
+	t.Parallel()
 	// "12345678901234567890" in Base32, which is the vector's shared secret.
 	const secretB32 = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
 	cases := []struct {

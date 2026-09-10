@@ -10,6 +10,7 @@ import (
 )
 
 func TestTheUsernameRuleAcceptsWhatEveryConsumerCanCarry(t *testing.T) {
+	t.Parallel()
 	for _, name := range []string{
 		"a",
 		"_",
@@ -29,6 +30,7 @@ func TestTheUsernameRuleAcceptsWhatEveryConsumerCanCarry(t *testing.T) {
 // and because the renderer refuses the file rather than the name, one such
 // account cost every account its file-sharing access at once.
 func TestTheUsernameRuleRefusesWhatTheOlderScreensAdmitted(t *testing.T) {
+	t.Parallel()
 	for _, name := range []string{
 		"",
 		strings.Repeat("a", auth.UsernameMaxLen+1),
@@ -61,6 +63,7 @@ func TestTheUsernameRuleRefusesWhatTheOlderScreensAdmitted(t *testing.T) {
 // asserted here, in the package that owns the rule, because the package that
 // relies on it may not import this one.
 func TestTheHomesTemplateNameIsRefused(t *testing.T) {
+	t.Parallel()
 	for _, name := range []string{".template", ".", ".x"} {
 		if err := auth.ValidUsername(name); !errors.Is(err, auth.ErrNameInvalid) {
 			t.Errorf("ValidUsername(%q) = %v, want a refusal: an account with this name would take the homes template as its own home",
@@ -71,6 +74,7 @@ func TestTheHomesTemplateNameIsRefused(t *testing.T) {
 
 // A validation message that echoes what was typed is a reflection primitive.
 func TestTheUsernameRefusalDoesNotEchoTheInput(t *testing.T) {
+	t.Parallel()
 	const hostile = "<script>alert(1)</script>"
 	err := auth.ValidUsername(hostile)
 	if err == nil {
@@ -84,6 +88,7 @@ func TestTheUsernameRefusalDoesNotEchoTheInput(t *testing.T) {
 // The rule gates creation whoever calls it: an account made through the
 // administrative surface used to bypass validation entirely.
 func TestCreationEnforcesTheUsernameRule(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 
@@ -100,6 +105,7 @@ func TestCreationEnforcesTheUsernameRule(t *testing.T) {
 }
 
 func TestCreationRefusesAShortPasswordAndADuplicateName(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	f.account(t, "alice")

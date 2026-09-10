@@ -20,6 +20,7 @@ import (
 // An offset-based reader is the failure this pins: with rows arriving at the
 // head, page two of an offset reader re-serves what page one already showed.
 func TestTheCursorPagesAConcurrentlyAppendedLog(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	actor := f.account(t, "alice")

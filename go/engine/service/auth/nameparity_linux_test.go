@@ -69,6 +69,7 @@ func readVectors(t *testing.T, path string) []Vector {
 }
 
 func TestValidUsernameAgreesWithTheSharedVectors(t *testing.T) {
+	t.Parallel()
 	for _, v := range readVectors(t, filepath.Join("testdata", "usernames.txt")) {
 		got := ValidUsername(v.Name) == nil
 		if got != v.Valid {
@@ -80,6 +81,7 @@ func TestValidUsernameAgreesWithTheSharedVectors(t *testing.T) {
 // A refusal must not repeat what was typed: a validation message echoing its
 // input is a reflection primitive.
 func TestTheRefusalDoesNotEchoTheName(t *testing.T) {
+	t.Parallel()
 	const hostile = "<script>alert(1)</script>"
 	err := ValidUsername(hostile)
 	if err == nil {
@@ -95,6 +97,7 @@ func TestTheRefusalDoesNotEchoTheName(t *testing.T) {
 
 // The bound is one number, and the vectors exercise both sides of it.
 func TestTheLengthBoundIsExactlyTheDocumentedOne(t *testing.T) {
+	t.Parallel()
 	at := strings.Repeat("a", UsernameMaxLen)
 	if ValidUsername(at) != nil {
 		t.Error("a name at exactly the bound was refused")

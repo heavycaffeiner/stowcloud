@@ -36,6 +36,7 @@ func ringFile(t *testing.T, keys map[uint32][32]byte, order []uint32) []byte {
 // older version means the re-seal never committed, and naming the newer one
 // means the compaction never ran.
 func TestStartupAlignsARingLeftBehindByAnInterruptedRotation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	for _, tc := range []struct {
@@ -85,6 +86,7 @@ func TestStartupAlignsARingLeftBehindByAnInterruptedRotation(t *testing.T) {
 // time, and a second factor is the kind that refuses: its secret is the only
 // copy of that factor.
 func TestStartupRefusesAKeyThatCannotOpenAnEnrolledSecondFactor(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	id := f.account(t, "alice")
@@ -115,6 +117,7 @@ func TestStartupRefusesAKeyThatCannotOpenAnEnrolledSecondFactor(t *testing.T) {
 // A stored file-sharing credential is derived material one password change
 // regenerates, so it warns instead of refusing: the deployment still serves.
 func TestStartupSurvivesAKeyThatCannotOpenAnSMBCredential(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	f.account(t, "alice")

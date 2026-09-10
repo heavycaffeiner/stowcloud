@@ -11,6 +11,7 @@ import (
 )
 
 func TestAnAppPasswordVerifiesAndCarriesItsScope(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	id := f.account(t, "alice")
@@ -35,6 +36,7 @@ func TestAnAppPasswordVerifiesAndCarriesItsScope(t *testing.T) {
 // A code read off a screen and typed into a phone must not fail on a
 // character the reader guessed wrong.
 func TestConfusableSpellingsOfATokenAllVerify(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	id := f.account(t, "alice")
@@ -59,6 +61,7 @@ func TestConfusableSpellingsOfATokenAllVerify(t *testing.T) {
 // The token cache would otherwise serve a revoked credential for up to a
 // minute, so the generation counter is what makes the revocation immediate.
 func TestRevocationBeatsTheTokenCache(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	id := f.account(t, "alice")
@@ -83,6 +86,7 @@ func TestRevocationBeatsTheTokenCache(t *testing.T) {
 }
 
 func TestAWipedCredentialStaysRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	id := f.account(t, "alice")
@@ -105,6 +109,7 @@ func TestAWipedCredentialStaysRefused(t *testing.T) {
 }
 
 func TestAnExpiredOrDisownedCredentialRefuses(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	clk := &steppingClock{at: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
 	f := newFixtureWithClock(t, clk)
@@ -136,6 +141,7 @@ func TestAnExpiredOrDisownedCredentialRefuses(t *testing.T) {
 // and the id it returns is what a failed delivery revokes without anybody
 // retaining the plaintext.
 func TestASyncCredentialCarriesFullScopeAndNoExpiry(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	id := f.account(t, "alice")
@@ -169,6 +175,7 @@ func TestASyncCredentialCarriesFullScopeAndNoExpiry(t *testing.T) {
 }
 
 func TestTheSecondFactorAcceptsItsWindowAndRefusesOutsideIt(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	id := f.account(t, "alice")
@@ -207,6 +214,7 @@ func TestTheSecondFactorAcceptsItsWindowAndRefusesOutsideIt(t *testing.T) {
 
 // A code captured in transit must not be usable again inside its own window.
 func TestASecondFactorCodeCannotBeReplayed(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	id := f.account(t, "alice")
@@ -231,6 +239,7 @@ func TestASecondFactorCodeCannotBeReplayed(t *testing.T) {
 // The factor the person just added must not be bypassable by the older
 // protocol answering to the account password.
 func TestEnrollingASecondFactorDropsTheStoredSMBCredential(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	id := f.account(t, "alice")
@@ -265,6 +274,7 @@ func TestEnrollingASecondFactorDropsTheStoredSMBCredential(t *testing.T) {
 // missing however often they signed in and the screen kept saying the same
 // thing. The password verified here is the only place the plaintext exists.
 func TestSigningInRestoresAMissingSMBCredential(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	id := f.account(t, "alice")
@@ -301,6 +311,7 @@ func TestSigningInRestoresAMissingSMBCredential(t *testing.T) {
 // protocol whose authentication cannot be strengthened to match. A restore on
 // the next sign-in would undo that silently.
 func TestSigningInDoesNotRestoreTheCredentialASecondFactorClosed(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	id := f.account(t, "alice")
@@ -331,6 +342,7 @@ func TestSigningInDoesNotRestoreTheCredentialASecondFactorClosed(t *testing.T) {
 }
 
 func TestRecoveryCodesAreSingleUseAndCountDown(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	id := f.account(t, "alice")
@@ -364,6 +376,7 @@ func TestRecoveryCodesAreSingleUseAndCountDown(t *testing.T) {
 }
 
 func TestARecoveryCodeSetSizeIsBounded(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	id := f.account(t, "alice")
@@ -378,6 +391,7 @@ func TestARecoveryCodeSetSizeIsBounded(t *testing.T) {
 // A code that is not the alphabet is a refusal rather than an error: it is a
 // wrong code, and the caller answers the same way it answers any other.
 func TestAMalformedRecoveryCodeIsARefusal(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	id := f.account(t, "alice")

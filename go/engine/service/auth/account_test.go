@@ -19,6 +19,7 @@ import (
 // that protocol until it changed its password, and the interface's "set a
 // separate password" framing made that defect read as a policy.
 func TestANewAccountReachesTheFileSharingProtocolWithNoFurtherStep(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	id := f.account(t, "alice")
@@ -50,6 +51,7 @@ func TestANewAccountReachesTheFileSharingProtocolWithNoFurtherStep(t *testing.T)
 // sidecar file agrees, so every credential-changing path re-renders and tells
 // the publisher.
 func TestEveryCredentialChangeRepublishesAndNotifies(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	f.admin(t, "admin")
@@ -91,6 +93,7 @@ func TestEveryCredentialChangeRepublishesAndNotifies(t *testing.T) {
 // The deleted account has to leave the published file too, or it keeps
 // working over the older protocol.
 func TestADeletedAccountLeavesThePublishedCredentials(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	f.admin(t, "admin")
@@ -113,6 +116,7 @@ func TestADeletedAccountLeavesThePublishedCredentials(t *testing.T) {
 // Policy governs publication only, never storage, so reverting it restores
 // access with no one needing to set a password again.
 func TestTheSecondFactorPolicyOnlyChangesWhatIsPublished(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	id := f.account(t, "alice")
@@ -160,6 +164,7 @@ func TestTheSecondFactorPolicyOnlyChangesWhatIsPublished(t *testing.T) {
 // whose account password cannot serve it, and saying so beats reporting a
 // success that reads as "nothing changed".
 func TestClearingASeparatePasswordReportsWhetherTheAccountPasswordTakesOver(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("an ordinary account reverts", func(t *testing.T) {
@@ -219,6 +224,7 @@ func TestClearingASeparatePasswordReportsWhetherTheAccountPasswordTakesOver(t *t
 // A session is not a credential: signing somebody out of every device because
 // they changed their own password is a surprise rather than a property.
 func TestAPasswordChangeInvalidatesSessionsAndCachedDecisions(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	id := f.account(t, "alice")
@@ -246,6 +252,7 @@ func TestAPasswordChangeInvalidatesSessionsAndCachedDecisions(t *testing.T) {
 // A live session is what somebody who walked past an unlocked screen already
 // has, and the credentials these screens create outlive it.
 func TestReconfirmingAPasswordAnswersWithoutRevealingWhoExists(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	id := f.account(t, "alice")
@@ -265,6 +272,7 @@ func TestReconfirmingAPasswordAnswersWithoutRevealingWhoExists(t *testing.T) {
 // Recovering from a deployment nobody can administer means editing the
 // database by hand.
 func TestTheLastAdministratorIsProtected(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	admin := f.admin(t, "admin")
@@ -278,6 +286,7 @@ func TestTheLastAdministratorIsProtected(t *testing.T) {
 }
 
 func TestTheAdministrativeListingCarriesNoHash(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	admin := f.admin(t, "admin")
@@ -301,6 +310,7 @@ func TestTheAdministrativeListingCarriesNoHash(t *testing.T) {
 }
 
 func TestQuotaRefusesACapThatIsNotACap(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	id := f.account(t, "alice")
@@ -324,6 +334,7 @@ func TestQuotaRefusesACapThatIsNotACap(t *testing.T) {
 // and out of scope and absent are one answer: telling them apart is a
 // directory a stranger can walk.
 func TestTheAccountDirectoryAppliesVisibility(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	admin := f.admin(t, "admin")
@@ -362,6 +373,7 @@ func TestTheAccountDirectoryAppliesVisibility(t *testing.T) {
 }
 
 func TestResolvingAnAccountOrGroupReportsAbsenceRatherThanRaisingIt(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	id := f.account(t, "alice")
@@ -388,6 +400,7 @@ func TestResolvingAnAccountOrGroupReportsAbsenceRatherThanRaisingIt(t *testing.T
 // Without the crossing a membership change is live in the database and stale
 // in the process answering requests.
 func TestEveryMembershipChangeNotifiesTheEvaluator(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	id := f.account(t, "alice")
@@ -425,6 +438,7 @@ func TestEveryMembershipChangeNotifiesTheEvaluator(t *testing.T) {
 // with nothing for that account and the symptom is a client that cannot
 // connect.
 func TestTheAccountFileCarriesTheSameAccountsAtTheSameUids(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	f.account(t, "alice")
@@ -461,6 +475,7 @@ func TestTheAccountFileCarriesTheSameAccountsAtTheSameUids(t *testing.T) {
 // well as the credential file. Present in one alone it would still resolve as a
 // name, which is a login that gets further than it should before failing.
 func TestAnIneligibleAccountIsAbsentFromTheAccountFile(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	id := f.account(t, "alice")
@@ -492,6 +507,7 @@ func TestAnIneligibleAccountIsAbsentFromTheAccountFile(t *testing.T) {
 // empty one. An empty file is a roster saying nobody may connect, which is a
 // different claim from this deployment not publishing one.
 func TestNoAccountFileIsWrittenWithoutARenderer(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	fdb, err := dbfile.Open(context.Background(), state.Spec(filepath.Join(dir, "state.db")))
 	if err != nil {
@@ -502,8 +518,9 @@ func TestNoAccountFileIsWrittenWithoutARenderer(t *testing.T) {
 			t.Errorf("Close: %v", cerr)
 		}
 	})
+	// StoreDir alone already resolves the key path with no environment
+	// variable involved.
 	svc := auth.New(auth.Config{Store: state.New(fdb), StoreDir: dir})
-	t.Setenv("SC_MASTER_KEY_FILE", filepath.Join(dir, "master.key"))
 	if _, oerr := svc.OpenMasterKey(context.Background()); oerr != nil {
 		t.Fatalf("OpenMasterKey: %v", oerr)
 	}
