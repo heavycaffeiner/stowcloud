@@ -12,6 +12,7 @@ import (
 )
 
 func TestASessionRoundTripsAndRevokes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	id := newAccount(t, d, "alice", 0)
@@ -50,6 +51,7 @@ func TestASessionRoundTripsAndRevokes(t *testing.T) {
 // The owner is in the predicate with the digest, so the ownership check and
 // the delete cannot disagree.
 func TestRevokingBySessionHashIsOwnerScoped(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	alice := newAccount(t, d, "alice", 0)
@@ -69,6 +71,7 @@ func TestRevokingBySessionHashIsOwnerScoped(t *testing.T) {
 }
 
 func TestSessionsOfListsAndCountsRevocations(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	id := newAccount(t, d, "alice", 0)
@@ -95,6 +98,7 @@ func TestSessionsOfListsAndCountsRevocations(t *testing.T) {
 }
 
 func TestAnAppPasswordRoundTripsWithItsScope(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	user := newAccount(t, d, "alice", 0)
@@ -132,6 +136,7 @@ func TestAnAppPasswordRoundTripsWithItsScope(t *testing.T) {
 // An empty scope column is no list, not a list holding one empty name: the
 // two mean "every share this account can see" and "a share with no name".
 func TestAnEmptyScopeIsNoShareList(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	user := newAccount(t, d, "alice", 0)
@@ -153,6 +158,7 @@ func TestAnEmptyScopeIsNoShareList(t *testing.T) {
 // A single statement both marks and revokes the credential, so a device that
 // never reconnects to receive the request cannot continue working.
 func TestAWipeRequestAlsoExpiresTheCredential(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	user := newAccount(t, d, "alice", 0)
@@ -175,6 +181,7 @@ func TestAWipeRequestAlsoExpiresTheCredential(t *testing.T) {
 }
 
 func TestRevokingAnotherAccountsAppPasswordRefuses(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	alice := newAccount(t, d, "alice", 0)
@@ -194,6 +201,7 @@ func TestRevokingAnotherAccountsAppPasswordRefuses(t *testing.T) {
 }
 
 func TestEnrollingASecondFactorDropsTheSMBCredential(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	user := newAccount(t, d, "alice", 0)
@@ -217,6 +225,7 @@ func TestEnrollingASecondFactorDropsTheSMBCredential(t *testing.T) {
 // A code presented twice inside its window is refused the second time, even
 // when the two presentations race: the insert is the acceptance.
 func TestOnlyOneClaimantWinsATOTPStep(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	user := newAccount(t, d, "alice", 0)
@@ -256,6 +265,7 @@ func TestOnlyOneClaimantWinsATOTPStep(t *testing.T) {
 // Disabling removes the window with the secret: leaving it would refuse the
 // steps it holds after a re-enrolment under a different secret, for nothing.
 func TestDisablingASecondFactorClearsTheReplayWindow(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	user := newAccount(t, d, "alice", 0)
@@ -281,6 +291,7 @@ func TestDisablingASecondFactorClearsTheReplayWindow(t *testing.T) {
 }
 
 func TestARecoveryCodeIsSingleUseUnderConcurrency(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	user := newAccount(t, d, "alice", 0)
@@ -321,6 +332,7 @@ func TestARecoveryCodeIsSingleUseUnderConcurrency(t *testing.T) {
 }
 
 func TestGeneratingRecoveryCodesReplacesTheSet(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	user := newAccount(t, d, "alice", 0)

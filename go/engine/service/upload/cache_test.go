@@ -25,6 +25,7 @@ func cached(t *testing.T) *fixture {
 }
 
 func TestTheCacheSwitchIsReadAtCreationAndNeverAfterwards(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := cached(t)
 	const chunk = limits.UploadChunkFloor
@@ -56,6 +57,7 @@ func TestTheCacheSwitchIsReadAtCreationAndNeverAfterwards(t *testing.T) {
 // A deployment with no spool has no switch to offer, and says so rather than
 // pretending to have one.
 func TestADeploymentWithNoSpoolRefusesTheSwitch(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	if f.engine.CacheAvailable() {
 		t.Fatal("a fixture with no spool reports one")
@@ -69,6 +71,7 @@ func TestADeploymentWithNoSpoolRefusesTheSwitch(t *testing.T) {
 // chunks to files of their own, so it would be a second staging layer under
 // the first.
 func TestNameOrderedSessionsAreNeverCached(t *testing.T) {
+	t.Parallel()
 	f := cached(t)
 	s := f.create(t, "named.bin", uint64(limits.UploadChunkFloor), SessionSpec{Mode: SpoolNameOrdered})
 	if s.Cached {
@@ -79,6 +82,7 @@ func TestNameOrderedSessionsAreNeverCached(t *testing.T) {
 // A cached upload finishes: the bytes go to the spool, the merger drains them
 // into the part file, and finalize publishes what was sent.
 func TestACachedUploadPublishesWhatWasSent(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := cached(t)
 	const chunk = limits.UploadChunkFloor
@@ -105,6 +109,7 @@ func TestACachedUploadPublishesWhatWasSent(t *testing.T) {
 // and the refusal carries how long to wait, because what it waits for is a
 // disk write already under way.
 func TestTheBudgetRefusesWithARetryDelay(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := cached(t)
 	const chunk = limits.UploadChunkFloor
@@ -140,6 +145,7 @@ func TestTheBudgetRefusesWithARetryDelay(t *testing.T) {
 // A chunk larger than one merge step drains across several of them, and the
 // cache file goes only once every byte of it is in the part file.
 func TestAChunkLargerThanAStepDrainsAcrossRounds(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := cached(t)
 	const chunk = limits.UploadChunkFloor
@@ -161,6 +167,7 @@ func TestAChunkLargerThanAStepDrainsAcrossRounds(t *testing.T) {
 // A file in the spool this build did not write is not merged as data and is
 // not counted as a chunk.
 func TestAForeignFileInTheSpoolIsNeverMerged(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	spool := filepath.Join(t.TempDir(), "spool")
 	f := newFixtureWithCache(t, spool)
@@ -198,6 +205,7 @@ func TestAForeignFileInTheSpoolIsNeverMerged(t *testing.T) {
 // still claimed those bytes would answer a resuming client with an offset
 // whose data is gone.
 func TestRecoveryCutsTheSetDownToWhatSurvived(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	spool := filepath.Join(t.TempDir(), "spool")
 	f := newFixtureWithCache(t, spool)
@@ -248,6 +256,7 @@ func TestRecoveryCutsTheSetDownToWhatSurvived(t *testing.T) {
 // can see: the spool is not a share, and the row is the only thing naming a
 // directory in it.
 func TestTheSweepCollectsAnOrphanedCacheDirectory(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	spool := filepath.Join(t.TempDir(), "spool")
 	f := newFixtureWithCache(t, spool)
@@ -284,6 +293,7 @@ func TestTheSweepCollectsAnOrphanedCacheDirectory(t *testing.T) {
 // The spool is scratch space rather than a share: it borrows no id, and
 // nothing that lists shares can reach it.
 func TestTheSpoolIsScratchSpaceAndNotAShare(t *testing.T) {
+	t.Parallel()
 	f := cached(t)
 	if !f.engine.cache.root.IsScratch() {
 		t.Fatal("the spool root does not report itself as scratch space")

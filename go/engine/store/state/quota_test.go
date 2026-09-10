@@ -37,6 +37,7 @@ func usage(t *testing.T, d *state.DB, user int64) int64 {
 }
 
 func TestReserveAdmitsBelowTheCapAndRefusesAtIt(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedCappedUser(t, d, 1, id64(1000))
@@ -74,6 +75,7 @@ func TestReserveAdmitsBelowTheCapAndRefusesAtIt(t *testing.T) {
 }
 
 func TestANullCapAlwaysAdmits(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedCappedUser(t, d, 1, nil)
@@ -89,6 +91,7 @@ func TestANullCapAlwaysAdmits(t *testing.T) {
 // A user who does not exist has no headroom either, so the refusal is the
 // same shape as being at the cap: false with no error.
 func TestReserveForAMissingUserRefusesWithoutAnError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 
@@ -104,6 +107,7 @@ func TestReserveForAMissingUserRefusesWithoutAnError(t *testing.T) {
 // A byte count that does not fit the signed column is a caller error rather
 // than a refusal: the two are different facts.
 func TestAnUnstorableReservationErrors(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedCappedUser(t, d, 1, nil)
@@ -116,6 +120,7 @@ func TestAnUnstorableReservationErrors(t *testing.T) {
 // The cap check and the increment are one statement, so exactly one of the
 // racing reservations gets the last slot.
 func TestRacingReservationsAdmitExactlyOne(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedCappedUser(t, d, 1, id64(100))
@@ -154,6 +159,7 @@ func TestRacingReservationsAdmitExactlyOne(t *testing.T) {
 // Reserve books the bytes durably, so Commit exists only to keep the call
 // site honest and moves nothing.
 func TestCommitIsANoOpAndIsIdempotent(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedCappedUser(t, d, 1, id64(1000))
@@ -173,6 +179,7 @@ func TestCommitIsANoOpAndIsIdempotent(t *testing.T) {
 }
 
 func TestReleaseCreditsAndClampsAtZero(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedCappedUser(t, d, 1, id64(1000))
@@ -200,6 +207,7 @@ func TestReleaseCreditsAndClampsAtZero(t *testing.T) {
 // The write path reserves and the delete path credits, so a negative value
 // arriving here means the two were confused.
 func TestANegativeReleaseIsACallerBug(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedCappedUser(t, d, 1, id64(1000))
@@ -210,6 +218,7 @@ func TestANegativeReleaseIsACallerBug(t *testing.T) {
 }
 
 func TestReleasingZeroChangesNothing(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedCappedUser(t, d, 1, id64(1000))
@@ -230,6 +239,7 @@ func TestReleasingZeroChangesNothing(t *testing.T) {
 // does not touch it: refusing here would block uploads for a reason that has
 // nothing to do with the ledger.
 func TestReserveIgnoresTheSizeGuard(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, f := open(t)
 	seedCappedUser(t, d, 1, id64(1000))

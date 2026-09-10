@@ -27,6 +27,7 @@ func startFlow(t *testing.T, d *state.DB, user int64, stateDigest, binding []byt
 // A flow that can be redeemed twice is a code that can be replayed, and the
 // exchange is the only thing it is for.
 func TestTakingAFlowConsumesIt(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	user := newAccount(t, d, "alice", 0)
@@ -50,6 +51,7 @@ func TestTakingAFlowConsumesIt(t *testing.T) {
 // An unknown state and an expired one are one answer, because telling them
 // apart would say whether a state value was ever real.
 func TestAnExpiredFlowAnswersLikeAnUnknownOne(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	user := newAccount(t, d, "alice", 0)
@@ -66,6 +68,7 @@ func TestAnExpiredFlowAnswersLikeAnUnknownOne(t *testing.T) {
 // Starting one sweeps what has expired, so a deployment nobody links on
 // accumulates nothing and there is no timer to forget.
 func TestStartingAFlowSweepsTheExpiredOnes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	user := newAccount(t, d, "alice", 0)
@@ -85,6 +88,7 @@ func TestStartingAFlowSweepsTheExpiredOnes(t *testing.T) {
 // Both values go to the browser, so storing them whole would make a read of
 // this table enough to complete somebody else's link.
 func TestTheFlowStoresDigestsAndNotTheValues(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	user := newAccount(t, d, "alice", 0)
@@ -112,6 +116,7 @@ func TestTheFlowStoresDigestsAndNotTheValues(t *testing.T) {
 }
 
 func TestAnIdentityLinkRoundTripsAndReplaces(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	user := newAccount(t, d, "alice", 0)
@@ -148,6 +153,7 @@ func TestAnIdentityLinkRoundTripsAndReplaces(t *testing.T) {
 // Claiming an identity owned by someone else would transfer that account's sole
 // means of access to a different person.
 func TestATakenIdentityIsRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	alice := newAccount(t, d, "alice", 0)
@@ -166,6 +172,7 @@ func TestATakenIdentityIsRefused(t *testing.T) {
 }
 
 func TestTouchingALinkStampsIt(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	user := newAccount(t, d, "alice", 0)
@@ -185,6 +192,7 @@ func TestTouchingALinkStampsIt(t *testing.T) {
 }
 
 func TestUnlinkingDetachesTheIdentity(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	user := newAccount(t, d, "alice", 0)
@@ -205,6 +213,7 @@ func TestUnlinkingDetachesTheIdentity(t *testing.T) {
 // The log outlives the accounts it names: who did this matters most for the
 // account that no longer exists.
 func TestTheAuditLogSurvivesTheAccountItNames(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	newAccount(t, d, "admin", state.RoleAdmin)
@@ -236,6 +245,7 @@ func TestTheAuditLogSurvivesTheAccountItNames(t *testing.T) {
 
 // A screen has to tell "no target" from "a target whose name is blank".
 func TestAbsentAuditColumnsReadBackAsAbsent(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 
@@ -258,6 +268,7 @@ func TestAbsentAuditColumnsReadBackAsAbsent(t *testing.T) {
 // The cursor is the previous page's last rowid, so a boundary stays correct
 // while new rows land ahead of it; an offset would shift every page.
 func TestTheAuditCursorPagesWhileRowsLandAhead(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 
@@ -296,6 +307,7 @@ func TestTheAuditCursorPagesWhileRowsLandAhead(t *testing.T) {
 }
 
 func TestAuditFilteringAggregationAndPruning(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 
@@ -359,6 +371,7 @@ func TestAuditFilteringAggregationAndPruning(t *testing.T) {
 // changes nothing, so the database never names a version some of its rows
 // were not brought to.
 func TestResealWalksEveryKindAndRecordsTheVersion(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	user := newAccount(t, d, "alice", 0)
@@ -412,6 +425,7 @@ func TestResealWalksEveryKindAndRecordsTheVersion(t *testing.T) {
 // A row that will not open aborts the whole transaction, so nothing is left
 // at a version the database does not name.
 func TestAFailedResealChangesNothing(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	user := newAccount(t, d, "alice", 0)
@@ -439,6 +453,7 @@ func TestAFailedResealChangesNothing(t *testing.T) {
 }
 
 func TestAFreshDatabaseNamesNoKeyVersion(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 
@@ -461,6 +476,7 @@ func TestAFreshDatabaseNamesNoKeyVersion(t *testing.T) {
 // so a wrong key file is found before the first login rather than one failing
 // account at a time.
 func TestSampleSealedRowReportsPresenceAndAbsence(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	user := newAccount(t, d, "alice", 0)

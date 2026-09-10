@@ -23,6 +23,7 @@ func newAccount(t *testing.T, d *state.DB, name string, role int64) int64 {
 }
 
 func TestAnAccountRoundTripsByNameAndByID(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 
@@ -56,6 +57,7 @@ func TestAnAccountRoundTripsByNameAndByID(t *testing.T) {
 // the scan, leaving the account unable to sign in at all and producing a server
 // error rather than anything actionable.
 func TestAnAbsentDisplayNameReadsAsEmpty(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	id := newAccount(t, d, "bob", 0)
@@ -70,6 +72,7 @@ func TestAnAbsentDisplayNameReadsAsEmpty(t *testing.T) {
 }
 
 func TestAMissingAccountIsATypedRefusal(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 
@@ -85,6 +88,7 @@ func TestAMissingAccountIsATypedRefusal(t *testing.T) {
 // reaching a client as a server error tells whoever typed the name that
 // something broke rather than that the name is taken.
 func TestADuplicateNameIsErrNameTaken(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	newAccount(t, d, "alice", 0)
@@ -98,6 +102,7 @@ func TestADuplicateNameIsErrNameTaken(t *testing.T) {
 // The name column collates case-insensitively, so two spellings of one name
 // are one account rather than two people who both believe they own it.
 func TestNamesCollideAcrossCase(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	newAccount(t, d, "alice", 0)
@@ -110,6 +115,7 @@ func TestNamesCollideAcrossCase(t *testing.T) {
 // The credential for the file-sharing protocol is sealed inside the creating
 // transaction, because it comes from a plaintext that exists only then.
 func TestCreationSealsTheSMBCredentialInTheSameTransaction(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 
@@ -136,6 +142,7 @@ func TestCreationSealsTheSMBCredentialInTheSameTransaction(t *testing.T) {
 // credential its creation promised is the half-write this transaction exists
 // to prevent.
 func TestAFailedSealLeavesNoAccount(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 
@@ -150,6 +157,7 @@ func TestAFailedSealLeavesNoAccount(t *testing.T) {
 }
 
 func TestDisablingAnAccountDropsItsSessions(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	admin := newAccount(t, d, "admin", state.RoleAdmin)
@@ -172,6 +180,7 @@ func TestDisablingAnAccountDropsItsSessions(t *testing.T) {
 // Recovering from a deployment nobody can administer means editing the
 // database by hand, so the write that would cause it is refused instead.
 func TestTheLastAdministratorCannotBeDisabledOrDeleted(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	admin := newAccount(t, d, "admin", state.RoleAdmin)
@@ -195,6 +204,7 @@ func TestTheLastAdministratorCannotBeDisabledOrDeleted(t *testing.T) {
 }
 
 func TestQuotaIsSetAndCleared(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	id := newAccount(t, d, "alice", 0)
@@ -225,6 +235,7 @@ func TestQuotaIsSetAndCleared(t *testing.T) {
 // the opt-out column unwritable, so the screen's own toggle never survived a
 // reload.
 func TestBothSMBSwitchesArePersisted(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	id := newAccount(t, d, "alice", 0)
@@ -242,6 +253,7 @@ func TestBothSMBSwitchesArePersisted(t *testing.T) {
 }
 
 func TestGroupsAndMemberships(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	alice := newAccount(t, d, "alice", 0)
@@ -292,6 +304,7 @@ func TestGroupsAndMemberships(t *testing.T) {
 }
 
 func TestSetMembershipsReplacesTheWholeSet(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	alice := newAccount(t, d, "alice", 0)
@@ -322,6 +335,7 @@ func TestSetMembershipsReplacesTheWholeSet(t *testing.T) {
 // A membership naming a group that does not exist is refused by the foreign
 // key, and the whole replacement rolls back rather than landing half of it.
 func TestAMembershipSetNamingAMissingGroupChangesNothing(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	alice := newAccount(t, d, "alice", 0)
@@ -345,6 +359,7 @@ func TestAMembershipSetNamingAMissingGroupChangesNothing(t *testing.T) {
 }
 
 func TestTheSetupGateReadsCountsAndAdminExistence(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 

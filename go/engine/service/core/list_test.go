@@ -84,6 +84,7 @@ func mustList(t *testing.T, c *Core, r Resolved, cur Cursor, opt ListOptions) Pa
 // permuted names alone: a directory whose read order is not already sorted
 // drew folders as files and files as folders.
 func TestSortingKeepsEveryNameWithItsOwnKind(t *testing.T) {
+	t.Parallel()
 	c, _, host, r := listable(t)
 	// Names interleaved so no read order can be the sorted one by accident.
 	for _, name := range []string{"zeta", "beta"} {
@@ -113,6 +114,7 @@ func TestSortingKeepsEveryNameWithItsOwnKind(t *testing.T) {
 }
 
 func TestDirectoriesLeadInBothDirections(t *testing.T) {
+	t.Parallel()
 	c, _, host, r := listable(t)
 	for _, name := range []string{"a-dir", "z-dir"} {
 		if err := os.Mkdir(filepath.Join(host, name), 0o755); err != nil {
@@ -136,6 +138,7 @@ func TestDirectoriesLeadInBothDirections(t *testing.T) {
 }
 
 func TestSortBySizeAndMtimeOrderByTheStatValue(t *testing.T) {
+	t.Parallel()
 	c, _, host, r := listable(t)
 	writeFile(t, host, "small.txt", "a")
 	writeFile(t, host, "large.txt", "aaaaaaaaaa")
@@ -171,6 +174,7 @@ func TestSortBySizeAndMtimeOrderByTheStatValue(t *testing.T) {
 // cannot type a symlink under the deny policy, so the entry would carry
 // KindOther without the directory read's answer.
 func TestASymlinkIsTypedFromTheDirectoryRead(t *testing.T) {
+	t.Parallel()
 	c, _, host, r := listable(t)
 	writeFile(t, host, "target.txt", "x")
 	if err := os.Symlink("target.txt", filepath.Join(host, "link.txt")); err != nil {
@@ -207,6 +211,7 @@ func TestASymlinkIsTypedFromTheDirectoryRead(t *testing.T) {
 // exactly as a deleted entry's does, so the fallback is exercised without a
 // race the test cannot win.
 func TestAVanishedEntryIsASkeletonRow(t *testing.T) {
+	t.Parallel()
 	c, _, host, r := listable(t)
 	writeFile(t, host, "present.txt", "hello")
 	if err := os.Symlink("nothing-here", filepath.Join(host, "gone.txt")); err != nil {
@@ -234,6 +239,7 @@ func TestAVanishedEntryIsASkeletonRow(t *testing.T) {
 }
 
 func TestPagingWalksTheDirectoryOnceWithStableAccounting(t *testing.T) {
+	t.Parallel()
 	c, _, host, r := listable(t)
 	const total = 25
 	for i := range total {
@@ -272,6 +278,7 @@ func TestPagingWalksTheDirectoryOnceWithStableAccounting(t *testing.T) {
 }
 
 func TestCursorRefusals(t *testing.T) {
+	t.Parallel()
 	c, _, host, r := listable(t)
 	writeFile(t, host, "a.txt", "x")
 	writeFile(t, host, "b.txt", "x")
@@ -294,6 +301,7 @@ func TestCursorRefusals(t *testing.T) {
 }
 
 func TestTheLimitDefaultsAndIsClamped(t *testing.T) {
+	t.Parallel()
 	c, _, host, r := listable(t)
 	// 201 entries: one more than the default page, so the default is
 	// observable without minting two thousand files.
@@ -313,6 +321,7 @@ func TestTheLimitDefaultsAndIsClamped(t *testing.T) {
 }
 
 func TestListingAFileIsNotFoundAndListingWithoutReadIsDenied(t *testing.T) {
+	t.Parallel()
 	c, st, host, _ := listable(t)
 	writeFile(t, host, "readme.txt", "x")
 
@@ -350,6 +359,7 @@ func TestListingAFileIsNotFoundAndListingWithoutReadIsDenied(t *testing.T) {
 }
 
 func TestReservedControlNamesNeverReachAPage(t *testing.T) {
+	t.Parallel()
 	c, _, host, r := listable(t)
 	writeFile(t, host, "visible.txt", "x")
 	for _, name := range []string{".scpart-abcd", ".scmeta", ".sctrash", ".scindex"} {
@@ -366,6 +376,7 @@ func TestReservedControlNamesNeverReachAPage(t *testing.T) {
 }
 
 func TestThePageCarriesTheDirectoryInodesOwnToken(t *testing.T) {
+	t.Parallel()
 	c, _, host, r := listable(t)
 	writeFile(t, host, "a.txt", "x")
 
@@ -385,6 +396,7 @@ func TestThePageCarriesTheDirectoryInodesOwnToken(t *testing.T) {
 // about creating one beside them, and a client that guessed offered upload and
 // "new folder" to an account holding read alone.
 func TestThePageCarriesWhatTheCallerMayDoToTheDirectory(t *testing.T) {
+	t.Parallel()
 	c, _, host, r := listable(t)
 	writeFile(t, host, "a.txt", "x")
 
@@ -398,6 +410,7 @@ func TestThePageCarriesWhatTheCallerMayDoToTheDirectory(t *testing.T) {
 }
 
 func TestCursorOffsetParsing(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		in      Cursor
 		want    int

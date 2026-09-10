@@ -38,6 +38,7 @@ func startLoginFlow(t *testing.T, d *state.DB, name string, approve bool) []byte
 // pass a check made before either wrote, and the client would end up holding
 // two credentials with no way to know the second exists.
 func TestExactlyOnePollClaimsDelivery(t *testing.T) {
+	t.Parallel()
 	d, _ := open(t)
 	ctx := context.Background()
 	seedUser(t, d, 1, "alice")
@@ -88,6 +89,7 @@ func TestExactlyOnePollClaimsDelivery(t *testing.T) {
 // database's write path serializes and a timing test cannot separate one
 // statement from a read followed by a write.
 func TestTheDeliveryClaimIsOneStatement(t *testing.T) {
+	t.Parallel()
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, "loginflow_sql.go", nil, 0)
 	if err != nil {
@@ -131,6 +133,7 @@ func contains(haystack, needle string) bool {
 // An unapproved flow cannot be claimed. Minting before a person approved would
 // hand a credential to whoever started the flow.
 func TestAnUnapprovedFlowCannotBeClaimed(t *testing.T) {
+	t.Parallel()
 	d, _ := open(t)
 	ctx := context.Background()
 	seedUser(t, d, 1, "alice")
@@ -144,6 +147,7 @@ func TestAnUnapprovedFlowCannotBeClaimed(t *testing.T) {
 // A flow nobody started is unknown, and that answer is the same one an expired
 // or consumed flow gets: a caller cannot tell them apart by the error.
 func TestAnAbsentFlowIsUnknown(t *testing.T) {
+	t.Parallel()
 	d, _ := open(t)
 	ctx := context.Background()
 
@@ -158,6 +162,7 @@ func TestAnAbsentFlowIsUnknown(t *testing.T) {
 // The sealed result survives being read, so the same poll token collects the
 // same credential rather than minting a second one.
 func TestASealedResultIsCollectedRepeatedly(t *testing.T) {
+	t.Parallel()
 	d, _ := open(t)
 	ctx := context.Background()
 	seedUser(t, d, 1, "alice")
@@ -196,6 +201,7 @@ func TestASealedResultIsCollectedRepeatedly(t *testing.T) {
 // the server wrote its response is exactly the case redelivery exists for, and
 // clearing here makes the client's retry mint a second credential.
 func TestMarkingDeliveredKeepsTheResult(t *testing.T) {
+	t.Parallel()
 	d, _ := open(t)
 	ctx := context.Background()
 	seedUser(t, d, 1, "alice")
@@ -226,6 +232,7 @@ func TestMarkingDeliveredKeepsTheResult(t *testing.T) {
 // The key version is recorded, so a rotation does not strand a flow that is
 // already deliverable.
 func TestTheKeyVersionIsRecordedWithTheCiphertext(t *testing.T) {
+	t.Parallel()
 	d, _ := open(t)
 	ctx := context.Background()
 	seedUser(t, d, 1, "alice")
@@ -253,6 +260,7 @@ func TestTheKeyVersionIsRecordedWithTheCiphertext(t *testing.T) {
 // the row would lose the record that a credential was minted, and the
 // credential itself belongs to the client now.
 func TestSweepClearsTheCiphertextAndKeepsTheRow(t *testing.T) {
+	t.Parallel()
 	d, _ := open(t)
 	ctx := context.Background()
 	seedUser(t, d, 1, "alice")
@@ -287,6 +295,7 @@ func TestSweepClearsTheCiphertextAndKeepsTheRow(t *testing.T) {
 
 // A flow newer than the cutoff keeps its material.
 func TestSweepLeavesALiveFlowAlone(t *testing.T) {
+	t.Parallel()
 	d, _ := open(t)
 	ctx := context.Background()
 	seedUser(t, d, 1, "alice")
@@ -315,6 +324,7 @@ func TestSweepLeavesALiveFlowAlone(t *testing.T) {
 // Storing against a flow that does not exist is refused rather than silently
 // creating one.
 func TestStoringAgainstAnAbsentFlowIsRefused(t *testing.T) {
+	t.Parallel()
 	d, _ := open(t)
 
 	err := d.StoreLoginFlowDelivery(context.Background(), []byte("nothing"), []byte("ct"), 1, 1)
@@ -327,6 +337,7 @@ func TestStoringAgainstAnAbsentFlowIsRefused(t *testing.T) {
 // nothing writes a password column: a read of this table says which sign-ins
 // are underway without providing any means to complete one.
 func TestNoPlaintextReachesTheTable(t *testing.T) {
+	t.Parallel()
 	d, f := open(t)
 	ctx := context.Background()
 	seedUser(t, d, 1, "alice")

@@ -32,6 +32,7 @@ func openTestRoot(t *testing.T, containerPath string, create bool, sizeMiB uint6
 }
 
 func TestRootEndToEnd(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	containerPath := filepath.Join(dir, "share.hc")
 
@@ -203,6 +204,7 @@ func TestRootEndToEnd(t *testing.T) {
 }
 
 func TestOpenWrongPasswordRefused(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	containerPath := filepath.Join(dir, "share.hc")
 	root := openTestRoot(t, containerPath, true, minContainerDataMiB)

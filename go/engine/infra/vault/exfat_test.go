@@ -38,6 +38,7 @@ func newExFatTestFS(t *testing.T, sizeBytes int64) (*ExFatFS, Device) {
 const testExFatVolumeSize = 8 << 20
 
 func TestExFatFormatAndMount(t *testing.T) {
+	t.Parallel()
 	fsys, _ := newExFatTestFS(t, testExFatVolumeSize)
 	total, free := fsys.Space()
 	if total == 0 {
@@ -59,6 +60,7 @@ func TestExFatFormatAndMount(t *testing.T) {
 }
 
 func TestExFatCreateFileAndReadBack(t *testing.T) {
+	t.Parallel()
 	fsys, _ := newExFatTestFS(t, testExFatVolumeSize)
 	p := mustPath(t, "hello.txt")
 	if err := fsys.CreateFile(p); err != nil {
@@ -88,6 +90,7 @@ func TestExFatCreateFileAndReadBack(t *testing.T) {
 }
 
 func TestExFatListDirectory(t *testing.T) {
+	t.Parallel()
 	fsys, _ := newExFatTestFS(t, testExFatVolumeSize)
 	if err := fsys.Mkdir(mustPath(t, "a")); err != nil {
 		t.Fatalf("Mkdir a: %v", err)
@@ -126,6 +129,7 @@ func TestExFatListDirectory(t *testing.T) {
 // clusters in one WriteFileStaged call, exercising ensureExtent's chain
 // growth and readExtent's multi-cluster stitching together.
 func TestExFatExtendAcrossClusterBoundary(t *testing.T) {
+	t.Parallel()
 	fsys, _ := newExFatTestFS(t, testExFatVolumeSize)
 	p := mustPath(t, "spanning.bin")
 	if err := fsys.CreateFile(p); err != nil {
@@ -194,6 +198,7 @@ func TestExFatExtendAcrossClusterBoundary(t *testing.T) {
 }
 
 func TestExFatDeleteFreesClusters(t *testing.T) {
+	t.Parallel()
 	fsys, _ := newExFatTestFS(t, testExFatVolumeSize)
 	p := mustPath(t, "big.bin")
 	if err := fsys.CreateFile(p); err != nil {
@@ -225,6 +230,7 @@ func TestExFatDeleteFreesClusters(t *testing.T) {
 }
 
 func TestExFatMkdirRmdir(t *testing.T) {
+	t.Parallel()
 	fsys, _ := newExFatTestFS(t, testExFatVolumeSize)
 	dir := mustPath(t, "occupied")
 	if err := fsys.Mkdir(dir); err != nil {
@@ -255,6 +261,7 @@ func TestExFatMkdirRmdir(t *testing.T) {
 // the subdirectory's own Stream Extension entry, held in its parent, has
 // to track the new chain length or a later listing would stop short.
 func TestExFatNestedDirectoryGrowth(t *testing.T) {
+	t.Parallel()
 	fsys, _ := newExFatTestFS(t, testExFatVolumeSize)
 	sub := mustPath(t, "sub")
 	if err := fsys.Mkdir(sub); err != nil {
@@ -297,6 +304,7 @@ func TestExFatNestedDirectoryGrowth(t *testing.T) {
 }
 
 func TestExFatRenameAcrossDirectories(t *testing.T) {
+	t.Parallel()
 	fsys, _ := newExFatTestFS(t, testExFatVolumeSize)
 	srcDir := mustPath(t, "src")
 	dstDir := mustPath(t, "dst")
@@ -334,6 +342,7 @@ func TestExFatRenameAcrossDirectories(t *testing.T) {
 // files until allocation refuses, and confirms the refusal is the clean
 // ErrNoSpaceOnVolume sentinel, not a partial write or a corrupted volume.
 func TestExFatFillVolumeThenNoSpace(t *testing.T) {
+	t.Parallel()
 	fsys, _ := newExFatTestFS(t, 1<<20) // 1 MiB: small enough to fill in well under a second
 	created := 0
 	var lastErr error
@@ -415,6 +424,7 @@ func exfatReserveContiguousForTest(t *testing.T, fsys *ExFatFS, n int) uint32 {
 // formatter or a defragmenter can, and which a reader that always walks
 // the FAT would read as garbage or a short read.
 func TestExFatReadContiguousNoFatChainFile(t *testing.T) {
+	t.Parallel()
 	fsys, _ := newExFatTestFS(t, testExFatVolumeSize)
 	bpc := int(fsys.bpb.bytesPerCluster())
 	content := bytes.Repeat([]byte("no-fat-chain-contiguous-data-"), bpc/10)
@@ -479,6 +489,7 @@ func TestExFatReadContiguousNoFatChainFile(t *testing.T) {
 // an independent formatter and an independent checker are the only things
 // that prove this driver against something other than its own writer.
 func TestExFatRealFormatterImage(t *testing.T) {
+	t.Parallel()
 	mkfsPath, err := exec.LookPath("mkfs.exfat")
 	if err != nil {
 		t.Skip("mkfs.exfat not available")
@@ -581,6 +592,7 @@ func fsckExFat(tool, imgPath string) ([]byte, error) {
 // re-encoded or truncated table would make our volumes unreadable everywhere
 // else while this driver went on reading them happily.
 func TestDefaultUpcaseTableChecksum(t *testing.T) {
+	t.Parallel()
 	raw, err := base64.StdEncoding.DecodeString(defaultExFatUpcaseTableB64)
 	if err != nil {
 		t.Fatalf("decode embedded up-case table: %v", err)

@@ -11,6 +11,7 @@ import (
 )
 
 func TestFreeSpaceReportsTheFilesystemHoldingThePath(t *testing.T) {
+	t.Parallel()
 	c, _, _, root := writable(t)
 
 	fs, err := c.FreeSpace(context.Background(), root)
@@ -32,6 +33,7 @@ func TestFreeSpaceReportsTheFilesystemHoldingThePath(t *testing.T) {
 }
 
 func TestFreeSpaceRefusesWithoutRead(t *testing.T) {
+	t.Parallel()
 	c, _, _, root := writable(t)
 	stranger := Resolved{
 		user: root.user, share: root.share, root: root.root,
@@ -43,6 +45,7 @@ func TestFreeSpaceRefusesWithoutRead(t *testing.T) {
 }
 
 func TestAttachQuotaSinkIsOneShot(t *testing.T) {
+	t.Parallel()
 	c, _ := newCore(t)
 	if err := c.AttachQuotaSink(&countingSink{}); err != nil {
 		t.Fatalf("attaching the first sink: %v", err)
@@ -53,6 +56,7 @@ func TestAttachQuotaSinkIsOneShot(t *testing.T) {
 }
 
 func TestChargeQuotaSplitsBySign(t *testing.T) {
+	t.Parallel()
 	c, _ := newCore(t)
 	sink := &countingSink{}
 	if err := c.AttachQuotaSink(sink); err != nil {
@@ -84,6 +88,7 @@ func TestChargeQuotaSplitsBySign(t *testing.T) {
 }
 
 func TestChargeQuotaSwallowsEveryFailure(t *testing.T) {
+	t.Parallel()
 	c, _ := newCore(t)
 	sink := &countingSink{fail: errors.New("the ledger is down")}
 	if err := c.AttachQuotaSink(sink); err != nil {
@@ -106,6 +111,7 @@ func TestChargeQuotaSwallowsEveryFailure(t *testing.T) {
 }
 
 func TestACoreWithNoSinkChargesNothing(t *testing.T) {
+	t.Parallel()
 	c, _, hostDir, _ := writable(t)
 	if c.quota != nil {
 		t.Fatal("the fixture core already carries a sink")
@@ -122,6 +128,7 @@ func TestACoreWithNoSinkChargesNothing(t *testing.T) {
 }
 
 func TestMagnitudeClampsTheMostNegativeValue(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		in, want int64
 	}{

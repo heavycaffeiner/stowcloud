@@ -18,6 +18,7 @@ import (
 // The id is the whole of an upload URL, so a wrong length is refused rather
 // than padded, and the refusal is the one an unknown session gets.
 func TestSessionIDRoundTripsAndRefusesEveryOtherShape(t *testing.T) {
+	t.Parallel()
 	id, err := NewSessionID()
 	if err != nil {
 		t.Fatalf("NewSessionID: %v", err)
@@ -44,6 +45,7 @@ func TestSessionIDRoundTripsAndRefusesEveryOtherShape(t *testing.T) {
 // The part file is one unlistable entry in the destination's own directory,
 // sized sparsely up front so nothing is copied.
 func TestCreateMakesOneUnlistablePartFileOfTheDeclaredSize(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	sess := f.create(t, "report.txt", 4096, SessionSpec{})
 	root := f.root(t)
@@ -78,6 +80,7 @@ func TestCreateMakesOneUnlistablePartFileOfTheDeclaredSize(t *testing.T) {
 }
 
 func TestCreateRefusesARootDestination(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	p, err := vfs.ParseVpath("Docs")
 	if err != nil {
@@ -97,6 +100,7 @@ func TestCreateRefusesARootDestination(t *testing.T) {
 // A session id is addressing, not authorization: every surface answers the
 // same way for another account as for one that never existed.
 func TestEverySurfaceIsOwnerScoped(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	sess := f.create(t, "report.txt", 10, SessionSpec{})
@@ -127,6 +131,7 @@ func TestEverySurfaceIsOwnerScoped(t *testing.T) {
 }
 
 func TestADeferredLengthIsSuppliedOnceAndBoundsWhatLanded(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	s, err := f.engine.Create(ctx, f.resolve(t, "deferred.bin"), SessionSpec{})
@@ -162,6 +167,7 @@ func TestADeferredLengthIsSuppliedOnceAndBoundsWhatLanded(t *testing.T) {
 // A finalize with no length refuses: the interval set cannot say whether a
 // file of unknown size is complete.
 func TestFinalizeWithoutALengthRefuses(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	s, err := f.engine.Create(ctx, f.resolve(t, "deferred.bin"), SessionSpec{})
@@ -176,6 +182,7 @@ func TestFinalizeWithoutALengthRefuses(t *testing.T) {
 // Abort takes the row, the handle and the bookkeeping lock. Leaving the lock
 // for the sweep meant an aborted session's mutex sat in the map for a day.
 func TestAbortForgetsTheRowLock(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	s := f.create(t, "report.txt", 10, SessionSpec{})
@@ -209,6 +216,7 @@ func TestAbortForgetsTheRowLock(t *testing.T) {
 // Expiry is derived from the clock, so a session expires with no intervening
 // write.
 func TestExpiryIsDerivedFromTheClock(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	s := f.create(t, "report.txt", 10, SessionSpec{})
@@ -230,6 +238,7 @@ func TestExpiryIsDerivedFromTheClock(t *testing.T) {
 // The floor is snapshotted at creation, so an administrator raising it
 // mid-upload cannot retroactively refuse a chunk that was legal when sent.
 func TestTheChunkFloorIsSnapshottedAtCreation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	total := uint64(limits.UploadChunkFloor * 3)
@@ -256,6 +265,7 @@ func TestTheChunkFloorIsSnapshottedAtCreation(t *testing.T) {
 }
 
 func TestAnAliasRoundTripsAndRefusesAHostileTransferID(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	s := f.create(t, "report.txt", 10, SessionSpec{})
@@ -308,6 +318,7 @@ func TestAnAliasRoundTripsAndRefusesAHostileTransferID(t *testing.T) {
 // a momentarily exhausted resource, which says nothing an operator can act
 // on about a container that is merely small.
 func TestFreeSpaceMarginShrinksWithASmallFilesystem(t *testing.T) {
+	t.Parallel()
 	flat := uint64(limits.UploadFreeSpaceMargin)
 
 	if got := freeSpaceMargin(1 << 40); got != flat {

@@ -86,6 +86,7 @@ func readableShare(t *testing.T) (c *Core, st *state.DB, host string) {
 // stranger could use to map the tree answers with the same error, whether it
 // arose at the grant table or at the filesystem.
 func TestMissingAndForbiddenAreOneAnswer(t *testing.T) {
+	t.Parallel()
 	c, st, _ := readableShare(t)
 	// A second share this user holds no grant over at all.
 	share(t, c, 20, "private")
@@ -129,6 +130,7 @@ func TestMissingAndForbiddenAreOneAnswer(t *testing.T) {
 }
 
 func TestADenialIsOnlyEarnedAfterTheLabelMatched(t *testing.T) {
+	t.Parallel()
 	c, _, _ := readableShare(t)
 
 	_, err := c.Resolve(1, vpath(t, "Documents/readme.txt"), acl.Write)
@@ -144,6 +146,7 @@ func TestADenialIsOnlyEarnedAfterTheLabelMatched(t *testing.T) {
 }
 
 func TestTheVirtualRootIsNeverResolved(t *testing.T) {
+	t.Parallel()
 	c, _, _ := readableShare(t)
 	for _, raw := range []string{"", "/"} {
 		if _, err := c.Resolve(1, vpath(t, raw), acl.Read); !errors.Is(err, ErrNotFound) {
@@ -153,6 +156,7 @@ func TestTheVirtualRootIsNeverResolved(t *testing.T) {
 }
 
 func TestTraversalIsRefusedAtParseOrAtResolve(t *testing.T) {
+	t.Parallel()
 	c, _, _ := readableShare(t)
 
 	// Refused at the parse boundary, before a Vpath exists at all.
@@ -174,6 +178,7 @@ func TestTraversalIsRefusedAtParseOrAtResolve(t *testing.T) {
 }
 
 func TestASymlinkOutOfTheShareIsRefusedByTheRootsPolicy(t *testing.T) {
+	t.Parallel()
 	c, _, host := readableShare(t)
 	outside := filepath.Join(t.TempDir(), "secret.txt")
 	if err := os.WriteFile(outside, []byte("secret"), 0o644); err != nil {
@@ -199,6 +204,7 @@ func TestASymlinkOutOfTheShareIsRefusedByTheRootsPolicy(t *testing.T) {
 }
 
 func TestAGrantSubpathIsLaidOnTheFrontOfTheClientPath(t *testing.T) {
+	t.Parallel()
 	c, st := newCore(t)
 	seedUser(t, st, 1, "ada")
 	_, host := share(t, c, 10, "documents")
@@ -225,6 +231,7 @@ func TestAGrantSubpathIsLaidOnTheFrontOfTheClientPath(t *testing.T) {
 }
 
 func TestANameTheCreationTableRefusesStillResolves(t *testing.T) {
+	t.Parallel()
 	c, _, host := readableShare(t)
 	if err := os.Mkdir(filepath.Join(host, "CON"), 0o755); err != nil {
 		t.Fatalf("creating the CON directory: %v", err)
@@ -244,6 +251,7 @@ func TestANameTheCreationTableRefusesStillResolves(t *testing.T) {
 }
 
 func TestRequireCreatableLeafPassesTheRootAndAnOrdinaryName(t *testing.T) {
+	t.Parallel()
 	if err := requireCreatableLeaf(vfs.RootPath()); err != nil {
 		t.Fatalf("requireCreatableLeaf on the share root: %v", err)
 	}
@@ -256,6 +264,7 @@ func TestRequireCreatableLeafPassesTheRootAndAnOrdinaryName(t *testing.T) {
 }
 
 func TestABrokenShareSaysSoRatherThanReportingThePathMissing(t *testing.T) {
+	t.Parallel()
 	c, st := newCore(t)
 	seedUser(t, st, 1, "ada")
 	c.RegisterBroken(ShareDef{ID: 11, Name: "archive"}, vfs.ErrNotFound)
@@ -278,7 +287,9 @@ func TestABrokenShareSaysSoRatherThanReportingThePathMissing(t *testing.T) {
 }
 
 func TestACorruptGrantRefusesTheResolutionRatherThanGuessing(t *testing.T) {
+	t.Parallel()
 	t.Run("a share id that does not fit", func(t *testing.T) {
+		t.Parallel()
 		c, st := newCore(t)
 		seedUser(t, st, 1, "ada")
 		grantRead(t, c, st, 1, 10, "Documents")
@@ -299,6 +310,7 @@ func TestACorruptGrantRefusesTheResolutionRatherThanGuessing(t *testing.T) {
 	})
 
 	t.Run("a subpath component that does not validate", func(t *testing.T) {
+		t.Parallel()
 		c, st := newCore(t)
 		seedUser(t, st, 1, "ada")
 		share(t, c, 10, "documents")
@@ -321,6 +333,7 @@ func TestACorruptGrantRefusesTheResolutionRatherThanGuessing(t *testing.T) {
 }
 
 func TestAResolutionIsACapabilityCarryingOnlyItsOwnBits(t *testing.T) {
+	t.Parallel()
 	c, _, _ := readableShare(t)
 	r, err := c.Resolve(1, vpath(t, "Documents/readme.txt"), acl.Read)
 	if err != nil {
@@ -348,6 +361,7 @@ func TestAResolutionIsACapabilityCarryingOnlyItsOwnBits(t *testing.T) {
 }
 
 func TestResolveUnderNarrowsAndNeverWidens(t *testing.T) {
+	t.Parallel()
 	c, st := newCore(t)
 	seedUser(t, st, 1, "ada")
 	_, host := share(t, c, 10, "documents")
@@ -388,6 +402,7 @@ func TestResolveUnderNarrowsAndNeverWidens(t *testing.T) {
 }
 
 func TestEntryAtProjectsTheResolvedPathItself(t *testing.T) {
+	t.Parallel()
 	c, _, _ := readableShare(t)
 	r, err := c.Resolve(1, vpath(t, "Documents/readme.txt"), acl.Read)
 	if err != nil {
@@ -421,6 +436,7 @@ func TestEntryAtProjectsTheResolvedPathItself(t *testing.T) {
 }
 
 func TestVpathForRoundTripsWithResolveAndRefusesAnInvisibleShare(t *testing.T) {
+	t.Parallel()
 	c, st, _ := readableShare(t)
 
 	rest, err := vfs.ParseSharePath("readme.txt")
@@ -483,6 +499,7 @@ func grantSubpathRead(
 // Two depths, because the bug is the subpath's length: one component and
 // three, and the second is what proves nothing is hard-coded to one level.
 func TestVpathForStripsTheGrantSubpathAtAnyDepth(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name     string
 		subpath  string
@@ -498,6 +515,7 @@ func TestVpathForStripsTheGrantSubpathAtAnyDepth(t *testing.T) {
 		{"the folder itself", "Game", "Game", "Game", "Game"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			c, st := newCore(t)
 			seedUser(t, st, 1, "ada")
 			share(t, c, 10, "share")
@@ -532,6 +550,7 @@ func TestVpathForStripsTheGrantSubpathAtAnyDepth(t *testing.T) {
 // a path is the label whose subpath actually contains it, and where both
 // contain it the deeper one wins: that is the folder the client is looking at.
 func TestVpathForPicksTheDeepestGrantThatContainsThePath(t *testing.T) {
+	t.Parallel()
 	c, st := newCore(t)
 	seedUser(t, st, 1, "ada")
 	share(t, c, 10, "share")
@@ -570,6 +589,7 @@ func TestVpathForPicksTheDeepestGrantThatContainsThePath(t *testing.T) {
 }
 
 func TestPathExistsFoldsMissingButNotARefusal(t *testing.T) {
+	t.Parallel()
 	c, _, host := readableShare(t)
 	r, err := c.Resolve(1, vpath(t, "Documents"), acl.Read)
 	if err != nil {
@@ -612,6 +632,7 @@ func TestPathExistsFoldsMissingButNotARefusal(t *testing.T) {
 }
 
 func TestUniqueSiblingNameSuffixesTheStemNotTheExtension(t *testing.T) {
+	t.Parallel()
 	c, _, host := readableShare(t)
 	r, err := c.Resolve(1, vpath(t, "Documents"), acl.Read)
 	if err != nil {
@@ -663,6 +684,7 @@ func TestUniqueSiblingNameSuffixesTheStemNotTheExtension(t *testing.T) {
 }
 
 func TestUniqueSiblingNameGivesUpAtItsBound(t *testing.T) {
+	t.Parallel()
 	c, _, host := readableShare(t)
 	r, err := c.Resolve(1, vpath(t, "Documents"), acl.Read)
 	if err != nil {
@@ -681,6 +703,7 @@ func TestUniqueSiblingNameGivesUpAtItsBound(t *testing.T) {
 }
 
 func TestLastDot(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		in   string
 		want int

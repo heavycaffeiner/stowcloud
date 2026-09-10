@@ -35,6 +35,7 @@ func waitForOp(t *testing.T, c *Core, owner UserID, id OperationID) Operation {
 }
 
 func TestAnOperationIsScopedToItsOwner(t *testing.T) {
+	t.Parallel()
 	c, st, srcHost, _, src, dst := twoShares(t)
 	ctx := context.Background()
 	seedUser(t, st, 2, "bob")
@@ -64,6 +65,7 @@ func TestAnOperationIsScopedToItsOwner(t *testing.T) {
 }
 
 func TestAMissingOperationIdIsNotFound(t *testing.T) {
+	t.Parallel()
 	c, _, _, _, _, _ := twoShares(t)
 	ctx := context.Background()
 
@@ -76,6 +78,7 @@ func TestAMissingOperationIdIsNotFound(t *testing.T) {
 }
 
 func TestTheUnfinishedSplitIsReadOnlyOnceAnOperationStopped(t *testing.T) {
+	t.Parallel()
 	c, st, _, _, _, _ := twoShares(t)
 	ctx := context.Background()
 
@@ -115,6 +118,7 @@ func TestTheUnfinishedSplitIsReadOnlyOnceAnOperationStopped(t *testing.T) {
 }
 
 func TestListingCarriesNoResultsAndSplitsOnlyInterruptedRows(t *testing.T) {
+	t.Parallel()
 	c, st, _, _, _, _ := twoShares(t)
 	ctx := context.Background()
 
@@ -165,6 +169,7 @@ func TestListingCarriesNoResultsAndSplitsOnlyInterruptedRows(t *testing.T) {
 }
 
 func TestStartCopyWalksADirectorySource(t *testing.T) {
+	t.Parallel()
 	c, _, srcHost, dstHost, src, dst := twoShares(t)
 	ctx := context.Background()
 	if err := os.MkdirAll(filepath.Join(srcHost, "tree/inner"), 0o755); err != nil {
@@ -199,9 +204,11 @@ func TestStartCopyWalksADirectorySource(t *testing.T) {
 }
 
 func TestStartCopyChecksTheDestinationBeforeCreatingARow(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("fail", func(t *testing.T) {
+		t.Parallel()
 		c, _, srcHost, dstHost, src, dst := twoShares(t)
 		writeFile(t, srcHost, "note.txt", "source")
 		writeFile(t, dstHost, "note.txt", "taken")
@@ -221,6 +228,7 @@ func TestStartCopyChecksTheDestinationBeforeCreatingARow(t *testing.T) {
 	})
 
 	t.Run("skip", func(t *testing.T) {
+		t.Parallel()
 		c, _, srcHost, dstHost, src, dst := twoShares(t)
 		writeFile(t, srcHost, "note.txt", "source")
 		writeFile(t, dstHost, "note.txt", "taken")
@@ -238,6 +246,7 @@ func TestStartCopyChecksTheDestinationBeforeCreatingARow(t *testing.T) {
 	})
 
 	t.Run("rename", func(t *testing.T) {
+		t.Parallel()
 		c, _, srcHost, dstHost, src, dst := twoShares(t)
 		writeFile(t, srcHost, "note.txt", "source")
 		writeFile(t, dstHost, "note.txt", "taken")
@@ -259,6 +268,7 @@ func TestStartCopyChecksTheDestinationBeforeCreatingARow(t *testing.T) {
 	})
 
 	t.Run("overwrite a directory", func(t *testing.T) {
+		t.Parallel()
 		c, _, srcHost, dstHost, src, dst := twoShares(t)
 		if err := os.MkdirAll(filepath.Join(srcHost, "tree"), 0o755); err != nil {
 			t.Fatalf("building the source: %v", err)
@@ -288,6 +298,7 @@ func TestStartCopyChecksTheDestinationBeforeCreatingARow(t *testing.T) {
 }
 
 func TestStartCopyRefusesASelfDescendantDestination(t *testing.T) {
+	t.Parallel()
 	c, _, srcHost, _, src, _ := twoShares(t)
 	ctx := context.Background()
 	if err := os.MkdirAll(filepath.Join(srcHost, "tree/inner"), 0o755); err != nil {
@@ -301,6 +312,7 @@ func TestStartCopyRefusesASelfDescendantDestination(t *testing.T) {
 }
 
 func TestAFailedCopyRecordsATypedResultRow(t *testing.T) {
+	t.Parallel()
 	c, _, srcHost, dstHost, src, dst := twoShares(t)
 	ctx := context.Background()
 	writeFile(t, srcHost, "note.txt", "body")
@@ -334,6 +346,7 @@ func TestAFailedCopyRecordsATypedResultRow(t *testing.T) {
 }
 
 func TestOpReasonForClassifiesEverySentinelAClientBranchesOn(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		err  error
 		want state.OpResultReason
@@ -354,6 +367,7 @@ func TestOpReasonForClassifiesEverySentinelAClientBranchesOn(t *testing.T) {
 }
 
 func TestACancelledCopyStopsAndRecordsNoResult(t *testing.T) {
+	t.Parallel()
 	c, st, srcHost, dstHost, src, dst := twoShares(t)
 	ctx := context.Background()
 	if err := os.MkdirAll(filepath.Join(srcHost, "tree"), 0o755); err != nil {
@@ -401,6 +415,7 @@ func TestACancelledCopyStopsAndRecordsNoResult(t *testing.T) {
 }
 
 func TestACancelMidWalkStopsAtTheNextItemBoundary(t *testing.T) {
+	t.Parallel()
 	c, _, srcHost, dstHost, src, dst := twoShares(t)
 	ctx := context.Background()
 	if err := os.MkdirAll(filepath.Join(srcHost, "tree"), 0o755); err != nil {
@@ -444,6 +459,7 @@ func TestACancelMidWalkStopsAtTheNextItemBoundary(t *testing.T) {
 }
 
 func TestACopyOutlivesTheRequestThatStartedIt(t *testing.T) {
+	t.Parallel()
 	c, _, srcHost, dstHost, src, dst := twoShares(t)
 	writeFile(t, srcHost, "note.txt", "body")
 
@@ -471,6 +487,7 @@ func TestACopyOutlivesTheRequestThatStartedIt(t *testing.T) {
 // same states, and this is what keeps them one: a state added here with no
 // name, or named but classified differently, fails.
 func TestEveryOperationStateIsNamedAndClassified(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		state    state.OpState
 		name     string
@@ -507,6 +524,7 @@ func TestEveryOperationStateIsNamedAndClassified(t *testing.T) {
 // states that actually exist. A state added to the store and named in neither
 // place fails here.
 func TestThePublishedNamesCoverEveryStoredState(t *testing.T) {
+	t.Parallel()
 	published := OperationStateNames()
 
 	// Every state the store defines, walked by value. An added one appears as
@@ -538,6 +556,7 @@ func TestThePublishedNamesCoverEveryStoredState(t *testing.T) {
 // Every kind has a name, so a kind added to the store shows up as unknown here
 // rather than as a number a client has to interpret.
 func TestEveryOperationKindIsNamed(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		kind state.OpKind
 		name string
@@ -559,6 +578,7 @@ func TestEveryOperationKindIsNamed(t *testing.T) {
 // A successful item carries no reason: that case is described by OK, and
 // naming it would invite a client to switch on the reason instead.
 func TestASuccessfulItemHasNoReason(t *testing.T) {
+	t.Parallel()
 	op := Operation{Results: []state.OpResult{
 		{Idx: 0, Path: "ok.txt", OK: true, Reason: state.ReasonItemOk},
 		{Idx: 1, Path: "gone.txt", OK: false, Reason: state.ReasonItemNotFound},

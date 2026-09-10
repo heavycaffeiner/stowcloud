@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -99,18 +100,37 @@ func grantRead(t *testing.T, c *Core, st *state.DB, user int64, share ShareID, l
 	}
 }
 
-// openDescriptors counts this process's open files. The registry's promise
-// that a replaced root is closed is a promise about this number.
-func openDescriptors(t *testing.T) int {
+// openDescriptorsUnder counts this process's open files whose path is dir or
+// sits inside it. The registry's promise that a replaced root is closed is a
+// promise about this number.
+//
+// Filtered by path rather than counted whole: these tests run in parallel,
+// and a count of every descriptor in the process moves with whatever another
+// test happens to be opening. It did: the whole-process form failed once in
+// four suite runs with two descriptors it had never opened.
+func openDescriptorsUnder(t *testing.T, dir string) int {
 	t.Helper()
 	names, err := os.ReadDir("/proc/self/fd")
 	if err != nil {
 		t.Fatalf("reading /proc/self/fd: %v", err)
 	}
-	return len(names)
+	n := 0
+	for _, e := range names {
+		// A descriptor closed between the listing and this read is not one
+		// of ours; the listing itself holds one.
+		target, rerr := os.Readlink(filepath.Join("/proc/self/fd", e.Name()))
+		if rerr != nil {
+			continue
+		}
+		if target == dir || strings.HasPrefix(target, dir+string(filepath.Separator)) {
+			n++
+		}
+	}
+	return n
 }
 
 func TestARegisteredShareIsVisibleThroughEveryAccessor(t *testing.T) {
+	t.Parallel()
 	c, _ := newCore(t)
 	d := def(t, 7, "documents")
 
@@ -134,6 +154,7 @@ func TestARegisteredShareIsVisibleThroughEveryAccessor(t *testing.T) {
 }
 
 func TestSharesListsEveryShareByAscendingID(t *testing.T) {
+	t.Parallel()
 	c, _ := newCore(t)
 	ctx := context.Background()
 	for _, id := range []ShareID{40, 9, 22} {
@@ -159,6 +180,7 @@ func TestSharesListsEveryShareByAscendingID(t *testing.T) {
 }
 
 func TestABrokenShareStaysListedAndHandsOutNoRoot(t *testing.T) {
+	t.Parallel()
 	c, _ := newCore(t)
 	cause := errors.New("the disk did not come back")
 	c.RegisterBroken(ShareDef{ID: 4, Name: "archive"}, cause)
@@ -182,6 +204,7 @@ func TestABrokenShareStaysListedAndHandsOutNoRoot(t *testing.T) {
 }
 
 func TestAnUnregisteredShareIsAbsentRatherThanBroken(t *testing.T) {
+	t.Parallel()
 	c, _ := newCore(t)
 	if err := c.ShareBroken(99); err != nil {
 		t.Fatalf("ShareBroken on an unknown id: %v", err)
@@ -195,6 +218,7 @@ func TestAnUnregisteredShareIsAbsentRatherThanBroken(t *testing.T) {
 }
 
 func TestRejectionKindNamesWhyTheShareWouldNotOpen(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		err  error
@@ -225,6 +249,7 @@ func TestRejectionKindNamesWhyTheShareWouldNotOpen(t *testing.T) {
 }
 
 func TestReRegisteringAShareClosesTheRootItReplaces(t *testing.T) {
+	t.Parallel()
 	c, _ := newCore(t)
 	ctx := context.Background()
 	d := def(t, 1, "documents")
@@ -232,18 +257,19 @@ func TestReRegisteringAShareClosesTheRootItReplaces(t *testing.T) {
 	if err := c.RegisterShare(ctx, d); err != nil {
 		t.Fatalf("RegisterShare: %v", err)
 	}
-	before := openDescriptors(t)
+	before := openDescriptorsUnder(t, d.Host)
 	for range 20 {
 		if err := c.RegisterShare(ctx, d); err != nil {
 			t.Fatalf("re-registering: %v", err)
 		}
 	}
-	if after := openDescriptors(t); after > before {
+	if after := openDescriptorsUnder(t, d.Host); after > before {
 		t.Fatalf("open descriptors went from %d to %d across 20 re-registrations", before, after)
 	}
 }
 
 func TestReplacingAnEntryWithItsOwnRootLeavesTheRootOpen(t *testing.T) {
+	t.Parallel()
 	c, _ := newCore(t)
 	d := def(t, 1, "documents")
 	if err := c.RegisterShare(context.Background(), d); err != nil {
@@ -267,6 +293,7 @@ func TestReplacingAnEntryWithItsOwnRootLeavesTheRootOpen(t *testing.T) {
 }
 
 func TestProbeMovesAShareWhoseDirectoryWentAwayToBroken(t *testing.T) {
+	t.Parallel()
 	c, _ := newCore(t)
 	ctx := context.Background()
 	host := filepath.Join(t.TempDir(), "share")
@@ -300,6 +327,7 @@ func TestProbeMovesAShareWhoseDirectoryWentAwayToBroken(t *testing.T) {
 }
 
 func TestProbeHealsAShareWhosePathCameBackAndReportsOnlyTransitions(t *testing.T) {
+	t.Parallel()
 	c, _ := newCore(t)
 	ctx := context.Background()
 	host := filepath.Join(t.TempDir(), "share")
@@ -334,6 +362,7 @@ func TestProbeHealsAShareWhosePathCameBackAndReportsOnlyTransitions(t *testing.T
 }
 
 func TestProbeRunsTheAdmissionGateAgainOnRetry(t *testing.T) {
+	t.Parallel()
 	c, _ := newCore(t)
 	ctx := context.Background()
 	// procfs is a real, readable directory this server refuses to serve, so
@@ -352,6 +381,7 @@ func TestProbeRunsTheAdmissionGateAgainOnRetry(t *testing.T) {
 }
 
 func TestUnregisterRemovesTheEntryAndClosesTheRoot(t *testing.T) {
+	t.Parallel()
 	c, _ := newCore(t)
 	ctx := context.Background()
 	if err := c.RegisterShare(ctx, def(t, 1, "documents")); err != nil {
@@ -373,6 +403,7 @@ func TestUnregisterRemovesTheEntryAndClosesTheRoot(t *testing.T) {
 }
 
 func TestUnregisterHandlesABrokenShareAndAnUnknownID(t *testing.T) {
+	t.Parallel()
 	c, _ := newCore(t)
 	c.RegisterBroken(ShareDef{ID: 8, Name: "gone"}, vfs.ErrNotFound)
 
@@ -384,6 +415,7 @@ func TestUnregisterHandlesABrokenShareAndAnUnknownID(t *testing.T) {
 }
 
 func TestRootsCarryTheRegistrysFactsAndKeepABrokenShareListed(t *testing.T) {
+	t.Parallel()
 	c, st := newCore(t)
 	ctx := context.Background()
 	seedUser(t, st, 1, "ada")
@@ -423,6 +455,7 @@ func TestRootsCarryTheRegistrysFactsAndKeepABrokenShareListed(t *testing.T) {
 }
 
 func TestRootsLeaveAnUnregisteredGrantAlone(t *testing.T) {
+	t.Parallel()
 	c, st := newCore(t)
 	seedUser(t, st, 1, "ada")
 	grantRead(t, c, st, 1, 12, "Ghost")
@@ -437,6 +470,7 @@ func TestRootsLeaveAnUnregisteredGrantAlone(t *testing.T) {
 }
 
 func TestTheRegistryTakesConcurrentReadsAndWrites(t *testing.T) {
+	t.Parallel()
 	c, _ := newCore(t)
 	ctx := context.Background()
 	hosts := make([]string, 4)

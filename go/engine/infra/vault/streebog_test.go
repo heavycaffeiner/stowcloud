@@ -40,6 +40,7 @@ func streebogMustHex(t *testing.T, s string) []byte {
 // verbatim from the RFC; streebogReverse is what turns them into the
 // ordinary-byte-order message and digest newStreebog512 actually produces.
 func TestStreebog512RFC6986Vectors(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		m    string
@@ -58,6 +59,7 @@ func TestStreebog512RFC6986Vectors(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			msg := streebogReverse(streebogMustHex(t, c.m))
 			want := streebogReverse(streebogMustHex(t, c.want))
 			h := newStreebog512()
@@ -78,6 +80,7 @@ func TestStreebog512RFC6986Vectors(t *testing.T) {
 // given in ordinary byte order, the same order any caller's key and
 // message would arrive in, so nothing here needs reversing.
 func TestStreebog512HMACVector(t *testing.T) {
+	t.Parallel()
 	key := streebogMustHex(t, "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
 	msg := streebogMustHex(t, "0126bdb87800af214341456563780100")
 	want := streebogMustHex(t, "a59bab22ecae19c65fbde6e5f4e9f5d8549d31f037f9df9b905500e171923a773d5f1530f2ed7e964cb2eedc29e9ad2f3afe93b2814f79f5000ffc0366c251e6")
@@ -98,6 +101,7 @@ func TestStreebog512HMACVector(t *testing.T) {
 // factor with 64. The expected digest is RFC 6986's own H(M2), reversed
 // the same way TestStreebog512RFC6986Vectors reverses it.
 func TestStreebog512AwkwardWrites(t *testing.T) {
+	t.Parallel()
 	msg := streebogReverse(streebogMustHex(t, "fbe2e5f0eee3c820fbeafaebef20fffbf0e1e0f0f520e0ed20e8ece0ebe5f0f2f120fff0eeec20f120faf2fee5e2202ce8f6f3ede220e8e6eee1e8f0f2d1202ce8f0f2e5e220e5d1"))
 	want := streebogReverse(streebogMustHex(t, "28fbc9bada033b1460642bdcddb90c3fb3e56c497ccd0f62b8a2ad4935e85f037613966de4ee00531ae60f3b5a47f8dae06915d5f2f194996fcabf2622e6881e"))
 
@@ -129,6 +133,7 @@ func TestStreebog512AwkwardWrites(t *testing.T) {
 // bytes, and a caller may keep writing afterward as though Sum had never
 // run.
 func TestStreebog512SumIsIdempotent(t *testing.T) {
+	t.Parallel()
 	h := newStreebog512()
 	if _, err := h.Write([]byte("some data, then some more")); err != nil {
 		t.Fatalf("Write: %v", err)
@@ -152,6 +157,7 @@ func TestStreebog512SumIsIdempotent(t *testing.T) {
 // similar: hashing a message after writing something else and resetting
 // must match hashing that message from a fresh instance.
 func TestStreebog512Reset(t *testing.T) {
+	t.Parallel()
 	h := newStreebog512()
 	if _, err := h.Write([]byte("a message that will be discarded")); err != nil {
 		t.Fatalf("Write: %v", err)
@@ -177,6 +183,7 @@ func TestStreebog512Reset(t *testing.T) {
 // table and golang.org/x/crypto/xts both rely on without constructing a
 // full hash.Hash.
 func TestStreebog512Interface(t *testing.T) {
+	t.Parallel()
 	h := newStreebog512()
 	if got := h.Size(); got != 64 {
 		t.Fatalf("Size() = %d, want 64", got)

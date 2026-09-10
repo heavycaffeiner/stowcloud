@@ -27,6 +27,7 @@ func chunkOf(off uint64, n int) []byte {
 }
 
 func TestChunksLandAtTheirOffsetsAndTheOffsetAdvances(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	const chunk = limits.UploadChunkFloor
 	total := uint64(chunk * 3)
@@ -51,6 +52,7 @@ func TestChunksLandAtTheirOffsetsAndTheOffsetAdvances(t *testing.T) {
 // carries the offset the client should have written at, so a resuming client
 // does not need a second round trip to find out.
 func TestAChunkOutOfOrderIsRefusedWithTheExpectedOffset(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	const chunk = limits.UploadChunkFloor
@@ -79,6 +81,7 @@ func TestAChunkOutOfOrderIsRefusedWithTheExpectedOffset(t *testing.T) {
 // Received and Offset diverge once a client writes past a hole: one is what a
 // resume needs and the other is what a progress bar shows.
 func TestReceivedAndOffsetDivergeAfterAHole(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	const chunk = limits.UploadChunkFloor
 	s := f.create(t, "holed.bin", uint64(chunk*3), SessionSpec{RandomAccess: true})
@@ -99,6 +102,7 @@ func TestReceivedAndOffsetDivergeAfterAHole(t *testing.T) {
 // The declared length is enforced as the bytes arrive rather than from a
 // header, because a header is a claim and this is the stream.
 func TestABodyPastTheDeclaredLengthIsRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	s := f.create(t, "small.bin", 10, SessionSpec{})
@@ -118,6 +122,7 @@ func TestABodyPastTheDeclaredLengthIsRefused(t *testing.T) {
 // The floor exempts the last chunk and a whole file smaller than it: neither
 // can be made bigger.
 func TestTheFloorExemptsTheLastChunkAndASmallFile(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	const chunk = limits.UploadChunkFloor
 
@@ -134,6 +139,7 @@ func TestTheFloorExemptsTheLastChunkAndASmallFile(t *testing.T) {
 // resends the same range rather than resuming past a hole it believes is
 // filled.
 func TestAFailedChecksumLeavesTheIntervalSetUnrecorded(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	const chunk = limits.UploadChunkFloor
@@ -177,6 +183,7 @@ func TestAFailedChecksumLeavesTheIntervalSetUnrecorded(t *testing.T) {
 // accepted it, so a client sending checksums got them checked or ignored
 // depending on a mode it chose for unrelated reasons.
 func TestAFailedChecksumIsRefusedOnBothNamedBranches(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	const chunk = limits.UploadChunkFloor
 
@@ -195,6 +202,7 @@ func TestAFailedChecksumIsRefusedOnBothNamedBranches(t *testing.T) {
 		{"spooled", 2},
 	} {
 		t.Run(c.what, func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			s := f.create(t, "named-sum.bin", uint64(chunk*3), SessionSpec{Mode: SpoolNameOrdered})
 			off := uint64(c.name-1) * chunk
@@ -260,6 +268,7 @@ func (r *blockingReader) Read(p []byte) (int, error) {
 // connection that deadlocks rather than queues: every upload stopped after
 // its first chunk.
 func TestConcurrentChunksDoNotSerialize(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	const chunk = limits.UploadChunkFloor
@@ -302,6 +311,7 @@ func TestConcurrentChunksDoNotSerialize(t *testing.T) {
 }
 
 func TestNamedChunksAssembleInNameOrder(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	const chunk = limits.UploadChunkFloor
@@ -359,6 +369,7 @@ func TestNamedChunksAssembleInNameOrder(t *testing.T) {
 // A gap at assembly is a refusal naming what is missing, because there is
 // nothing left to wait for.
 func TestAssemblyRefusesAGapAndNamesIt(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	const chunk = limits.UploadChunkFloor
@@ -383,6 +394,7 @@ func TestAssemblyRefusesAGapAndNamesIt(t *testing.T) {
 // A repeated name is a client retry after a lost response, carrying the same
 // bytes, so it overwrites rather than being refused.
 func TestARepeatedChunkNameIsARetry(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	const chunk = limits.UploadChunkFloor
@@ -410,6 +422,7 @@ func TestARepeatedChunkNameIsARetry(t *testing.T) {
 }
 
 func TestTheTwoModesRefuseEachOthersWrites(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	offsets := f.create(t, "offsets.bin", 10, SessionSpec{})

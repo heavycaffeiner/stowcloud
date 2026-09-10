@@ -11,6 +11,7 @@ import (
 )
 
 func TestCreateContainerRejectsBadSize(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	pw := secret.New([]byte("whatever"))
 	if err := createContainer(filepath.Join(dir, "too-small.hc"), 8, pw); !errors.Is(err, ErrContainerSize) {
@@ -22,6 +23,7 @@ func TestCreateContainerRejectsBadSize(t *testing.T) {
 }
 
 func TestHeaderRoundTripAndWrongPasswordVsCorruption(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "vault.hc")
 	correct := secret.New([]byte("correct horse battery staple"))
@@ -82,6 +84,7 @@ func TestHeaderRoundTripAndWrongPasswordVsCorruption(t *testing.T) {
 }
 
 func TestXTSDataUnitNumbering(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "vault.hc")
 	pw := secret.New([]byte("xts tweak convention"))

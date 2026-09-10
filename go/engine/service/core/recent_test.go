@@ -26,6 +26,7 @@ func recording(t *testing.T) (c *Core, st *state.DB, host string, root Resolved)
 func timeOf(ns int64) time.Time { return time.Unix(0, ns) }
 
 func TestANilJournalAnswersEmpty(t *testing.T) {
+	t.Parallel()
 	c, _, _, _ := writable(t)
 
 	// A deployment that kept no history is not an error, and an empty list
@@ -40,6 +41,7 @@ func TestANilJournalAnswersEmpty(t *testing.T) {
 }
 
 func TestARecordedWriteComesBackNavigable(t *testing.T) {
+	t.Parallel()
 	c, _, host, root := recording(t)
 	ctx := context.Background()
 
@@ -75,6 +77,7 @@ func TestARecordedWriteComesBackNavigable(t *testing.T) {
 }
 
 func TestAtNsIsTheWriteTimeNotTheModificationTime(t *testing.T) {
+	t.Parallel()
 	c, _, host, root := recording(t)
 	ctx := context.Background()
 	mustCreate(t, c, at(t, root, "restored.txt"), "body")
@@ -101,6 +104,7 @@ func TestAtNsIsTheWriteTimeNotTheModificationTime(t *testing.T) {
 }
 
 func TestRecentIsNewestFirstAndBoundedByLimit(t *testing.T) {
+	t.Parallel()
 	c, _, _, root := recording(t)
 	ctx := context.Background()
 	for _, name := range []string{"first.txt", "second.txt", "third.txt"} {
@@ -128,6 +132,7 @@ func TestRecentIsNewestFirstAndBoundedByLimit(t *testing.T) {
 }
 
 func TestScopeKeepsOnlyRowsUnderOneSubtree(t *testing.T) {
+	t.Parallel()
 	c, _, host, root := recording(t)
 	ctx := context.Background()
 	if err := os.MkdirAll(filepath.Join(host, "inner"), 0o755); err != nil {
@@ -146,6 +151,7 @@ func TestScopeKeepsOnlyRowsUnderOneSubtree(t *testing.T) {
 }
 
 func TestSinceNsWindowsTheResult(t *testing.T) {
+	t.Parallel()
 	c, _, _, root := recording(t)
 	ctx := context.Background()
 	mustCreate(t, c, at(t, root, "note.txt"), "x")
@@ -165,6 +171,7 @@ func TestSinceNsWindowsTheResult(t *testing.T) {
 }
 
 func TestARowWhoseFileWentAwayDisappears(t *testing.T) {
+	t.Parallel()
 	c, _, host, root := recording(t)
 	ctx := context.Background()
 	mustCreate(t, c, at(t, root, "gone.txt"), "x")
@@ -185,6 +192,7 @@ func TestARowWhoseFileWentAwayDisappears(t *testing.T) {
 }
 
 func TestARevokedSubtreeGrantHidesItsRows(t *testing.T) {
+	t.Parallel()
 	c, st, host, root := recording(t)
 	ctx := context.Background()
 	if err := os.MkdirAll(filepath.Join(host, "secret"), 0o755); err != nil {
@@ -213,6 +221,7 @@ func TestARevokedSubtreeGrantHidesItsRows(t *testing.T) {
 }
 
 func TestAnAccountPastTheJournalWidthErrors(t *testing.T) {
+	t.Parallel()
 	c, _, _, _ := recording(t)
 
 	// The journal's account column is narrower than a user id, and a value
@@ -224,6 +233,7 @@ func TestAnAccountPastTheJournalWidthErrors(t *testing.T) {
 }
 
 func TestARowWhoseShareWentAwayDisappears(t *testing.T) {
+	t.Parallel()
 	c, _, _, root := recording(t)
 	ctx := context.Background()
 	mustCreate(t, c, at(t, root, "note.txt"), "x")
@@ -242,6 +252,7 @@ func TestARowWhoseShareWentAwayDisappears(t *testing.T) {
 }
 
 func TestDroppedRowsAreNotBackfilledPastTheLimit(t *testing.T) {
+	t.Parallel()
 	c, _, host, root := recording(t)
 	ctx := context.Background()
 	for _, name := range []string{"a.txt", "b.txt", "c.txt", "d.txt"} {

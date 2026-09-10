@@ -66,6 +66,7 @@ func deviceOf(t *testing.T, r Resolved) uint64 {
 }
 
 func TestParseOnConflictMapsEverySpelling(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		in   string
 		want OnConflict
@@ -91,6 +92,7 @@ func TestParseOnConflictMapsEverySpelling(t *testing.T) {
 }
 
 func TestParseOnConflictRefusesAnUnknownSpelling(t *testing.T) {
+	t.Parallel()
 	// The false return is what the caller must act on. Returning fail as the
 	// value is incidental; silently applying it is the bug this prevents.
 	got, ok := ParseOnConflict("clobber")
@@ -103,6 +105,7 @@ func TestParseOnConflictRefusesAnUnknownSpelling(t *testing.T) {
 }
 
 func TestMoveWithinAShareIsAPlainRename(t *testing.T) {
+	t.Parallel()
 	c, _, host, root := writable(t)
 	ctx := context.Background()
 	j := attachJournal(t, c)
@@ -137,6 +140,7 @@ func TestMoveWithinAShareIsAPlainRename(t *testing.T) {
 }
 
 func TestMoveRefusesAShareRootAtEitherEnd(t *testing.T) {
+	t.Parallel()
 	c, _, host, root := writable(t)
 	ctx := context.Background()
 	writeFile(t, host, "note.txt", "body")
@@ -150,6 +154,7 @@ func TestMoveRefusesAShareRootAtEitherEnd(t *testing.T) {
 }
 
 func TestMoveOntoItselfIsANoOpSuccess(t *testing.T) {
+	t.Parallel()
 	c, _, host, root := writable(t)
 	writeFile(t, host, "note.txt", "body")
 
@@ -167,6 +172,7 @@ func TestMoveOntoItselfIsANoOpSuccess(t *testing.T) {
 }
 
 func TestMoveFailsOnATakenDestination(t *testing.T) {
+	t.Parallel()
 	c, _, host, root := writable(t)
 	writeFile(t, host, "a.txt", "source")
 	writeFile(t, host, "b.txt", "taken")
@@ -181,6 +187,7 @@ func TestMoveFailsOnATakenDestination(t *testing.T) {
 }
 
 func TestMoveSkipsATakenDestinationWithoutWriting(t *testing.T) {
+	t.Parallel()
 	c, _, host, root := writable(t)
 	writeFile(t, host, "a.txt", "source")
 	writeFile(t, host, "b.txt", "taken")
@@ -202,6 +209,7 @@ func TestMoveSkipsATakenDestinationWithoutWriting(t *testing.T) {
 }
 
 func TestMoveKeepsBothUnderTheRenamePolicy(t *testing.T) {
+	t.Parallel()
 	c, _, host, root := writable(t)
 	writeFile(t, host, "a.txt", "source")
 	writeFile(t, host, "b.txt", "taken")
@@ -225,6 +233,7 @@ func TestMoveKeepsBothUnderTheRenamePolicy(t *testing.T) {
 }
 
 func TestMoveReplacesAFileUnderTheOverwritePolicy(t *testing.T) {
+	t.Parallel()
 	c, _, host, root := writable(t)
 	writeFile(t, host, "a.txt", "source")
 	writeFile(t, host, "b.txt", "taken")
@@ -243,6 +252,7 @@ func TestMoveReplacesAFileUnderTheOverwritePolicy(t *testing.T) {
 }
 
 func TestOverwriteOntoAFreeNameStillRefusesAClobber(t *testing.T) {
+	t.Parallel()
 	c, _, host, root := writable(t)
 	writeFile(t, host, "a.txt", "source")
 
@@ -263,6 +273,7 @@ func TestOverwriteOntoAFreeNameStillRefusesAClobber(t *testing.T) {
 }
 
 func TestOverwriteOntoANonEmptyDirectoryReplacesRatherThanMerges(t *testing.T) {
+	t.Parallel()
 	c, _, host, root := writable(t)
 	ctx := context.Background()
 	if err := os.MkdirAll(filepath.Join(host, "src"), 0o755); err != nil {
@@ -289,6 +300,7 @@ func TestOverwriteOntoANonEmptyDirectoryReplacesRatherThanMerges(t *testing.T) {
 }
 
 func TestMoveWithAValidatorIsRefusedWithTheCurrentToken(t *testing.T) {
+	t.Parallel()
 	c, _, host, root := writable(t)
 	writeFile(t, host, "a.txt", "source")
 	writeFile(t, host, "b.txt", "taken")
@@ -316,6 +328,7 @@ func TestMoveWithAValidatorIsRefusedWithTheCurrentToken(t *testing.T) {
 }
 
 func TestTheLegacyOverwriteFieldWinsOverThePolicy(t *testing.T) {
+	t.Parallel()
 	c, _, host, root := writable(t)
 	writeFile(t, host, "a.txt", "source")
 	writeFile(t, host, "b.txt", "taken")
@@ -332,6 +345,7 @@ func TestTheLegacyOverwriteFieldWinsOverThePolicy(t *testing.T) {
 }
 
 func TestACrossShareMoveCopiesThenDeletes(t *testing.T) {
+	t.Parallel()
 	c, _, srcHost, dstHost, src, dst := twoShares(t)
 	ctx := context.Background()
 	if err := os.MkdirAll(filepath.Join(srcHost, "tree/inner"), 0o755); err != nil {
@@ -359,6 +373,7 @@ func TestACrossShareMoveCopiesThenDeletes(t *testing.T) {
 }
 
 func TestACrossShareMoveReportsAFailedSourceDelete(t *testing.T) {
+	t.Parallel()
 	c, _, srcHost, dstHost, src, dst := twoShares(t)
 	ctx := context.Background()
 	if err := os.MkdirAll(filepath.Join(srcHost, "locked"), 0o755); err != nil {
@@ -387,6 +402,7 @@ func TestACrossShareMoveReportsAFailedSourceDelete(t *testing.T) {
 }
 
 func TestCrossesDeviceAnswersPerShareAndPerParent(t *testing.T) {
+	t.Parallel()
 	_, _, srcHost, _, src, dst := twoShares(t)
 	writeFile(t, srcHost, "note.txt", "body")
 
@@ -413,6 +429,7 @@ func TestCrossesDeviceAnswersPerShareAndPerParent(t *testing.T) {
 }
 
 func TestWouldCopyIsFailOpenOnAnUnstattableSource(t *testing.T) {
+	t.Parallel()
 	c, _, srcHost, _, src, dst := twoShares(t)
 	writeFile(t, srcHost, "note.txt", "body")
 
@@ -430,6 +447,7 @@ func TestWouldCopyIsFailOpenOnAnUnstattableSource(t *testing.T) {
 }
 
 func TestCopyRecursiveCarriesTheTreeAndSkipsReservedNames(t *testing.T) {
+	t.Parallel()
 	c, _, srcHost, dstHost, src, dst := twoShares(t)
 	ctx := context.Background()
 	if err := os.MkdirAll(filepath.Join(srcHost, "tree/inner"), 0o755); err != nil {
@@ -462,6 +480,7 @@ func TestCopyRecursiveCarriesTheTreeAndSkipsReservedNames(t *testing.T) {
 }
 
 func TestCopyFileReplacesAnExistingDestination(t *testing.T) {
+	t.Parallel()
 	c, _, srcHost, dstHost, src, dst := twoShares(t)
 	writeFile(t, srcHost, "note.txt", "new content")
 	writeFile(t, dstHost, "note.txt", "old content")
@@ -476,6 +495,7 @@ func TestCopyFileReplacesAnExistingDestination(t *testing.T) {
 }
 
 func TestTheCancellationGateStopsTheWalkAtAnItemBoundary(t *testing.T) {
+	t.Parallel()
 	c, _, srcHost, dstHost, src, dst := twoShares(t)
 	ctx := context.Background()
 	if err := os.MkdirAll(filepath.Join(srcHost, "tree"), 0o755); err != nil {
@@ -501,6 +521,7 @@ func TestTheCancellationGateStopsTheWalkAtAnItemBoundary(t *testing.T) {
 }
 
 func TestACopyChildThatVanishesUnderTheWalkIsSkipped(t *testing.T) {
+	t.Parallel()
 	c, _, srcHost, dstHost, src, dst := twoShares(t)
 	ctx := context.Background()
 	if err := os.MkdirAll(filepath.Join(srcHost, "tree"), 0o755); err != nil {
@@ -528,6 +549,7 @@ func TestACopyChildThatVanishesUnderTheWalkIsSkipped(t *testing.T) {
 }
 
 func TestRefuseSelfDescendantComparesComponentsNotBytes(t *testing.T) {
+	t.Parallel()
 	_, _, _, _, src, dst := twoShares(t)
 
 	for _, tc := range []struct {

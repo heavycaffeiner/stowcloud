@@ -121,6 +121,7 @@ func mustCreate(t *testing.T, c *Core, r Resolved, content string) Entry {
 }
 
 func TestPreconditionRefusesEveryValidator(t *testing.T) {
+	t.Parallel()
 	c, _, host, _ := writable(t)
 	writeFile(t, host, "readme.txt", "hello")
 	r := under(t, c, "Documents/readme.txt", acl.Read)
@@ -147,6 +148,7 @@ func TestPreconditionRefusesEveryValidator(t *testing.T) {
 }
 
 func TestAValidatorAgainstAMissingTargetCarriesNoToken(t *testing.T) {
+	t.Parallel()
 	c, _, _, _ := writable(t)
 	r := under(t, c, "Documents/absent.txt", acl.Write)
 
@@ -166,6 +168,7 @@ func TestAValidatorAgainstAMissingTargetCarriesNoToken(t *testing.T) {
 }
 
 func TestTheUnconditionalRetryIsTheWayPast(t *testing.T) {
+	t.Parallel()
 	c, _, host, _ := writable(t)
 	writeFile(t, host, "notes.txt", "old")
 	r := under(t, c, "Documents/notes.txt", acl.Write)
@@ -194,6 +197,7 @@ func readHost(t *testing.T, host, name string) string {
 }
 
 func TestMkdirCreatesAndRefuses(t *testing.T) {
+	t.Parallel()
 	c, st, host, root := writable(t)
 	dir := under(t, c, "Documents/reports", acl.Create)
 
@@ -246,6 +250,7 @@ func TestMkdirCreatesAndRefuses(t *testing.T) {
 }
 
 func TestCreateFileWritesReplacesAndPreservesMode(t *testing.T) {
+	t.Parallel()
 	c, _, host, _ := writable(t)
 	r := under(t, c, "Documents/data.bin", acl.Write)
 
@@ -289,6 +294,7 @@ func TestCreateFileWritesReplacesAndPreservesMode(t *testing.T) {
 // property asserted once, here, where it is consumed: the replace publishes
 // by rename, so an open descriptor keeps reading the bytes it opened.
 func TestAReplaceIsAtomicForAReaderHoldingTheOldDescriptor(t *testing.T) {
+	t.Parallel()
 	c, _, host, _ := writable(t)
 	writeFile(t, host, "live.txt", "before")
 	r := under(t, c, "Documents/live.txt", acl.Write)
@@ -317,6 +323,7 @@ func TestAReplaceIsAtomicForAReaderHoldingTheOldDescriptor(t *testing.T) {
 }
 
 func TestAFailedWriteCallbackLeavesNothingBehind(t *testing.T) {
+	t.Parallel()
 	c, _, host, root := writable(t)
 	writeFile(t, host, "keep.txt", "original")
 	r := under(t, c, "Documents/keep.txt", acl.Write)
@@ -338,6 +345,7 @@ func TestAFailedWriteCallbackLeavesNothingBehind(t *testing.T) {
 }
 
 func TestRenameMovesWithinTheDirectory(t *testing.T) {
+	t.Parallel()
 	c, _, host, root := writable(t)
 	writeFile(t, host, "draft.txt", "text")
 	r := under(t, c, "Documents/draft.txt", acl.Rename)
@@ -386,6 +394,7 @@ func TestRenameMovesWithinTheDirectory(t *testing.T) {
 }
 
 func TestDeleteRemovesFilesAndTreesAndCreditsTheLedger(t *testing.T) {
+	t.Parallel()
 	c, _, host, _ := writable(t)
 	sink := attachSink(t, c)
 	writeFile(t, host, "gone.txt", "0123456789")
@@ -422,6 +431,7 @@ func TestDeleteRemovesFilesAndTreesAndCreditsTheLedger(t *testing.T) {
 }
 
 func TestDeleteWithoutTheBitTouchesNothing(t *testing.T) {
+	t.Parallel()
 	c, st, host, _ := writable(t)
 	writeFile(t, host, "safe.txt", "x")
 	seedUser(t, st, 2, "bob")
@@ -442,6 +452,7 @@ func TestDeleteWithoutTheBitTouchesNothing(t *testing.T) {
 // TestADanglingChildDoesNotFailARecursiveDelete uses a dangling symlink,
 // whose stat fails exactly as a vanished child's does.
 func TestADanglingChildDoesNotFailARecursiveDelete(t *testing.T) {
+	t.Parallel()
 	c, _, host, _ := writable(t)
 	if err := os.Mkdir(filepath.Join(host, "mixed"), 0o755); err != nil {
 		t.Fatalf("creating the directory: %v", err)
@@ -466,6 +477,7 @@ func TestADanglingChildDoesNotFailARecursiveDelete(t *testing.T) {
 }
 
 func TestStatProjectsTheResolvedPath(t *testing.T) {
+	t.Parallel()
 	c, st, host, _ := writable(t)
 	writeFile(t, host, "one.txt", "hello")
 
@@ -504,6 +516,7 @@ func TestStatProjectsTheResolvedPath(t *testing.T) {
 }
 
 func TestPublishPartRefusesAnythingItDidNotMint(t *testing.T) {
+	t.Parallel()
 	c, _, host, _ := writable(t)
 	r := under(t, c, "Documents/final.bin", acl.Write)
 
@@ -528,6 +541,7 @@ func TestPublishPartRefusesAnythingItDidNotMint(t *testing.T) {
 }
 
 func TestPublishPartCreatesAndReplacesWithTheSignedCharge(t *testing.T) {
+	t.Parallel()
 	c, _, host, _ := writable(t)
 	sink := attachSink(t, c)
 
@@ -584,6 +598,7 @@ func TestPublishPartCreatesAndReplacesWithTheSignedCharge(t *testing.T) {
 }
 
 func TestDeltaOfIsSignedAndRefusesGarbage(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		now, before uint64
 		want        int64
@@ -602,6 +617,7 @@ func TestDeltaOfIsSignedAndRefusesGarbage(t *testing.T) {
 }
 
 func TestInt64MinusSaturatesRatherThanWrapping(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		in   uint64
 		want int64
@@ -620,6 +636,7 @@ func TestInt64MinusSaturatesRatherThanWrapping(t *testing.T) {
 }
 
 func TestTheJournalRecordsWhatCommittedAndNothingElse(t *testing.T) {
+	t.Parallel()
 	c, _, host, _ := writable(t)
 	j := attachJournal(t, c)
 	ctx := context.Background()
@@ -661,6 +678,7 @@ func TestTheJournalRecordsWhatCommittedAndNothingElse(t *testing.T) {
 }
 
 func TestAFailedMutationWritesNoJournalRow(t *testing.T) {
+	t.Parallel()
 	c, _, host, _ := writable(t)
 	j := attachJournal(t, c)
 	ctx := context.Background()
@@ -684,6 +702,7 @@ func TestAFailedMutationWritesNoJournalRow(t *testing.T) {
 // row that does not fit is dropped rather than truncated into some other
 // account's history.
 func TestAnAccountPastTheJournalColumnIsSkipped(t *testing.T) {
+	t.Parallel()
 	c, st, host, _ := writable(t)
 	j := attachJournal(t, c)
 	ctx := context.Background()
@@ -722,6 +741,7 @@ func TestAnAccountPastTheJournalColumnIsSkipped(t *testing.T) {
 // substituting a stub, so what is exercised is the real Record path returning
 // a real error.
 func TestAFailingJournalDoesNotFailAWrite(t *testing.T) {
+	t.Parallel()
 	c, _, host, _ := writable(t)
 
 	f, err := dbfile.Open(context.Background(),
@@ -752,6 +772,7 @@ func TestAFailingJournalDoesNotFailAWrite(t *testing.T) {
 }
 
 func TestANilJournalDoesNotFailAWrite(t *testing.T) {
+	t.Parallel()
 	c, _, host, _ := writable(t)
 	if c.journal != nil {
 		t.Fatal("the fixture core already carries a journal")

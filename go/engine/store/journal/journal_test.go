@@ -67,6 +67,7 @@ func record(t *testing.T, d *DB, account uint32, path string, op Op) {
 }
 
 func TestRecordUpsertsRatherThanAppending(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d := openJournal(t, stepping())
 
@@ -99,6 +100,7 @@ func TestRecordUpsertsRatherThanAppending(t *testing.T) {
 // The trim commits with the write that crossed the cap, so re-opening the
 // file (which is what a crash leaves behind) already sees the cap enforced.
 func TestTrimCommitsWithTheWriteThatCrossedTheCap(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "journal.db")
 	d := openAt(t, path, stepping())
@@ -132,6 +134,7 @@ func TestTrimCommitsWithTheWriteThatCrossedTheCap(t *testing.T) {
 }
 
 func TestTrimIsPerAccount(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d := openJournal(t, stepping())
 
@@ -155,6 +158,7 @@ func TestTrimIsPerAccount(t *testing.T) {
 }
 
 func TestRecentOrdersNewestFirst(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d := openJournal(t, stepping())
 
@@ -178,6 +182,7 @@ func TestRecentOrdersNewestFirst(t *testing.T) {
 // Two rows sharing a nanosecond still come back in a fixed order, which the
 // rowid tiebreak is what provides.
 func TestRecentIsDeterministicWhenTimestampsCollide(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d := openJournal(t, clock.Fixed(time.Unix(1_700_000_000, 0)))
 
@@ -206,6 +211,7 @@ func TestRecentIsDeterministicWhenTimestampsCollide(t *testing.T) {
 }
 
 func TestRecentSinceWindowsAndEmptyIsNotAnError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d := openJournal(t, stepping())
 
@@ -236,6 +242,7 @@ func TestRecentSinceWindowsAndEmptyIsNotAnError(t *testing.T) {
 }
 
 func TestLimitClampsToTheCap(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d := openJournal(t, stepping())
 
@@ -263,6 +270,7 @@ func TestLimitClampsToTheCap(t *testing.T) {
 // A row this server would no longer accept fails the read rather than being
 // dropped: this package cannot tell corrupt from stale, and the caller can.
 func TestARefusedPathErrorsTheRead(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d := openJournal(t, stepping())
 
@@ -281,6 +289,7 @@ func TestARefusedPathErrorsTheRead(t *testing.T) {
 }
 
 func TestAShareThatNoLongerFitsErrorsTheRead(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d := openJournal(t, stepping())
 
@@ -298,6 +307,7 @@ func TestAShareThatNoLongerFitsErrorsTheRead(t *testing.T) {
 }
 
 func TestParseOpDefaultsAnUnknownLabelToUpload(t *testing.T) {
+	t.Parallel()
 	for label, want := range map[string]Op{
 		"upload":                  OpUpload,
 		"edit":                    OpEdit,
@@ -314,6 +324,7 @@ func TestParseOpDefaultsAnUnknownLabelToUpload(t *testing.T) {
 }
 
 func TestOpLabelsRoundTrip(t *testing.T) {
+	t.Parallel()
 	for _, op := range []Op{OpUpload, OpEdit, OpCopy, OpMove, OpRestore} {
 		if got := ParseOp(op.String()); got != op {
 			t.Errorf("%v stored as %q read back as %v", op, op.String(), got)
@@ -322,6 +333,7 @@ func TestOpLabelsRoundTrip(t *testing.T) {
 }
 
 func TestARecordedOpSurvivesTheRoundTrip(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d := openJournal(t, stepping())
 
@@ -341,6 +353,7 @@ func TestARecordedOpSurvivesTheRoundTrip(t *testing.T) {
 // A journal.db that could not be opened leaves a nil *DB, and every caller
 // above it needs no branch for that.
 func TestEveryMethodIsSafeOnANilReceiver(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	var d *DB
 
@@ -365,6 +378,7 @@ func TestEveryMethodIsSafeOnANilReceiver(t *testing.T) {
 }
 
 func TestOpenedJournalReportsItselfEnabled(t *testing.T) {
+	t.Parallel()
 	if d := openJournal(t, stepping()); !d.Enabled() {
 		t.Error("an opened journal reports itself disabled")
 	}
@@ -372,6 +386,7 @@ func TestOpenedJournalReportsItselfEnabled(t *testing.T) {
 
 // Nothing rebuilds who wrote what, so a discard step is refused.
 func TestTheJournalIsNotRebuildable(t *testing.T) {
+	t.Parallel()
 	spec := Spec(filepath.Join(t.TempDir(), "journal.db"))
 	if spec.Rebuildable {
 		t.Error("the journal declares itself rebuildable")

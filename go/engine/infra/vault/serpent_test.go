@@ -40,6 +40,7 @@ func serpentDecodeHex(t *testing.T, s string) []byte {
 // known-answer files never print directly: ecb_vk.txt varies one key bit
 // at a time against PT=0 but never uses a fully zero key.
 func TestSerpentZeroKeyZeroPlaintext(t *testing.T) {
+	t.Parallel()
 	key := make([]byte, serpentKeySize)
 	pt := make([]byte, serpentBlockSize)
 	wantCT := serpentDecodeHex(t, "49672ba898d98df95019180445491089")
@@ -88,6 +89,7 @@ func TestSerpentVariableKey(t *testing.T) {
 	pt := make([]byte, serpentBlockSize)
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			key := serpentDecodeHex(t, tc.key)
 			wantCT := serpentDecodeHex(t, tc.ct)
 
@@ -140,6 +142,7 @@ func TestSerpentVariableText(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			pt := serpentDecodeHex(t, tc.pt)
 			wantCT := serpentDecodeHex(t, tc.ct)
 
@@ -159,6 +162,7 @@ func TestSerpentVariableText(t *testing.T) {
 }
 
 func TestSerpentBlockSize(t *testing.T) {
+	t.Parallel()
 	blk, err := newSerpentCipher(make([]byte, serpentKeySize))
 	if err != nil {
 		t.Fatalf("newSerpentCipher: %v", err)
@@ -174,6 +178,7 @@ func TestSerpentBlockSize(t *testing.T) {
 // length is a caller mistake worth naming precisely rather than a variant
 // this driver silently tries to support.
 func TestSerpentRejectsBadKeySize(t *testing.T) {
+	t.Parallel()
 	for _, n := range []int{0, 1, 16, 24, 31, 33, 64} {
 		_, err := newSerpentCipher(make([]byte, n))
 		if err == nil {
@@ -192,6 +197,7 @@ func TestSerpentRejectsBadKeySize(t *testing.T) {
 // the published algorithm; this proves Decrypt is genuinely the inverse of
 // Encrypt across the input space those fixed vectors do not cover.
 func TestSerpentRoundTripRandom(t *testing.T) {
+	t.Parallel()
 	const keyTrials = 5
 	const blocksPerKey = 200
 	for keyTrial := range keyTrials {

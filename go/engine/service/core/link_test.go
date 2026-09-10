@@ -77,6 +77,7 @@ func mustLink(t *testing.T, c *Core, r Resolved, perms acl.Perms) Link {
 }
 
 func TestCreateLinkMintsATokenAndStoresOnlyItsHash(t *testing.T) {
+	t.Parallel()
 	c, st, host, root, _ := linkable(t)
 	ctx := context.Background()
 	writeFile(t, host, "note.txt", "body")
@@ -111,9 +112,11 @@ func TestCreateLinkMintsATokenAndStoresOnlyItsHash(t *testing.T) {
 }
 
 func TestCreateLinkRefusesWhatItMustNotMint(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("without the share bit", func(t *testing.T) {
+		t.Parallel()
 		c, st, host, _, _ := linkable(t)
 		writeFile(t, host, "note.txt", "body")
 		seedUser(t, st, 2, "bob")
@@ -128,6 +131,7 @@ func TestCreateLinkRefusesWhatItMustNotMint(t *testing.T) {
 	})
 
 	t.Run("granting nothing", func(t *testing.T) {
+		t.Parallel()
 		c, _, host, root, _ := linkable(t)
 		writeFile(t, host, "note.txt", "body")
 		_, _, err := c.CreateLink(ctx, at(t, root, "note.txt"), LinkSpec{MaxDown: -1})
@@ -137,6 +141,7 @@ func TestCreateLinkRefusesWhatItMustNotMint(t *testing.T) {
 	})
 
 	t.Run("escalating past the creator", func(t *testing.T) {
+		t.Parallel()
 		c, st, host, _, _ := linkable(t)
 		writeFile(t, host, "note.txt", "body")
 		seedUser(t, st, 3, "eve")
@@ -153,6 +158,7 @@ func TestCreateLinkRefusesWhatItMustNotMint(t *testing.T) {
 	})
 
 	t.Run("expiring in the past", func(t *testing.T) {
+		t.Parallel()
 		c, _, host, root, _ := linkable(t)
 		writeFile(t, host, "note.txt", "body")
 		_, _, err := c.CreateLink(ctx, at(t, root, "note.txt"),
@@ -163,6 +169,7 @@ func TestCreateLinkRefusesWhatItMustNotMint(t *testing.T) {
 	})
 
 	t.Run("a drop shape on a file", func(t *testing.T) {
+		t.Parallel()
 		c, _, host, root, _ := linkable(t)
 		writeFile(t, host, "note.txt", "body")
 		// Create with neither Read nor Download is a drop, and a drop targets
@@ -175,6 +182,7 @@ func TestCreateLinkRefusesWhatItMustNotMint(t *testing.T) {
 	})
 
 	t.Run("into an encrypted share", func(t *testing.T) {
+		t.Parallel()
 		c, _, _, root, _ := linkable(t)
 		if _, _, err := c.CreateLink(ctx, root, LinkSpec{Perms: acl.Read, MaxDown: -1}); err != nil {
 			t.Fatalf("minting into the plain share: %v", err)
@@ -189,6 +197,7 @@ func TestCreateLinkRefusesWhatItMustNotMint(t *testing.T) {
 }
 
 func TestCreateLinkHashesThePasswordBeforeItReachesTheRow(t *testing.T) {
+	t.Parallel()
 	c, st, host, root, h := linkable(t)
 	ctx := context.Background()
 	writeFile(t, host, "note.txt", "body")
@@ -219,9 +228,11 @@ func TestCreateLinkHashesThePasswordBeforeItReachesTheRow(t *testing.T) {
 }
 
 func TestTheCryptoSeamsFailClosedWhenUnwired(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("no hasher", func(t *testing.T) {
+		t.Parallel()
 		c, st, host, root, _ := linkable(t)
 		writeFile(t, host, "note.txt", "body")
 		_ = st
@@ -234,6 +245,7 @@ func TestTheCryptoSeamsFailClosedWhenUnwired(t *testing.T) {
 	})
 
 	t.Run("no cipher", func(t *testing.T) {
+		t.Parallel()
 		c, _, host, root, _ := linkable(t)
 		writeFile(t, host, "note.txt", "body")
 		c.AttachLinkCrypto(nil, nil, nil)
@@ -244,6 +256,7 @@ func TestTheCryptoSeamsFailClosedWhenUnwired(t *testing.T) {
 	})
 
 	t.Run("no store", func(t *testing.T) {
+		t.Parallel()
 		c, _, host, root, _ := linkable(t)
 		writeFile(t, host, "note.txt", "body")
 		c.linkStore = nil
@@ -255,6 +268,7 @@ func TestTheCryptoSeamsFailClosedWhenUnwired(t *testing.T) {
 }
 
 func TestTheIdentityPinIsSetForAFileAndAbsentForARoot(t *testing.T) {
+	t.Parallel()
 	c, _, host, root, _ := linkable(t)
 	writeFile(t, host, "note.txt", "body")
 
@@ -271,6 +285,7 @@ func TestTheIdentityPinIsSetForAFileAndAbsentForARoot(t *testing.T) {
 }
 
 func TestGetLinkAndListLinksAreOwnerScoped(t *testing.T) {
+	t.Parallel()
 	c, st, host, root, _ := linkable(t)
 	ctx := context.Background()
 	writeFile(t, host, "note.txt", "body")
@@ -294,6 +309,7 @@ func TestGetLinkAndListLinksAreOwnerScoped(t *testing.T) {
 }
 
 func TestListLinksNarrowsToOneTargetAndRoundTripsTheToken(t *testing.T) {
+	t.Parallel()
 	c, _, host, root, _ := linkable(t)
 	ctx := context.Background()
 	writeFile(t, host, "a.txt", "a")
@@ -332,6 +348,7 @@ func TestListLinksNarrowsToOneTargetAndRoundTripsTheToken(t *testing.T) {
 }
 
 func TestALegacyRowListsWithNoRecoverableToken(t *testing.T) {
+	t.Parallel()
 	c, st, host, root, _ := linkable(t)
 	ctx := context.Background()
 	writeFile(t, host, "note.txt", "body")
@@ -357,6 +374,7 @@ func TestALegacyRowListsWithNoRecoverableToken(t *testing.T) {
 }
 
 func TestUpdateLinkLeavesClearsAndRefuses(t *testing.T) {
+	t.Parallel()
 	c, _, host, root, h := linkable(t)
 	ctx := context.Background()
 	writeFile(t, host, "note.txt", "body")
@@ -426,6 +444,7 @@ func TestUpdateLinkLeavesClearsAndRefuses(t *testing.T) {
 }
 
 func TestUpdateLinkRecheckesPermissionsAgainstCurrentAccess(t *testing.T) {
+	t.Parallel()
 	c, st, host, root, _ := linkable(t)
 	ctx := context.Background()
 	writeFile(t, host, "note.txt", "body")
@@ -452,6 +471,7 @@ func TestUpdateLinkRecheckesPermissionsAgainstCurrentAccess(t *testing.T) {
 }
 
 func TestDeleteLinkIsOwnerScopedAndPermanent(t *testing.T) {
+	t.Parallel()
 	c, st, host, root, _ := linkable(t)
 	ctx := context.Background()
 	writeFile(t, host, "note.txt", "body")
@@ -475,6 +495,7 @@ func TestDeleteLinkIsOwnerScopedAndPermanent(t *testing.T) {
 }
 
 func TestNoteLinkDownloadConsumesToTheCapThenRefuses(t *testing.T) {
+	t.Parallel()
 	c, _, host, root, _ := linkable(t)
 	ctx := context.Background()
 	writeFile(t, host, "note.txt", "body")
@@ -504,9 +525,11 @@ func TestNoteLinkDownloadConsumesToTheCapThenRefuses(t *testing.T) {
 }
 
 func TestLinkPublicAppliesEveryLivenessRule(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("an unknown token is absent", func(t *testing.T) {
+		t.Parallel()
 		c, _, _, _, _ := linkable(t)
 		// Absent rather than gone: reporting it as gone would assert it once
 		// existed, letting a stranger sort guesses into real and invented.
@@ -516,6 +539,7 @@ func TestLinkPublicAppliesEveryLivenessRule(t *testing.T) {
 	})
 
 	t.Run("a live token resolves with the link's perms", func(t *testing.T) {
+		t.Parallel()
 		c, _, host, root, _ := linkable(t)
 		writeFile(t, host, "note.txt", "body")
 		_, tok, err := c.CreateLink(ctx, at(t, root, "note.txt"),
@@ -536,6 +560,7 @@ func TestLinkPublicAppliesEveryLivenessRule(t *testing.T) {
 	})
 
 	t.Run("a rename kills the link", func(t *testing.T) {
+		t.Parallel()
 		c, _, host, root, _ := linkable(t)
 		writeFile(t, host, "note.txt", "body")
 		_, tok, err := c.CreateLink(ctx, at(t, root, "note.txt"),
@@ -550,6 +575,7 @@ func TestLinkPublicAppliesEveryLivenessRule(t *testing.T) {
 	})
 
 	t.Run("a recreate at the same path kills the link", func(t *testing.T) {
+		t.Parallel()
 		c, _, host, root, _ := linkable(t)
 		writeFile(t, host, "note.txt", "body")
 		_, tok, err := c.CreateLink(ctx, at(t, root, "note.txt"),
@@ -569,6 +595,7 @@ func TestLinkPublicAppliesEveryLivenessRule(t *testing.T) {
 	})
 
 	t.Run("expiry and an unregistered share are both gone", func(t *testing.T) {
+		t.Parallel()
 		c, st, host, root, _ := linkable(t)
 		writeFile(t, host, "note.txt", "body")
 		link, tok, err := c.CreateLink(ctx, at(t, root, "note.txt"),
@@ -588,6 +615,7 @@ func TestLinkPublicAppliesEveryLivenessRule(t *testing.T) {
 }
 
 func TestAPathOnlyLinkSurvivesInodeReuse(t *testing.T) {
+	t.Parallel()
 	c, st, host, root, _ := linkable(t)
 	ctx := context.Background()
 	writeFile(t, host, "note.txt", "body")
@@ -629,6 +657,7 @@ func TestAPathOnlyLinkSurvivesInodeReuse(t *testing.T) {
 }
 
 func TestLinkCheckPasswordAcceptsRefusesAndFailsClosed(t *testing.T) {
+	t.Parallel()
 	c, _, host, root, _ := linkable(t)
 	ctx := context.Background()
 	writeFile(t, host, "note.txt", "body")

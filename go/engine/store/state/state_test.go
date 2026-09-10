@@ -61,6 +61,7 @@ func seedGroup(t *testing.T, d *state.DB, id int64, name string) {
 // The migration runner refuses a discard against this database whatever the
 // step names, because nothing rebuilds what it holds.
 func TestTheStateDatabaseIsNotRebuildable(t *testing.T) {
+	t.Parallel()
 	spec := state.Spec(filepath.Join(t.TempDir(), "state.db"))
 	if spec.Rebuildable {
 		t.Fatal("the state database declares itself rebuildable")
@@ -73,6 +74,7 @@ func TestTheStateDatabaseIsNotRebuildable(t *testing.T) {
 }
 
 func TestEveryMigrationApplies(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, f := open(t)
 
@@ -120,6 +122,7 @@ func TestEveryMigrationApplies(t *testing.T) {
 // The foreign keys the schema declares only enforce anything on a connection
 // that ran the pragma, so the pragma is what this proves.
 func TestForeignKeysAreEnforced(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 
@@ -137,6 +140,7 @@ func TestForeignKeysAreEnforced(t *testing.T) {
 // The guard gates growth and never recovery, so the two halves are one table
 // test over the methods on each side of the rule.
 func TestTheSizeGuardCoversEveryInsertPathAndNothingElse(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	// Each case runs against its own database, since a refused write and a
@@ -356,6 +360,7 @@ func sampleSession(id []byte) state.UploadSession {
 }
 
 func TestSharesRoundTrip(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 
@@ -392,6 +397,7 @@ func TestSharesRoundTrip(t *testing.T) {
 // field never has to resupply, and cannot accidentally clear, a share's
 // secret.
 func TestUpdateShareDoesNotClobberTheSecret(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 
@@ -431,6 +437,7 @@ func TestUpdateShareDoesNotClobberTheSecret(t *testing.T) {
 // A share row written before backends existed reads as local, since that
 // is the only kind such a row could ever have named.
 func TestTheMigrationReadsAnOldShareRowAsLocal(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "state.db")
 
@@ -489,6 +496,7 @@ func TestTheMigrationReadsAnOldShareRowAsLocal(t *testing.T) {
 // The identity round trip has to survive the full unsigned range, since that
 // is what a real filesystem hands out.
 func TestFavoritesRoundTripThroughIdent(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 1, "u")
@@ -533,6 +541,7 @@ func TestFavoritesRoundTripThroughIdent(t *testing.T) {
 }
 
 func TestUnstarRemovesExactlyOneRow(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 1, "u")
@@ -558,6 +567,7 @@ func TestUnstarRemovesExactlyOneRow(t *testing.T) {
 }
 
 func TestDavPropsAndLocksRoundTripThroughIdent(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 1, "u")
@@ -614,6 +624,7 @@ func TestDavPropsAndLocksRoundTripThroughIdent(t *testing.T) {
 // A lock past its deadline is gone whether or not the sweep has run, so a
 // reader never honors one.
 func TestAnExpiredLockIsNeverRead(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 1, "u")
@@ -644,6 +655,7 @@ func TestAnExpiredLockIsNeverRead(t *testing.T) {
 }
 
 func TestRefreshingAnUnknownLockIsARefusal(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	if err := d.RefreshDavLock(ctx, "nothing", 1<<40, 600, 0); !errors.Is(err, state.ErrNoSuchLock) {
@@ -654,6 +666,7 @@ func TestRefreshingAnUnknownLockIsARefusal(t *testing.T) {
 // A save is a patch: the fields the caller did not mention survive it, which
 // is the regression a whole-section replace caused.
 func TestMergeSettingsKeepsWhatTheCallerDidNotMention(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 
@@ -686,6 +699,7 @@ func TestMergeSettingsKeepsWhatTheCallerDidNotMention(t *testing.T) {
 }
 
 func TestSearchSettingsDoNotDropEachOther(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 
@@ -713,6 +727,7 @@ func TestSearchSettingsDoNotDropEachOther(t *testing.T) {
 }
 
 func TestUnsetSettingsReadAsAbsentRatherThanErroring(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 
@@ -731,6 +746,7 @@ func TestUnsetSettingsReadAsAbsentRatherThanErroring(t *testing.T) {
 }
 
 func TestConfigSecretRoundTrips(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 
@@ -759,6 +775,7 @@ func TestConfigSecretRoundTrips(t *testing.T) {
 }
 
 func TestActiveWorkCountsWhatARestartWouldInterrupt(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 1, "u")
@@ -787,6 +804,7 @@ func TestActiveWorkCountsWhatARestartWouldInterrupt(t *testing.T) {
 }
 
 func TestFileBytesMeasuresTheFile(t *testing.T) {
+	t.Parallel()
 	d, _ := open(t)
 	n, err := d.FileBytes()
 	if err != nil {
@@ -808,6 +826,7 @@ func mustCreateOp(t *testing.T, d *state.DB, paths []string) int64 {
 }
 
 func TestOperationLifecycle(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 1, "u")
@@ -852,6 +871,7 @@ func TestOperationLifecycle(t *testing.T) {
 }
 
 func TestGetOpOfAnUnknownIDIsErrNoSuchOp(t *testing.T) {
+	t.Parallel()
 	d, _ := open(t)
 	if _, _, err := d.GetOp(context.Background(), 4242); !errors.Is(err, state.ErrNoSuchOp) {
 		t.Fatalf("reading an unknown operation returned %v, want ErrNoSuchOp", err)
@@ -861,6 +881,7 @@ func TestGetOpOfAnUnknownIDIsErrNoSuchOp(t *testing.T) {
 // A job that stopped short can say which items it never reached, which is
 // what recording the paths up front buys.
 func TestUnfinishedItemsSplitAttemptingFromPending(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 1, "u")
@@ -894,6 +915,7 @@ func TestUnfinishedItemsSplitAttemptingFromPending(t *testing.T) {
 // A client re-attaching wants what is in flight, not a copy it watched
 // finish an hour ago.
 func TestListOpsReturnsOnlyUnfinishedWork(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 1, "u")
@@ -929,6 +951,7 @@ func TestListOpsReturnsOnlyUnfinishedWork(t *testing.T) {
 }
 
 func TestRequestOpCancelIsVisibleToTheRunner(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 1, "u")
@@ -947,6 +970,7 @@ func TestRequestOpCancelIsVisibleToTheRunner(t *testing.T) {
 }
 
 func TestUploadSessionRoundTripsIncludingNulls(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 1, "u")
@@ -1037,6 +1061,7 @@ func deref(v *int64) any {
 }
 
 func TestReadingAnUnknownUploadSessionIsARefusal(t *testing.T) {
+	t.Parallel()
 	d, _ := open(t)
 	if _, err := d.ReadUploadSession(context.Background(), []byte{7}); !errors.Is(err, state.ErrNoSuchUploadSession) {
 		t.Fatalf("reading an unknown session returned %v, want ErrNoSuchUploadSession", err)
@@ -1044,6 +1069,7 @@ func TestReadingAnUnknownUploadSessionIsARefusal(t *testing.T) {
 }
 
 func TestUploadIntervalsAreRewrittenWholeAndSurviveTheFullRange(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 1, "u")
@@ -1079,6 +1105,7 @@ func TestUploadIntervalsAreRewrittenWholeAndSurviveTheFullRange(t *testing.T) {
 }
 
 func TestAnIntervalThatDoesNotFitIsRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 1, "u")
@@ -1094,6 +1121,7 @@ func TestAnIntervalThatDoesNotFitIsRefused(t *testing.T) {
 // The frontier only ever moves forward: the merger runs while chunks are
 // still arriving.
 func TestTheCacheMergeFrontierNeverRetreats(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 1, "u")
@@ -1118,6 +1146,7 @@ func TestTheCacheMergeFrontierNeverRetreats(t *testing.T) {
 // A transfer id is client-chosen, so it is scoped by account and a rebind is
 // refused rather than silently orphaning the first session's spool.
 func TestUploadAliasesAreScopedByAccountAndNeverRebound(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 1, "one")
@@ -1164,6 +1193,7 @@ func TestUploadAliasesAreScopedByAccountAndNeverRebound(t *testing.T) {
 // Deleting a session takes its aliases with it: a transfer id outliving the
 // session it names would keep addressing a freed id.
 func TestDeletingASessionTakesItsAliasesAndIntervals(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 1, "u")
@@ -1197,6 +1227,7 @@ func TestDeletingASessionTakesItsAliasesAndIntervals(t *testing.T) {
 // The row's absence is the fact that matters: it separates an admin's stored
 // numbers from the compiled-in defaults.
 func TestChunkSettingsReportWhetherAnAdminStoredThem(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 
@@ -1220,6 +1251,7 @@ func TestChunkSettingsReportWhetherAnAdminStoredThem(t *testing.T) {
 }
 
 func TestTouchedDirsAccumulate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 
@@ -1242,6 +1274,7 @@ func TestTouchedDirsAccumulate(t *testing.T) {
 }
 
 func TestUploadCountsAndReservations(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 1, "u")
@@ -1272,6 +1305,7 @@ func TestUploadCountsAndReservations(t *testing.T) {
 
 // One login URL opened twice must mint exactly one credential.
 func TestALoginFlowIsApprovedExactlyOnce(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 1, "u")
@@ -1303,6 +1337,7 @@ func TestALoginFlowIsApprovedExactlyOnce(t *testing.T) {
 }
 
 func TestPollingTooFastIsRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 
@@ -1328,6 +1363,7 @@ func TestPollingTooFastIsRefused(t *testing.T) {
 }
 
 func TestSweepingLoginFlowsRemovesTheAbandonedOnes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 

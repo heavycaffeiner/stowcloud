@@ -18,6 +18,7 @@ import (
 const homeShare int64 = 999_999
 
 func TestPersistGrantRefusesAGrantThatSaysNothing(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 1, "u")
@@ -48,6 +49,7 @@ func TestPersistGrantRefusesAGrantThatSaysNothing(t *testing.T) {
 // one subtree. Refusing it made the exception unexpressible, so a folder
 // inside a granted tree could not be closed off.
 func TestPersistGrantStoresADenyOnlyGrant(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 1, "u")
@@ -72,6 +74,7 @@ func TestPersistGrantStoresADenyOnlyGrant(t *testing.T) {
 // subpath is refused by the unique index rather than stored as an
 // indistinguishable duplicate. The first grant survives untouched.
 func TestPersistGrantRefusesADuplicateOverTheSameShareAndSubpath(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 1, "u")
@@ -96,6 +99,7 @@ func TestPersistGrantRefusesADuplicateOverTheSameShareAndSubpath(t *testing.T) {
 }
 
 func TestPersistGrantRoundTripsAndStampsTheCallersClock(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 7, "u")
@@ -135,6 +139,7 @@ func TestPersistGrantRoundTripsAndStampsTheCallersClock(t *testing.T) {
 }
 
 func TestAGroupGrantStoresNoUser(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedGroup(t, d, 3, "editors")
@@ -157,6 +162,7 @@ func TestAGroupGrantStoresNoUser(t *testing.T) {
 // The regression the cascade decision rests on: a home grant names a share
 // that is never a share_definition row.
 func TestAHomeGrantNeedsNoShareDefinitionRow(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, f := open(t)
 	seedUser(t, d, 1, "u")
@@ -178,6 +184,7 @@ func TestAHomeGrantNeedsNoShareDefinitionRow(t *testing.T) {
 }
 
 func TestListGrantsNarrowsByEachFilter(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 1, "one")
@@ -219,6 +226,7 @@ func TestListGrantsNarrowsByEachFilter(t *testing.T) {
 // Who a grant is for and which share it covers identify the grant, so an
 // update cannot move either: the statement has no columns for them.
 func TestUpdateGrantMovesOnlyThePermissions(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 1, "u")
@@ -249,6 +257,7 @@ func TestUpdateGrantMovesOnlyThePermissions(t *testing.T) {
 // An empty label clears it rather than storing an empty string, so "no
 // label" is one value on disk.
 func TestClearingALabelStoresNull(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, f := open(t)
 	seedUser(t, d, 1, "u")
@@ -281,6 +290,7 @@ func TestClearingALabelStoresNull(t *testing.T) {
 }
 
 func TestUpdateAndDeleteOfAnUnknownGrantAreRefusals(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 
@@ -293,6 +303,7 @@ func TestUpdateAndDeleteOfAnUnknownGrantAreRefusals(t *testing.T) {
 }
 
 func TestDeleteGrantRemovesExactlyThatRow(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 1, "u")
@@ -328,6 +339,7 @@ func TestDeleteGrantRemovesExactlyThatRow(t *testing.T) {
 // The cascade lives inside DeleteShare rather than in a foreign key, and
 // both halves commit together.
 func TestDeleteShareTakesEveryGrantNamingIt(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 1, "u")
@@ -375,6 +387,7 @@ func TestDeleteShareTakesEveryGrantNamingIt(t *testing.T) {
 // The cascade is one transaction, so a failure in either half leaves
 // neither: there is no window where the grants are gone and the share is not.
 func TestTheCascadeIsAtomic(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 1, "u")
@@ -422,6 +435,7 @@ func TestTheCascadeIsAtomic(t *testing.T) {
 // Deleting the principal takes the grant with it, which is what the foreign
 // keys that do exist are for.
 func TestDeletingAUserCascadesToItsGrants(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 1, "u")
@@ -446,6 +460,7 @@ func TestDeletingAUserCascadesToItsGrants(t *testing.T) {
 }
 
 func TestMembershipsRoundTrip(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 1, "one")
@@ -489,6 +504,7 @@ func TestMembershipsRoundTrip(t *testing.T) {
 // to open, and the fold preserves what the evaluator was already answering:
 // the union of the allows and of the denies.
 func TestTheMigrationFoldsDuplicateGrants(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "state.db")
 
@@ -582,6 +598,7 @@ func TestTheMigrationFoldsDuplicateGrants(t *testing.T) {
 // to read as a refusal: an administrator flipping a switch on a form must not
 // be told the server broke.
 func TestUpdateGrantRefusesWideningOntoAnExistingSubtreeGrant(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 1, "u")

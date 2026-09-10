@@ -36,6 +36,7 @@ func tree(t *testing.T, hostDir string) {
 }
 
 func TestARollupCountsTheWholeSubtree(t *testing.T) {
+	t.Parallel()
 	c, _, hostDir, _ := writable(t)
 	tree(t, hostDir)
 
@@ -53,6 +54,7 @@ func TestARollupCountsTheWholeSubtree(t *testing.T) {
 }
 
 func TestARollupIsStableAndChangesWithTheTree(t *testing.T) {
+	t.Parallel()
 	c, _, hostDir, _ := writable(t)
 	tree(t, hostDir)
 	ctx := context.Background()
@@ -103,6 +105,7 @@ func TestARollupIsStableAndChangesWithTheTree(t *testing.T) {
 // whose contribution is their own rollup rather than an inode-derived file
 // token, so anything left of a match is the order the names were folded in.
 func TestTheRollupDoesNotDependOnCreationOrder(t *testing.T) {
+	t.Parallel()
 	c, _, hostA, _ := writable(t)
 	forward := []string{"alpha", "bravo", "charlie", "delta"}
 	for _, name := range forward {
@@ -129,6 +132,7 @@ func TestTheRollupDoesNotDependOnCreationOrder(t *testing.T) {
 }
 
 func TestAggregateRefusesWhatItCannotRollUp(t *testing.T) {
+	t.Parallel()
 	c, _, hostDir, _ := writable(t)
 	writeFile(t, hostDir, "plain.txt", "x")
 
@@ -143,6 +147,7 @@ func TestAggregateRefusesWhatItCannotRollUp(t *testing.T) {
 // TestADanglingChildIsSkippedByTheRollup uses a dangling symlink, whose stat
 // fails exactly as a child deleted mid-walk does.
 func TestADanglingChildIsSkippedByTheRollup(t *testing.T) {
+	t.Parallel()
 	c, _, hostDir, _ := writable(t)
 	writeFile(t, hostDir, "real.txt", "abc")
 	if err := os.Symlink("nowhere", filepath.Join(hostDir, "ghost.txt")); err != nil {
@@ -161,6 +166,7 @@ func TestADanglingChildIsSkippedByTheRollup(t *testing.T) {
 // locked here deliberately, so a call that tried to take it again would
 // never return.
 func TestReEnteringAHeldFileIDSkipsItsGuard(t *testing.T) {
+	t.Parallel()
 	c, _, hostDir, _ := writable(t)
 	writeFile(t, hostDir, "one.txt", "abc")
 
@@ -183,6 +189,7 @@ func TestReEnteringAHeldFileIDSkipsItsGuard(t *testing.T) {
 }
 
 func TestTheSecondRollupComesFromTheCache(t *testing.T) {
+	t.Parallel()
 	c, _, hostDir, _ := writable(t)
 	tree(t, hostDir)
 	ctx := context.Background()
@@ -207,6 +214,7 @@ func TestTheSecondRollupComesFromTheCache(t *testing.T) {
 }
 
 func TestMarkDirtyInvalidatesTheAncestorChainOnly(t *testing.T) {
+	t.Parallel()
 	c, _, hostDir, _ := writable(t)
 	ctx := context.Background()
 	if err := os.MkdirAll(filepath.Join(hostDir, "left"), 0o755); err != nil {
@@ -242,6 +250,7 @@ func TestMarkDirtyInvalidatesTheAncestorChainOnly(t *testing.T) {
 // TestMarkDirtyOnAVanishedShareIsSilent covers the racing admin action: the
 // share is gone, so there is nothing left to invalidate and nothing to fail.
 func TestMarkDirtyOnAVanishedShareIsSilent(t *testing.T) {
+	t.Parallel()
 	c, _, _, _ := writable(t)
 	c.markDirty(context.Background(), 99, safe(t, "anything.txt"))
 }
@@ -250,6 +259,7 @@ func TestMarkDirtyOnAVanishedShareIsSilent(t *testing.T) {
 // row of its own and is still cached: its id is the sentinel, which is what
 // makes markDirty able to push it unconditionally.
 func TestARootRollupIsCachedUnderTheSentinel(t *testing.T) {
+	t.Parallel()
 	c, _, hostDir, _ := writable(t)
 	tree(t, hostDir)
 	ctx := context.Background()
@@ -284,6 +294,7 @@ func mustRoot(t *testing.T, c *Core, share ShareID) vfs.Root {
 // TestAMutationInvalidatesWhatItTouched is the write path's own invalidation
 // asserted end to end, which is what markDirty exists for.
 func TestAMutationInvalidatesWhatItTouched(t *testing.T) {
+	t.Parallel()
 	c, _, hostDir, _ := writable(t)
 	if err := os.MkdirAll(filepath.Join(hostDir, "docs"), 0o755); err != nil {
 		t.Fatalf("building the tree: %v", err)

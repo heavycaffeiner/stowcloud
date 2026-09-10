@@ -36,6 +36,7 @@ func allSentinels() []struct {
 }
 
 func TestEverySentinelIsDistinct(t *testing.T) {
+	t.Parallel()
 	set := allSentinels()
 	for _, a := range set {
 		for _, b := range set {
@@ -50,6 +51,7 @@ func TestEverySentinelIsDistinct(t *testing.T) {
 }
 
 func TestShareBrokenErrorUnwrapsToItsSentinel(t *testing.T) {
+	t.Parallel()
 	err := error(&ShareBrokenError{Share: "documents", Reason: "missing"})
 	if !errors.Is(err, ErrShareBroken) {
 		t.Fatalf("errors.Is(%v, ErrShareBroken) is false", err)
@@ -64,6 +66,7 @@ func TestShareBrokenErrorUnwrapsToItsSentinel(t *testing.T) {
 }
 
 func TestPreconditionErrorUnwrapsToItsSentinel(t *testing.T) {
+	t.Parallel()
 	err := error(&PreconditionError{Current: "abc123"})
 	if !errors.Is(err, ErrPrecondition) {
 		t.Fatalf("errors.Is(%v, ErrPrecondition) is false", err)
@@ -78,6 +81,7 @@ func TestPreconditionErrorUnwrapsToItsSentinel(t *testing.T) {
 }
 
 func TestPreconditionErrorCarriesAnEmptyTokenForAMissingTarget(t *testing.T) {
+	t.Parallel()
 	err := error(&PreconditionError{})
 	if !IsPrecondition(err) {
 		t.Fatal("IsPrecondition is false for a *PreconditionError with no token")
@@ -88,6 +92,7 @@ func TestPreconditionErrorCarriesAnEmptyTokenForAMissingTarget(t *testing.T) {
 }
 
 func TestIsPreconditionIsFalseForEveryOtherSentinel(t *testing.T) {
+	t.Parallel()
 	for _, s := range allSentinels() {
 		if s.name == "ErrPrecondition" {
 			continue
@@ -99,6 +104,7 @@ func TestIsPreconditionIsFalseForEveryOtherSentinel(t *testing.T) {
 }
 
 func TestMapVFSErrMapsEveryNamedError(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		in   error
@@ -125,6 +131,7 @@ func TestMapVFSErrMapsEveryNamedError(t *testing.T) {
 }
 
 func TestMapVFSErrMapsAWrappedError(t *testing.T) {
+	t.Parallel()
 	// Every vfs sentinel arrives wrapped by the operation that produced it,
 	// so a mapping that only matched a bare value would map nothing real.
 	wrapped := fmt.Errorf("openat2: %w", vfs.ErrDenied)
@@ -134,6 +141,7 @@ func TestMapVFSErrMapsAWrappedError(t *testing.T) {
 }
 
 func TestMapVFSErrPassesAnUnnamedErrorThroughUnchanged(t *testing.T) {
+	t.Parallel()
 	// An error the table does not name is an infrastructure failure, and it
 	// keeps its identity so a caller can still match it.
 	infra := errors.New("the disk controller reset")
@@ -149,6 +157,7 @@ func TestMapVFSErrPassesAnUnnamedErrorThroughUnchanged(t *testing.T) {
 }
 
 func TestMapVFSErrPassesNilThrough(t *testing.T) {
+	t.Parallel()
 	if got := mapVFSErr(nil); got != nil {
 		t.Fatalf("mapVFSErr(nil) = %v, want nil", got)
 	}
@@ -157,6 +166,7 @@ func TestMapVFSErrPassesNilThrough(t *testing.T) {
 // The typed errors are the two that could carry a host path, since both are
 // built from values the registry holds. Neither may.
 func TestTypedErrorsLeakNoHostPath(t *testing.T) {
+	t.Parallel()
 	broken := (&ShareBrokenError{Share: "documents", Reason: "unreadable"}).Error()
 	precondition := (&PreconditionError{Current: "deadbeef"}).Error()
 	for _, msg := range []string{broken, precondition} {

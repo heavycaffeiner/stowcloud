@@ -44,6 +44,7 @@ func drain(t *testing.T, s *Stream) string {
 }
 
 func TestAWholeFileStreamsExactlyItsContent(t *testing.T) {
+	t.Parallel()
 	c, _, host, _ := listable(t)
 	writeFile(t, host, "readme.txt", "hello world")
 	r := resolveAt(t, c, "Documents/readme.txt", acl.Download)
@@ -80,6 +81,7 @@ func TestAWholeFileStreamsExactlyItsContent(t *testing.T) {
 }
 
 func TestRangeClamping(t *testing.T) {
+	t.Parallel()
 	c, _, host, _ := listable(t)
 	writeFile(t, host, "abc.txt", "abcdefghij")
 	r := resolveAt(t, c, "Documents/abc.txt", acl.Download)
@@ -112,6 +114,7 @@ func TestRangeClamping(t *testing.T) {
 }
 
 func TestReadsAreChunkedWhateverTheBuffer(t *testing.T) {
+	t.Parallel()
 	c, _, host, _ := listable(t)
 	writeFile(t, host, "big.bin", strings.Repeat("a", streamChunk+4096))
 	r := resolveAt(t, c, "Documents/big.bin", acl.Download)
@@ -130,6 +133,7 @@ func TestReadsAreChunkedWhateverTheBuffer(t *testing.T) {
 }
 
 func TestAFileTruncatedAfterOpenEndsAtTheShortLength(t *testing.T) {
+	t.Parallel()
 	c, _, host, _ := listable(t)
 	writeFile(t, host, "shrink.txt", strings.Repeat("x", 4096))
 	r := resolveAt(t, c, "Documents/shrink.txt", acl.Download)
@@ -158,6 +162,7 @@ func TestAFileTruncatedAfterOpenEndsAtTheShortLength(t *testing.T) {
 // promise: a rename over the name mid-download must not splice two files
 // into one response body.
 func TestAnAtomicReplaceDoesNotChangeWhatIsBeingRead(t *testing.T) {
+	t.Parallel()
 	c, _, host, _ := listable(t)
 	writeFile(t, host, "live.txt", "original content")
 	r := resolveAt(t, c, "Documents/live.txt", acl.Download)
@@ -180,6 +185,7 @@ func TestAnAtomicReplaceDoesNotChangeWhatIsBeingRead(t *testing.T) {
 }
 
 func TestOpenStreamRefusesADirectoryAndAMissingDownloadBit(t *testing.T) {
+	t.Parallel()
 	c, st, host, _ := listable(t)
 	writeFile(t, host, "a.txt", "x")
 	if err := os.Mkdir(filepath.Join(host, "sub"), 0o755); err != nil {
@@ -203,6 +209,7 @@ func TestOpenStreamRefusesADirectoryAndAMissingDownloadBit(t *testing.T) {
 }
 
 func TestOpenRandomReadsTheTailAndNeedsBothBits(t *testing.T) {
+	t.Parallel()
 	c, st, host, _ := listable(t)
 	writeFile(t, host, "container.bin", "headerBODYtrailer")
 	r := resolveAt(t, c, "Documents/container.bin", acl.Read|acl.Download)
@@ -290,6 +297,7 @@ func (w *walkCollector) paths() []string {
 }
 
 func TestArchiveWalkCoversATreeUnderTheRootsLeafName(t *testing.T) {
+	t.Parallel()
 	c, _, host, _ := listable(t)
 	if err := os.MkdirAll(filepath.Join(host, "box", "inner"), 0o755); err != nil {
 		t.Fatalf("building the tree: %v", err)
@@ -337,6 +345,7 @@ func TestArchiveWalkCoversATreeUnderTheRootsLeafName(t *testing.T) {
 }
 
 func TestArchiveWalkStopsAtASubtreeTheCallerCannotRead(t *testing.T) {
+	t.Parallel()
 	c, st, host, _ := listable(t)
 	if err := os.MkdirAll(filepath.Join(host, "closed"), 0o755); err != nil {
 		t.Fatalf("building the tree: %v", err)
@@ -373,6 +382,7 @@ func TestArchiveWalkStopsAtASubtreeTheCallerCannotRead(t *testing.T) {
 }
 
 func TestArchiveWalkReportsAnUnreadableFileAsSkipped(t *testing.T) {
+	t.Parallel()
 	c, st, host, _ := listable(t)
 	writeFile(t, host, "open.txt", "visible")
 	writeFile(t, host, "shut.txt", "hidden")
@@ -404,6 +414,7 @@ func TestArchiveWalkReportsAnUnreadableFileAsSkipped(t *testing.T) {
 // TestArchiveWalkSkipsAFileThatVanishesBeforeItsOpen uses a dangling symlink,
 // whose open fails exactly as a deleted file's does.
 func TestArchiveWalkSkipsAFileThatVanishesBeforeItsOpen(t *testing.T) {
+	t.Parallel()
 	c, _, host, _ := listable(t)
 	writeFile(t, host, "present.txt", "here")
 	if err := os.Symlink("nothing-here", filepath.Join(host, "gone.txt")); err != nil {
@@ -426,6 +437,7 @@ func TestArchiveWalkSkipsAFileThatVanishesBeforeItsOpen(t *testing.T) {
 }
 
 func TestAVisitorErrorAbortsTheWalkUnchanged(t *testing.T) {
+	t.Parallel()
 	c, _, host, _ := listable(t)
 	for _, name := range []string{"a.txt", "b.txt", "c.txt"} {
 		writeFile(t, host, name, "x")
@@ -447,11 +459,12 @@ func TestAVisitorErrorAbortsTheWalkUnchanged(t *testing.T) {
 }
 
 func TestASingleFileRootIsAOneEntryWalkAndClosesItsDescriptor(t *testing.T) {
+	t.Parallel()
 	c, _, host, _ := listable(t)
 	writeFile(t, host, "alone.txt", "solo")
 	r := resolveAt(t, c, "Documents/alone.txt", acl.Read|acl.Download)
 
-	before := openDescriptors(t)
+	before := openDescriptorsUnder(t, host)
 	w := newCollector(t)
 	if err := c.ArchiveWalk(context.Background(), r, w.visit); err != nil {
 		t.Fatalf("ArchiveWalk: %v", err)
@@ -462,12 +475,13 @@ func TestASingleFileRootIsAOneEntryWalkAndClosesItsDescriptor(t *testing.T) {
 	if w.body["alone.txt"] != "solo" {
 		t.Fatalf("the single-file walk produced the body %q", w.body["alone.txt"])
 	}
-	if after := openDescriptors(t); after > before {
+	if after := openDescriptorsUnder(t, host); after > before {
 		t.Fatalf("the walk leaked a descriptor: %d open before, %d after", before, after)
 	}
 }
 
 func TestArchiveWalkRefusesWithoutReadAndFailsAFileRootItCannotOpen(t *testing.T) {
+	t.Parallel()
 	c, st, host, _ := listable(t)
 	writeFile(t, host, "a.txt", "x")
 	if err := os.Mkdir(filepath.Join(host, "drop"), 0o755); err != nil {
@@ -498,6 +512,7 @@ func TestArchiveWalkRefusesWithoutReadAndFailsAFileRootItCannotOpen(t *testing.T
 }
 
 func TestSatAddSaturates(t *testing.T) {
+	t.Parallel()
 	if got := satAdd(0); got != 1 {
 		t.Fatalf("satAdd(0) = %d, want 1", got)
 	}
@@ -507,6 +522,7 @@ func TestSatAddSaturates(t *testing.T) {
 }
 
 func TestStreamReadOfAnEmptyBufferIsNotAnEnd(t *testing.T) {
+	t.Parallel()
 	c, _, host, _ := listable(t)
 	writeFile(t, host, "some.txt", "abc")
 	r := resolveAt(t, c, "Documents/some.txt", acl.Download)

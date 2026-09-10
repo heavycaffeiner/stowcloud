@@ -31,6 +31,7 @@ func permutations(in []Range) [][]Range {
 // what makes the resumable offset an answer rather than an artefact of
 // arrival order.
 func TestTheSetHasOneNormalFormWhateverTheOrder(t *testing.T) {
+	t.Parallel()
 	pieces := []Range{{0, 10}, {10, 20}, {25, 30}, {5, 15}, {28, 40}}
 	want := []Range{{0, 20}, {25, 40}}
 
@@ -60,6 +61,7 @@ func TestTheSetHasOneNormalFormWhateverTheOrder(t *testing.T) {
 // exactly are one contiguous region, and a set that kept them apart would
 // report a resumable offset short of what actually landed.
 func TestTouchingRangesMerge(t *testing.T) {
+	t.Parallel()
 	s := NewIntervalSet()
 	for _, r := range []Range{{0, 10}, {10, 20}, {20, 30}} {
 		if err := s.Insert(r.Lo, r.Hi); err != nil {
@@ -72,6 +74,7 @@ func TestTouchingRangesMerge(t *testing.T) {
 }
 
 func TestAnEmptyRangeChangesNothing(t *testing.T) {
+	t.Parallel()
 	s := NewIntervalSet()
 	if err := s.Insert(5, 5); err != nil {
 		t.Fatalf("Insert: %v", err)
@@ -87,6 +90,7 @@ func TestAnEmptyRangeChangesNothing(t *testing.T) {
 // The refusal costs the client one chunk, not the session, so the set has to
 // be exactly what it was before.
 func TestTheRunBoundRefusesAndLeavesTheSetUnchanged(t *testing.T) {
+	t.Parallel()
 	s := NewIntervalSet()
 	// Disjoint runs, each separated by a gap, up to the bound.
 	for i := 0; i < limits.UploadIntervalRuns; i++ {
@@ -116,6 +120,7 @@ func TestTheRunBoundRefusesAndLeavesTheSetUnchanged(t *testing.T) {
 // Stored rows are inserted rather than adopted, so a set that would not
 // rebuild is refused instead of becoming a hole the client resumes past.
 func TestLoadRederivesTheInvariantAndRefusesCorruption(t *testing.T) {
+	t.Parallel()
 	s, err := LoadIntervalSet([]Range{{20, 30}, {0, 10}, {5, 25}})
 	if err != nil {
 		t.Fatalf("LoadIntervalSet: %v", err)
@@ -136,6 +141,7 @@ func TestLoadRederivesTheInvariantAndRefusesCorruption(t *testing.T) {
 }
 
 func TestPrefixCompleteMissingAndReceived(t *testing.T) {
+	t.Parallel()
 	s := NewIntervalSet()
 	for _, r := range []Range{{10, 20}, {30, 40}} {
 		if err := s.Insert(r.Lo, r.Hi); err != nil {
@@ -181,6 +187,7 @@ func TestPrefixCompleteMissingAndReceived(t *testing.T) {
 // A zero-length file is complete when empty: nothing arriving is the file
 // having arrived, and it is the one case where that is true.
 func TestAZeroLengthFileIsCompleteWhenEmpty(t *testing.T) {
+	t.Parallel()
 	if !NewIntervalSet().IsComplete(0) {
 		t.Fatal("an empty set is not complete for a zero-length file")
 	}
@@ -195,6 +202,7 @@ func TestAZeroLengthFileIsCompleteWhenEmpty(t *testing.T) {
 // A set that covers more than the declared length is still complete: a
 // truncation elsewhere must not make a finished upload look unfinished.
 func TestASetPastTheLengthIsStillComplete(t *testing.T) {
+	t.Parallel()
 	s := FullIntervalSet(100)
 	if !s.IsComplete(50) {
 		t.Fatal("a set covering more than the length reported incomplete")

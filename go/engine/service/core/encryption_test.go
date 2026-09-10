@@ -43,6 +43,7 @@ func encryptedShare(t *testing.T) (*Core, ShareID, string) {
 }
 
 func TestEnablingEncryptionStoresWhatTheClientSent(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	c, id, _ := encryptedShare(t)
 
@@ -72,6 +73,7 @@ func TestEnablingEncryptionStoresWhatTheClientSent(t *testing.T) {
 // base64url characters, and a verifier that is not exactly one rclone crypt
 // file of the agreed size.
 func TestSettingsThatCouldNotHaveComeFromTheProcedureAreRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	c, id, _ := encryptedShare(t)
 
@@ -120,6 +122,7 @@ func stored(t *testing.T, c *Core, id ShareID) bool {
 // refusal has to name it rather than fail generically: a client that
 // truncated the salt would otherwise look like a client that sent nothing.
 func TestTheSaltRefusalNamesTheLength(t *testing.T) {
+	t.Parallel()
 	c, id, _ := encryptedShare(t)
 	err := c.EnableEncryption(context.Background(), id, Encryption{
 		Scheme: SchemeRcloneCrypt, Salt: "short", Verifier: testVerifier(),
@@ -130,6 +133,7 @@ func TestTheSaltRefusalNamesTheLength(t *testing.T) {
 }
 
 func TestEncryptionCannotBeTurnedOnOverExistingFiles(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	c, id, host := encryptedShare(t)
 
@@ -147,6 +151,7 @@ func TestEncryptionCannotBeTurnedOnOverExistingFiles(t *testing.T) {
 }
 
 func TestEncryptionCannotBeTurnedOffOverExistingFiles(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	c, id, host := encryptedShare(t)
 
@@ -173,6 +178,7 @@ func TestEncryptionCannotBeTurnedOffOverExistingFiles(t *testing.T) {
 // the trash unreadable, and enabling would leave the plaintext there for a
 // later restore to drop into an encrypted share.
 func TestATrashedFileBlocksBothEncryptionToggles(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	c, id, host := encryptedShare(t)
@@ -214,6 +220,7 @@ func seedTrash(t *testing.T, host string) {
 }
 
 func TestDisablingIsIdempotentAndDisablingAnUnencryptedShareSucceeds(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	c, id, _ := encryptedShare(t)
 
@@ -234,6 +241,7 @@ func TestDisablingIsIdempotentAndDisablingAnUnencryptedShareSucceeds(t *testing.
 }
 
 func TestAPartFileDoesNotCountAsContent(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	c, id, host := encryptedShare(t)
 
@@ -250,6 +258,7 @@ func TestAPartFileDoesNotCountAsContent(t *testing.T) {
 }
 
 func TestTheEncryptedSetNamesOnlyTheEncryptedShares(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	c, _ := newCore(t)
 
@@ -275,6 +284,7 @@ func TestTheEncryptedSetNamesOnlyTheEncryptedShares(t *testing.T) {
 }
 
 func TestAnUnknownShareIsNotFound(t *testing.T) {
+	t.Parallel()
 	c, _ := newCore(t)
 	err := c.EnableEncryption(context.Background(), ShareID(999999), testEncryption())
 	if !errors.Is(err, ErrNotFound) {

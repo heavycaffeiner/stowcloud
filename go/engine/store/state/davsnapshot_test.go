@@ -20,6 +20,7 @@ import (
 // Checked structurally, for the same reason the admission is: the database's
 // write path serializes, so a timing test cannot separate one read from two.
 func TestASnapshotReadsTheTableOnce(t *testing.T) {
+	t.Parallel()
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, "davsnapshot.go", nil, 0)
 	if err != nil {
@@ -67,6 +68,7 @@ func TestASnapshotReadsTheTableOnce(t *testing.T) {
 // locks over it: a missing entry and an empty one are the same answer, and a
 // caller that has to tell them apart will get it wrong.
 func TestASnapshotAnswersEveryTarget(t *testing.T) {
+	t.Parallel()
 	d, _ := open(t)
 	ctx := context.Background()
 	seedUser(t, d, 1, "a")
@@ -104,6 +106,7 @@ func TestASnapshotAnswersEveryTarget(t *testing.T) {
 // Coverage in a snapshot follows the same rule as admission: the named path,
 // and anything under a depth-infinity ancestor with a real path boundary.
 func TestWhatASnapshotCounts(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name      string
 		lockPath  string
@@ -147,6 +150,7 @@ func TestWhatASnapshotCounts(t *testing.T) {
 // An expired lock covers nothing, so a request is not refused for a lock that
 // has already run out.
 func TestASnapshotIgnoresAnExpiredLock(t *testing.T) {
+	t.Parallel()
 	d, _ := open(t)
 	ctx := context.Background()
 	seedUser(t, d, 1, "a")
@@ -170,6 +174,7 @@ func TestASnapshotIgnoresAnExpiredLock(t *testing.T) {
 // An empty target list is answered without touching the database, since there
 // is nothing to be consistent about.
 func TestAnEmptySnapshotIsEmpty(t *testing.T) {
+	t.Parallel()
 	d, _ := open(t)
 
 	snap, err := d.SnapshotDavLocks(context.Background(), nil, 0)
@@ -187,6 +192,7 @@ func TestAnEmptySnapshotIsEmpty(t *testing.T) {
 // Many targets in one share read that share's locks once rather than per
 // target, so a large COPY does not scan the table once per endpoint.
 func TestOneSharesLocksAreReadOnce(t *testing.T) {
+	t.Parallel()
 	d, _ := open(t)
 	ctx := context.Background()
 	seedUser(t, d, 1, "a")

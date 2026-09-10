@@ -40,6 +40,7 @@ func whirlpoolVectors() []struct {
 }
 
 func TestWhirlpoolVectors(t *testing.T) {
+	t.Parallel()
 	for _, v := range whirlpoolVectors() {
 		h := newWhirlpool()
 		if _, err := h.Write([]byte(v.msg)); err != nil {
@@ -62,6 +63,7 @@ func TestWhirlpoolVectors(t *testing.T) {
 // 64. The expected digest is the same OpenSSL-generated vector Botan
 // carries for this message hashed in one piece.
 func TestWhirlpoolAwkwardWrites(t *testing.T) {
+	t.Parallel()
 	msg := strings.Repeat("abcdefghijklmnopqrstuvwxyz", 4) // 104 bytes.
 	const want = "9fe4affe44e3d16d4e6109a252aeaf3fbd46f8a402a5cdc10eee48b6f64be2deee2b9ee62ea5c037236cea0b71cb1909a421672ca23662558cd7d98ccbd820ec"
 
@@ -107,6 +109,7 @@ func mustWrite(t *testing.T, w io.Writer, p []byte) {
 }
 
 func TestWhirlpoolInterface(t *testing.T) {
+	t.Parallel()
 	h := newWhirlpool()
 	if h.Size() != 64 {
 		t.Errorf("Size() = %d, want 64", h.Size())
@@ -121,6 +124,7 @@ func TestWhirlpoolInterface(t *testing.T) {
 // bytes, and a caller may keep writing afterward as though Sum had never
 // run.
 func TestWhirlpoolSumIsIdempotent(t *testing.T) {
+	t.Parallel()
 	h := newWhirlpool()
 	mustWrite(t, h, []byte("some data"))
 	first := h.Sum(nil)
@@ -148,6 +152,7 @@ func TestWhirlpoolSumIsIdempotent(t *testing.T) {
 // similar: hashing "abc" after writing and resetting must match hashing
 // "abc" from a fresh instance.
 func TestWhirlpoolReset(t *testing.T) {
+	t.Parallel()
 	h := newWhirlpool()
 	mustWrite(t, h, []byte("this gets discarded"))
 	h.Reset()
@@ -172,6 +177,7 @@ func TestWhirlpoolReset(t *testing.T) {
 // HMAC both need instead: the same inputs always derive the same key, and
 // changing any one input changes it.
 func TestWhirlpoolPBKDF2Stable(t *testing.T) {
+	t.Parallel()
 	salt := []byte("a-salt-value")
 	key1, err := pbkdf2.Key(newWhirlpool, "password", salt, 1, 64)
 	if err != nil {
@@ -219,6 +225,7 @@ func TestWhirlpoolPBKDF2Stable(t *testing.T) {
 // Reset, hashing B must agree with two independent instances each hashing
 // one message.
 func TestWhirlpoolHMACReuse(t *testing.T) {
+	t.Parallel()
 	key := []byte("an-hmac-key")
 
 	shared := hmac.New(newWhirlpool, key)

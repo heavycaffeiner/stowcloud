@@ -8,6 +8,7 @@ import (
 )
 
 func TestNewInstanceIDIs32HexCharacters(t *testing.T) {
+	t.Parallel()
 	id, err := NewInstanceID()
 	if err != nil {
 		t.Fatalf("NewInstanceID: %v", err)
@@ -26,6 +27,7 @@ func TestNewInstanceIDIs32HexCharacters(t *testing.T) {
 }
 
 func TestTwoInstanceIDsDiffer(t *testing.T) {
+	t.Parallel()
 	a, err := NewInstanceID()
 	if err != nil {
 		t.Fatalf("NewInstanceID: %v", err)
@@ -43,6 +45,7 @@ func TestTwoInstanceIDsDiffer(t *testing.T) {
 // where a core.ShareID is wanted with no conversion. A defined type would
 // refuse both calls below, which is what the alias exists to avoid.
 func TestShareIDIsTheVFSShareID(t *testing.T) {
+	t.Parallel()
 	takesCore := func(id ShareID) uint32 { return uint32(id) }
 	takesVFS := func(id vfs.ShareID) uint32 { return uint32(id) }
 

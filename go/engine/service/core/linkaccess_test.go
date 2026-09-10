@@ -33,6 +33,7 @@ func folderLink(t *testing.T, perms acl.Perms) (c *Core, host string, link Link)
 }
 
 func TestLinkBrowseListsDirectoriesFirstWithRealSizes(t *testing.T) {
+	t.Parallel()
 	c, _, link := folderLink(t, acl.Read|acl.Download)
 
 	got, err := c.LinkBrowse(context.Background(), link, "")
@@ -61,6 +62,7 @@ func TestLinkBrowseListsDirectoriesFirstWithRealSizes(t *testing.T) {
 }
 
 func TestLinkBrowseRefusesEveryPathOutsideTheLinkedFolder(t *testing.T) {
+	t.Parallel()
 	c, _, link := folderLink(t, acl.Read|acl.Download)
 	ctx := context.Background()
 
@@ -78,6 +80,7 @@ func TestLinkBrowseRefusesEveryPathOutsideTheLinkedFolder(t *testing.T) {
 }
 
 func TestAFileLinkBrowsesAsItselfWithNoEntries(t *testing.T) {
+	t.Parallel()
 	c, _, host, root, _ := linkable(t)
 	writeFile(t, host, "note.txt", "body")
 	link := mustLink(t, c, at(t, root, "note.txt"), acl.Read|acl.Download)
@@ -97,6 +100,7 @@ func TestAFileLinkBrowsesAsItselfWithNoEntries(t *testing.T) {
 }
 
 func TestBrowseSeparatesADeadBaseFromAMissingSubpath(t *testing.T) {
+	t.Parallel()
 	c, _, link := folderLink(t, acl.Read|acl.Download)
 	ctx := context.Background()
 
@@ -112,6 +116,7 @@ func TestBrowseSeparatesADeadBaseFromAMissingSubpath(t *testing.T) {
 }
 
 func TestLinkStreamAtReadsBeneathAFolderLink(t *testing.T) {
+	t.Parallel()
 	c, _, link := folderLink(t, acl.Read|acl.Download)
 	ctx := context.Background()
 
@@ -137,6 +142,7 @@ func TestLinkStreamAtReadsBeneathAFolderLink(t *testing.T) {
 }
 
 func TestLinkArchiveWalkReadsEveryFileWithNoUser(t *testing.T) {
+	t.Parallel()
 	c, host, link := folderLink(t, acl.Read|acl.Download)
 	ctx := context.Background()
 
@@ -172,6 +178,7 @@ func TestLinkArchiveWalkReadsEveryFileWithNoUser(t *testing.T) {
 }
 
 func TestAnArchiveWalkSurvivesASubtreeThatVanishes(t *testing.T) {
+	t.Parallel()
 	c, host, link := folderLink(t, acl.Read|acl.Download)
 	ctx := context.Background()
 	// Unreadable, so the descent into it fails the way a vanished directory
@@ -200,6 +207,7 @@ func TestAnArchiveWalkSurvivesASubtreeThatVanishes(t *testing.T) {
 }
 
 func TestLinkResolvedCarriesTheLinksOwnPermissions(t *testing.T) {
+	t.Parallel()
 	c, _, link := folderLink(t, acl.Read|acl.Download)
 
 	r, err := c.LinkResolved(link, "inner")
@@ -215,9 +223,11 @@ func TestLinkResolvedCarriesTheLinksOwnPermissions(t *testing.T) {
 }
 
 func TestLinkDropRefusesWithoutCreateAndSuffixesATakenName(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("without create", func(t *testing.T) {
+		t.Parallel()
 		c, _, link := folderLink(t, acl.Read|acl.Download)
 		if _, err := c.LinkDrop(ctx, link, "x.txt", []byte("x")); !errors.Is(err, ErrDenied) {
 			t.Fatalf("dropping through a read link returned %v, want ErrDenied", err)
@@ -225,6 +235,7 @@ func TestLinkDropRefusesWithoutCreateAndSuffixesATakenName(t *testing.T) {
 	})
 
 	t.Run("a taken name keeps both", func(t *testing.T) {
+		t.Parallel()
 		c, host, link := folderLink(t, acl.Create)
 		if _, err := c.LinkDrop(ctx, link, "a.txt", []byte("dropped")); err != nil {
 			t.Fatalf("LinkDrop: %v", err)
@@ -241,6 +252,7 @@ func TestLinkDropRefusesWithoutCreateAndSuffixesATakenName(t *testing.T) {
 }
 
 func TestLinkDropFileRefusesATakenNameAndDoesNotWidenTheLink(t *testing.T) {
+	t.Parallel()
 	c, host, link := folderLink(t, acl.Create)
 	ctx := context.Background()
 
@@ -270,6 +282,7 @@ func TestLinkDropFileRefusesATakenNameAndDoesNotWidenTheLink(t *testing.T) {
 }
 
 func TestADeadLinkRefusesEveryBearerSurface(t *testing.T) {
+	t.Parallel()
 	c, _, link := folderLink(t, acl.Read|acl.Download|acl.Create)
 	ctx := context.Background()
 	// The base is renamed, so the identity cross-check fails everywhere.

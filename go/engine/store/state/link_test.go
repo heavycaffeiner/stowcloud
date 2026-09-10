@@ -26,6 +26,7 @@ func seedLinkOwner(t *testing.T, d *state.DB) int64 {
 }
 
 func TestLinkRoundTripsEveryColumn(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	owner := seedLinkOwner(t, d)
@@ -83,6 +84,7 @@ func TestLinkRoundTripsEveryColumn(t *testing.T) {
 // A link against a share root carries no pin and no optional column, and
 // every nullable one has to come back nil rather than zero.
 func TestALinkWithNoOptionalColumnsRoundTrips(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	owner := seedLinkOwner(t, d)
@@ -125,6 +127,7 @@ func TestALinkWithNoOptionalColumnsRoundTrips(t *testing.T) {
 }
 
 func TestByHashFindsTheSameRowAsByID(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	owner := seedLinkOwner(t, d)
@@ -148,6 +151,7 @@ func TestByHashFindsTheSameRowAsByID(t *testing.T) {
 // Nothing matching is (row, false, nil): mapping that to a not-found error
 // belongs one layer up.
 func TestAMissingLinkIsNotAnError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 
@@ -160,6 +164,7 @@ func TestAMissingLinkIsNotAnError(t *testing.T) {
 }
 
 func TestListByOwnerIsScopedAndOrdered(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 1, "one")
@@ -201,6 +206,7 @@ func TestListByOwnerIsScopedAndOrdered(t *testing.T) {
 // The ownership check and the delete are one statement, so the two cannot
 // disagree about who owns the row.
 func TestDeleteRequiresBothIDAndOwner(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 1, "one")
@@ -232,6 +238,7 @@ func TestDeleteRequiresBothIDAndOwner(t *testing.T) {
 // The cap check and the increment are one statement, so a cap of one admits
 // exactly one download however many callers race for it.
 func TestConsumeDownloadHonorsTheCapUnderConcurrency(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	owner := seedLinkOwner(t, d)
@@ -282,6 +289,7 @@ func TestConsumeDownloadHonorsTheCapUnderConcurrency(t *testing.T) {
 // An uncapped link never refuses, and a gone row reads the same as a reached
 // cap: the caller disambiguates with ByID.
 func TestConsumeDownloadWithoutACapAndOnAMissingRow(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	owner := seedLinkOwner(t, d)
@@ -304,6 +312,7 @@ func TestConsumeDownloadWithoutACapAndOnAMissingRow(t *testing.T) {
 }
 
 func TestPasswordHashReadsOneColumn(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	owner := seedLinkOwner(t, d)
@@ -342,6 +351,7 @@ func TestPasswordHashReadsOneColumn(t *testing.T) {
 
 // An outer nil leaves the column, an inner nil sets it NULL.
 func TestUpdateAppliesOnlyThePresentFields(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	owner := seedLinkOwner(t, d)
@@ -402,6 +412,7 @@ func TestUpdateAppliesOnlyThePresentFields(t *testing.T) {
 // than match a file it was never made against. The schema refuses to store
 // one, and the scan refuses to interpret one.
 func TestAPartialPinCannotBeStored(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedLinkOwner(t, d)
@@ -434,6 +445,7 @@ func TestAPartialPinCannotBeStored(t *testing.T) {
 // The migration's precondition names the offending link, because a
 // constraint failure names the constraint and an operator needs the row.
 func TestTheMigrationRefusesAMalformedPinByName(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "state.db")
 
@@ -476,6 +488,7 @@ func TestTheMigrationRefusesAMalformedPinByName(t *testing.T) {
 // A deployment that has never sealed a token has no row, which is version
 // zero rather than an error.
 func TestKeyVersionDefaultsToZero(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 
@@ -504,6 +517,7 @@ func TestKeyVersionDefaultsToZero(t *testing.T) {
 // A stored value that no longer fits is a corrupt row, which is worth saying
 // rather than truncating into a different set of permissions.
 func TestAStoredValueThatDoesNotFitErrorsTheRead(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	seedLinkOwner(t, d)
@@ -524,6 +538,7 @@ func TestAStoredValueThatDoesNotFitErrorsTheRead(t *testing.T) {
 
 // Deleting the owner takes their links with it.
 func TestDeletingTheOwnerCascadesToTheirLinks(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	owner := seedLinkOwner(t, d)

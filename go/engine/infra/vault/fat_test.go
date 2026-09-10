@@ -81,6 +81,7 @@ func newTestFS(t *testing.T, sizeBytes int64) (*FS, Device) {
 const testVolumeSize = 64 << 20
 
 func TestFormatAndMount(t *testing.T) {
+	t.Parallel()
 	fsys, _ := newTestFS(t, testVolumeSize)
 	total, free := fsys.Space()
 	if total == 0 {
@@ -95,6 +96,7 @@ func TestFormatAndMount(t *testing.T) {
 }
 
 func TestCreateFileAndReadBack(t *testing.T) {
+	t.Parallel()
 	fsys, _ := newTestFS(t, testVolumeSize)
 	p := mustPath(t, "hello.txt")
 	if err := fsys.CreateFile(p); err != nil {
@@ -121,6 +123,7 @@ func TestCreateFileAndReadBack(t *testing.T) {
 }
 
 func TestNestedDirectories(t *testing.T) {
+	t.Parallel()
 	fsys, _ := newTestFS(t, testVolumeSize)
 	a := mustPath(t, "a")
 	ab := mustPath(t, "a/b")
@@ -151,6 +154,7 @@ func TestNestedDirectories(t *testing.T) {
 }
 
 func TestTruncateShorterAndLonger(t *testing.T) {
+	t.Parallel()
 	fsys, _ := newTestFS(t, testVolumeSize)
 	p := mustPath(t, "grow.bin")
 	if err := fsys.CreateFile(p); err != nil {
@@ -205,6 +209,7 @@ func TestTruncateShorterAndLonger(t *testing.T) {
 }
 
 func TestDeleteFreesClusters(t *testing.T) {
+	t.Parallel()
 	fsys, _ := newTestFS(t, testVolumeSize)
 	p := mustPath(t, "big.bin")
 	if err := fsys.CreateFile(p); err != nil {
@@ -236,6 +241,7 @@ func TestDeleteFreesClusters(t *testing.T) {
 }
 
 func TestRenameAcrossDirectories(t *testing.T) {
+	t.Parallel()
 	fsys, _ := newTestFS(t, testVolumeSize)
 	srcDir := mustPath(t, "src")
 	dstDir := mustPath(t, "dst")
@@ -270,6 +276,7 @@ func TestRenameAcrossDirectories(t *testing.T) {
 }
 
 func TestRmdirRefusesNonEmpty(t *testing.T) {
+	t.Parallel()
 	fsys, _ := newTestFS(t, testVolumeSize)
 	dir := mustPath(t, "occupied")
 	if err := fsys.Mkdir(dir); err != nil {
@@ -290,6 +297,7 @@ func TestRmdirRefusesNonEmpty(t *testing.T) {
 }
 
 func TestLongFileNameRoundTrip(t *testing.T) {
+	t.Parallel()
 	fsys, _ := newTestFS(t, testVolumeSize)
 	names := []string{
 		"a fairly long file name with spaces.txt",
@@ -318,6 +326,7 @@ func TestLongFileNameRoundTrip(t *testing.T) {
 }
 
 func TestRefusesUnencodableName(t *testing.T) {
+	t.Parallel()
 	fsys, _ := newTestFS(t, testVolumeSize)
 	bad := []string{"has*star.txt", "has?question.txt", "pipe|char.txt", string(rune(0x1F600)) + ".txt"}
 	for _, name := range bad {
@@ -334,6 +343,7 @@ func TestRefusesUnencodableName(t *testing.T) {
 }
 
 func TestShortNameUniqueness(t *testing.T) {
+	t.Parallel()
 	fsys, _ := newTestFS(t, testVolumeSize)
 	for i := range 12 {
 		name := "REPORT VERSION " + string(rune('A'+i)) + ".TXT"
@@ -375,6 +385,7 @@ func TestShortNameUniqueness(t *testing.T) {
 // rest of the product keys a link or a cache row on: store/cache's own
 // collision test exists because this class of bug already happened once.
 func TestEmptyFilesGetDistinctInodes(t *testing.T) {
+	t.Parallel()
 	fsys, _ := newTestFS(t, testVolumeSize)
 	a := mustPath(t, "empty-a.txt")
 	b := mustPath(t, "empty-b.txt")
@@ -415,6 +426,7 @@ func TestEmptyFilesGetDistinctInodes(t *testing.T) {
 // touches, so it must survive the move; an empty file has no such
 // guarantee, since it owns no cluster to begin with.
 func TestFileKeepsInodeAcrossRename(t *testing.T) {
+	t.Parallel()
 	fsys, _ := newTestFS(t, testVolumeSize)
 	from := mustPath(t, "before.bin")
 	to := mustPath(t, "after.bin")
@@ -609,10 +621,12 @@ func testFAT1216ReadWriteDeleteExtend(t *testing.T, kind fatKind, sizeBytes int6
 }
 
 func TestFAT12ReadWriteDeleteExtend(t *testing.T) {
+	t.Parallel()
 	testFAT1216ReadWriteDeleteExtend(t, fat12, 1<<20, 224)
 }
 
 func TestFAT16ReadWriteDeleteExtend(t *testing.T) {
+	t.Parallel()
 	testFAT1216ReadWriteDeleteExtend(t, fat16, 16<<20, 512)
 }
 
@@ -670,9 +684,15 @@ func testFAT1216FixedRootFillsUp(t *testing.T, kind fatKind) {
 	}
 }
 
-func TestFAT12FixedRootFillsUp(t *testing.T) { testFAT1216FixedRootFillsUp(t, fat12) }
+func TestFAT12FixedRootFillsUp(t *testing.T) {
+	t.Parallel()
+	testFAT1216FixedRootFillsUp(t, fat12)
+}
 
-func TestFAT16FixedRootFillsUp(t *testing.T) { testFAT1216FixedRootFillsUp(t, fat16) }
+func TestFAT16FixedRootFillsUp(t *testing.T) {
+	t.Parallel()
+	testFAT1216FixedRootFillsUp(t, fat16)
+}
 
 // testRealFormatterImage formats an image with the real mkfs.vfat, the only
 // thing that proves this driver's BPB parse against a formatter other than
@@ -736,10 +756,12 @@ func testRealFormatterImage(t *testing.T, wantKind fatKind, fatBits int, blocks 
 }
 
 func TestFAT12RealFormatterImage(t *testing.T) {
+	t.Parallel()
 	testRealFormatterImage(t, fat12, 12, 1024) // 1024 * 1024 bytes = 1 MiB
 }
 
 func TestFAT16RealFormatterImage(t *testing.T) {
+	t.Parallel()
 	testRealFormatterImage(t, fat16, 16, 16384) // 16384 * 1024 bytes = 16 MiB
 }
 

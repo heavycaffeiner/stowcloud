@@ -124,6 +124,7 @@ func TestConcurrentExclusiveLocksAdmitExactlyOne(t *testing.T) {
 // So the property is read off the source. AdmitDavLock calls Write once, and
 // the conflict scan, the count and the insert are all inside that one call.
 func TestAdmissionIsOneTransaction(t *testing.T) {
+	t.Parallel()
 	src := filepath.Join("davlock.go")
 
 	fset := token.NewFileSet()
@@ -198,6 +199,7 @@ func calleeName(call *ast.CallExpr) string {
 // blanket refusal of any second lock, this would fail, so the two tests
 // together show the conflict rule and not just a lock counter.
 func TestConcurrentSharedLocksAllCoexist(t *testing.T) {
+	t.Parallel()
 	d, _ := open(t)
 	ctx := context.Background()
 
@@ -248,6 +250,7 @@ func TestConcurrentSharedLocksAllCoexist(t *testing.T) {
 
 // The conflict matrix, over one database rather than the predicate alone.
 func TestTheLockConflictMatrixOverTheDatabase(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name       string
 		heldScope  int64
@@ -289,6 +292,7 @@ func TestTheLockConflictMatrixOverTheDatabase(t *testing.T) {
 // depth-infinity lock is blocked by a descendant, and a prefix that is not a
 // path boundary blocks nothing.
 func TestWhatALockCovers(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name      string
 		heldPath  string
@@ -335,6 +339,7 @@ func TestWhatALockCovers(t *testing.T) {
 // An expired lock blocks nothing, even before the periodic sweep runs. A
 // deadline that passed is not a lock anyone is relying on.
 func TestAnExpiredLockDoesNotBlock(t *testing.T) {
+	t.Parallel()
 	d, _ := open(t)
 	ctx := context.Background()
 	seedUser(t, d, 1, "a")
@@ -364,6 +369,7 @@ func TestAnExpiredLockDoesNotBlock(t *testing.T) {
 // A lock in another share does not block one here. Shares are separate trees
 // and a path string means nothing across them.
 func TestALockInAnotherShareDoesNotBlock(t *testing.T) {
+	t.Parallel()
 	d, _ := open(t)
 	ctx := context.Background()
 	seedUser(t, d, 1, "a")

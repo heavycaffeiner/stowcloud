@@ -135,6 +135,7 @@ func checkDataSize(t *testing.T, name string, got, want uint64) {
 // way createContainer's own round trip cannot, since createContainer only
 // ever exercises PBKDF2-HMAC-SHA-512.
 func TestInteropHashMatrix(t *testing.T) {
+	t.Parallel()
 	dir := interopFixturesDir(t)
 	cases := []struct{ name, hash, token string }{
 		{"hash_sha512", "sha-512", "sha512"},
@@ -145,6 +146,7 @@ func TestInteropHashMatrix(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			dev, dataSize, fsys := openInteropFixture(t, dir, c.name, interopPassword, 0, c.token)
 			defer closeInteropFixture(t, c.name, dev)
 			assertMarker(t, c.name, fsys, fmt.Sprintf("interop fixture %s AES %s", c.name, c.hash))
@@ -160,6 +162,7 @@ func TestInteropHashMatrix(t *testing.T) {
 // order the way the cascade's own Decrypt does) but produces garbage FAT
 // content, which the marker comparison below catches.
 func TestInteropCipherMatrix(t *testing.T) {
+	t.Parallel()
 	dir := interopFixturesDir(t)
 	ciphers := []string{
 		"Serpent", "Twofish", "Camellia", "Kuznyechik",
@@ -170,6 +173,7 @@ func TestInteropCipherMatrix(t *testing.T) {
 	for _, cipher := range ciphers {
 		name := "cipher_" + fixtureSlug(cipher)
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			dev, dataSize, fsys := openInteropFixture(t, dir, name, interopPassword, 0, "sha512")
 			defer closeInteropFixture(t, name, dev)
 			assertMarker(t, name, fsys, fmt.Sprintf("interop fixture %s %s sha-512", name, cipher))
@@ -200,6 +204,7 @@ func fixtureSlug(cipher string) string {
 // from a wrong password, so this is the one case createContainer's own
 // tests (which never pass a PIM) cannot reach at all.
 func TestInteropPIM(t *testing.T) {
+	t.Parallel()
 	dir := interopFixturesDir(t)
 	const pim = 20
 	dev, dataSize, fsys := openInteropFixture(t, dir, "pim", interopPassword, pim, "sha512")
@@ -215,6 +220,7 @@ func TestInteropPIM(t *testing.T) {
 // nearly-empty FAT volume actually allocates, so it never touches the
 // marker file or the filesystem metadata this test reads.
 func TestInteropDynamic(t *testing.T) {
+	t.Parallel()
 	dir := interopFixturesDir(t)
 	dev, dataSize, fsys := openInteropFixture(t, dir, "dynamic", interopPassword, 0, "sha512")
 	defer closeInteropFixture(t, "dynamic", dev)
@@ -237,11 +243,13 @@ func TestInteropDynamic(t *testing.T) {
 // by generate.sh against the same two password constants used below) is
 // unaffected by that swap and is the assertion that matters.
 func TestInteropHidden(t *testing.T) {
+	t.Parallel()
 	dir := interopFixturesDir(t)
 	wantOuter := uint64(interopHiddenOuterSize) - 2*headerGroupSize
 	wantHidden := uint64(interopStandardSize) - headerGroupSize
 
 	t.Run("outer_marker_password", func(t *testing.T) {
+		t.Parallel()
 		dev, dataSize, fsys := openInteropFixture(t, dir, "hidden", interopPassword, 0, "sha512")
 		defer closeInteropFixture(t, "hidden(outer marker)", dev)
 		assertMarker(t, "hidden(outer marker)", fsys, "interop fixture hidden outer AES sha-512")
@@ -249,6 +257,7 @@ func TestInteropHidden(t *testing.T) {
 	})
 
 	t.Run("inner_marker_password", func(t *testing.T) {
+		t.Parallel()
 		dev, dataSize, fsys := openInteropFixture(t, dir, "hidden", interopHiddenPassword, 0, "sha512")
 		defer closeInteropFixture(t, "hidden(inner marker)", dev)
 		assertMarker(t, "hidden(inner marker)", fsys, "interop fixture hidden inner AES sha-512")

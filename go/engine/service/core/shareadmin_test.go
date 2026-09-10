@@ -15,6 +15,7 @@ import (
 )
 
 func TestTheIdSchemeRoundTripsAndReservesTheHomeId(t *testing.T) {
+	t.Parallel()
 	for _, rowid := range []int64{1, 2, 4096, 1_000_000} {
 		id, err := shareIDOf(rowid)
 		if err != nil {
@@ -41,6 +42,7 @@ func TestTheIdSchemeRoundTripsAndReservesTheHomeId(t *testing.T) {
 }
 
 func TestCreateShareMintsDurablyAndRefusesADuplicateName(t *testing.T) {
+	t.Parallel()
 	c, st := newCore(t)
 	ctx := context.Background()
 	host := t.TempDir()
@@ -74,6 +76,7 @@ func TestCreateShareMintsDurablyAndRefusesADuplicateName(t *testing.T) {
 // would leave every grant, share link and cached identity naming data that
 // is no longer there.
 func TestUpdateShareRefusesABackendChange(t *testing.T) {
+	t.Parallel()
 	c, _ := newCore(t)
 	ctx := context.Background()
 
@@ -105,6 +108,7 @@ func TestUpdateShareRefusesABackendChange(t *testing.T) {
 }
 
 func TestAShareThatWillNotRegisterLeavesNoDanglingRow(t *testing.T) {
+	t.Parallel()
 	c, st := newCore(t)
 	ctx := context.Background()
 
@@ -147,6 +151,7 @@ func TestAShareThatWillNotRegisterLeavesNoDanglingRow(t *testing.T) {
 // rather than folding it into the generic "unreadable". A truly absent
 // path still reports "missing", proving the new case did not swallow it.
 func TestCreateShareNamesASandboxRefusalApartFromAMissingPath(t *testing.T) {
+	t.Parallel()
 	if os.Geteuid() == 0 {
 		t.Skip("root bypasses the mode bit this test depends on")
 	}
@@ -185,6 +190,7 @@ func TestCreateShareNamesASandboxRefusalApartFromAMissingPath(t *testing.T) {
 }
 
 func TestUpdateShareAppliesOnlyThePatchedFields(t *testing.T) {
+	t.Parallel()
 	c, st := newCore(t)
 	ctx := context.Background()
 	created, err := c.CreateShare(ctx, ShareSpec{Name: "documents", Host: t.TempDir()})
@@ -227,6 +233,7 @@ func TestUpdateShareAppliesOnlyThePatchedFields(t *testing.T) {
 // listing under it answered unavailable, and Retry re-ran the same rejected
 // definition. Only guessing which edit broke it undid the damage.
 func TestUpdateSharePutsAServingShareBackWhenTheEditIsRefused(t *testing.T) {
+	t.Parallel()
 	c, st := newCore(t)
 	ctx := context.Background()
 	host := t.TempDir()
@@ -266,6 +273,7 @@ func TestUpdateSharePutsAServingShareBackWhenTheEditIsRefused(t *testing.T) {
 // There is nothing working to protect, and dropping the edit would hide the
 // attempt that was meant to fix it.
 func TestUpdateShareKeepsTheEditWhenTheShareWasAlreadyBroken(t *testing.T) {
+	t.Parallel()
 	c, _ := newCore(t)
 	ctx := context.Background()
 	host := filepath.Join(t.TempDir(), "never-there")
@@ -296,6 +304,7 @@ func TestUpdateShareKeepsTheEditWhenTheShareWasAlreadyBroken(t *testing.T) {
 // the failed restore has to fall through to the broken state rather than
 // pretend the share is still serving.
 func TestUpdateShareLeavesTheShareBrokenWhenItCannotBePutBack(t *testing.T) {
+	t.Parallel()
 	c, _ := newCore(t)
 	ctx := context.Background()
 	host := t.TempDir()
@@ -327,6 +336,7 @@ func TestUpdateShareLeavesTheShareBrokenWhenItCannotBePutBack(t *testing.T) {
 }
 
 func TestRetryShareHealsAFixedPathAndRefusesAStillBrokenOne(t *testing.T) {
+	t.Parallel()
 	c, _ := newCore(t)
 	ctx := context.Background()
 	host := filepath.Join(t.TempDir(), "later")
@@ -373,6 +383,7 @@ func TestRetryShareHealsAFixedPathAndRefusesAStillBrokenOne(t *testing.T) {
 }
 
 func TestDeleteShareRemovesTheRowTheEntryAndItsGrants(t *testing.T) {
+	t.Parallel()
 	c, st := newCore(t)
 	ctx := context.Background()
 	seedUser(t, st, 1, "ada")
@@ -407,6 +418,7 @@ func TestDeleteShareRemovesTheRowTheEntryAndItsGrants(t *testing.T) {
 }
 
 func TestDeleteShareWorksOnABrokenShare(t *testing.T) {
+	t.Parallel()
 	c, st := newCore(t)
 	ctx := context.Background()
 	created, err := c.CreateShare(ctx, ShareSpec{Name: "documents", Host: t.TempDir()})
@@ -427,6 +439,7 @@ func TestDeleteShareWorksOnABrokenShare(t *testing.T) {
 }
 
 func TestReloadPersistedSharesLandsOnTheSameIds(t *testing.T) {
+	t.Parallel()
 	c, st := newCore(t)
 	ctx := context.Background()
 	host := t.TempDir()
@@ -455,6 +468,7 @@ func TestReloadPersistedSharesLandsOnTheSameIds(t *testing.T) {
 }
 
 func TestReloadReportsABrokenShareAndKeepsTheRestServing(t *testing.T) {
+	t.Parallel()
 	c, st := newCore(t)
 	ctx := context.Background()
 	good, err := c.CreateShare(ctx, ShareSpec{Name: "good", Host: t.TempDir()})
@@ -495,6 +509,7 @@ func TestReloadReportsABrokenShareAndKeepsTheRestServing(t *testing.T) {
 }
 
 func TestAnUnreadableSymlinkPolicyFallsToTheStrictest(t *testing.T) {
+	t.Parallel()
 	c, st := newCore(t)
 	ctx := context.Background()
 	host := t.TempDir()
@@ -528,6 +543,7 @@ func TestAnUnreadableSymlinkPolicyFallsToTheStrictest(t *testing.T) {
 }
 
 func TestScanSourcesCoverEveryShareAndNarrowPerEntry(t *testing.T) {
+	t.Parallel()
 	c, st, host, _ := writable(t)
 	ctx := context.Background()
 	_ = ctx
@@ -561,6 +577,7 @@ func TestScanSourcesCoverEveryShareAndNarrowPerEntry(t *testing.T) {
 }
 
 func TestShareLabelAnswersFromTheGrantProjection(t *testing.T) {
+	t.Parallel()
 	c, st, _, _ := writable(t)
 	seedUser(t, st, 2, "bob")
 

@@ -7,6 +7,7 @@ import (
 )
 
 func TestParseSortKeyMapsTheNamedSpellings(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		in   string
 		want SortKey
@@ -30,6 +31,7 @@ func TestParseSortKeyMapsTheNamedSpellings(t *testing.T) {
 }
 
 func TestNeedsStatIsTrueForExactlyTheTwoStatKeys(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		key  SortKey
@@ -52,6 +54,7 @@ func TestNeedsStatIsTrueForExactlyTheTwoStatKeys(t *testing.T) {
 // The zero ListOptions is what every caller that does not care passes, and
 // it has to mean the cheap listing: by name, ascending, one default page.
 func TestTheZeroListOptionsIsTheDefaultListing(t *testing.T) {
+	t.Parallel()
 	var opt ListOptions
 	if opt.Sort != SortName {
 		t.Fatalf("the zero ListOptions sorts by %d, want SortName", opt.Sort)
@@ -70,6 +73,7 @@ func TestTheZeroListOptionsIsTheDefaultListing(t *testing.T) {
 // The empty cursor is the first page, which is what makes the zero value a
 // usable argument rather than an error.
 func TestTheZeroCursorIsTheFirstPage(t *testing.T) {
+	t.Parallel()
 	var cur Cursor
 	if cur != "" {
 		t.Fatalf("the zero Cursor is %q, want empty", cur)
@@ -77,6 +81,7 @@ func TestTheZeroCursorIsTheFirstPage(t *testing.T) {
 }
 
 func TestPageSizeCeilingIsAboveTheDefault(t *testing.T) {
+	t.Parallel()
 	if pageSize != 200 {
 		t.Fatalf("pageSize = %d, want 200", pageSize)
 	}
@@ -92,6 +97,7 @@ func TestPageSizeCeilingIsAboveTheDefault(t *testing.T) {
 // built in the listing step, so the invariant is asserted here over every
 // kind the VFS defines.
 func TestIsDirIsExactlyKindIsDirForEveryKind(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []vfs.Kind{vfs.KindOther, vfs.KindFile, vfs.KindDir, vfs.KindSymlink} {
 		e := Entry{Kind: kind, IsDir: kind.IsDir()}
 		if e.IsDir != (e.Kind == vfs.KindDir) {
@@ -101,6 +107,7 @@ func TestIsDirIsExactlyKindIsDirForEveryKind(t *testing.T) {
 }
 
 func TestASymlinkIsNeverADirectory(t *testing.T) {
+	t.Parallel()
 	e := Entry{Kind: vfs.KindSymlink, IsDir: vfs.KindSymlink.IsDir()}
 	if e.IsDir {
 		t.Fatal("a symlink reported itself a directory; under the default policy it cannot be entered")
@@ -110,6 +117,7 @@ func TestASymlinkIsNeverADirectory(t *testing.T) {
 // BTimeNs is a pointer so that "this filesystem reports no birth time" is a
 // different fact from "the birth time is the epoch".
 func TestEntryTellsAnAbsentBirthTimeFromAnEpochOne(t *testing.T) {
+	t.Parallel()
 	epoch := int64(0)
 	absent := Entry{}
 	present := Entry{BTimeNs: &epoch}

@@ -38,6 +38,7 @@ func mustDecodeBlock(t *testing.T, s string) [kuznyechikBlockSize]byte {
 // worked example, not just the encryption result: a key schedule bug that
 // happens to still round-trip a block would pass a ciphertext-only check.
 func TestKuznyechikRoundKeys(t *testing.T) {
+	t.Parallel()
 	roundKeysHex := [kuznyechikRounds]string{
 		"8899aabbccddeeff0011223344556677",
 		"fedcba98765432100123456789abcdef",
@@ -72,6 +73,7 @@ func TestKuznyechikRoundKeys(t *testing.T) {
 // TestKuznyechikEncryptDecryptVector checks the encryption and decryption
 // results from RFC 7801's own worked example.
 func TestKuznyechikEncryptDecryptVector(t *testing.T) {
+	t.Parallel()
 	key := mustDecodeHex(t, kuznyechikTestKeyHex)
 	blk, err := newKuznyechikCipher(key)
 	if err != nil {
@@ -95,6 +97,7 @@ func TestKuznyechikEncryptDecryptVector(t *testing.T) {
 }
 
 func TestKuznyechikBlockSize(t *testing.T) {
+	t.Parallel()
 	key := mustDecodeHex(t, kuznyechikTestKeyHex)
 	blk, err := newKuznyechikCipher(key)
 	if err != nil {
@@ -108,6 +111,7 @@ func TestKuznyechikBlockSize(t *testing.T) {
 // TestKuznyechikRejectsBadKeySize checks that every key length other than
 // 32 is refused, and that the error names the length actually received.
 func TestKuznyechikRejectsBadKeySize(t *testing.T) {
+	t.Parallel()
 	for _, n := range []int{0, 1, 16, 24, 31, 33, 64} {
 		_, err := newKuznyechikCipher(make([]byte, n))
 		if err == nil {
@@ -129,6 +133,7 @@ func TestKuznyechikRejectsBadKeySize(t *testing.T) {
 // the expensive part (it fills two 64 KiB tables) while encrypting a block
 // is not.
 func TestKuznyechikRoundTripRandom(t *testing.T) {
+	t.Parallel()
 	const keyTrials = 5
 	const blocksPerKey = 100
 	for keyTrial := range keyTrials {

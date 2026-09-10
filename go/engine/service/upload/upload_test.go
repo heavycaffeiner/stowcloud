@@ -197,6 +197,7 @@ func itoa(n int) string { return strconv.Itoa(n) }
 // the secrecy argument behind that error does not apply: the caller has already
 // resolved a capability for this path.
 func TestACreateIntoAMissingDirectorySaysSo(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 
 	total := uint64(4)
@@ -215,6 +216,7 @@ func TestACreateIntoAMissingDirectorySaysSo(t *testing.T) {
 // An unknown session still reports as one, so the split above did not widen
 // into the case that deliberately keeps its answer vague.
 func TestAnUnknownSessionStillReportsAsNotFound(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 
 	var missing SessionID

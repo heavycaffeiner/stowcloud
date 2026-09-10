@@ -17,6 +17,7 @@ import (
 
 // An expired session takes its part file with it.
 func TestTheSweepCollectsAnExpiredSession(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	s := f.create(t, "abandoned.bin", uint64(limits.UploadChunkFloor), SessionSpec{})
@@ -48,6 +49,7 @@ func TestTheSweepCollectsAnExpiredSession(t *testing.T) {
 // the sweep walks the directories a part file was ever created in rather than
 // the live sessions.
 func TestTheSweepCollectsAnOrphanedPartFileAfterTheGracePeriod(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	s := f.create(t, "orphan.bin", uint64(limits.UploadChunkFloor), SessionSpec{})
@@ -77,6 +79,7 @@ func TestTheSweepCollectsAnOrphanedPartFileAfterTheGracePeriod(t *testing.T) {
 
 // A spool directory with no row is the same debt in directory form.
 func TestTheSweepCollectsAnOrphanedSpoolDirectory(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	s := f.create(t, "named.bin", uint64(limits.UploadChunkFloor*2), SessionSpec{Mode: SpoolNameOrdered})
@@ -105,6 +108,7 @@ func TestTheSweepCollectsAnOrphanedSpoolDirectory(t *testing.T) {
 
 // A live session's part file is never taken, however long the sweep runs.
 func TestTheSweepNeverTakesALiveSessionsFiles(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	s := f.create(t, "live.bin", uint64(limits.UploadChunkFloor), SessionSpec{})

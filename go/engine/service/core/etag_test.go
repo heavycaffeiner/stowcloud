@@ -19,6 +19,7 @@ func baseStat() vfs.Stat {
 }
 
 func TestFileETagIsDeterministic(t *testing.T) {
+	t.Parallel()
 	first, weak := FileETag(baseStat())
 	second, _ := FileETag(baseStat())
 	if first != second {
@@ -30,6 +31,7 @@ func TestFileETagIsDeterministic(t *testing.T) {
 }
 
 func TestFileETagIs32LowercaseHexCharacters(t *testing.T) {
+	t.Parallel()
 	token, _ := FileETag(baseStat())
 	if len(token) != 2*etagBytes {
 		t.Fatalf("token %q is %d characters, want %d", token, len(token), 2*etagBytes)
@@ -45,6 +47,7 @@ func TestFileETagIs32LowercaseHexCharacters(t *testing.T) {
 }
 
 func TestFileETagChangesWithEveryHashedField(t *testing.T) {
+	t.Parallel()
 	otherCtime := int64(1_700_000_000_000_000_001)
 	cases := []struct {
 		name  string
@@ -73,6 +76,7 @@ func TestFileETagChangesWithEveryHashedField(t *testing.T) {
 // ctime is in the input. Without it a moved file and an untouched one carry
 // the same token.
 func TestFileETagSeesAMoveThatLeftMtimeAlone(t *testing.T) {
+	t.Parallel()
 	before := baseStat()
 	after := baseStat()
 	moved := *before.CtimeNs + 1_000_000
@@ -89,6 +93,7 @@ func TestFileETagSeesAMoveThatLeftMtimeAlone(t *testing.T) {
 }
 
 func TestFileETagFoldsANilCtimeIntoZero(t *testing.T) {
+	t.Parallel()
 	zero := int64(0)
 	withNil := baseStat()
 	withNil.CtimeNs = nil
@@ -103,6 +108,7 @@ func TestFileETagFoldsANilCtimeIntoZero(t *testing.T) {
 }
 
 func TestFileETagAcceptsATimestampBeforeTheEpoch(t *testing.T) {
+	t.Parallel()
 	negative := int64(-1)
 	st := baseStat()
 	st.MtimeNs = -1_000
@@ -120,6 +126,7 @@ func TestFileETagAcceptsATimestampBeforeTheEpoch(t *testing.T) {
 // The identity fields alone decide the token when nothing else differs, so
 // two different files never share one.
 func TestFileETagSeparatesTwoFilesOnTheSameDevice(t *testing.T) {
+	t.Parallel()
 	a := baseStat()
 	b := baseStat()
 	b.Ino = a.Ino + 1
@@ -131,6 +138,7 @@ func TestFileETagSeparatesTwoFilesOnTheSameDevice(t *testing.T) {
 // The encoders write eight bytes each and nothing overlaps: a value moved
 // from one field to the next has to change the token.
 func TestFileETagFieldsDoNotAlias(t *testing.T) {
+	t.Parallel()
 	inDev := baseStat()
 	inDev.Dev, inDev.Ino = 1, 0
 	inIno := baseStat()
@@ -141,6 +149,7 @@ func TestFileETagFieldsDoNotAlias(t *testing.T) {
 }
 
 func TestPutUint64WritesLittleEndian(t *testing.T) {
+	t.Parallel()
 	var buf [8]byte
 	putUint64(buf[:], 0x0102030405060708)
 	want := [8]byte{0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01}
@@ -150,6 +159,7 @@ func TestPutUint64WritesLittleEndian(t *testing.T) {
 }
 
 func TestPutInt64WritesTheBitPattern(t *testing.T) {
+	t.Parallel()
 	var buf [8]byte
 	putInt64(buf[:], -1)
 	want := [8]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}

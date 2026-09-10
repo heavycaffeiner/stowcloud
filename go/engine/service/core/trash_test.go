@@ -56,6 +56,7 @@ func trashNames(t *testing.T, hostDir string) []string {
 }
 
 func TestEncodingRoundTripsEveryOriginPath(t *testing.T) {
+	t.Parallel()
 	for _, raw := range []string{
 		"report.pdf",
 		"docs/2024/report.pdf",
@@ -76,6 +77,7 @@ func TestEncodingRoundTripsEveryOriginPath(t *testing.T) {
 }
 
 func TestDecodeReportsNotOkForAnythingItDidNotWrite(t *testing.T) {
+	t.Parallel()
 	// A legacy entry carries a bare basename, which is exactly how it is
 	// recognised.
 	if _, ok := decodeOrigPath("report.pdf"); ok {
@@ -92,6 +94,7 @@ func TestDecodeReportsNotOkForAnythingItDidNotWrite(t *testing.T) {
 }
 
 func TestSplitTrashNameCutsOnTheFirstDash(t *testing.T) {
+	t.Parallel()
 	// The encoded half may hold dashes; the hex id never can, so the first
 	// dash is always the right cut.
 	id, rest, ok := splitTrashName("0011aabb-ZG9jcy0yMDI0")
@@ -111,6 +114,7 @@ func TestSplitTrashNameCutsOnTheFirstDash(t *testing.T) {
 }
 
 func TestHexLowerIsLowercaseAndDashFree(t *testing.T) {
+	t.Parallel()
 	got := hexLower([]byte{0x00, 0x0f, 0xa5, 0xff, 0x10})
 	if got != "000fa5ff10" {
 		t.Fatalf("hexLower rendered %q", got)
@@ -125,6 +129,7 @@ func TestHexLowerIsLowercaseAndDashFree(t *testing.T) {
 }
 
 func TestDeleteOnATrashEnabledShareRelocates(t *testing.T) {
+	t.Parallel()
 	c, _, hostDir, root := trashable(t)
 	sink := attachSink(t, c)
 	if err := os.MkdirAll(filepath.Join(hostDir, "docs/2024"), 0o755); err != nil {
@@ -165,6 +170,7 @@ func TestDeleteOnATrashEnabledShareRelocates(t *testing.T) {
 }
 
 func TestTwoDeletesOfOnePathCoexist(t *testing.T) {
+	t.Parallel()
 	c, _, hostDir, _ := trashable(t)
 	ctx := context.Background()
 	for range 2 {
@@ -180,6 +186,7 @@ func TestTwoDeletesOfOnePathCoexist(t *testing.T) {
 }
 
 func TestPermanentAndDisabledDeletesRemoveForGood(t *testing.T) {
+	t.Parallel()
 	c, _, hostDir, _ := trashable(t)
 	sink := attachSink(t, c)
 	writeFile(t, hostDir, "bypass.txt", "0123456789")
@@ -212,6 +219,7 @@ func TestPermanentAndDisabledDeletesRemoveForGood(t *testing.T) {
 }
 
 func TestTrashListReportsWhatWasDeleted(t *testing.T) {
+	t.Parallel()
 	c, _, hostDir, root := trashable(t)
 	ctx := context.Background()
 
@@ -298,6 +306,7 @@ func TestTrashListReportsWhatWasDeleted(t *testing.T) {
 }
 
 func TestTrashRestorePutsAnEntryBack(t *testing.T) {
+	t.Parallel()
 	c, _, hostDir, root := trashable(t)
 	ctx := context.Background()
 	if err := os.MkdirAll(filepath.Join(hostDir, "docs/2024"), 0o755); err != nil {
@@ -332,6 +341,7 @@ func TestTrashRestorePutsAnEntryBack(t *testing.T) {
 }
 
 func TestTrashRestoreRefusesToOverwriteAndToInvent(t *testing.T) {
+	t.Parallel()
 	c, st, hostDir, root := trashable(t)
 	ctx := context.Background()
 	writeFile(t, hostDir, "note.txt", "old")
@@ -373,6 +383,7 @@ func TestTrashRestoreRefusesToOverwriteAndToInvent(t *testing.T) {
 }
 
 func TestALegacyEntryRestoresToTheShareRoot(t *testing.T) {
+	t.Parallel()
 	c, _, hostDir, root := trashable(t)
 	ctx := context.Background()
 	// Force the trash directory into existence through the ordinary path.
@@ -398,6 +409,7 @@ func TestALegacyEntryRestoresToTheShareRoot(t *testing.T) {
 }
 
 func TestTrashPurgeRemovesAndCredits(t *testing.T) {
+	t.Parallel()
 	c, _, hostDir, root := trashable(t)
 	ctx := context.Background()
 	sink := attachSink(t, c)
@@ -450,6 +462,7 @@ func TestTrashPurgeRemovesAndCredits(t *testing.T) {
 }
 
 func TestTrashPurgeOnAnUntouchedShareSucceeds(t *testing.T) {
+	t.Parallel()
 	c, _, _, root := trashable(t)
 	if err := c.TrashPurge(context.Background(), root, nil); err != nil {
 		t.Fatalf("purging a share with no trash directory: %v", err)
@@ -457,6 +470,7 @@ func TestTrashPurgeOnAnUntouchedShareSucceeds(t *testing.T) {
 }
 
 func TestRestoreAndPurgeRefuseADisabledShare(t *testing.T) {
+	t.Parallel()
 	c, _, hostDir, root := trashable(t)
 	ctx := context.Background()
 	writeFile(t, hostDir, "note.txt", "x")
@@ -493,6 +507,7 @@ func TestRestoreAndPurgeRefuseADisabledShare(t *testing.T) {
 }
 
 func TestCtimeOrMtimeFallsBackToTheMtime(t *testing.T) {
+	t.Parallel()
 	ctime := int64(42)
 	if got := ctimeOrMtime(vfs.Stat{MtimeNs: 7, CtimeNs: &ctime}); got != 42 {
 		t.Fatalf("with a ctime present the answer is %d, want the ctime", got)

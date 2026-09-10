@@ -26,6 +26,7 @@ func seedNamedShare(t *testing.T, d *state.DB, name string) int64 {
 }
 
 func TestShareEncryptionRoundTripsTheVerifierByteForByte(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	share := seedNamedShare(t, d, "vault")
@@ -57,6 +58,7 @@ func TestShareEncryptionRoundTripsTheVerifierByteForByte(t *testing.T) {
 }
 
 func TestAnUnencryptedShareHasNoRowAndNoError(t *testing.T) {
+	t.Parallel()
 	d, _ := open(t)
 	share := seedNamedShare(t, d, "plain")
 	_, ok, err := d.ReadShareEncryption(context.Background(), share)
@@ -69,6 +71,7 @@ func TestAnUnencryptedShareHasNoRowAndNoError(t *testing.T) {
 }
 
 func TestWritingTwiceReplacesRatherThanFailing(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	share := seedNamedShare(t, d, "rotated")
@@ -94,6 +97,7 @@ func TestWritingTwiceReplacesRatherThanFailing(t *testing.T) {
 }
 
 func TestListingAnswersEveryEncryptedShareOrdered(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	a := seedNamedShare(t, d, "a")
@@ -120,6 +124,7 @@ func TestListingAnswersEveryEncryptedShareOrdered(t *testing.T) {
 }
 
 func TestDeletingSettingsLeavesTheShareItself(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	share := seedNamedShare(t, d, "doomed")
@@ -152,6 +157,7 @@ func TestDeletingSettingsLeavesTheShareItself(t *testing.T) {
 // Removing settings that are not there is not an error, so a delete path can
 // drop them without first asking whether any exist.
 func TestDeletingAbsentSettingsSucceeds(t *testing.T) {
+	t.Parallel()
 	d, _ := open(t)
 	if err := d.DeleteShareEncryption(context.Background(), 4242); err != nil {
 		t.Errorf("DeleteShareEncryption on an unencrypted share: %v", err)

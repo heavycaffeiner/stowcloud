@@ -39,6 +39,7 @@ func homeGrants(t *testing.T, st *state.DB) []state.GrantRow {
 }
 
 func TestEnableHomesRegistersTheReservedShareAndIsRepeatable(t *testing.T) {
+	t.Parallel()
 	c, _, host := homed(t)
 	ctx := context.Background()
 
@@ -88,6 +89,7 @@ func TestEnableHomesRegistersTheReservedShareAndIsRepeatable(t *testing.T) {
 // shell on the host, a mount over SMB, a backup listing. A directory called
 // "7" tells whoever is looking nothing about whose files are inside it.
 func TestAHomeIsNamedAfterItsAccount(t *testing.T) {
+	t.Parallel()
 	c, st := newCore(t)
 	seedUser(t, st, 7, "ada")
 	host := filepath.Join(t.TempDir(), "homes")
@@ -130,6 +132,7 @@ func TestAHomeIsNamedAfterItsAccount(t *testing.T) {
 // The home is what an account reaches its own files through, so losing it over
 // a name lookup would be a worse answer than an ugly directory name.
 func TestAHomeFallsBackToTheIDWhenTheNameIsUnavailable(t *testing.T) {
+	t.Parallel()
 	c, st := newCore(t)
 	seedUser(t, st, 7, "ada")
 	host := filepath.Join(t.TempDir(), "homes")
@@ -151,6 +154,7 @@ func TestAHomeFallsBackToTheIDWhenTheNameIsUnavailable(t *testing.T) {
 }
 
 func TestTheFirstEnsureHomeCreatesOneDirectoryAndOneScopedGrant(t *testing.T) {
+	t.Parallel()
 	c, st, host := homed(t)
 	ctx := context.Background()
 
@@ -186,6 +190,7 @@ func TestTheFirstEnsureHomeCreatesOneDirectoryAndOneScopedGrant(t *testing.T) {
 }
 
 func TestASecondEnsureHomeWritesNothing(t *testing.T) {
+	t.Parallel()
 	c, st, _ := homed(t)
 	ctx := context.Background()
 
@@ -201,6 +206,7 @@ func TestASecondEnsureHomeWritesNothing(t *testing.T) {
 }
 
 func TestConcurrentEnsureHomeProducesOneHome(t *testing.T) {
+	t.Parallel()
 	c, st, host := homed(t)
 	ctx := context.Background()
 
@@ -229,6 +235,7 @@ func TestConcurrentEnsureHomeProducesOneHome(t *testing.T) {
 }
 
 func TestANewHomeIsSeededFromTheTemplate(t *testing.T) {
+	t.Parallel()
 	c, _, host := homed(t)
 	ctx := context.Background()
 
@@ -252,6 +259,7 @@ func TestANewHomeIsSeededFromTheTemplate(t *testing.T) {
 }
 
 func TestOneUserCannotReachAnotherUsersHome(t *testing.T) {
+	t.Parallel()
 	c, st, host := homed(t)
 	ctx := context.Background()
 	seedUser(t, st, 2, "bob")
@@ -285,6 +293,7 @@ func TestOneUserCannotReachAnotherUsersHome(t *testing.T) {
 }
 
 func TestTheTemplateIsNotReachableAsAHome(t *testing.T) {
+	t.Parallel()
 	c, _, host := homed(t)
 	ctx := context.Background()
 	if err := os.MkdirAll(filepath.Join(host, templateName), 0o755); err != nil {
@@ -323,6 +332,7 @@ func TestTheTemplateIsNotReachableAsAHome(t *testing.T) {
 }
 
 func TestAHomeDirectoryWithNoGrantIsAdopted(t *testing.T) {
+	t.Parallel()
 	c, st, host := homed(t)
 	ctx := context.Background()
 
@@ -341,6 +351,7 @@ func TestAHomeDirectoryWithNoGrantIsAdopted(t *testing.T) {
 }
 
 func TestAFreshAccountSeesItsHomeInTheFirstRootListing(t *testing.T) {
+	t.Parallel()
 	c, st, host := homed(t)
 
 	// The listing is what a client draws as the top-level folder list, and
@@ -360,6 +371,7 @@ func TestAFreshAccountSeesItsHomeInTheFirstRootListing(t *testing.T) {
 }
 
 func TestHomesDisabledIsASilentNoOp(t *testing.T) {
+	t.Parallel()
 	c, st := newCore(t)
 	seedUser(t, st, 1, "ada")
 	if err := c.ensureHome(context.Background(), 1); err != nil {
@@ -374,6 +386,7 @@ func TestHomesDisabledIsASilentNoOp(t *testing.T) {
 }
 
 func TestAFailingHomeDoesNotBreakTheUsersOtherShares(t *testing.T) {
+	t.Parallel()
 	c, st, host := homed(t)
 	_, docsHost := share(t, c, 10, "documents")
 	grantAt(t, c, st, 1, 10, "", "Documents", acl.Read)
@@ -401,6 +414,7 @@ func TestAFailingHomeDoesNotBreakTheUsersOtherShares(t *testing.T) {
 }
 
 func TestPersistGrantRefusesAGrantNamingNeitherOrBoth(t *testing.T) {
+	t.Parallel()
 	_, st := newCore(t)
 	ctx := context.Background()
 	holder, group := int64(1), int64(2)
@@ -416,6 +430,7 @@ func TestPersistGrantRefusesAGrantNamingNeitherOrBoth(t *testing.T) {
 }
 
 func TestGrantWrappersReloadTheEvaluator(t *testing.T) {
+	t.Parallel()
 	c, st, host, _ := writable(t)
 	ctx := context.Background()
 	seedUser(t, st, 2, "bob")

@@ -24,6 +24,7 @@ type overrides interface {
 var _ overrides = (*state.DB)(nil)
 
 func TestNoOverrideIsNotAnError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 
@@ -39,6 +40,7 @@ func TestNoOverrideIsNotAnError(t *testing.T) {
 }
 
 func TestOverridesRoundTripBothDirections(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 
@@ -67,6 +69,7 @@ func TestOverridesRoundTripBothDirections(t *testing.T) {
 // An absent birth time and a zero one are different files, so they are
 // different rows.
 func TestOverridesKeepAbsentAndZeroBirthTimeApart(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 
@@ -96,6 +99,7 @@ func TestOverridesKeepAbsentAndZeroBirthTimeApart(t *testing.T) {
 // a different decision is refused rather than overwriting, because answering
 // a sync client with either value would be a guess.
 func TestARepeatedRecordIsFineAndAContradictionIsRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 
@@ -125,6 +129,7 @@ func TestARepeatedRecordIsFineAndAContradictionIsRefused(t *testing.T) {
 // The id column is UNIQUE, so a second identity claiming one id fails rather
 // than producing two answers to the same question.
 func TestTwoIdentitiesCannotClaimOneID(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 
@@ -141,6 +146,7 @@ func TestTwoIdentitiesCannotClaimOneID(t *testing.T) {
 // Both sides of a collision commit together, so a rebuild never sees half a
 // decision.
 func TestRecordingBothSidesIsOneTransaction(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 
@@ -164,6 +170,7 @@ func TestRecordingBothSidesIsOneTransaction(t *testing.T) {
 }
 
 func TestRecordingNothingIsANoOp(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 	if err := d.RecordFileIDs(ctx); err != nil {
@@ -175,6 +182,7 @@ func TestRecordingNothingIsANoOp(t *testing.T) {
 // against a table that is almost always empty, so a write has to invalidate
 // it rather than leaving a stale zero behind.
 func TestTheEmptyTableShortcutIsInvalidatedByAWrite(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	d, _ := open(t)
 

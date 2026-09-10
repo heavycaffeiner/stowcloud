@@ -14,6 +14,7 @@ import (
 // test vectors for Camellia, the same ones the Bouncy Castle and OpenSSL
 // test suites carry for this cipher.
 func TestCamelliaKnownAnswerVectors(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		key  string
@@ -42,6 +43,7 @@ func TestCamelliaKnownAnswerVectors(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			key, err := hex.DecodeString(tc.key)
 			if err != nil {
 				t.Fatalf("decode key: %v", err)
@@ -79,6 +81,7 @@ func TestCamelliaKnownAnswerVectors(t *testing.T) {
 }
 
 func TestCamelliaRejectsWrongKeyLength(t *testing.T) {
+	t.Parallel()
 	for _, n := range []int{0, 1, 16, 24, 31, 33, 64} {
 		_, err := newCamelliaCipher(make([]byte, n))
 		if err == nil {
@@ -92,6 +95,7 @@ func TestCamelliaRejectsWrongKeyLength(t *testing.T) {
 }
 
 func TestCamelliaRoundTripRandomBlocks(t *testing.T) {
+	t.Parallel()
 	key := make([]byte, 32)
 	if _, err := rand.Read(key); err != nil {
 		t.Fatalf("rand.Read key: %v", err)

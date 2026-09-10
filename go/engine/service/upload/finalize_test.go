@@ -17,6 +17,7 @@ import (
 // parse: a short one would compare against a truncation of the real digest
 // and pass.
 func TestChecksumParsing(t *testing.T) {
+	t.Parallel()
 	sum, err := Sum(AlgoCRC32C, []byte("hello"))
 	if err != nil {
 		t.Fatalf("Sum: %v", err)
@@ -49,6 +50,7 @@ func TestChecksumParsing(t *testing.T) {
 // Known answers, so a change to either algorithm is caught against a fixed
 // vector rather than against this tree's own arithmetic.
 func TestKnownDigests(t *testing.T) {
+	t.Parallel()
 	crc, err := Sum(AlgoCRC32C, []byte("123456789"))
 	if err != nil {
 		t.Fatalf("Sum: %v", err)
@@ -69,6 +71,7 @@ func TestKnownDigests(t *testing.T) {
 }
 
 func TestFinalizePublishesThroughTheCore(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	const chunk = limits.UploadChunkFloor
@@ -108,6 +111,7 @@ func TestFinalizePublishesThroughTheCore(t *testing.T) {
 // A session is bound to where it was created for. A finalize resolved
 // somewhere else is refused before anything is touched.
 func TestFinalizeRefusesAnotherDestinationBeforeAnyEffect(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	const chunk = limits.UploadChunkFloor
@@ -138,6 +142,7 @@ func TestFinalizeRefusesAnotherDestinationBeforeAnyEffect(t *testing.T) {
 // An incomplete set refuses and names the holes, so the client resends the
 // ranges rather than the file.
 func TestFinalizeRefusesHolesAndNamesThem(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	const chunk = limits.UploadChunkFloor
@@ -159,6 +164,7 @@ func TestFinalizeRefusesHolesAndNamesThem(t *testing.T) {
 // recoverable: the client knows whether to resend a range or start again, and
 // discarding its bytes here would decide that for it.
 func TestAFailedWholeFileVerificationLeavesTheSessionResumable(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	const chunk = limits.UploadChunkFloor
@@ -202,6 +208,7 @@ func TestAFailedWholeFileVerificationLeavesTheSessionResumable(t *testing.T) {
 }
 
 func TestAMatchingWholeFileDigestPublishes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	const chunk = limits.UploadChunkFloor
@@ -223,6 +230,7 @@ func TestAMatchingWholeFileDigestPublishes(t *testing.T) {
 // A finalizing session is not receiving, and the sweep leaves it alone: a
 // long assembly must not be collected halfway through its own publish.
 func TestAFinalizingSessionSurvivesTheSweep(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	const chunk = limits.UploadChunkFloor
@@ -256,6 +264,7 @@ func TestAFinalizingSessionSurvivesTheSweep(t *testing.T) {
 // The ladder: the compiled-in floor beats an administrator's override, which
 // beats the configuration seed, and a nil leaves that half alone.
 func TestTheSettingsLadder(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 
@@ -290,6 +299,7 @@ func TestTheSettingsLadder(t *testing.T) {
 // The per-account bounds refuse with the limit they refused on: "resource
 // exhausted" without the name is a refusal an operator cannot act on.
 func TestTheAccountSessionBoundRefusesByName(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 
@@ -310,6 +320,7 @@ func TestTheAccountSessionBoundRefusesByName(t *testing.T) {
 }
 
 func TestTheReservedBytesBoundRefusesByName(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 
