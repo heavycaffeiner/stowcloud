@@ -1,18 +1,22 @@
 //go:build linux
 
-// Search, streamed.
+// Search, streamed to the end.
 //
 // A walk of a large tree takes as long as it takes, so results arrive as they
 // are found rather than at the end: a client shows the first match while the
-// rest is still being looked for. The stream is committed only after the
-// query has been validated and the sources resolved, because after the first
-// byte there is no status left to refuse with.
+// rest is still being looked for. Nothing here shortens the answer. There is
+// no result ceiling and no walk deadline, because a stream has no second page
+// to ask for and a partial list nobody can extend is a wrong list.
+//
+// The stream is committed only after the query has been validated and the
+// sources resolved, because after the first byte there is no status left to
+// refuse with.
 package lifecycle
 
 import (
 	"bufio"
 	"context"
-	"strconv"
+	"errors"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -44,6 +48,21 @@ func (e *Engine) searchStream(c *fiber.Ctx) error {
 		return refuse(c, apierr.Classified{Class: apierr.LimitExceeded})
 	}
 
+	// A filter the server does not understand is refused rather than dropped.
+	// A client that asked for folders and was silently handed the whole tree
+	// would present that as the answer to the narrow question it asked.
+	kind, kok := search.ParseKind(c.Query("kind"))
+	exts, eok := search.ParseExts(c.Query("ext"))
+	if !kok || !eok {
+		return refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+	}
+	if kind == search.KindDir && len(exts) > 0 {
+		// Folders carry no extension, so this pair matches nothing anywhere.
+		// Answering it would walk every share to the end and report nothing,
+		// which reads to whoever asked as "there are none of those".
+		return refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+	}
+
 	// Permission-scoped, and resolved before commitment. Every source carries
 	// its own per-entry check, because a grant can begin partway down a tree
 	// and a share-level answer would either conceal a readable subtree or
@@ -58,9 +77,9 @@ func (e *Engine) searchStream(c *fiber.Ctx) error {
 
 	opt := svc.QueryOptions{
 		Query:        query,
-		Limit:        searchLimit(c.Query("limit")),
 		Scope:        c.Query("path"),
 		WithMetadata: c.Query("metadata") == "1",
+		Filter:       search.Filter{Kind: kind, Exts: exts},
 	}
 
 	// The headers the protocol needs, all of them before the first byte. The
@@ -90,6 +109,10 @@ func (e *Engine) searchStream(c *fiber.Ctx) error {
 const searchQueryMax = 512
 
 // writeSearchStream runs the query into a committed response.
+//
+// Every hit is written the moment the walk hands it over, and the walk stops
+// when the writes stop landing: a client that closed the tab is how an
+// unbounded search ends early.
 func (e *Engine) writeSearchStream(
 	ctx context.Context, cancel context.CancelFunc, w *bufio.Writer, sources []search.Source, opt svc.QueryOptions,
 ) {
@@ -102,33 +125,66 @@ func (e *Engine) writeSearchStream(
 		return
 	}
 
+	var (
+		count  int
+		broken bool
+	)
+	opt.Stream = func(hits []search.Hit) {
+		if broken {
+			return
+		}
+		for _, hit := range hits {
+			writeSSEEvent(w, "hit", handler.SearchHitViewOf(hit), e)
+			count++
+		}
+		if ferr := w.Flush(); ferr != nil {
+			// The reader is gone. Cancelling here is what keeps a walk of a
+			// whole tree from running on for a screen nobody is watching.
+			broken = true
+			cancel()
+		}
+	}
+
 	results, err := e.Search.Query(ctx, sources, opt)
+	if broken {
+		return
+	}
 	if err != nil {
 		// The status is spent, so the failure travels as the terminal event.
 		// Attempting a 500 here would write a status onto a response the
 		// client has already begun reading.
 		e.logger.Warn("a search failed after its stream was committed", "error", err)
-		writeSSEEvent(w, "done", map[string]string{"error": "search_failed"}, e)
+		writeSSEEvent(w, "done", map[string]any{"error": searchErrorName(err), "count": count}, e)
+		if ferr := w.Flush(); ferr != nil {
+			e.logger.Warn("flushing a search stream", "error", ferr)
+		}
 		return
 	}
 
-	view := handler.SearchResultsOf(results)
-	for _, hit := range view.Hits {
-		writeSSEEvent(w, "hit", hit, e)
-		if ferr := w.Flush(); ferr != nil {
-			cancel()
-			return
-		}
-	}
+	// Complete by construction: this route sets no limit and takes no
+	// deadline, so the only thing that ends a search early is the reader
+	// leaving, and that path never reaches here.
 	writeSSEEvent(w, "done", map[string]any{
-		"truncated": view.Truncated,
-		"tier":      view.Tier,
-		"deadline":  view.Deadline,
+		"count":      count,
+		"tier":       results.Tier.String(),
+		"elapsed_ms": results.Elapsed.Milliseconds(),
 	}, e)
 
 	if ferr := w.Flush(); ferr != nil {
 		e.logger.Warn("flushing a search stream", "error", ferr)
 	}
+}
+
+// searchErrorName is what a client is told went wrong.
+//
+// A busy engine is named apart from a failure: one is worth retrying in a
+// moment and the other is not, and a client showing "search failed" for a
+// queue that was momentarily full sends people looking for a broken server.
+func searchErrorName(err error) string {
+	if errors.Is(err, svc.ErrBusy) {
+		return "busy"
+	}
+	return "search_failed"
 }
 
 // writeSSEEvent writes one named event carrying a JSON payload.
@@ -194,18 +250,4 @@ func searchSourcesOf(scan []core.ScanSource, owner core.UserID, c *core.Core) []
 		})
 	}
 	return out
-}
-
-// searchLimit bounds how many hits one query returns.
-//
-// An unbounded limit is a walk that reports everything it finds, which for a
-// one-character query is the whole tree.
-func searchLimit(raw string) int {
-	const fallback, ceiling = 100, 1000
-
-	n, err := strconv.Atoi(raw)
-	if err != nil || n <= 0 {
-		return fallback
-	}
-	return min(n, ceiling)
 }

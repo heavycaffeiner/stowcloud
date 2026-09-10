@@ -174,6 +174,16 @@ type QueryOptions struct {
 	// WithMetadata resolves size and time for entries surviving the filter. A
 	// name-only query leaves it disabled.
 	WithMetadata bool
+	// Filter narrows what is reported. The zero value reports everything.
+	Filter search.Filter
+	// Stream receives hits as they are found, and changes what a query is: it
+	// runs to completion, with no result ceiling and no deadline, because a
+	// caller reading matches as they arrive has nothing to gain from being cut
+	// off partway. Results then carries no hits, they all went to the callback.
+	//
+	// Calls are serialised and block the walk, which is how a consumer that
+	// stops reading stops the search.
+	Stream func(hits []search.Hit)
 }
 
 // Results holds what a query produced.
@@ -195,12 +205,17 @@ type Results struct {
 
 // Query searches across the sources visible to the caller.
 //
-// The index answers unless it declines, in which case the walk does.
+// The index answers unless it declines or cannot, in which case the walk does.
 func (s *Service) Query(ctx context.Context, sources []search.Source, opt QueryOptions) (Results, error) {
 	if len(opt.Query) > limits.SearchQueryBytes {
 		return Results{}, limits.Exceed("search query", limits.SearchQueryBytes, int64(len(opt.Query)))
 	}
-	if opt.Limit <= 0 || opt.Limit > limits.SearchResults {
+	if opt.Stream != nil {
+		// A ceiling on a stream would be a "load more" the caller cannot ask
+		// for: the connection is already open and every further match is one
+		// more frame down it.
+		opt.Limit = 0
+	} else if opt.Limit <= 0 || opt.Limit > limits.SearchResults {
 		opt.Limit = limits.SearchResults
 	}
 
@@ -221,7 +236,7 @@ func (s *Service) Query(ctx context.Context, sources []search.Source, opt QueryO
 	start := s.clk.Now()
 	needle := search.FoldString(opt.Query)
 
-	if ix := s.index(); ix != nil {
+	if ix := s.index(); ix != nil && indexCanAnswer(opt) {
 		res, err := ix.Query([]byte(opt.Query), opt.Limit)
 		switch {
 		case err != nil:
@@ -239,7 +254,7 @@ func (s *Service) Query(ctx context.Context, sources []search.Source, opt QueryO
 			return Results{
 				Hits:      hits,
 				Tier:      TierIndex,
-				Truncated: len(res.Hits) >= opt.Limit,
+				Truncated: opt.Limit > 0 && len(res.Hits) >= opt.Limit,
 				Elapsed:   s.clk.Now().Sub(start),
 			}, nil
 		}
@@ -248,20 +263,32 @@ func (s *Service) Query(ctx context.Context, sources []search.Source, opt QueryO
 	return s.walk(ctx, sources, needle, opt, start)
 }
 
+// indexCanAnswer reports whether the index is allowed to answer this query.
+//
+// Two queries it cannot. Folders are never indexed, so a folders-only query
+// asked of the index comes back empty rather than short. And the index is a
+// cache that trails the filesystem: a file created since the updater last ran
+// is not in it, which a bounded query can live with and a streamed one, whose
+// whole promise is every match, cannot. Both walk.
+func indexCanAnswer(opt QueryOptions) bool {
+	return opt.Stream == nil && opt.Filter.Kind != search.KindDir
+}
+
 func (s *Service) walk(
 	ctx context.Context, sources []search.Source, needle []byte, opt QueryOptions, start time.Time,
 ) (Results, error) {
-	deadline := s.walkDeadline()
-	wctx, cancel := context.WithTimeout(ctx, deadline)
+	wctx, cancel := s.walkContext(ctx, opt)
 	defer cancel()
 
 	res, err := search.Walk(wctx, sources, search.WalkOptions{
 		Needle:       needle,
+		Filter:       opt.Filter,
 		Limit:        opt.Limit,
 		Scope:        opt.Scope,
 		Threads:      threadsFor(s.cpus),
 		WithMetadata: opt.WithMetadata,
 		NowNs:        s.clk.Now().UnixNano(),
+		Emit:         opt.Stream,
 	})
 	if err != nil {
 		// Cancellation by the caller is an error while the deadline is not, since
@@ -281,6 +308,19 @@ func (s *Service) walk(
 		Deadline:  wctx.Err() != nil && ctx.Err() == nil,
 		Elapsed:   s.clk.Now().Sub(start),
 	}, nil
+}
+
+// walkContext bounds the walk in time, except for a streamed one.
+//
+// The deadline exists to keep an interactive request from waiting on a whole
+// tree. A stream is not waiting: its first hits are already on the client's
+// screen, so cutting it off partway would discard the rest of an answer that
+// was arriving. The caller's own cancellation still stops it.
+func (s *Service) walkContext(ctx context.Context, opt QueryOptions) (context.Context, context.CancelFunc) {
+	if opt.Stream != nil {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, s.walkDeadline())
 }
 
 // pathUnder converts an index-stored path back into a validated path beneath the
@@ -313,6 +353,9 @@ func pathUnder(src search.Source, stored string) (vfs.SafePath, error) {
 // Only names live in the index. A hit becomes a result via a stat run after the
 // caller's permission check, and that stat serves as the staleness check too: an
 // entry for a file that no longer exists is dropped rather than returned.
+//
+// A streamed query never arrives here, since it walks, so this is the bounded
+// caller's path alone.
 func (s *Service) promote(
 	ctx context.Context, sources []search.Source, hits []index.Hit, opt QueryOptions,
 ) []search.Hit {
@@ -333,6 +376,11 @@ func (s *Service) promote(
 			// scoring.
 			continue
 		}
+		if len(opt.Filter.Exts) > 0 && !opt.Filter.Admits(h.Name, false) {
+			// Judged on the name the index already holds, before the stat: an
+			// extension filter is the one narrowing that costs no disk at all.
+			continue
+		}
 		p, err := pathUnder(src, h.Path)
 		if err != nil {
 			continue
@@ -345,6 +393,11 @@ func (s *Service) promote(
 		if serr != nil {
 			// The index is stale and the file has gone. Dropping it is
 			// revalidation doing its job.
+			continue
+		}
+		if !opt.Filter.Admits(h.Name, st.Kind.IsDir()) {
+			// The index holds files, but it holds yesterday's files: a name
+			// that is a folder today is judged on what it is now.
 			continue
 		}
 

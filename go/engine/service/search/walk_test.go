@@ -6,6 +6,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -375,5 +378,118 @@ func TestSourcesOfKeepsANilAllowNil(t *testing.T) {
 	got := SourcesOf([]core.ScanSource{{Share: 1, Root: src.Root, Base: vfs.RootPath()}})
 	if len(got) != 1 || got[0].Allow != nil {
 		t.Error("a nil Allow did not stay nil")
+	}
+}
+
+// The filter decides what is reported, never where the walk goes: the files
+// asked for live under the folders it excludes.
+func TestWalkFiltersWhatItReportsAndStillDescends(t *testing.T) {
+	src := corpus(t, 1, "a/deep/report.pdf", "a/report.txt", "a/", "reports/")
+
+	files, err := Walk(t.Context(), []Source{src}, WalkOptions{
+		Needle: FoldString("report"), Filter: Filter{Kind: KindFile},
+	})
+	if err != nil {
+		t.Fatalf("walk: %v", err)
+	}
+	if got := paths(files.Hits); len(got) != 2 || !has(files.Hits, "a/deep/report.pdf") {
+		t.Errorf("a files-only walk reported %v, want both files including the deep one", got)
+	}
+
+	dirs, err := Walk(t.Context(), []Source{src}, WalkOptions{
+		Needle: FoldString("report"), Filter: Filter{Kind: KindDir},
+	})
+	if err != nil {
+		t.Fatalf("walk: %v", err)
+	}
+	if got := paths(dirs.Hits); len(got) != 1 || got[0] != "reports" {
+		t.Errorf("a folders-only walk reported %v, want the one folder", got)
+	}
+
+	byExt, err := Walk(t.Context(), []Source{src}, WalkOptions{
+		Needle: FoldString("report"), Filter: Filter{Exts: []string{"pdf"}},
+	})
+	if err != nil {
+		t.Fatalf("walk: %v", err)
+	}
+	if got := paths(byExt.Hits); len(got) != 1 || got[0] != "a/deep/report.pdf" {
+		t.Errorf("an extension walk reported %v, want the one PDF", got)
+	}
+}
+
+// A streamed walk hands over every match and holds nothing back, which is
+// what makes a result list complete without a second request.
+func TestAStreamedWalkEmitsEveryMatchPastTheLimit(t *testing.T) {
+	names := make([]string, 0, 2_500)
+	for i := range 2_500 {
+		names = append(names, "d"+strconv.Itoa(i%50)+"/match-"+strconv.Itoa(i)+".txt")
+	}
+	src := corpus(t, 1, names...)
+
+	var (
+		mu   sync.Mutex
+		seen []string
+	)
+	res, err := Walk(t.Context(), []Source{src}, WalkOptions{
+		Needle:  FoldString("match-"),
+		Threads: 4,
+		// A ceiling a caller did state is still ignored: a stream has no
+		// second page, so cutting it would lose the rest for good.
+		Limit: 10,
+		Emit: func(hits []Hit) {
+			mu.Lock()
+			defer mu.Unlock()
+			seen = append(seen, paths(hits)...)
+		},
+	})
+	if err != nil {
+		t.Fatalf("walk: %v", err)
+	}
+	if len(seen) != len(names) {
+		t.Errorf("the stream carried %d hits, want %d", len(seen), len(names))
+	}
+	if len(res.Hits) != 0 || res.Truncated {
+		t.Errorf("a streamed walk also returned %d hits (truncated=%v)", len(res.Hits), res.Truncated)
+	}
+
+	// Against the collecting walk rather than against a count: a worker whose
+	// whole directory went missing and one that emitted a duplicate produce
+	// the same total, and neither is the same answer.
+	collected, cerr := Walk(t.Context(), []Source{src}, WalkOptions{
+		Needle: FoldString("match-"), Threads: 4, Limit: len(names) + 1,
+	})
+	if cerr != nil {
+		t.Fatalf("walk: %v", cerr)
+	}
+	slices.Sort(seen)
+	want := paths(collected.Hits)
+	slices.Sort(want)
+	if !slices.Equal(seen, want) {
+		t.Errorf("the streamed set differs from the collected one: %d vs %d paths", len(seen), len(want))
+	}
+}
+
+// A streamed hit carries the same metadata a collected one does. The stat
+// moved into the worker, and a size that only the non-streaming path reported
+// would leave a search result list with no sizes in it.
+func TestAStreamedHitCarriesItsMetadata(t *testing.T) {
+	src := corpus(t, 1, "sub/report.txt")
+
+	var got []Hit
+	if _, err := Walk(t.Context(), []Source{src}, WalkOptions{
+		Needle:       FoldString("report"),
+		WithMetadata: true,
+		Emit:         func(hits []Hit) { got = append(got, hits...) },
+	}); err != nil {
+		t.Fatalf("walk: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("the stream carried %d hits, want 1", len(got))
+	}
+	if got[0].Size == nil || *got[0].Size != 1 {
+		t.Errorf("the hit carries size %v, want the file's one byte", got[0].Size)
+	}
+	if got[0].MTimeNs == nil {
+		t.Error("the hit carries no modification time")
 	}
 }

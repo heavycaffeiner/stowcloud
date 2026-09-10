@@ -44,8 +44,12 @@ type Hit struct {
 type WalkOptions struct {
 	// Needle is the folded query.
 	Needle []byte
+	// Filter narrows which matched entries are reported. The zero value
+	// reports every one of them.
+	Filter Filter
 	// Limit bounds the result set. A truncated result declares itself rather than
-	// appearing complete.
+	// appearing complete. Ignored when Emit is set, since a caller reading hits
+	// as they are found has nothing for a ceiling to shorten.
 	Limit int
 	// Scope names the directory the caller is searching from, feeding the
 	// ranking's in-scope term.
@@ -58,6 +62,14 @@ type WalkOptions struct {
 	WithMetadata bool
 	// NowNs feeds the recency term.
 	NowNs int64
+	// Emit receives hits a directory at a time, as the walk finds them, and
+	// makes the walk unbounded: nothing is held back, sorted globally or cut.
+	// Calls are serialised, arrive from several goroutines over the run, and
+	// block the worker that made them, which is the backpressure a slow
+	// consumer applies to the walk.
+	//
+	// With Emit set, WalkResult carries the counters and no hits.
+	Emit func(hits []Hit)
 }
 
 // WalkResult holds what a walk produced.
@@ -125,8 +137,13 @@ func Walk(ctx context.Context, sources []Source, opt WalkOptions) (WalkResult, e
 		return WalkResult{}, err
 	}
 
+	if opt.Emit != nil {
+		// Every hit left through Emit already, one directory at a time, and
+		// the stat that a collecting walk defers ran there too.
+		return WalkResult{DirsVisited: w.dirs, EntriesSeen: w.entries}, nil
+	}
 	if opt.WithMetadata {
-		w.stat()
+		statAll(w.sources, w.pending)
 	}
 	return w.finish(), nil
 }
@@ -146,6 +163,11 @@ type walker struct {
 	dirs    int64
 	entries int64
 	dirSeq  uint64
+
+	// emitMu serialises the callback. It is not w.mu: a consumer writing to a
+	// socket must not hold the lock the queue is handed around under, or the
+	// walk would proceed one directory per network write.
+	emitMu sync.Mutex
 }
 
 // run empties the queue using a bounded pool.
@@ -263,7 +285,7 @@ func (w *walker) visit(j job) {
 		if isDir {
 			children = append(children, job{src: j.src, path: p, depth: j.depth + 1})
 		}
-		if matchesName(e.Name, w.opt.Needle) {
+		if matchesName(e.Name, w.opt.Needle) && w.opt.Filter.Admits(e.Name, isDir) {
 			matched = append(matched, pending{
 				src: j.src, ino: e.Ino, hasIno: e.Ino != 0,
 				dirSeq: dirSeq, entSeq: entSeq,
@@ -283,20 +305,26 @@ func (w *walker) visit(j job) {
 	w.mu.Lock()
 	w.entries += seen
 	w.queue = append(w.queue, children...)
-	w.pending = append(w.pending, matched...)
+	if w.opt.Emit == nil {
+		w.pending = append(w.pending, matched...)
+	}
 	w.mu.Unlock()
+
+	if w.opt.Emit != nil && len(matched) > 0 {
+		w.emit(matched)
+	}
 }
 
-// stat resolves size and time for entries that survived filtering.
+// statAll resolves size and time for entries that survived filtering.
 //
 // The batch is first sorted by device and inode. Filesystems allocate inodes in
 // increasing order, so requesting them that way keeps the disk seeking forward
 // and improves the odds that several arrive from a single block.
-func (w *walker) stat() {
-	sortForStat(w.pending)
-	for i := range w.pending {
-		p := &w.pending[i]
-		st, err := w.sources[p.src].Root.Stat(p.path)
+func statAll(sources []Source, batch []pending) {
+	sortForStat(batch)
+	for i := range batch {
+		p := &batch[i]
+		st, err := sources[p.src].Root.Stat(p.path)
 		if err != nil {
 			continue
 		}
@@ -308,10 +336,40 @@ func (w *walker) stat() {
 	}
 }
 
+// emit hands one directory's matches to the caller.
+//
+// The stat runs here rather than at the end, so a streamed hit carries the
+// same size and time a collected one does. Locality survives the change: the
+// entries of one directory are what a global sort would have grouped anyway.
+func (w *walker) emit(batch []pending) {
+	if w.opt.WithMetadata {
+		statAll(w.sources, batch)
+	}
+	hits := w.hitsOf(batch)
+	SortHits(hits)
+
+	w.emitMu.Lock()
+	defer w.emitMu.Unlock()
+	w.opt.Emit(hits)
+}
+
 func (w *walker) finish() WalkResult {
 	out := WalkResult{DirsVisited: w.dirs, EntriesSeen: w.entries}
-	hits := make([]Hit, 0, len(w.pending))
-	for _, p := range w.pending {
+	hits := w.hitsOf(w.pending)
+
+	SortHits(hits)
+	if len(hits) > w.opt.Limit {
+		hits = hits[:w.opt.Limit]
+		out.Truncated = true
+	}
+	out.Hits = hits
+	return out
+}
+
+// hitsOf scores a batch of matched entries.
+func (w *walker) hitsOf(batch []pending) []Hit {
+	hits := make([]Hit, 0, len(batch))
+	for _, p := range batch {
 		src := w.sources[p.src]
 		path := src.Prefix + p.path.String()
 		hits = append(hits, Hit{
@@ -331,14 +389,7 @@ func (w *walker) finish() WalkResult {
 			}),
 		})
 	}
-
-	SortHits(hits)
-	if len(hits) > w.opt.Limit {
-		hits = hits[:w.opt.Limit]
-		out.Truncated = true
-	}
-	out.Hits = hits
-	return out
+	return hits
 }
 
 // SortHits orders a result set: score first, then path, so a run with equal

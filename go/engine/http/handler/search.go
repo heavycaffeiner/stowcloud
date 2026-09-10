@@ -79,24 +79,30 @@ func SearchResultsOf(r svc.Results) SearchResultsView {
 	out.Complete = !r.Truncated && !r.Deadline
 
 	for _, h := range r.Hits {
-		v := SearchHitView{
-			Path:  h.Path,
-			Name:  h.Name,
-			IsDir: h.IsDir,
-			Share: strconv.FormatUint(uint64(h.Share), 10),
-			Score: h.Score,
-		}
-		if h.Size != nil {
-			s := strconv.FormatUint(*h.Size, 10)
-			v.Size = &s
-		}
-		if h.MTimeNs != nil {
-			m := strconv.FormatInt(*h.MTimeNs, 10)
-			v.MTimeNs = &m
-		}
-		out.Hits = append(out.Hits, v)
+		out.Hits = append(out.Hits, SearchHitViewOf(h))
 	}
 	return out
+}
+
+// SearchHitViewOf projects one hit, which is what a streamed answer sends one
+// frame at a time.
+func SearchHitViewOf(h search.Hit) SearchHitView {
+	v := SearchHitView{
+		Path:  h.Path,
+		Name:  h.Name,
+		IsDir: h.IsDir,
+		Share: strconv.FormatUint(uint64(h.Share), 10),
+		Score: h.Score,
+	}
+	if h.Size != nil {
+		s := strconv.FormatUint(*h.Size, 10)
+		v.Size = &s
+	}
+	if h.MTimeNs != nil {
+		m := strconv.FormatInt(*h.MTimeNs, 10)
+		v.MTimeNs = &m
+	}
+	return v
 }
 
 // fallbackName is the wire name of an index's reason for declining.

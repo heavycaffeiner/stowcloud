@@ -405,3 +405,39 @@ func TestSetIndexAttachesAndDetaches(t *testing.T) {
 		t.Error("SetIndex(nil) did not detach")
 	}
 }
+
+// A streamed query walks even with an index attached.
+//
+// The index trails the filesystem and holds no folders at all, so answering a
+// search that promises every match out of it would quietly drop both the file
+// created a minute ago and every folder that ever matched.
+func TestAStreamedQueryWalksPastTheIndex(t *testing.T) {
+	ix := newIndex(t)
+	svc := New(Options{Index: ix})
+	src, _ := corpus(t, 1, "reports/", "report.pdf", "report-new.pdf")
+
+	// The index knows one of the two files and neither folder, which is what
+	// an index that has not caught up looks like.
+	if err := ix.Append([]index.Entry{{Share: 1, Path: "report.pdf"}}); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+
+	var streamed []string
+	res, err := svc.Query(t.Context(), []search.Source{src}, QueryOptions{
+		Query:  "report",
+		Stream: func(hits []search.Hit) { streamed = append(streamed, hitPaths(hits)...) },
+	})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if res.Tier != TierWalk {
+		t.Errorf("a streamed query was answered by the %v tier", res.Tier)
+	}
+	if len(res.Hits) != 0 {
+		t.Errorf("a streamed query also returned %d hits", len(res.Hits))
+	}
+	slices.Sort(streamed)
+	if want := []string{"report-new.pdf", "report.pdf", "reports"}; !slices.Equal(streamed, want) {
+		t.Errorf("the stream carried %v, want %v", streamed, want)
+	}
+}

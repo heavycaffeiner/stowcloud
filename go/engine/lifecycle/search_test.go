@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -439,5 +441,120 @@ func TestAFileNameCannotSplitTheSearchStream(t *testing.T) {
 	}
 	if hits != 1 {
 		t.Errorf("%d hits for one file, want exactly 1", hits)
+	}
+}
+
+// hitNames reads the names off a stream, and the terminal event's own count.
+func hitNames(t *testing.T, events []sseEvent) (names []string, done map[string]any) {
+	t.Helper()
+	for _, e := range events {
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(e.data), &payload); err != nil {
+			t.Fatalf("decoding %q: %v", e.data, err)
+		}
+		switch e.name {
+		case "hit":
+			names = append(names, stringField(payload, "name"))
+		case "done":
+			done = payload
+		}
+	}
+	if done == nil {
+		t.Fatal("the stream never ended")
+	}
+	return names, done
+}
+
+// The search runs to the end. There is no ceiling to raise and no second page
+// to ask for, so a query matching more than the old thousand-result limit
+// reports every one of them.
+func TestASearchReportsEveryMatchWithNoCeiling(t *testing.T) {
+	base, sess, _, host := contentShareAt(t, everyPerm(), []byte("unused"))
+
+	const want = 2_400
+	for i := range want {
+		dir := filepath.Join(host, "d"+strconv.Itoa(i%40))
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "needle-"+strconv.Itoa(i)+".txt"), []byte("x"), 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+
+	_, _, events := readSSE(t, base+"/api/v1/search/stream?q=needle-", sess)
+	names, done := hitNames(t, events)
+
+	if len(names) != want {
+		t.Errorf("the stream carried %d hits, want %d: the answer was cut", len(names), want)
+	}
+	if count, ok := done["count"].(float64); !ok || int(count) != want {
+		t.Errorf("the terminal event counts %v, want %d", done["count"], want)
+	}
+	if _, present := done["error"]; present {
+		t.Errorf("the stream ended with %v", done["error"])
+	}
+	unique := map[string]bool{}
+	for _, n := range names {
+		if unique[n] {
+			t.Fatalf("%q arrived twice", n)
+		}
+		unique[n] = true
+	}
+}
+
+// The kind and extension filters are the client's, and they are answered
+// rather than approximated: a folder is not a file whose name happens to end
+// in one of the extensions asked for.
+func TestSearchFiltersByKindAndExtension(t *testing.T) {
+	base, sess, _, host := contentShareAt(t, everyPerm(), []byte("unused"))
+
+	if err := os.MkdirAll(filepath.Join(host, "target.txt"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	for _, name := range []string{"target.txt", "target.PDF", "target.bin", "target"} {
+		if err := os.WriteFile(filepath.Join(host, "f-"+name), []byte("x"), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+
+	for _, c := range []struct {
+		what  string
+		query string
+		want  []string
+	}{
+		{"everything", "?q=target", []string{"f-target", "f-target.PDF", "f-target.bin", "f-target.txt", "target.txt"}},
+		{"files only", "?q=target&kind=file", []string{"f-target", "f-target.PDF", "f-target.bin", "f-target.txt"}},
+		{"folders only", "?q=target&kind=dir", []string{"target.txt"}},
+		{"one extension", "?q=target&ext=pdf", []string{"f-target.PDF"}},
+		{"two extensions", "?q=target&ext=.PDF,bin", []string{"f-target.PDF", "f-target.bin"}},
+		{"an extension never takes a folder", "?q=target&ext=txt", []string{"f-target.txt"}},
+	} {
+		_, _, events := readSSE(t, base+"/api/v1/search/stream"+c.query, sess)
+		names, _ := hitNames(t, events)
+		sort.Strings(names)
+		if strings.Join(names, ",") != strings.Join(c.want, ",") {
+			t.Errorf("%s reported %v, want %v", c.what, names, c.want)
+		}
+	}
+}
+
+// A filter the server cannot honour is refused before the stream opens. A
+// dropped filter would answer a narrow question with the whole tree, and a
+// pair that can match nothing would walk every share to say so.
+func TestAnUnreadableSearchFilterIsRefused(t *testing.T) {
+	base, sess, _ := contentShare(t, everyPerm(), []byte("unused"))
+
+	for _, query := range []string{
+		"?q=x&kind=folder",
+		"?q=x&kind=FILE",
+		"?q=x&ext=" + strings.Repeat("a/b,", 2),
+		// Folders carry no extension, so this asks for what cannot exist.
+		"?q=x&kind=dir&ext=pdf",
+	} {
+		status, _, _ := readSSE(t, base+"/api/v1/search/stream"+query, sess)
+		if status != http.StatusUnprocessableEntity {
+			t.Errorf("%s answered %d, want 422", query, status)
+		}
 	}
 }
