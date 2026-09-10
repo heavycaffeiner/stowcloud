@@ -119,9 +119,11 @@ func ScanCorpus(ctx context.Context, sources []Source, opt ScanOptions) (ScanRes
 				}
 				if e.Kind.IsDir() {
 					stack = append(stack, child)
-					continue
 				}
 
+				// Folders are measured as well as descended into, because the
+				// build indexes their names too. Skipping them here sized the
+				// index against fewer names than it would hold.
 				out.Stats.Files++
 				folded = Fold([]byte(e.Name))
 				out.Stats.NameBytesTotal += uint64(len(folded))

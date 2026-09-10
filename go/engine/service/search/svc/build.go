@@ -40,7 +40,12 @@ var ErrNoIndex = errors.New("search: no index is open, so there is nothing to bu
 // BuildProgress reports on a build while it runs, so a lengthy one is observable
 // rather than appearing as a request that has yet to answer.
 type BuildProgress struct {
-	Files   uint64
+	// Files counts indexed names, folders among them, since a folder's name
+	// is indexed like a file's. It is also what the entry ceiling is
+	// measured against.
+	Files uint64
+	// Dirs counts directories read, which is a traversal cost rather than a
+	// count of what was indexed.
 	Dirs    uint64
 	Partial bool
 }

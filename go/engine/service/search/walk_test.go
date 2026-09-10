@@ -252,7 +252,8 @@ func TestWalkAppliesThePrefixToReportedPaths(t *testing.T) {
 }
 
 // The two walks agree on membership: they differ in cost by design, not in
-// which names they find.
+// which names they find. Folders count on both sides, since the index holds
+// their names and the estimate has to size it against them.
 func TestScanCorpusAndWalkAgreeOnMembership(t *testing.T) {
 	src := corpus(t, 1, "a.txt", "d/b.txt", "d/e/c.txt")
 
@@ -260,19 +261,13 @@ func TestScanCorpusAndWalkAgreeOnMembership(t *testing.T) {
 	if err != nil {
 		t.Fatalf("walk: %v", err)
 	}
-	var files uint64
-	for _, h := range walk.Hits {
-		if !h.IsDir {
-			files++
-		}
-	}
 
 	scan, err := ScanCorpus(t.Context(), []Source{src}, ScanOptions{})
 	if err != nil {
 		t.Fatalf("scan: %v", err)
 	}
-	if got := scan.Stats.Files; got != uint64(files) {
-		t.Errorf("the scan counted %d files and the walk found %d", got, files)
+	if got, want := scan.Stats.Files, uint64(len(walk.Hits)); got != want {
+		t.Errorf("the scan counted %d entries and the walk found %d: %v", got, want, paths(walk.Hits))
 	}
 	if scan.Stats.DistinctTrigramsEst == 0 {
 		t.Error("the scan measured no trigrams")
@@ -305,8 +300,10 @@ func TestBothWalksApplyTheSameAllow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("scan: %v", err)
 	}
-	if scan.Stats.Files != 1 {
-		t.Errorf("the scan counted %d files, want the one visible file", scan.Stats.Files)
+	// The visible file and the folder holding it; the refused pair is
+	// absent from both walks.
+	if scan.Stats.Files != 2 {
+		t.Errorf("the scan counted %d entries, want the visible folder and file", scan.Stats.Files)
 	}
 }
 
