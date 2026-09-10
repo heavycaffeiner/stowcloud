@@ -79,7 +79,7 @@ import {
   permsFromNames,
   permNamesOf
 } from './types'
-import type { ListOpts, SearchDone, SearchHit } from './mock'
+import type { ListOpts, SearchDone, SearchHit, SearchRequest } from './mock'
 import { normalizePath } from './path-utils'
 import { decryptDownload, encryptForUpload } from '../crypto/e2ee'
 import { encryptionForLabel, shareLabelOf } from '../crypto/encrypted-shares'
@@ -1920,7 +1920,9 @@ interface RawSearchHit {
   path: string
   name: string
   is_dir: boolean
-  size: number | null
+  /** Base 10, because a size past 2^53 loses digits as a JSON number. Absent
+   *  when the query never asked for metadata. */
+  size: string | null
   mtime_ns: string | null
   score: number
 }
@@ -1938,7 +1940,7 @@ function toSearchHit(raw: RawSearchHit): SearchHit {
       // from a result addresses the file by.
       path: normalizePath(raw.path),
       kind: raw.is_dir ? 'dir' : 'file',
-      size: raw.size ?? 0,
+      size: raw.size == null ? 0 : Number(raw.size),
       mtime_ns: raw.mtime_ns ?? '0',
       // A search hit carries no change token, so there is nothing to be exact
       // about and nothing here may be used for a conditional write.
@@ -1956,40 +1958,46 @@ function toSearchHit(raw: RawSearchHit): SearchHit {
 }
 
 /**
- * `GET /api/v1/search/stream`. The `done` event carries
- * `{truncated, tier, deadline}`.
+ * `GET /api/v1/search/stream`. Runs to the end: every match arrives as the
+ * server finds it, there is no page to ask for and no ceiling to hit, so the
+ * `done` event carries a count rather than a "there was more" flag.
  *
- * `truncated` means the limit cut the list; `deadline` means the walk ran out
- * of time. Both make what arrived a prefix rather than the answer, and the
- * second is how a share the walk could not finish, a container or a bucket
- * rather than a local folder, goes missing from a search that looks complete.
+ * `metadata=1` because the result list shows a size and a date; without it
+ * the server skips the stat and both are absent.
  */
-function searchStream(query: string, onHit: (hit: SearchHit) => void, onDone: (done: SearchDone) => void): () => void {
-  const es = new EventSource(`${BASE}/search/stream${qs({ q: query })}`, { withCredentials: true })
+function searchStream(req: SearchRequest, onHit: (hit: SearchHit) => void, onDone: (done: SearchDone) => void): () => void {
+  const exts = req.exts && req.exts.length > 0 ? req.exts.join(',') : undefined
+  const url = `${BASE}/search/stream${qs({ q: req.query, kind: req.kind, ext: exts, path: req.scope, metadata: '1' })}`
+  const es = new EventSource(url, { withCredentials: true })
+  let count = 0
+
   es.addEventListener('hit', (ev: MessageEvent) => {
+    count++
     onHit(toSearchHit(JSON.parse((ev as MessageEvent).data)))
   })
   es.addEventListener('done', (ev: MessageEvent) => {
-    let done: SearchDone = { truncated: false }
+    let done: SearchDone = { count }
     try {
-      const raw = JSON.parse(ev.data) as { truncated?: unknown; tier?: unknown; deadline?: unknown }
+      const raw = JSON.parse(ev.data) as { count?: unknown; tier?: unknown; elapsed_ms?: unknown; error?: unknown }
       done = {
-        truncated: raw.truncated === true,
-        deadline: raw.deadline === true,
-        tier: typeof raw.tier === 'string' ? raw.tier : undefined
+        // The server's own count is what the arriving hits are measured
+        // against: a difference between the two means frames were lost.
+        count: typeof raw.count === 'number' ? raw.count : count,
+        tier: typeof raw.tier === 'string' ? raw.tier : undefined,
+        elapsedMs: typeof raw.elapsed_ms === 'number' ? raw.elapsed_ms : undefined,
+        error: typeof raw.error === 'string' ? raw.error : undefined
       }
     } catch {
-      // A `done` with no parsable payload still ends the search. Reporting
-      // it as complete is the safe read: it claims less, not more.
+      // A `done` with no parsable payload still ends the search.
     }
     onDone(done)
     es.close()
   })
   es.onerror = () => {
     es.close()
-    // The stream broke rather than finished, so the result list is a prefix
-    // whatever the server would have said.
-    onDone({ truncated: true })
+    // The stream broke rather than finished, so what arrived is a prefix and
+    // the list says so instead of presenting itself as the whole answer.
+    onDone({ count, error: 'network' })
   }
   return () => es.close()
 }

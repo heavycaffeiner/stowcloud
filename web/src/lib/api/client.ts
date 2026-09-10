@@ -115,4 +115,4 @@ export type {
 } from './types'
 export { ALL_GRANT_PERMS, ALL_LOG_LEVELS } from './types'
 export { ApiError } from './types'
-export type { ListOpts, SearchHit } from './mock'
+export type { ListOpts, SearchDone, SearchHit, SearchRequest } from './mock'

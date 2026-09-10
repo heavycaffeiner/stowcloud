@@ -2805,35 +2805,70 @@ export interface SearchHit {
   entry: Entry
 }
 
-/** The `done` event of `GET /api/search/stream`.
+/** One search, filters included.
  *
- *  `truncated` says the limit cut the list; `deadline` says the walk ran out
- *  of time. Either way the hits that arrived are a prefix of the matches, and
- *  a share slow enough to exhaust the deadline (a container, a bucket) is
- *  missing from a result list that otherwise looks complete. */
-export interface SearchDone {
-  truncated: boolean
-  /** The walk hit its time limit rather than its result limit. */
-  deadline?: boolean
-  /** Which index tier answered, for a diagnostic. Absent when the stream
-   *  ended without a parsable payload. */
-  tier?: string
+ *  An absent `kind` or an empty `exts` narrows nothing. `scope` is the folder
+ *  the search was opened from: it ranks that subtree up, it does not confine
+ *  the search to it. */
+export interface SearchRequest {
+  query: string
+  kind?: 'file' | 'dir'
+  exts?: readonly string[]
+  scope?: string
 }
 
-function searchStream(query: string, onHit: (hit: SearchHit) => void, onDone: (done: SearchDone) => void): () => void {
+/** The `done` event of `GET /api/v1/search/stream`.
+ *
+ *  The search runs to the end, so there is nothing to page through and no
+ *  ceiling to report: `count` is how many hits the server sent, and `error`
+ *  is the only way a list is short. */
+export interface SearchDone {
+  count: number
+  /** Which tier answered, for a diagnostic. */
+  tier?: string
+  elapsedMs?: number
+  /** `busy` when the engine already had its hands full, `search_failed` when
+   *  the walk broke, `network` when the stream did. Absent on a search that
+   *  ran to the end. */
+  error?: string
+}
+
+/** The extension of a name, without the dot and lowercased. Mirrors the
+ *  server's own rule: a dotfile's leading dot is its name. */
+function extensionOf(name: string): string {
+  const i = name.lastIndexOf('.')
+  if (i <= 0 || i === name.length - 1) return ''
+  return name.slice(i + 1).toLowerCase()
+}
+
+function admits(req: SearchRequest, e: Entry): boolean {
+  const isDir = e.kind === 'dir'
+  if (req.kind === 'file' && isDir) return false
+  if (req.kind === 'dir' && !isDir) return false
+  if (!req.exts || req.exts.length === 0) return true
+  if (isDir) return false
+  return req.exts.includes(extensionOf(e.name))
+}
+
+function searchStream(req: SearchRequest, onHit: (hit: SearchHit) => void, onDone: (done: SearchDone) => void): () => void {
   let cancelled = false
-  const q = query.trim().toLowerCase()
+  let count = 0
+  const q = req.query.trim().toLowerCase()
+  const hit = (path: string, e: Entry): void => {
+    count++
+    onHit({ path, entry: e })
+  }
 
   async function run() {
     if (!q) {
-      onDone({ truncated: false })
+      onDone({ count: 0 })
       return
     }
     // Search small static dirs immediately.
     for (const dir of STATIC_SEED) {
       if (cancelled) return
       for (const e of resolveDirEntries(dir.path)) {
-        if (e.name.toLowerCase().includes(q)) onHit({ path: joinPath(dir.path, e.name), entry: e })
+        if (e.name.toLowerCase().includes(q) && admits(req, e)) hit(joinPath(dir.path, e.name), e)
       }
     }
     // Search /bench in yielding batches so we never block the main thread for long.
@@ -2844,11 +2879,11 @@ function searchStream(query: string, onHit: (hit: SearchHit) => void, onDone: (d
       for (let j = i; j < end; j++) {
         const e = benchEntryAt(j)
         if (isTombstoned(BENCH_DIR, e.name)) continue
-        if (e.name.toLowerCase().includes(q)) onHit({ path: joinPath(BENCH_DIR, e.name), entry: e })
+        if (e.name.toLowerCase().includes(q) && admits(req, e)) hit(joinPath(BENCH_DIR, e.name), e)
       }
       await delay(0)
     }
-    if (!cancelled) onDone({ truncated: false })
+    if (!cancelled) onDone({ count, tier: 'walk' })
   }
 
   run()

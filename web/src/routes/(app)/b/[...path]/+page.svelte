@@ -24,6 +24,7 @@
   import { jobTray } from '../../../../lib/store/jobs.store'
   import { selection } from '../../../../lib/store/selection.store'
   import { ui } from '../../../../lib/store/ui.store'
+  import { openSearch } from '../../../../lib/store/search.store'
   import { view } from '../../../../lib/store/view.store'
   import { addEntries, addFiles } from '../../../../lib/upload/queue'
   import { t } from '../../../../lib/i18n'
@@ -408,22 +409,9 @@
   let menuX = $state(0)
   let menuY = $state(0)
   let snackbarMsg = $state<string | null>(null)
-  let searchOpen = $state(false)
-  let searchQuery = $state('')
-  let searchResults = $state<{ path: string; entry: Entry }[]>([])
-  /** A query has actually been submitted (Enter), so an empty
-   *  `searchResults` means "nothing matched" rather than "not asked yet". */
-  let searchRan = $state(false)
-  // The server stopped the walk at its deadline, so what is listed is a
-  // prefix of the matches. Saying so beats a short list that reads complete.
-  let searchTruncated = $state(false)
-  /** The walk ran out of time, so a share it could not finish is missing. */
-  let searchDeadline = $state(false)
-  let searchInputEl: HTMLInputElement | undefined = $state()
   let fileInputEl: HTMLInputElement | undefined = $state()
   let dirInputEl: HTMLInputElement | undefined = $state()
   let dragOver = $state(false)
-  let searchCancel: (() => void) | null = null
   let shareOpen = $state(false)
   /** The entries the share and rename dialogs are pointed at, captured when
    *  the action starts. They are separate from `contextEntry` because that one
@@ -956,51 +944,13 @@
     }
   }
 
-  function focusSearch(): void {
-    searchOpen = true
-    queueMicrotask(() => searchInputEl?.focus())
-  }
-  function closeSearch(): void {
-    searchOpen = false
-    searchQuery = ''
-    searchResults = []
-    searchRan = false
-    searchTruncated = false
-    searchDeadline = false
-    searchCancel?.()
-  }
-  function onSearchInput(): void {
-    searchCancel?.()
-    searchResults = []
-    searchRan = false
-    searchTruncated = false
-    searchDeadline = false
-    if (!searchQuery.trim()) return
-    searchRan = true
-    searchTruncated = false
-    searchDeadline = false
-    searchCancel = api.searchStream(
-      searchQuery,
-      (hit) => {
-        searchResults = [...searchResults, hit].slice(0, 100)
-      },
-      (done) => {
-        searchTruncated = done.truncated
-        // The walk ran out of time rather than out of room. A share too slow
-        // to finish inside the deadline, a container or a bucket rather than
-        // a local folder, contributes nothing and says nothing without this.
-        searchDeadline = done.deadline === true
-      }
-    )
-  }
-  function onSearchResultClick(hit: { path: string; entry: Entry }): void {
-    closeSearch()
-    // A folder opens; a file opens the folder holding it, since there is
-    // nowhere else to land. `hit.path` is a full `/{label}/sub/path` virtual
-    // path: the wire shape carries the share separately and `toSearchHit`
-    // rejoins the two, which is what a result for `Share/Movie/01` needs to
-    // stop navigating to `/Movie/01` and 404ing.
-    goto(`/b${hit.entry.kind === 'dir' ? normalizePath(hit.path) : parentOf(hit.path)}`)
+  // Search left this page. It is a surface of its own now: a top sheet over
+  // the desktop shell, a route on a phone, both reached through the store so
+  // the toolbar button and the keyboard shortcut open the same thing. What
+  // this page still owns is the folder the search starts from, which is what
+  // lifts the current subtree in the ranking.
+  function startSearch(): void {
+    openSearch(path)
   }
 
   function toggleView(): void {
@@ -1230,16 +1180,7 @@
       {/if}
     </div>
     <div class="sc-browse__toolbar-actions">
-      {#if searchOpen}
-        <div class="sc-browse__search">
-          <TextField bind:value={searchQuery} type="search" placeholder={t('browse.search')} autofocus onkeydown={(e) => {
-            if (e.key === 'Enter') onSearchInput()
-            if (e.key === 'Escape') closeSearch()
-          }} />
-          <IconButton label={t('browse.close_search')} onclick={closeSearch}><Icon icon={icons.close} /></IconButton>
-        </div>
-      {:else}
-        <IconButton label={t('common.search')} onclick={focusSearch}><Icon icon={icons.search} /></IconButton>
+      <IconButton label={t('common.search')} onclick={startSearch}><Icon icon={icons.search} /></IconButton>
         {#if !ui.state.compact}
           <IconButton label={t('common.refresh')} onclick={refresh}><Icon icon={icons.refresh} /></IconButton>
           <IconButton label={treeOpen ? t('browse.hide_folder_tree') : t('browse.show_folder_tree')} selected={treeOpen} onclick={toggleTree}>
@@ -1287,7 +1228,6 @@
             {t('common.new_folder')}
           </Button>
         {/if}
-      {/if}
     </div>
   </header>
 
@@ -1386,33 +1326,6 @@
     </div>
   </Menu>
 
-  <!-- `searchRan`, not just a non-empty box: the query runs on Enter, so
-       between the first keystroke and that Enter there is a typed word and
-       an empty result list, which rendered as "No results" for a search
-       nobody had asked for yet. It said the opposite of the truth about
-       files that were about to match. -->
-  {#if searchOpen && searchQuery.trim()}
-    <ul class="sc-browse__search-results">
-      {#each searchResults as hit (hit.path)}
-        <li>
-          <button class="sc-browse__search-result" onclick={() => onSearchResultClick(hit)}>
-            <Icon icon={icons[hit.entry.kind === 'dir' ? 'folder' : 'file']} size={16} />
-            {hit.path}
-          </button>
-        </li>
-      {:else}
-        <li class="sc-browse__search-empty">
-          {searchRan ? t('browse.no_results') : t('browse.press_enter_to_search')}
-        </li>
-      {/each}
-      {#if searchDeadline && searchResults.length > 0}
-        <li class="sc-browse__search-empty">{t('browse.search_hit_time_limit')}</li>
-      {:else if searchTruncated && searchResults.length > 0}
-        <li class="sc-browse__search-empty">{t('browse.search_stopped_early')}</li>
-      {/if}
-    </ul>
-  {/if}
-
   <div class="sc-browse__content">
     {#if treeOpen}
       <FileTree
@@ -1491,7 +1404,7 @@
             menuFor={menuOpen ? (contextEntry?.name ?? null) : null}
             onrename={requestRename}
             ondelete={requestDelete}
-            onsearchfocus={focusSearch}
+            onsearchfocus={startSearch}
             {encrypted}
           />
         </div>
@@ -1514,7 +1427,7 @@
             oncontextmenu={openContextMenu}
             onrename={requestRename}
             ondelete={requestDelete}
-            onsearchfocus={focusSearch}
+            onsearchfocus={startSearch}
             {encrypted}
           />
         </div>
@@ -1789,22 +1702,6 @@
     outline: 2px solid var(--m3c-primary);
     outline-offset: 2px;
   }
-  .sc-browse__search {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 240px;
-  }
-  /* `TextField.svelte` sizes the framework's box off its own wrapper
-     (`width: 100%`), which is right in the column layouts every other caller
-     uses and circular in this row: the wrapper's automatic width comes from
-     content that is measured as a percentage of the wrapper, so it resolved to
-     zero and the field disappeared, leaving the input to spill 32px of itself
-     over the breadcrumb. This is the one caller that has to say how much of
-     the row the field takes. */
-  .sc-browse__search :global(.field) {
-    flex: 1;
-  }
   .sc-browse__table-wrap--marquee {
     /* Only while a drag is running: dragging over text would otherwise
        highlight it, and the browser's own drag-select fights the rectangle. */
@@ -1873,30 +1770,6 @@
   }
   .sc-browse__selection-bar-inner :global(button) {
     flex-shrink: 0;
-  }
-  .sc-browse__search-results {
-    list-style: none;
-    margin: 0;
-    padding: 8px 16px;
-    max-height: 240px;
-    overflow-y: auto;
-    border-bottom: 1px solid var(--m3c-outline-variant);
-  }
-  .sc-browse__search-result {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-    border: none;
-    background: transparent;
-    color: var(--m3c-on-surface);
-    text-align: left;
-    padding-block: 8px;
-    cursor: pointer;
-  }
-  .sc-browse__search-empty {
-    color: var(--m3c-on-surface-variant);
-    padding-block: 8px;
   }
   .sc-browse__content {
     display: flex;

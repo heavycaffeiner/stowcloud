@@ -19,6 +19,8 @@
   import { startLiveInvalidation } from '../../lib/query/live'
   import { swReady } from '../../lib/crypto/download-sw'
   import { COMPACT_MAX_PX, ui } from '../../lib/store/ui.store'
+  import { openSearch, search } from '../../lib/store/search.store'
+  import SearchSheet from '../../lib/ui/SearchSheet.svelte'
 
   interface Props {
     children: Snippet
@@ -261,7 +263,24 @@
     // before this change -- switching again shouldn't cost a re-open.
     if (ui.state.compact) drawerOpen = false
   }
+
+  /** The folder the shell is showing, so a search started from a keystroke
+   *  ranks the same subtree the toolbar button would. */
+  function browseScope(): string {
+    return page.url.pathname.startsWith('/b/') ? decodeURI(page.url.pathname.slice(2)) : ''
+  }
+
+  // Ctrl/Cmd+K, the combination every other file interface uses for this.
+  // It reaches search from any page in the shell, which is the reason the
+  // sheet is mounted here rather than on the browse page.
+  function onWindowKeydown(e: KeyboardEvent): void {
+    if (screen !== 'browser' || !(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'k') return
+    e.preventDefault()
+    openSearch(browseScope())
+  }
 </script>
+
+<svelte:window onkeydown={onWindowKeydown} />
 
 {#if screen === 'browser'}
   <div class="sc-app-shell" class:sc-app-shell--compact={ui.state.compact}>
@@ -305,6 +324,11 @@
     <JobTray />
     <UploadTray />
   </div>
+  <!-- The desktop search surface. Mounted on the shell rather than on the
+       browse page, so the shortcut reaches it from anywhere and the page
+       underneath stays where it was: on a phone the same button navigates
+       to /search instead, which is why this branch is desktop-only. -->
+  <SearchSheet open={search.state.open && !ui.state.compact} scope={search.state.scope} onclose={() => search.close()} />
 {:else}
   <div class="sc-app-shell__boot" role="status" aria-label={t('nav.checking_your_session')}>
     <ProgressCircular />
