@@ -189,7 +189,7 @@ shipping.
 |---|---|
 | **Browse and organise** | Upload, move, copy, rename, delete. If two people change the same thing you get a conflict screen, not a silent overwrite. Long jobs keep running if you refresh the tab. |
 | **Uploads that resume** | A dropped connection, a closed tab, or a proxy with a size limit does not restart the transfer. |
-| **Search** | By name, across every folder the person searching is allowed to see. |
+| **Search** | By name, across every folder the person searching is allowed to see. Narrow it to files, to folders, or to the extensions you name. Every match is listed: there is no page to load and no result cap. |
 | **Share links** | Send a folder to someone with no account. Optionally password-protected, expiring, download-capped, or upload-only so people can drop files in without seeing what is there. |
 | **Per-folder access** | Give an account one folder, or one subfolder inside it, with read and write decided separately. The default is that a new account sees nothing. |
 | **Network drive** | WebDAV (mount it in Windows Explorer, Finder, or Linux) and SMB through an optional sidecar container, off unless you turn it on. |
@@ -206,10 +206,17 @@ imported, so what you see here is what `ls` sees.
 ### Search reaches across folders
 
 One query covers every folder that account can see, so it is one place to
-look instead of several. Names only. Searching inside file contents is a
-separate feature you turn on.
+look instead of several. It runs to the end and streams matches as it finds
+them, so a folder with a hundred thousand files answers with all of them and
+not the first page. Filter by files, by folders, or by extension: pick a
+group such as Images or Documents, or type the extensions yourself. Names
+only. Searching inside file contents is a separate feature you turn on.
 
-![Search results for "2026" listing matches from two shares above the current folder's own contents](docs/screenshots/search.png)
+On a desktop the search button opens a sheet over the folder you were in, so
+closing it puts you back where you started. Ctrl+K, or Cmd+K, opens the same
+sheet from any screen. On a phone it opens a screen of its own.
+
+![The search sheet over the file browser: a query for 2026, filter chips for kind and file type, and results from two shares with their folders, sizes and dates](docs/screenshots/search.png)
 
 ### A link is created once, and shown once
 
