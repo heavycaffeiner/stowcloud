@@ -3,6 +3,7 @@
 package nc
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
@@ -80,7 +81,7 @@ func (s *Server) Mount(app *fiber.App) {
 	get(avatarPath, s.avatar)
 	get(directPath, s.directStream)
 
-	bridge := adaptor.HTTPHandler(s.DavHandler())
+	bridge := adaptor.HTTPHandler(requestScoped(s.DavHandler()))
 	for _, prefix := range []string{davMount, webdavMount} {
 		for _, p := range []string{prefix, frontPrefix + prefix} {
 			app.All(p, bridge)
@@ -92,6 +93,26 @@ func (s *Server) Mount(app *fiber.App) {
 // DavHandler serves the DAV half.
 func (s *Server) DavHandler() http.Handler {
 	return http.HandlerFunc(s.serveDav)
+}
+
+// requestScoped replaces the adapter's context with one this handler owns.
+//
+// The adapter hands over fasthttp's own request object as the context, and
+// fasthttp rewrites that object when the server shuts down and when it
+// reuses it for the next request. Anything that installs a cancellation
+// watcher on it keeps a reference past that point: every database/sql query
+// does, which is how a listing that reads an owner's groups ends up racing
+// the shutdown. Retaining it is what fasthttp documents as forbidden.
+//
+// The replacement keeps the values the chain put there, installs no watcher
+// on the request object, and is cancelled when the handler returns so
+// nothing started here outlives the request either.
+func requestScoped(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithCancel(context.WithoutCancel(r.Context()))
+		defer cancel()
+		h.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
 
 // ocs dispatches one envelope version.

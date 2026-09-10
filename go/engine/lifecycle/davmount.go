@@ -69,9 +69,30 @@ const davDefaultInfinity = 10_000
 // principal it resolved travels in the request context, which is what the
 // mount reads. The bridge is built once: it is stateless.
 func (e *Engine) mountDav(app *fiber.App) {
-	bridge := adaptor.HTTPHandler(e.DavHandler(e.newDavHandler()))
+	bridge := adaptor.HTTPHandler(requestScoped(e.DavHandler(e.newDavHandler())))
 	app.All(DavPrefix, bridge)
 	app.All(DavPrefix+"/*", bridge)
+}
+
+// requestScoped replaces the adapter's context with one the handler owns.
+//
+// The adapter hands fasthttp's own request object over as the context, and
+// the server rewrites that object at shutdown and when it reuses it. A
+// database/sql query installs a cancellation watcher on whatever context it
+// is given, so passing this one keeps a reference to the request past the
+// handler, which is what fasthttp documents as forbidden and what the race
+// detector reports as a write during shutdown against a read from a
+// listing.
+//
+// Values survive, so the principal the chain resolved still travels. The
+// replacement is cancelled when the handler returns, which bounds the work
+// to the request the same way the original did.
+func requestScoped(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithCancel(context.WithoutCancel(r.Context()))
+		defer cancel()
+		h.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
 
 // DavHandler serves the WebDAV mount.

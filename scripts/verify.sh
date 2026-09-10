@@ -408,8 +408,14 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # runner doubles that, so the default made this step a coin flip: the panic
   # names whichever four tests happened to be in flight, which reads as a hang
   # in one of them rather than as the package running out of budget.
+  # Both tag sets, because the compatibility layer is where the detector had
+  # nothing to say for as long as this line ran untagged: the request context
+  # it handed to database/sql outlived the handler for months without the one
+  # step that would have said so.
   if have_cc; then
     run "go test -race ($HOST)" ingo_cgo go test -race -count=1 -timeout 30m ./...
+    run "go test -race -tags compat_nc ($HOST)" \
+        ingo_cgo go test -race -tags compat_nc -count=1 -timeout 30m ./...
   else
     skipped "go test -race" "no C compiler on PATH, and the detector needs cgo" \
             "${VERIFY_REQUIRE_RACE:-0}"
