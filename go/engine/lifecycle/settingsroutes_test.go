@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
@@ -622,5 +623,82 @@ func TestANonStringSecretIsRefused(t *testing.T) {
 		if status == http.StatusOK {
 			t.Errorf("a %T client secret was accepted", value)
 		}
+	}
+}
+
+// bindEngine serves an engine with an administrator signed in, and hands the
+// engine back so a test can register the bind hook the process owns.
+func bindEngine(t *testing.T) (*lifecycle.Engine, string, *http.Cookie, string) {
+	t.Helper()
+	ctx := context.Background()
+
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
+	if err != nil {
+		t.Fatalf("opening: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := e.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	})
+	if _, cerr := e.Auth.CreateAdmin(ctx, "root", "Root", pwOf(loginPassword)); cerr != nil {
+		t.Fatalf("creating the administrator: %v", cerr)
+	}
+	base := serve(t, e)
+	admin := postJSON(t, base+"/api/v1/auth/login",
+		map[string]string{"login": "root", "password": loginPassword})
+	if admin.sessionCookie() == nil {
+		t.Fatalf("the administrator did not sign in: %d %v", admin.status, admin.body)
+	}
+	return e, base, admin.sessionCookie(), admin.field("csrf")
+}
+
+// An address the process was started with survives a settings save.
+//
+// The stored value is the compiled default, every interface, and saving any
+// section at all used to apply it: a deployment started on loopback behind a
+// proxy was published to the network by saving something unrelated to the
+// network.
+func TestAPinnedListenAddressSurvivesASettingsSave(t *testing.T) {
+	t.Parallel()
+	e, base, cookie, csrf := bindEngine(t)
+
+	moved := make(chan string, 4)
+	e.OnBindChange("127.0.0.1:19999", true, func(next string) { moved <- next })
+
+	status, body := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/rate",
+		cookie, csrf, map[string]any{"per_sec": 30, "burst": 90})
+	if status != http.StatusOK {
+		t.Fatalf("saving answered %d: %v", status, body)
+	}
+	select {
+	case next := <-moved:
+		t.Errorf("the save moved the listener to %q", next)
+	default:
+	}
+}
+
+// A stored address still moves the listener when the process was not told
+// where to listen. That is the whole point of storing one: an operator who
+// bound somewhere unreachable changes it from the screen.
+func TestAStoredListenAddressStillMovesTheListener(t *testing.T) {
+	t.Parallel()
+	e, base, cookie, csrf := bindEngine(t)
+
+	moved := make(chan string, 4)
+	e.OnBindChange("127.0.0.1:19999", false, func(next string) { moved <- next })
+
+	status, body := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/network",
+		cookie, csrf, map[string]any{"bind": "127.0.0.1:19998"})
+	if status != http.StatusOK {
+		t.Fatalf("saving answered %d: %v", status, body)
+	}
+	select {
+	case next := <-moved:
+		if next != "127.0.0.1:19998" {
+			t.Errorf("the listener moved to %q, want the saved address", next)
+		}
+	case <-time.After(10 * time.Second):
+		t.Error("a saved address never reached the hook")
 	}
 }

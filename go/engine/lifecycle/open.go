@@ -221,9 +221,15 @@ type Engine struct {
 	// onBind is told when a settings save moved the listen address. The
 	// listener belongs to the process that started this engine, so the change
 	// is handed out rather than applied here.
-	bindMu    sync.Mutex
-	onBind    func(addr string)
-	boundAddr string
+	//
+	// bindPinned marks an address the process was started with. A stored
+	// setting does not move that one: an operator who bound to loopback
+	// behind a proxy would otherwise find the socket on every interface
+	// after saving something unrelated.
+	bindMu     sync.Mutex
+	onBind     func(addr string)
+	boundAddr  string
+	bindPinned bool
 
 	// onRestart replaces the process image. Same reason as onBind: the image
 	// belongs to the process, not to an engine mounted on it.

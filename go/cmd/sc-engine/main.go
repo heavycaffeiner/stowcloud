@@ -167,6 +167,11 @@ func run(addr, dataDir string, plain bool) error {
 	// stored one exists so an operator can move a deployment that is bound
 	// somewhere unreachable, which only works if starting it without an
 	// address actually uses what they stored.
+	//
+	// A flag that wins keeps winning: pinned travels to the engine so a
+	// settings save cannot move the socket out from under a process that was
+	// told where to listen.
+	pinned := addr != ""
 	if addr == "" {
 		addr = values.Listen
 	}
@@ -236,7 +241,7 @@ func run(addr, dataDir string, plain bool) error {
 	// A saved bind address moves the socket. The old generation keeps
 	// answering until the new one is confirmed serving, so an address that
 	// cannot be bound leaves the server exactly where it was.
-	eng.OnBindChange(addr, func(next string) {
+	eng.OnBindChange(addr, pinned, func(next string) {
 		if serr := srv.Swap(next); serr != nil {
 			logger.Error("the bind address could not be moved",
 				"address", next, "error", serr)

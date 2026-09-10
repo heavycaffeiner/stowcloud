@@ -114,12 +114,19 @@ func (e *Engine) loadSettings(ctx context.Context) {
 	// rather than to this engine, so the change is handed out rather than
 	// applied here: a swap that fails leaves the old socket answering, and
 	// only the caller that owns the supervisor can decide that.
+	//
+	// An address the process was started with is not moved at all. The flag
+	// that set it says it overrides the stored one, and it did so only until
+	// the next save of any section: a deployment bound to loopback behind a
+	// proxy was published on every interface by saving a search setting.
 	e.bindMu.Lock()
-	onBind, was := e.onBind, e.boundAddr
-	e.boundAddr = values.Listen
+	onBind, was, pinned := e.onBind, e.boundAddr, e.bindPinned
+	if !pinned {
+		e.boundAddr = values.Listen
+	}
 	e.bindMu.Unlock()
 
-	if onBind != nil && values.Listen != "" && values.Listen != was {
+	if onBind != nil && !pinned && values.Listen != "" && values.Listen != was {
 		onBind(values.Listen)
 	}
 }
@@ -134,11 +141,13 @@ func (e *Engine) loadSettings(ctx context.Context) {
 //
 // The address this engine already believes it is on is recorded here, so
 // registering the hook does not immediately fire it for the address the caller
-// just bound.
-func (e *Engine) OnBindChange(current string, fn func(addr string)) {
+// just bound. pinned says that address came from the command line, and then no
+// stored setting moves it for as long as this process runs.
+func (e *Engine) OnBindChange(current string, pinned bool, fn func(addr string)) {
 	e.bindMu.Lock()
 	defer e.bindMu.Unlock()
 	e.boundAddr = current
+	e.bindPinned = pinned
 	e.onBind = fn
 }
 
