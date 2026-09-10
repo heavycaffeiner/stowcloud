@@ -34,6 +34,13 @@ UPDATE operation
 SET state = ?, progress = ?, message = ?, finished_ns = ?
 WHERE id = ?`
 
+	// The progress column is absent on purpose: an interrupted run keeps the
+	// count it reached, which is what a client re-attaching reads.
+	sqlInterruptOp = `
+UPDATE operation
+SET state = ?, message = ?, finished_ns = ?
+WHERE id = ?`
+
 	sqlInsertOpResult = `
 INSERT INTO operation_result(operation, idx, path, ok, reason, text)
 VALUES (?, ?, ?, ?, ?, ?)`

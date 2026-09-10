@@ -200,7 +200,7 @@ func (e *Engine) runIndexBuild(ctx context.Context, id int64, sources []search.S
 	gate := func() bool {
 		// A close asks the build to stop, which it does at the next share
 		// boundary. What it wrote stays and a query beyond it walks.
-		if e.jobsCtx != nil && e.jobsCtx.Err() != nil {
+		if e.jobsStopped() {
 			return false
 		}
 		op, _, err := e.State.GetOp(ctx, id)
@@ -248,17 +248,53 @@ func (e *Engine) runIndexBuild(ctx context.Context, id int64, sources []search.S
 		}
 	}
 
-	// A build that stopped at its bound is finished, and says which. A query
-	// for what it did not reach falls back to a walk, so an index short of its
-	// corpus is a slower answer rather than a wrong one.
-	message := ""
-	if progress.Partial {
-		message = "the corpus is larger than one build covers; a query beyond it falls back to a walk"
+	// Why it stopped decides the state, because every non-error exit used to
+	// read "done": a build a shutdown or an operator stopped halfway then
+	// reported a complete index over a partial one. The count it reached is
+	// recorded whichever way it ended.
+	indexed := indexedCount(progress.Files)
+	switch {
+	case e.jobsStopped():
+		// Interrupted keeps the progress row and reads as work the server
+		// walked away from, which is what a client offers to re-run.
+		if ferr := e.State.InterruptOp(ctx, id, now); ferr != nil {
+			e.logger.Warn("the index build's interruption could not be recorded", "error", ferr)
+		}
+	case e.buildCancelled(ctx, id):
+		if ferr := e.State.FinishOp(ctx, id, state.OpCancelled, indexed,
+			"cancelled; the index holds what the walk reached", now, nil); ferr != nil {
+			e.logger.Warn("the index build's cancellation could not be recorded", "error", ferr)
+		}
+	default:
+		// A build that stopped at its bound is finished, and says which. A
+		// query for what it did not reach falls back to a walk, so an index
+		// short of its corpus is a slower answer rather than a wrong one.
+		message := ""
+		if progress.Partial {
+			message = "the corpus is larger than one build covers; a query beyond it falls back to a walk"
+		}
+		if ferr := e.State.FinishOp(ctx, id, state.OpDone, indexed, message, now, nil); ferr != nil {
+			e.logger.Warn("the index build's completion could not be recorded", "error", ferr)
+		}
 	}
-	if ferr := e.State.FinishOp(ctx, id, state.OpDone,
-		indexedCount(progress.Files), message, now, nil); ferr != nil {
-		e.logger.Warn("the index build's completion could not be recorded", "error", ferr)
+}
+
+// jobsStopped reports whether a close asked the detached work to stop.
+func (e *Engine) jobsStopped() bool {
+	return e.jobsCtx != nil && e.jobsCtx.Err() != nil
+}
+
+// buildCancelled reports whether the operator cancelled this build.
+//
+// A row that cannot be read answers false: the build stopped for some reason
+// and "done" over what it wrote is the same answer a bound gives, while
+// claiming a cancellation nobody asked for is not.
+func (e *Engine) buildCancelled(ctx context.Context, id int64) bool {
+	op, _, err := e.State.GetOp(ctx, id)
+	if err != nil {
+		return false
 	}
+	return op.Cancellation
 }
 
 // indexedCount narrows a file count into what an operation row records.

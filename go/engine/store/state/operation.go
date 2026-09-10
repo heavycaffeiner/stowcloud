@@ -286,12 +286,16 @@ func (d *DB) FinishOp(
 }
 
 // InterruptOp marks a running operation as interrupted while keeping its
-// progress and results, so a client that refreshes receives a truthful terminal
-// state.
+// progress and results, so a client that refreshes receives a truthful
+// terminal state.
+//
+// The message is fixed here rather than taken from the caller: every
+// interruption has the same cause, a server that stopped while the work was
+// in flight, and a client renders that string.
 func (d *DB) InterruptOp(ctx context.Context, id int64, finishedNs int64) error {
 	return d.Write(ctx, func(tx *sql.Tx) error {
-		_, ierr := tx.ExecContext(ctx, sqlSetOpState,
-			int64(OpInterrupted), 0,
+		_, ierr := tx.ExecContext(ctx, sqlInterruptOp,
+			int64(OpInterrupted),
 			textArg("interrupted by server restart, not resumed"), finishedNs, id)
 		return ierr
 	})

@@ -950,6 +950,37 @@ func TestListOpsReturnsOnlyUnfinishedWork(t *testing.T) {
 	}
 }
 
+// An interruption keeps the count the run reached.
+//
+// A client re-attaching reads that number: an interrupt that reset it to zero
+// reported a build which indexed nothing over one that indexed most of a
+// corpus, and there is nothing in the row left to recover the figure from.
+func TestInterruptingAnOperationKeepsItsProgress(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	d, _ := open(t)
+	seedUser(t, d, 1, "u")
+
+	id := mustCreateOp(t, d, []string{"a"})
+	if err := d.SetOpProgress(ctx, id, 7, ""); err != nil {
+		t.Fatalf("SetOpProgress: %v", err)
+	}
+	if err := d.InterruptOp(ctx, id, 300); err != nil {
+		t.Fatalf("InterruptOp: %v", err)
+	}
+
+	op, _, err := d.GetOp(ctx, id)
+	if err != nil {
+		t.Fatalf("GetOp: %v", err)
+	}
+	if op.State != state.OpInterrupted {
+		t.Errorf("the operation reads %v, want interrupted", op.State)
+	}
+	if op.Progress != 7 {
+		t.Errorf("the interruption left progress at %d, want the 7 it reached", op.Progress)
+	}
+}
+
 func TestRequestOpCancelIsVisibleToTheRunner(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
