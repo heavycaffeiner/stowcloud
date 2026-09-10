@@ -77,7 +77,11 @@
     background: var(--m3c-surface-container-high, canvas);
     color: var(--m3c-on-surface, canvastext);
     box-shadow: 0 8px 24px rgb(0 0 0 / 24%);
-    overflow: hidden;
+    /* Not clipped, and never translated: the filter menu inside is
+       position: fixed, and either one would turn this into its containing
+       block, which cut the menu off at the sheet's edge and shifted it by
+       the sheet's own offset. */
+    overflow: visible;
   }
 
   .sc-search-sheet::backdrop {
@@ -91,20 +95,17 @@
     padding: 16px;
   }
 
-  /* Slides down from the top edge rather than fading in place: the sheet's
-     own gesture is vertical, and reduced motion turns it off. */
+  /* Fades in rather than sliding: a slide means a translate, and a
+     translated ancestor is a containing block for the fixed-position menu
+     inside. Reduced motion turns even this off. */
   @media (prefers-reduced-motion: no-preference) {
     .sc-search-sheet {
-      transition:
-        translate 200ms ease-out,
-        opacity 200ms ease-out;
-      translate: 0 0;
+      transition: opacity 160ms ease-out;
       opacity: 1;
     }
 
     @starting-style {
       .sc-search-sheet {
-        translate: 0 -16px;
         opacity: 0;
       }
     }

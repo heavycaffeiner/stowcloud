@@ -15,10 +15,11 @@
   import { computeWindow } from '../virtual/windowing'
   import { formatBytes } from '../format/bytes'
   import { formatDateNs, t } from '../i18n'
-  import { Icon } from 'm3-svelte'
+  import { Icon, MenuItem } from 'm3-svelte'
   import { icons } from '../icons'
   import Button from './Button.svelte'
-  import Chip from './Chip.svelte'
+  import Divider from './Divider.svelte'
+  import Menu from './Menu.svelte'
   import ProgressCircular from './ProgressCircular.svelte'
   import Select from './Select.svelte'
   import TextField from './TextField.svelte'
@@ -221,6 +222,46 @@
 
   const dirCount = $derived(view.filter((h) => h.entry.kind === 'dir').length)
 
+  /** How many filters are on, which is what the button says when it is not
+   *  wide enough to list them. */
+  const activeCount = $derived((kind === 'any' ? 0 : 1) + presets.length + (extQuery.trim() === '' ? 0 : 1))
+
+  let filtersOpen = $state(false)
+  let filtersX = $state(0)
+  let filtersY = $state(0)
+  let filtersMenuEl: HTMLDivElement | undefined = $state()
+  let filtersTrigger: HTMLElement | null = null
+
+  function openFilters(e: MouseEvent): void {
+    if (filtersOpen) {
+      closeFilters()
+      return
+    }
+    e.stopPropagation()
+    const btn = e.currentTarget as HTMLElement
+    filtersTrigger = btn
+    const rect = btn.getBoundingClientRect()
+    filtersX = rect.left
+    filtersY = rect.bottom + 4
+    filtersOpen = true
+    queueMicrotask(() => filtersMenuEl?.querySelector<HTMLButtonElement>('button')?.focus())
+  }
+
+  // Escape belongs to the menu while the menu is open. Without this the key
+  // reached the sheet's own dialog underneath and closed the whole search.
+  function onKeydownCapture(e: KeyboardEvent): void {
+    if (!filtersOpen || e.key !== 'Escape') return
+    e.preventDefault()
+    e.stopPropagation()
+    closeFilters()
+  }
+
+  function closeFilters(): void {
+    filtersOpen = false
+    filtersTrigger?.focus()
+    filtersTrigger = null
+  }
+
   /** What is narrowing the search right now, in the words the controls use. */
   const activeFilters = $derived.by(() => {
     const parts: string[] = []
@@ -290,6 +331,8 @@
   })
 </script>
 
+<svelte:window onkeydowncapture={onKeydownCapture} />
+
 <div class="sc-search">
   <div class="sc-search__query">
     <span class="sc-search__query-icon" aria-hidden="true"><Icon icon={icons.search} /></span>
@@ -313,45 +356,59 @@
   </div>
 
   <div class="sc-search__filters">
-    <div class="sc-search__kinds" role="group" aria-label={t('search.kind')}>
-      {#each [['any', t('search.kind_any')], ['file', t('search.kind_file')], ['dir', t('search.kind_dir')]] as const as [id, label] (id)}
-        <Chip variant="filter" selected={kind === id} onclick={() => setKind(id as Kind)}>{label}</Chip>
-      {/each}
-    </div>
+    <!-- One button rather than a row of chips: the type list alone is six of
+         them, and they pushed the results down the panel to say what was
+         mostly "no filter". What is on is still visible beside the button. -->
+    <Button variant="outlined" onclick={openFilters} ariaLabel={t('search.filters')}>
+      {#snippet icon()}<Icon icon={icons.filter} size={18} />{/snippet}
+      {activeCount === 0 ? t('search.filters') : t('search.filters_active', { count: activeCount })}
+    </Button>
+    {#if activeFilters !== ''}
+      <span class="sc-search__active">{activeFilters}</span>
+    {/if}
 
-    <!-- Gone rather than greyed out while folders are the target: a folder
-         has no extension, so every one of these would narrow the answer to
-         nothing. -->
-    {#if kind === 'dir'}
-      <p class="sc-search__hint">{t('search.folders_have_no_extension')}</p>
-    {:else}
-      <div class="sc-search__presets" role="group" aria-label={t('search.file_types')}>
+    <div class="sc-search__exts" onfocusout={commitExts}>
+      <!-- Committed on Enter or on leaving the box, not per keystroke:
+           every commit starts a walk of every share, so "pdf" typed a
+           letter at a time would start three of them. -->
+      <TextField
+        bind:value={extText}
+        label={t('search.extensions')}
+        placeholder="pdf, hwp, zip"
+        onkeydown={(e) => {
+          if (e.key === 'Enter') commitExts()
+        }}
+      />
+    </div>
+  </div>
+
+  <Menu open={filtersOpen} onclose={closeFilters} x={filtersX} y={filtersY} align="start">
+    <div bind:this={filtersMenuEl} role="none">
+      {#each [['any', t('search.kind_any')], ['file', t('search.kind_file')], ['dir', t('search.kind_dir')]] as const as [id, label] (id)}
+        <MenuItem icon={kind === id ? icons.check : 'space'} onclick={() => setKind(id as Kind)}>
+          {kind === id ? t('search.filter_selected', { label }) : label}
+        </MenuItem>
+      {/each}
+      <Divider />
+      <!-- The type rows are gone rather than greyed out while folders are the
+           target: a folder has no extension, so each of them would narrow the
+           answer to nothing. -->
+      {#if kind === 'dir'}
+        <p class="sc-search__hint">{t('search.folders_have_no_extension')}</p>
+      {:else}
         {#each EXTENSION_PRESETS as preset (preset.id)}
-          <Chip
-            variant="filter"
-            selected={presets.includes(preset.id)}
+          <MenuItem
+            icon={presets.includes(preset.id) ? icons.check : 'space'}
             onclick={() => togglePreset(preset.id)}
           >
-            {t(preset.labelKey)}
-          </Chip>
+            {presets.includes(preset.id)
+              ? t('search.filter_selected', { label: t(preset.labelKey) })
+              : t(preset.labelKey)}
+          </MenuItem>
         {/each}
-      </div>
-
-      <div class="sc-search__exts" onfocusout={commitExts}>
-        <!-- Committed on Enter or on leaving the box, not per keystroke:
-             every commit starts a walk of every share, so "pdf" typed a
-             letter at a time would start three of them. -->
-        <TextField
-          bind:value={extText}
-          label={t('search.extensions')}
-          placeholder="pdf, hwp, zip"
-          onkeydown={(e) => {
-            if (e.key === 'Enter') commitExts()
-          }}
-        />
-      </div>
-    {/if}
-  </div>
+      {/if}
+    </div>
+  </Menu>
 
   <div class="sc-search__status">
     <!-- The running count changes ten times a second, and a live region
@@ -460,11 +517,14 @@
     gap: 8px;
   }
 
-  .sc-search__kinds,
-  .sc-search__presets {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
+  .sc-search__active {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--m3c-on-surface-variant, inherit);
+    font: var(--m3-font-body-small);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .sc-search__exts {

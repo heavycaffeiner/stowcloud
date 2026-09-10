@@ -37,6 +37,7 @@ import iconRecent from '@ktibow/iconset-material-symbols/history'
 import iconRefresh from '@ktibow/iconset-material-symbols/refresh'
 import iconRename from '@ktibow/iconset-material-symbols/edit-outline'
 import iconRestore from '@ktibow/iconset-material-symbols/restore-from-trash-outline'
+import iconFilter from '@ktibow/iconset-material-symbols/filter-list'
 import iconSearch from '@ktibow/iconset-material-symbols/search'
 import iconSettings from '@ktibow/iconset-material-symbols/settings-outline'
 import iconTrash from '@ktibow/iconset-material-symbols/delete-sweep-outline'
@@ -99,6 +100,7 @@ export const icons = {
   download: iconDownload,
   'edit-document': iconEditDocument,
   file: iconFile,
+  filter: iconFilter,
   folder: iconFolder,
   'folder-tree': iconAccountTree,
   grid: iconGrid,
