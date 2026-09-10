@@ -608,17 +608,20 @@ func TestASearchRefusedForBeingBusySaysSo(t *testing.T) {
 	sources := search.SourcesOf(f.e.Core.UserScanSources(core.UserID(f.user)))
 	release := make(chan struct{})
 	held := make(chan struct{})
+	// The outcome travels on a channel rather than through t: the search
+	// unblocks as this test body ends, and reporting from there panics the
+	// run with "Log in goroutine after test has completed".
+	done := make(chan error, 1)
 	var once sync.Once
 	task.Go(context.Background(), "test: hold the search slot", func() {
-		if _, qerr := f.e.Search.Query(context.Background(), sources, svc.QueryOptions{
+		_, qerr := f.e.Search.Query(context.Background(), sources, svc.QueryOptions{
 			Query: "busy-target",
 			Stream: func([]search.Hit) {
 				once.Do(func() { close(held) })
 				<-release
 			},
-		}); qerr != nil {
-			t.Errorf("the occupying search failed: %v", qerr)
-		}
+		})
+		done <- qerr
 	})
 	select {
 	case <-held:
@@ -626,7 +629,6 @@ func TestASearchRefusedForBeingBusySaysSo(t *testing.T) {
 		close(release)
 		t.Fatal("the occupying search never reached its callback")
 	}
-	defer close(release)
 
 	resp, body := f.request(t, "SEARCH", f.base+"/remote.php/dav",
 		strings.NewReader(searchBody(f.login, "", "busy-target", 0)),
@@ -640,6 +642,18 @@ func TestASearchRefusedForBeingBusySaysSo(t *testing.T) {
 		nil, map[string]string{"Accept": "application/json"})
 	if resp.StatusCode != http.StatusServiceUnavailable {
 		t.Errorf("the unified search answered %d, want 503\n%s", resp.StatusCode, body)
+	}
+
+	// Let the held search finish and read its outcome here, inside the test,
+	// so nothing touches t after this returns.
+	close(release)
+	select {
+	case qerr := <-done:
+		if qerr != nil {
+			t.Errorf("the occupying search failed: %v", qerr)
+		}
+	case <-time.After(10 * time.Second):
+		t.Error("the occupying search never finished")
 	}
 }
 
