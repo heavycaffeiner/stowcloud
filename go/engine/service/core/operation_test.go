@@ -653,3 +653,42 @@ func TestDrainingJobsHonoursItsDeadline(t *testing.T) {
 		t.Errorf("draining past the deadline returned %v, want the context's error", derr)
 	}
 }
+
+// A copy stopped by a shutdown ends as interrupted, not as one the runner
+// never reached.
+//
+// The stop is what bounds the drain by an item instead of by a clock: without
+// it a copy of a large tree ran past the wait and wrote into a closed
+// database, which is the case the wait exists for. Interrupted is what a
+// client reads as work that is still theirs and was not resumed.
+func TestAShutdownStopsACopyAndRecordsItAsInterrupted(t *testing.T) {
+	t.Parallel()
+	c, _, srcHost, _, src, dst := twoShares(t)
+	ctx := context.Background()
+	if err := os.MkdirAll(filepath.Join(srcHost, "tree"), 0o755); err != nil {
+		t.Fatalf("building the tree: %v", err)
+	}
+	for i := range 40 {
+		writeFile(t, srcHost, "tree/file-"+strconv.Itoa(i)+".txt", "body")
+	}
+
+	// Stopped first, so the walk meets the gate at its first item however
+	// fast the disk is. A copy caught halfway is the same path.
+	c.StopJobs()
+
+	start, err := c.StartCopy(ctx, 1, at(t, src, "tree"), at(t, dst, "tree"), ConflictFail)
+	if err != nil {
+		t.Fatalf("StartCopy: %v", err)
+	}
+	if derr := c.DrainJobs(ctx); derr != nil {
+		t.Fatalf("draining: %v", derr)
+	}
+
+	op, err := c.Operation(ctx, 1, start.ID)
+	if err != nil {
+		t.Fatalf("reading the operation: %v", err)
+	}
+	if op.State != state.OpInterrupted {
+		t.Errorf("a copy the shutdown stopped ended as %v, want interrupted", op.State)
+	}
+}

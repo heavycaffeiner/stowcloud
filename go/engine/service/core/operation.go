@@ -334,12 +334,30 @@ func (c *Core) StartCopy(
 	return CopyStart{ID: OperationID(id), Dest: dest, Started: true}, nil
 }
 
+// StopJobs tells the work a request started and left running to stop at its
+// next item boundary.
+//
+// Called by a shutdown before DrainJobs. Without it the drain is bounded only
+// by a clock, which leaves the case it exists for exactly where it started: a
+// copy of a large tree outlives the wait and then writes into a closed
+// database. Stopping first bounds the wait by one item instead.
+func (c *Core) StopJobs() {
+	if c.jobsStop != nil {
+		c.jobsStop()
+	}
+}
+
+// jobsStopped reports whether a shutdown asked the detached work to stop.
+func (c *Core) jobsStopped() bool {
+	return c.jobsCtx != nil && c.jobsCtx.Err() != nil
+}
+
 // DrainJobs waits for the work a request started and left running.
 //
-// Called by a shutdown before the databases close. A copy still running when
-// they closed reported "recording a copy's outcome failed" and left an
-// operation row that reads as never finished, and in a test it wrote into a
-// directory the harness had already removed.
+// Called by a shutdown after StopJobs and before the databases close. A copy
+// still running when they closed reported "recording a copy's outcome failed"
+// and left an operation row that reads as never finished, and in a test it
+// wrote into a directory the harness had already removed.
 //
 // ctx bounds the wait: its error says the work is still running, which is
 // something to report rather than something to hang on.
@@ -365,6 +383,14 @@ func (c *Core) runCopy(ctx context.Context, id int64, from, to Resolved, st vfs.
 	path := to.path.String()
 
 	switch {
+	case errors.Is(err, errOpCancelled) && c.jobsStopped():
+		// Stopped by a shutdown rather than by its owner. Interrupted is what
+		// a client reads as work that is still theirs and was not resumed,
+		// which is the truth about a copy the server walked away from.
+		if ierr := c.state.InterruptOp(ctx, id, now); ierr != nil {
+			c.warn("recording a copy's interruption failed",
+				"operation", id, "error", ierr)
+		}
 	case errors.Is(err, errOpCancelled):
 		// The one deliberate exception to the result-row rule: what was
 		// written stays and nothing undoes it, so the item is genuinely in an
@@ -406,6 +432,11 @@ func (c *Core) finish(
 // store hiccup must not abort a copy.
 func (c *Core) cancelGate(ctx context.Context, id int64) func() bool {
 	return func() bool {
+		// A shutdown stops the walk without a row to read, so a restart is
+		// not held open for the length of a tree.
+		if c.jobsStopped() {
+			return true
+		}
 		row, _, err := c.state.GetOp(ctx, id)
 		if err != nil {
 			return false

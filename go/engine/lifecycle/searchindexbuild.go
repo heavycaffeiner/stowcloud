@@ -179,7 +179,7 @@ func (e *Engine) startIndexBuild(c *fiber.Ctx, owner int64) error {
 	ctx := context.WithoutCancel(c.UserContext())
 	sources := indexSourcesOf(e.Core.ScanSources())
 
-	task.Go(ctx, "index build", func() { e.runIndexBuild(ctx, id, sources) })
+	e.jobs.Go(ctx, "index build", func() { e.runIndexBuild(ctx, id, sources) })
 
 	// The job as the jobs surface reports it, so a client polls the same shape
 	// it was handed rather than one this route spells only here.
@@ -198,6 +198,11 @@ func (e *Engine) runIndexBuild(ctx context.Context, id int64, sources []search.S
 	// cancel reaches a build that is already running rather than only stopping
 	// one that has not started.
 	gate := func() bool {
+		// A close asks the build to stop, which it does at the next share
+		// boundary. What it wrote stays and a query beyond it walks.
+		if e.jobsCtx != nil && e.jobsCtx.Err() != nil {
+			return false
+		}
 		op, _, err := e.State.GetOp(ctx, id)
 		if err != nil {
 			// A row that cannot be read is not a reason to keep walking every

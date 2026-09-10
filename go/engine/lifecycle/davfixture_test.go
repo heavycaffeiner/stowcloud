@@ -139,6 +139,17 @@ func build(t *testing.T, held []string, infinityEntries int) *fixture {
 		t.Fatalf("building the core: %v", kerr)
 	}
 
+	// Cleanups run in reverse, so this one registered after the database
+	// closes above runs before them: the same ordering Engine.Close gives a
+	// real deployment. A copy left running writes into the temporary
+	// directory the harness is about to remove.
+	t.Cleanup(func() {
+		c.StopJobs()
+		if derr := c.DrainJobs(context.Background()); derr != nil {
+			t.Errorf("draining the fixture's jobs: %v", derr)
+		}
+	})
+
 	// The share's own directory, separate from where the databases live so a
 	// listing does not report them.
 	shareDir := filepath.Join(root, "share")

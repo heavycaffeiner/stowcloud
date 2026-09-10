@@ -109,6 +109,12 @@ type Core struct {
 	// copy, today. Tracked so a shutdown can wait for it rather than closing
 	// the databases it is still writing its outcome into.
 	jobs task.Group
+
+	// jobsCtx ends when a shutdown asks that work to stop. The gate a copy
+	// polls at item boundaries reads it, so a copy of a large tree stops at
+	// its next item instead of running past the wait on a clock.
+	jobsCtx  context.Context
+	jobsStop context.CancelFunc
 }
 
 // New wires a Core over the store and loads the grant table into the
@@ -142,15 +148,18 @@ func New(ctx context.Context, opt Options) (*Core, error) {
 		backend = localOpener{}
 	}
 
+	jobsCtx, jobsStop := context.WithCancel(context.Background())
 	c := &Core{
-		state:   opt.State,
-		cache:   opt.Cache,
-		journal: opt.Journal,
-		acl:     opt.ACL,
-		clk:     clk,
-		logger:  logger,
-		backend: backend,
-		shares:  map[ShareID]*shareEntry{},
+		state:    opt.State,
+		cache:    opt.Cache,
+		journal:  opt.Journal,
+		acl:      opt.ACL,
+		clk:      clk,
+		logger:   logger,
+		backend:  backend,
+		shares:   map[ShareID]*shareEntry{},
+		jobsCtx:  jobsCtx,
+		jobsStop: jobsStop,
 	}
 	c.linkStore = opt.Links
 	if err := c.ReloadGrants(ctx); err != nil {

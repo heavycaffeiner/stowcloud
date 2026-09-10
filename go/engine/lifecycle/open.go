@@ -30,6 +30,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/jail"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/clock"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/task"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
@@ -218,6 +219,16 @@ type Engine struct {
 	searchUpdater     *svc.Updater
 	searchUpdaterStop context.CancelFunc
 
+	// jobs holds the work an admin request started and left running: an index
+	// build, today. jobsStop ends the context those goroutines poll, so a
+	// close stops the walk at its next gate rather than waiting out a corpus.
+	//
+	// The long-lived loops are deliberately not in here. They end on their
+	// own cancellation and joining them in a close would hang it.
+	jobs     task.Group
+	jobsCtx  context.Context
+	jobsStop context.CancelFunc
+
 	// onBind is told when a settings save moved the listen address. The
 	// listener belongs to the process that started this engine, so the change
 	// is handed out rather than applied here.
@@ -289,12 +300,15 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 		logger = slog.Default()
 	}
 
+	jobsCtx, jobsStop := context.WithCancel(context.Background())
 	e := &Engine{
 		clock:     clk,
 		hardening: opt.Hardening,
 		dataDir:   opt.DataDir,
 		Revision:  opt.Revision,
 		logger:    logger,
+		jobsCtx:   jobsCtx,
+		jobsStop:  jobsStop,
 		// Until settings are loaded, no proxy is trusted and no host is
 		// named. An empty host list is what first boot looks like, and the
 		// boundary admits only a private client in that state.
@@ -629,10 +643,39 @@ func reloadMemberships(ctx context.Context, e *Engine, logger *slog.Logger) {
 	e.ACL.SetMemberships(byUser)
 }
 
-// jobDrainTimeout bounds how long a close waits for detached work. Long
-// enough for a copy to finish writing its outcome row, short enough that a
-// copy of a whole tree does not hold a restart open.
+// jobDrainTimeout backstops the wait for detached work once it has been told
+// to stop. Long enough for an item to finish and write its outcome row, short
+// enough that one long item does not hold a restart open.
 const jobDrainTimeout = 10 * time.Second
+
+// drainJobs tells the detached work to stop and waits for it.
+//
+// Both holders are drained under one deadline: the core's copies and this
+// engine's index build write into the same databases the close is about to
+// shut, so either one still running is the same problem.
+func (e *Engine) drainJobs() {
+	if e.jobsStop != nil {
+		e.jobsStop()
+	}
+	if e.Core != nil {
+		e.Core.StopJobs()
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), jobDrainTimeout)
+	defer cancel()
+
+	if derr := e.jobs.Wait(ctx); derr != nil {
+		e.logger.Warn("an index build was still running when the engine closed; its outcome may not be recorded",
+			"error", derr)
+	}
+	if e.Core == nil {
+		return
+	}
+	if derr := e.Core.DrainJobs(ctx); derr != nil {
+		e.logger.Warn("a job was still running when the engine closed; its outcome may not be recorded",
+			"error", derr)
+	}
+}
 
 // Close releases every open database, in reverse order.
 //
@@ -668,22 +711,16 @@ func (e *Engine) Close() (err error) {
 	// they are closed rather than sampling a file that is going away.
 	e.stopSizeGuard()
 
-	// The work a request started and left running: a recursive copy is the
-	// one today. It writes its outcome when it finishes, so closing the
+	// The work a request started and left running: a recursive copy and an
+	// index build. Each writes its outcome when it finishes, so closing the
 	// databases first turned a completed copy into an operation row that
 	// reads as never finished, and logged the write as a failure.
 	//
-	// Bounded, because a copy of a large tree is not a reason to hang a
-	// shutdown forever. What the bound buys when it expires is a line saying
-	// the work is still running, which is more than the silence it replaces.
-	if e.Core != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), jobDrainTimeout)
-		if derr := e.Core.DrainJobs(ctx); derr != nil {
-			e.logger.Warn("a job was still running when the engine closed; its outcome may not be recorded",
-				"error", derr)
-		}
-		cancel()
-	}
+	// Told to stop before the wait, so what is joined is one more item rather
+	// than a whole tree. The timeout is only a backstop for an item that is
+	// itself long, and what it buys when it expires is a line saying the work
+	// is still running.
+	e.drainJobs()
 
 	var errs []error
 	for i := len(e.files) - 1; i >= 0; i-- {

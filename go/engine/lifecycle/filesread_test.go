@@ -1236,7 +1236,12 @@ func TestClosingTheEngineWaitsForACopyToRecordItsOutcome(t *testing.T) {
 	if oerr != nil {
 		t.Fatalf("reading the operation after the restart: %v", oerr)
 	}
-	if name := op.StateName(); name != "done" {
-		t.Errorf("the copy's outcome after the restart reads %q, want done", name)
+	// Either terminal state is honest: the close asks the copy to stop, so a
+	// tree it had not finished reads interrupted and a small one it had reads
+	// done. What is refused is "running", the state a client polls forever.
+	switch name := op.StateName(); name {
+	case "done", "interrupted":
+	default:
+		t.Errorf("the copy's outcome after the restart reads %q", name)
 	}
 }
