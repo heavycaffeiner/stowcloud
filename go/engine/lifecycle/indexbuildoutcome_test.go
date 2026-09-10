@@ -19,13 +19,14 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 )
 
-// buildEngine is the smallest engine runIndexBuild reads: a state database, a
-// search service holding an index, and a corpus to walk.
+// buildEngine is the smallest engine runIndexBuild reads: a state database,
+// an index for the walk to append to, and one account to own the row.
 //
-// Driven directly rather than through the admin route, because what is under
-// test is which state a stopped build records and a walk over a real corpus
-// finishes before an HTTP client could stop it.
-func buildEngine(t *testing.T) (*Engine, []search.Source) {
+// Driven directly rather than through the admin route, because the state a
+// stopped build records is decided after the walk returns, so a corpus and a
+// race to interrupt one are both beside the point. Only the test that asserts
+// a file count registers a share.
+func buildEngine(t *testing.T) *Engine {
 	t.Helper()
 	ctx := context.Background()
 	root := t.TempDir()
@@ -58,10 +59,22 @@ func buildEngine(t *testing.T) (*Engine, []search.Source) {
 	svcSearch := svc.New(svc.Options{Clock: clock.System()})
 	svcSearch.SetIndex(ix)
 
-	corpus := filepath.Join(root, "corpus")
-	if merr := os.MkdirAll(corpus, 0o755); merr != nil {
-		t.Fatal(merr)
+	jobsCtx, jobsStop := context.WithCancel(context.Background())
+	t.Cleanup(jobsStop)
+	return &Engine{
+		State:    st,
+		Search:   svcSearch,
+		clock:    clock.System(),
+		logger:   slog.Default(),
+		jobsCtx:  jobsCtx,
+		jobsStop: jobsStop,
 	}
+}
+
+// corpusSource registers a share of two files for the walk to find.
+func corpusSource(t *testing.T) []search.Source {
+	t.Helper()
+	corpus := t.TempDir()
 	for _, name := range []string{"a.txt", "b.txt"} {
 		if werr := os.WriteFile(filepath.Join(corpus, name), []byte("x"), 0o600); werr != nil {
 			t.Fatal(werr)
@@ -76,18 +89,7 @@ func buildEngine(t *testing.T) (*Engine, []search.Source) {
 			t.Errorf("closing the share root: %v", cerr)
 		}
 	})
-
-	jobsCtx, jobsStop := context.WithCancel(context.Background())
-	t.Cleanup(jobsStop)
-	e := &Engine{
-		State:    st,
-		Search:   svcSearch,
-		clock:    clock.System(),
-		logger:   slog.Default(),
-		jobsCtx:  jobsCtx,
-		jobsStop: jobsStop,
-	}
-	return e, []search.Source{{Share: 1, Root: shareRoot, Base: vfs.RootPath()}}
+	return []search.Source{{Share: 1, Root: shareRoot, Base: vfs.RootPath()}}
 }
 
 // A build a shutdown stopped reads as interrupted, not as a finished one.
@@ -97,7 +99,7 @@ func buildEngine(t *testing.T) (*Engine, []search.Source) {
 // had no reason to run it again.
 func TestAnIndexBuildStoppedByAShutdownReadsInterrupted(t *testing.T) {
 	t.Parallel()
-	e, sources := buildEngine(t)
+	e := buildEngine(t)
 	ctx := context.Background()
 
 	id, err := e.State.CreateOp(ctx, 1, state.OpIndexBuild, 0, 0, nil)
@@ -106,7 +108,9 @@ func TestAnIndexBuildStoppedByAShutdownReadsInterrupted(t *testing.T) {
 	}
 
 	e.jobsStop()
-	e.runIndexBuild(ctx, id, sources)
+	// No sources: the branch under test runs after the walk returns, so an
+	// empty one reaches it without a corpus or a race to interrupt.
+	e.runIndexBuild(ctx, id, nil)
 
 	op, _, err := e.State.GetOp(ctx, id)
 	if err != nil {
@@ -120,7 +124,7 @@ func TestAnIndexBuildStoppedByAShutdownReadsInterrupted(t *testing.T) {
 // A build the operator cancelled reads as cancelled.
 func TestACancelledIndexBuildReadsCancelled(t *testing.T) {
 	t.Parallel()
-	e, sources := buildEngine(t)
+	e := buildEngine(t)
 	ctx := context.Background()
 
 	id, err := e.State.CreateOp(ctx, 1, state.OpIndexBuild, 0, 0, nil)
@@ -131,7 +135,7 @@ func TestACancelledIndexBuildReadsCancelled(t *testing.T) {
 		t.Fatalf("requesting the cancellation: %v", cerr)
 	}
 
-	e.runIndexBuild(ctx, id, sources)
+	e.runIndexBuild(ctx, id, nil)
 
 	op, _, err := e.State.GetOp(ctx, id)
 	if err != nil {
@@ -142,10 +146,14 @@ func TestACancelledIndexBuildReadsCancelled(t *testing.T) {
 	}
 }
 
-// A build nobody stopped reads as done.
+// A build nobody stopped reads as done, with the count it indexed.
+//
+// This one walks a real share: the count is what the other two branches
+// preserve rather than reset, so a figure of zero here would prove nothing.
 func TestAnUninterruptedIndexBuildReadsDone(t *testing.T) {
 	t.Parallel()
-	e, sources := buildEngine(t)
+	e := buildEngine(t)
+	sources := corpusSource(t)
 	ctx := context.Background()
 
 	id, err := e.State.CreateOp(ctx, 1, state.OpIndexBuild, 0, 0, nil)
