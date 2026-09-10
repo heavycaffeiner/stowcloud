@@ -4,12 +4,12 @@ name: verify
 # workspace targets. Each job proves what it can actually prove and nothing
 # else:
 #
-#   linux   — the deployment platform. The only place in this pipeline where
+#   linux:    the deployment platform. The only place in this pipeline where
 #             the openat2 path resolver, the Landlock and seccomp hardening and
 #             the preview jail execute rather than merely compile. It also runs
 #             the race detector, which needs a C compiler, and the browser
 #             end-to-end run.
-#   windows — the mandated development platform. Proves the frontend build and
+#   windows:  the mandated development platform. Proves the frontend build and
 #             that a contributor's own machine can run the gate. The
 #             filesystem work does not build there, and the gate reports that
 #             rather than substituting a portable backend: two real bugs once
@@ -27,7 +27,7 @@ on:
   pull_request:
   workflow_dispatch:
 
-# Nothing in this workflow writes to the repository — it checks out, builds and
+# Nothing in this workflow writes to the repository: it checks out, builds and
 # runs the gate. Declaring the scope here pins it to that regardless of what the
 # repository's default `GITHUB_TOKEN` permission is set to.
 permissions:
@@ -70,6 +70,18 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: go/go.sum
+
+      # golangci-lint keeps its analysis cache under ~/.cache, which
+      # setup-go's module and build cache does not cover. Without this the
+      # linter starts cold on every run and spends about a minute
+      # re-analysing a tree that did not change. The key carries the pinned
+      # linter version in verify.sh and the rule set it reads, since a cache
+      # written by another version is discarded anyway.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/golangci-lint
+          key: ${{ runner.os }}-golangci-${{ hashFiles('scripts/verify.sh', 'go/.golangci.yml', 'go/go.sum') }}
+          restore-keys: ${{ runner.os }}-golangci-
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -119,6 +131,9 @@ jobs:
           # installs and the race run have nothing to be absent for either.
           VERIFY_REQUIRE_GOTOOLS: "1"
           VERIFY_REQUIRE_RACE: "1"
+          # The frontend is built above, so the gate serves that bundle rather
+          # than building it again for the embed check and the browser run.
+          SC_BUNDLE_FRESH: "1"
         run: bash scripts/verify.sh
 
       # Runs even when the gate failed: "no space left on device" is otherwise
@@ -142,6 +157,12 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: go/go.sum
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~\AppData\Local\golangci-lint
+          key: ${{ runner.os }}-golangci-${{ hashFiles('scripts/verify.sh', 'go/.golangci.yml', 'go/go.sum') }}
+          restore-keys: ${{ runner.os }}-golangci-
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -175,6 +196,7 @@ jobs:
         env:
           VERIFY_REQUIRE_UI: "1"
           VERIFY_REQUIRE_GOTOOLS: "1"
+          SC_BUNDLE_FRESH: "1"
         run: bash scripts/verify.sh
 
       - name: Disk
