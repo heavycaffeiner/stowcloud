@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -592,5 +593,63 @@ func TestASuccessfulItemHasNoReason(t *testing.T) {
 	}
 	if items[1].Reason != "not_found" {
 		t.Errorf("a missing item carries the reason %q", items[1].Reason)
+	}
+}
+
+// A drain returns only once the detached copy has written its outcome.
+//
+// A shutdown calls this before closing the databases. Without it a copy that
+// was still running wrote its outcome into a closed database, which left an
+// operation row reading as one the runner never reached, and in one test it
+// wrote into a directory the harness had already removed.
+func TestDrainingJobsWaitsForTheOutcomeToBeRecorded(t *testing.T) {
+	t.Parallel()
+	c, _, srcHost, _, src, dst := twoShares(t)
+	ctx := context.Background()
+
+	// A tree rather than one file: the runner has real work to do, so a
+	// drain that returned early would be observable rather than lucky.
+	if err := os.MkdirAll(filepath.Join(srcHost, "tree"), 0o755); err != nil {
+		t.Fatalf("building the tree: %v", err)
+	}
+	for i := range 40 {
+		writeFile(t, srcHost, "tree/file-"+strconv.Itoa(i)+".txt", "body")
+	}
+
+	start, err := c.StartCopy(ctx, 1, at(t, src, "tree"), at(t, dst, "tree"), ConflictFail)
+	if err != nil {
+		t.Fatalf("StartCopy: %v", err)
+	}
+
+	if derr := c.DrainJobs(ctx); derr != nil {
+		t.Fatalf("draining: %v", derr)
+	}
+
+	op, err := c.Operation(ctx, 1, start.ID)
+	if err != nil {
+		t.Fatalf("reading the operation: %v", err)
+	}
+	if op.State == state.OpRunning {
+		t.Errorf("the drain returned while the copy was still running")
+	}
+	if op.State != state.OpDone {
+		t.Errorf("the copy ended as %v", op.State)
+	}
+}
+
+// A drain that runs out of time says so rather than blocking the shutdown
+// that called it.
+func TestDrainingJobsHonoursItsDeadline(t *testing.T) {
+	t.Parallel()
+	c, _, _, _, _, _ := twoShares(t)
+
+	release := make(chan struct{})
+	defer close(release)
+	c.jobs.Go(context.Background(), "test: a job that will not finish", func() { <-release })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if derr := c.DrainJobs(ctx); !errors.Is(derr, context.Canceled) {
+		t.Errorf("draining past the deadline returned %v, want the context's error", derr)
 	}
 }

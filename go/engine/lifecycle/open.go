@@ -629,6 +629,11 @@ func reloadMemberships(ctx context.Context, e *Engine, logger *slog.Logger) {
 	e.ACL.SetMemberships(byUser)
 }
 
+// jobDrainTimeout bounds how long a close waits for detached work. Long
+// enough for a copy to finish writing its outcome row, short enough that a
+// copy of a whole tree does not hold a restart open.
+const jobDrainTimeout = 10 * time.Second
+
 // Close releases every open database, in reverse order.
 //
 // Every error is joined rather than the first returned: a caller shutting down
@@ -662,6 +667,23 @@ func (e *Engine) Close() (err error) {
 	// The size guard reads those databases on a ticker, so it stops before
 	// they are closed rather than sampling a file that is going away.
 	e.stopSizeGuard()
+
+	// The work a request started and left running: a recursive copy is the
+	// one today. It writes its outcome when it finishes, so closing the
+	// databases first turned a completed copy into an operation row that
+	// reads as never finished, and logged the write as a failure.
+	//
+	// Bounded, because a copy of a large tree is not a reason to hang a
+	// shutdown forever. What the bound buys when it expires is a line saying
+	// the work is still running, which is more than the silence it replaces.
+	if e.Core != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), jobDrainTimeout)
+		if derr := e.Core.DrainJobs(ctx); derr != nil {
+			e.logger.Warn("a job was still running when the engine closed; its outcome may not be recorded",
+				"error", derr)
+		}
+		cancel()
+	}
 
 	var errs []error
 	for i := len(e.files) - 1; i >= 0; i-- {

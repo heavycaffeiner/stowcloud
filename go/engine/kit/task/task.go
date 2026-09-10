@@ -8,6 +8,7 @@ import (
 	"context"
 	"log/slog"
 	"runtime/debug"
+	"sync"
 )
 
 // Go starts fn on a new goroutine with a panic recovery installed. If fn
@@ -22,6 +23,56 @@ func Go(ctx context.Context, name string, fn func()) {
 		defer Recover(ctx, name)
 		fn()
 	}()
+}
+
+// Group is a set of goroutines something else has to wait for.
+//
+// Detached work that writes to a file the process is about to close needs an
+// answer to "is it finished". A copy started by a request outlives that
+// request by design, and without this it also outlived the databases: the
+// close ran first and the copy then wrote its outcome into a closed one.
+//
+// The zero value is usable. A nil Group starts the work anyway, untracked, so
+// a caller with nothing to wait on is not a caller that has to branch.
+type Group struct {
+	wg sync.WaitGroup
+}
+
+// Go starts fn like the package function does, counted so Wait can see it.
+func (g *Group) Go(ctx context.Context, name string, fn func()) {
+	if g == nil {
+		Go(ctx, name, fn)
+		return
+	}
+	g.wg.Add(1)
+	Go(ctx, name, func() {
+		defer g.wg.Done()
+		fn()
+	})
+}
+
+// Wait blocks until every goroutine started through this group has returned,
+// or until ctx ends.
+//
+// A deadline that passes returns ctx's error rather than blocking forever:
+// work that will not finish is a reason to say so, not a reason to hang a
+// shutdown. Those goroutines keep running, which is the honest outcome, and
+// the caller decides what to do about it.
+func (g *Group) Wait(ctx context.Context) error {
+	if g == nil {
+		return nil
+	}
+	done := make(chan struct{})
+	Go(ctx, "task: group wait", func() {
+		g.wg.Wait()
+		close(done)
+	})
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // Recover stops a panic from unwinding past the goroutine it runs on. Call it

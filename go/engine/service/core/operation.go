@@ -7,7 +7,6 @@ import (
 	"errors"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
-	"github.com/heavycaffeiner/stowcloud/go/engine/kit/task"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 )
 
@@ -324,11 +323,28 @@ func (c *Core) StartCopy(
 	// The request's context ends when the response is written and this work
 	// outlives it by design. Cancelling on client disconnect is exactly the
 	// bug this detachment avoids; the caller polls the row for the result.
+	//
+	// Counted in the job group, because outliving the request is not the same
+	// as outliving the process: a shutdown waits for this rather than closing
+	// the database it is about to write its outcome into.
 	runCtx := context.WithoutCancel(ctx)
-	task.Go(runCtx, "core: long copy", func() {
+	c.jobs.Go(runCtx, "core: long copy", func() {
 		c.runCopy(runCtx, id, from, dest, st)
 	})
 	return CopyStart{ID: OperationID(id), Dest: dest, Started: true}, nil
+}
+
+// DrainJobs waits for the work a request started and left running.
+//
+// Called by a shutdown before the databases close. A copy still running when
+// they closed reported "recording a copy's outcome failed" and left an
+// operation row that reads as never finished, and in a test it wrote into a
+// directory the harness had already removed.
+//
+// ctx bounds the wait: its error says the work is still running, which is
+// something to report rather than something to hang on.
+func (c *Core) DrainJobs(ctx context.Context) error {
+	return c.jobs.Wait(ctx)
 }
 
 // runCopy is the detached half of StartCopy.

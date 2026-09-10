@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/clock"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/task"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/cache"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/journal"
@@ -103,6 +104,11 @@ type Core struct {
 	// homeOnce serializes the once-per-user home creation. Only the slow
 	// path takes it; the steady state reads the grant marker and returns.
 	homeOnce sync.Mutex
+
+	// jobs holds the work a request started and left running: a recursive
+	// copy, today. Tracked so a shutdown can wait for it rather than closing
+	// the databases it is still writing its outcome into.
+	jobs task.Group
 }
 
 // New wires a Core over the store and loads the grant table into the

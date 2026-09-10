@@ -1155,3 +1155,88 @@ func statPath(t *testing.T, base string, sess session, path string) (int, []byte
 	t.Helper()
 	return authed(t, http.MethodGet, base+"/api/v1/files/stat?path="+urlEscape(path), sess)
 }
+
+// A copy still running when the engine closes has its outcome recorded.
+//
+// The copy outlives the request that started it by design. It used to outlive
+// the databases too: the close ran first, the copy then wrote its outcome
+// into a closed one and logged that as a failure, and the row a client polls
+// stayed as one the runner never finished.
+func TestClosingTheEngineWaitsForACopyToRecordItsOutcome(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dataDir := t.TempDir()
+
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dataDir, PasswordParams: fastPasswordParams()})
+	if err != nil {
+		t.Fatalf("opening: %v", err)
+	}
+	id, err := e.Auth.CreateUser(ctx, "alice", "Alice", secret.New([]byte("a-long-enough-password")))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A tree, so the runner is still working when the close arrives.
+	host := t.TempDir()
+	if merr := os.MkdirAll(filepath.Join(host, "tree"), 0o700); merr != nil {
+		t.Fatal(merr)
+	}
+	for i := range 60 {
+		name := filepath.Join(host, "tree", "file-"+strconv.Itoa(i)+".bin")
+		if werr := os.WriteFile(name, []byte("body"), 0o600); werr != nil {
+			t.Fatal(werr)
+		}
+	}
+	sh, err := e.Core.CreateShare(ctx, core.ShareSpec{Name: "files", Host: host})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
+		User: &id, Share: sh.ID, Allow: everyPerm(), Inherit: true, Label: sh.Name,
+	}); gerr != nil {
+		t.Fatal(gerr)
+	}
+
+	base := serve(t, e)
+	sess := signIn(t, base, "alice", "a-long-enough-password")
+	status, body := post(t, base+"/api/v1/files/copy", sess, map[string]string{
+		"from": "/files/tree", "to": "/files/copy",
+	})
+	if status != http.StatusAccepted {
+		t.Fatalf("the copy answered %d: %s", status, body)
+	}
+	var started struct {
+		ID string `json:"id"`
+	}
+	if jerr := json.Unmarshal(body, &started); jerr != nil || started.ID == "" {
+		t.Fatalf("the copy named no job: %v %s", jerr, body)
+	}
+
+	// Closed while it runs, then reopened on the same directory: the row a
+	// client polls is what says whether the outcome was recorded.
+	if cerr := e.Close(); cerr != nil {
+		t.Fatalf("closing: %v", cerr)
+	}
+
+	again, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dataDir, PasswordParams: fastPasswordParams()})
+	if err != nil {
+		t.Fatalf("reopening: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := again.Close(); cerr != nil {
+			t.Errorf("closing the second engine: %v", cerr)
+		}
+	})
+
+	opID, perr := strconv.ParseInt(started.ID, 10, 64)
+	if perr != nil {
+		t.Fatalf("the job id %q is not a number", started.ID)
+	}
+	op, oerr := again.Core.Operation(ctx, core.UserID(id), core.OperationID(opID))
+	if oerr != nil {
+		t.Fatalf("reading the operation after the restart: %v", oerr)
+	}
+	if name := op.StateName(); name != "done" {
+		t.Errorf("the copy's outcome after the restart reads %q, want done", name)
+	}
+}

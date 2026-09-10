@@ -3,11 +3,11 @@
 package lifecycle_test
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/dav"
 )
@@ -192,21 +192,14 @@ func TestARecursiveCopyBecomesAJob(t *testing.T) {
 	}
 
 	// The job writes into the fixture's directory after this handler
-	// returned, so the test waits for it. Without the wait the temporary
-	// directory is removed while the copy is still writing into it, which
-	// fails the run with "directory not empty" rather than with anything
-	// about copying.
-	// Counted rather than timed: reading the wall clock outside the clock
-	// packages is what this project's own gate refuses.
-	var landed bool
-	for range 500 {
-		if f.exists("copy/deep/file.txt") {
-			landed = true
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+	// returned, so the test drains it. Without that the temporary directory
+	// is removed while the copy is still writing into it, which fails the
+	// run with "directory not empty" rather than with anything about
+	// copying.
+	if derr := f.core.DrainJobs(context.Background()); derr != nil {
+		t.Fatalf("draining the copy: %v", derr)
 	}
-	if !landed {
+	if !f.exists("copy/deep/file.txt") {
 		t.Fatal("the copy job never produced the destination")
 	}
 }
