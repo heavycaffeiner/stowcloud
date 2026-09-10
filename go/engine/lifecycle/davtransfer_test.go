@@ -196,12 +196,18 @@ func TestARecursiveCopyBecomesAJob(t *testing.T) {
 	// directory is removed while the copy is still writing into it, which
 	// fails the run with "directory not empty" rather than with anything
 	// about copying.
-	deadline := time.Now().Add(5 * time.Second)
-	for !f.exists("copy/deep/file.txt") {
-		if time.Now().After(deadline) {
-			t.Fatal("the copy job never produced the destination")
+	// Counted rather than timed: reading the wall clock outside the clock
+	// packages is what this project's own gate refuses.
+	var landed bool
+	for range 500 {
+		if f.exists("copy/deep/file.txt") {
+			landed = true
+			break
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+	if !landed {
+		t.Fatal("the copy job never produced the destination")
 	}
 }
 
