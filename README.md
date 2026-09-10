@@ -208,15 +208,16 @@ imported, so what you see here is what `ls` sees.
 One query covers every folder that account can see, so it is one place to
 look instead of several. It runs to the end and streams matches as it finds
 them, so a folder with a hundred thousand files answers with all of them and
-not the first page. Filter by files, by folders, or by extension: pick a
-group such as Images or Documents, or type the extensions yourself. Names
-only. Searching inside file contents is a separate feature you turn on.
+not the first page. Filter by files, by folders, or by extension: the filter
+menu holds the kinds and the type groups such as Images or Documents, and
+the box beside it takes extensions you type. Names only. Searching inside
+file contents is a separate feature you turn on.
 
 On a desktop the search button opens a sheet over the folder you were in, so
 closing it puts you back where you started. Ctrl+K, or Cmd+K, opens the same
 sheet from any screen. On a phone it opens a screen of its own.
 
-![The search sheet over the file browser: a query for 2026, filter chips for kind and file type, and results from two shares with their folders, sizes and dates](docs/screenshots/search.png)
+![The search sheet over the file browser: a query for 2026, the filter menu's button beside an extensions box, and results from two shares with their folders, sizes and dates](docs/screenshots/search.png)
 
 ### A link is created once, and shown once
 
