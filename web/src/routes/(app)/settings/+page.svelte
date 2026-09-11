@@ -55,7 +55,7 @@
     ...(features?.smb || features?.webdav
       ? [{ name: t('settings.connections'), value: 'connections', icon: icons['folder-tree'] }]
       : []),
-    { name: t('settings.appearance'), value: 'appearance', icon: icons.settings }
+    { name: t('settings.browser_preferences'), value: 'appearance', icon: icons.settings }
   ])
 
   const TAB_VALUES = ['account', 'security', 'connections', 'appearance']
@@ -158,6 +158,7 @@
         </div>
       </section>
 
+    {:else if tab === 'security'}
       <section class="sc-settings__card">
         <div class="sc-settings__card-head">
           <div class="sc-settings__card-icon">
@@ -173,7 +174,6 @@
           <PasswordSection />
         {/await}
       </section>
-    {:else if tab === 'security'}
       <section class="sc-settings__card">
         <div class="sc-settings__card-head">
           <div class="sc-settings__card-icon">

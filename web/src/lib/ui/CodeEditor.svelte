@@ -21,10 +21,60 @@
      *  `LanguageDescription.matchFilename`), never sent anywhere. */
     filename: string
     readOnly?: boolean
+    maxBytes?: number
     onchange: (text: string) => void
     onsave?: () => void
+    onlimit?: () => void
   }
-  let { value, filename, readOnly = false, onchange, onsave }: Props = $props()
+  let { value, filename, readOnly = false, maxBytes, onchange, onsave, onlimit }: Props = $props()
+
+  /**
+   * Count UTF-8 bytes without materializing an encoded copy of the document.
+   * The early exit keeps a large rejected paste bounded by the configured
+   * limit, and the pending high surrogate handles Text cursor chunk splits.
+   */
+  function exceedsUtf8Limit(text: Iterable<string>, limit: number): boolean {
+    let bytes = 0
+    let pendingHighSurrogate = false
+    for (const chunk of text) {
+      for (let i = 0; i < chunk.length; i++) {
+        const code = chunk.charCodeAt(i)
+        if (pendingHighSurrogate) {
+          if (code >= 0xdc00 && code <= 0xdfff) {
+            bytes += 4
+            pendingHighSurrogate = false
+            if (bytes > limit) return true
+            continue
+          }
+          bytes += 3
+          pendingHighSurrogate = false
+          if (bytes > limit) return true
+        }
+        if (code <= 0x7f) {
+          bytes++
+        } else if (code <= 0x7ff) {
+          bytes += 2
+        } else if (code >= 0xd800 && code <= 0xdbff) {
+          if (i + 1 < chunk.length) {
+            const low = chunk.charCodeAt(i + 1)
+            if (low >= 0xdc00 && low <= 0xdfff) {
+              bytes += 4
+              i++
+            } else {
+              bytes += 3
+            }
+          } else {
+            pendingHighSurrogate = true
+          }
+        } else {
+          bytes += 3
+        }
+        if (bytes > limit) return true
+      }
+    }
+    if (pendingHighSurrogate) bytes += 3
+    return bytes > limit
+  }
 
   let hostEl: HTMLDivElement | undefined = $state()
   let ready = $state(false)
@@ -59,6 +109,19 @@
         const languageExt = desc ? await desc.load() : null
         if (disposed || !hostEl) return
 
+        const byteLimitFilter = EditorState.transactionFilter.of((tr) => {
+          if (maxBytes === undefined || !tr.docChanged) return tr
+
+          let hasInsertion = false
+          tr.changes.iterChanges((_fromA, _toA, _fromB, _toB, inserted) => {
+            if (inserted.length > 0) hasInsertion = true
+          })
+          if (!hasInsertion || !exceedsUtf8Limit(tr.newDoc, maxBytes)) return tr
+
+          if (tr.isUserEvent('input')) onlimit?.()
+          return { changes: [] }
+        })
+
         const saveKeymap = keymap.of([
           {
             key: 'Mod-s',
@@ -90,6 +153,7 @@
               languageExt ? languageExt.extension : [],
               EditorView.editable.of(!readOnly),
               EditorState.readOnly.of(readOnly),
+              byteLimitFilter,
               updateListener,
               EditorView.theme({
                 '&': { height: '100%', fontSize: '0.875rem' },
@@ -116,7 +180,7 @@
   $effect(() => {
     if (view && value !== lastEcho) {
       lastEcho = value
-      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } })
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value }, filter: false })
     }
   })
   export function focus(): void {

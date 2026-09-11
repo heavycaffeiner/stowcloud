@@ -9,10 +9,11 @@
   import { goto } from '$app/navigation'
   import { createQuery, createMutation } from '@tanstack/svelte-query'
   import { trashQuery, trashRestoreMutation, trashPurgeMutation } from '../../../lib/query/files'
-  import { describeApiError } from '../../../lib/api/error-text'
+  import { batchErrorKey, describeApiError } from '../../../lib/api/error-text'
   import { formatDateNs, t, tp } from '../../../lib/i18n'
   import { formatBytes } from '../../../lib/format/bytes'
   import { selection } from '../../../lib/store/selection.store'
+  import type { BatchItemResult } from '../../../lib/api/types'
   import Button from '../../../lib/ui/Button.svelte'
   import Checkbox from '../../../lib/ui/Checkbox.svelte'
   import ConfirmDialog from '../../../lib/ui/ConfirmDialog.svelte'
@@ -46,6 +47,8 @@
   let purgeOpen = $state(false)
   // null means purge whatever is selected: set to single id when opened from row
   let purgeSingle = $state<string | null>(null)
+  type TrashOperation = 'restore' | 'purge'
+  let operationNotice = $state<{ kind: TrashOperation; results: BatchItemResult[] } | null>(null)
 
   function toggle(id: string): void {
     selection.toggle(id)
@@ -56,7 +59,7 @@
     else selection.all(entries.map((e) => e.id))
   }
 
-  /** Summarizes a batch OpResult array with total and failure counts. */
+  /** Summarizes a batch result with total and failure counts. */
   function summarize(results: { ok: boolean }[], verb: string): string {
     const failed = results.filter((r) => !r.ok).length
     if (failed === 0) return tp('trash.items', results.length, { verb })
@@ -64,12 +67,29 @@
     return t('trash.succeeded_failed', { verb, ok, failed })
   }
 
+  function applyTrashResults(ids: string[], results: BatchItemResult[]): void {
+    const failed = new Set(results.filter((result) => !result.ok).map((result) => result.path))
+    const next = new Set(selected)
+    for (const id of ids) {
+      if (failed.has(id)) next.add(id)
+      else next.delete(id)
+    }
+    selection.replace(next)
+  }
+
+  function resultText(result: BatchItemResult): string {
+    if (result.ok) return t('common.done')
+    const key = batchErrorKey(result.error)
+    return key ? t(key.key, key.params) : result.error?.message ?? t('error.internal')
+  }
+
   async function restore(ids: string[]): Promise<void> {
     if (ids.length === 0) return
     try {
       const res = await restoreMutation.mutateAsync(ids)
+      operationNotice = { kind: 'restore', results: res.results }
       snackbarMsg = summarize(res.results, t('trash.restored'))
-      selection.replace([...selected].filter((id) => !ids.includes(id)))
+      applyTrashResults(ids, res.results)
     } catch (err) {
       snackbarMsg = describeApiError(err, t('trash.could_not_restore'))
     }
@@ -86,8 +106,9 @@
     if (ids.length === 0) return
     try {
       const res = await purgeMutation.mutateAsync(ids)
+      operationNotice = { kind: 'purge', results: res.results }
       snackbarMsg = summarize(res.results, t('trash.deleted_permanently'))
-      selection.replace([...selected].filter((id) => !ids.includes(id)))
+      applyTrashResults(ids, res.results)
     } catch (err) {
       snackbarMsg = describeApiError(err, t('trash.could_not_delete_permanently'))
     } finally {
@@ -133,6 +154,22 @@
           </Button>
         </div>
       </div>
+    {/if}
+    {#if operationNotice}
+      <section class="sc-trash__operation" role="status" aria-live="polite">
+        <div class="sc-trash__operation-heading">
+          <h2>{operationNotice.kind === 'restore' ? t('trash.restore') : t('trash.purge')}</h2>
+          <button type="button" onclick={() => (operationNotice = null)}>{t('common.close')}</button>
+        </div>
+        <ul>
+          {#each operationNotice.results as result (result.path)}
+            <li class:error={!result.ok}>
+              <span class="sc-trash__operation-path">{result.path}</span>
+              <span>{resultText(result)}</span>
+            </li>
+          {/each}
+        </ul>
+      </section>
     {/if}
 
     {#if loading}
@@ -211,6 +248,54 @@
     margin-bottom: 8px;
     border-radius: var(--m3-shape-medium);
     background: var(--m3c-surface-container);
+  }
+  .sc-trash__operation {
+    display: grid;
+    gap: 8px;
+    margin: 12px 0;
+    padding: 12px 16px;
+    border: 1px solid var(--m3c-outline-variant);
+    border-radius: var(--m3-shape-medium);
+    background: var(--m3c-surface-container);
+  }
+  .sc-trash__operation-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .sc-trash__operation-heading h2 {
+    margin: 0;
+    @apply --m3-title-medium;
+  }
+  .sc-trash__operation-heading button {
+    border: 0;
+    padding: 4px 8px;
+    color: var(--m3c-primary);
+    background: transparent;
+    cursor: pointer;
+    font: inherit;
+  }
+  .sc-trash__operation ul {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .sc-trash__operation li {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 4px 12px;
+    overflow-wrap: anywhere;
+    @apply --m3-body-small;
+  }
+  .sc-trash__operation li.error {
+    color: var(--m3c-error);
+  }
+  .sc-trash__operation-path {
+    min-width: 0;
   }
   .sc-trash__toolbar-actions {
     display: flex;

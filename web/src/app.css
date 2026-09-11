@@ -26,7 +26,7 @@
    m3-svelte positions itself. The hosts keep their own click and their hover
    tint; only the hitbox stops eating what is inside them. */
 .sc-row::before,
-.sc-file-grid__cell::before,
+.sc-file-grid__card::before,
 .sc-list-item::before,
 .sc-tree-row::before {
   pointer-events: none;
@@ -123,7 +123,24 @@
     --m3c-on-tertiary-container-subtle: light-dark(#60435f, #d6b1d2);
     --m3c-error-container-subtle: light-dark(#ffcfc9, #790006);
     --m3c-on-error-container-subtle: light-dark(#9e000b, #ffa49a);
-  }
+
+    /* Semantic aliases keep shared compositions on the Material palette. They
+       are roles, not a second colour system, so a theme change updates every
+       surface and state without per-page literals. */
+    --sc-page-surface: var(--m3c-surface);
+    --sc-container-surface: var(--m3c-surface-container-low);
+    --sc-raised-surface: var(--m3c-surface-container);
+    --sc-overlay-surface: var(--m3c-surface-container-high);
+    --sc-content-primary: var(--m3c-on-surface);
+    --sc-content-secondary: var(--m3c-on-surface-variant);
+    --sc-state-selection: var(--m3c-secondary-container);
+    --sc-state-selection-content: var(--m3c-on-secondary-container);
+    --sc-state-focus: var(--m3c-secondary);
+    --sc-state-warning: var(--m3c-tertiary-container);
+    --sc-state-warning-content: var(--m3c-on-tertiary-container);
+    --sc-state-error: var(--m3c-error-container);
+    --sc-state-error-content: var(--m3c-on-error-container);
+}
 }
 /* ---------------------------------------------------------------------------
    App-level base. Everything below is either a browser default we have to
@@ -166,14 +183,10 @@
 :root {
   --sc-row-height: 48px;
 
-  /* The two nav components are `position: fixed` (see their own comments), so
-     four other rules have to reserve their space by hand. These mirror
-     m3-svelte's own numbers: `NavCMLXItem`'s compact height is `4rem`, and
-     `NavigationRail`'s container is `96px`, in the framework's own units, so
-     a browser font-size change moves the bar and its reservations together
-     instead of splitting them apart. */
+  /* The fixed bottom bar and standard drawer need matching reservations in
+     the shell and file surfaces. Keep their dimensions in root tokens so
+     drawer, bar and content stay aligned when the browser text size changes. */
   --sc-nav-bar-height: 4rem;
-  --sc-nav-rail-width: 96px;
   --sc-nav-drawer-width: 256px;
 
   /* MD3 window-class margins: 16dp compact, 24dp medium and up. Every
@@ -205,11 +218,18 @@ html {
   height: 100%;
 }
 
+/* Keep native form controls on the same type scale as framework controls.
+   The browser's default button and input fonts are otherwise a second visual
+   system on the few native controls that remain in route compositions. */
+:where(button, input, select, textarea) {
+  font: inherit;
+}
+
 body {
   height: 100%;
   margin: 0;
-  background: var(--m3v-background);
-  color: var(--m3c-on-surface);
+  background: var(--sc-page-surface);
+  color: var(--sc-content-primary);
   /* Tabular figures so file sizes and dates don't jitter between rows. */
   font-feature-settings: 'tnum' 1;
   @apply --m3-body-large;
@@ -239,18 +259,26 @@ a {
   --m3c-on-primary: var(--m3c-on-error);
   --m3c-primary-container: var(--m3c-error-container);
   --m3c-on-primary-container: var(--m3c-on-error-container);
+  --m3c-secondary: var(--m3c-error);
+  --m3c-on-secondary: var(--m3c-on-error);
   --m3c-secondary-container: var(--m3c-error-container);
   --m3c-on-secondary-container: var(--m3c-on-error-container);
+  --m3c-outline: var(--m3c-error);
+  --m3c-outline-variant: var(--m3c-error);
+  --m3c-on-surface-variant: var(--m3c-error);
 }
 
 /* The framework's focus indicator, reachable from our own compositions.
    m3-svelte exposes it as a mixin its components `@apply` internally and ships
    no class, so this is the one place that turns it into one: the second
    selector draws it on an ancestor for the cases where the focusable element
-   is the wrong box to outline. */
+   is the wrong box. A stable outline keeps focus obvious even when motion is
+   reduced. */
 .sc-focus-ring:focus-visible,
 .sc-focus-ring-within:has(:focus-visible) {
-  @apply --m3-focused-outward;
+  outline: 3px solid var(--sc-state-focus);
+  outline-offset: 2px;
+  animation: none;
 }
 
 /* 48px minimum touch target, expanded via ::before so a visually smaller
@@ -266,6 +294,38 @@ a {
   height: max(100%, 48px);
   translate: -50% -50%;
 }
+
+/* Native and framework fields share this reading measure on wide surfaces.
+   Route forms may choose a narrower maximum; this ceiling prevents an
+   accidental full-card field from becoming hard to scan. */
+.field {
+  min-inline-size: 0;
+  max-inline-size: 35rem;
+}
+
+/* The framework's small controls are 40px on desktop. Compact layouts use a
+   48px minimum without changing file-row density; labels may wrap rather than
+   forcing a page-wide overflow at 320px. */
+@media (max-width: 599px) {
+  :where(button.m3-container.s, a.m3-container.s) {
+    min-block-size: 3rem;
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  :where(button.m3-container.s.icon-full, a.m3-container.s.icon-full) {
+    inline-size: 3rem;
+    min-inline-size: 3rem;
+  }
+
+  :where(button.m3-container.s, a.m3-container.s) > span:not(.spinner) {
+    min-inline-size: 0;
+    flex-shrink: 1;
+  }
+}
+
 
 /* Screen-reader-only text, for controls whose visible label is an icon. */
 .sc-sr-only {

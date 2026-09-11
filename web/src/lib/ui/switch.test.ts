@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 // m3-svelte's Switch reads `matchMedia` and `ResizeObserver` at module scope,
-// and jsdom has neither. Installed before the dynamic imports below, which is
-// why those imports are inside the test rather than at the top of the file.
+// and jsdom has neither. Install them before loading the component.
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
   value: vi.fn().mockImplementation((query) => ({
@@ -28,13 +27,10 @@ window.ResizeObserver = FakeResizeObserver as unknown as typeof ResizeObserver
 // than at the call site: a well-known DOM object the lib types do not cover.
 const svgProto = window.SVGElement.prototype as SVGElement & { beginElement: () => void }
 svgProto.beginElement = () => {}
+const { render, fireEvent } = await import('@testing-library/svelte')
+const { default: Switch } = await import('./Switch.svelte')
 
-async function mount(checked: boolean, onchange: (v: boolean) => void) {
-  // Dynamic, and it has to be: m3-svelte touches `matchMedia` while its module
-  // body runs, so a static import would be hoisted above the polyfills and
-  // throw before the first test.
-  const { render, fireEvent } = await import('@testing-library/svelte')
-  const { default: Switch } = await import('./Switch.svelte')
+function mount(checked: boolean, onchange: (v: boolean) => void) {
   const result = render(Switch, { checked, label: 'Allow SMB access', onchange })
   const input = result.container.querySelector('input[type="checkbox"]') as HTMLInputElement
   return { ...result, input, fireEvent }

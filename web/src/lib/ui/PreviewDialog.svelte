@@ -21,6 +21,7 @@
   import { icons } from '../icons'
   import IconButton from './IconButton.svelte'
   import Button from './Button.svelte'
+  import Dialog from './Dialog.svelte'
   import ProgressCircular from './ProgressCircular.svelte'
   import UnlockShareDialog from './UnlockShareDialog.svelte'
   import { IMAGE_EXT, VIDEO_EXT, extensionOf, mimeTypeOf } from './media-utils'
@@ -173,6 +174,11 @@
    *  resets on. */
   const previewKey = $derived(open && entry ? `${body.kind}\x00${path}\x00${entry.id ?? ''}\x00${entry.size}` : null)
 
+  let previewEl = $state<HTMLDivElement | null>(null)
+  $effect(() => {
+    if (!open || !entry || !previewEl) return
+    queueMicrotask(() => previewEl?.querySelector<HTMLButtonElement>('button')?.focus())
+  })
   let videoEl = $state<HTMLVideoElement | null>(null)
   /** Set once a preview URL fails to decode. Distinct from a fetch failure:
    *  nothing here is a query, since constructing the URL never round-trips. */
@@ -409,7 +415,10 @@
   }
 
   function onKeydown(e: KeyboardEvent): void {
-    if (!open) return
+    if (!open || e.defaultPrevented) return
+    // Preview owns Escape only while it is the topmost modal. A nested
+    // unlock dialog has its own native cancel/focus lifecycle.
+    if (document.querySelector('dialog[open]:not(.sc-preview-dialog)')) return
     if (e.key === 'Escape') {
       e.preventDefault()
       if (archive !== null && cwd !== '') up()
@@ -426,8 +435,17 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-{#if open && entry}
-  <div class="sc-preview" role="dialog" aria-modal="true" aria-label={entry.name}>
+<Dialog
+  open={open && entry !== null}
+  title={entry?.name ?? ''}
+  ariaLabel={entry?.name ?? t('preview.cannot_preview')}
+  role="dialog"
+  closedby="none"
+  class="sc-preview-dialog"
+  {onclose}
+>
+  {#if open && entry}
+    <div bind:this={previewEl} class="sc-preview">
     <header class="sc-preview__bar">
       <IconButton label={t('common.close')} onclick={onclose}><Icon icon={icons.close} /></IconButton>
       <span class="sc-preview__name" title={entry.name}>{entry.name}</span>
@@ -596,8 +614,9 @@
         </IconButton>
       </div>
     </div>
-  </div>
-{/if}
+    </div>
+  {/if}
+</Dialog>
 
 <UnlockShareDialog
   open={unlockDialogOpen}
@@ -611,6 +630,37 @@
 />
 
 <style>
+  /* Dialog.svelte provides the native top-layer modal. The viewer fills that
+     surface while retaining Dialog's focus containment and inert backdrop. */
+  :global(dialog.sc-preview-dialog) {
+    width: 100vw;
+    min-width: 100vw;
+    max-width: none;
+    height: 100vh;
+    max-height: none;
+    padding: 0;
+    border-radius: 0;
+    overflow: hidden;
+  }
+  :global(dialog.sc-preview-dialog .headline),
+  :global(dialog.sc-preview-dialog .buttons) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  :global(dialog.sc-preview-dialog .content) {
+    display: block;
+    flex: 1 1 auto;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+  }
   .sc-preview {
     position: fixed;
     inset: 0;

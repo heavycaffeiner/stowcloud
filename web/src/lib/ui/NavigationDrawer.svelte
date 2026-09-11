@@ -1,14 +1,12 @@
 <script lang="ts">
-  // NavigationDrawer.svelte: Google AI Studio / Material 3 style clean navigation sidebar.
-  // Features a flat full-width "+ Add" action button with dropdown, structured sections,
-  // 8px rounded rectangle items, right-aligned collapse chevrons, and refined typography.
+  // NavigationDrawer.svelte: the standard navigation surface and the compact
+  // folder selector. Files is always a destination; folder switching is a
+  // separately named control with the permitted roots beneath it.
   import { t } from '../i18n'
   import type { IconifyIcon } from '@iconify/types'
   import IconButton from './IconButton.svelte'
-  import { Icon, MenuItem } from 'm3-svelte'
-  import Menu from './Menu.svelte'
+  import { Icon } from 'm3-svelte'
   import { icons } from '../icons'
-  import { goto } from '$app/navigation'
   import { createMutation } from '@tanstack/svelte-query'
   import { setRootOrderMutation } from '../query/account'
   import { describeApiError } from '../api/error-text'
@@ -36,6 +34,7 @@
     onnavselect?: (item: NavItem) => void
     overlay?: boolean
     onclose?: () => void
+    folderSelectorOnly?: boolean
   }
 
   let {
@@ -46,14 +45,13 @@
     onselect,
     onnavselect,
     overlay = false,
-    onclose
+    onclose,
+    folderSelectorOnly = false
   }: Props = $props()
 
+
   let dialogEl: HTMLDialogElement | undefined = $state()
-  let filesExpanded = $state(true)
-  let addMenuOpen = $state(false)
-  let addMenuX = $state(0)
-  let addMenuY = $state(0)
+  let foldersExpanded = $state(true)
 
   const setOrderMut = createMutation(() => setRootOrderMutation())
 
@@ -92,36 +90,13 @@
     if (e.target === dialogEl) onclose?.()
   }
 
-  function toggleAddMenu(e: MouseEvent): void {
-    if (addMenuOpen) {
-      addMenuOpen = false
-      return
-    }
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    addMenuX = rect.left
-    addMenuY = rect.bottom + 4
-    addMenuOpen = true
-  }
-
-  function triggerAction(action: 'folder' | 'file' | 'upload-folder'): void {
-    addMenuOpen = false
-    if (overlay) onclose?.()
-    if (!location.pathname.startsWith('/b')) {
-      void goto('/b').then(() => {
-        setTimeout(() => window.dispatchEvent(new CustomEvent(`sc:${action}`)), 100)
-      })
-    } else {
-      window.dispatchEvent(new CustomEvent(`sc:${action}`))
-    }
+  function toggleFolders(): void {
+    foldersExpanded = !foldersExpanded
   }
 
   function handleFilesClick(): void {
-    filesExpanded = !filesExpanded
-    if (displayRoots.length > 0 && !active) {
-      onselect?.(displayRoots[0])
-    } else if (activeNav !== 'files') {
-      onnavselect?.({ id: 'files', label: t('nav.files'), icon: icons.home, href: '/b' })
-    }
+    onnavselect?.({ id: 'files', label: t('nav.files'), icon: icons.home, href: '/b' })
+    if (overlay) onclose?.()
   }
 
   function handleNavClick(item: NavItem): void {
@@ -162,48 +137,44 @@
   {/if}
 
   <div class="sc-nav-drawer__body">
-    <!-- Full-width flat Add button with dropdown menu -->
-    <div class="sc-nav-drawer__action-wrap">
-      <button
-        type="button"
-        class="sc-nav-drawer__add-btn"
-        aria-haspopup="true"
-        aria-expanded={addMenuOpen}
-        onclick={toggleAddMenu}
-      >
-        <span class="sc-nav-drawer__add-icon"><Icon icon={icons.add} size={20} /></span>
-        <span class="sc-nav-drawer__add-text">{t('common.add')} +</span>
-      </button>
-      <Menu open={addMenuOpen} onclose={() => (addMenuOpen = false)} x={addMenuX} y={addMenuY}>
-        <MenuItem icon={icons.folder} onclick={() => triggerAction('folder')}>
-          {t('common.new_folder')}
-        </MenuItem>
-        <MenuItem icon={icons.upload} onclick={() => triggerAction('file')}>
-          {t('common.upload')}
-        </MenuItem>
-        <MenuItem icon={icons['upload-folder']} onclick={() => triggerAction('upload-folder')}>
-          {t('browse.upload_folder')}
-        </MenuItem>
-      </Menu>
-    </div>
 
-    <!-- Section 1: FILES -->
+    {#if !folderSelectorOnly}
+    <!-- Primary destination. Choosing Files never toggles this surface. -->
     <div class="sc-nav-drawer__section-title">{t('nav.files')}</div>
     <ul class="sc-nav-drawer__list">
       <li class="sc-nav-drawer__entry">
         <button
           type="button"
           class="sc-nav-drawer__item"
-          class:sc-nav-drawer__item--active={activeNav === 'files' && !active}
+          class:sc-nav-drawer__item--active={activeNav === 'files'}
           onclick={handleFilesClick}
+          aria-current={activeNav === 'files' ? 'page' : undefined}
         >
           <span class="sc-nav-drawer__item-icon"><Icon icon={icons.home} size={20} /></span>
           <span class="sc-nav-drawer__item-label">{t('nav.files')}</span>
+        </button>
+      </li>
+    </ul>
+    {/if}
+
+    <!-- Folder switching is a separate, named control rather than a side
+         effect of activating the Files destination. -->
+    <div class="sc-nav-drawer__section-title">{t('nav.folders')}</div>
+    <ul class="sc-nav-drawer__list" aria-label={t('nav.folder_selector')}>
+      <li class="sc-nav-drawer__entry">
+        <button
+          type="button"
+          class="sc-nav-drawer__item"
+          aria-expanded={foldersExpanded}
+          aria-controls="sc-nav-drawer-folders"
+          onclick={toggleFolders}
+        >
+          <span class="sc-nav-drawer__item-icon"><Icon icon={icons['folder-tree']} size={20} /></span>
+          <span class="sc-nav-drawer__item-label">{t('nav.browse_folders')}</span>
           {#if displayRoots.length > 0}
             <span
               class="sc-nav-drawer__twisty-right"
-              class:sc-nav-drawer__twisty-right--expanded={filesExpanded}
-              title={t('nav.switch_folder')}
+              class:sc-nav-drawer__twisty-right--expanded={foldersExpanded}
               aria-hidden="true"
             >
               <Icon icon={icons['chevron-right']} size={16} />
@@ -211,8 +182,8 @@
           {/if}
         </button>
 
-        {#if filesExpanded && displayRoots.length > 0}
-          <ul class="sc-nav-drawer__sublist">
+        {#if foldersExpanded && displayRoots.length > 0}
+          <ul id="sc-nav-drawer-folders" class="sc-nav-drawer__sublist">
             <li class="sc-nav-drawer__reorder-row">
               <button type="button" class="sc-nav-drawer__reorder-toggle" aria-pressed={reordering} onclick={toggleReordering}>
                 {reordering ? t('nav.reorder_done') : t('nav.reorder')}
@@ -247,6 +218,7 @@
                     type="button"
                     class="sc-nav-drawer__subitem"
                     class:sc-nav-drawer__subitem--active={active === root.id}
+                    aria-current={active === root.id ? 'page' : undefined}
                     onclick={() => {
                       onselect?.(root)
                       if (overlay) onclose?.()
@@ -265,12 +237,16 @@
           </ul>
         {/if}
       </li>
+    </ul>
 
+    {#if !folderSelectorOnly}
+    <ul class="sc-nav-drawer__list">
       <li class="sc-nav-drawer__entry">
         <button
           type="button"
           class="sc-nav-drawer__item"
           class:sc-nav-drawer__item--active={activeNav === 'recent'}
+          aria-current={activeNav === 'recent' ? 'page' : undefined}
           onclick={() => handleNavClick({ id: 'recent', label: t('nav.recent'), icon: icons.recent, href: '/recent' })}
         >
           <span class="sc-nav-drawer__item-icon"><Icon icon={icons.recent} size={20} /></span>
@@ -283,6 +259,7 @@
           type="button"
           class="sc-nav-drawer__item"
           class:sc-nav-drawer__item--active={activeNav === 'trash'}
+          aria-current={activeNav === 'trash' ? 'page' : undefined}
           onclick={() => handleNavClick({ id: 'trash', label: t('common.trash'), icon: icons.trash, href: '/trash' })}
         >
           <span class="sc-nav-drawer__item-icon"><Icon icon={icons.trash} size={20} /></span>
@@ -295,6 +272,7 @@
           type="button"
           class="sc-nav-drawer__item"
           class:sc-nav-drawer__item--active={activeNav === 'links'}
+          aria-current={activeNav === 'links' ? 'page' : undefined}
           onclick={() => handleNavClick({ id: 'links', label: t('nav.links'), icon: icons.link, href: '/links' })}
         >
           <span class="sc-nav-drawer__item-icon"><Icon icon={icons.link} size={20} /></span>
@@ -302,7 +280,9 @@
         </button>
       </li>
     </ul>
+    {/if}
 
+    {#if !folderSelectorOnly}
     <!-- Section 2: SYSTEM -->
     <div class="sc-nav-drawer__section-title">{t('common.settings')}</div>
     <ul class="sc-nav-drawer__list">
@@ -312,6 +292,7 @@
             type="button"
             class="sc-nav-drawer__item"
             class:sc-nav-drawer__item--active={activeNav === 'admin'}
+            aria-current={activeNav === 'admin' ? 'page' : undefined}
             onclick={() => handleNavClick({ id: 'admin', label: t('nav.admin'), icon: icons.admin, href: '/admin' })}
           >
             <span class="sc-nav-drawer__item-icon"><Icon icon={icons.admin} size={20} /></span>
@@ -325,6 +306,7 @@
           type="button"
           class="sc-nav-drawer__item"
           class:sc-nav-drawer__item--active={activeNav === 'settings'}
+          aria-current={activeNav === 'settings' ? 'page' : undefined}
           onclick={() => handleNavClick({ id: 'settings', label: t('common.settings'), icon: icons.settings, href: '/settings' })}
         >
           <span class="sc-nav-drawer__item-icon"><Icon icon={icons.settings} size={20} /></span>
@@ -332,6 +314,7 @@
         </button>
       </li>
     </ul>
+    {/if}
   </div>
 {/snippet}
 
@@ -339,13 +322,13 @@
   <dialog
     bind:this={dialogEl}
     class="sc-nav-drawer sc-nav-drawer--overlay"
-    aria-label={t('common.main_menu')}
+    aria-label={folderSelectorOnly ? t('nav.folder_selector') : t('common.main_menu')}
     onclick={onDialogClick}
     onclose={() => onclose?.()}
     oncancel={() => onclose?.()}
   >
     <div class="sc-nav-drawer__overlay-header">
-      <span class="sc-nav-drawer__app-name">Stowcloud</span>
+      <span class="sc-nav-drawer__app-name">{folderSelectorOnly ? t('nav.browse_folders') : 'Stowcloud'}</span>
       <IconButton label={t('common.close')} onclick={() => onclose?.()}><Icon icon={icons.close} /></IconButton>
     </div>
     {@render content()}
@@ -398,42 +381,6 @@
     display: flex;
     flex-direction: column;
     padding: 0;
-  }
-  .sc-nav-drawer__action-wrap {
-    padding: 8px 12px;
-    margin-bottom: 8px;
-    flex: none;
-  }
-  .sc-nav-drawer__add-btn {
-    width: 100%;
-    height: 40px;
-    padding: 0 16px;
-    border-radius: var(--m3-shape-small);
-    border: 1px solid var(--m3c-outline-variant);
-    background: var(--m3c-surface-container);
-    color: var(--m3c-on-surface);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    cursor: pointer;
-    @apply --m3-label-large;
-    font-weight: 600;
-    font-size: 14px;
-    transition: background var(--m3-duration-fast) var(--m3-easing), border-color var(--m3-duration-fast) var(--m3-easing);
-  }
-  .sc-nav-drawer__add-btn:hover {
-    background: var(--m3c-surface-container-high);
-    border-color: var(--m3c-outline);
-  }
-  .sc-nav-drawer__add-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--m3c-primary);
-  }
-  .sc-nav-drawer__add-text {
-    white-space: nowrap;
   }
   .sc-nav-drawer__section-title {
     margin: 16px 16px 8px;

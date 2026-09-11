@@ -29,8 +29,11 @@
   import { createQuery } from '@tanstack/svelte-query'
   import { adminLinksQuery } from '../../../lib/query/admin'
   import { shareLinksQuery } from '../../../lib/query/shares'
+  import { statQuery } from '../../../lib/query/files'
+  import { queryClient } from '../../../lib/query/client'
+  import { keys } from '../../../lib/query/keys'
   import { createSession } from '../../../lib/query/session'
-  import type { OwnedShareLinkInfo, ShareLinkInfo } from '../../../lib/api/client'
+  import type { Entry, OwnedShareLinkInfo, Perms, ShareLinkInfo } from '../../../lib/api/client'
   import { describeApiError } from '../../../lib/api/error-text'
   import { baseName, normalizePath } from '../../../lib/api/path-utils'
   import { formatDateNs, t } from '../../../lib/i18n'
@@ -86,19 +89,113 @@
     return !isOwned(l) || l.owner === session.data?.user.id
   }
 
+  // A link listing carries no resource type. Read an already-cached stat for
+  // the row summary, but do not retain a second component-local cache: the
+  // shared query cache knows when a path stat is stale or invalidated.
+  function targetPath(link: ShareLinkInfo | OwnedShareLinkInfo): string {
+    return normalizePath(link.path)
+  }
+
+  function targetOf(link: ShareLinkInfo | OwnedShareLinkInfo): Entry | undefined {
+    const state = queryClient.getQueryState<Entry>(keys.pathStat(targetPath(link)))
+    return state?.isInvalidated ? undefined : state?.data
+  }
+
+  function targetKindOf(link: ShareLinkInfo | OwnedShareLinkInfo): Entry['kind'] | undefined {
+    return targetOf(link)?.kind
+  }
+
+  const CAPABILITY_KEYS: readonly (keyof Perms)[] = [
+    'read',
+    'download',
+    'write',
+    'create',
+    'delete',
+    'rename',
+    'move',
+    'share'
+  ]
+
+  function capabilityLabel(key: keyof Perms): string {
+    switch (key) {
+      case 'read':
+        return t('links.can_read')
+      case 'download':
+        return t('links.can_download')
+      case 'write':
+        return t('links.can_write')
+      case 'create':
+        return t('links.can_create')
+      case 'delete':
+        return t('links.can_delete')
+      case 'rename':
+        return t('links.can_rename')
+      case 'move':
+        return t('links.can_move')
+      case 'share':
+        return t('links.can_share')
+    }
+  }
+
+  function capabilitySummary(link: ShareLinkInfo): string {
+    const labels = CAPABILITY_KEYS.filter((key) => link.perms[key]).map(capabilityLabel)
+    const mutating = link.perms.write || link.perms.create || link.perms.delete || link.perms.rename || link.perms.move || link.perms.share
+    if (!mutating && labels.length > 0) return `${t('links.read_only')} (${labels.join(', ')})`
+    return labels.join(', ') || t('links.target_unknown')
+  }
+
+  function targetSummary(link: ShareLinkInfo | OwnedShareLinkInfo): string {
+    const kind = targetKindOf(link)
+    if (kind === undefined) return t('links.target_unknown')
+    const kindLabel = kind === 'dir' ? t('links.target_folder') : t('links.target_file')
+    return `${kindLabel} - ${t('links.capabilities')}: ${capabilitySummary(link)}`
+  }
+
   // The link whose dialog is open, or null. The dialog manages every link at
   // one path, which is the unit it was built around, so the row hands it the
   // path rather than the link id.
   let managing = $state<ShareLinkInfo | OwnedShareLinkInfo | null>(null)
+  let managingTarget = $state<Entry | null>(null)
+  const managingIsDir = $derived(managingTarget?.kind === 'dir')
+  let resolvingPath = $state<string | null>(null)
+  let targetErrorPath = $state<string | null>(null)
+  let targetError = $state<string | null>(null)
+  let resolveGeneration = 0
 
-  // The dialog offers the file-drop option only for a directory, and the
-  // listing carries no resourcetype. A drop link proves its target is one,
-  // since the server refuses to create a drop over a file; anything else is
-  // reported as a file, which costs a folder the option to gain a second,
-  // drop-shaped link from this screen and never mis-offers one on a file.
-  const managingIsDir = $derived(managing ? isDropLink(managing) : false)
+  async function openManagement(link: ShareLinkInfo | OwnedShareLinkInfo): Promise<void> {
+    if (!isMine(link) || resolvingPath !== null) return
+
+    const path = targetPath(link)
+    targetErrorPath = null
+    targetError = null
+
+    if (link.path.trim() === '') {
+      targetErrorPath = path
+      targetError = t('links.target_unknown')
+      return
+    }
+
+    const generation = ++resolveGeneration
+    resolvingPath = path
+    managing = null
+    managingTarget = null
+    try {
+      // Reuse a stat until file invalidation marks it stale. Directory and
+      // file changes arrive through the same live invalidation channel.
+      const target = await queryClient.fetchQuery({ ...statQuery(path), staleTime: Infinity })
+      if (generation !== resolveGeneration) return
+      managingTarget = target
+      managing = link
+    } catch (error) {
+      if (generation !== resolveGeneration) return
+      targetErrorPath = path
+      targetError = describeApiError(error, t('links.target_unknown'))
+    } finally {
+      if (generation === resolveGeneration) resolvingPath = null
+    }
+  }
+
 </script>
-
 <svelte:head><title>{t('links.title_stowcloud')}</title></svelte:head>
 
 <div class="sc-links">
@@ -130,19 +227,21 @@
               type="button"
               class="sc-links__row"
               class:sc-links__row--readonly={!isMine(link)}
-              aria-disabled={!isMine(link)}
+              aria-disabled={!isMine(link) || resolvingPath !== null}
+              aria-busy={resolvingPath === targetPath(link)}
               aria-label={isMine(link)
-                ? t('links.manage_link', { path: link.path })
+                ? `${t('links.manage_link', { path: link.path })}. ${targetSummary(link)}`
                 : t('links.owned_elsewhere', { path: link.path })}
-              onclick={() => {
-                if (isMine(link)) managing = link
-              }}
+              onclick={() => void openManagement(link)}
             >
               <span class="sc-links__icon">
                 <Icon icon={icons[link.has_password ? 'lock' : 'link']} size={20} />
               </span>
               <span class="sc-links__text">
                 <span class="sc-links__path">{link.path}</span>
+                {#if isMine(link)}
+                  <span class="sc-links__target">{targetSummary(link)}</span>
+                {/if}
                 <span class="sc-links__meta">
                   {#if isOwned(link)}
                     {t('links.owner')}: {link.owner_name || t('common.user', { id: link.owner })}
@@ -157,12 +256,18 @@
                   - {#if link.expires_ns}{t('share.expires', { date: formatDateNs(link.expires_ns) })}{:else}{t('share.never_expires')}{/if}
                 </span>
               </span>
+              {#if isMine(link) && resolvingPath === targetPath(link)}
+                <span class="sc-links__target-loading" role="status"><ProgressCircular size={18} /></span>
+              {/if}
               {#if isExpired(link)}
                 <span class="sc-links__flag sc-links__flag--warn">{t('links.expired')}</span>
               {:else if isExhausted(link)}
                 <span class="sc-links__flag sc-links__flag--warn">{t('links.exhausted')}</span>
               {/if}
             </button>
+            {#if targetErrorPath === targetPath(link) && targetError}
+              <p class="sc-links__target-error" role="alert">{targetError}</p>
+            {/if}
           </li>
         {/each}
       </ul>
@@ -176,7 +281,10 @@
     path={normalizePath(managing.path)}
     targetName={baseName(managing.path) || managing.path}
     targetIsDir={managingIsDir}
-    onclose={() => (managing = null)}
+    onclose={() => {
+      managing = null
+      managingTarget = null
+    }}
   />
 {/if}
 
@@ -251,6 +359,23 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .sc-links__target {
+    color: var(--m3c-on-surface-variant);
+    @apply --m3-body-small;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sc-links__target-loading {
+    display: inline-flex;
+    flex: none;
+    color: var(--m3c-on-surface-variant);
+  }
+  .sc-links__target-error {
+    margin: -4px 16px 8px 64px;
+    color: var(--m3c-error);
+    @apply --m3-body-small;
   }
   .sc-links__meta {
     color: var(--m3c-on-surface-variant);

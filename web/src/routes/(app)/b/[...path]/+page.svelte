@@ -37,7 +37,7 @@
   import FileGrid from '../../../../lib/ui/FileGrid.svelte'
   import FileTable from '../../../../lib/ui/FileTable.svelte'
   import FileTree from '../../../../lib/ui/FileTree.svelte'
-  import { FAB, Icon, MenuItem } from 'm3-svelte'
+  import { Icon, MenuItem } from 'm3-svelte'
   import { icons } from '../../../../lib/icons'
   import type { Order, SortKey } from '../../../../lib/api/types'
   import IconButton from '../../../../lib/ui/IconButton.svelte'
@@ -110,6 +110,12 @@
   const dir = $derived(dirViewOf(listing.data?.pages))
   const entries = $derived(dir.entries)
   const names = $derived(new Set(entries.map((e) => e.name)))
+  // A selection is a set of names in one directory, and those names mean
+  // something else in the next one.
+  $effect(() => {
+    void path
+    selection.reset()
+  })
 
   // Whether this share encrypts what it stores. The listing's sizes are
   // ciphertext sizes on an encrypted share, so a row that shows one as the
@@ -153,16 +159,12 @@
 
   $effect(() => {
     if (path === '/' && firstRoot) {
-      void goto(`/b/${encodeURIComponent(firstRoot)}`, { replaceState: true })
+      const focus = page.url.searchParams.get('focus')
+      const suffix = focus ? `?focus=${encodeURIComponent(focus)}` : ''
+      void goto(`/b/${encodeURIComponent(firstRoot)}${suffix}`, { replaceState: true })
     }
   })
 
-  // A selection is a set of names in one directory, and those names mean
-  // something else in the next one.
-  $effect(() => {
-    void path
-    selection.reset()
-  })
 
   function refresh(): void {
     invalidateDirs([path])
@@ -278,14 +280,14 @@
   // the edge of the window extends it instead of dragging it along. Which rows
   // it covers is arithmetic, not hit-testing, because the listing is
   // virtualized: see `lib/ui/marquee.ts`.
-  let gridView = $state<{ entriesInRect: (r: Rect) => Entry[] }>()
-  let tableView = $state<{ entriesInRect: (r: Rect) => Entry[] }>()
+  /** Anchor corner and the latest page scroll state for the active drag. */
+  let dragOrigin: { x: number; y: number } | null = null
   let marqueeRect = $state<Rect | null>(null)
   let scrollXNow = $state(0)
   let scrollYNow = $state(0)
 
-  /** Anchor corner, in document coordinates. */
-  let dragOrigin: { x: number; y: number } | null = null
+  let gridView = $state<{ entriesInRect: (r: Rect) => Entry[]; focusEntry: (name: string) => boolean }>()
+  let tableView = $state<{ entriesInRect: (r: Rect) => Entry[]; focusEntry: (name: string) => boolean }>()
   /** Last pointer position, in viewport coordinates, for the auto-scroll loop. */
   let dragPointer = { x: 0, y: 0 }
   /** Whatever was selected when the drag began, kept only for an additive drag. */
@@ -293,7 +295,33 @@
   let dragFrame = 0
 
   const activeView = $derived(view.state.mode === 'grid' ? gridView : tableView)
+  // Recent and Links can open this route with an exact entry name. Consume the
+  // query only after the cursor walk has loaded that row, so the user lands on
+  // the actual item rather than an unscoped parent folder.
+  const focusName = $derived(page.url.searchParams.get('focus') ?? '')
+  let focusHandled = $state<string | null>(null)
 
+  function consumeFocusQuery(): void {
+    const url = new URL(page.url)
+    url.searchParams.delete('focus')
+    focusHandled = `${path}:${focusName}`
+    void goto(`${url.pathname}${url.search}${url.hash}`, { replaceState: true, keepFocus: true, noScroll: true })
+  }
+
+  $effect(() => {
+    const requested = focusName
+    if (!requested || focusHandled === `${path}:${requested}` || listing.isPending) return
+    const index = entries.findIndex((entry) => entry.name === requested)
+    if (index >= 0) {
+      if (activeView?.focusEntry(requested)) consumeFocusQuery()
+      return
+    }
+    if (listing.hasNextPage) {
+      if (!listing.isFetchingNextPage) void listing.fetchNextPage()
+      return
+    }
+    consumeFocusQuery()
+  })
   /** Controls own their own gestures. Rows and cards are not on this list: a
    *  drag may start on one, because it only becomes a marquee once it has
    *  moved too far to have been a click. */
@@ -405,7 +433,6 @@
   let conflictName = $state('')
   let contextEntry = $state<Entry | null>(null)
   let menuOpen = $state(false)
-  let emptyMenuOpen = $state(false)
   let menuX = $state(0)
   let menuY = $state(0)
   let snackbarMsg = $state<string | null>(null)
@@ -413,59 +440,42 @@
   let dirInputEl: HTMLInputElement | undefined = $state()
   let dragOver = $state(false)
   let shareOpen = $state(false)
+  let newMenuOpen = $state(false)
+  let newMenuX = $state(0)
+  let newMenuY = $state(0)
+  let newMenuTriggerEl: HTMLElement | null = null
+  let selectedMoreOpen = $state(false)
+
+  type OperationKind = 'delete' | 'move' | 'copy'
+  interface OperationNotice {
+    kind: OperationKind
+    results: BatchItemResult[]
+    jobs: string[]
+  }
+  let operationNotice = $state<OperationNotice | null>(null)
+
+  /** Source capabilities are captured with the destination request, so
+   * changing the selection while the picker is open cannot widen its modes. */
+  let destCanCopy = $state(false)
+  let destCanMove = $state(false)
+
   /** The entries the share and rename dialogs are pointed at, captured when
-   *  the action starts. They are separate from `contextEntry` because that one
-   *  belongs to the right-click menu and outlives it, which is how both
-   *  dialogs used to open on the previously right-clicked row. */
+   * the action starts. They are separate from `contextEntry` because that one
+   * belongs to the right-click menu and outlives it. */
   let shareTarget = $state<Entry | null>(null)
   let renameTarget = $state<Entry | null>(null)
-  /** component inventory: `FileTree` alongside
-   *  `FileTable`/`FileGrid`. Off by default -- most of the time the
-   *  breadcrumb + table is all a user needs, and a 240px side panel is a
-   *  real bite out of a phone/tablet width (§3). */
+  /** `FileTree` is an optional overlay beside the current folder view. */
   let treeOpen = $state(false)
 
-  $effect(() => {
-    const onNewFolder = () => { newFolderOpen = true }
-    const onUploadFile = () => { onUploadClick() }
-    const onUploadDir = () => { onUploadFolderClick() }
-    window.addEventListener('sc:folder', onNewFolder)
-    window.addEventListener('sc:file', onUploadFile)
-    window.addEventListener('sc:upload-folder', onUploadDir)
-    return () => {
-      window.removeEventListener('sc:folder', onNewFolder)
-      window.removeEventListener('sc:file', onUploadFile)
-      window.removeEventListener('sc:upload-folder', onUploadDir)
-    }
-  })
-
   function openContextMenu(entry: Entry, e: MouseEvent): void {
-    // Right-clicking a row that is not in the selection makes it the selection,
-    // which is what every file manager does and what keeps this menu and the
-    // selection bar aimed at the same rows. Without it the two could be open
-    // against different targets at once, showing different actions for the same
-    // gesture. A right-click *inside* the selection leaves it alone, so
+    // Right-clicking a row that is not in the selection makes it the
+    // selection. A right-click inside the selection leaves it alone, so
     // right-clicking one of five selected files still acts on all five.
     if (!selection.state.names.has(entry.name)) selection.only(entry.name, entries.indexOf(entry))
     contextEntry = entry
-    emptyMenuOpen = false
     menuX = e.clientX
     menuY = e.clientY
     menuOpen = true
-  }
-
-  /** Right-click on blank space. No target rows, so this is deliberately not
-   *  `rowActions`: it offers what you can do *to the folder* instead. Clearing
-   *  the selection matches every file manager, and keeps the selection bar from
-   *  sitting there describing rows this menu cannot act on. */
-  function openEmptyMenu(e: MouseEvent): void {
-    e.preventDefault()
-    selection.clear()
-    contextEntry = null
-    menuOpen = false
-    menuX = e.clientX
-    menuY = e.clientY
-    emptyMenuOpen = true
   }
 
   /** The actions that apply to whatever rows are being acted on, in one place.
@@ -511,6 +521,38 @@
       canCreateHere
     )
   )
+
+  const compactPrimaryActions = $derived.by(() => {
+    const frequent = actions.find((action) => action.key === 'download') ?? actions[0]
+    return frequent ? [frequent] : []
+  })
+  const compactMoreActions = $derived(
+    actions.filter((action) => !compactPrimaryActions.some((primary) => primary.key === action.key))
+  )
+
+  function runSelectedAction(action: (typeof actions)[number]): void {
+    selectedMoreOpen = false
+    action.run()
+  }
+
+  function openNewMenu(e: MouseEvent): void {
+    if (newMenuOpen) {
+      closeNewMenu()
+      return
+    }
+    e.stopPropagation()
+    newMenuTriggerEl = e.currentTarget as HTMLElement
+    const rect = newMenuTriggerEl.getBoundingClientRect()
+    newMenuX = rect.right
+    newMenuY = rect.bottom + 4
+    newMenuOpen = true
+  }
+
+  function closeNewMenu(): void {
+    newMenuOpen = false
+    newMenuTriggerEl?.focus()
+    newMenuTriggerEl = null
+  }
 
   /** The entry a single-item action applies to.
    *
@@ -687,18 +729,53 @@
     shareOpen = true
   }
 
+  function operationTitle(kind: OperationKind): string {
+    return kind === 'delete' ? t('common.delete') : kind === 'move' ? t('common.move') : t('common.copy')
+  }
+
+  function operationResultText(result: BatchItemResult): string {
+    if (!result.ok) {
+      const key = batchErrorKey(result.error)
+      return key ? t(key.key, key.params) : result.error?.message ?? t('error.internal')
+    }
+    if (result.skipped) return t('browse.items_skipped_name_taken', { count: 1 })
+    if (result.started) {
+      return result.job ? `${t('button.working')} (${result.job})` : t('button.working')
+    }
+    if (result.copied) return `${t('common.done')} (${t('common.copy')})`
+    return t('common.done')
+  }
+
+  function applyBatchSelection(paths: string[], results: BatchItemResult[]): void {
+    const unresolved = new Set(results.filter((result) => !result.ok).map((result) => result.path))
+    const next = new Set(selection.state.names)
+    for (const source of paths) {
+      const name = baseName(source)
+      if (unresolved.has(source)) next.add(name)
+      else next.delete(name)
+    }
+    selection.replace(next)
+  }
+
+  function rememberOperation(kind: OperationKind, results: BatchItemResult[], jobs: string[] = []): void {
+    operationNotice = { kind, results, jobs }
+  }
+
   async function doDelete(): Promise<void> {
     deleteOpen = false
     const targets = selected.length > 0 ? selected : contextEntry ? [contextEntry] : []
     const paths = targets.map((e) => joinPath(path, e.name))
-    selection.clear()
+    if (paths.length === 0) return
     try {
-      // The server answers with one result per path, not a job.
       const { results } = await remove.mutateAsync(paths)
-      const failed = results.filter((r) => !r.ok)
+      rememberOperation('delete', results)
+      applyBatchSelection(paths, results)
+      const failed = results.filter((result) => !result.ok)
       if (failed.length > 0) {
         const bKey = batchErrorKey(failed[0].error)
         snackbarMsg = bKey ? t(bKey.key, bKey.params) : t('browse.delete_failed')
+      } else {
+        snackbarMsg = t('common.done')
       }
     } catch (err) {
       snackbarMsg = describeApiError(err, t('browse.delete_failed'))
@@ -706,14 +783,13 @@
   }
 
   // ── move / copy to another folder ──
-  // One code path for all three actions. "Duplicate" is a copy whose destination is
-  // the folder the entry is already in, and a move differs from a copy only in
-  // which endpoint it calls -- the job tracking, the conflict retry and the
-  // failure messages are identical, and were worth writing once.
+  // One code path for all three actions. "Duplicate" is a copy whose destination
+  // is the folder the entry is already in; the picker has already intersected
+  // source capabilities before this function is called.
   let destOpen = $state(false)
   let destSources = $state<string[]>([])
-  /** Set by whichever transfer hit `fs.conflict`, so ConflictDialog's three
-   *  answers re-run *that* operation rather than a hardcoded one. */
+  /** Set by whichever transfer hit `fs.conflict`, so ConflictDialog retries
+   * only the unresolved conflicting items. */
   let conflictRetry: ((on: OnConflict) => void) | null = null
 
   function requestTransfer(): void {
@@ -721,71 +797,46 @@
     const targets = selected.length > 0 ? selected : contextEntry ? [contextEntry] : []
     if (targets.length === 0) return
     destSources = targets.map((e) => joinPath(path, e.name))
+    destCanCopy = targets.every((entry) => entry.perms.read && entry.perms.download)
+    destCanMove = targets.every((entry) => entry.perms.read && entry.perms.move)
     destOpen = true
   }
 
   function onDestinationPicked(dest: string, mode: 'move' | 'copy'): void {
+    if ((mode === 'copy' && !destCanCopy) || (mode === 'move' && !destCanMove)) return
     destOpen = false
     void transfer(destSources, dest, mode, 'fail')
   }
 
   /** Duplicate is a copy into the folder the entry is already in, so it always
-   *  collides with itself. `rename` rather than `fail`: asking "this name is
-   *  taken, what now" about a name the user did not choose is a dialog with
-   *  one sensible answer, and the point of the action is a second copy. */
+   * collides with itself. `rename` rather than `fail` keeps the action useful. */
   function duplicate(onConflict: OnConflict = 'rename'): void {
-    // The same target rule every other action here follows: the right-clicked
-    // row when there is one, the selection otherwise. Reading only
-    // `contextEntry` meant the selection bar's own button did nothing on the
-    // menu path and sent an empty name on the bar path, which the server took
-    // as the folder itself and duplicated into a file called " (2)".
     const targets = selected.length > 0 ? selected : contextEntry ? [contextEntry] : []
     if (targets.length === 0) return
-    // The one menu action that forgot this. `Menu` only dismisses on a click
-    // *outside* itself, so an item's own click leaves it open -- and duplicate
-    // is the one that raises a modal on the same click, so the stale menu sat
-    // opaque next to the conflict dialog with its labels painted over the file
-    // rows behind it.
     menuOpen = false
-    // Captured now, not read back off `contextEntry` once the job settles --
-    // the context menu can be pointed at a different entry by then, since
-    // this doesn't await the job.
     const paths = targets.map((e) => joinPath(path, e.name))
     void transfer(paths, path, 'copy', onConflict)
   }
 
-  /** Says how many items were left alone because their destination was taken.
-   *  A skip is a success with nothing written, so without this the operation
-   *  reports as done and the files are silently not there. */
-  function noteSkipped(results: BatchItemResult[]): void {
-    const skipped = results.filter((r) => r.skipped).length
-    if (skipped > 0) snackbarMsg = t('browse.items_skipped_name_taken', { count: skipped })
-  }
-
   async function transfer(paths: string[], dest: string, mode: 'move' | 'copy', onConflict: OnConflict): Promise<void> {
     if (paths.length === 0) return
-    // Whatever the conflict dialog answers has to re-run *this* operation,
-    // with these paths and this destination -- by the time it is answered the
-    // selection and the context menu have both moved on.
-    conflictRetry = (on) => void transfer(paths, dest, mode, on)
     const failMsg = mode === 'move' ? t('browse.move_job_failed') : t('browse.copy_job_failed')
     const quotaMsg =
       mode === 'move' ? t('browse.not_enough_storage_space_move') : t('browse.not_enough_storage_space_copy')
 
-    /** The first refusal in a batch decides the message. A conflict opens the
-     *  dialog instead, because it has three answers rather than one. */
     function reportBatch(results: BatchItemResult[]): 'conflict' | 'failed' | 'ok' {
-      const conflicted = results.find((r) => r.error?.code === 'fs.conflict')
-      if (conflicted) {
-        // The first conflicting item names the dialog. The answer then applies
-        // to the whole batch, because `on_conflict` is a property of the
-        // request and not of an item: asking once per name would mean one
-        // dialog per file for a selection that mostly collides.
-        conflictName = baseName(conflicted.path)
+      const conflicts = results.filter((result) => result.error?.code === 'fs.conflict')
+      if (conflicts.length > 0) {
+        const conflictPaths = conflicts.map((result) => result.path)
+        conflictName = baseName(conflicts[0].path)
+        conflictRetry = (nextConflict) => {
+          conflictOpen = false
+          void transfer(conflictPaths, dest, mode, nextConflict)
+        }
         conflictOpen = true
         return 'conflict'
       }
-      const refused = results.find((r) => !r.ok)
+      const refused = results.find((result) => !result.ok)
       if (refused) {
         const bKey = batchErrorKey(refused.error)
         snackbarMsg =
@@ -797,22 +848,22 @@
 
     try {
       const vars = { paths, dest, onConflict }
-      // A move finishes in the request: it is a rename, and only the
-      // cross-device case rewrites bytes, which the server reports per item.
-      // A copy large enough becomes a durable job, because it always rewrites
-      // them; the destination is checked before that job exists, so a
-      // conflict, a denial or a quota refusal is in this response rather than
-      // minutes later.
-      const { results, job } =
-        mode === 'move' ? { ...(await move.mutateAsync(vars)), job: undefined } : await copy.mutateAsync(vars)
+      let results: BatchItemResult[]
+      let jobs: string[] = []
+      if (mode === 'move') {
+        const result = await move.mutateAsync(vars)
+        results = result.results
+      } else {
+        const result = await copy.mutateAsync(vars)
+        results = result.results
+        jobs = result.jobs ?? []
+      }
+      rememberOperation(mode, results, jobs)
+      applyBatchSelection(paths, results)
+      if (jobs.length > 0) jobTray.track(...jobs)
       if (reportBatch(results) !== 'ok') return
       conflictOpen = false
-      if (mode === 'move') selection.clear()
-      noteSkipped(results)
-      // A job reports its own progress and its own failure in the tray. What
-      // it writes arrives here as an invalidation over the WebSocket, so
-      // there is nothing to wait for on this screen.
-      if (job !== undefined) jobTray.track(job)
+      snackbarMsg = t('common.done')
     } catch (err) {
       snackbarMsg =
         err instanceof ApiError && err.code === 'quota.exceeded' ? quotaMsg : describeApiError(err, failMsg)
@@ -988,13 +1039,9 @@
   }
 
   // ── overflow menu ──
-  // Measured: the phone toolbar cost 217px of an 844px viewport (a quarter
-  // of the screen) because eight equal-weight controls wrapped across three
-  // rows. MD3's shape for this is a top app bar with at most a couple of
-  // icon actions plus an overflow menu for the rest, not a row that gives up
-  // and wraps -- so the six controls that aren't "search" or "the one
-  // primary create action" (see the FAB below) move in here, as m3-svelte
-  // `MenuItem`s -- the same component the context menu below uses.
+  // The compact toolbar keeps search, New, and common view controls visible.
+  // Secondary actions live in one deliberate More menu instead of wrapping
+  // into rows that hide commands below the fold.
   let overflowOpen = $state(false)
   let overflowLeft = $state(0)
   let overflowTop = $state(0)
@@ -1089,13 +1136,27 @@
     const next = e.key === 'ArrowDown' ? (idx + 1) % items.length : (idx - 1 + items.length) % items.length
     items[next]?.focus()
   }
-  function openInEditor(): void {
+  async function openInEditor(): Promise<void> {
     // The selection decides, the right-clicked row is the fallback: the same
     // rule `actionTarget` states once for every single-item action here.
     const target = actionTarget()
     if (!target || target.kind === 'dir') return
     menuOpen = false
-    goto(`/edit${joinPath(path, target.name)}`)
+    const href = `/edit${joinPath(path, target.name)}`
+    try {
+      const encryption = await encryptionForLabel(shareLabelOf(target.path))
+      if (encryption && !isUnlocked(encryption.salt)) {
+        openUnlockFor(encryption, () => {
+          void goto(href).catch((err) => {
+            snackbarMsg = describeApiError(err, t('common.could_not_load_list'))
+          })
+        })
+        return
+      }
+      await goto(href)
+    } catch (err) {
+      snackbarMsg = describeApiError(err, t('common.could_not_load_list'))
+    }
   }
 </script>
 
@@ -1116,181 +1177,166 @@
   ondragleave={() => (dragOver = false)}
   ondrop={onDrop}
 >
-  <!--
-    MD3 top app bar: a title (the breadcrumb) plus at most a couple of icon
-    actions, everything else behind overflow -- not a row of equal-weight
-    controls that wraps when it runs out of room (measured before this
-    change: 217px of an 844px phone viewport, three rows deep).
-
-    Search stays inline on both breakpoints -- it's used constantly and a
-    second tap to reach it would be a regression. Refresh and the folder tree
-    stay inline on desktop (room for them, and they're used often enough to be
-    worth a direct icon) but fold into More on a phone, alongside the viewing
-    preferences (grid/list, density) that fold in on *both* breakpoints --
-    density and view mode are preferences, not actions taken per-visit, so they
-    don't deserve a persistent icon on either width. Upload folder and New
-    folder stay as visible buttons on desktop (there's room, and hiding a
-    familiar control there would be a regression, not a simplification); on a
-    phone they fold into More too, because the one create action a phone layout
-    gets a dedicated control for is Upload -- see the FAB below.
-  -->
   <div class="sc-browse__bar-stack">
-  <!-- No `inert` here any more. It was correct while the selection bar covered
-       this element (a covered control must not stay tabbable) and became the
-       opposite of correct once the bar moved to its own row: visible controls
-       that cannot be clicked or tabbed to are worse than hidden ones. -->
-  <header
-    class="sc-browse__toolbar"
-    class:sc-browse__toolbar--compact={ui.state.compact}
-  >
-    <div class="sc-browse__title">
-      <Breadcrumb {crumbs} onnavigate={onNavigate} />
-      {#if rootShared}
-        <span class="sc-browse__external-badge">
-          <Icon icon={icons.warning} size={14} />
-          {t('common.shared_with_other_services')}
-        </span>
-      {/if}
-      {#if encrypted && shareUnlocked}
-        <!-- Nothing else on this screen says the share is encrypted, and the
-             difference is load-bearing: the sizes shown are derived from
-             ciphertext, and the server holds no key for this content. -->
-        <span class="sc-browse__encrypted-badge" role="status">
-          <Icon icon={icons.lock} size={14} />
-          {t('browse.encrypted_badge')}
-        </span>
-      {:else if encrypted}
-        <!-- The only way into the passphrase prompt that does not start from
-             a failed action. An empty encrypted share has no file to fail on,
-             so without this there is no way forward at all: uploads are
-             refused as locked and there is nothing to download. -->
-        <button type="button" class="sc-browse__encrypted-badge sc-browse__encrypted-badge--locked" onclick={unlockThisShare}>
-          <Icon icon={icons.lock} size={14} />
-          {t('browse.encrypted_locked_badge')}
-        </button>
-      {/if}
-      {#if rootBroken}
-        <!-- The badge is on the folder rather than only in the failed
-             listing, because the folder is still navigable from the root
-             list and the reason has to travel with it. -->
-        <span class="sc-browse__broken-badge" role="status">
-          <Icon icon={icons.warning} size={14} />
-          {t('browse.this_folder_is_unavailable')}
-        </span>
-      {/if}
+    <div class="sc-browse__folder-context">
+      <div class="sc-browse__folder-heading">
+        <h1>{crumbs.at(-1)?.label ?? t('browse.home')}</h1>
+        <Breadcrumb {crumbs} onnavigate={onNavigate} />
+        {#if rootShared}
+          <span class="sc-browse__external-badge">
+            <Icon icon={icons.warning} size={14} />
+            {t('common.shared_with_other_services')}
+          </span>
+        {/if}
+        {#if encrypted && shareUnlocked}
+          <span class="sc-browse__encrypted-badge" role="status">
+            <Icon icon={icons.lock} size={14} />
+            {t('browse.encrypted_badge')}
+          </span>
+        {:else if encrypted}
+          <button type="button" class="sc-browse__encrypted-badge sc-browse__encrypted-badge--locked" onclick={unlockThisShare}>
+            <Icon icon={icons.lock} size={14} />
+            {t('browse.encrypted_locked_badge')}
+          </button>
+        {/if}
+        {#if rootBroken}
+          <span class="sc-browse__broken-badge" role="status">
+            <Icon icon={icons.warning} size={14} />
+            {t('browse.this_folder_is_unavailable')}
+          </span>
+        {/if}
+      </div>
+      <div class="sc-browse__folder-state" role="status" aria-live="polite">
+        <span>{view.state.mode === 'list' ? t('browse.list_view') : t('browse.grid_view')}</span>
+        <span>{t('browse.sort_selected', {
+          label: sortKeyLabel(sort.key),
+          direction: sort.order === 'asc' ? t('browse.sort_ascending') : t('browse.sort_descending')
+        })}</span>
+      </div>
     </div>
-    <div class="sc-browse__toolbar-actions">
-      <IconButton label={t('common.search')} onclick={startSearch}><Icon icon={icons.search} /></IconButton>
+
+    <header class="sc-browse__toolbar" class:sc-browse__toolbar--compact={ui.state.compact}>
+      <div class="sc-browse__toolbar-actions">
+        <IconButton label={t('common.search')} onclick={startSearch}><Icon icon={icons.search} /></IconButton>
+        {#if canCreateHere}
+          <Button variant="filled" onclick={openNewMenu}>
+            {#snippet icon()}<Icon icon={icons.add} size={18} />{/snippet}
+            {t('browse.new')}
+          </Button>
+        {/if}
         {#if !ui.state.compact}
           <IconButton label={t('common.refresh')} onclick={refresh}><Icon icon={icons.refresh} /></IconButton>
           <IconButton label={treeOpen ? t('browse.hide_folder_tree') : t('browse.show_folder_tree')} selected={treeOpen} onclick={toggleTree}>
             <Icon icon={icons['folder-tree']} />
           </IconButton>
         {/if}
-        <!-- Its own control, not an overflow-menu row: switching between grid
-             and list is a frequent, reversible view preference, and burying it
-             two clicks deep next to destructive one-way actions read as if it
-             were one of them. The icon shows what you would switch *to*, which
-             is what the label says too. -->
-        <IconButton
-          label={view.state.mode === 'list' ? t('browse.grid_view') : t('browse.list_view')}
-          onclick={toggleView}
-        >
-          <Icon icon={view.state.mode === 'list' ? icons.grid : icons.list} />
-        </IconButton>
-        <IconButton
-          label={ui.state.details ? t('details.hide') : t('details.show')}
-          expanded={ui.state.details}
-          onclick={() => ui.setDetails(!ui.state.details)}
-        >
-          <Icon icon={icons.info} />
-        </IconButton>
-        <IconButton
-          label={t('browse.sort_by', { key: sortKeyLabel(sort.key) })}
-          selected={sortOpen}
-          expanded={sortOpen}
-          onclick={openSort}
-        >
-          <Icon icon={icons.sort} />
-        </IconButton>
-        <IconButton label={t('browse.more')} selected={overflowOpen} expanded={overflowOpen} onclick={openOverflow}><Icon icon={icons['more-vert']} /></IconButton>
-        {#if !ui.state.compact && canCreateHere}
-          <Button variant="text" onclick={onUploadFolderClick}>
-            {#snippet icon()}<Icon icon={icons['upload-folder']} size={18} />{/snippet}
-            {t('browse.upload_folder')}
-          </Button>
-          <Button variant="tonal" onclick={onUploadClick}>
-            {#snippet icon()}<Icon icon={icons.upload} size={18} />{/snippet}
-            {t('common.upload')}
-          </Button>
-          <Button variant="filled" onclick={() => (newFolderOpen = true)}>
-            {#snippet icon()}<Icon icon={icons.add} size={18} />{/snippet}
-            {t('common.new_folder')}
-          </Button>
+        {#if !ui.state.compact}
+          <IconButton
+            label={view.state.mode === 'list' ? t('browse.grid_view') : t('browse.list_view')}
+            onclick={toggleView}
+          >
+            <Icon icon={view.state.mode === 'list' ? icons.grid : icons.list} />
+          </IconButton>
+          <IconButton
+            label={ui.state.details ? t('details.hide') : t('details.show')}
+            expanded={ui.state.details}
+            onclick={() => ui.setDetails(!ui.state.details)}
+          >
+            <Icon icon={icons.info} />
+          </IconButton>
+          <IconButton
+            label={t('browse.sort_by', { key: sortKeyLabel(sort.key) })}
+            selected={sortOpen}
+            expanded={sortOpen}
+            onclick={openSort}
+          >
+            <Icon icon={icons.sort} />
+          </IconButton>
         {/if}
+        <IconButton label={t('browse.more')} selected={overflowOpen} expanded={overflowOpen} onclick={openOverflow}>
+          <Icon icon={icons['more-vert']} />
+        </IconButton>
+      </div>
+    </header>
     </div>
-  </header>
 
-  <!--
-    Floating, over the bottom of the viewport, in no layout flow at all.
-
-    Two earlier placements each broke something. Absolutely positioned over the
-    toolbar, it took the breadcrumb and the New folder / Upload buttons with
-    it, so selecting one file hid where you were. As its own row under the
-    toolbar, it pushed the list down by its own height the moment the first
-    click landed. The second click of a double click then arrived one row
-    higher than the first, so `dblclick` fired on their common ancestor instead
-    of on a row and opening quietly did nothing. Compensating with `scrollBy`
-    could not fix that: at the top of the page, where a first click most often
-    lands, there is no scroll to give back.
-
-    Taking it out of flow removes the shift instead of correcting it. Nothing
-    above or below moves, at any scroll position. The list reserves room at its
-    own bottom so the last rows can still be scrolled clear of the bar.
-  -->
-  {#if selected.length > 0}
-  <div class="sc-browse__selection-bar">
-    <div class="sc-browse__selection-bar-inner">
-      <!-- Ctrl/Cmd+A already covers Select all (FileTable.svelte's onKeydown),
-           but that needs a physical keyboard, and a phone has none, so it has
-           to be reachable here too.
-           Icons at every width, one layout. The text version needed 642px of
-           a 390px bar, so at compact width three of the five buttons sat
-           off-screen behind a horizontal scroll nothing announced; that is
-           what first split this in two. Keeping the split meant two orders,
-           two sets of affordances and one of them exercised only at a width
-           nobody develops at. `IconButton` shows the same label on hover and
-           on keyboard focus, so nothing is lost by dropping the text.
-           Clear selection leads as the close affordance, matching how every
-           other modal-ish surface in this app dismisses. -->
-      <IconButton label={t('browse.clear_selection')} onclick={() => selection.clear()}>
-        <Icon icon={icons.close} />
-      </IconButton>
-      <span class="sc-browse__selection-count">
-        {#if ui.state.compact}
-          {t('common.item_count', { count: selected.length })}
-        {:else if folderSizes.pending}
-          <!-- A folder's total needs a walk, and a cold one takes long enough
-               that a bare count would read as the answer. -->
-          {t('common.item_count', { count: selected.length })}
-          <span class="sc-browse__selection-measuring" role="status">{t('details.measuring')}</span>
-        {:else if folderSizes.failed}
-          {t('common.item_count', { count: selected.length })}
-        {:else}
-          {t('browse.selected', { count: selected.length, size: formatBytes(selectionBytes) })}
-        {/if}
-      </span>
-      <span class="sc-browse__selection-gap"></span>
-      <IconButton label={t('browse.select_all')} onclick={() => selection.all(entries.map((e) => e.name))}>
-        <Icon icon={icons.check} />
-      </IconButton>
-      {#each actions as action (action.key)}
-        <IconButton label={action.label} onclick={action.run}><Icon icon={action.icon} /></IconButton>
-      {/each}
-    </div>
-  </div>
+    {#if selected.length > 0}
+      <div class="sc-browse__selection-bar">
+        <div class="sc-browse__selection-bar-inner">
+          <IconButton label={t('browse.clear_selection')} onclick={() => selection.clear()}>
+            <Icon icon={icons.close} />
+          </IconButton>
+          <span class="sc-browse__selection-count">
+            {#if ui.state.compact}
+              {t('common.item_count', { count: selected.length })}
+            {:else if folderSizes.pending}
+              {t('common.item_count', { count: selected.length })}
+              <span class="sc-browse__selection-measuring" role="status">{t('details.measuring')}</span>
+            {:else if folderSizes.failed}
+              {t('common.item_count', { count: selected.length })}
+            {:else}
+              {t('browse.selected', { count: selected.length, size: formatBytes(selectionBytes) })}
+            {/if}
+          </span>
+          <span class="sc-browse__selection-gap"></span>
+          <IconButton label={t('browse.select_all')} onclick={() => selection.all(entries.map((e) => e.name))}>
+            <Icon icon={icons.check} />
+          </IconButton>
+          {#if ui.state.compact}
+            {#each compactPrimaryActions as action (action.key)}
+              <Button variant="text" onclick={() => runSelectedAction(action)} ariaLabel={action.label}>
+                {#snippet icon()}<Icon icon={action.icon} size={18} />{/snippet}
+                {action.label}
+              </Button>
+            {/each}
+            {#if compactMoreActions.length > 0}
+              <IconButton label={t('browse.more')} selected={selectedMoreOpen} expanded={selectedMoreOpen} onclick={() => (selectedMoreOpen = !selectedMoreOpen)}>
+                <Icon icon={icons['more-vert']} />
+              </IconButton>
+            {/if}
+          {:else}
+            {#each actions as action (action.key)}
+              <IconButton label={action.label} onclick={action.run}><Icon icon={action.icon} /></IconButton>
+            {/each}
+          {/if}
+        </div>
+      </div>
+    {/if}
+  {#if operationNotice}
+    <section class="sc-browse__operation" role="status" aria-live="polite">
+      <div class="sc-browse__operation-heading">
+        <h2>{operationTitle(operationNotice.kind)}</h2>
+        <button type="button" class="sc-browse__operation-close" onclick={() => (operationNotice = null)}>
+          {t('common.close')}
+        </button>
+      </div>
+      <ul>
+        {#each operationNotice.results as result (result.path)}
+          <li class:sc-browse__operation-error={!result.ok}>
+            <span class="sc-browse__operation-path">
+              {#if result.destination}{result.path} to {result.destination}{:else}{result.path}{/if}
+            </span>
+            <span>{operationResultText(result)}</span>
+          </li>
+        {/each}
+      </ul>
+      {#if operationNotice.jobs.length > 0}
+        <p class="sc-browse__operation-jobs">{t('job.jobs')}: {operationNotice.jobs.join(', ')}</p>
+      {/if}
+    </section>
   {/if}
-  </div>
+
+  <Menu open={newMenuOpen} onclose={closeNewMenu} x={newMenuX} y={newMenuY} align="end">
+    <MenuItem onclick={() => { closeNewMenu(); newFolderOpen = true }}>
+      {t('common.new_folder')}
+    </MenuItem>
+    <MenuItem onclick={() => { closeNewMenu(); onUploadClick() }}>
+      {t('common.upload')}
+    </MenuItem>
+    <MenuItem onclick={() => { closeNewMenu(); void onUploadFolderClick() }}>
+      {t('browse.upload_folder')}
+    </MenuItem>
+  </Menu>
 
   <Menu open={sortOpen} onclose={closeSort} x={sortLeft} y={sortTop} align="end">
     <div bind:this={sortMenuEl} role="none">
@@ -1308,23 +1354,43 @@
   </Menu>
 
   <Menu open={overflowOpen} onclose={closeOverflow} x={overflowLeft} y={overflowTop} align="end">
-      <div bind:this={overflowMenuEl} role="none" onkeydown={onOverflowKeydown}>
-        {#if ui.state.compact}
-          <MenuItem onclick={() => { refresh(); closeOverflow() }}>{t('common.refresh')}</MenuItem>
-          <MenuItem onclick={() => { toggleTree(); closeOverflow() }}>
-            {treeOpen ? t('browse.hide_folder_tree') : t('browse.show_folder_tree')}
-          </MenuItem>
-        {/if}
-        <MenuItem onclick={() => { cycleDensity(); closeOverflow() }}>
-          {t('browse.density', { density: densityLabel(view.state.density) })}
+    <div bind:this={overflowMenuEl} role="none" onkeydown={onOverflowKeydown}>
+      {#if ui.state.compact}
+        <MenuItem onclick={() => { toggleView(); closeOverflow() }}>
+          {view.state.mode === 'list' ? t('browse.grid_view') : t('browse.list_view')}
         </MenuItem>
-        {#if ui.state.compact && canCreateHere}
-          <MenuItem onclick={() => { onUploadFolderClick(); closeOverflow() }}>{t('browse.upload_folder')}</MenuItem>
-          <MenuItem onclick={() => { newFolderOpen = true; closeOverflow() }}>{t('common.new_folder')}</MenuItem>
-        {/if}
-        <MenuItem onclick={() => { closeOverflow(); goto('/trash') }}>{t('browse.open_trash')}</MenuItem>
+        <MenuItem onclick={() => { ui.setDetails(!ui.state.details); closeOverflow() }}>
+          {ui.state.details ? t('details.hide') : t('details.show')}
+        </MenuItem>
+        {#each sortKeys as s (s.key)}
+          <MenuItem onclick={() => { chooseSort(s.key); closeOverflow() }}>
+            {sort.key === s.key
+              ? t('browse.sort_selected', {
+                  label: s.label(),
+                  direction: sort.order === 'asc' ? t('browse.sort_ascending') : t('browse.sort_descending')
+                })
+              : s.label()}
+          </MenuItem>
+        {/each}
+        <MenuItem onclick={() => { refresh(); closeOverflow() }}>{t('common.refresh')}</MenuItem>
+        <MenuItem onclick={() => { toggleTree(); closeOverflow() }}>
+          {treeOpen ? t('browse.hide_folder_tree') : t('browse.show_folder_tree')}
+        </MenuItem>
+      {/if}
+      <MenuItem onclick={() => { cycleDensity(); closeOverflow() }}>
+        {t('browse.density', { density: densityLabel(view.state.density) })}
+      </MenuItem>
+      <MenuItem onclick={() => { closeOverflow(); goto('/trash') }}>{t('browse.open_trash')}</MenuItem>
     </div>
   </Menu>
+
+  {#if ui.state.compact && compactMoreActions.length > 0}
+    <Menu open={selectedMoreOpen} onclose={() => (selectedMoreOpen = false)}>
+      {#each compactMoreActions as action (action.key)}
+        <MenuItem onclick={() => runSelectedAction(action)}>{action.label}</MenuItem>
+      {/each}
+    </Menu>
+  {/if}
 
   <div class="sc-browse__content">
     {#if treeOpen}
@@ -1335,23 +1401,13 @@
         onclose={() => (treeOpen = false)}
       />
     {/if}
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- The click here only clears the selection, and the keyboard already has
-         that: Escape on the list or the grid, which is where a keyboard user's
-         focus is. A keydown handler on this div would never fire, since it is
-         not focusable and never will be. -->
-
-    <!-- The blank-space menu hangs here, not on the table/grid itself: this
-         element is `flex: 1`, so it covers both the gaps between rows and the
-         empty area left when a short listing does not fill the pane. Rows stop
-         the event before it reaches this (`FileTable`/`FileGrid`), so a
-         right-click is answered by exactly one of the two menus. -->
+    <!-- This wrapper owns mouse-only marquee and blank-space gestures. FileTable
+         and FileGrid keep the keyboard selection contract on their grid roots. -->
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
     <div
       class="sc-browse__table-wrap"
       class:sc-browse__table-wrap--dragover={dragOver}
       class:sc-browse__table-wrap--marquee={marqueeRect !== null}
-      oncontextmenu={openEmptyMenu}
       onpointerdown={onMarqueePointerDown}
       onclick={onEmptyAreaClick}
     >
@@ -1453,25 +1509,6 @@
     {/if}
   </div>
 
-  {#if ui.state.compact && selected.length === 0 && canCreateHere}
-    <!--
-      The one primary action a phone-width toolbar gets a dedicated control
-      for. Upload over New folder: a folder is created rarely,
-      once per project or session; bringing in new files (not least straight
-      from the camera roll) is the action a phone visit to a file browser is
-      most often *for*. Upload folder was never a contender here -- directory
-      picker support on a mobile browser is patchy at best, so it's exactly the
-      kind of secondary action More exists for.
-
-      Gone while something is selected: the selection bar now floats over the
-      same corner, and what you do to the files you have picked is on it.
-      Uploading is not part of that, and half a button behind a bar is worse
-      than no button.
-    -->
-    <div class="sc-browse__fab">
-      <FAB icon={icons.upload} aria-label={t('common.upload')} onclick={onUploadClick} />
-    </div>
-  {/if}
 </div>
 
 <input
@@ -1501,17 +1538,6 @@
     {/each}
 </Menu>
 
-<!-- Blank-space menu. Same component and the same `menuX`/`menuY` the row menu
-     positions with; only the contents differ, because there is no target row to
-     act on. The three handlers and the three labels are the toolbar's own, not
-     copies. -->
-<Menu open={emptyMenuOpen} onclose={() => (emptyMenuOpen = false)} x={menuX} y={menuY}>
-    {#if canCreateHere}
-      <MenuItem onclick={() => { emptyMenuOpen = false; newFolderOpen = true }}>{t('common.new_folder')}</MenuItem>
-      <MenuItem onclick={() => { emptyMenuOpen = false; onUploadClick() }}>{t('common.upload')}</MenuItem>
-      <MenuItem onclick={() => { emptyMenuOpen = false; onUploadFolderClick() }}>{t('browse.upload_folder')}</MenuItem>
-    {/if}
-</Menu>
 
 <NewFolderDialog open={newFolderOpen} onclose={() => (newFolderOpen = false)} oncreate={createFolder} />
 <RenameDialog
@@ -1531,6 +1557,8 @@
 <DestinationPickerDialog
   open={destOpen}
   sources={destSources}
+  canCopy={destCanCopy}
+  canMove={destCanMove}
   onclose={() => (destOpen = false)}
   onpick={onDestinationPicked}
 />
@@ -1583,66 +1611,113 @@
     flex-direction: column;
     height: 100%;
     min-height: 0;
-    /* Anchors `.sc-browse__drop-overlay` (absolute) to the browse pane
-       itself. `.sc-browse__fab` used to rely on this too -- floating over
-       the file list "for free" by being absolutely positioned inside a
-       pane that was itself always exactly the visible area, back when
-       `.sc-app-shell__main` clipped everything to one screen. Once the
-       document became the real scroller (+layout.svelte), this pane is no
-       longer clipped to the viewport -- it scrolls with the page like
-       everything else -- so an absolutely-positioned FAB anchored to it
-       scrolled away too (measured: `top` went from 707 at the top of the
-       page to -4443 near the bottom). Same mistake already caught and
-       fixed twice over for `NavigationBar`/`NavigationRail`: an element
-       that only looked pinned because nothing used to scroll. The FAB is
-       `position: fixed` now (see its own rule) instead of relying on this
-       element's `position: relative`. */
     position: relative;
+  }
+  .sc-browse__bar-stack {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+  }
+  .sc-browse__folder-context {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px;
+  }
+  .sc-browse__folder-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    min-width: 0;
+  }
+  .sc-browse__folder-heading h1 {
+    flex: 0 0 100%;
+    min-width: 0;
+    margin: 0;
+    overflow-wrap: anywhere;
+    @apply --m3-headline-small;
+  }
+  .sc-browse__folder-state {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 4px 12px;
+    color: var(--m3c-on-surface-variant);
+    text-align: right;
+    white-space: nowrap;
+    @apply --m3-label-large;
   }
   .sc-browse__toolbar {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 16px;
     padding: 16px;
-    /* `box-shadow`, not `border-bottom`: a border is inside the border box, so
-       the 40px action row plus 16px of padding each side measured 73px, one
-       off the 4px grid, and pushed everything below it half a pixel out of
-       step. A shadow paints outside the box and costs no layout height.
-       NavigationDrawer/FileTree's overlay headers do the same. */
     box-shadow: 0 1px 0 var(--m3c-outline-variant);
-    /* Defensive fallback only, not the normal case anymore: an unusually
-       deep breadcrumb chain can still outgrow one row (Breadcrumb.svelte
-       wraps its own crumbs rather than truncating, and isn't a file this
-       change owns). At the two-icon compact width and the handful of
-       controls left on desktop, this shouldn't trigger in practice -- see
-       `--compact` below for the width it's tuned against. */
-    flex-wrap: wrap;
   }
   .sc-browse__toolbar--compact {
-    /* Down from 16px/16px: at 360px (the
-       narrowest width this project tests against) the breadcrumb plus
-       search plus More needed 345px against 328px available at
-       the wider spacing and wrapped to a second row -- exactly the failure this
-       toolbar redesign exists to remove. Tightening compact-only spacing
-       buys back the ~17px that cost; desktop keeps the wider spacing since
-       it was never the problem. */
     padding-inline: 8px;
     gap: 8px;
   }
   .sc-browse__toolbar-actions {
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
     justify-content: flex-end;
     gap: 8px;
+    min-width: 0;
   }
-  .sc-browse__title {
+  .sc-browse__operation {
+    margin: 12px 16px;
+    padding: 12px 16px;
+    border: 1px solid var(--m3c-outline-variant);
+    border-radius: var(--m3-shape-medium);
+    background: var(--m3c-surface-container);
+  }
+  .sc-browse__operation-heading {
     display: flex;
     align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .sc-browse__operation-heading h2 {
+    margin: 0;
+    @apply --m3-title-medium;
+  }
+  .sc-browse__operation-close {
+    border: 0;
+    padding: 4px 8px;
+    color: var(--m3c-primary);
+    background: transparent;
+    cursor: pointer;
+    font: inherit;
+  }
+  .sc-browse__operation ul {
+    display: grid;
+    gap: 4px;
+    margin: 8px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .sc-browse__operation li {
+    display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 4px 12px;
+    justify-content: space-between;
+    overflow-wrap: anywhere;
+    @apply --m3-body-small;
+  }
+  .sc-browse__operation-error {
+    color: var(--m3c-error);
+  }
+  .sc-browse__operation-path {
     min-width: 0;
+  }
+  .sc-browse__operation-jobs {
+    margin: 8px 0 0;
+    overflow-wrap: anywhere;
+    @apply --m3-body-small;
   }
   /* item 133: marks a root shared with another service (Jellyfin, SMB) --
      same tonal-container chip shape as `SessionsSection.svelte`'s "Current
@@ -1741,18 +1816,11 @@
   }
   .sc-browse__selection-bar-inner {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    /* The icons are already 48px touch targets, so anything wider than this
-       reads as gaps rather than as a group. */
     gap: 4px;
     min-height: 48px;
-    padding-inline: 8px;
-    /* Nothing here shrinks or wraps (a half-rendered destructive button is
-       worse than a scroll), so the row scrolls if a long enough count string
-       ever outgrows it. */
-    overflow-x: auto;
-    /* ...and the tooltips are `position: fixed`, so scrolling this box clips
-       them only if it is also the containing block. It is not. */
+    padding: 4px 8px;
   }
   .sc-browse__selection-gap {
     /* Separates the count from the actions. It no longer stretches: the bar is
@@ -1849,50 +1917,5 @@
     color: var(--m3c-primary);
     @apply --m3-title-medium;
     pointer-events: none;
-  }
-  .sc-browse__fab {
-    /* `position: fixed` (was `absolute`, anchored to `.sc-browse` -- see
-       that rule's comment for why that stopped being pinned once the
-       document became the real scroller). Fixed pins to the viewport
-       itself, same fix already applied to `NavigationBar`/`NavigationRail`/
-       `NavigationDrawer` (+layout.svelte and those components' own
-       comments) for the identical reason. */
-    position: fixed;
-    right: 16px;
-    /* Clears `NavigationBar`'s full height (the same
-       `--sc-nav-bar-height + env(safe-area-inset-bottom, 0px)` formula
-       `NavigationDrawer.svelte`'s overlay variant already shares with it)
-       plus this FAB's own 16px gap above it, so the two never collide.
-       This does NOT try to also clear the last row of a long list -- MD3
-       floating action buttons are expected to float over list content (the
-       "floating" is the point; every reference MD3 file-manager mock has
-       the FAB sitting on top of the last row, not making room for it), so
-       the bottom reservation FileTable.svelte/FileGrid.svelte already add
-       for the bar stays exactly what it is. Only the bar itself gets a
-       dedicated no-overlap guarantee; the FAB gets MD3's normal floating
-       behavior.
-       `--sc-tray-stack-top` is the one thing that does move it: the
-       job/upload tray stack is fixed to this same corner at z 30 and wins,
-       so a running job buried this FAB outright (8px of 56 left showing,
-       measured at 390x844) rather than merely floating over it. A snackbar
-       covering the FAB for a few seconds is MD3-normal; a tray that stays up
-       for the length of a copy is not. +layout.svelte publishes the stack's
-       measured top edge as a distance up from the bottom of the viewport,
-       already including the 12px gap the FAB should keep above it, and 0px
-       when the stack is empty -- so `max()` picks the resting place below
-       whenever there is nothing there, with no second baseline to reconcile
-       (see that effect's comment for why a published *height* lost 8px). */
-    bottom: max(
-      calc(16px + var(--sc-nav-bar-height) + env(safe-area-inset-bottom, 0px)),
-      var(--sc-tray-stack-top, 0px)
-    );
-    /* `NavigationDrawer`'s overlay variant is a native `<dialog>`
-       (`showModal()`), which the UA always paints in the top layer above
-       every ordinary stacking context regardless of z-index -- so the FAB
-       sits under its scrim for free; this z-index only has to beat this
-       page's own regular content (below `Menu`/`Snackbar`/`UploadTray`'s
-       20/40/30 -- see their own files -- which is correct, a snackbar or
-       menu should still cover the FAB, not the other way round). */
-    z-index: 10;
   }
 </style>

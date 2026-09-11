@@ -24,7 +24,9 @@
     type?: 'text' | 'search' | 'password' | 'date' | 'datetime-local' | 'number'
     min?: number
     max?: number
-    id?: string
+    /** Additional descriptions supplied by the caller. The validation message
+     *  is appended rather than replacing these descriptions. */
+    ariaDescribedby?: string
     /** Id of a `<datalist>` to suggest from. For a field whose useful values
      *  are known but not closed: the suggestions are offered, anything else
      *  is still accepted. A `<select>` would refuse the values this build has
@@ -36,10 +38,11 @@
     /** Reports the field's value as the user edits it. For a caller that
      *  owns its own state rather than binding: a filter form hands each
      *  keystroke to a store that debounces it, so `bind:value` would fight
-     *  the store for who holds the value. The value is passed rather than the
-     *  event so no caller has to reach through `currentTarget`. */
+     *  the store for who holds the value. The value is passed rather than
+     *  the event so no caller has to reach through `currentTarget`. */
     oninput?: (value: string) => void
   }
+  const generatedId = $props.id()
 
   let {
     value = $bindable(''),
@@ -50,13 +53,17 @@
     type = 'text',
     min,
     max,
-    id,
+    ariaDescribedby,
     list,
     autofocus = false,
     autocomplete,
     onkeydown,
     oninput
   }: Props = $props()
+
+  const errorId = `${generatedId}-error`
+  const describedBy = $derived([ariaDescribedby, error ? errorId : null].filter(Boolean).join(' ') || undefined)
+
 
   // The framework renders (and owns the id of) the `<input>`, so autofocus has
   // to reach it through the DOM rather than an attribute: which also avoids
@@ -94,11 +101,13 @@
     placeholder={focused ? placeholder : undefined}
     {autocomplete}
     {onkeydown}
+    aria-invalid={error ? 'true' : undefined}
+    aria-describedby={describedBy}
+    aria-errormessage={error ? errorId : undefined}
     oninput={oninput ? (e: Event) => oninput((e.currentTarget as HTMLInputElement).value) : undefined}
     {...list ? { list } : {}}
-    {...id ? { id } : {}}
   />
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#if error}<p id={errorId} class="error" role="alert">{error}</p>{/if}
 </div>
 
 <style>

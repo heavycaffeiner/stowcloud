@@ -127,6 +127,8 @@
    *  never returns them again after this response ("plaintext is not stored"), so this has to be shown now or lost, same
    *  rule the app-password/recovery-code create flows already follow. */
   let justCreated = $state<ShareLinkInfo | null>(null)
+  let dialogOpen = $state(false)
+  let issuedAcknowledged = $state(false)
 
   // ── inline edit ──
   let editingId = $state<number | null>(null)
@@ -145,6 +147,7 @@
   let revokeTarget = $state<ShareLinkInfo | null>(null)
 
   let copiedId = $state<number | null>(null)
+  let copyErrorId = $state<number | null>(null)
 
   // The banner above the list doubles as the "could not read" state and the
   // "an edit or a revoke just failed" state, same slot the old imperative
@@ -158,10 +161,12 @@
           ? describeApiError(deleteMut.error, t('share.could_not_revoke_share_link'))
           : null
   )
-
   $effect(() => {
+    dialogOpen = open
     if (open) {
       justCreated = null
+      issuedAcknowledged = false
+      copyErrorId = null
       creatingOpen = false
       editingId = null
     }
@@ -207,13 +212,16 @@
         label: newLabel.trim() || undefined
       })
       justCreated = created
+      issuedAcknowledged = false
+      copyErrorId = null
+      copiedId = null
       creatingOpen = false
     } catch {
       // `createError` reads `createMut.error`; the form stays open to retry.
     }
   }
-
   async function copy(text: string, id: number): Promise<void> {
+    copyErrorId = null
     try {
       await navigator.clipboard.writeText(text)
       copiedId = id
@@ -221,8 +229,28 @@
         if (copiedId === id) copiedId = null
       }, 2000)
     } catch {
-      // clipboard API unavailable, the value is still selectable as text
+      copiedId = null
+      // The complete value remains in the selectable reveal surface.
+      copyErrorId = id
     }
+  }
+
+  function acknowledgeIssued(): void {
+    issuedAcknowledged = true
+    justCreated = null
+    copyErrorId = null
+  }
+
+  function closeIssued(): void {
+    if (justCreated && !issuedAcknowledged) {
+      // Re-open after Escape/backdrop dismissal attempts. The one-time value
+      // remains available until the operator explicitly acknowledges saving it.
+      dialogOpen = true
+      return
+    }
+    dialogOpen = false
+    justCreated = null
+    onclose()
   }
 
   function openEdit(link: ShareLinkInfo): void {
@@ -248,7 +276,7 @@
       await updateMut.mutateAsync({
         id: link.id,
         patch: {
-          perms: { read: editRead, download: editDownload },
+          perms: { read: editRead, download: editDownload, create: link.perms.create },
           // Absent (`undefined`) leaves the password alone; `null` clears it;
           // a non-empty value replaces it. `JSON.stringify` drops `undefined`
           // keys on its own; see `ShareLinkPatchReq`'s doc comment.
@@ -279,22 +307,26 @@
   }
 </script>
 
-<Dialog {open} title={t('share.share_links', { name: targetName })} onclose={onclose}>
+<Dialog open={dialogOpen} title={t('share.share_links', { name: targetName })} onclose={closeIssued}>
   {#if justCreated}
     <div class="sc-share__issued">
       <p class="sc-share__issued-note">
         {t('share.link_shown_only_now_cannot')}
       </p>
       <div class="sc-share__url-row">
-        <code class="sc-share__url">{justCreated.url}</code>
-        <IconButton label={t('share.copy_link')} onclick={() => justCreated && copy(justCreated.url ?? '', -1)}>
+        <textarea class="sc-share__url" readonly rows="3" aria-label={t('share.copy_link')} value={justCreated.url ?? ''}></textarea>
+        <IconButton label={t('share.copy_link')} onclick={() => copy(justCreated?.url ?? '', -1)}>
           <Icon icon={icons.copy} />
         </IconButton>
       </div>
-      <Button variant="text" onclick={() => (justCreated = null)}>{t('common.close')}</Button>
+      {#if copiedId === -1}
+        <p class="sc-share__copy-feedback" role="status">{t('common.copied')}</p>
+      {:else if copyErrorId === -1}
+        <p class="sc-share__copy-feedback sc-share__copy-feedback--error" role="alert">{t('share.copy_failed')}</p>
+      {/if}
+      <Button variant="text" onclick={acknowledgeIssued}>{t('share.acknowledge_link_saved')}</Button>
     </div>
   {/if}
-
   {#if loading}
     <div class="sc-share__loading"><ProgressCircular /></div>
   {:else if loadError}
@@ -410,7 +442,7 @@
   {/if}
 
   {#snippet actions()}
-    <Button variant="text" onclick={onclose}>{t('common.close')}</Button>
+    <Button variant="text" onclick={closeIssued}>{t('common.close')}</Button>
   {/snippet}
 </Dialog>
 
@@ -442,13 +474,27 @@
   .sc-share__url {
     flex: 1;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    max-width: 100%;
+    box-sizing: border-box;
+    display: block;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+    user-select: all;
+    resize: vertical;
+    border: 0;
+    font: inherit;
     padding: 8px;
     border-radius: var(--m3-shape-extra-small);
     background: var(--m3c-surface);
     color: var(--m3c-on-surface);
+  }
+  .sc-share__copy-feedback {
+    margin: 8px 0 0;
+    color: var(--m3c-on-secondary-container);
+    @apply --m3-body-small;
+  }
+  .sc-share__copy-feedback--error {
+    color: var(--m3c-error);
   }
   .sc-share__loading {
     display: flex;

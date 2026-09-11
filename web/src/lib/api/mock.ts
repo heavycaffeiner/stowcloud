@@ -341,13 +341,8 @@ async function rename(path: string, newName: string): Promise<Entry> {
 }
 
 /** Backs both `copy()` and `move()`: the two differ only in whether the
- *  source survives, so the conflict and rename-suffix behaviour
- *  they must agree on lives here once.
- *
- *  The suffix matches the server's (`(2)`, `(3)`, …, never `(1)`), and the
- *  result carries the name the item actually landed under: a rename that
- *  reported the requested path back would tell the caller a file exists under
- *  a name nothing wrote. */
+ * source survives, so conflict and rename-suffix behavior lives here once.
+ * Every result keeps the requested source path and the actual destination. */
 async function transfer(req: MoveReq, keepSource: boolean): Promise<BatchResult> {
   await delay()
   const results: BatchResult['results'] = []
@@ -362,10 +357,20 @@ async function transfer(req: MoveReq, keepSource: boolean): Promise<BatchResult>
       const destDir = normalizePath(req.dest)
       const destExists = resolveDirEntries(destDir).some((e) => e.name === name)
       if (destExists && req.on_conflict === 'fail') {
-        throw new ApiError(409, { code: 'fs.conflict', message: 'destination already exists', detail: { path: joinPath(destDir, name) } })
+        throw new ApiError(409, {
+          code: 'fs.conflict',
+          message: 'destination already exists',
+          detail: { path: joinPath(destDir, name) }
+        })
       }
       if (destExists && req.on_conflict === 'skip') {
-        results.push({ path: joinPath(destDir, name), ok: true, skipped: true })
+        results.push({
+          path: p,
+          ok: true,
+          destination: joinPath(destDir, name),
+          skipped: true,
+          ...(keepSource ? {} : { copied: false })
+        })
         continue
       }
       let finalName = name
@@ -377,10 +382,17 @@ async function transfer(req: MoveReq, keepSource: boolean): Promise<BatchResult>
           finalName = `${stem} (${i++})${ext}`
         }
       }
-
+      const destination = joinPath(destDir, finalName)
       addOverlayEntry(destDir, { ...entry, name: finalName, etag: randomId('e') })
       if (!keepSource) removeEntry(parent, name)
-      results.push({ path: joinPath(destDir, finalName), ok: true })
+
+      results.push({
+        path: p,
+        ok: true,
+        destination,
+        skipped: false,
+        ...(keepSource ? {} : { copied: false })
+      })
     } catch (err) {
       const e = err instanceof ApiError ? err : new ApiError(500, { code: 'internal', message: 'internal error' })
       results.push({ path: p, ok: false, error: { code: e.code, message: e.message, detail: e.detail } })
@@ -389,17 +401,23 @@ async function transfer(req: MoveReq, keepSource: boolean): Promise<BatchResult>
   return { results }
 }
 
-/** A copy is a durable job: it rewrites every byte whatever the two paths
- *  are, so the server answers with an id and the tray polls it.
- *
- *  The destination is checked before the job exists, so a conflict is in this
- *  response rather than in the job's own results, and a batch where nothing
- *  started carries no job at all. */
+/** A copy is represented as one durable job per accepted source, matching
+ * the real endpoint's one-item response while keeping the mock immediately
+ * terminal. */
 async function copy(req: MoveReq): Promise<CopyResult> {
   const { results } = await transfer(req, true)
-  const started = results.filter((r) => r.ok && !r.skipped)
-  if (started.length === 0) return { results }
-  return { results, job: makeMockJob('copy', started.length, started) }
+  const jobs: string[] = []
+  for (const result of results) {
+    if (!result.ok || result.skipped) {
+      result.started = false
+      continue
+    }
+    result.started = true
+    const job = makeMockJob('copy', 1, [result])
+    result.job = job
+    jobs.push(job)
+  }
+  return { results, ...(jobs.length > 0 ? { jobs } : {}) }
 }
 
 /** A move finishes in the request: it is a rename. */
@@ -408,10 +426,10 @@ async function move(req: MoveReq): Promise<BatchResult> {
 }
 
 /** The mock tree is one device, so a move here is always a rename and never
- *  the copy-then-delete fallback the real server warns about. */
+ * the copy-then-delete fallback the real server warns about. */
 async function movePreflight(req: MoveReq): Promise<MovePreflight> {
   await delay(10)
-  return { results: req.paths.map((p) => ({ path: normalizePath(p), ok: true })) }
+  return { results: req.paths.map((p) => ({ path: normalizePath(p), ok: true, copied: false })) }
 }
 
 async function del(paths: string[], permanent = false): Promise<{ results: BatchItemResult[] }> {
@@ -440,15 +458,10 @@ async function del(paths: string[], permanent = false): Promise<{ results: Batch
   return { results }
 }
 
-// ── long-running jobs: the real server always answers
-// `202 { job }`, never a synchronous result, so this mock must too for UI
-// code-path parity. Unlike the real backend, this mock's file operations
-// above already ran to completion synchronously by the time `{ job }` is
-// handed back (there is no mock filesystem large enough for a fake delay to
-// mean anything): `makeMockJob` just records the already-known outcome
-// under a fresh id so `jobStatus` sees a normal `done` job on the
-// very first poll, same shape a real terminal job has. ──
-
+// ── long-running jobs ──
+// Copies create one terminal mock job per accepted source. The filesystem
+// operation completes synchronously, then the job records that result so the
+// tray follows the same durable-id contract as the real endpoint.
 interface MockJobRow {
   kind: JobKindWire
   state: JobState
@@ -2838,13 +2851,15 @@ export interface SearchRequest {
 
 /** The `done` event of `GET /api/v1/search/stream`.
  *
- *  The search runs to the end, so there is nothing to page through and no
- *  ceiling to report: `count` is how many hits the server sent, and `error`
- *  is the only way a list is short. */
+ *  `count` is how many hits the server sent. `truncated` means the server
+ *  stopped before checking every accessible folder, so the hits remain useful
+ *  but are not a complete answer. `error` describes a failed stream. */
 export interface SearchDone {
   count: number
   /** Which tier answered, for a diagnostic. */
   tier?: string
+  /** True when the server stopped before checking every accessible folder. */
+  truncated?: boolean
   elapsedMs?: number
   /** `busy` when the engine already had its hands full, `search_failed` when
    *  the walk broke, `network` when the stream did. Absent on a search that

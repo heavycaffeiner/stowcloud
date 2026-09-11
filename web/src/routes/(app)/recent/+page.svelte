@@ -24,7 +24,9 @@
   import IconButton from '../../../lib/ui/IconButton.svelte'
   import ProgressCircular from '../../../lib/ui/ProgressCircular.svelte'
 
-  const recent = createQuery(() => recentQuery())
+  const RECENT_LIMIT = 100
+  const RECENT_RETENTION_DAYS = 14
+  const recent = createQuery(() => recentQuery(RECENT_LIMIT))
   const hits = $derived(recent.data?.hits ?? [])
   const loading = $derived(recent.isPending)
   const loadError = $derived(recent.error ? describeApiError(recent.error, t('recent.could_not_load')) : null)
@@ -35,8 +37,14 @@
     return i <= 0 ? vpath : vpath.slice(0, i)
   }
 
+  function browsePath(path: string): string {
+    const normalized = path.startsWith('/') ? path : `/${path}`
+    return normalized === '/' ? '/b' : `/b${normalized}`
+  }
+
   function open(hit: RecentHit): void {
-    goto(`/b/${parentOfVpath(hit.vpath)}`)
+    const folder = parentOfVpath(hit.vpath)
+    void goto(`${browsePath(folder)}?focus=${encodeURIComponent(hit.name)}`)
   }
 
   /** The one-word verb for what was done. Text, never a colour or an icon on
@@ -75,6 +83,7 @@
       <h1>{t('nav.recent')}</h1>
       <IconButton label={t('common.refresh')} onclick={() => recent.refetch()}><Icon icon={icons.refresh} /></IconButton>
     </header>
+    <p class="sc-recent__coverage">{t('recent.coverage', { limit: RECENT_LIMIT, days: RECENT_RETENTION_DAYS })}</p>
 
     {#if loading}
       <div class="sc-recent__loading"><ProgressCircular /></div>
@@ -84,7 +93,7 @@
       <p class="sc-recent__empty">{t('recent.nothing_recent')}</p>
     {:else}
       <ul class="sc-recent__list">
-        {#each hits as hit (hit.vpath)}
+        {#each hits as hit (`${hit.at_ns}:${hit.vpath}`)}
           <li>
             <!-- The accessible name carries the folder too: a file name alone
                  repeats across folders, and a list of twelve "IMG_0042.jpg"
@@ -92,7 +101,7 @@
             <button
               type="button"
               class="sc-recent__row"
-              aria-label={t('recent.open_containing_folder', {
+              aria-label={t('recent.open_item', {
                 name: hit.name,
                 folder: parentOfVpath(hit.vpath)
               })}
@@ -124,6 +133,11 @@
     max-width: min(720px, 100%);
     margin-inline: auto;
     padding: var(--sc-page-pad);
+  }
+  .sc-recent__coverage {
+    margin: -8px 0 16px;
+    color: var(--m3c-on-surface-variant);
+    @apply --m3-body-small;
   }
   .sc-recent__header {
     display: flex;

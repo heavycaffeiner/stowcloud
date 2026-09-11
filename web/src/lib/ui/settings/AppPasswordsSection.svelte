@@ -25,6 +25,9 @@
   let newReadOnly = $state(false)
   let newCurrent = $state('')
   let issuedToken = $state<string | null>(null)
+  let issuedOpen = $state(false)
+  let issuedAcknowledged = $state(false)
+  let tokenCopyState = $state<'idle' | 'copied' | 'failed'>('idle')
   const create = createMutation(() => createAppPasswordMutation())
   const createError = $derived(
     create.error ? describeApiError(create.error, t('app_password.could_not_create_app_password')) : null
@@ -65,6 +68,9 @@
       {
         onSuccess: (res) => {
           issuedToken = res.token
+          issuedOpen = true
+          issuedAcknowledged = false
+          tokenCopyState = 'idle'
           createOpen = false
         }
       }
@@ -72,6 +78,18 @@
   }
 
   function closeIssued(): void {
+    if (issuedToken && !issuedAcknowledged) {
+      // Keep the one-time value open after Escape/backdrop dismissal attempts.
+      issuedOpen = true
+      return
+    }
+    issuedOpen = false
+    issuedToken = null
+  }
+
+  function acknowledgeIssued(): void {
+    issuedAcknowledged = true
+    issuedOpen = false
     issuedToken = null
   }
 
@@ -79,10 +97,12 @@
     if (!issuedToken) return
     try {
       await navigator.clipboard.writeText(issuedToken)
+      tokenCopyState = 'copied'
     } catch {
-      // clipboard API unavailable: the token is still selectable as text
+      tokenCopyState = 'failed'
     }
   }
+
 
   function askRevoke(p: AppPasswordInfo): void {
     actionError = null
@@ -233,17 +253,22 @@
   {/snippet}
 </Dialog>
 
-<Dialog open={!!issuedToken} title={t('app_password.app_password_issued')} onclose={closeIssued}>
+<Dialog open={issuedOpen && !!issuedToken} title={t('app_password.app_password_issued')} onclose={closeIssued}>
   <p>
     <Icon icon={icons.warning} size={16} />
     {t('app_password.once_you_close_cannot_shown')}
   </p>
   <div class="sc-app-passwords__token-row">
-    <code class="sc-app-passwords__token">{issuedToken}</code>
-    <Button variant="text" onclick={copyToken}>{t('common.copy')}</Button>
+    <input class="sc-app-passwords__token" readonly value={issuedToken ?? ''} aria-label={t('app_password.app_password_issued')} />
+    <Button variant="text" onclick={copyToken}>
+      {tokenCopyState === 'copied' ? t('common.copied') : t('common.copy')}
+    </Button>
   </div>
+  {#if tokenCopyState === 'failed'}
+    <p class="sc-app-passwords__copy-feedback" role="alert">{t('app_password.copy_failed')}</p>
+  {/if}
   {#snippet actions()}
-    <Button variant="filled" onclick={closeIssued}>{t('common.saved')}</Button>
+    <Button variant="filled" onclick={acknowledgeIssued}>{t('app_password.acknowledge_saved')}</Button>
   {/snippet}
 </Dialog>
 
@@ -301,6 +326,11 @@
   .sc-app-passwords__error {
     color: var(--m3c-on-surface-variant);
   }
+  .sc-app-passwords__copy-feedback {
+    margin: 8px 0 0;
+    color: var(--m3c-error);
+    @apply --m3-body-small;
+  }
   .sc-app-passwords__actions {
     margin-top: 16px;
   }
@@ -316,9 +346,15 @@
     margin-block: 8px;
   }
   .sc-app-passwords__token {
+    flex: 1;
+    min-width: 0;
+    box-sizing: border-box;
+    border: 0;
     padding: 8px 12px;
     border-radius: var(--m3-shape-extra-small);
     background: var(--m3c-surface-container-highest);
+    color: var(--m3c-on-surface);
+    font: inherit;
     @apply --m3-body-medium;
     overflow-wrap: anywhere;
     user-select: all;

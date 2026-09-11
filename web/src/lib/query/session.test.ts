@@ -38,4 +38,8 @@ describe('telling "not signed in" apart from "cannot reach the server"', () => {
     expect(isUnauthenticated(new ApiError(503, { code: 'unavailable', message: 'no' }))).toBe(false)
     expect(isUnauthenticated(new TypeError('network down'))).toBe(false)
   })
+
+  it('does not treat a credential reconfirmation refusal as session death', () => {
+    expect(isUnauthenticated(new ApiError(401, { code: 'auth.invalid_credentials', message: 'no' }))).toBe(false)
+  })
 })

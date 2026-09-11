@@ -418,36 +418,43 @@ async function rename(path: string, newName: string): Promise<Entry> {
 }
 
 /**
- * `POST /api/v1/files/copy` answers per-item results and, when at least one item
- * actually started, the job to poll.
- *
- * `job` is absent when nothing started: every item was refused, or every item
- * was skipped because its destination was taken. This was typed as always
- * present, so a caller destructured `undefined` and polled a job by that name
- * until its own timeout fired.
+ * `POST /api/v1/files/copy` accepts one source at a time and answers where
+ * that source will land. A batch is therefore aggregated here rather than
+ * represented by the last response. Every started item retains its own job
+ * id, and `jobs` carries the complete set for the job tray.
  */
+interface WireCopyStart {
+  id?: string
+  path: string
+  started: boolean
+  skipped: boolean
+}
+
 async function copy(req: MoveReq): Promise<CopyResult> {
   const results: BatchItemResult[] = []
-  let job: string | undefined
+  const jobs: string[] = []
   for (const path of req.paths) {
     try {
-      // The route names both ends of one transfer, so a selection is one
-      // request each, in sequence.
-      const out = await request<{ id?: string; path: string; started: boolean; skipped: boolean }>(
-        '/files/copy',
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            from: path,
-            to: joinDest(req.dest, path),
-            on_conflict: req.on_conflict
-          })
-        }
-      )
-      results.push({ path, ok: true })
-      // A copy large enough to run in the background answers with the job to
-      // poll. The last one wins, which is what the tray follows.
-      if (out.started && out.id) job = out.id
+      const out = await request<WireCopyStart>('/files/copy', {
+        method: 'POST',
+        body: JSON.stringify({
+          from: path,
+          to: joinDest(req.dest, path),
+          on_conflict: req.on_conflict
+        })
+      })
+      const item: BatchItemResult = {
+        path,
+        ok: true,
+        destination: out.path,
+        started: out.started,
+        skipped: out.skipped
+      }
+      if (out.started && out.id) {
+        item.job = out.id
+        jobs.push(out.id)
+      }
+      results.push(item)
     } catch (err) {
       results.push({
         path,
@@ -456,7 +463,7 @@ async function copy(req: MoveReq): Promise<CopyResult> {
       })
     }
   }
-  return { results, job }
+  return { results, ...(jobs.length > 0 ? { jobs } : {}) }
 }
 
 /** The per-item error shape, from whatever was thrown. */
@@ -477,16 +484,21 @@ function joinDest(dest: string, source: string): string {
 }
 
 /**
- * `POST /api/v1/files/move` answers inline, not with a job: a move is a rename
- * within one filesystem, which finishes in the request. Only the cross-device
- * case copies bytes, and the server reports that per item as `will_copy`
- * rather than deferring the whole batch.
+ * `POST /api/v1/files/move` accepts one source at a time and returns the
+ * actual destination. A renamed destination, a cross-device copy, and a
+ * skipped conflict are all retained on the corresponding item.
  */
+interface WireMove {
+  path: string
+  copied: boolean
+  skipped: boolean
+}
+
 async function move(req: MoveReq): Promise<BatchResult> {
   const results: BatchItemResult[] = []
   for (const path of req.paths) {
     try {
-      await requestNoContent('/files/move', {
+      const out = await request<WireMove>('/files/move', {
         method: 'POST',
         body: JSON.stringify({
           from: path,
@@ -494,7 +506,13 @@ async function move(req: MoveReq): Promise<BatchResult> {
           on_conflict: req.on_conflict
         })
       })
-      results.push({ path, ok: true })
+      results.push({
+        path,
+        ok: true,
+        destination: out.path,
+        copied: out.copied,
+        skipped: out.skipped
+      })
     } catch (err) {
       results.push({
         path,
@@ -505,6 +523,7 @@ async function move(req: MoveReq): Promise<BatchResult> {
   }
   return { results }
 }
+
 
 /**
  * What a move would do, asked before it is committed.
@@ -2006,9 +2025,9 @@ function toSearchHit(raw: RawSearchHit): SearchHit {
 }
 
 /**
- * `GET /api/v1/search/stream`. Runs to the end: every match arrives as the
- * server finds it, there is no page to ask for and no ceiling to hit, so the
- * `done` event carries a count rather than a "there was more" flag.
+ * `GET /api/v1/search/stream`. Runs until the server finishes or reports that
+ * its bounded walk was truncated. Every hit that arrived remains available;
+ * the `done` event distinguishes a complete answer from that partial one.
  *
  * `onProgress` receives the walk's counters while it runs. A search of a
  * large tree can go a long time without matching anything, and a stream that
@@ -2049,12 +2068,19 @@ function searchStream(
   es.addEventListener('done', (ev: MessageEvent) => {
     let done: SearchDone = { count }
     try {
-      const raw = JSON.parse(ev.data) as { count?: unknown; tier?: unknown; elapsed_ms?: unknown; error?: unknown }
+      const raw = JSON.parse(ev.data) as {
+        count?: unknown
+        tier?: unknown
+        truncated?: unknown
+        elapsed_ms?: unknown
+        error?: unknown
+      }
       done = {
         // The server's own count is what the arriving hits are measured
         // against: a difference between the two means frames were lost.
         count: typeof raw.count === 'number' ? raw.count : count,
         tier: typeof raw.tier === 'string' ? raw.tier : undefined,
+        truncated: raw.truncated === true,
         elapsedMs: typeof raw.elapsed_ms === 'number' ? raw.elapsed_ms : undefined,
         error: typeof raw.error === 'string' ? raw.error : undefined
       }
@@ -2068,7 +2094,7 @@ function searchStream(
     es.close()
     // The stream broke rather than finished, so what arrived is a prefix and
     // the list says so instead of presenting itself as the whole answer.
-    onDone({ count, error: 'network' })
+    onDone({ count, error: 'network', truncated: false })
   }
   return () => es.close()
 }

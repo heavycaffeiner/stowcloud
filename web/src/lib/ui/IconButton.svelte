@@ -25,7 +25,8 @@
     children: Snippet
   }
 
-  let { label, selected = false, expanded, disabled = false, onclick, children }: Props = $props()
+  let { label, selected, expanded, disabled = false, onclick, children }: Props = $props()
+  const isSelected = $derived(selected === true)
 
   /** Long enough that dragging the pointer across a row of these does not
    *  leave a trail of tooltips behind it. */
@@ -159,11 +160,11 @@
   onfocusout={hide}
 >
   <Button
-    variant={selected ? 'tonal' : 'text'}
+    variant={isSelected ? 'tonal' : 'text'}
     square
     iconType="full"
     aria-label={label}
-    aria-pressed={expanded === undefined ? selected : undefined}
+    aria-pressed={expanded === undefined && selected !== undefined ? selected : undefined}
     aria-expanded={expanded}
     {disabled}
     {onclick}

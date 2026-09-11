@@ -1,5 +1,5 @@
 <script lang="ts">
-  // (app) route group: the authenticated shell (nav rail/bar + upload tray).
+  // (app) route group: the authenticated shell (drawer/bar + upload tray).
   // Kept OUT of the true root layout so /s/[token] (outside this group)
   // never pulls this chunk in: the "separate lightweight
   // bundle" for the public share page.
@@ -8,57 +8,45 @@
   import { page } from '$app/state'
   import { goto } from '$app/navigation'
   import { createQuery } from '@tanstack/svelte-query'
-  import { Snackbar as M3Snackbar } from 'm3-svelte'
+  import { Icon, Snackbar as M3Snackbar, MenuItem } from 'm3-svelte'
   import { icons } from '../../lib/icons'
+  import Button from '../../lib/ui/Button.svelte'
+  import Menu from '../../lib/ui/Menu.svelte'
   import NavigationBar from '../../lib/ui/NavigationBar.svelte'
   import NavigationDrawer from '../../lib/ui/NavigationDrawer.svelte'
   import ProgressCircular from '../../lib/ui/ProgressCircular.svelte'
   import UploadTray from '../../lib/ui/UploadTray.svelte'
   import JobTray from '../../lib/ui/JobTray.svelte'
-  import { createSession, screenOf, setupRequiredQuery } from '../../lib/query/session'
+  import { createSession, isUnauthenticated, screenOf, setupRequiredQuery } from '../../lib/query/session'
   import { startLiveInvalidation } from '../../lib/query/live'
   import { swReady } from '../../lib/crypto/download-sw'
   import { COMPACT_MAX_PX, ui } from '../../lib/store/ui.store'
   import { openSearch, search } from '../../lib/store/search.store'
   import SearchSheet from '../../lib/ui/SearchSheet.svelte'
-
   interface Props {
     children: Snippet
   }
   let { children }: Props = $props()
 
   // The session, and the one follow-up question ("has this server ever had
-  // an account?") that turns a failed session into either "login" or
-  // "first-run" -- see `screenOf`'s own doc comment for why the two can't be
-  // told apart from the 401 alone.
+  // an account?") that turns a definitive auth refusal into either "login" or
+  // "first-run". Transient network and 503 failures keep the current shell
+  // recoverable instead of treating an outage as a sign-out.
   const session = createSession()
-  const setup = createQuery(() => setupRequiredQuery(session.isError))
+  const sessionDefinitiveFailure = $derived(session.isError && isUnauthenticated(session.error))
+  const setup = createQuery(() => setupRequiredQuery(sessionDefinitiveFailure))
   const screen = $derived(
     screenOf({
-      hasSession: session.data !== undefined,
-      sessionFailed: session.isError,
-      setupPending: session.isError && setup.isPending,
+      hasSession: session.data !== undefined && !sessionDefinitiveFailure,
+      sessionFailed: sessionDefinitiveFailure,
+      setupPending: sessionDefinitiveFailure && setup.isPending,
       setupRequired: setup.data === true
     })
   )
 
-  // Used to list one nav entry per root (": what a user
-  // sees as their root is a projection of their grant list") -- fixed a real
-  // bug (a hardcoded single "home" item made every root after the first
-  // unreachable) by creating a worse one: a NavigationBar/Rail is a fixed
-  // *small* set of destinations (MD3: 3-5 for the bar), not one item per
-  // grant. Per-user grants make a dozen roots the expected case, not the
-  // extreme, so that list only grows.
-  //
-  // The roots aren't peer destinations to Settings/Admin anyway -- they're all
-  // contents of the *same* place ("Files"). So the fixed nav is now Files +
-  // [Admin] + Settings (2-3 items, independent of grant count), and "Files"
-  // doesn't navigate anywhere itself -- it opens `NavigationDrawer`
-  // (already paired with NavigationRail at ≥905px, which is a strong hint
-  // this is where root-switching belongs), which lists the actual roots.
-  // That component is
-  // where the fix for "every root must stay reachable" lives now -- see its
-  // own doc comment for the modal (phone) vs. standard (rail) split.
+  // Roots are contents of the same Files workspace, not peer destinations.
+  // Keep the compact bar bounded to five stable meanings and expose root
+  // switching through the explicitly named folder selector in the drawer.
   const rootItems = $derived(
     (session.data?.roots ?? []).map((r) => ({
       id: r.label,
@@ -67,35 +55,24 @@
     }))
   )
 
-  // Admin nav item only for an administrator: a hidden nav entry is not
-  // access control (the server's `require_admin` still gates the API), but
-  // there is no reason to draw a link into a screen a non-admin would only
-  // get an "Only administrators can see this screen" message from.
-  //
-  // Trash is here rather than only behind the browser's overflow menu: it is
-  // a destination (its own route, its own list), not an action on the current
-  // folder, and a restore path nobody can find is the same as no restore path.
-  //
-  // Links is deliberately absent here. This list feeds the bottom bar on a
-  // phone and the rail on a tablet, both of which MD3 bounds at three to five
-  // destinations, and a fifth entry beside the admin one pushed a signed-in
-  // administrator to six. It lives in the navigation drawer instead, which is
-  // where the less-travelled destinations belong: reviewing published links is
-  // something an account does occasionally, not on the way to a file.
+  // The desktop drawer also lists the secondary destinations so they remain
+  // reachable without a shortcut. Compact navigation deliberately has exactly
+  // Files, Recent, Trash, Links, and More; Settings and role-gated Admin live
+  // in More.
   const navItems = $derived([
-    { id: 'files', label: t('nav.files'), icon: icons.home },
+    { id: 'files', label: t('nav.files'), icon: icons.home, href: '/b' },
     { id: 'recent', label: t('nav.recent'), icon: icons.recent, href: '/recent' },
     { id: 'trash', label: t('common.trash'), icon: icons.trash, href: '/trash' },
+    { id: 'links', label: t('nav.links'), icon: icons.link, href: '/links' },
+    { id: 'more', label: t('nav.more'), icon: icons['more-vert'] },
     ...(session.data?.user.is_admin
-      // `nav.admin`, not `common.administrator`: the rail gives a label a
-      // 56px box, and "Administrator" needs 83 of them.
       ? [{ id: 'admin', label: t('nav.admin'), icon: icons.admin, href: '/admin' }]
       : []),
     { id: 'settings', label: t('common.settings'), icon: icons.settings, href: '/settings' }
   ])
 
-  // "Files" stays highlighted for every root, not just the first one: it
-  // represents the section, not any single grant.
+  const compactNavItems = $derived(navItems.filter((item) => ['files', 'recent', 'trash', 'links', 'more'].includes(item.id)))
+
   const activeNav = $derived.by(() => {
     const p = page.url.pathname
     if (p.startsWith('/settings')) return 'settings'
@@ -106,61 +83,41 @@
     return 'files'
   })
 
+  const compactActiveNav = $derived(activeNav === 'settings' || activeNav === 'admin' ? 'more' : activeNav)
+
+  function isBrowsePathname(pathname: string): boolean {
+    return pathname.startsWith('/b') && (pathname.length === 2 || pathname[2] === '/')
+  }
+
   const currentRoot = $derived.by(() => {
     const p = page.url.pathname
-    if (!p.startsWith('/b/')) return null
-    return decodeURIComponent(p.slice('/b/'.length).split('/')[0] ?? '') || null
-  })
-
-  // Desktop: the root list used to be visible in the rail with no click at
-  // all, so it defaults open there to cost the same single click switching
-  // roots always did (see NavigationDrawer.svelte doc comment). Phone:
-  // opening it always costs a tap either way (bar item -> drawer), so it
-  // defaults closed to spend the least vertical/visual budget when a user
-  // isn't switching roots.
-  //
-  // `drawerDefaultApplied` makes that a *default*, applied once, rather
-  // than a rule re-enforced on every render: without it, this effect's
-  // dependency on `ui.state.compact` meant crossing the compact/standard
-  // breakpoint in either direction re-ran it, and re-entering standard
-  // width forced `drawerOpen` back to `true` even after a user had
-  // deliberately collapsed it -- resize the window (or rotate a tablet)
-  // past 905px and a closed drawer sprang back open with no click at all.
-  // Now the forced-open only ever fires the first time standard width is
-  // seen with a session, exactly the "cost one click, same as before"
-  // default the comment above describes -- after that, only the "Files"
-  // rail item (`navigateTo`) or `selectRoot` change it. Entering compact
-  // still closes it unconditionally: the overlay variant is a modal, and
-  // leaving one open across a resize would pop a dialog over whatever the
-  // user is now looking at on the narrower layout.
-  //
-  // `drawerDefaultApplied` is a plain `let`, so it only survives a resize --
-  // a refresh reset it and the default fired again, which is why a drawer
-  // closed on one load was open on the next. `ui.state.drawer`
-  // (`'open'|'closed'|'unset'`, persisted) carries the choice across loads;
-  // `'unset'` means there is no choice yet and the width default still
-  // applies.
-  let drawerOpen = $state(false)
-  let drawerDefaultApplied = false
-  $effect(() => {
-    if (ui.state.compact) {
-      drawerOpen = false
-    } else if (!drawerDefaultApplied && session.data) {
-      drawerOpen = ui.state.drawer === 'unset' ? true : ui.state.drawer === 'open'
-      drawerDefaultApplied = true
+    if (!isBrowsePathname(p)) return null
+    try {
+      return decodeURIComponent(p.slice('/b/'.length).split('/')[0] ?? '') || null
+    } catch {
+      return null
     }
   })
 
-  // Only standard width records a preference. Compact's drawer is a modal:
-  // opening it is a step in "switch root", and closing it is dismissing a
-  // dialog -- neither says anything about how the desktop layout should
-  // start, and `ui.state.compact` closes it on entry anyway.
-  function setDrawerOpen(open: boolean) {
-    drawerOpen = open
-    if (!ui.state.compact) ui.setDrawer(open)
-  }
+  // Keep the last browse folder while a secondary route is open. Returning to
+  // Files therefore returns to the user's actual workspace, not root one.
+  let lastBrowsePath = $state<string | null>(null)
+  $effect(() => {
+    const p = page.url.pathname
+    if (!isBrowsePathname(p)) return
+    try {
+      lastBrowsePath = decodeURI(p.slice('/b'.length) || '/')
+    } catch {
+      lastBrowsePath = p.slice('/b'.length) || '/'
+    }
+  })
 
-  // MD3 window class breakpoint: rail versus bar plus drawer. Plain
+  let moreOpen = $state(false)
+  let moreX = $state(0)
+  let moreY = $state(0)
+  let folderSelectorOpen = $state(false)
+
+  // MD3 window class breakpoint: standard versus compact navigation. Plain
   // `resize` listener rather than a store action, because this is a
   // property of the viewport the component is rendered in, not a user
   // choice -- nothing outside this shell needs to read it as it changes.
@@ -172,13 +129,12 @@
     onResize()
     return () => window.removeEventListener('resize', onResize)
   })
-
   // Screen redirects: `createSession()`/`setupRequiredQuery` fetch
   // themselves the moment they mount, so there is nothing left to
-  // bootstrap by hand. A dead session found later (task #3's 401 handling,
-  // now inside `query/client.ts`) invalidates `keys.session()`, which
-  // reruns this same derivation and bounces here exactly like a fresh
-  // unauthenticated load would.
+  // bootstrap by hand. A definitive auth refusal clears account-bound cache
+  // state and makes `sessionDefinitiveFailure` hide stale session data, so the
+  // shell reaches login or first-run. A transient outage leaves the existing
+  // browser state visible and retryable.
   $effect(() => {
     if (screen === 'login') void goto('/login', { replaceState: true })
     else if (screen === 'first-run') void goto('/setup', { replaceState: true })
@@ -204,23 +160,57 @@
     void swReady()
   })
 
-  function navigateTo(id: string, href?: string) {
+  function pathFromBrowseUrl(): string | null {
+    const p = page.url.pathname
+    if (!isBrowsePathname(p)) return null
+    try {
+      return decodeURI(p.slice('/b'.length) || '/')
+    } catch {
+      return p.slice('/b'.length) || '/'
+    }
+  }
+
+  function isReachableBrowsePath(candidate: string): boolean {
+    const root = candidate.split('/').filter(Boolean)[0]
+    return rootItems.some((item) => item.id === root)
+  }
+
+  function browseTarget(): string {
+    const current = pathFromBrowseUrl()
+    if (current && (current === '/' || isReachableBrowsePath(current))) return current
+    if (lastBrowsePath && isReachableBrowsePath(lastBrowsePath)) return lastBrowsePath
+    return rootItems.length > 0 ? `/${rootItems[0].id}` : '/'
+  }
+
+  function browseHref(path: string): string {
+    return path === '/' ? '/b' : `/b${path}`
+  }
+
+  function toggleMore(): void {
+    moreOpen = !moreOpen
+    folderSelectorOpen = false
+    if (moreOpen) {
+      moreX = window.innerWidth - 16
+      moreY = window.innerHeight - (ui.state.compact ? 88 : 16)
+    }
+  }
+
+  function navigateTo(id: string, href?: string): void {
     if (id === 'files') {
-      if (ui.state.compact) {
-        setDrawerOpen(!drawerOpen)
-        return
-      }
-      if (rootItems.length > 0) {
-        void goto(`/b/${encodeURIComponent(rootItems[0].id)}`)
-      } else {
-        void goto('/b')
-      }
+      moreOpen = false
+      folderSelectorOpen = false
+      void goto(browseHref(browseTarget()))
+      return
+    }
+    if (id === 'more') {
+      toggleMore()
       return
     }
     const target = href ?? navItems.find((n) => n.id === id)?.href
     if (target) {
+      moreOpen = false
+      folderSelectorOpen = false
       void goto(target)
-      if (ui.state.compact) drawerOpen = false
     }
   }
 
@@ -255,19 +245,23 @@
     }
   })
 
-  function selectRoot(item: { id: string }) {
-    goto(`/b/${encodeURIComponent(item.id)}`)
-    // Modal drawer: picking a root is the drawer's whole purpose, so close
-    // it same as any other modal on selection. Standard (rail) drawer: it
-    // stays open, matching how the rail always kept every root visible
-    // before this change -- switching again shouldn't cost a re-open.
-    if (ui.state.compact) drawerOpen = false
+  function selectRoot(item: { id: string }): void {
+    void goto(`/b/${encodeURIComponent(item.id)}`)
+    moreOpen = false
+    folderSelectorOpen = false
   }
 
   /** The folder the shell is showing, so a search started from a keystroke
-   *  ranks the same subtree the toolbar button would. */
+   *  ranks the same subtree the toolbar button would. Secondary routes keep
+   *  the last browse context for the next global search. */
   function browseScope(): string {
-    return page.url.pathname.startsWith('/b/') ? decodeURI(page.url.pathname.slice(2)) : ''
+    const current = pathFromBrowseUrl()
+    const path = current ?? lastBrowsePath
+    return path && path !== '/' ? path : ''
+  }
+
+  function openGlobalSearch(): void {
+    openSearch(browseScope())
   }
 
   // Ctrl/Cmd+K, the combination every other file interface uses for this.
@@ -276,7 +270,7 @@
   function onWindowKeydown(e: KeyboardEvent): void {
     if (screen !== 'browser' || !(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'k') return
     e.preventDefault()
-    openSearch(browseScope())
+    openGlobalSearch()
   }
 </script>
 
@@ -301,20 +295,43 @@
       {@render children()}
     </main>
     {#if ui.state.compact}
-      <NavigationBar items={navItems} active={activeNav} onselect={navigateTo} />
-      {#if drawerOpen}
+      <NavigationBar items={compactNavItems} active={compactActiveNav} onselect={navigateTo} />
+      {#if folderSelectorOpen}
         <NavigationDrawer
-          {navItems}
-          {activeNav}
           items={rootItems}
           active={currentRoot ?? ''}
           onselect={selectRoot}
-          onnavselect={(item) => navigateTo(item.id, item.href)}
+          folderSelectorOnly
           overlay
-          onclose={() => (drawerOpen = false)}
+          onclose={() => (folderSelectorOpen = false)}
         />
       {/if}
     {/if}
+    {#if moreOpen}
+      <Menu open={true} onclose={() => (moreOpen = false)} x={moreX} y={moreY} align="end">
+        <MenuItem icon={icons['folder-tree']} onclick={() => { moreOpen = false; folderSelectorOpen = true }}>
+          {t('nav.browse_folders')}
+        </MenuItem>
+        <MenuItem icon={icons.settings} onclick={() => navigateTo('settings', '/settings')}>
+          {t('common.settings')}
+        </MenuItem>
+        {#if session.data?.user.is_admin}
+          <MenuItem icon={icons.admin} onclick={() => navigateTo('admin', '/admin')}>
+            {t('nav.admin')}
+          </MenuItem>
+        {/if}
+      </Menu>
+    {/if}
+    <div class="sc-app-shell__global-search">
+      <Button
+        variant="outlined"
+        ariaLabel={`${t('common.search')}: ${t('search.scope_all_accessible')}`}
+        onclick={openGlobalSearch}
+      >
+        {#snippet icon()}<Icon icon={icons.search} size={18} />{/snippet}
+        {t('common.search')}
+      </Button>
+    </div>
   </div>
   <!-- Shared fixed-position corner: `JobTray` above `UploadTray` so a job
        started on one page (and the upload tray, unrelated but the same
@@ -381,6 +398,7 @@
     min-width: 0;
     display: flex;
     flex-direction: column;
+    padding-top: 64px;
     /* Was `overflow: hidden` -- the shell's clip point, and the reason
        nothing below it ever reached the document no matter how tall it
        wanted to be: a browser only collapses its address-bar chrome when
@@ -420,6 +438,29 @@
     /* Standard (>=905px) width: Google Drive unified sidebar docked at left: 0
        with width var(--sc-nav-drawer-width), so main reserves only this width. */
     padding-left: var(--sc-nav-drawer-width);
+  }
+  /* One search entry point is present on every authenticated destination.
+     It is fixed so secondary pages cannot accidentally hide it in their own
+     scroll containers, and the page content keeps its existing geometry. */
+  .sc-app-shell__global-search {
+    position: fixed;
+    top: 12px;
+    right: 0;
+    left: 0;
+    z-index: 20;
+    display: flex;
+    justify-content: flex-end;
+    box-sizing: border-box;
+    padding-inline: 24px;
+    pointer-events: none;
+  }
+  .sc-app-shell__global-search :global(button) {
+    pointer-events: auto;
+    max-width: min(22rem, calc(100vw - 2rem));
+  }
+  .sc-app-shell--compact .sc-app-shell__global-search {
+    top: 8px;
+    padding-inline: 16px;
   }
   .sc-tray-stack {
     /* Carries the fixed/right/bottom/z-index that used to live directly on

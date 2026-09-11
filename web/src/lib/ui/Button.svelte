@@ -8,10 +8,11 @@
   // removed) so the button's box stays exactly its resting width: swapping
   // the label for a spinner is what used to make buttons jump width mid-click.
   //
-  // `danger` remaps the colour roles rather than adding a variant, so the
-  // framework's own states still apply. It is set inline because m3-svelte
-  // spreads `...props` after its own `class`, so passing `class` here would
-  // replace the component's styling wholesale.
+  // `danger` remaps every colour role used by the five Material variants, so a
+  // destructive text or outlined action is not blue while its filled sibling
+  // is red. It is set inline because m3-svelte spreads `...props` after its own
+  // `class`, so passing `class` here would replace the component's styling
+  // wholesale.
   import { t } from '../i18n'
   import type { Snippet } from 'svelte'
   import { Button as M3Button, LoadingIndicator } from 'm3-svelte'
@@ -56,9 +57,13 @@
 
   const DANGER_ROLES =
     '--m3c-primary: var(--m3c-error); --m3c-on-primary: var(--m3c-on-error); ' +
+    '--m3c-primary-container: var(--m3c-error-container); ' +
+    '--m3c-on-primary-container: var(--m3c-on-error-container); ' +
+    '--m3c-secondary: var(--m3c-error); --m3c-on-secondary: var(--m3c-on-error); ' +
     '--m3c-secondary-container: var(--m3c-error-container); ' +
     '--m3c-on-secondary-container: var(--m3c-on-error-container); ' +
-    '--m3c-outline-variant: var(--m3c-error);'
+    '--m3c-outline: var(--m3c-error); --m3c-outline-variant: var(--m3c-error); ' +
+    '--m3c-on-surface-variant: var(--m3c-error);'
 </script>
 
 <M3Button

@@ -18,26 +18,41 @@ import type { AddItem, Cmd, Evt } from './worker'
 
 let worker: Worker | null = null
 
-function handle(evt: Evt): void {
+export function handle(evt: Evt): void {
   switch (evt.t) {
-    case 'queued':
-      uploads.queue({
-        id: evt.id,
-        name: evt.name,
-        dest: evt.dest,
-        total: evt.total,
-        sent: 0,
-        rate: 0,
-        etaSec: Infinity,
-        status: 'uploading'
-      })
+    case 'queued': {
+      // Preparation rows are registered by addFiles before the worker gets an
+      // item. Keep that row and preserve a control pressed during preparation;
+      // only create a row here for callers that talk to an older queue.
+      const current = uploads.statusOf(evt.id)
+      if (current === undefined) {
+        uploads.queue({
+          id: evt.id,
+          name: evt.name,
+          dest: evt.dest,
+          total: evt.total,
+          sent: 0,
+          rate: 0,
+          etaSec: Infinity,
+          status: 'uploading'
+        })
+      } else {
+        uploads.patch(evt.id, {
+          name: evt.name,
+          dest: evt.dest,
+          total: evt.total,
+          status: current === 'paused' || current === 'canceled' ? current : 'uploading'
+        })
+      }
       break
+    }
     case 'progress': {
       // A chunk already on the wire when pause or cancel was pressed still
       // reports afterwards. Taking the status from it would undo what the
       // person just asked for; the bytes are still true and still recorded.
       const current = uploads.statusOf(evt.id)
-      const status = current === 'paused' || current === 'canceled' ? current : 'uploading'
+      const status =
+        current === 'paused' || current === 'canceled' || current === 'error' ? current : 'uploading'
       uploads.patch(evt.id, { sent: evt.sent, total: evt.total, rate: evt.rate, etaSec: evt.etaSec, status })
       break
     }
@@ -62,7 +77,11 @@ function handle(evt: Evt): void {
       invalidateDirs([evt.dest])
       break
     case 'error':
-      uploads.patch(evt.id, { status: evt.retryIn ? 'uploading' : 'error', message: evt.message })
+      uploads.patch(evt.id, {
+        status: evt.retryIn ? 'uploading' : 'error',
+        message: evt.message,
+        errorCode: evt.code
+      })
       break
     case 'chunk-size-adjusted':
       uploads.patch(evt.id, {
@@ -71,7 +90,10 @@ function handle(evt: Evt): void {
       })
       break
     case 'canceled':
-      uploads.patch(evt.id, { status: 'canceled' })
+      uploads.patch(evt.id, { status: 'canceled', message: undefined, errorCode: undefined })
+      break
+    case 'released':
+      releaseEncryptedPermit(evt.id)
       break
   }
 }
@@ -94,8 +116,153 @@ function send(cmd: Cmd): void {
   worker.postMessage(cmd)
 }
 
-/**
- * `file`, encrypted for upload when `dest`'s share is encrypted, unchanged
+function sendPrepared(items: readonly AddItem[]): void {
+  try {
+    send({ t: 'add', items: [...items] })
+  } catch (err) {
+    for (const item of items) {
+      if (item.encrypted) releaseEncryptedPermit(item.id)
+    }
+    throw err
+  }
+  for (const item of items) {
+    // Reconcile controls after the add message is ordered. The worker records
+    // these commands even while its asynchronous session setup is still
+    // yielding, so a resume that follows a pause cannot be overwritten by a
+    // stale preparation snapshot.
+    const status = uploads.statusOf(item.id)
+    if (status === 'paused') send({ t: 'pause', id: item.id })
+    else if (status === 'canceled') send({ t: 'cancel', id: item.id })
+  }
+}
+
+/** At most one whole-file encryption runs at once. Plain files only hold their
+ * browser File handle and do not wait for this preparation slot. */
+export const MAX_PREPARATION_CONCURRENCY = 1
+let preparationTail: Promise<void> = Promise.resolve()
+
+interface EncryptedPermitWaiter {
+  id: string
+  resolve: (granted: boolean) => void
+}
+
+// A prepared ciphertext keeps this permit until the worker releases its File
+// after completion, a permanent error, or cancellation. This bounds aggregate
+// retained ciphertext as well as the transient encryption itself.
+let encryptedPermitOwner: string | null = null
+const encryptedPermitWaiters: EncryptedPermitWaiter[] = []
+
+function acquireEncryptedPermit(id: string): Promise<boolean> {
+  if (encryptedPermitOwner === null && encryptedPermitWaiters.length === 0) {
+    encryptedPermitOwner = id
+    return Promise.resolve(true)
+  }
+  const { promise, resolve } = Promise.withResolvers<boolean>()
+  encryptedPermitWaiters.push({ id, resolve })
+  return promise
+}
+
+
+function releaseEncryptedPermit(id: string): void {
+  if (encryptedPermitOwner !== id) return
+  const next = encryptedPermitWaiters.shift()
+  if (next) {
+    encryptedPermitOwner = next.id
+    next.resolve(true)
+  } else {
+    encryptedPermitOwner = null
+  }
+}
+
+function cancelEncryptedPermit(id: string): void {
+  const waiting = encryptedPermitWaiters.findIndex((waiter) => waiter.id === id)
+  if (waiting === -1) return
+  const [waiter] = encryptedPermitWaiters.splice(waiting, 1)
+  waiter.resolve(false)
+}
+
+async function inPreparationSlot<T>(work: () => Promise<T>): Promise<T> {
+  let release!: () => void
+  const turn = preparationTail
+  preparationTail = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await turn
+  try {
+    return await work()
+  } finally {
+    release()
+  }
+}
+
+interface PreparationState {
+  id: string
+  paused: boolean
+  canceled: boolean
+}
+
+const preparations = new Map<string, PreparationState>()
+
+function newPreparation(file: File, dest: string): PreparationState {
+  const id =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `upload-${Math.random().toString(36).slice(2, 10)}`
+  const state: PreparationState = { id, paused: false, canceled: false }
+  preparations.set(id, state)
+  uploads.queue({
+    id,
+    name: file.name,
+    dest,
+    total: file.size,
+    sent: 0,
+    rate: 0,
+    etaSec: Infinity,
+    status: 'uploading'
+  })
+  return state
+}
+
+interface UploadContext {
+  accountId?: string
+  sessionContext?: string
+}
+
+/** SHA-256 is only an identity marker. It is never used as a key or sent to
+ * the server as a credential. If SubtleCrypto is unavailable, returning
+ * undefined disables resume for this item rather than guessing identity. */
+async function digestBytes(bytes: Uint8Array): Promise<string | undefined> {
+  const subtle = globalThis.crypto?.subtle
+  if (!subtle) return undefined
+  try {
+    const digest = await subtle.digest('SHA-256', bytes as unknown as BufferSource)
+    return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('')
+  } catch {
+    return undefined
+  }
+}
+
+async function digestFile(file: Blob): Promise<string | undefined> {
+  let bytes: Uint8Array | undefined
+  try {
+    bytes = new Uint8Array(await file.arrayBuffer())
+    return await digestBytes(bytes)
+  } catch {
+    return undefined
+  } finally {
+    // This is a temporary identity buffer, not the File's backing storage.
+    bytes?.fill(0)
+  }
+}
+
+async function contextForSession(): Promise<UploadContext> {
+  const session = queryClient.getQueryData<SessionInfo>(keys.session())
+  const accountId = session?.user?.id === undefined ? undefined : String(session.user.id)
+  if (!accountId || !session?.csrf) return { accountId }
+  return { accountId, sessionContext: await digestBytes(new TextEncoder().encode(session.csrf)) }
+}
+
+/** `file`, encrypted for upload when `dest`'s share is encrypted, unchanged
  * otherwise. The whole file is read and encrypted here, on the main thread,
  * before anything reaches the upload Worker: rclone-crypt's on-disk block
  * boundaries have nothing to do with this app's HTTP chunk boundaries, so
@@ -104,75 +271,148 @@ function send(cmd: Cmd): void {
  * it is given at arbitrary byte offsets already; handing it the whole
  * ciphertext up front, wrapped as a same-named `File`, is the one place
  * that transformation happens and needs nothing downstream to change.
- *
- * Throws `LockedSessionError` (this share's key is not the unlocked one,
- * whether because nothing is unlocked or because a different share is) or
- * `FileTooLargeError` (over `MAX_ENCRYPTABLE_BYTES`) for the caller to turn
- * into a queued, failed row rather than silently uploading plaintext into an
- * encrypted share, encrypting under the wrong share's key, or crashing the
- * tab on a huge one.
  */
-async function maybeEncrypt(file: File, dest: string): Promise<File> {
-  const encryption = await encryptionForLabel(shareLabelOf(dest))
-  if (encryption === null) return file
-  const ciphertext = await encryptForUpload(file, encryption.salt)
-  return new File([new Uint8Array(ciphertext)], file.name, { lastModified: file.lastModified })
-}
 
-/** The i18n key `toAddItem`'s catch turns an encryption failure into, or
- *  `null` for anything unrecognized (surfaced as the generic upload
- *  failure, same as any other unexpected error already is). */
 function encryptionFailureMessage(err: unknown): string {
   if (err instanceof LockedSessionError) return /* i18n */ 'upload.share_locked'
   if (err instanceof FileTooLargeError) return /* i18n */ 'upload.file_too_large_to_encrypt'
   return /* i18n */ 'upload.encryption_failed'
 }
-
-/**
- * One file, encrypted if its destination needs it and turned into the
- * Worker's own `AddItem` shape, or `null` when encryption failed. A `null`
- * here already queued its own row and patched it to `error`: `addFiles`
- * only has to drop it from the batch handed to the Worker, not report it
- * again.
- */
-async function toAddItem(file: File, dest: string, relativePath?: string): Promise<AddItem | null> {
-  try {
-    const encrypted = await maybeEncrypt(file, dest)
-    return relativePath ? { file: encrypted, dest, relativePath } : { file: encrypted, dest }
-  } catch (err) {
-    const id = `f-${Math.random().toString(36).slice(2, 10)}`
-    const name = relativePath ? relativePath.split('/').pop()! : file.name
-    uploads.queue({ id, name, dest, total: file.size, sent: 0, rate: 0, etaSec: Infinity, status: 'uploading' })
-    uploads.patch(id, { status: 'error', message: encryptionFailureMessage(err) })
+async function maybeEncrypt(
+  file: File,
+  dest: string,
+  state: PreparationState
+): Promise<{ file: File; encrypted: boolean; ciphertextIdentity?: string } | null> {
+  const encryption = await encryptionForLabel(shareLabelOf(dest))
+  if (encryption === null) return { file, encrypted: false }
+  if (state.canceled || !(await acquireEncryptedPermit(state.id))) return null
+  if (state.canceled) {
+    releaseEncryptedPermit(state.id)
     return null
+  }
+  try {
+    const ciphertext = await encryptForUpload(file, encryption.salt)
+    try {
+      const ciphertextIdentity = await digestBytes(ciphertext)
+      const encryptedFile = new File([new Uint8Array(ciphertext)], file.name, { lastModified: file.lastModified })
+      return {
+        file: encryptedFile,
+        encrypted: true,
+        ciphertextIdentity
+      }
+    } finally {
+      ciphertext.fill(0)
+    }
+  } catch (err) {
+    releaseEncryptedPermit(state.id)
+    throw err
+  }
+}
+
+/** One file, encrypted if its destination needs it and turned into the
+ * Worker's AddItem shape, or null when preparation failed or was canceled. */
+async function toAddItem(
+  file: File,
+  dest: string,
+  relativePath: string | undefined,
+  context: Promise<UploadContext>
+): Promise<AddItem | null> {
+  const state = newPreparation(file, dest)
+  try {
+    const prepared = await inPreparationSlot(async () => {
+      if (state.canceled) return null
+      const encrypted = await maybeEncrypt(file, dest, state)
+      if (encrypted === null || state.canceled) {
+        releaseEncryptedPermit(state.id)
+        return null
+      }
+      const sourceIdentity = await digestFile(file)
+      if (state.canceled) {
+        releaseEncryptedPermit(state.id)
+        return null
+      }
+      const contextIdentity = await context
+      return { encrypted, sourceIdentity, contextIdentity }
+    })
+    if (state.canceled || prepared === null || prepared.encrypted === null) {
+      releaseEncryptedPermit(state.id)
+      return null
+    }
+    const ciphertextIdentity = prepared.encrypted.encrypted
+      ? prepared.encrypted.ciphertextIdentity
+      : prepared.sourceIdentity
+    return {
+      id: state.id,
+      file: prepared.encrypted.file,
+      encrypted: prepared.encrypted.encrypted,
+      dest,
+      sourceName: file.name,
+      sourceSize: file.size,
+      sourceLastModified: file.lastModified,
+      ...(relativePath !== undefined ? { relativePath } : {}),
+      ...(prepared.contextIdentity.accountId ? { accountId: prepared.contextIdentity.accountId } : {}),
+      ...(prepared.contextIdentity.sessionContext ? { sessionContext: prepared.contextIdentity.sessionContext } : {}),
+      ...(prepared.sourceIdentity ? { sourceIdentity: prepared.sourceIdentity } : {}),
+      ...(ciphertextIdentity ? { ciphertextIdentity } : {}),
+    }
+  } catch (err) {
+    releaseEncryptedPermit(state.id)
+    if (!state.canceled) uploads.patch(state.id, { status: 'error', message: encryptionFailureMessage(err) })
+    return null
+  } finally {
+    preparations.delete(state.id)
   }
 }
 
 export async function addFiles(files: FileList | readonly File[], dest: string): Promise<void> {
-  const items = await Promise.all(Array.from(files).map((file) => toAddItem(file, dest)))
-  const ready = items.filter((item): item is AddItem => item !== null)
-  if (ready.length === 0) return
-  send({ t: 'add', items: ready })
+  const context = contextForSession()
+  for (const file of Array.from(files)) {
+    const item = await toAddItem(file, dest, undefined, context)
+    if (item !== null) sendPrepared([item])
+  }
 }
 
 export async function addEntries(entries: readonly { file: File; relativePath: string }[], dest: string): Promise<void> {
-  const items = await Promise.all(entries.map((entry) => toAddItem(entry.file, dest, entry.relativePath)))
-  const ready = items.filter((item): item is AddItem => item !== null)
-  if (ready.length === 0) return
-  send({ t: 'add', items: ready })
+  const context = contextForSession()
+  for (const entry of entries) {
+    const item = await toAddItem(entry.file, dest, entry.relativePath, context)
+    if (item !== null) sendPrepared([item])
+  }
 }
 
 export function pauseUpload(id: string): void {
+  const preparation = preparations.get(id)
+  if (preparation) {
+    if (preparation.canceled) return
+    preparation.paused = true
+    uploads.patch(id, { status: 'paused' })
+    return
+  }
   uploads.patch(id, { status: 'paused' })
   send({ t: 'pause', id })
 }
-
 export function resumeUpload(id: string): void {
+  const preparation = preparations.get(id)
+  if (preparation) {
+    if (preparation.canceled) return
+    preparation.paused = false
+    uploads.patch(id, { status: 'uploading' })
+    return
+  }
   uploads.patch(id, { status: 'uploading' })
   send({ t: 'resume', id })
 }
 
 export function cancelUpload(id: string): void {
+  const preparation = preparations.get(id)
+  if (preparation) {
+    // Blob.arrayBuffer() has no abort signal, so let the bounded preparation
+    // finish but discard its result. No session can be created for it.
+    preparation.canceled = true
+    cancelEncryptedPermit(id)
+    uploads.patch(id, { status: 'canceled' })
+    return
+  }
   send({ t: 'cancel', id })
 }
 

@@ -26,7 +26,7 @@ vi.mock('./encrypted-shares', async () => {
   return { ...actual, encryptionForLabel: (label: string) => encryptionForLabel(label) }
 })
 
-import { deriveKeys, encryptForUpload, FileTooLargeError, generateSalt, lock, LockedSessionError, makeVerifier, unlock } from './e2ee'
+import { deriveKeys, encryptForUpload, FileTooLargeError, generateSalt, lock, LockedSessionError, makeVerifier, MAX_ENCRYPTABLE_BYTES, unlock } from './e2ee'
 import { downloadEncryptedFile, downloadEncryptedFolder, registerMediaSource, releaseMediaSource, streamToDownload } from './download-sw'
 
 function makeEntry(overrides: Partial<Entry> & { path: string; size: number }): Entry {
@@ -140,13 +140,18 @@ describe('streamToDownload (no Service Worker in this environment: buffered fall
     clickSpy.mockRestore()
   })
 
-  it('refuses a stream declaring a size over MAX_ENCRYPTABLE_BYTES before reading anything', async () => {
-    const { MAX_ENCRYPTABLE_BYTES } = await import('./e2ee')
-    await expect(streamToDownload('big.bin', streamOf([1]), MAX_ENCRYPTABLE_BYTES + 1)).rejects.toThrow(FileTooLargeError)
+  it('refuses an oversized declared stream and cancels its source before reading', async () => {
+    let canceled = false
+    const stream = new ReadableStream<Uint8Array>({
+      cancel() {
+        canceled = true
+      }
+    })
+    await expect(streamToDownload('big.bin', stream, MAX_ENCRYPTABLE_BYTES + 1)).rejects.toThrow(FileTooLargeError)
+    expect(canceled).toBe(true)
   })
 
   it('refuses once the buffered total crosses MAX_ENCRYPTABLE_BYTES, even with no declared size', async () => {
-    const { MAX_ENCRYPTABLE_BYTES } = await import('./e2ee')
     const chunk = new Uint8Array(1024 * 1024)
     const oversizedStream = new ReadableStream<Uint8Array>({
       pull(controller) {

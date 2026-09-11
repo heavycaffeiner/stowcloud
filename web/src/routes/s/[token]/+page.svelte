@@ -28,17 +28,21 @@
   // `/s/{token}` regardless of the query.
   const subpath = $derived(page.url.searchParams.get('path') ?? '')
 
-  // No retry: a password prompt, a gone path, and a 404 are all definite
-  // answers the moment the server gives one, not a transient fault worth
-  // spending the default retry budget on.
   const shareQuery = createQuery(() => ({
     queryKey: ['share', token, subpath],
     queryFn: () => getShare(token, subpath),
+    // Definite link states (password required, expired, or gone paths) are not
+    // retried automatically. A transient failure gets an explicit in-place
+    // retry button below so the visitor can recover without losing context.
     retry: false
   }))
   const info = $derived(shareQuery.data ?? null)
   const loading = $derived(shareQuery.isPending)
   const needsPassword = $derived(shareQuery.error instanceof SharePasswordRequiredError)
+  const retryableError = $derived.by(() => {
+    const e = shareQuery.error
+    return !!e && !needsPassword && !(e instanceof ShareNotFoundError) && !(e instanceof SharePathGoneError)
+  })
   const error = $derived.by(() => {
     const e = shareQuery.error
     if (!e || needsPassword || e instanceof SharePathGoneError) return null
@@ -88,15 +92,16 @@
     ]
     void runQueue()
   }
-
   /** One request at a time: a drop link is a single-shot `POST` per file, and
    *  serialising keeps the "n / m" count honest. Files picked mid-run join the
-   *  same pass: the loop re-checks `queue.length` after every await. */
+   *  same pass because the loop re-checks the live queue after every await. */
   async function runQueue(): Promise<void> {
     if (uploading) return
     uploading = true
     try {
-      for (const item of queue) {
+      let index = 0
+      while (index < queue.length) {
+        const item = queue[index++]
         if (item.status !== 'pending') continue
         item.status = 'uploading'
         try {
@@ -110,7 +115,26 @@
       }
     } finally {
       uploading = false
+      // A failed row can be retried while another file is still uploading.
+      // If the live cursor has already passed that row, start another pass
+      // after this one releases the guard.
+      if (queue.some((item) => item.status === 'pending')) void runQueue()
     }
+  }
+
+  function retryUpload(index: number): void {
+    const item = queue[index]
+    if (!item || item.status !== 'error') return
+    item.status = 'pending'
+    item.failure = null
+    item.storedAs = ''
+    void runQueue()
+  }
+
+  function removeFailedUpload(index: number): void {
+    const item = queue[index]
+    if (!item || item.status !== 'error') return
+    queue = queue.filter((_, i) => i !== index)
   }
 
   /** A folder the server refused. Cleared to the link root rather than shown
@@ -195,13 +219,18 @@
     <p class="sc-share__status">{t('common.loading')}</p>
   {:else if error}
     <p class="sc-share__status sc-share__status--error">{error}</p>
+    {#if retryableError}
+      <Button variant="outlined" loading={shareQuery.isFetching} onclick={() => shareQuery.refetch()}>
+        {t('public_share.retry')}
+      </Button>
+    {/if}
   {:else if needsPassword}
     <form class="sc-share__unlock" onsubmit={submitPassword}>
       <p>{t('public_share.link_password_protected')}</p>
       <TextField type="password" label={t('common.password')} bind:value={password} error={unlockError} autofocus autocomplete="off" />
       <div class="sc-share__unlock-actions">
         <Button type="submit" variant="filled" disabled={!password} loading={unlocking}>
-          {t('common.ok')}
+          {t('public_share.unlock')}
         </Button>
       </div>
     </form>
@@ -253,7 +282,8 @@
       {#if queue.length > 0}
         <p class="sc-share__status">{t('share_drop.uploading', { done: doneCount, total: queue.length })}</p>
         <ul class="sc-share__list">
-          <!-- Append-only, never reordered, so the index is a stable key. -->
+          <!-- Append-only while uploading; failed rows can be removed and
+               retain their own retry action without touching completed rows. -->
           {#each queue as item, i (i)}
             <li class="sc-share__row">
               <span class="sc-filename sc-share__name">{item.file.name}</span>
@@ -270,6 +300,12 @@
                   {formatBytes(item.file.size)}
                 {/if}
               </span>
+              {#if item.status === 'error'}
+                <div class="sc-share__row-actions">
+                  <Button variant="text" onclick={() => retryUpload(i)}>{t('share_drop.retry')}</Button>
+                  <Button variant="text" onclick={() => removeFailedUpload(i)}>{t('share_drop.remove')}</Button>
+                </div>
+              {/if}
             </li>
           {/each}
         </ul>
@@ -380,6 +416,12 @@
     gap: 16px;
     padding: 12px 16px;
     border-bottom: 1px solid var(--m3c-outline-variant);
+  }
+  .sc-share__row-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
   }
   .sc-share__row:last-child {
     border-bottom: none;

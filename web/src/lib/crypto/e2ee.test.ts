@@ -2,7 +2,7 @@
 // round trip. Cross-implementation compatibility against real rclone is not
 // asserted here: asserting encrypt against this module's own decrypt proves
 // nothing about a second implementation.
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   checkVerifier,
   ciphertextSpanForRange,
@@ -18,7 +18,10 @@ import {
   LockedSessionError,
   makeVerifier,
   MAX_ENCRYPTABLE_BYTES,
+  openSessionValue,
   plaintextSizeFromCiphertextSize,
+  SessionChangedError,
+  sealSessionValue,
   unlock,
   WrongPassphraseError
 } from './e2ee'
@@ -107,6 +110,31 @@ describe('deriveKeys + makeVerifier + checkVerifier + unlock (the enable/unlock 
     lock()
     expect(isUnlocked()).toBe(false)
   })
+
+  it('seals an editing value before lock and opens it after the same share is unlocked', async () => {
+    const salt = generateSalt()
+    const keys = await deriveKeys('correct horse battery staple', salt)
+    const verifier = await makeVerifier(keys)
+    await unlock('correct horse battery staple', salt, verifier)
+
+    const captured: { sealed?: Uint8Array } = {}
+    const onBeforeLock = (event: Event) => {
+      const eventSalt = (event as CustomEvent<{ salt: string }>).detail.salt
+      captured.sealed = sealSessionValue(new TextEncoder().encode('unsaved draft'), eventSalt)
+    }
+    window.addEventListener('sc:before-lock', onBeforeLock)
+    lock()
+    window.removeEventListener('sc:before-lock', onBeforeLock)
+    expect(isUnlocked()).toBe(false)
+    const sealed = captured.sealed
+    if (sealed === undefined) throw new Error('the before-lock event did not seal the draft')
+
+    await unlock('correct horse battery staple', salt, verifier)
+    const plaintext = openSessionValue(sealed, salt)
+    expect(new TextDecoder().decode(plaintext)).toBe('unsaved draft')
+    plaintext.fill(0)
+    sealed.fill(0)
+  })
 })
 
 describe('encryptForUpload + decryptDownload', () => {
@@ -154,6 +182,32 @@ describe('encryptForUpload + decryptDownload', () => {
     expect(isUnlocked()).toBe(false)
     await expect(encryptForUpload(new Uint8Array([1, 2, 3]), generateSalt()))
       .rejects.toThrow(LockedSessionError)
+  })
+
+  it('rejects a real Blob read when the share is locked before it completes', async () => {
+    const { salt } = await unlockedFixture()
+    const blob = new Blob([new TextEncoder().encode('deferred plaintext')])
+    const readNative = blob.arrayBuffer.bind(blob)
+    let release!: () => void
+    let markStarted!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve
+    })
+    vi.spyOn(blob, 'arrayBuffer').mockImplementation(async () => {
+      markStarted()
+      await gate
+      return readNative()
+    })
+
+    const pending = encryptForUpload(blob, salt)
+    await started
+    lock()
+    release()
+
+    await expect(pending).rejects.toThrow(SessionChangedError)
   })
 
   it('refuses to decrypt without an unlocked session, distinctly from a corrupt file', async () => {

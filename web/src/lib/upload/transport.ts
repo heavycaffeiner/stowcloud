@@ -265,11 +265,23 @@ export class HttpTransport implements Transport {
   }
 
   async deleteSession(id: string): Promise<void> {
-    await fetch(`${BASE}/uploads/${id}`, {
-      method: 'DELETE',
-      credentials: 'include',
-      headers: { 'Tus-Resumable': '1.0.0', 'Sc-Csrf': csrfToken }
-    })
+    await withRetry(async () => {
+      const res = await send(`${BASE}/uploads/${id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { 'Tus-Resumable': '1.0.0', 'Sc-Csrf': csrfToken }
+      })
+      // A missing session is already in the desired terminal state. The
+      // worker treats this as confirmed cancellation.
+      if (res.status === 404 || res.status === 410) return
+      if (!res.ok) {
+        throw new UploadHttpError(
+          res.status,
+          `delete failed: ${res.status}`,
+          retryAfterMs(res.headers.get('Retry-After'))
+        )
+      }
+    }, true)
   }
 }
 

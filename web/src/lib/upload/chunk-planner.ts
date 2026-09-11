@@ -78,6 +78,9 @@ export interface FileTask {
   totalSize: number
   chunkSize: number
   resumeOffset: number
+  /** Ownership token for this plan. A replacement plan must use a new token
+   * so callbacks from its predecessor cannot requeue or complete new work. */
+  generation?: number
 }
 
 interface TrackedFile extends FileTask {
@@ -85,6 +88,7 @@ interface TrackedFile extends FileTask {
   cursor: number
   inflight: Set<number>
   paused: boolean
+  generation: number
 }
 
 /**
@@ -119,7 +123,9 @@ export class ChunkScheduler {
 
   addFile(task: FileTask): void {
     const queue = planChunkOffsets(task.totalSize, task.chunkSize, task.resumeOffset)
-    this.#files.set(task.id, { ...task, queue, cursor: 0, inflight: new Set(), paused: false })
+    const generation = task.generation ?? 0
+    if (this.#files.has(task.id)) this.#order = this.#order.filter((x) => x !== task.id)
+    this.#files.set(task.id, { ...task, generation, queue, cursor: 0, inflight: new Set(), paused: false })
     this.#order.push(task.id)
   }
 
@@ -145,7 +151,7 @@ export class ChunkScheduler {
   }
 
   /** Pulls the next task to send, respecting the global inflight cap. Null if nothing is available right now. */
-  next(): (ChunkDescriptor & { fileId: string }) | null {
+  next(): (ChunkDescriptor & { fileId: string; generation: number }) | null {
     if (this.totalInflight >= this.#maxInflight) return null
     const n = this.#order.length
     if (n === 0) return null
@@ -160,21 +166,23 @@ export class ChunkScheduler {
         f.cursor += 1
         f.inflight.add(chunk.index)
         this.#ring = (idx + 1) % n
-        return { ...chunk, fileId: id }
+        return { ...chunk, fileId: id, generation: f.generation }
       }
     }
     return null
   }
 
-  complete(fileId: string, chunkIndex: number): void {
-    this.#files.get(fileId)?.inflight.delete(chunkIndex)
+  complete(fileId: string, chunkIndex: number, generation?: number): void {
+    const f = this.#files.get(fileId)
+    if (!f || (generation !== undefined && f.generation !== generation)) return
+    f.inflight.delete(chunkIndex)
   }
 
   /** Retries a chunk (e.g. after a transient failure): re-queues it at the front. */
-  requeue(fileId: string, chunk: ChunkDescriptor): void {
+  requeue(fileId: string, chunk: ChunkDescriptor & { generation?: number }, generation = chunk.generation): void {
     const f = this.#files.get(fileId)
-    if (!f) return
+    if (!f || (generation !== undefined && f.generation !== generation)) return
     f.inflight.delete(chunk.index)
-    f.queue.splice(f.cursor, 0, chunk)
+    f.queue.splice(f.cursor, 0, { index: chunk.index, offset: chunk.offset, length: chunk.length })
   }
 }

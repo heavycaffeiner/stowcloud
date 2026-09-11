@@ -51,29 +51,39 @@ export async function fetchOidcConfig(): Promise<OidcConfig> {
 }
 
 /**
- * Hands the browser to `GET /api/v1/auth/oidc/start`, which answers a `302` to
- * the provider.
+ * Starts the unauthenticated sign-in flow.
  *
- * A full navigation, never `fetch`: an XHR follows the redirect in the
- * background and the browser never actually goes anywhere, so the person never
- * sees the IdP's own login page. That page is the entire point of the flow.
- *
- * `returnTo` is passed through untouched. The server validates it again with
- * the same rules this app's `safeReturnTo` applies plus one it cannot skip
- * (every byte printable ASCII, since the value ends up in a `Location`
- * header), and quietly substitutes its default when the value fails.
+ * The endpoint answers JSON because the browser must first receive and inspect
+ * the provider URL. Navigating to the endpoint itself would only render that
+ * JSON response and never reach the identity provider.
  */
-export function startOidcLogin(returnTo?: string | null): void {
-  // The wire key is `return_to`, snake_case like every other field this API
-  // decodes; `returnTo` is only this app's own client-side query parameter
-  // (the compat consent bounce `/login?returnTo=` reads that one directly,
-  // never sends it anywhere). Sending the wrong spelling here answered
-  // `c.Query("return_to")` with nothing, so the server always fell back to
-  // its own default and every sign-in landed on the file browser regardless
-  // of where the person actually started.
+export async function startOidcLogin(returnTo?: string | null): Promise<void> {
+  if (IS_MOCK) return
+
   const q = returnTo ? `?return_to=${encodeURIComponent(returnTo)}` : ''
-  window.location.href = `${BASE}/auth/oidc/start${q}`
+  try {
+    const res = await fetch(`${BASE}/auth/oidc/start${q}`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      credentials: 'include'
+    })
+    if (!res.ok) return
+
+    const body: unknown = await res.json()
+    if (body === null || typeof body !== 'object') return
+    const raw = (body as Record<string, unknown>).authorize_url
+    if (typeof raw !== 'string' || raw.trim() === '') return
+
+    // The server's provider discovery contract is HTTPS-only. Relative,
+    // plain-HTTP and script URLs are not provider authorization destinations.
+    const target = new URL(raw)
+    if (target.protocol !== 'https:' || target.hostname === '' || target.username || target.password) return
+    window.location.href = raw
+  } catch {
+    // A provider or network refusal leaves the login form in place.
+  }
 }
+
 
 /**
  * §5-2 table B: the callback never answers with JSON, because a person

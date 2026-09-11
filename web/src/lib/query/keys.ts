@@ -38,8 +38,10 @@ export const keys = {
   pathStat: (path: string) => ['path', path, 'stat'] as const,
   pathSize: (path: string) => ['path', path, 'size'] as const,
   /** `unlocked` distinguishes a read taken while an encrypted share was
-   *  locked, which fails, from one taken after it was unlocked. */
-  pathContent: (path: string, unlocked = true) => ['path', path, 'content', unlocked] as const,
+   *  locked, which fails, from one taken after it was unlocked. The entry's
+   *  ETag is also part of the identity: a path can keep the same name while
+   *  its bytes change. */
+  pathContent: (path: string, etag: string, unlocked = true) => ['path', path, 'content', etag, unlocked] as const,
   pathArchive: (path: string) => ['path', path, 'archive'] as const,
   /** Keyed by share label, not by path: every path under one share shares
    *  the answer, and re-fetching it per folder would be one request per

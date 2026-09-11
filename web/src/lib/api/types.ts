@@ -974,50 +974,34 @@ export type LoginResult =
  */
 export type OnConflict = 'fail' | 'rename' | 'overwrite' | 'skip'
 
-/** `go/internal/httpapi/handler/ops.go`: the one per-item result shape
- *  `/fs/delete`, `/fs/move`, `/fs/copy`, `/trash/restore` and `/trash/purge`
- *  all share, sent as `{"results": [...]}`. This used to be
- *  declared as `{ path, status: 'ok' | 'error', error? }`: a shape nothing
- *  on the server has ever sent; the real field is `ok: boolean`, confirmed
- *  live (`{"results":[{"ok":true,"path":"..."}]}` /
- *  `{"results":[{"error":{"message":"not found"},"ok":false,"path":"..."}]}`).
- *  `(app)/b/[...path]/+page.svelte`'s `duplicate()` checked
- *  `item.status === 'error'` to decide whether to open the conflict-resolve
- *  dialog; against the real backend that was always `undefined === 'error'`
- *  (false), so a copy conflict never opened the dialog it exists for. Fixed
- *  alongside this type. */
+/** One result for one requested item. Transfer endpoints may answer a
+ * destination path that differs from the requested path (for example when
+ * `on_conflict: 'rename'` adds a suffix), so both identities are retained.
+ *
+ * `started` and `job` describe an asynchronous copy accepted by the server.
+ * `copied` describes a move that crossed a device boundary. `skipped` is an
+ * intentional no-op, not a completed write. */
 export interface BatchItemResult {
+  /** The source or requested opaque id, in request order. */
   path: string
   ok: boolean
   error?: ApiErrorBody['error']
-  /** Only ever `true` (server omits the key otherwise, `skip_serializing_if
-   *  = "std::ops::Not::not"`): `CoreError::CrossDevice`'s cheap same-call
-   *  signal that a move degraded into a copy. */
-  will_copy?: boolean
-  /** The destination was taken and `on_conflict: 'skip'` left it alone. Rides
-   *  beside `ok: true`, because nothing failed and nothing was written: a
-   *  screen reporting what happened has to tell the two apart. */
+  destination?: string
+  started?: boolean
   skipped?: boolean
+  copied?: boolean
+  job?: string
 }
 
 export interface BatchResult {
   results: BatchItemResult[]
 }
 
-/**
- * `POST /api/fs/copy`. The destination is checked before any job exists, so a
- * conflict, a denial or a quota refusal is here rather than in a job that has
- * already started copying.
- *
- * `job` is absent when nothing started: every item refused, or every item
- * skipped because its destination was taken and the request said to leave it.
- * `jobs` carries every id when the batch had several sources; `job` is the
- * first, which is the one the tray tracks.
- */
+/** `POST /api/fs/copy` aggregates one response per requested source. */
 export interface CopyResult {
   results: BatchItemResult[]
-  job?: string
-  jobs?: number[]
+  /** Every copy job accepted by the server, in request order. */
+  jobs?: string[]
 }
 
 // ── trash ──
@@ -1213,8 +1197,8 @@ export interface MoveReq {
  * tells the user before they commit.
  */
 export interface MovePreflight {
-  /** One entry per requested path, in request order. `will_copy` on an item
-   *  is the cross-device warning; `ok: false` is a path the move would refuse
+  /** One entry per requested path, in request order. `copied` on an item is
+   *  the cross-device warning; `ok: false` is a path the move would refuse
    *  outright, which the picker can show before anybody commits. */
   results: BatchItemResult[]
 }

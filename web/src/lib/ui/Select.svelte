@@ -21,13 +21,39 @@
     /** Reaches the underlying `<select>`, so a test or a caller that needs to
      *  address the control by name has something stable to address. */
     testid?: string
+    id?: string
+    name?: string
+    disabled?: boolean
+    required?: boolean
+    ariaDescribedby?: string
   }
 
-  let { value = $bindable(''), label, options, testid }: Props = $props()
+  let {
+    value = $bindable(''),
+    label,
+    options,
+    testid,
+    id,
+    name,
+    disabled = false,
+    required = false,
+    ariaDescribedby
+  }: Props = $props()
 </script>
 
 <div class="field">
-  <SelectOutlined bind:value {label} {options} width="100%" {...testid ? { 'data-testid': testid } : {}} />
+  <SelectOutlined
+    bind:value
+    {label}
+    {options}
+    width="100%"
+    {...id ? { id } : {}}
+    {...name ? { name } : {}}
+    {...disabled ? { disabled: true } : {}}
+    {...required ? { required: true } : {}}
+    {...ariaDescribedby ? { 'aria-describedby': ariaDescribedby } : {}}
+    {...testid ? { 'data-testid': testid } : {}}
+  />
 </div>
 
 <style>

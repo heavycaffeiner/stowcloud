@@ -75,6 +75,7 @@
   let toggleCurrent = $state('')
   let pendingOptOut = $state(false)
   let pendingEnabled = $state(false)
+  const confirmingOptOut = $derived(pendingOptOut && !optOut)
   const toggle = createMutation(() => smbSettingsMutation())
   const toggleError = $derived.by(() => {
     const err = toggle.error
@@ -250,9 +251,12 @@
     </Button>
   {/snippet}
 </Dialog>
-
-<Dialog open={toggleOpen} title={t('common.settings')} onclose={closeToggle}>
-  <p>{t('smb.set_password_hint')}</p>
+<Dialog
+  open={toggleOpen}
+  title={confirmingOptOut ? t('smb.confirm_opt_out_title') : t('smb.confirm_setting_title')}
+  onclose={closeToggle}
+>
+  <p>{confirmingOptOut ? t('smb.confirm_opt_out_warning') : t('smb.confirm_setting_hint')}</p>
   <TextField
     type="password"
     label={t('common.current_password')}
@@ -261,9 +265,8 @@
     autocomplete="current-password"
   />
   {#snippet actions()}
-    <Button variant="text" onclick={closeToggle}>{t('common.cancel')}</Button>
     <Button variant="filled" disabled={!toggleCurrent} loading={toggle.isPending} onclick={confirmToggle}>
-      {t('common.save')}
+      {confirmingOptOut ? t('smb.confirm_opt_out') : t('common.save')}
     </Button>
   {/snippet}
 </Dialog>

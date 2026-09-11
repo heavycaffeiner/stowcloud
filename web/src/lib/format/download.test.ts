@@ -4,8 +4,8 @@
 // compose a download URL from a path directly. `downloadPath` calls the
 // client's `download()` with the path and navigates to the ticket's own
 // `url`; the source-tree scan for a surviving hand-built download URL lives
-// in `tools/no-download-url.test.ts` (outside `tsconfig.json`'s checked
-// set, same as `tools/stylelint-four-px.test.ts`, since it needs `node:fs`).
+// in `tools/no-download-url.test.ts`, outside `tsconfig.json` because it
+// needs `node:fs`.
 // An encrypted path skips the ticket and routes through
 // `downloadEncryptedFile` instead: covered here only at the routing
 // boundary; the decrypt/Service-Worker pipeline itself is

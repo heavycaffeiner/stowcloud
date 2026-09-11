@@ -18,10 +18,17 @@
   // whichever locale was live then. Resolved reactively instead.
   let { value = null, size = 24, label }: Props = $props()
   const resolved = $derived(label ?? t('progress.loading'))
+  const fraction = $derived(
+    typeof value === 'number' && Number.isFinite(value) ? Math.min(Math.max(value, 0), 1) : 0
+  )
+  const indeterminate = $derived(
+    value === null || typeof value !== 'number' || !Number.isFinite(value)
+  )
+  const percent = $derived(Math.round(fraction * 100))
 </script>
 
-{#if value === null}
+{#if indeterminate}
   <LoadingIndicator {size} aria-label={resolved} />
 {:else}
-  <CircularProgress percent={Math.round(value * 100)} {size} aria-label={resolved} />
+  <CircularProgress percent={percent} {size} aria-label={resolved} />
 {/if}

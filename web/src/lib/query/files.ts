@@ -44,12 +44,12 @@ export function dirListQuery(path: string, sort: Sort) {
  * bytes. `encryptionForLabel` fails closed, so a fetch that cannot complete
  * leaves this in error rather than reporting "not encrypted".
  */
-export function shareEncryptionQuery(path: string) {
+export function shareEncryptionQuery(path: string, enabled = true) {
   const label = shareLabelOf(path)
   return queryOptions({
     queryKey: keys.shareEncryption(label),
     queryFn: () => encryptionForLabel(label),
-    enabled: label !== '',
+    enabled: enabled && label !== '',
     staleTime: Infinity
   })
 }
@@ -105,11 +105,13 @@ export function folderSizeQuery(path: string, enabled = true) {
  * `unlocked` is part of the key because a read from an encrypted share fails
  * while the session is locked, and a failure cached under a key that does not
  * mention the lock survives the unlock: an open preview kept showing it until
- * it was closed and reopened.
+ * it was closed and reopened. The entry's ETag is part of the identity too,
+ * so a later visit cannot reuse text read for an older version at the same
+ * path.
  */
 export function fileContentQuery(entry: Entry | null | undefined, unlocked = true) {
   return queryOptions({
-    queryKey: keys.pathContent(entry?.path ?? '', unlocked),
+    queryKey: keys.pathContent(entry?.path ?? '', entry?.etag ?? '', unlocked),
     queryFn: () => api.readFile(entry as Entry),
     enabled: entry !== null && entry !== undefined,
     staleTime: Infinity
@@ -208,9 +210,9 @@ export function copyMutation() {
     mutationFn: (vars: TransferVars) => api.copy(transferRequest(vars)),
     onSuccess: (result, { dest }) => {
       invalidateDirs([dest])
-      // A copy large enough to run in the background reports through the job
-      // list, so the tray has to learn about it now rather than on its next poll.
-      if (result.job) void queryClient.invalidateQueries({ queryKey: keys.jobs() })
+      // Each accepted source can have its own durable job. Invalidate the
+      // collection once so every returned id is reattached by the tray.
+      if ((result.jobs?.length ?? 0) > 0) void queryClient.invalidateQueries({ queryKey: keys.jobs() })
     }
   })
 }

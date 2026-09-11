@@ -140,16 +140,27 @@ export async function streamToDownload(filename: string, stream: ReadableStream<
  *  `MAX_ENCRYPTABLE_BYTES` already exists to bound, so this path reuses it
  *  rather than inventing a second ceiling. */
 async function fallbackBufferedDownload(filename: string, stream: ReadableStream<Uint8Array>, size?: number): Promise<void> {
-  if (size !== undefined && size > MAX_ENCRYPTABLE_BYTES) throw new FileTooLargeError(size)
+  if (size !== undefined && size > MAX_ENCRYPTABLE_BYTES) {
+    const err = new FileTooLargeError(size)
+    await stream.cancel(err).catch(() => {})
+    throw err
+  }
   const reader = stream.getReader()
   const chunks: Uint8Array[] = []
   let total = 0
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    total += value.length
-    if (total > MAX_ENCRYPTABLE_BYTES) throw new FileTooLargeError(total)
-    chunks.push(value)
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      total += value.length
+      if (total > MAX_ENCRYPTABLE_BYTES) throw new FileTooLargeError(total)
+      chunks.push(value)
+    }
+  } catch (err) {
+    await reader.cancel(err).catch(() => {})
+    throw err
+  } finally {
+    reader.releaseLock()
   }
   const url = URL.createObjectURL(new Blob(chunks as BlobPart[]))
   try {
@@ -174,13 +185,13 @@ async function fallbackBufferedDownload(filename: string, stream: ReadableStream
 export async function downloadEncryptedFile(entry: Entry): Promise<void> {
   const encryption = await encryptionForLabel(shareLabelOf(entry.path))
   if (!encryption) throw new Error(`downloadEncryptedFile called for ${entry.path}, which names no encrypted share`)
-  // Throws LockedSessionError synchronously, before the fetch below starts,
-  // so a caller learns it needs the passphrase without opening a connection
-  // it would only have to abandon.
-  const transform = decryptStream(encryption.salt, entry.size)
+  // Check the key before opening a connection. Create the operation-owned key
+  // copy only after a usable body exists, so a failed fetch cannot retain it.
+  if (!isUnlocked(encryption.salt)) throw new LockedSessionError()
 
   const res = await fetch(api.contentUrl(entry))
   if (!res.ok || !res.body) throw new Error(`could not fetch ${entry.path}: HTTP ${res.status}`)
+  const transform = decryptStream(encryption.salt, entry.size)
   await streamToDownload(entry.name, res.body.pipeThrough(transform), plaintextSizeFromCiphertextSize(entry.size))
 }
 

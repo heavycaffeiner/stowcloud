@@ -100,6 +100,24 @@ describe('rowActions', () => {
   // An account holding read alone was offered rename, move, duplicate and
   // delete, and every click ended in a refusal it could have predicted from
   // the row it was looking at.
+  it('requires Read and Download for downloads and duplicate', () => {
+    const noDownload = entry('a.txt', 'file', { download: false })
+    expect(keys([noDownload])).not.toContain('download')
+    expect(keys([noDownload])).not.toContain('duplicate')
+    expect(keys([noDownload])).toContain('transfer')
+  })
+
+  it('keeps only a transfer mode shared by every selected source', () => {
+    const moveOnly = entry('move.txt', 'file', { download: false })
+    const copyOnly = entry('copy.txt', 'file', { move: false })
+    expect(keys([moveOnly])).toContain('transfer')
+    expect(keys([copyOnly])).toContain('transfer')
+    expect(keys([moveOnly, copyOnly])).not.toContain('transfer')
+  })
+
+  // An account holding read alone was offered rename, move, duplicate and
+  // delete, and every click ended in a refusal it could have predicted from
+  // the row it was looking at.
   it('offers only what a read-only row allows', () => {
     const readOnly = {
       write: false,

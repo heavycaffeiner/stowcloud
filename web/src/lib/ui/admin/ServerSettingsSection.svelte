@@ -98,6 +98,10 @@
       .map((x) => x.trim())
       .filter(Boolean)
   }
+  function stringArrayField(key: string): string[] {
+    const value = field(key)?.value
+    return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+  }
 
   // The server answers three separate facts: stored, applied, and whether a
   // restart is needed.
@@ -255,11 +259,69 @@
   }
 
   /** A validation refusal hides the previous save's outcome rather than
-   *  showing a stale success beside the new complaint. */
-  function groupOutcome(validation: string | null, outcome: ApplyOutcome | undefined): ApplyOutcome | null {
-    return validation ? null : (outcome ?? null)
+   * showing a stale success beside the new complaint. A successful result
+   * also belongs to the values that produced it: once the operator edits
+   * the draft again, only the new draft status remains visible. */
+  function groupOutcome(
+    validation: string | null,
+    outcome: ApplyOutcome | undefined,
+    dirty = false
+  ): ApplyOutcome | null {
+    if (validation) return null
+    if (!outcome) return null
+    if (dirty && (outcome.stored || outcome.applied || outcome.restart_required)) return null
+    return outcome
   }
 
+  type SettingsGroup = 'smb' | 'search' | 'thumbnail' | 'archive' | 'network' | 'db' | 'homes' | 'watch' | 'rate' | 'oidc'
+
+  // The query is shared by every card, but each card owns its own loaded
+  // baseline and draft. A save records the submitted draft, then waits for
+  // the first query revision after the successful mutation completion. This
+  // keeps an older shared-query response from rolling a saved group back
+  // while allowing the server to normalize the post-save snapshot.
+  type SettingsSaveState = {
+    submitted: string
+    queryRevision: number | null
+    accepted: boolean
+  }
+
+  let baselines = $state<Record<SettingsGroup, string | null>>({
+    smb: null,
+    search: null,
+    thumbnail: null,
+    archive: null,
+    network: null,
+    db: null,
+    homes: null,
+    watch: null,
+    rate: null,
+    oidc: null
+  })
+  let hydrated = $state<Record<SettingsGroup, boolean>>({
+    smb: false,
+    search: false,
+    thumbnail: false,
+    archive: false,
+    network: false,
+    db: false,
+    homes: false,
+    watch: false,
+    rate: false,
+    oidc: false
+  })
+  let settingsSaveState = $state<Record<SettingsGroup, SettingsSaveState | null>>({
+    smb: null,
+    search: null,
+    thumbnail: null,
+    archive: null,
+    network: null,
+    db: null,
+    homes: null,
+    watch: null,
+    rate: null,
+    oidc: null
+  })
   // ── SMB ──
 
   let smbEnabled = $state(false)
@@ -273,10 +335,11 @@
   let smbValidationError = $state<string | null>(null)
   const smbMutation = createMutation(() => adminSettingsMutation())
   const smbError = $derived(groupError(smbValidationError, smbMutation.error, t('server.could_not_save_smb_settings')))
-  const smbOutcome = $derived(groupOutcome(smbValidationError, smbMutation.data))
+  const smbOutcome = $derived(groupOutcome(smbValidationError, smbMutation.data, isSettingsDirty('smb')))
 
   function saveSmb(): void {
     smbValidationError = null
+    smbMutation.reset()
     const gid = Number(smbServiceGid)
     if (!Number.isInteger(gid) || gid < 0) {
       smbValidationError = t('server.gid_must_integer_0')
@@ -296,7 +359,14 @@
       service_gid: gid,
       interfaces: strToArr(smbInterfaces)
     }
-    smbMutation.mutate({ section: 'smb', req }, { onSuccess: onSettingsSaved })
+    beginSettingsSave('smb', req)
+    smbMutation.mutate(
+      { section: 'smb', req },
+      {
+        onSuccess: (outcome) => finishSettingsSave('smb', req, outcome),
+        onError: () => failSettingsSave('smb')
+      }
+    )
   }
 
   // ── search ── (both fields fully live)
@@ -306,10 +376,11 @@
   let searchValidationError = $state<string | null>(null)
   const searchMutation = createMutation(() => adminSettingsMutation())
   const searchError = $derived(groupError(searchValidationError, searchMutation.error, t('server.could_not_save_search_settings')))
-  const searchOutcome = $derived(groupOutcome(searchValidationError, searchMutation.data))
+  const searchOutcome = $derived(groupOutcome(searchValidationError, searchMutation.data, isSettingsDirty('search')))
 
   function saveSearch(): void {
     searchValidationError = null
+    searchMutation.reset()
     const maxErr = rangeError('search.max_concurrent_fast', searchMaxFast)
     const deadlineErr = rangeError('search.walk_deadline_fast_ms', searchDeadlineFast)
     if (maxErr || deadlineErr) {
@@ -320,7 +391,14 @@
       max_concurrent_fast: Number(searchMaxFast),
       walk_deadline_fast_ms: Number(searchDeadlineFast)
     }
-    searchMutation.mutate({ section: 'search', req }, { onSuccess: onSettingsSaved })
+    beginSettingsSave('search', req)
+    searchMutation.mutate(
+      { section: 'search', req },
+      {
+        onSuccess: (outcome) => finishSettingsSave('search', req, outcome),
+        onError: () => failSettingsSave('search')
+      }
+    )
   }
 
   // ── thumbnails ──
@@ -332,15 +410,23 @@
   const thumbnailError = $derived(
     groupError(thumbnailValidationError, thumbnailMutation.error, t('server.could_not_save_thumbnail_settings'))
   )
-  const thumbnailOutcome = $derived(groupOutcome(thumbnailValidationError, thumbnailMutation.data))
+  const thumbnailOutcome = $derived(groupOutcome(thumbnailValidationError, thumbnailMutation.data, isSettingsDirty('thumbnail')))
 
   function saveThumbnail(): void {
     thumbnailValidationError = null
+    thumbnailMutation.reset()
     const req: ThumbnailSettingsReq = {
       enabled: thumbnailEnabled,
       dir: thumbnailDir.trim() || undefined
     }
-    thumbnailMutation.mutate({ section: 'thumbnail', req }, { onSuccess: onSettingsSaved })
+    beginSettingsSave('thumbnail', req)
+    thumbnailMutation.mutate(
+      { section: 'thumbnail', req },
+      {
+        onSuccess: (outcome) => finishSettingsSave('thumbnail', req, outcome),
+        onError: () => failSettingsSave('thumbnail')
+      }
+    )
   }
 
   // ── archive ──
@@ -349,17 +435,25 @@
   let archiveValidationError = $state<string | null>(null)
   const archiveMutation = createMutation(() => adminSettingsMutation())
   const archiveError = $derived(groupError(archiveValidationError, archiveMutation.error, t('server.could_not_save_archive_settings')))
-  const archiveOutcome = $derived(groupOutcome(archiveValidationError, archiveMutation.data))
+  const archiveOutcome = $derived(groupOutcome(archiveValidationError, archiveMutation.data, isSettingsDirty('archive')))
 
   function saveArchive(): void {
     archiveValidationError = null
+    archiveMutation.reset()
     const rerr = rangeError('archive.max_concurrent', archiveMax)
     if (rerr) {
       archiveValidationError = rerr
       return
     }
     const req: ArchiveSettingsReq = { max_concurrent: Number(archiveMax) }
-    archiveMutation.mutate({ section: 'archive', req }, { onSuccess: onSettingsSaved })
+    beginSettingsSave('archive', req)
+    archiveMutation.mutate(
+      { section: 'archive', req },
+      {
+        onSuccess: (outcome) => finishSettingsSave('archive', req, outcome),
+        onError: () => failSettingsSave('archive')
+      }
+    )
   }
 
   // ── network ──
@@ -373,10 +467,11 @@
   let netValidationError = $state<string | null>(null)
   const netMutation = createMutation(() => adminSettingsMutation())
   const netError = $derived(groupError(netValidationError, netMutation.error, t('server.could_not_save_network_settings')))
-  const netOutcome = $derived(groupOutcome(netValidationError, netMutation.data))
+  const netOutcome = $derived(groupOutcome(netValidationError, netMutation.data, isSettingsDirty('network')))
 
   function saveNetwork(): void {
     netValidationError = null
+    netMutation.reset()
     const hosts = strToArr(netAppHosts)
     if (hosts.length === 0) {
       // The host list is the origin check. An empty one is a server that
@@ -393,7 +488,14 @@
       trusted_proxies: strToArr(netTrustedProxies),
       bind: netBind.trim() || undefined
     }
-    netMutation.mutate({ section: 'network', req }, { onSuccess: onSettingsSaved })
+    beginSettingsSave('network', req)
+    netMutation.mutate(
+      { section: 'network', req },
+      {
+        onSuccess: (outcome) => finishSettingsSave('network', req, outcome),
+        onError: () => failSettingsSave('network')
+      }
+    )
   }
 
   // ── the hop this request arrived over ──
@@ -430,10 +532,11 @@
   let dbValidationError = $state<string | null>(null)
   const dbMutation = createMutation(() => adminSettingsMutation())
   const dbError = $derived(groupError(dbValidationError, dbMutation.error, t('server.could_not_save_db_settings')))
-  const dbOutcome = $derived(groupOutcome(dbValidationError, dbMutation.data))
+  const dbOutcome = $derived(groupOutcome(dbValidationError, dbMutation.data, isSettingsDirty('db')))
 
   function saveDb(): void {
     dbValidationError = null
+    dbMutation.reset()
     const maxMb = Number(dbMaxBytesMb)
     const minMb = Number(dbMinFreeBytesMb)
     if (!Number.isFinite(maxMb) || maxMb < 0 || !Number.isFinite(minMb) || minMb < 0) {
@@ -445,7 +548,14 @@
       max_bytes: Math.round(maxMb * BYTES_PER_MB),
       min_free_bytes: Math.round(minMb * BYTES_PER_MB)
     }
-    dbMutation.mutate({ section: 'db', req }, { onSuccess: onSettingsSaved })
+    beginSettingsSave('db', req)
+    dbMutation.mutate(
+      { section: 'db', req },
+      {
+        onSuccess: (outcome) => finishSettingsSave('db', req, outcome),
+        onError: () => failSettingsSave('db')
+      }
+    )
   }
 
   // ── home folders ──
@@ -455,16 +565,24 @@
   let homesValidationError = $state<string | null>(null)
   const homesMutation = createMutation(() => adminSettingsMutation())
   const homesError = $derived(groupError(homesValidationError, homesMutation.error, t('server.could_not_save_home_folder')))
-  const homesOutcome = $derived(groupOutcome(homesValidationError, homesMutation.data))
+  const homesOutcome = $derived(groupOutcome(homesValidationError, homesMutation.data, isSettingsDirty('homes')))
 
   function saveHomes(): void {
     homesValidationError = null
+    homesMutation.reset()
     if (homesEnabled && !homesRoot.trim()) {
       homesValidationError = t('server.enter_root_path_enable_home')
       return
     }
     const req: HomesSettingsReq = { enabled: homesEnabled, root: homesRoot.trim() || null }
-    homesMutation.mutate({ section: 'homes', req }, { onSuccess: onSettingsSaved })
+    beginSettingsSave('homes', req)
+    homesMutation.mutate(
+      { section: 'homes', req },
+      {
+        onSuccess: (outcome) => finishSettingsSave('homes', req, outcome),
+        onError: () => failSettingsSave('homes')
+      }
+    )
   }
 
   // ── file watching ── (both bounds fully live)
@@ -474,10 +592,11 @@
   let watchValidationError = $state<string | null>(null)
   const watchMutation = createMutation(() => adminSettingsMutation())
   const watchError = $derived(groupError(watchValidationError, watchMutation.error, t('server.could_not_save_file_watch')))
-  const watchOutcome = $derived(groupOutcome(watchValidationError, watchMutation.data))
+  const watchOutcome = $derived(groupOutcome(watchValidationError, watchMutation.data, isSettingsDirty('watch')))
 
   function saveWatch(): void {
     watchValidationError = null
+    watchMutation.reset()
     const hot = Number(watchHotSetMax)
     const full = Number(watchFullThreshold)
     if (!Number.isInteger(hot) || hot < 1 || !Number.isInteger(full) || full < 1) {
@@ -485,7 +604,14 @@
       return
     }
     const req: WatchSettingsReq = { hot_set_max: hot, full_threshold: full }
-    watchMutation.mutate({ section: 'watch', req }, { onSuccess: onSettingsSaved })
+    beginSettingsSave('watch', req)
+    watchMutation.mutate(
+      { section: 'watch', req },
+      {
+        onSuccess: (outcome) => finishSettingsSave('watch', req, outcome),
+        onError: () => failSettingsSave('watch')
+      }
+    )
   }
 
   // ── request rate ──
@@ -495,10 +621,11 @@
   let rateValidationError = $state<string | null>(null)
   const rateMutation = createMutation(() => adminSettingsMutation())
   const rateError = $derived(groupError(rateValidationError, rateMutation.error, t('server.could_not_save_rate_settings')))
-  const rateOutcome = $derived(groupOutcome(rateValidationError, rateMutation.data))
+  const rateOutcome = $derived(groupOutcome(rateValidationError, rateMutation.data, isSettingsDirty('rate')))
 
   function saveRate(): void {
     rateValidationError = null
+    rateMutation.reset()
     const perSec = Number(ratePerSec)
     const burst = Number(rateBurst)
     // Zero is not a low limit, it is an off switch: every request from every
@@ -507,7 +634,15 @@
       rateValidationError = t('server.must_integer_1_or_more')
       return
     }
-    rateMutation.mutate({ section: 'rate', req: { per_sec: perSec, burst } }, { onSuccess: onSettingsSaved })
+    const req = { per_sec: perSec, burst }
+    beginSettingsSave('rate', req)
+    rateMutation.mutate(
+      { section: 'rate', req },
+      {
+        onSuccess: (outcome) => finishSettingsSave('rate', req, outcome),
+        onError: () => failSettingsSave('rate')
+      }
+    )
   }
 
   // ── single sign-on (OIDC) ──
@@ -529,12 +664,13 @@
   let oidcValidationError = $state<string | null>(null)
   const oidcMutation = createMutation(() => adminSettingsMutation())
   const oidcError = $derived(groupError(oidcValidationError, oidcMutation.error, t('server.could_not_save_oidc_settings')))
-  const oidcOutcome = $derived(groupOutcome(oidcValidationError, oidcMutation.data))
+  const oidcOutcome = $derived(groupOutcome(oidcValidationError, oidcMutation.data, isSettingsDirty('oidc')))
 
   function saveOidc(): void {
     oidcValidationError = null
+    oidcMutation.reset()
     if (oidcEnabled && (!oidcIssuer.trim() || !oidcClientId.trim())) {
-      oidcValidationError = t('server.enter_workgroup_server_name_service_account')
+      oidcValidationError = t('settings.oidc_issuer_client_required')
       return
     }
     const req: OidcSettingsReq & { client_secret?: string } = {
@@ -549,13 +685,26 @@
       smb_policy: 'block'
     }
     if (oidcClientSecret.trim()) req.client_secret = oidcClientSecret.trim()
+    const visibleReq: OidcSettingsReq = {
+      enabled: req.enabled,
+      issuer: req.issuer,
+      client_id: req.client_id,
+      scopes: req.scopes,
+      display_name: req.display_name,
+      allow_private_endpoints: req.allow_private_endpoints,
+      ca_cert_file: req.ca_cert_file,
+      public_client: req.public_client,
+      smb_policy: req.smb_policy
+    }
+    beginSettingsSave('oidc', visibleReq)
     oidcMutation.mutate(
       { section: 'oidc', req },
       {
         onSuccess: (outcome) => {
-          onSettingsSaved(outcome)
-          oidcClientSecret = ''
-        }
+          const accepted = finishSettingsSave('oidc', visibleReq, outcome)
+          if (accepted) oidcClientSecret = ''
+        },
+        onError: () => failSettingsSave('oidc')
       }
     )
   }
@@ -576,6 +725,208 @@
     } catch {
       // clipboard API unavailable: the value is still selectable as text
     }
+  }
+
+  function settingsFingerprint(value: unknown): string {
+    return JSON.stringify(value)
+  }
+
+  function currentSettingsRequest(group: SettingsGroup): unknown {
+    switch (group) {
+      case 'smb':
+        return {
+          enabled: smbEnabled,
+          workgroup: smbWorkgroup,
+          server_name: smbServerName,
+          service_user: smbServiceUser,
+          allow_public_bind: smbAllowPublicBind,
+          totp_policy: smbTotpPolicy,
+          service_gid: Number(smbServiceGid),
+          interfaces: strToArr(smbInterfaces)
+        } satisfies SmbSettingsReq
+      case 'search':
+        return {
+          max_concurrent_fast: Number(searchMaxFast),
+          walk_deadline_fast_ms: Number(searchDeadlineFast)
+        } satisfies SearchSettingsReq
+      case 'thumbnail':
+        return { enabled: thumbnailEnabled, dir: thumbnailDir.trim() || undefined } satisfies ThumbnailSettingsReq
+      case 'archive':
+        return { max_concurrent: Number(archiveMax) } satisfies ArchiveSettingsReq
+      case 'network':
+        return {
+          app_hosts: strToArr(netAppHosts),
+          content_hosts: strToArr(netContentHosts),
+          allowed_origins: strToArr(netAllowedOrigins),
+          compat_canonical_url: netCanonicalUrl.trim(),
+          trusted_proxies: strToArr(netTrustedProxies),
+          bind: netBind.trim() || undefined
+        } satisfies NetworkSettingsReq
+      case 'db':
+        return {
+          size_guard: dbSizeGuard,
+          max_bytes: Math.round(Number(dbMaxBytesMb) * BYTES_PER_MB),
+          min_free_bytes: Math.round(Number(dbMinFreeBytesMb) * BYTES_PER_MB)
+        } satisfies DbSettingsReq
+      case 'homes':
+        return { enabled: homesEnabled, root: homesRoot.trim() || null } satisfies HomesSettingsReq
+      case 'watch':
+        return { hot_set_max: Number(watchHotSetMax), full_threshold: Number(watchFullThreshold) } satisfies WatchSettingsReq
+      case 'rate':
+        return { per_sec: Number(ratePerSec), burst: Number(rateBurst) }
+      case 'oidc':
+        return {
+          enabled: oidcEnabled,
+          issuer: oidcIssuer.trim(),
+          client_id: oidcClientId.trim(),
+          scopes: strToArr(oidcScopes),
+          display_name: oidcDisplayName,
+          allow_private_endpoints: oidcAllowPrivateEndpoints,
+          ca_cert_file: oidcCaCertFile.trim(),
+          public_client: oidcPublicClient,
+          smb_policy: 'block'
+        } satisfies OidcSettingsReq
+    }
+  }
+
+  function snapshotSettingsRequest(group: SettingsGroup): unknown {
+    switch (group) {
+      case 'smb':
+        return {
+          enabled: Boolean(field('smb.enabled')?.value),
+          workgroup: String(field('smb.workgroup')?.value ?? ''),
+          server_name: String(field('smb.server_name')?.value ?? ''),
+          service_user: String(field('smb.service_user')?.value ?? ''),
+          allow_public_bind: Boolean(field('smb.allow_public_bind')?.value),
+          totp_policy: (field('smb.totp_policy')?.value as 'require_separate' | 'block') ?? 'require_separate',
+          service_gid: Number(field('smb.service_gid')?.value ?? 1000),
+          interfaces: stringArrayField('smb.interfaces')
+        } satisfies SmbSettingsReq
+      case 'search':
+        return {
+          max_concurrent_fast: Number(field('search.max_concurrent_fast')?.value ?? 0),
+          walk_deadline_fast_ms: Number(field('search.walk_deadline_fast_ms')?.value ?? 0)
+        } satisfies SearchSettingsReq
+      case 'thumbnail':
+        return {
+          enabled: field('thumbnail.enabled')?.value !== false,
+          dir: String(field('thumbnail.dir')?.value ?? '').trim() || undefined
+        } satisfies ThumbnailSettingsReq
+      case 'archive':
+        return { max_concurrent: Number(field('archive.max_concurrent')?.value ?? 0) } satisfies ArchiveSettingsReq
+      case 'network':
+        return {
+          app_hosts: stringArrayField('app_hosts'),
+          content_hosts: stringArrayField('content_hosts'),
+          allowed_origins: stringArrayField('allowed_origins'),
+          compat_canonical_url: String(field('compat_canonical_url')?.value ?? '').trim(),
+          trusted_proxies: stringArrayField('trusted_proxies'),
+          bind: String(field('bind')?.value ?? '').trim() || undefined
+        } satisfies NetworkSettingsReq
+      case 'db':
+        return {
+          size_guard: Boolean(field('db.size_guard')?.value),
+          max_bytes: Number(field('db.max_bytes')?.value ?? 0),
+          min_free_bytes: Number(field('db.min_free_bytes')?.value ?? 0)
+        } satisfies DbSettingsReq
+      case 'homes':
+        return {
+          enabled: Boolean(field('homes.enabled')?.value),
+          root: String(field('homes.root')?.value ?? '').trim() || null
+        } satisfies HomesSettingsReq
+      case 'watch':
+        return {
+          hot_set_max: Number(field('watch.hot_set_max')?.value ?? 0),
+          full_threshold: Number(field('watch.full_threshold')?.value ?? 0)
+        } satisfies WatchSettingsReq
+      case 'rate':
+        return {
+          per_sec: Number(field('rate.per_sec')?.value ?? 0),
+          burst: Number(field('rate.burst')?.value ?? 0)
+        }
+      case 'oidc':
+        return {
+          enabled: Boolean(field('oidc.enabled')?.value),
+          issuer: String(field('oidc.issuer')?.value ?? '').trim(),
+          client_id: String(field('oidc.client_id')?.value ?? '').trim(),
+          scopes: stringArrayField('oidc.scopes'),
+          display_name: String(field('oidc.display_name')?.value ?? ''),
+          allow_private_endpoints: Boolean(field('oidc.allow_private_endpoints')?.value),
+          ca_cert_file: String(field('oidc.ca_cert_file')?.value ?? '').trim(),
+          public_client: Boolean(field('oidc.public_client')?.value),
+          smb_policy: 'block'
+        } satisfies OidcSettingsReq
+    }
+  }
+
+  function settingsQueryRevision(): number {
+    return queryClient.getQueryState(keys.adminSettings())?.dataUpdateCount ?? 0
+  }
+
+  function isSettingsDirty(group: SettingsGroup): boolean {
+    return hydrated[group] && baselines[group] !== settingsFingerprint(currentSettingsRequest(group))
+  }
+
+  function hydrateSettingsGroup(group: SettingsGroup, apply: () => void): void {
+    const values = snapshotSettingsRequest(group)
+    const fingerprint = settingsFingerprint(values)
+    const save = settingsSaveState[group]
+    if (save !== null) {
+      // Do not hydrate while the mutation is still pending, or from the
+      // snapshot that was current when the save completed. An active query is
+      // invalidated after the success callback, so the first newer revision
+      // is the post-save snapshot even when the server normalized values.
+      if (!save.accepted || save.queryRevision === null || settingsQueryRevision() <= save.queryRevision) return
+      settingsSaveState[group] = null
+      baselines[group] = fingerprint
+
+      // A post-submit edit owns this group's controls. Record the server
+      // snapshot as the new baseline, but never replace that edit.
+      if (settingsFingerprint(currentSettingsRequest(group)) !== save.submitted) {
+        hydrated[group] = true
+        return
+      }
+      apply()
+      hydrated[group] = true
+      return
+    }
+    if (hydrated[group] && isSettingsDirty(group)) return
+    baselines[group] = fingerprint
+    apply()
+    hydrated[group] = true
+  }
+
+  function beginSettingsSave(group: SettingsGroup, request: unknown): void {
+    settingsSaveState[group] = {
+      submitted: settingsFingerprint(request),
+      queryRevision: null,
+      accepted: false
+    }
+  }
+
+  function finishSettingsSave(group: SettingsGroup, request: unknown, outcome: ApplyOutcome): boolean {
+    const accepted = outcome.stored || outcome.applied || outcome.restart_required
+    const submitted = settingsFingerprint(request)
+    if (accepted) {
+      settingsSaveState[group] = {
+        submitted,
+        queryRevision: settingsQueryRevision(),
+        accepted: true
+      }
+      baselines[group] = submitted
+    } else {
+      settingsSaveState[group] = null
+    }
+    onSettingsSaved(outcome)
+    return accepted
+  }
+
+  function failSettingsSave(group: SettingsGroup): void {
+    settingsSaveState[group] = null
+  }
+
+  function scrollToServerCard(id: string): void {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   // ── everything else this screen doesn't have a dedicated control for,
@@ -643,57 +994,67 @@
     )
   )
 
-  // Every form field re-seeds from the latest snapshot: on first load, and
-  // again whenever a save's own invalidation (or any other refetch) brings
-  // a new one in, so a field this screen didn't just save still tracks
-  // what the server actually has.
+  // Hydrate each card only while it is clean. A save invalidates this shared
+  // query, so assigning every input from every response would replace text
+  // the operator is currently editing in a different card.
   $effect(() => {
     if (!snapshot) return
-    smbEnabled = Boolean(field('smb.enabled')?.value)
-    smbWorkgroup = String(field('smb.workgroup')?.value ?? '')
-    smbServerName = String(field('smb.server_name')?.value ?? '')
-    smbServiceUser = String(field('smb.service_user')?.value ?? '')
-    smbAllowPublicBind = Boolean(field('smb.allow_public_bind')?.value)
-    smbTotpPolicy = (field('smb.totp_policy')?.value as 'require_separate' | 'block') ?? 'require_separate'
-    smbServiceGid = String(field('smb.service_gid')?.value ?? '1000')
-    smbInterfaces = arrToStr(field('smb.interfaces')?.value)
-
-    searchMaxFast = String(field('search.max_concurrent_fast')?.value ?? '')
-    searchDeadlineFast = String(field('search.walk_deadline_fast_ms')?.value ?? '')
-
-    archiveMax = String(field('archive.max_concurrent')?.value ?? '')
-
-    thumbnailEnabled = field('thumbnail.enabled')?.value !== false
-    thumbnailDir = String(field('thumbnail.dir')?.value ?? '')
-
-    ratePerSec = String(field('rate.per_sec')?.value ?? '')
-    rateBurst = String(field('rate.burst')?.value ?? '')
-
-    netAppHosts = arrToStr(field('app_hosts')?.value)
-    netContentHosts = arrToStr(field('content_hosts')?.value)
-    netAllowedOrigins = arrToStr(field('allowed_origins')?.value)
-    netCanonicalUrl = String(field('compat_canonical_url')?.value ?? '')
-    netTrustedProxies = arrToStr(field('trusted_proxies')?.value)
-    netBind = String(field('bind')?.value ?? '')
-
-    dbSizeGuard = Boolean(field('db.size_guard')?.value)
-    dbMaxBytesMb = String(bytesToMb(Number(field('db.max_bytes')?.value ?? 0)))
-    dbMinFreeBytesMb = String(bytesToMb(Number(field('db.min_free_bytes')?.value ?? 0)))
-
-    homesEnabled = Boolean(field('homes.enabled')?.value)
-    homesRoot = String(field('homes.root')?.value ?? '')
-
-    watchHotSetMax = String(field('watch.hot_set_max')?.value ?? '')
-    watchFullThreshold = String(field('watch.full_threshold')?.value ?? '')
-
-    oidcEnabled = Boolean(field('oidc.enabled')?.value)
-    oidcIssuer = String(field('oidc.issuer')?.value ?? '')
-    oidcClientId = String(field('oidc.client_id')?.value ?? '')
-    oidcScopes = arrToStr(field('oidc.scopes')?.value)
-    oidcDisplayName = String(field('oidc.display_name')?.value ?? '')
-    oidcAllowPrivateEndpoints = Boolean(field('oidc.allow_private_endpoints')?.value)
-    oidcCaCertFile = String(field('oidc.ca_cert_file')?.value ?? '')
-    oidcPublicClient = Boolean(field('oidc.public_client')?.value)
+    hydrateSettingsGroup('smb', () => {
+      smbEnabled = Boolean(field('smb.enabled')?.value)
+      smbWorkgroup = String(field('smb.workgroup')?.value ?? '')
+      smbServerName = String(field('smb.server_name')?.value ?? '')
+      smbServiceUser = String(field('smb.service_user')?.value ?? '')
+      smbAllowPublicBind = Boolean(field('smb.allow_public_bind')?.value)
+      smbTotpPolicy = (field('smb.totp_policy')?.value as 'require_separate' | 'block') ?? 'require_separate'
+      smbServiceGid = String(field('smb.service_gid')?.value ?? '1000')
+      smbInterfaces = arrToStr(field('smb.interfaces')?.value)
+    })
+    hydrateSettingsGroup('search', () => {
+      searchMaxFast = String(field('search.max_concurrent_fast')?.value ?? '')
+      searchDeadlineFast = String(field('search.walk_deadline_fast_ms')?.value ?? '')
+    })
+    hydrateSettingsGroup('archive', () => {
+      archiveMax = String(field('archive.max_concurrent')?.value ?? '')
+    })
+    hydrateSettingsGroup('thumbnail', () => {
+      thumbnailEnabled = field('thumbnail.enabled')?.value !== false
+      thumbnailDir = String(field('thumbnail.dir')?.value ?? '')
+    })
+    hydrateSettingsGroup('rate', () => {
+      ratePerSec = String(field('rate.per_sec')?.value ?? '')
+      rateBurst = String(field('rate.burst')?.value ?? '')
+    })
+    hydrateSettingsGroup('network', () => {
+      netAppHosts = arrToStr(field('app_hosts')?.value)
+      netContentHosts = arrToStr(field('content_hosts')?.value)
+      netAllowedOrigins = arrToStr(field('allowed_origins')?.value)
+      netCanonicalUrl = String(field('compat_canonical_url')?.value ?? '')
+      netTrustedProxies = arrToStr(field('trusted_proxies')?.value)
+      netBind = String(field('bind')?.value ?? '')
+    })
+    hydrateSettingsGroup('db', () => {
+      dbSizeGuard = Boolean(field('db.size_guard')?.value)
+      dbMaxBytesMb = String(bytesToMb(Number(field('db.max_bytes')?.value ?? 0)))
+      dbMinFreeBytesMb = String(bytesToMb(Number(field('db.min_free_bytes')?.value ?? 0)))
+    })
+    hydrateSettingsGroup('homes', () => {
+      homesEnabled = Boolean(field('homes.enabled')?.value)
+      homesRoot = String(field('homes.root')?.value ?? '')
+    })
+    hydrateSettingsGroup('watch', () => {
+      watchHotSetMax = String(field('watch.hot_set_max')?.value ?? '')
+      watchFullThreshold = String(field('watch.full_threshold')?.value ?? '')
+    })
+    hydrateSettingsGroup('oidc', () => {
+      oidcEnabled = Boolean(field('oidc.enabled')?.value)
+      oidcIssuer = String(field('oidc.issuer')?.value ?? '')
+      oidcClientId = String(field('oidc.client_id')?.value ?? '')
+      oidcScopes = arrToStr(field('oidc.scopes')?.value)
+      oidcDisplayName = String(field('oidc.display_name')?.value ?? '')
+      oidcAllowPrivateEndpoints = Boolean(field('oidc.allow_private_endpoints')?.value)
+      oidcCaCertFile = String(field('oidc.ca_cert_file')?.value ?? '')
+      oidcPublicClient = Boolean(field('oidc.public_client')?.value)
+    })
   })
 </script>
 
@@ -717,6 +1078,17 @@
     </ul>
   {/if}
 {/snippet}
+{#snippet saveStatus(group: SettingsGroup, pending: boolean, error: string | null, outcome: ApplyOutcome | null)}
+  {#if pending}
+    <p class="sc-admin-section__status" role="status">{t('common.saving')}</p>
+  {:else if outcome && !outcome.stored && !outcome.applied && !outcome.restart_required}
+    <p class="sc-admin-section__status sc-admin-section__status--error" role="status">{t('common.could_not_save')}</p>
+  {:else if isSettingsDirty(group)}
+    <p class="sc-admin-section__status" role="status">{t('settings.unsaved_changes')}</p>
+  {:else if outcome}
+    <p class="sc-admin-section__status" role="status">{outcomeText(outcome)}</p>
+  {/if}
+{/snippet}
 
 <section class="sc-admin-section">
   <h3>{t('server.server_settings')}</h3>
@@ -729,6 +1101,17 @@
   {:else if loadError}
     <p class="sc-admin-section__error" role="alert">{loadError}</p>
   {:else if snapshot}
+    <nav class="sc-server-settings__nav" aria-label={t('admin.server_settings_navigation')}>
+      <span class="sc-server-settings__nav-label">{t('admin.server_settings_navigation')}</span>
+      <div class="sc-server-settings__nav-items">
+        <button type="button" onclick={() => scrollToServerCard('server-smb')}>{t('admin.server_smb')}</button>
+        <button type="button" onclick={() => scrollToServerCard('server-search')}>{t('admin.server_search')}</button>
+        <button type="button" onclick={() => scrollToServerCard('server-network')}>{t('admin.server_network')}</button>
+        <button type="button" onclick={() => scrollToServerCard('server-transfers')}>{t('admin.server_transfers')}</button>
+        <button type="button" onclick={() => scrollToServerCard('server-security')}>{t('admin.server_security')}</button>
+        <button type="button" onclick={() => scrollToServerCard('server-storage')}>{t('admin.server_storage_paths')}</button>
+      </div>
+    </nav>
     {#if snapshot.smb_public_bind_warning}
       <p class="sc-admin-section__warning" role="alert">
         {t('server.smb_reachable_from_outside_private')}
@@ -754,7 +1137,7 @@
     {/if}
 
     <!-- 1. SMB -->
-    <div class="sc-admin-card">
+    <div class="sc-admin-card" id="server-smb">
       <div class="sc-admin-card-head">
         <div class="sc-admin-card-icon">
           <Icon icon={icons.folder} size={20} />
@@ -778,9 +1161,9 @@
         <TextField label={t('settings.smb_interfaces')} bind:value={smbInterfaces} />
         <p class="sc-admin-section__hint">{t('settings.smb_interfaces_hint')}</p>
         <Button variant="filled" onclick={saveSmb} loading={smbMutation.isPending}>{t('common.save')}</Button>
+        {@render saveStatus('smb', smbMutation.isPending, smbError, smbOutcome)}
         {#if smbError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={smbError}>{smbError}</p>{/if}
         {#if smbOutcome}
-          <p class="sc-admin-section__saved" role="status">{outcomeText(smbOutcome)}</p>
           {@render findingsList(smbOutcome)}
         {/if}
       </div>
@@ -827,7 +1210,7 @@
     </div>
 
     <!-- 2. Search -->
-    <div class="sc-admin-card">
+    <div class="sc-admin-card" id="server-search">
       <div class="sc-admin-card-head">
         <div class="sc-admin-card-icon">
           <Icon icon={icons.search} size={20} />
@@ -841,16 +1224,16 @@
         <TextField label={t('server.concurrent_fast_searches')} bind:value={searchMaxFast} type="number" {...intRangeAttrs('search.max_concurrent_fast')} />
         <TextField label={t('server.fast_search_timeout_ms')} bind:value={searchDeadlineFast} type="number" {...intRangeAttrs('search.walk_deadline_fast_ms')} />
         <Button variant="filled" onclick={saveSearch} loading={searchMutation.isPending}>{t('common.save')}</Button>
+        {@render saveStatus('search', searchMutation.isPending, searchError, searchOutcome)}
         {#if searchError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={searchError}>{searchError}</p>{/if}
         {#if searchOutcome}
-          <p class="sc-admin-section__saved" role="status">{outcomeText(searchOutcome)}</p>
           {@render findingsList(searchOutcome)}
         {/if}
       </div>
     </div>
 
     <!-- 3. Zip download -->
-    <div class="sc-admin-card">
+    <div class="sc-admin-card" id="server-transfers">
       <div class="sc-admin-card-head">
         <div class="sc-admin-card-icon">
           <Icon icon={icons.download} size={20} />
@@ -863,9 +1246,9 @@
       <div class="sc-server-settings__form">
         <TextField label={t('server.concurrent_zip_streams')} bind:value={archiveMax} type="number" {...intRangeAttrs('archive.max_concurrent')} />
         <Button variant="filled" onclick={saveArchive} loading={archiveMutation.isPending}>{t('common.save')}</Button>
+        {@render saveStatus('archive', archiveMutation.isPending, archiveError, archiveOutcome)}
         {#if archiveError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={archiveError}>{archiveError}</p>{/if}
         {#if archiveOutcome}
-          <p class="sc-admin-section__saved" role="status">{outcomeText(archiveOutcome)}</p>
           {@render findingsList(archiveOutcome)}
         {/if}
       </div>
@@ -893,16 +1276,16 @@
         </div>
         <p class="sc-admin-section__hint">{t('server.thumbnail_storage_dir_description')}</p>
         <Button variant="filled" onclick={saveThumbnail} loading={thumbnailMutation.isPending}>{t('common.save')}</Button>
+        {@render saveStatus('thumbnail', thumbnailMutation.isPending, thumbnailError, thumbnailOutcome)}
         {#if thumbnailError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={thumbnailError}>{thumbnailError}</p>{/if}
         {#if thumbnailOutcome}
-          <p class="sc-admin-section__saved" role="status">{outcomeText(thumbnailOutcome)}</p>
           {@render findingsList(thumbnailOutcome)}
         {/if}
       </div>
     </div>
 
     <!-- 4. Network -->
-    <div class="sc-admin-card">
+    <div class="sc-admin-card" id="server-network">
       <div class="sc-admin-card-head">
         <div class="sc-admin-card-icon">
           <Icon icon={icons.link} size={20} />
@@ -936,9 +1319,9 @@
         <TextField label={t('server.bind_address')} bind:value={netBind} />
         <p class="sc-admin-section__hint">{t('server.bind_address_hint')}</p>
         <Button variant="filled" onclick={saveNetwork} loading={netMutation.isPending}>{t('common.save')}</Button>
+        {@render saveStatus('network', netMutation.isPending, netError, netOutcome)}
         {#if netError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={netError}>{netError}</p>{/if}
         {#if netOutcome}
-          <p class="sc-admin-section__saved" role="status">{outcomeText(netOutcome)}</p>
           {@render findingsList(netOutcome)}
         {/if}
       </div>
@@ -962,9 +1345,8 @@
         <TextField label={t('settings.db_max_bytes')} bind:value={dbMaxBytesMb} type="number" {...mbRangeAttrs('db.max_bytes')} />
         <TextField label={t('settings.db_min_free_bytes')} bind:value={dbMinFreeBytesMb} type="number" {...mbRangeAttrs('db.min_free_bytes')} />
         <Button variant="filled" onclick={saveDb} loading={dbMutation.isPending}>{t('common.save')}</Button>
-        {#if dbError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={dbError}>{dbError}</p>{/if}
+        {@render saveStatus('db', dbMutation.isPending, dbError, dbOutcome)}
         {#if dbOutcome}
-          <p class="sc-admin-section__saved" role="status">{outcomeText(dbOutcome)}</p>
           {@render findingsList(dbOutcome)}
         {/if}
       </div>
@@ -991,9 +1373,9 @@
           </Button>
         </div>
         <Button variant="filled" onclick={saveHomes} loading={homesMutation.isPending}>{t('common.save')}</Button>
+        {@render saveStatus('homes', homesMutation.isPending, homesError, homesOutcome)}
         {#if homesError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={homesError}>{homesError}</p>{/if}
         {#if homesOutcome}
-          <p class="sc-admin-section__saved" role="status">{outcomeText(homesOutcome)}</p>
           {@render findingsList(homesOutcome)}
         {/if}
       </div>
@@ -1014,9 +1396,9 @@
         <TextField label={t('server.requests_per_second')} bind:value={ratePerSec} type="number" {...intRangeAttrs('rate.per_sec')} />
         <TextField label={t('server.burst_allowance')} bind:value={rateBurst} type="number" {...intRangeAttrs('rate.burst')} />
         <Button variant="filled" onclick={saveRate} loading={rateMutation.isPending}>{t('common.save')}</Button>
+        {@render saveStatus('rate', rateMutation.isPending, rateError, rateOutcome)}
         {#if rateError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={rateError}>{rateError}</p>{/if}
         {#if rateOutcome}
-          <p class="sc-admin-section__saved" role="status">{outcomeText(rateOutcome)}</p>
           {@render findingsList(rateOutcome)}
         {/if}
       </div>
@@ -1037,16 +1419,16 @@
         <TextField label={t('server.maximum_folders_watched_at_once')} bind:value={watchHotSetMax} type="number" {...intRangeAttrs('watch.hot_set_max')} />
         <TextField label={t('server.changes_before_a_full_rescan')} bind:value={watchFullThreshold} type="number" {...intRangeAttrs('watch.full_threshold')} />
         <Button variant="filled" onclick={saveWatch} loading={watchMutation.isPending}>{t('common.save')}</Button>
+        {@render saveStatus('watch', watchMutation.isPending, watchError, watchOutcome)}
         {#if watchError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={watchError}>{watchError}</p>{/if}
         {#if watchOutcome}
-          <p class="sc-admin-section__saved" role="status">{outcomeText(watchOutcome)}</p>
           {@render findingsList(watchOutcome)}
         {/if}
       </div>
     </div>
 
     <!-- 9. Single sign-on -->
-    <div class="sc-admin-card">
+    <div class="sc-admin-card" id="server-security">
       <div class="sc-admin-card-head">
         <div class="sc-admin-card-icon">
           <Icon icon={icons.lock} size={20} />
@@ -1074,9 +1456,9 @@
         </div>
         <p class="sc-admin-section__hint">{t('server.connected_accounts_cannot_use_smb')}</p>
         <Button variant="filled" onclick={saveOidc} loading={oidcMutation.isPending}>{t('common.save')}</Button>
+        {@render saveStatus('oidc', oidcMutation.isPending, oidcError, oidcOutcome)}
         {#if oidcError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={oidcError}>{oidcError}</p>{/if}
         {#if oidcOutcome}
-          <p class="sc-admin-section__saved" role="status">{outcomeText(oidcOutcome)}</p>
           {@render findingsList(oidcOutcome)}
         {/if}
       </div>
@@ -1119,7 +1501,7 @@
     </div>
 
     <!-- 10. Storage paths -->
-    <div class="sc-admin-card">
+    <div class="sc-admin-card" id="server-storage">
       <div class="sc-admin-card-head">
         <div class="sc-admin-card-icon">
           <Icon icon={icons.info} size={20} />
@@ -1188,6 +1570,7 @@
 
 <style>
   .sc-admin-card {
+    scroll-margin-top: 64px;
     display: flex;
     flex-direction: column;
     margin-bottom: 24px;
@@ -1270,10 +1653,52 @@
     outline: 2px solid var(--m3c-error);
     outline-offset: 2px;
   }
-  .sc-admin-section__saved {
+  .sc-admin-section__status {
     margin: 8px 0 0;
     color: var(--m3c-primary);
     @apply --m3-body-medium;
+  }
+  .sc-admin-section__status--error {
+    color: var(--m3c-error);
+  }
+  .sc-server-settings__nav {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 16px;
+    margin: 0 0 16px;
+    padding: 8px 12px;
+    border: 1px solid var(--m3c-outline-variant);
+    border-radius: var(--m3-shape-small);
+    background: var(--m3c-surface);
+  }
+  .sc-server-settings__nav-label {
+    @apply --m3-label-large;
+    color: var(--m3c-on-surface);
+  }
+  .sc-server-settings__nav-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+  }
+  .sc-server-settings__nav button {
+    border: 0;
+    padding: 4px 0;
+    color: var(--m3c-primary);
+    background: transparent;
+    cursor: pointer;
+    @apply --m3-label-medium;
+  }
+  .sc-server-settings__nav button:hover,
+  .sc-server-settings__nav button:focus-visible {
+    text-decoration: underline;
+  }
+  .sc-server-settings__nav button:focus-visible {
+    outline: 2px solid var(--m3c-primary);
+    outline-offset: 2px;
   }
   .sc-server-settings__form {
     display: flex;

@@ -10,10 +10,11 @@
 // backend silently turned three "(mock)" tests into failing real-`fetch`
 // calls. A test whose meaning depends on ambient configuration is not
 // pinning anything down.
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mockApi } from './mock'
+import type { createInitialAdmin as CreateInitialAdmin } from './setup'
 
-let createInitialAdmin: typeof import('./setup').createInitialAdmin
+let createInitialAdmin: typeof CreateInitialAdmin
 
 describe('createInitialAdmin (mock)', () => {
   beforeEach(async () => {
@@ -48,3 +49,67 @@ describe('createInitialAdmin (mock)', () => {
     })
   })
 })
+
+// Setup captures VITE_API_MOCK at module evaluation, so each branch must load
+// a fresh module after selecting the transport.
+
+describe('createInitialAdmin (HTTP)', () => {
+  beforeEach(async () => {
+    vi.stubEnv('VITE_API_MOCK', '0')
+    vi.resetModules()
+    ;({ createInitialAdmin } = await import('./setup'))
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
+  })
+
+  it('preserves field findings when the server rejects setup validation', async () => {
+    const findings = [
+      { section: 'network', field: 'app_hosts', reason: 'host.invalid', blocking: true }
+    ]
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        status: 422,
+        ok: false,
+        statusText: 'Unprocessable Entity',
+        json: async () => ({ findings })
+      })
+    )
+
+    await expect(
+      createInitialAdmin({
+        token: 'SETUP-TOKEN',
+        username: 'root',
+        password: 'longenoughpw',
+        app_hosts: ['localhost'],
+        trusted_proxies: []
+      })
+    ).rejects.toMatchObject({ name: 'SetupValidationError', findings })
+  })
+
+  it('reports a committed account separately when the optional first share failed', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        status: 200,
+        ok: true,
+        statusText: 'OK',
+        json: async () => ({ warnings: [], share_failed: true })
+      })
+    )
+
+    const result = await createInitialAdmin({
+      token: 'SETUP-TOKEN',
+      username: 'root',
+      password: 'longenoughpw',
+      app_hosts: ['localhost'],
+      trusted_proxies: [],
+      first_share: { name: 'Documents', host: '/srv/documents' }
+    })
+    expect(result).toEqual({ warnings: [], share_failed: true })
+  })
+})
+

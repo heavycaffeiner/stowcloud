@@ -16,6 +16,7 @@
   import { t } from '../../i18n'
   import { createMutation, createQuery } from '@tanstack/svelte-query'
   import { adminSettingsQuery, adminUploadSettingsMutation } from '../../query/admin'
+  import type { UploadSettingsReq } from '../../api/types'
   import { describeApiError } from '../../api/error-text'
   import { BYTES_PER_MB, bytesToMb, formatBytes } from '../../format/bytes'
   import {
@@ -40,17 +41,37 @@
   const serverMin = $derived(Number(settingsField('upload.chunk_min_bytes') ?? CHUNK_SIZE_MIN))
   const serverDefault = $derived(Number(settingsField('upload.chunk_default_bytes') ?? CHUNK_SIZE_MIN * 2))
 
-  // Seeded once, the first time the snapshot arrives, then edited
-  // independently, same as the browser-only override below.
   let minMb = $state(String(bytesToMb(CHUNK_SIZE_MIN)))
   let defaultMb = $state(String(bytesToMb(CHUNK_SIZE_MIN * 2)))
-  let seededServerValues = false
+  let serverBaseline: string | null = $state(null)
+  let serverExpectedAfterSave: string | null = $state(null)
+  let serverHydrated = false
+
+  function serverFingerprint(minBytes: number, defaultBytes: number): string {
+    return JSON.stringify({ chunk_min: minBytes, chunk_default: defaultBytes })
+  }
+
+  function currentServerFingerprint(): string {
+    return serverFingerprint(Math.round(Number(minMb) * BYTES_PER_MB), Math.round(Number(defaultMb) * BYTES_PER_MB))
+  }
+
   $effect(() => {
-    if (seededServerValues || !settingsResult.data) return
+    if (!settingsResult.data) return
+    const fingerprint = serverFingerprint(serverMin, serverDefault)
+    if (serverExpectedAfterSave !== null) {
+      if (serverExpectedAfterSave !== fingerprint) return
+      serverExpectedAfterSave = null
+    }
+    if (serverHydrated && serverBaseline !== currentServerFingerprint()) return
     minMb = String(bytesToMb(serverMin))
     defaultMb = String(bytesToMb(serverDefault))
-    seededServerValues = true
+    serverBaseline = fingerprint
+    serverHydrated = true
   })
+
+  function serverDirty(): boolean {
+    return serverHydrated && serverBaseline !== currentServerFingerprint()
+  }
 
   let serverValidationError = $state<string | null>(null)
   const serverMutation = createMutation(() => adminUploadSettingsMutation())
@@ -60,11 +81,12 @@
   )
   let serverSaved = $state(false)
 
-  // The cache spool switch. Its current value only arrives in a save
-  // response, so until one comes back this reflects what the operator has
-  // selected rather than claiming to know the server's state.
-  let cacheEnabled = $state(false)
-  let cacheAvailable = $state(true)
+  // Cache availability is not part of the settings snapshot. Keep it
+  // explicitly unknown until a save response says otherwise, and never send
+  // an untouched optional field.
+  let cacheEnabled: boolean | null = $state(null)
+  let cacheAvailable: boolean | null = $state(null)
+  let cacheTouched = $state(false)
 
   function saveServerSettings(): void {
     serverValidationError = null
@@ -88,16 +110,22 @@
       serverValidationError = t('upload_settings.default_cannot_smaller_than_minimum')
       return
     }
-    serverMutation.mutate(
-      { chunk_min: minBytes, chunk_default: defaultBytes, cache_enabled: cacheEnabled },
-      {
-        onSuccess: (resp) => {
-          cacheEnabled = resp.cache_enabled
-          cacheAvailable = resp.cache_available
-          serverSaved = true
-        }
+    const request: UploadSettingsReq = { chunk_min: minBytes, chunk_default: defaultBytes }
+    if (cacheTouched && cacheEnabled !== null) request.cache_enabled = cacheEnabled
+    serverExpectedAfterSave = serverFingerprint(minBytes, defaultBytes)
+    serverMutation.mutate(request, {
+      onSuccess: (resp) => {
+        const fingerprint = serverFingerprint(resp.chunk_min, resp.chunk_default)
+        minMb = String(bytesToMb(resp.chunk_min))
+        defaultMb = String(bytesToMb(resp.chunk_default))
+        serverBaseline = fingerprint
+        serverExpectedAfterSave = fingerprint
+        cacheEnabled = resp.cache_enabled
+        cacheAvailable = resp.cache_available
+        cacheTouched = false
+        serverSaved = true
       }
-    )
+    })
   }
 
   // ── this browser's override ──
@@ -192,6 +220,10 @@
   </div>
   {#if serverError}
     <p class="sc-admin-section__upload-error" role="alert">{serverError}</p>
+  {:else if serverMutation.isPending}
+    <p class="sc-admin-section__upload-current" role="status">{t('common.saving')}</p>
+  {:else if serverDirty()}
+    <p class="sc-admin-section__upload-current" role="status">{t('settings.unsaved_changes')}</p>
   {:else if serverSaved}
     <p class="sc-admin-section__upload-saved" role="status">{t('upload_settings.server_wide_setting_saved')}</p>
   {/if}
@@ -204,9 +236,21 @@
   <p class="sc-admin-section__hint">
     {t('upload_settings.cache_spool_hint')}
   </p>
-  <Checkbox bind:checked={cacheEnabled} label={t('upload_settings.cache_spool_enable')} />
-  {#if !cacheAvailable}
+  {#if cacheAvailable === false}
     <p class="sc-admin-section__upload-error" role="alert">{t('upload_settings.cache_spool_unavailable')}</p>
+  {:else}
+    <Checkbox
+      checked={cacheEnabled === true}
+      indeterminate={cacheEnabled === null}
+      onchange={(value) => {
+        cacheEnabled = value
+        cacheTouched = true
+      }}
+      label={t('upload_settings.cache_spool_enable')}
+    />
+    {#if cacheEnabled === null}
+      <p class="sc-admin-section__upload-current">{t('upload_settings.cache_spool_state_unknown')}</p>
+    {/if}
   {/if}
 
   <h4 class="sc-admin-section__subhead">{t('upload_settings.override_browser_only')}</h4>

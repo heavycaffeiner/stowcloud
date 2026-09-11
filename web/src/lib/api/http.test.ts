@@ -1,10 +1,7 @@
-// httpApi's job wrappers. Every
-// `fs_move`/`fs_copy`/`fs_delete`/`fs_archive` request always answers
-// `202 { job }` (`go/internal/httpapi/handler`): there is no synchronous
-// fallback, so `copy`/`del`/`archive` (http.ts) hand that envelope straight
-// back to the caller rather than polling it internally. `query/jobs.ts` is
-// what tracks it and shows the user live progress instead of the UI just
-// hanging.
+// httpApi's transfer wrappers. The server accepts one source per
+// `files/move`/`files/copy`/`files/delete` request, so the client keeps one
+// result for every requested path. Asynchronous copies also expose every
+// accepted job id for the jobs query to track.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { httpApi } from './http'
 import { ApiError, isSessionDead } from './types'
@@ -78,46 +75,59 @@ describe('httpApi job wrappers', () => {
     expect(result.results[1]).toMatchObject({ path: '/fine', ok: true })
   })
 
-  it('copy() names both ends and carries the job back', async () => {
+  it('copy() preserves every item outcome, destination, and started job id', async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(jsonResponse(202, { id: 'J-4', path: 'b/a', started: true, skipped: false }))
+      .mockResolvedValueOnce(jsonResponse(202, { id: 'J-4', path: '/b/a', started: true, skipped: false }))
+      .mockResolvedValueOnce(jsonResponse(200, { path: '/b/b', started: false, skipped: true }))
+      .mockResolvedValueOnce(jsonResponse(403, { error: { code: 'fs.denied', message: 'no' } }))
     vi.stubGlobal('fetch', fetchMock)
 
-    const result = await httpApi.copy({ paths: ['/a'], dest: '/b', on_conflict: 'fail' })
+    const result = await httpApi.copy({ paths: ['/a', '/b', '/c'], dest: '/b', on_conflict: 'skip' })
 
-    expect(result.results).toEqual([{ path: '/a', ok: true }])
-    expect(result.job).toBe('J-4')
+    expect(result.results).toEqual([
+      { path: '/a', ok: true, destination: '/b/a', started: true, skipped: false, job: 'J-4' },
+      { path: '/b', ok: true, destination: '/b/b', started: false, skipped: true },
+      { path: '/c', ok: false, error: { code: 'fs.denied', message: 'no', detail: undefined } }
+    ])
+    expect(result.jobs).toEqual(['J-4'])
+    expect(fetchMock).toHaveBeenCalledTimes(3)
     const sent = JSON.parse(fetchMock.mock.calls[0][1].body as string)
-    // The item keeps its own name under the chosen folder.
-    expect(sent).toMatchObject({ from: '/a', to: '/b/a', on_conflict: 'fail' })
+    expect(sent).toMatchObject({ from: '/a', to: '/b/a', on_conflict: 'skip' })
   })
 
-  // Nothing started means no job to poll. It was typed as always present, and
-  // the caller polled a job named `undefined` once a second until it gave up.
   it('copy() carries no job when nothing started', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValueOnce(jsonResponse(200, { path: 'b/a', started: false, skipped: true }))
+      vi.fn().mockResolvedValueOnce(jsonResponse(200, { path: '/b/a', started: false, skipped: true }))
     )
 
     const result = await httpApi.copy({ paths: ['/a'], dest: '/b', on_conflict: 'skip' })
 
-    expect(result.job).toBeUndefined()
-    expect(result.results[0].ok).toBe(true)
+    expect(result.jobs).toBeUndefined()
+    expect(result.results[0]).toMatchObject({
+      path: '/a',
+      ok: true,
+      destination: '/b/a',
+      started: false,
+      skipped: true
+    })
   })
 
-  it('move() names both ends', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(200, { path: 'b/a', copied: false, skipped: false }))
+  it('move() preserves its destination and copy/skip outcome', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(200, { path: '/b/a (2)', copied: true, skipped: false }))
     vi.stubGlobal('fetch', fetchMock)
 
-    const result = await httpApi.move({ paths: ['/a'], dest: '/b', on_conflict: 'fail' })
+    const result = await httpApi.move({ paths: ['/a'], dest: '/b', on_conflict: 'rename' })
 
-    expect(result.results).toEqual([{ path: '/a', ok: true }])
+    expect(result.results).toEqual([
+      { path: '/a', ok: true, destination: '/b/a (2)', copied: true, skipped: false }
+    ])
     const [url, init] = fetchMock.mock.calls[0]
     expect(String(url)).toContain('/files/move')
-    expect(JSON.parse(init.body as string)).toMatchObject({ from: '/a', to: '/b/a' })
+    expect(JSON.parse(init.body as string)).toMatchObject({ from: '/a', to: '/b/a', on_conflict: 'rename' })
   })
+
 
   // The server has no dry run. Answering with nothing rather than guessing is
   // what keeps the picker's notice honest: it shows one only when it has one.

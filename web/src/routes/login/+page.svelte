@@ -68,6 +68,7 @@
 
   type Step = 'credentials' | 'totp'
   let step = $state<Step>('credentials')
+  let factorMode = $state<'totp' | 'recovery'>('totp')
   let username = $state('')
   let password = $state('')
   let code = $state('')
@@ -126,6 +127,8 @@
       const result = await login.mutateAsync({ username: username.trim(), password })
       if (result.required === 'totp') {
         challenge = result.challenge
+        factorMode = 'totp'
+        code = ''
         step = 'totp'
       } else {
         await afterLogin()
@@ -149,8 +152,21 @@
     }
   }
 
+  function useRecoveryCode(): void {
+    factorMode = 'recovery'
+    code = ''
+    errorMsg = null
+  }
+
+  function useAuthenticatorCode(): void {
+    factorMode = 'totp'
+    code = ''
+    errorMsg = null
+  }
+
   function backToCredentials(): void {
     step = 'credentials'
+    factorMode = 'totp'
     code = ''
     errorMsg = null
   }
@@ -173,10 +189,23 @@
       <TextField label={t('login.username')} bind:value={username} autofocus autocomplete="username" />
       <TextField label={t('common.password')} type="password" bind:value={password} autocomplete="current-password" />
     {:else}
-      <p class="sc-auth-card__subtitle">{t('login.enter_your_two_factor_code')}</p>
-      <TextField label={t('login.verification_code')} placeholder={t('login.6_digits')} bind:value={code} autofocus autocomplete="one-time-code" />
-    {/if}
+      {#if factorMode === 'totp'}
+        <p class="sc-auth-card__subtitle">{t('login.enter_your_two_factor_code')}</p>
+        <TextField
+          label={t('login.verification_code')}
+          placeholder={t('login.6_digits')}
+          bind:value={code}
+          autofocus
+          autocomplete="one-time-code"
+        />
+        <Button variant="text" type="button" onclick={useRecoveryCode}>{t('login.use_recovery_code')}</Button>
+      {:else}
+        <p class="sc-auth-card__subtitle">{t('login.recovery_code_hint')}</p>
+        <TextField label={t('login.recovery_code')} bind:value={code} autofocus autocomplete="one-time-code" />
+        <Button variant="text" type="button" onclick={useAuthenticatorCode}>{t('login.use_authenticator_code')}</Button>
+      {/if}
 
+    {/if}
     {#if ssoError && step === 'credentials'}
       <p class="sc-auth-card__error" role="alert">{ssoError}</p>
     {/if}

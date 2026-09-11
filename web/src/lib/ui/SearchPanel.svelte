@@ -2,12 +2,12 @@
   // The search experience, once. The desktop top sheet and the phone route
   // both draw this; neither owns any of it.
   //
-  // A search here runs to the end. The server streams every match as it finds
-  // one, so the list grows while the walk is still going and there is nothing
-  // to press for more. What that costs is ordering: matches arrive in the
-  // order the tree gives them up, and the sort is applied once the stream
-  // finishes, because re-sorting a hundred thousand rows on every arriving
-  // batch would spend the whole search sorting.
+  // A search streams matches as the server walks every accessible folder,
+  // subject to bounded work limits. A completed walk is distinct from a
+  // server-truncated walk: both preserve the hits that arrived, but only the
+  // former can claim the answer is complete. Ordering is applied once the
+  // stream finishes, because re-sorting a hundred thousand rows on every
+  // arriving batch would spend the whole search sorting.
   import { goto } from '$app/navigation'
   import { api } from '../api/client'
   import type { SearchDone, SearchHit, SearchProgress } from '../api/client'
@@ -15,6 +15,7 @@
   import { computeWindow } from '../virtual/windowing'
   import { formatBytes } from '../format/bytes'
   import { formatDateNs, formatNumber, t } from '../i18n'
+  import { search, type SearchSnapshot } from '../store/search.store'
   import { ConnectedButtons, Icon, MenuItem } from 'm3-svelte'
   import { icons } from '../icons'
   import Button from './Button.svelte'
@@ -25,7 +26,7 @@
 
   interface Props {
     /** The folder the search started from. Ranks that subtree up; it never
-     *  narrows the search, which always covers everything reachable. */
+     *  narrows the search, which always covers everything. */
     scope?: string
     autofocus?: boolean
     /** A result was opened, so a surface drawn over something else can go
@@ -41,32 +42,53 @@
   type Kind = 'any' | 'file' | 'dir'
   type SortKey = 'relevance' | 'name' | 'size' | 'date'
 
-  let query = $state('')
-  let kind = $state<Kind>('any')
-  let presets = $state<readonly string[]>([])
-  let extText = $state('')
-  let sortKey = $state('relevance')
+  // A result route unmounts this component on compact screens. Restore only
+  // the same ranking scope: otherwise a newly opened search must not display
+  // an answer scored for a different current folder. This is intentionally a
+  // mount snapshot: when a user changes scope at runtime, the search handlers
+  // below update local state explicitly rather than deriving every field from
+  // a reactive snapshot.
+  function snapshotAtMount(scopeAtMount: string): SearchSnapshot | null {
+    const saved = search.peek().snapshot
+    return saved?.scope === scopeAtMount ? saved : null
+  }
+  // Intentional mount snapshot: `scope` selects initial restoration only;
+  // subsequent route changes use explicit state updates instead of re-deriving
+  // each draft field.
+  // svelte-ignore state_referenced_locally
+  const restored = snapshotAtMount(scope)
+
+  let query = $state(restored?.query ?? '')
+  let kind = $state<Kind>(restored?.kind ?? 'any')
+  let presets = $state<readonly string[]>(restored ? [...restored.presets] : [])
+  let extText = $state(restored?.extText ?? '')
+  let extQuery = $state(restored?.extQuery ?? '')
+  let sortKey = $state<SortKey>(restored?.sortKey ?? 'relevance')
 
   /** `$state.raw`: the list is replaced wholesale on every flush, and a deep
-   *  proxy over a hundred thousand hits costs on every read. */
-  let hits = $state.raw<readonly SearchHit[]>([])
+   * proxy over a hundred thousand hits costs on every read. */
+  let hits = $state.raw<readonly SearchHit[]>(restored?.hits ?? [])
+  // An in-flight stream cannot resume after its component unmounts. Its
+  // cleanup records that interruption, and a remount reports the retained
+  // rows as partial instead of claiming a complete answer.
   let running = $state(false)
   /** A query has actually been submitted, so an empty list means "nothing
    *  matched" rather than "not asked yet". */
-  let ran = $state(false)
-  let failure = $state<string | null>(null)
-  let elapsedMs = $state<number | null>(null)
+  let ran = $state(restored?.ran ?? false)
+  let failure = $state<string | null>(restored?.running ? 'stopped' : (restored?.failure ?? null))
+  let truncated = $state(restored?.truncated ?? false)
+  let elapsedMs = $state<number | null>(restored?.elapsedMs ?? null)
   /** What the walk has looked through so far. A search of a large tree can
    *  run a long time before its first match, and a count that moves is the
-   *  difference between "still going" and "stuck". Null until the server
-   *  says, which for a fast search is never. */
-  let scanned = $state<SearchProgress | null>(null)
+   *  difference between "still going" and "stuck". */
+  let scanned = $state<SearchProgress | null>(restored?.scanned ?? null)
 
   let cancel: (() => void) | null = null
   /** Hits arrive one frame at a time; rendering per hit would spend the
    *  search re-rendering, so they land here and go in as batches. */
   let arriving: SearchHit[] = []
   let flushTimer: ReturnType<typeof setTimeout> | null = null
+  let runGeneration = 0
 
   const FLUSH_MS = 100
   const ROW_PX = 60
@@ -97,16 +119,22 @@
   }
 
   function start(): void {
+    runGeneration++
+    const generation = runGeneration
     cancel?.()
     cancel = null
+    if (flushTimer !== null) {
+      clearTimeout(flushTimer)
+      flushTimer = null
+    }
     arriving = []
     hits = []
     failure = null
+    truncated = false
     elapsedMs = null
     scanned = null
     scrollTop = 0
-    listEl?.scrollTo({ top: 0 })
-
+    restoredScrollTop = 0
     const text = query.trim()
     if (text === '') {
       ran = false
@@ -117,46 +145,61 @@
     ran = true
     running = true
     const exts = resolveExtensions(presets, extQuery)
-    cancel = api.searchStream(
+    const stopStream = api.searchStream(
       { query: text, kind: kind === 'any' ? undefined : kind, exts, scope: scope || undefined },
       (hit: SearchHit) => {
+        if (generation !== runGeneration) return
         arriving.push(hit)
         scheduleFlush()
       },
       (done: SearchDone) => {
+        if (generation !== runGeneration) return
         flush()
         running = false
         cancel = null
         elapsedMs = done.elapsedMs ?? null
         failure = done.error ?? null
+        truncated = done.truncated === true
       },
       (p: SearchProgress) => {
+        if (generation !== runGeneration) return
         scanned = p
       }
     )
+    if (generation === runGeneration && running) cancel = stopStream
+    else stopStream()
   }
 
   /** Stops the walk where it is. What arrived stays on screen and says it is
    *  partial, which is the honest reading of a search someone interrupted. */
   function stop(): void {
     if (!running) return
+    runGeneration++
     cancel?.()
     cancel = null
     flush()
     running = false
     failure = 'stopped'
+    truncated = false
   }
 
   /** Back to an empty search, filters included: a leftover extension is the
    *  quiet reason a later query finds nothing. */
   function clear(): void {
+    runGeneration++
     cancel?.()
     cancel = null
+    if (flushTimer !== null) {
+      clearTimeout(flushTimer)
+      flushTimer = null
+    }
     arriving = []
     hits = []
     running = false
+    restoredScrollTop = 0
     ran = false
     failure = null
+    truncated = false
     query = ''
     kind = 'any'
     presets = []
@@ -164,7 +207,6 @@
     extQuery = ''
     focus()
   }
-
   function togglePreset(id: string): void {
     presets = presets.includes(id) ? presets.filter((p) => p !== id) : [...presets, id]
   }
@@ -184,7 +226,6 @@
   /** The typed extensions as last committed. A search here walks whole trees,
    *  so it runs when the box is left or Enter is pressed, not on the way to
    *  spelling "pdf". */
-  let extQuery = $state('')
   function commitExts(): void {
     extQuery = extText
   }
@@ -201,8 +242,18 @@
   })
 
   $effect(() => () => {
+    const wasRunning = running
+    runGeneration++
     cancel?.()
-    if (flushTimer !== null) clearTimeout(flushTimer)
+    cancel = null
+    if (flushTimer !== null) {
+      clearTimeout(flushTimer)
+      flushTimer = null
+    }
+    flush()
+    // A stream cannot continue after this component unmounts. Keep what
+    // arrived and make the interruption explicit when the route remounts.
+    persistSnapshot({ running: false, failure: wasRunning ? 'stopped' : failure })
   })
 
   function sorted(list: readonly SearchHit[], key: SortKey): readonly SearchHit[] {
@@ -334,6 +385,52 @@
   let fieldEl: HTMLDivElement | undefined = $state()
   let listEl: HTMLDivElement | undefined = $state()
   let scrollTop = $state(0)
+  let restoredScrollTop = restored?.scrollTop ?? 0
+
+  function snapshotOf(overrides: Partial<Pick<SearchSnapshot, 'running' | 'failure' | 'truncated'>> = {}): SearchSnapshot {
+    return {
+      scope,
+      query,
+      kind,
+      presets,
+      extText,
+      extQuery,
+      sortKey,
+      hits,
+      running,
+      ran,
+      failure,
+      truncated,
+      elapsedMs,
+      scanned,
+      scrollTop,
+      ...overrides
+    }
+  }
+
+  function persistSnapshot(overrides: Partial<Pick<SearchSnapshot, 'running' | 'failure' | 'truncated'>> = {}): void {
+    search.saveSnapshot(snapshotOf(overrides))
+  }
+
+  // Bindings such as the query field and list scroll update local state
+  // directly. One effect records the complete state after each such update,
+  // so route changes cannot drop a refinement that has not been submitted yet.
+  $effect(() => {
+    persistSnapshot()
+  })
+
+  $effect(() => {
+    const el = listEl
+    const count = view.length
+    const offset = restoredScrollTop
+    if (!el || count === 0 || offset <= 0) return
+    queueMicrotask(() => {
+      if (!listEl || restoredScrollTop !== offset) return
+      listEl.scrollTop = offset
+      scrollTop = offset
+      restoredScrollTop = 0
+    })
+  })
   let viewportPx = $state(480)
 
   const window_ = $derived(
@@ -371,11 +468,14 @@
   }
 
   function open(hit: SearchHit): void {
+    // Save before closing the sheet or unmounting the mobile route. The
+    // containing folder can then reopen the same result list and position.
+    persistSnapshot()
     onnavigated?.()
-    // A folder opens; a file opens the folder holding it, since there is
-    // nowhere else to land.
-    const target = hit.entry.kind === 'dir' ? hit.path : folderOf(hit.path)
-    void goto(`/b${target}`)
+    // Browse reveals the exact hit from its parent folder, rather than merely
+    // opening a folder and making the user search for the selected item again.
+    const target = folderOf(hit.path)
+    void goto(`/b${target}?focus=${encodeURIComponent(hit.entry.name)}`)
   }
 
   const statusText = $derived.by(() => {
@@ -386,6 +486,10 @@
       return scanned === null ? found : `${found}, ${t('search.scanning', { dirs: formatNumber(scanned.dirs) })}`
     }
     if (!ran) return ''
+    // Server truncation is not a request failure: the rows are still useful,
+    // but they must not be presented as the complete answer. User stop and
+    // transport failure remain separate outcomes below.
+    if (truncated) return t('search.incomplete', { count: view.length })
     if (failure === 'stopped') return t('search.stopped', { count: view.length })
     if (failure === 'busy') return t('search.busy')
     if (failure === 'network') return t('search.connection_lost', { count: view.length })
@@ -419,6 +523,16 @@
     {@render trailing?.()}
   </div>
 
+  <div class="sc-search__scope" aria-describedby="sc-search-scope-note">
+    <span class="sc-search__scope-label">{t('search.scope_all_accessible')}</span>
+    <span id="sc-search-scope-note">
+      {#if scope}
+        {t('search.scope_current_prioritized', { folder: scope })}
+      {:else}
+        {t('search.scope_explanation')}
+      {/if}
+    </span>
+  </div>
   <div class="sc-search__filters">
     <!-- The kind is three buttons rather than a row in a menu: it is the
          filter people reach for, it has three values, and shown here it says
@@ -599,6 +713,19 @@
   .sc-search__field {
     flex: 1 1 auto;
     min-width: 0;
+  }
+  .sc-search__scope {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 8px;
+    color: var(--m3c-on-surface-variant, inherit);
+    font: var(--m3-font-body-small);
+  }
+
+  .sc-search__scope-label {
+    color: var(--m3c-on-surface, inherit);
+    font: var(--m3-font-label-large);
   }
 
   .sc-search__filters {

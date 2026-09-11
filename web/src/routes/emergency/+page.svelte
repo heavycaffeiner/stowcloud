@@ -15,14 +15,16 @@
     emergencyRestart,
     emergencySave,
     emergencySettings,
-    type EmergencyFinding
+    type EmergencyFinding,
+    type EmergencySettings
   } from '../../lib/api/emergency'
-  import { ApiError } from '../../lib/api/types'
   import { describeApiError } from '../../lib/api/error-text'
   import Button from '../../lib/ui/Button.svelte'
+  import Dialog from '../../lib/ui/Dialog.svelte'
   import TextField from '../../lib/ui/TextField.svelte'
 
   type Step = 'loading' | 'setup' | 'credentials' | 'totp' | 'editing'
+  type SectionOutcome = { section: string; ok: boolean; message: string }
 
   let step = $state<Step>('loading')
   let reason = $state('')
@@ -34,12 +36,21 @@
 
   let sections = $state<string[]>([])
   let section = $state('network')
+  let selectedSection = $state('network')
+  let sectionLoading = $state(false)
   let document_ = $state('{}')
+  let baselineDocument = $state('{}')
+  const dirty = $derived(document_ !== baselineDocument)
   let listen = $state('')
   let appHosts = $state<string[]>([])
   let warnings = $state<EmergencyFinding[]>([])
-  let saved = $state(false)
+  let warningSection = $state<string | null>(null)
   let restarting = $state<boolean | null>(null)
+  let sectionOutcome = $state<SectionOutcome | null>(null)
+
+  let settingsRequestId = 0
+  let pendingSection = $state<string | null>(null)
+  let sectionDialogOpen = $state(false)
 
   // The catalogue renders the sentence; the server sends the key and its
   // placeholders, so the keys cannot be seen at the call site.
@@ -51,6 +62,27 @@
 
   function messageFor(err: unknown): string {
     return describeApiError(err, t('emergency.something_went_wrong'))
+  }
+
+  function storedDocument(settings: EmergencySettings, name: string): string {
+    return JSON.stringify(settings.stored?.[name] ?? {}, null, 2)
+  }
+
+  function applySettingsMetadata(settings: EmergencySettings): void {
+    sections = settings.sections ?? []
+    listen = settings.listen ?? ''
+    appHosts = settings.app_hosts ?? []
+  }
+
+  function adoptSectionDocument(name: string, settings: EmergencySettings): void {
+    const next = storedDocument(settings, name)
+    section = name
+    selectedSection = name
+    document_ = next
+    baselineDocument = next
+    sectionOutcome = null
+    warnings = []
+    warningSection = null
   }
 
   $effect(() => {
@@ -69,30 +101,103 @@
   })
 
   async function loadSettings(): Promise<void> {
-    const s = await emergencySettings()
-    // The step moves first. This screen is the way into a deployment whose
-    // engine did not come up, so a field an older build does not send must
-    // not be what keeps the editor closed: a read that succeeded is enough
-    // to edit, and anything missing renders as empty.
-    step = 'editing'
-    sections = s.sections ?? []
-    listen = s.listen ?? ''
-    appHosts = s.app_hosts ?? []
-    document_ = JSON.stringify(s.stored?.[section] ?? {}, null, 2)
+    const requestId = ++settingsRequestId
+    sectionLoading = true
+    errorMsg = null
+    try {
+      const settings = await emergencySettings()
+      if (requestId !== settingsRequestId) return
+      applySettingsMetadata(settings)
+      const initialSection = sections.includes(section) ? section : (sections[0] ?? 'network')
+      step = 'editing'
+      sectionLoading = false
+      adoptSectionDocument(initialSection, settings)
+    } catch (err) {
+      if (requestId !== settingsRequestId) return
+      sectionLoading = false
+      errorMsg = messageFor(err)
+    }
+  }
+
+  async function loadSection(name: string): Promise<void> {
+    const requestId = ++settingsRequestId
+    sectionLoading = true
+    sectionOutcome = null
+    try {
+      const settings = await emergencySettings()
+      if (requestId !== settingsRequestId) return
+      if (dirty) {
+        // A response that arrives after somebody starts typing is never
+        // allowed to replace their text. Revert the selector to the active
+        // section and require an explicit discard or save choice next time.
+        selectedSection = section
+        sectionLoading = false
+        sectionOutcome = {
+          section: name,
+          ok: false,
+          message: t('emergency.section_change_requires_choice', { section: name })
+        }
+        return
+      }
+      applySettingsMetadata(settings)
+      sectionLoading = false
+      adoptSectionDocument(name, settings)
+    } catch (err) {
+      if (requestId !== settingsRequestId) return
+      sectionLoading = false
+      selectedSection = section
+      sectionOutcome = {
+        section: name,
+        ok: false,
+        message: t('emergency.section_load_failed', { section: name, error: messageFor(err) })
+      }
+    }
   }
 
   function pickSection(next: string): void {
-    section = next
-    saved = false
-    warnings = []
-    void (async () => {
-      try {
-        const s = await emergencySettings()
-        document_ = JSON.stringify(s.stored[next] ?? {}, null, 2)
-      } catch (err) {
-        errorMsg = messageFor(err)
+    if (next === section) {
+      if (sectionLoading) {
+        settingsRequestId++
+        sectionLoading = false
+        selectedSection = section
       }
-    })()
+      return
+    }
+    if (next === selectedSection) return
+    selectedSection = next
+    if (dirty) {
+      pendingSection = next
+      sectionDialogOpen = true
+      return
+    }
+    void loadSection(next)
+  }
+
+  function stayOnSection(): void {
+    pendingSection = null
+    selectedSection = section
+    sectionDialogOpen = false
+  }
+
+  function discardSectionAndLoad(): void {
+    const next = pendingSection
+    pendingSection = null
+    sectionDialogOpen = false
+    if (!next) return
+    document_ = baselineDocument
+    selectedSection = next
+    void loadSection(next)
+  }
+
+  async function saveSectionAndLoad(): Promise<void> {
+    if (busy) return
+    const next = pendingSection
+    if (!next) return
+    if (!(await saveCurrentSection())) return
+    pendingSection = null
+    sectionDialogOpen = false
+    selectedSection = next
+    void loadSection(next)
   }
 
   async function signIn(e: SubmitEvent): Promise<void> {
@@ -114,30 +219,52 @@
     }
   }
 
-  async function save(e: SubmitEvent): Promise<void> {
-    e.preventDefault()
-    errorMsg = null
-    warnings = []
-    saved = false
+  async function saveCurrentSection(): Promise<boolean> {
+    const targetSection = section
     let body: unknown
     try {
       body = JSON.parse(document_)
     } catch {
-      // Refused here rather than sent: a malformed document would come back as
-      // a generic parse failure with nothing pointing at which line.
-      errorMsg = t('emergency.that_is_not_valid_json')
-      return
+      sectionOutcome = {
+        section: targetSection,
+        ok: false,
+        message: t('emergency.section_invalid_json', { section: targetSection })
+      }
+      return false
     }
+
+    errorMsg = null
+    sectionOutcome = null
+    warnings = []
+    warningSection = null
     busy = true
     try {
-      const res = await emergencySave(section, body)
+      const res = await emergencySave(targetSection, body)
+      if (section !== targetSection) return false
+      baselineDocument = document_
       warnings = res.warnings
-      saved = true
+      warningSection = targetSection
+      sectionOutcome = {
+        section: targetSection,
+        ok: true,
+        message: t('emergency.section_stored_takes_effect_on_restart', { section: targetSection })
+      }
+      return true
     } catch (err) {
-      errorMsg = messageFor(err)
+      sectionOutcome = {
+        section: targetSection,
+        ok: false,
+        message: t('emergency.section_save_failed', { section: targetSection, error: messageFor(err) })
+      }
+      return false
     } finally {
       busy = false
     }
+  }
+
+  function save(e: SubmitEvent): void {
+    e.preventDefault()
+    void saveCurrentSection()
   }
 
   async function restart(): Promise<void> {
@@ -213,7 +340,8 @@
         <select
           id="sc-emergency-section"
           class="sc-emergency__select"
-          value={section}
+          value={selectedSection}
+          aria-busy={sectionLoading}
           onchange={(e) => pickSection((e.currentTarget as HTMLSelectElement).value)}
         >
           {#each sections as s (s)}
@@ -221,24 +349,38 @@
           {/each}
         </select>
 
+        {#if sectionLoading}
+          <p class="sc-emergency__hint" role="status">
+            {t('emergency.loading_section', { section: selectedSection })}
+          </p>
+        {/if}
+
         <label class="sc-emergency__label" for="sc-emergency-doc">{t('emergency.stored_document')}</label>
         <textarea
           id="sc-emergency-doc"
           class="sc-emergency__doc"
           rows="14"
           spellcheck="false"
+          disabled={sectionLoading || busy}
           bind:value={document_}
         ></textarea>
         <p class="sc-emergency__hint">{t('emergency.document_hint')}</p>
 
         <div class="sc-emergency__actions">
-          <Button variant="filled" type="submit" loading={busy}>{t('common.save')}</Button>
-          <Button variant="outlined" onclick={restart} loading={busy}>{t('emergency.restart_now')}</Button>
+          <Button variant="filled" type="submit" loading={busy} disabled={sectionLoading}>{t('common.save')}</Button>
+          <Button variant="outlined" onclick={restart} loading={busy} disabled={sectionLoading}>{t('emergency.restart_now')}</Button>
         </div>
       </form>
 
-      {#if saved}
-        <p class="sc-emergency__ok" role="status">{t('emergency.stored_takes_effect_on_restart')}</p>
+      {#if sectionOutcome}
+        <p class:sc-emergency__ok={sectionOutcome.ok} class:sc-emergency__error={!sectionOutcome.ok} role={sectionOutcome.ok ? 'status' : 'alert'}>
+          {sectionOutcome.message}
+        </p>
+      {/if}
+      {#if warningSection && warnings.length > 0}
+        <p class="sc-emergency__warning" role="status">
+          {t('emergency.warnings_for_section', { section: warningSection })}
+        </p>
       {/if}
       {#each warnings as w, i (w.reason_key + i)}
         <p class="sc-emergency__warning" role="status">{findingText(w)}</p>
@@ -251,6 +393,14 @@
     {/if}
   </div>
 </div>
+<Dialog open={sectionDialogOpen} title={t('emergency.unsaved_section')} onclose={stayOnSection}>
+  <p>{t('emergency.unsaved_section_prompt', { section })}</p>
+  {#snippet actions()}
+    <Button variant="text" onclick={stayOnSection}>{t('editor.stay')}</Button>
+    <Button variant="outlined" danger onclick={discardSectionAndLoad}>{t('emergency.discard_and_change')}</Button>
+    <Button variant="filled" loading={busy} onclick={saveSectionAndLoad}>{t('emergency.save_and_change')}</Button>
+  {/snippet}
+</Dialog>
 
 <style>
   .sc-emergency {

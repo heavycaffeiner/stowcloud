@@ -151,7 +151,24 @@
    *  loaded, same limit `selection.range` itself documents. */
   const loadedNames = $derived(entries.map((e) => e.name))
 
+  let focusSnapshot: { names: string[]; focusedName: string | null } = { names: [], focusedName: null }
   const focusedName = $derived(entries[selection.state.focused ?? -1]?.name ?? null)
+
+  $effect(() => {
+    const names = entries.map((entry) => entry.name)
+    const previous = focusSnapshot
+    const overlap = Math.min(previous.names.length, names.length)
+    const reordered =
+      overlap > 0 && previous.names.slice(0, overlap).some((name, index) => names[index] !== name)
+    if (reordered && previous.focusedName) {
+      const next = names.indexOf(previous.focusedName)
+      if (next >= 0 && next !== selection.state.focused) selection.focus(next)
+    }
+    focusSnapshot = {
+      names,
+      focusedName: reordered && previous.focusedName && names.includes(previous.focusedName) ? previous.focusedName : focusedName
+    }
+  })
 
   function scrollRowIntoView(index: number): void {
     if (!viewportEl) return
@@ -171,6 +188,17 @@
     } else if (rowBottom > scrollTop + viewportH) {
       window.scrollTo({ top: viewportDocumentTop + rowBottom - viewportH })
     }
+  }
+  /** Selects and focuses a loaded entry for callers returning from another
+   * surface. The cursor is name-based at the boundary, then index-based only
+   * for this virtualized listing's scroll math. */
+  export function focusEntry(name: string): boolean {
+    const index = entries.findIndex((entry) => entry.name === name)
+    if (index < 0) return false
+    selection.only(name, index)
+    viewportEl?.focus()
+    scrollRowIntoView(index)
+    return true
   }
 
   /**
@@ -209,6 +237,7 @@
   }
 
   function onRowClick(e: MouseEvent, entry: Entry, index: number): void {
+    viewportEl?.focus()
     if (e.shiftKey) {
       selection.range(loadedNames, entry.name)
       return
@@ -217,19 +246,36 @@
       selection.toggle(entry.name, index)
       return
     }
-    // A plain click selects; a double click opens. Same as a desktop file
-    // manager, and the same on every width.
-    //
-    // Shift and ctrl/cmd above are the range and the toggle, unchanged: they
-    // have no other meaning here and a mouse user reaching for a range
-    // expects them.
+    // Desktop keeps the conventional file-manager gesture: a plain click
+    // selects and a double click opens. Compact touch opening is handled by
+    // FileRow's pointer target so the checkbox remains selection-only.
     selection.only(entry.name, index)
   }
 
+  /** The table's kebab is not a tab stop, so Menu and Shift+F10 use the same
+   * context-menu callback as a pointer right click. */
+  function openMenuForFocused(): void {
+    const index = selection.state.focused
+    if (index === null) return
+    const entry = entries[index]
+    if (!entry) return
+    const row = document.getElementById(domId(entry.name))
+    if (!row) return
+    const box = row.getBoundingClientRect()
+    oncontextmenu(
+      entry,
+      new MouseEvent('contextmenu', {
+        clientX: Math.round(box.left + box.width / 2),
+        clientY: Math.round(box.top + box.height / 2)
+      })
+    )
+  }
+
   /** Moves the roving cursor and, only when extending, ranges to it. A plain
-   *  arrow press moves the cursor without changing the selection. */
+   * arrow press moves the cursor without changing the selection. */
   function moveFocus(delta: number, extend: boolean): void {
-    const next = Math.min(Math.max((selection.state.focused ?? 0) + delta, 0), total - 1)
+    const current = selection.state.focused
+    const next = current === null ? (delta < 0 ? total - 1 : 0) : Math.min(Math.max(current + delta, 0), total - 1)
     selection.focus(next)
     if (extend) {
       const name = entries[next]?.name
@@ -244,7 +290,8 @@
       case 'ArrowDown':
       case 'ArrowUp': {
         e.preventDefault()
-        moveFocus(e.key === 'ArrowDown' ? 1 : -1, e.shiftKey)
+        const delta = e.key === 'ArrowDown' ? 1 : -1
+        moveFocus(selection.state.focused === null ? 0 : delta, e.shiftKey)
         scrollRowIntoView(selection.state.focused ?? 0)
         break
       }
@@ -268,12 +315,21 @@
         if (entry) onopen(entry)
         break
       }
+      case 'ContextMenu':
+        e.preventDefault()
+        openMenuForFocused()
+        break
+      case 'F10':
+        if (e.shiftKey) {
+          e.preventDefault()
+          openMenuForFocused()
+        }
+        break
       case 'F2':
         e.preventDefault()
         onrename?.()
         break
       case 'Escape':
-        // Keyboard counterpart of clicking the blank area below the listing.
         if (selection.state.names.size > 0) {
           e.preventDefault()
           selection.clear()
@@ -324,8 +380,13 @@
               focused={focusedName === row.entry.name}
               domId={domId(row.entry.name)}
               {encrypted}
+              compact={ui.state.compact}
               onclick={(e) => onRowClick(e, row.entry as Entry, row.index)}
               ondblclick={() => onopen(row.entry as Entry)}
+              oncompactopen={() => {
+                viewportEl?.focus()
+                onopen(row.entry as Entry)
+              }}
               oncontextmenu={(e) => {
                 e.preventDefault()
                 // The list container has its own handler for blank space;

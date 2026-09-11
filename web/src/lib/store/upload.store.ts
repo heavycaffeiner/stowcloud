@@ -13,6 +13,9 @@ export interface UploadItem {
   readonly rate: number
   readonly etaSec: number
   readonly status: UploadStatus
+  /** Worker error classification, retained so cleanup-pending is distinct
+   * from an ordinary failed upload even though both use the error row state. */
+  readonly errorCode?: string
   /** A catalogue key, never text: the tray resolves it in the reader's
    *  language at render time. */
   readonly message?: string

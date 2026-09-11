@@ -366,7 +366,7 @@
       </p>
     {/if}
 
-    <Button variant="tonal" type="submit">{t('logs.apply_filters')}</Button>
+    <p class="sc-logs__auto-note" role="status">{t('logs.filters_update_automatically')}</p>
   </form>
 
   <!-- ── the graph ──
@@ -748,6 +748,11 @@
       flex-direction: column;
       align-items: stretch;
     }
+  }
+  .sc-logs__auto-note {
+    margin: 0;
+    color: var(--m3c-on-surface-variant);
+    @apply --m3-body-small;
   }
   .sc-logs__scope,
   .sc-logs__warn {

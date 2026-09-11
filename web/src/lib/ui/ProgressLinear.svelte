@@ -25,18 +25,23 @@
   // See ProgressCircular for why `label` has no default value.
   let { value = null, label, tone = 'primary' }: Props = $props()
   const resolved = $derived(label ?? t('progress.progress'))
-
+  const fraction = $derived(
+    typeof value === 'number' && Number.isFinite(value) ? Math.min(Math.max(value, 0), 1) : 0
+  )
+  const indeterminate = $derived(
+    value === null || typeof value !== 'number' || !Number.isFinite(value)
+  )
+  const percent = $derived(Math.round(fraction * 100))
   const TONE_ROLE: Record<string, string | undefined> = {
     weak: '--m3c-primary: var(--m3c-error);',
     fair: '--m3c-primary: var(--m3c-tertiary);'
   }
 </script>
-
-{#if value === null}
+{#if indeterminate}
   <LoadingIndicator size={16} aria-label={resolved} />
 {:else}
   <div class="bar" style={TONE_ROLE[tone]}>
-    <LinearProgress percent={Math.round(value * 100)} aria-label={resolved} />
+    <LinearProgress percent={percent} aria-label={resolved} />
   </div>
 {/if}
 

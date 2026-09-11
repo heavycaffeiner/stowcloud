@@ -70,17 +70,24 @@ export function emergencyDoor(): Promise<EmergencyDoor> {
   return call<EmergencyDoor>('/state')
 }
 
+/** A TOTP or one-use recovery code. The server verifies either through the
+ * same enrolled-factor policy as ordinary sign-in; this client never falls
+ * back to a password-only session. */
+export type EmergencyFactor = string
+
+export type EmergencyLoginResult = { status: 'ok' | 'totp_required' }
+
 /** Signs in. `totp_required` is the password having been right with a code
  *  still to come, which is not a refusal: reporting it as one leaves an
  *  enrolled administrator with no way to send the code. */
 export function emergencyLogin(
   username: string,
   password: string,
-  factor?: string
-): Promise<{ status: 'ok' | 'totp_required' }> {
-  return call('/login', {
+  factor?: EmergencyFactor
+): Promise<EmergencyLoginResult> {
+  return call<EmergencyLoginResult>('/login', {
     method: 'POST',
-    body: JSON.stringify({ username, password, factor: factor ?? '' })
+    body: JSON.stringify({ username, password, factor: factor?.trim() ?? '' })
   })
 }
 

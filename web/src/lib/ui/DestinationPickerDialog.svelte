@@ -22,10 +22,13 @@
     open: boolean
     /** Full virtual paths of what is being sent, not names. */
     sources: string[]
+    /** Source capabilities intersected across the whole selection. */
+    canCopy: boolean
+    canMove: boolean
     onclose: () => void
     onpick: (dest: string, mode: 'move' | 'copy') => void
   }
-  let { open, sources, onclose, onpick }: Props = $props()
+  let { open, sources, canCopy: sourceCanCopy, canMove: sourceCanMove, onclose, onpick }: Props = $props()
 
   const session = createSession()
   const roots = $derived((session.data?.roots ?? []).map((r) => ({ path: `/${r.label}`, name: r.label })))
@@ -44,8 +47,8 @@
   const canWriteDest = $derived(destPerms?.create ?? false)
   // A copy into the source's own folder is the ordinary duplicate case, so
   // only `into_itself` disqualifies it; a move there would be a no-op.
-  const canMove = $derived(selected !== null && problem === null && canWriteDest)
-  const canCopy = $derived(selected !== null && problem !== 'into_itself' && canWriteDest)
+  const canMoveToDestination = $derived(sourceCanMove && selected !== null && problem === null && canWriteDest)
+  const canCopyToDestination = $derived(sourceCanCopy && selected !== null && problem !== 'into_itself' && canWriteDest)
 
   $effect(() => {
     if (!open) selected = null
@@ -91,12 +94,16 @@
   </div>
   {#snippet actions()}
     <Button variant="text" onclick={onclose}>{t('common.cancel')}</Button>
-    <Button variant="outlined" disabled={!canCopy} onclick={() => selected && onpick(selected, 'copy')}>
-      {t('common.copy')}
-    </Button>
-    <Button variant="filled" disabled={!canMove} onclick={() => selected && onpick(selected, 'move')}>
-      {t('common.move')}
-    </Button>
+    {#if sourceCanCopy}
+      <Button variant="outlined" disabled={!canCopyToDestination} onclick={() => selected && onpick(selected, 'copy')}>
+        {t('common.copy')}
+      </Button>
+    {/if}
+    {#if sourceCanMove}
+      <Button variant="filled" disabled={!canMoveToDestination} onclick={() => selected && onpick(selected, 'move')}>
+        {t('common.move')}
+      </Button>
+    {/if}
   {/snippet}
 </Dialog>
 

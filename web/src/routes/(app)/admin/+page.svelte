@@ -44,10 +44,10 @@
   const isAdmin = $derived(user?.is_admin ?? false)
 
   const tabs = [
-    { name: t('common.user_2'), value: 'users', icon: icons.admin },
-    { name: t('common.share'), value: 'shares', icon: icons.folder },
-    { name: t('common.storage'), value: 'storage', icon: icons.grid },
-    { name: t('admin.server'), value: 'server', icon: icons.settings },
+    { name: t('admin.people_and_access'), value: 'users', icon: icons.admin },
+    { name: t('admin.shared_folders'), value: 'shares', icon: icons.folder },
+    { name: t('admin.storage_and_transfers'), value: 'storage', icon: icons.grid },
+    { name: t('admin.server_and_security'), value: 'server', icon: icons.settings },
     { name: t('common.logs'), value: 'logs', icon: icons.recent }
   ]
 

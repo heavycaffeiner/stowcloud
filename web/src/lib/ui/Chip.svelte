@@ -51,3 +51,31 @@
     {@render children()}
   </Chip>
 {/if}
+
+<style>
+  /* Chips are usually short, but translated labels and user-entered values
+     can be long. Let the chip grow instead of clipping its name or widening
+     the page. The variant classes keep this override scoped to chips rather
+     than every framework container. */
+  :global(.m3-container.assist),
+  :global(.m3-container.general),
+  :global(.m3-container.input) {
+    max-inline-size: 100%;
+    min-inline-size: 0;
+    height: auto;
+    min-height: 2rem;
+    white-space: normal;
+  }
+
+  :global(.m3-container.general.selected) {
+    background-color: var(--sc-state-selection);
+    color: var(--sc-state-selection-content);
+  }
+
+  :global(.m3-container.assist > span),
+  :global(.m3-container.general > span),
+  :global(.m3-container.input > span) {
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+</style>

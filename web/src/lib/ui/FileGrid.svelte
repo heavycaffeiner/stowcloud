@@ -78,7 +78,7 @@
   let { entries, total, dirs, loading, loadingMore, requestMore, onopen, oncontextmenu, menuFor = null, onrename, ondelete, onsearchfocus, encrypted = false }: Props =
     $props()
 
-  // 4px-grid card metrics, keyed by the same density control that drives
+  // Card metrics, keyed by the same density control that drives
   // FileTable's row height. Both card types share a width so the two sections
   // line up on the same columns, which is what makes "the card below this one"
   // mean anything across the seam.
@@ -313,6 +313,17 @@
       window.scrollTo({ top: rowBottom - viewportH })
     }
   }
+  /** Selects and focuses a loaded entry for callers returning from another
+   * surface. The cursor is name-based at the boundary, then index-based only
+   * for this virtualized grid's scroll math. */
+  export function focusEntry(name: string): boolean {
+    const index = entries.findIndex((entry) => entry.name === name)
+    if (index < 0) return false
+    selection.only(name, index)
+    viewportEl?.focus()
+    scrollIndexIntoView(index)
+    return true
+  }
 
   /**
    * The cards a rubber-band drag has swept over, for the page that owns the
@@ -366,9 +377,44 @@
    *  loaded, same limit `selection.range` itself documents. */
   const loadedNames = $derived(entries.map((e) => e.name))
 
+  let focusSnapshot: { names: string[]; focusedName: string | null } = { names: [], focusedName: null }
   const focusedName = $derived(entries[selection.state.focused ?? -1]?.name ?? null)
 
+  $effect(() => {
+    const names = entries.map((entry) => entry.name)
+    const previous = focusSnapshot
+    const overlap = Math.min(previous.names.length, names.length)
+    const reordered =
+      overlap > 0 && previous.names.slice(0, overlap).some((name, index) => names[index] !== name)
+    if (reordered && previous.focusedName) {
+      const next = names.indexOf(previous.focusedName)
+      if (next >= 0 && next !== selection.state.focused) selection.focus(next)
+    }
+    focusSnapshot = {
+      names,
+      focusedName: reordered && previous.focusedName && names.includes(previous.focusedName) ? previous.focusedName : focusedName
+    }
+  })
+
+  let suppressNextTouchClick = false
+
+  function onCompactPointerOpen(e: PointerEvent, entry: Entry): void {
+    if (!ui.state.compact || (e.pointerType !== 'touch' && e.pointerType !== 'pen') || e.button !== 0) return
+    suppressNextTouchClick = true
+    e.preventDefault()
+    e.stopPropagation()
+    viewportEl?.focus()
+    onopen(entry)
+  }
+
   function onCardClick(e: MouseEvent, entry: Entry, index: number): void {
+    if (suppressNextTouchClick) {
+      suppressNextTouchClick = false
+      e.preventDefault()
+      e.stopPropagation()
+      return
+    }
+    viewportEl?.focus()
     if (e.shiftKey) {
       selection.range(loadedNames, entry.name)
       return
@@ -377,9 +423,8 @@
       selection.toggle(entry.name, index)
       return
     }
-    // A plain click selects, a double click opens. Same rule as
-    // `FileTable.svelte`'s `onRowClick`, so the two views answer the same
-    // gesture the same way.
+    // Desktop keeps plain click selection and double click opening. Compact
+    // touch opens through the name/preview pointer targets below.
     selection.only(entry.name, index)
   }
 
@@ -407,9 +452,10 @@
   }
 
   /** Moves the roving cursor and, only when extending, ranges to it. A plain
-   *  arrow press moves the cursor without changing the selection. */
+   * arrow press moves the cursor without changing the selection. */
   function moveFocus(delta: number, extend: boolean): void {
-    const next = Math.min(Math.max((selection.state.focused ?? 0) + delta, 0), total - 1)
+    const current = selection.state.focused
+    const next = current === null ? (delta < 0 ? total - 1 : 0) : Math.min(Math.max(current + delta, 0), total - 1)
     selection.focus(next)
     if (extend) {
       const name = entries[next]?.name
@@ -439,21 +485,25 @@
 
   function onKeydown(e: KeyboardEvent): void {
     if (total === 0) return
-
     switch (e.key) {
       case 'ArrowDown':
       case 'ArrowUp': {
         e.preventDefault()
-        const from = selection.state.focused ?? 0
-        const to = verticalTarget(from, e.key === 'ArrowDown' ? 1 : -1, folderCount, total, columns)
-        moveFocus(to - from, e.shiftKey)
+        if (selection.state.focused === null) {
+          moveFocus(0, e.shiftKey)
+        } else {
+          const from = selection.state.focused
+          const to = verticalTarget(from, e.key === 'ArrowDown' ? 1 : -1, folderCount, total, columns)
+          moveFocus(to - from, e.shiftKey)
+        }
         scrollIndexIntoView(selection.state.focused ?? 0)
         break
       }
       case 'ArrowRight':
       case 'ArrowLeft': {
         e.preventDefault()
-        moveFocus(e.key === 'ArrowRight' ? 1 : -1, e.shiftKey)
+        const delta = selection.state.focused === null ? 0 : e.key === 'ArrowRight' ? 1 : -1
+        moveFocus(delta, e.shiftKey)
         scrollIndexIntoView(selection.state.focused ?? 0)
         break
       }
@@ -617,7 +667,8 @@
                          box is one run in its own direction, so the box still
                          ellipsizes on the left and the name still reads the
                          way it is spelled on disk. -->
-                    <span class="sc-file-grid__name"><bdi>{entry.name}</bdi></span>
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <span class="sc-file-grid__name" onpointerdown={(e) => onCompactPointerOpen(e, entry)}><bdi>{entry.name}</bdi></span>
                     {#if entry.confusable}
                       <span class="sc-file-grid__badge" title={t('common.look_alike_characters')}>
                         <Icon icon={icons.warning} size={14} />
@@ -627,7 +678,6 @@
                       type="button"
                       class="sc-file-grid__kebab"
                       tabindex="-1"
-                      aria-haspopup="menu"
                       aria-expanded={menuFor === entry.name}
                       aria-label={t('grid.more_actions', { name: entry.name })}
                       onclick={(e) => onKebabClick(e, entry)}
@@ -706,7 +756,8 @@
                            no picture, and a second copy cost the name a
                            quarter of a 224px header: `...-000023.mp4` was all
                            that survived of a real filename. -->
-                      <span class="sc-file-grid__name"><bdi>{entry.name}</bdi></span>
+                      <!-- svelte-ignore a11y_no_static_element_interactions -->
+                      <span class="sc-file-grid__name" onpointerdown={(e) => onCompactPointerOpen(e, entry)}><bdi>{entry.name}</bdi></span>
                       {#if entry.confusable}
                         <span class="sc-file-grid__badge" title={t('common.look_alike_characters')}>
                           <Icon icon={icons.warning} size={14} />
@@ -716,7 +767,6 @@
                         type="button"
                         class="sc-file-grid__kebab"
                         tabindex="-1"
-                        aria-haspopup="menu"
                         aria-expanded={menuFor === entry.name}
                         aria-label={t('grid.more_actions', { name: entry.name })}
                         onclick={(e) => onKebabClick(e, entry)}
@@ -725,7 +775,8 @@
                         <Icon icon={icons['more-vert']} size={18} />
                       </button>
                     </div>
-                    <div class="sc-file-grid__thumb">
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <div class="sc-file-grid__thumb" onpointerdown={(e) => onCompactPointerOpen(e, entry)}>
                       <Thumbnail {entry} dim={THUMB_DIM} fallback={iconName(entry)} iconSize={40} />
                     </div>
                     <span class="sc-file-grid__meta">{formatEntrySize(entry.size, encrypted)}</span>

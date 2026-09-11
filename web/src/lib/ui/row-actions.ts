@@ -60,17 +60,22 @@ export function rowActions(targets: Entry[], h: RowActionHandlers, canCreateHere
   const any = targets.length > 0
   const one = targets.length === 1
   const everyCan = (p: (e: Entry) => boolean) => any && targets.every(p)
-
+  const canCopy = everyCan((e) => e.perms.read && e.perms.download)
+  const canMove = everyCan((e) => e.perms.read && e.perms.move)
   return [
-    // `edit-document`, not the plain file glyph it used to carry. These render
-    // icon-only in the selection bar now, and "a document" said nothing about
-    // opening one for editing.
+    // The editor reads the source bytes and therefore needs Read, not merely
+    // a metadata permission.
     { key: 'edit', label: t('browse.open_text_editor'), icon: icons['edit-document'], show: one && targets[0].kind !== 'dir' && targets[0].perms.read, run: h.openInEditor },
-    { key: 'download', label: t('common.download'), icon: icons.download, show: everyCan((e) => e.perms.download), run: h.download },
+    // File and folder downloads both resolve Read and Download at the source.
+    { key: 'download', label: t('common.download'), icon: icons.download, show: everyCan((e) => e.perms.read && e.perms.download), run: h.download },
     { key: 'share', label: t('browse.manage_share_links'), icon: icons.link, show: one && everyCan((e) => e.perms.share), run: h.share },
     { key: 'rename', label: t('common.rename'), icon: icons.rename, show: one && everyCan((e) => e.perms.rename), run: h.rename },
-    { key: 'transfer', label: t('dest.move_or_copy'), icon: icons.move, show: everyCan((e) => e.perms.move || e.perms.read), run: h.transfer },
-    { key: 'duplicate', label: t('browse.duplicate'), icon: icons.copy, show: canCreateHere && everyCan((e) => e.perms.read), run: h.duplicate },
+    // The destination picker hides each mode independently. A selection may
+    // use either mode, but it must have one mode in common across all sources.
+    { key: 'transfer', label: t('dest.move_or_copy'), icon: icons.move, show: canCopy || canMove, run: h.transfer },
+    // Duplicate is always a copy into the folder currently on screen, so it
+    // needs the copy source pair as well as Create at that destination.
+    { key: 'duplicate', label: t('browse.duplicate'), icon: icons.copy, show: canCreateHere && everyCan((e) => e.perms.read && e.perms.download), run: h.duplicate },
     { key: 'delete', label: t('common.delete'), icon: icons.delete, show: everyCan((e) => e.perms.delete), run: h.remove }
   ]
     .filter((a) => a.show)

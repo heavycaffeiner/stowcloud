@@ -7,6 +7,8 @@
 // worker glue) import it directly.
 import { MutationCache, QueryCache, QueryClient } from '@tanstack/svelte-query'
 import { ApiError, isSessionDead } from '../api/types'
+import { lock } from '../crypto/e2ee'
+import { invalidateEncryptedShares } from '../crypto/encrypted-shares'
 import { keys } from './keys'
 
 /** Retries buy nothing against a refused or malformed request: only a network
@@ -19,15 +21,34 @@ function retryable(failures: number, error: unknown): boolean {
 }
 
 /**
- * A dead session, seen from any query or mutation in the app, re-checks the
- * session itself; its error is what the shell reads to decide between the file
- * browser and the login screen.
+ * Drop state belonging to the authenticated account without removing the
+ * session query whose definitive error drives the shell to the login screen.
+ * Cancelling first stops in-flight account reads and mutations; the shell's
+ * live socket is owned by its auth effect and closes when that effect leaves
+ * the browser state.
+ */
+export function clearAccountState(): void {
+  void queryClient.cancelQueries({
+    predicate: (query) => query.queryKey[0] !== 'session'
+  })
+  lock()
+  queryClient.removeQueries({
+    predicate: (query) => query.queryKey[0] !== 'session'
+  })
+  invalidateEncryptedShares()
+}
+
+/**
+ * A dead session, seen from any query or mutation in the app, clears the old
+ * account state and re-checks the session itself; its error is what the shell
+ * reads to decide between the file browser and the login screen.
  *
- * Skipped for the session query's own failure, which is already that answer
- * and would otherwise refetch itself forever.
+ * Skipped only for invalidating the session query's own failure, which is
+ * already that answer and would otherwise refetch itself forever.
  */
 function noteSessionDeath(error: unknown, key: readonly unknown[] | undefined): void {
   if (!isSessionDead(error)) return
+  clearAccountState()
   if (key?.[0] === 'session') return
   void queryClient.invalidateQueries({ queryKey: keys.session() })
 }

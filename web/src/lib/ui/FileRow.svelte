@@ -14,18 +14,33 @@
     focused: boolean
     domId: string
     encrypted?: boolean
+    compact?: boolean
     /** Selects (`FileTable.onRowClick`), or extends/toggles with a modifier. */
     onclick: (e: MouseEvent) => void
-    /** Opens. A double click is what enters a folder or shows a file. */
+    /** Opens. A double click remains the desktop opening gesture. */
     ondblclick?: () => void
     oncontextmenu: (e: MouseEvent) => void
     /** Checkbox tap/click: always toggles this row into/out of the
-     *  selection, independent of shift/ctrl. See the checkbox's own comment
-     *  below for why this exists as a separate handler from `onclick`. */
+     *  selection, independent of shift/ctrl. */
     ontogglecheck: () => void
+    /** Compact touch opening for the name/preview target. */
+    oncompactopen?: () => void
   }
 
-  let { entry, rowIndex, selected, focused, domId, encrypted = false, onclick, ondblclick, oncontextmenu, ontogglecheck }: Props = $props()
+  let {
+    entry,
+    rowIndex,
+    selected,
+    focused,
+    domId,
+    encrypted = false,
+    compact = false,
+    onclick,
+    ondblclick,
+    oncontextmenu,
+    ontogglecheck,
+    oncompactopen
+  }: Props = $props()
   const iconName = $derived(
     entry.kind === 'dir'
       ? 'folder'
@@ -59,6 +74,29 @@
     // ticking a box twice quickly opens the row.
     e.stopPropagation()
     ontogglecheck()
+  }
+  let suppressNextClick = false
+
+  function onNamePointerDown(e: PointerEvent): void {
+    if (!compact || (e.pointerType !== 'touch' && e.pointerType !== 'pen') || e.button !== 0) return
+    suppressNextClick = true
+    e.preventDefault()
+    e.stopPropagation()
+    oncompactopen?.()
+  }
+
+  function onNameClick(e: MouseEvent): void {
+    if (!suppressNextClick) return
+    suppressNextClick = false
+    e.preventDefault()
+    e.stopPropagation()
+  }
+
+  function onNameDoubleClick(e: MouseEvent): void {
+    if (!suppressNextClick) return
+    suppressNextClick = false
+    e.preventDefault()
+    e.stopPropagation()
   }
 </script>
 
@@ -102,7 +140,14 @@
       />
     </Checkbox>
   </span>
-  <span class="sc-row__cell sc-row__cell--name" role="gridcell">
+  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+  <span
+    class="sc-row__cell sc-row__cell--name"
+    role="gridcell"
+    onpointerdown={onNamePointerDown}
+    onclick={onNameClick}
+    ondblclick={onNameDoubleClick}
+  >
     <!-- Explicit 20: m3-svelte's Icon falls back to `1em`, which inside a row
          set in body-medium is 14px. Every other icon here is sized in px. -->
     <Icon icon={icons[iconName]} size={20} />

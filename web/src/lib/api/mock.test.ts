@@ -531,10 +531,22 @@ describe('mockApi share links', () => {
 // the source survives, which is exactly the part a caller notices, so both
 // halves are pinned here.
 describe('mockApi transfer', () => {
-  it('copy leaves the source where it was', async () => {
+  it('copy leaves the source and reports its destination and job', async () => {
     await mockApi.mkdir('/home/Documents/copy-src')
-    await mockApi.copy({ paths: ['/home/Documents/copy-src'], dest: '/home/Photos', on_conflict: 'fail' })
+    const result = await mockApi.copy({
+      paths: ['/home/Documents/copy-src'],
+      dest: '/home/Photos',
+      on_conflict: 'fail'
+    })
 
+    expect(result.results[0]).toMatchObject({
+      path: '/home/Documents/copy-src',
+      ok: true,
+      destination: '/home/Photos/copy-src',
+      started: true,
+      skipped: false
+    })
+    expect(result.results[0].job).toBe(result.jobs?.[0])
     const src = await mockApi.list('/home/Documents', {})
     const dest = await mockApi.list('/home/Photos', {})
     expect(src.entries.some((e) => e.name === 'copy-src')).toBe(true)
@@ -564,10 +576,9 @@ describe('mockApi transfer', () => {
   })
 })
 
-// See `JobStatus`'s doc comment in `types.ts`: no server operation issues a
-// job id yet, mock included; both of these pin down the one honest thing
-// there is to say about an id nobody issued, matching what `http.ts` gets
-// back from a real server for the same request.
+// Job ids are durable for accepted copies. The unknown-id cases below ensure
+// the status and cancellation endpoints still fail explicitly when no such
+// job exists.
 describe('mockApi jobs', () => {
   it('jobStatus on an unknown id is fs.not_found, not a silent hang', async () => {
     await expect(mockApi.jobStatus('J-does-not-exist')).rejects.toMatchObject({ code: 'fs.not_found' })

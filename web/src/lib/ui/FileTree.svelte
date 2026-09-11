@@ -31,19 +31,32 @@
 
   let dialogEl: HTMLDialogElement | undefined = $state()
 
-  $effect(() => {
-    if (!overlay || !dialogEl) return
-    // `showModal()` moves focus inside (to the close button, since nothing
-    // has `autofocus`) but never restores it; that's on the caller. Without
-    // this, closing the drawer drops keyboard focus to `<body>` and a Tab
-    // press starts back at the top of the page instead of picking up where
-    // the user was (the toolbar's tree toggle).
-    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    dialogEl.showModal()
-    return () => {
-      dialogEl?.close()
-      trigger?.focus()
+  let overlayWasOpen = false
+  let overlayOpener: HTMLElement | null = null
+
+  function restoreOverlayFocus(): void {
+    const target = overlayOpener
+    overlayOpener = null
+    if (target?.isConnected && !target.hasAttribute('disabled') && !target.hasAttribute('aria-hidden')) {
+      target.focus()
+      if (document.activeElement === target) return
     }
+    document.querySelector<HTMLElement>('[role="tree"][tabindex="0"], [role="grid"][tabindex="0"]')?.focus()
+  }
+
+  $effect(() => {
+    if (!overlay || !dialogEl) {
+      if (overlayWasOpen) {
+        overlayWasOpen = false
+        queueMicrotask(restoreOverlayFocus)
+      }
+      return
+    }
+    if (!overlayWasOpen) {
+      overlayOpener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      overlayWasOpen = true
+    }
+    if (!dialogEl.open) dialogEl.showModal()
   })
 
   function onDialogClick(e: MouseEvent): void {
@@ -52,12 +65,34 @@
     // content is narrower than the dialog's full-viewport backdrop box.
     if (e.target === dialogEl) onclose?.()
   }
+  function onTreeFocus(e: FocusEvent): void {
+    const tree = e.currentTarget as HTMLElement
+    if (e.target !== tree) return
+    const target =
+      tree.querySelector<HTMLElement>('[aria-current="page"][data-tree-label]') ??
+      tree.querySelector<HTMLElement>('[data-tree-label]')
+    if (!target) return
+    tree.tabIndex = -1
+    for (const button of tree.querySelectorAll<HTMLElement>('[data-tree-label], [data-tree-more]')) {
+      button.tabIndex = button === target ? 0 : -1
+    }
+    target.focus()
+  }
 </script>
 
 {#snippet tree()}
-  <ul role="tree" aria-label={t('tree.folder_tree')}>
-    {#each roots as r (r.path)}
-      <FileTreeItem path={r.path} name={r.name} depth={0} {currentPath} {onnavigate} />
+  <ul role="tree" tabindex="0" aria-label={t('tree.folder_tree')} onfocus={onTreeFocus}>
+    {#each roots as r, i (r.path)}
+      <FileTreeItem
+        path={r.path}
+        name={r.name}
+        depth={0}
+        {currentPath}
+        {onnavigate}
+        position={i + 1}
+        setSize={roots.length}
+        initial={i === 0}
+      />
     {/each}
   </ul>
 {/snippet}
@@ -68,7 +103,6 @@
     class="sc-file-tree sc-file-tree--overlay"
     aria-label={t('tree.folder_tree')}
     onclick={onDialogClick}
-    onclose={() => onclose?.()}
     oncancel={() => onclose?.()}
   >
     <div class="sc-file-tree__overlay-header">
@@ -178,11 +212,11 @@
     justify-content: flex-end;
     /* 56px total, matching NavigationDrawer.svelte's overlay header. The
        divider is a `box-shadow` hairline rather than `border-bottom` because
-       a border is inside the border box: `height: 56px` + a 1px border left
+       a border is inside the border box. A 56px height plus a 1px border left
        55px of content, which centred the 40px close button on a half pixel
-       (and here, where the height came from padding instead, made the whole
-       header 57px -- off the 4px grid and 1px taller than the drawer's). A
-       shadow paints outside the box, so the layout height stays exactly 56. */
+       and made the header 1px taller than the drawer when padding set its
+       height. A shadow paints outside the box, so the layout height remains
+       exactly 56px. */
     height: 56px;
     padding-inline: 8px;
     box-shadow: 0 1px 0 var(--m3c-outline-variant);

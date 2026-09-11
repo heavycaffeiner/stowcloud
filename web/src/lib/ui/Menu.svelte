@@ -3,12 +3,13 @@
   // On mobile (compact viewport), renders as a Material 3 Bottom Sheet modal dialog in the
   // browser top-layer, guaranteeing full-screen width, viewport anchoring, and escape
   // from any ancestor clipping or transform contexts (including the sidebar drawer).
-  // On desktop, renders as a fixed-position floating dropdown with exact pixel alignment
-  // to caller coordinates, 4px grid snapping, and boundary clamping.
+  // On desktop, renders as a fixed-position floating dropdown aligned to
+  // caller coordinates and clamped to the viewport boundary.
   import type { Snippet } from 'svelte'
   import { fade, scale } from 'svelte/transition'
   import { cubicOut } from 'svelte/easing'
   import { Menu } from 'm3-svelte'
+  import { t } from '../i18n'
   import { ui } from '../store/ui.store'
 
   interface Props {
@@ -24,25 +25,23 @@
   const anchored = $derived(x !== undefined && y !== undefined)
   let el: HTMLDivElement | undefined = $state()
   let sheetDialogEl: HTMLDialogElement | undefined = $state()
+  let opener: HTMLElement | null = null
+  let wasOpen = false
 
-  // Exact desktop coordinate derivations snapped to 4px grid
   let rightOffset = $derived.by(() => {
     if (x === undefined || align !== 'end') return undefined
     const w = typeof window !== 'undefined' ? window.innerWidth : 1000
-    const raw = Math.max(8, w - x)
-    return Math.round(raw / 4) * 4
+    return Math.max(8, w - x)
   })
 
   let leftOffset = $derived.by(() => {
     if (x === undefined || align === 'end') return undefined
-    const raw = Math.max(8, x)
-    return Math.round(raw / 4) * 4
+    return Math.max(8, x)
   })
 
   let topOffset = $derived.by(() => {
     if (y === undefined) return undefined
-    const raw = Math.max(8, y)
-    return Math.round(raw / 4) * 4
+    return Math.max(8, y)
   })
 
   function reduceMotion(): boolean {
@@ -53,21 +52,61 @@
     return reduceMotion() ? 0 : ms
   }
 
-  // Mobile BottomSheet modal dialog lifecycle in browser top-layer
+  function menuRoot(): HTMLElement | null {
+    return (ui.state.compact ? sheetDialogEl : el) ?? null
+  }
+
+  function menuButtons(): HTMLButtonElement[] {
+    const root = menuRoot()
+    if (!root) return []
+    return [...root.querySelectorAll<HTMLButtonElement>('button:not([disabled])')].filter((button) => {
+      const style = getComputedStyle(button)
+      return style.display !== 'none' && style.visibility !== 'hidden'
+    })
+  }
+
+  function focusFirst(): void {
+    menuButtons()[0]?.focus()
+  }
+
+  function restoreFocus(target: HTMLElement | null): void {
+    if (target?.isConnected && !target.hasAttribute('disabled') && !target.hasAttribute('aria-hidden')) {
+      target.focus()
+    }
+  }
+
+  // A menu is an honest disclosure: ordinary buttons are reached with Tab and
+  // Shift+Tab, and Escape returns focus to the disclosure trigger. It does not
+  // claim role=menu while leaving arrow-key/menuitem semantics to callers.
   $effect(() => {
-    if (!open || !ui.state.compact || !sheetDialogEl) return
-    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    sheetDialogEl.showModal?.()
-    return () => {
-      sheetDialogEl?.close?.()
-      trigger?.focus()
+    if (open && !wasOpen) {
+      opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      wasOpen = true
+    } else if (!open && wasOpen) {
+      wasOpen = false
+      const target = opener
+      opener = null
+      queueMicrotask(() => restoreFocus(target))
     }
   })
 
-  function onDialogClick(e: MouseEvent): void {
-    if (e.target === sheetDialogEl) {
-      onclose()
+  // Mobile bottom sheet lifecycle in the browser top layer.
+  $effect(() => {
+    if (!open || !ui.state.compact || !sheetDialogEl) return
+    if (!sheetDialogEl.open) sheetDialogEl.showModal()
+    return () => {
+      if (sheetDialogEl?.open) sheetDialogEl.close()
     }
+  })
+
+  // The first button is meaningful initial focus for both desktop and mobile.
+  $effect(() => {
+    if (!open || !menuRoot()) return
+    queueMicrotask(focusFirst)
+  })
+
+  function onDialogClick(e: MouseEvent): void {
+    if (e.target === sheetDialogEl) onclose()
   }
 
   // Desktop outside-click listener (capture phase)
@@ -75,7 +114,7 @@
     if (!open || ui.state.compact) return
     function onPointerDownCapture(e: PointerEvent) {
       const target = e.target as Element | null
-      if (el && el.contains(target as Node)) return
+      if (el && target && el.contains(target)) return
       if (target?.closest('[aria-expanded="true"]')) return
       onclose()
     }
@@ -85,11 +124,14 @@
     }
   })
 
-  function onWindowKeydown(e: KeyboardEvent) {
-    if (open && !ui.state.compact && e.key === 'Escape') onclose()
+  function onWindowKeydown(e: KeyboardEvent): void {
+    if (!open || e.defaultPrevented || e.key !== 'Escape') return
+    e.preventDefault()
+    e.stopPropagation()
+    onclose()
   }
-</script>
 
+</script>
 <svelte:window onkeydown={onWindowKeydown} />
 
 {#if open}
@@ -98,10 +140,9 @@
     <dialog
       bind:this={sheetDialogEl}
       class="sc-sheet"
-      role="menu"
-      tabindex="-1"
+      closedby="none"
+      aria-label={t('common.main_menu')}
       onclick={onDialogClick}
-      onclose={() => onclose()}
       oncancel={(e) => {
         e.preventDefault()
         onclose()
@@ -124,8 +165,6 @@
       style:left={leftOffset !== undefined ? `${leftOffset}px` : (anchored && align === 'end' ? 'auto' : undefined)}
       style:top={topOffset !== undefined ? `${topOffset}px` : undefined}
       style:max-height={topOffset !== undefined ? `calc(100vh - ${topOffset}px - 8px)` : undefined}
-      role="menu"
-      tabindex="-1"
       in:scale={{ duration: animDuration(150), start: 0.85, opacity: 0, easing: cubicOut }}
       out:fade={{ duration: animDuration(100) }}
     >

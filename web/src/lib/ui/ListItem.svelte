@@ -56,12 +56,24 @@
     min-height: var(--sc-row-height);
     padding-block: 8px;
     padding-inline: 16px;
+    cursor: default;
+    color: var(--sc-content-primary);
+  }
+  .sc-list-item.m3-layer {
     cursor: pointer;
-    color: var(--m3c-on-surface);
   }
   .sc-list-item--selected {
-    background: var(--m3c-secondary-container);
-    color: var(--m3c-on-secondary-container);
+    background: var(--sc-state-selection);
+    color: var(--sc-state-selection-content);
+  }
+  .sc-list-item--selected .sc-list-item__supporting,
+  .sc-list-item--selected .sc-list-item__leading,
+  .sc-list-item--selected .sc-list-item__trailing {
+    color: var(--sc-state-selection-content);
+  }
+  .sc-list-item:has(:focus-visible) {
+    outline: 3px solid var(--sc-state-focus);
+    outline-offset: -3px;
   }
   .sc-list-item__leading {
     display: inline-flex;
@@ -87,13 +99,16 @@
   .sc-list-item__headline {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     min-width: 0;
     gap: 8px;
+    overflow-wrap: anywhere;
     @apply --m3-body-large;
   }
   .sc-list-item__supporting {
     @apply --m3-body-small;
-    color: var(--m3c-on-surface-variant);
+    color: var(--sc-content-secondary);
+    overflow-wrap: anywhere;
   }
   .sc-list-item__trailing {
     display: inline-flex;

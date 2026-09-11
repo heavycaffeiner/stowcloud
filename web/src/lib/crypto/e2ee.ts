@@ -24,6 +24,8 @@ const NONCE_BYTES = 24
 /** Plaintext bytes per SecretBox block; only the file's last block may hold
  *  fewer. Fixed by the format, not a tuning knob. */
 const BLOCK_SIZE = 65536
+const MAX_SEALED_VALUE_BYTES =
+  MAX_ENCRYPTABLE_BYTES + HEADER.length + NONCE_BYTES + Math.ceil(MAX_ENCRYPTABLE_BYTES / BLOCK_SIZE) * 16
 
 /** The exact 19 bytes a verifier is the rclone-crypt encryption of. Picked
  *  here, not by rclone: nothing about this string is part of the on-disk
@@ -42,11 +44,22 @@ export class LockedSessionError extends Error {
   }
 }
 
-/** Thrown by every encrypt/decrypt entry point in this module for a buffer
- *  over `MAX_ENCRYPTABLE_BYTES`, before any cipher call is made. */
+/** Thrown when the unlocked share changes while an asynchronous encryption
+ *  preparation is reading its source. The operation must be discarded rather
+ *  than silently switching to a different key. */
+export class SessionChangedError extends LockedSessionError {
+  constructor() {
+    super()
+    this.message = 'the unlocked share changed while the file was being read'
+    this.name = 'SessionChangedError'
+  }
+}
+
+/** Thrown when a whole-buffer operation exceeds its own memory bound before
+ * any cipher call is made. */
 export class FileTooLargeError extends Error {
-  constructor(public readonly byteLength: number) {
-    super(`file is ${byteLength} bytes, over the ${MAX_ENCRYPTABLE_BYTES}-byte limit this path accepts`)
+  constructor(public readonly byteLength: number, public readonly limit = MAX_ENCRYPTABLE_BYTES) {
+    super(`file is ${byteLength} bytes, over the ${limit}-byte limit this path accepts`)
     this.name = 'FileTooLargeError'
   }
 }
@@ -81,8 +94,7 @@ export interface DerivedKeys {
  * without it made a silent data-loss path: unlock share A, upload to
  * encrypted share B, and the file is encrypted under A's key, so B's real
  * passphrase can never open it. Decryption catches a mismatch by itself
- * because the Poly1305 tag fails, but encryption cannot, so every entry
- * point below names the salt it is working for and this module refuses
+ * The entry point below names the salt it is working for and this module refuses
  * rather than guessing.
  *
  * MUST NOT be written to `localStorage`, `sessionStorage`, `IndexedDB`, a
@@ -93,6 +105,10 @@ export interface DerivedKeys {
  * gone on reload and cleared early by `lock()`.
  */
 let unlocked: { salt: string; dataKey: Uint8Array } | null = null
+/** Monotonic ownership token for the current unlocked share. Every lock,
+ *  including the lock performed before a share switch, invalidates operations
+ *  that captured the previous token. */
+let unlockGeneration = 0
 
 /** Whether a key is unlocked in this tab, and when `salt` is given, whether
  *  it is that share's key rather than some other share's. */
@@ -108,6 +124,10 @@ export function isUnlocked(salt?: string): boolean {
  *  `deriveKeys`'s own call frame, so this is the whole of "log out" for this
  *  module. */
 export function lock(): void {
+  if (typeof window !== 'undefined' && unlocked !== null) {
+    window.dispatchEvent(new CustomEvent('sc:before-lock', { detail: { salt: unlocked.salt } }))
+  }
+  unlockGeneration++
   if (unlocked !== null) clean(unlocked.dataKey)
   unlocked = null
   if (typeof window !== 'undefined') {
@@ -121,6 +141,16 @@ export function lock(): void {
 function keysFor(salt: string): DerivedKeys {
   if (unlocked === null || unlocked.salt !== salt) throw new LockedSessionError()
   return { dataKey: unlocked.dataKey }
+}
+/** Captures an operation-owned copy of the key and its ownership token. The
+ * copy is deliberately separate from the session array because `lock()` wipes
+ * that array while a Blob may still be awaiting `arrayBuffer()`. */
+function operationKeysFor(salt: string): { keys: DerivedKeys; generation: number } {
+  if (unlocked === null || unlocked.salt !== salt) throw new LockedSessionError()
+  return {
+    keys: { dataKey: unlocked.dataKey.slice() },
+    generation: unlockGeneration
+  }
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -304,10 +334,28 @@ export async function encryptForUpload(
   body: Blob | ArrayBuffer | Uint8Array,
   salt: string
 ): Promise<Uint8Array> {
-  const keys = keysFor(salt)
-  const bytes = body instanceof Blob ? new Uint8Array(await body.arrayBuffer()) : toBytes(body)
-  if (bytes.byteLength > MAX_ENCRYPTABLE_BYTES) throw new FileTooLargeError(bytes.byteLength)
-  return encryptRcloneCrypt(keys, bytes)
+  // A Blob exposes its size without reading it, so reject oversized input
+  // before allocating the whole plaintext buffer.
+  const declaredSize = body instanceof Blob ? body.size : body.byteLength
+  if (declaredSize > MAX_ENCRYPTABLE_BYTES) throw new FileTooLargeError(declaredSize)
+  // The key copy belongs to this operation. Keeping the session array itself
+  // across the Blob read would let lock() turn it into an all-zero key.
+  const operation = operationKeysFor(salt)
+  let bytes: Uint8Array | undefined
+  try {
+    bytes = body instanceof Blob ? new Uint8Array(await body.arrayBuffer()) : toBytes(body)
+    if (operation.generation !== unlockGeneration || unlocked?.salt !== salt) {
+      throw new SessionChangedError()
+    }
+    if (bytes.byteLength > MAX_ENCRYPTABLE_BYTES) throw new FileTooLargeError(bytes.byteLength)
+    return encryptRcloneCrypt(operation.keys, bytes)
+  } finally {
+    clean(operation.keys.dataKey)
+    // Blob.arrayBuffer() created an operation-owned plaintext copy. Clear it
+    // once the ciphertext has been made, but never mutate a caller's typed
+    // array or ArrayBuffer.
+    if (body instanceof Blob && bytes !== undefined) clean(bytes)
+  }
 }
 
 /**
@@ -327,6 +375,33 @@ export async function decryptDownload(
   const bytes = toBytes(ciphertext)
   if (bytes.byteLength > MAX_ENCRYPTABLE_BYTES) throw new FileTooLargeError(bytes.byteLength)
   return decryptRcloneCrypt(keys, bytes)
+}
+
+/** Encrypts a short-lived in-memory value before the current session key is
+ * cleared. The returned ciphertext may stay in component state while locked;
+ * the operation-owned key copy is cleared before this function returns. */
+export function sealSessionValue(plaintext: Uint8Array, salt: string): Uint8Array {
+  if (plaintext.byteLength > MAX_ENCRYPTABLE_BYTES) throw new FileTooLargeError(plaintext.byteLength)
+  const operation = operationKeysFor(salt)
+  try {
+    return encryptRcloneCrypt(operation.keys, plaintext)
+  } finally {
+    clean(operation.keys.dataKey)
+  }
+}
+
+/** Opens a value produced by sealSessionValue after the same share is
+ * unlocked again. The caller owns and must clear the returned plaintext. */
+export function openSessionValue(ciphertext: Uint8Array, salt: string): Uint8Array {
+  if (ciphertext.byteLength > MAX_SEALED_VALUE_BYTES) {
+    throw new FileTooLargeError(ciphertext.byteLength, MAX_SEALED_VALUE_BYTES)
+  }
+  const operation = operationKeysFor(salt)
+  try {
+    return decryptRcloneCrypt(operation.keys, ciphertext)
+  } finally {
+    clean(operation.keys.dataKey)
+  }
 }
 
 /**
@@ -364,13 +439,34 @@ export async function decryptDownload(
  * boundary-aligned truncation from a real end of file.
  */
 export function decryptStream(salt: string, expectedCiphertextSize?: number): TransformStream<Uint8Array, Uint8Array> {
-  const keys = keysFor(salt)
+  // Validate synchronously without retaining another key copy. Each
+  // synchronous cipher callback owns and clears its own copy, so a stream
+  // canceled or abandoned between callbacks cannot retain one.
+  void keysFor(salt)
+  const generation = unlockGeneration
   const buf = new ByteAccumulator()
   let nonce: Uint8Array | null = null
   let received = 0
 
+  const ensureOwnership = (): void => {
+    if (generation !== unlockGeneration || unlocked?.salt !== salt) {
+      throw new SessionChangedError()
+    }
+  }
+  const withOperationKeys = <T,>(run: (keys: DerivedKeys) => T): T => {
+    ensureOwnership()
+    const operation = operationKeysFor(salt)
+    try {
+      if (operation.generation !== generation) throw new SessionChangedError()
+      return run(operation.keys)
+    } finally {
+      clean(operation.keys.dataKey)
+    }
+  }
+
   return new TransformStream<Uint8Array, Uint8Array>({
     transform(chunk, controller) {
+      ensureOwnership()
       received += chunk.length
       buf.push(chunk)
       if (nonce === null) {
@@ -381,26 +477,30 @@ export function decryptStream(salt: string, expectedCiphertextSize?: number): Tr
         }
         nonce = header.subarray(HEADER.length)
       }
-      while (buf.length > BLOCK_SIZE + 16) {
-        const decrypted = decryptBlock(keys, nonce, buf.take(BLOCK_SIZE + 16))
-        nonce = decrypted.nextNonce
-        controller.enqueue(decrypted.plaintext)
+      if (buf.length > BLOCK_SIZE + 16) {
+        withOperationKeys((keys) => {
+          while (buf.length > BLOCK_SIZE + 16) {
+            const decrypted = decryptBlock(keys, nonce as Uint8Array, buf.take(BLOCK_SIZE + 16))
+            nonce = decrypted.nextNonce
+            controller.enqueue(decrypted.plaintext)
+          }
+        })
       }
     },
     flush(controller) {
+      ensureOwnership()
       if (expectedCiphertextSize !== undefined && received !== expectedCiphertextSize) {
         throw new Error(`ciphertext ended after ${received} of ${expectedCiphertextSize} expected bytes: truncated in transit`)
       }
       if (nonce === null) {
-        // Even an empty plaintext file's ciphertext is a full header: fewer
-        // bytes than that arrived in the whole stream, so this is a
-        // truncated file, never a valid empty one.
+        // Even an empty plaintext file's ciphertext is a full 32-byte
+        // header, so fewer bytes is truncated, never a valid empty file.
         throw new Error('not an rclone-crypt file: truncated before the 32-byte header')
       }
       const rest = buf.drain()
       if (rest.length === 0) return
       if (rest.length < 17) throw new Error('rclone-crypt file truncated mid-block')
-      controller.enqueue(decryptBlock(keys, nonce, rest).plaintext)
+      controller.enqueue(withOperationKeys((keys) => decryptBlock(keys, nonce as Uint8Array, rest).plaintext))
     }
   })
 }

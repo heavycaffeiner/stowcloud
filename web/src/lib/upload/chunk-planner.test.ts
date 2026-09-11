@@ -116,6 +116,24 @@ describe('ChunkScheduler', () => {
     expect(retried?.index).toBe(t.index)
   })
 
+  it('ignores completion and retry from an obsolete plan generation', () => {
+    const sched = new ChunkScheduler(1)
+    sched.addFile({ id: 'a', totalSize: 20, chunkSize: 10, resumeOffset: 0, generation: 0 })
+    const oldTask = sched.next()!
+
+    sched.addFile({ id: 'a', totalSize: 20, chunkSize: 5, resumeOffset: 0, generation: 1 })
+    const currentTask = sched.next()!
+    expect(currentTask.generation).toBe(1)
+
+    sched.complete('a', currentTask.index, oldTask.generation)
+    sched.requeue('a', oldTask, oldTask.generation)
+    expect(sched.totalInflight).toBe(1)
+    expect(sched.next()).toBeNull()
+
+    sched.complete('a', currentTask.index, currentTask.generation)
+    expect(sched.next()?.generation).toBe(1)
+  })
+
   it('drains every file when multiple single-chunk files are scheduled', () => {
     const sched = new ChunkScheduler(4)
     sched.addFile({ id: 'f1', totalSize: 10, chunkSize: 10, resumeOffset: 0 })

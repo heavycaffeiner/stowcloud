@@ -41,7 +41,11 @@
   let setupUrl = $state('')
   let enrollPassword = $state('')
   let enrollCode = $state('')
+  let secretCopyState = $state<'idle' | 'copied' | 'failed'>('idle')
   let recoveryCodes = $state<string[] | null>(null)
+  let recoveryDialogOpen = $state(false)
+  let recoveryAcknowledged = $state(false)
+  let recoveryCopyState = $state<'idle' | 'copied' | 'failed'>('idle')
   const setup = createMutation(() => totpSetupMutation())
   const enroll = createMutation(() => totpEnrollMutation())
   const enrollError = $derived.by(() => {
@@ -92,6 +96,9 @@
     reissue.mutate(reissuePassword, {
       onSuccess: (res) => {
         recoveryCodes = res.recovery_codes
+        recoveryDialogOpen = true
+        recoveryAcknowledged = false
+        recoveryCopyState = 'idle'
         reissueOpen = false
       }
     })
@@ -109,6 +116,7 @@
     enrollCode = ''
     setupSecret = ''
     setupUrl = ''
+    secretCopyState = 'idle'
     setup.reset()
     enroll.reset()
     enrollOpen = true
@@ -139,6 +147,16 @@
       {
         onSuccess: (res) => {
           recoveryCodes = res.recovery_codes
+          recoveryDialogOpen = true
+          recoveryAcknowledged = false
+          recoveryCopyState = 'idle'
+          // The setup response is a one-time secret too. Once enrollment has
+          // succeeded, the authenticator has it and this component must not
+          // retain another plaintext copy.
+          setupSecret = ''
+          setupUrl = ''
+          enrollPassword = ''
+          enrollCode = ''
           enrollOpen = false
         }
       }
@@ -146,9 +164,21 @@
   }
 
   function closeRecoveryCodes(): void {
+    if (recoveryCodes && !recoveryAcknowledged) {
+      // Escape and backdrop dismissal must not discard the only copy of these
+      // one-use values. Keep the dialog open until the explicit acknowledgment.
+      recoveryDialogOpen = true
+      return
+    }
+    recoveryDialogOpen = false
     recoveryCodes = null
   }
 
+  function acknowledgeRecoveryCodes(): void {
+    recoveryAcknowledged = true
+    recoveryDialogOpen = false
+    recoveryCodes = null
+  }
   function openDisable(): void {
     disablePassword = ''
     disable.reset()
@@ -177,8 +207,19 @@
   async function copySecret(): Promise<void> {
     try {
       await navigator.clipboard.writeText(setupSecret)
+      secretCopyState = 'copied'
     } catch {
-      // clipboard API unavailable: the secret is still selectable as text
+      secretCopyState = 'failed'
+    }
+  }
+
+  async function copyRecoveryCodes(): Promise<void> {
+    if (!recoveryCodes) return
+    try {
+      await navigator.clipboard.writeText(recoveryCodes.join('\n'))
+      recoveryCopyState = 'copied'
+    } catch {
+      recoveryCopyState = 'failed'
     }
   }
 </script>
@@ -225,9 +266,19 @@
   {:else if setupSecret}
     <p>{t('totp.add_key_below_authenticator_app')}</p>
     <div class="sc-totp__secret-row">
-      <code class="sc-totp__secret">{setupSecret}</code>
-      <Button variant="text" onclick={copySecret}>{t('common.copy')}</Button>
+      <input
+        class="sc-totp__secret"
+        readonly
+        value={setupSecret}
+        aria-label={t('totp.add_key_below_authenticator_app')}
+      />
+      <Button variant="text" onclick={copySecret}>
+        {secretCopyState === 'copied' ? t('common.copied') : t('common.copy')}
+      </Button>
     </div>
+    {#if secretCopyState === 'failed'}
+      <p class="sc-totp__copy-feedback" role="alert">{t('totp.copy_secret_failed')}</p>
+    {/if}
     <p class="sc-totp__url">{setupUrl}</p>
     <TextField label={t('totp.6_digit_code')} bind:value={enrollCode} error={enrollError} />
   {:else if enrollError}
@@ -294,18 +345,26 @@
   {/snippet}
 </Dialog>
 
-<Dialog open={!!recoveryCodes} title={t('totp.recovery_codes')} onclose={closeRecoveryCodes}>
+<Dialog open={recoveryDialogOpen && !!recoveryCodes} title={t('totp.recovery_codes')} onclose={closeRecoveryCodes}>
   <p>
     <Icon icon={icons.warning} size={16} />
     {t('totp.each_code_works_once_save')}
   </p>
   <ul class="sc-totp__codes">
     {#each recoveryCodes ?? [] as code (code)}
-      <li><code>{code}</code></li>
+      <li>
+        <input class="sc-totp__code" readonly value={code} aria-label={t('totp.recovery_codes')} />
+      </li>
     {/each}
   </ul>
+  <Button variant="outlined" onclick={copyRecoveryCodes}>
+    {recoveryCopyState === 'copied' ? t('common.copied') : t('totp.copy_codes')}
+  </Button>
+  {#if recoveryCopyState === 'failed'}
+    <p class="sc-totp__copy-feedback" role="alert">{t('totp.copy_codes_failed')}</p>
+  {/if}
   {#snippet actions()}
-    <Button variant="filled" onclick={closeRecoveryCodes}>{t('common.saved')}</Button>
+    <Button variant="filled" onclick={acknowledgeRecoveryCodes}>{t('totp.acknowledge_codes_saved')}</Button>
   {/snippet}
 </Dialog>
 
@@ -371,12 +430,23 @@
     margin-block: 8px;
   }
   .sc-totp__secret {
+    flex: 1;
+    min-width: 0;
+    box-sizing: border-box;
+    border: 0;
     padding: 8px 12px;
     border-radius: var(--m3-shape-extra-small);
     background: var(--m3c-surface-container-highest);
+    color: var(--m3c-on-surface);
+    font: inherit;
     @apply --m3-body-medium;
     letter-spacing: 0.05em;
     user-select: all;
+  }
+  .sc-totp__copy-feedback {
+    margin: 8px 0 0;
+    color: var(--m3c-error);
+    @apply --m3-body-small;
   }
   .sc-totp__url {
     overflow-wrap: anywhere;
@@ -391,11 +461,17 @@
     margin: 16px 0;
     list-style: none;
   }
-  .sc-totp__codes code {
+  .sc-totp__code {
     display: block;
+    width: 100%;
+    box-sizing: border-box;
+    border: 0;
     padding: 8px 12px;
     border-radius: var(--m3-shape-extra-small);
     background: var(--m3c-surface-container-highest);
+    color: var(--m3c-on-surface);
+    font: inherit;
     text-align: center;
+    user-select: all;
   }
 </style>

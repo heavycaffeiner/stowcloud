@@ -19,8 +19,6 @@ export interface SetupCreateAdminReq {
   app_hosts: string[]
   /** CIDR ranges whose forwarded headers are believed. Empty trusts none. */
   trusted_proxies: string[]
-  /** host:port the listener moves to. Empty leaves it where it is. */
-  bind?: string
   /** The folder to start serving. Omitted lands on the empty home, which
    *  offers the same thing one click later. */
   first_share?: { name: string; host: string }
@@ -39,10 +37,40 @@ export type { SetupFinding } from './types'
 
 export interface SetupResult {
   warnings: SetupFinding[]
-  /** True when the listener could not move to the address that was asked
-   *  for. The old address is still serving, which is why this is a field
-   *  rather than a failure. */
-  bind_failed?: boolean
+  /** True when the optional first shared folder was requested but could not
+   *  be registered. The administrator account still exists and can retry it
+   *  after signing in. */
+  share_failed?: boolean
+}
+/** A setup request whose account has not been created because the submitted
+ *  network values were refused. The findings carry the same catalogue keys
+ *  settings uses, so the first-run form can name the field-specific correction
+ *  instead of reducing a 422 response to a generic network failure. */
+export class SetupValidationError extends Error {
+  readonly findings: SetupFinding[]
+
+  constructor(findings: SetupFinding[]) {
+    super('setup validation failed')
+    this.name = 'SetupValidationError'
+    this.findings = findings
+  }
+}
+function isSetupFinding(value: unknown): value is SetupFinding {
+  if (!value || typeof value !== 'object') return false
+  return (
+    'section' in value &&
+    typeof value.section === 'string' &&
+    'reason' in value &&
+    typeof value.reason === 'string' &&
+    'blocking' in value &&
+    typeof value.blocking === 'boolean'
+  )
+}
+
+function setupFindings(body: unknown): SetupFinding[] | null {
+  if (!body || typeof body !== 'object' || !('findings' in body) || !Array.isArray(body.findings)) return null
+  const findings = body.findings.filter(isSetupFinding)
+  return findings.length === body.findings.length ? findings : null
 }
 
 const IS_MOCK = import.meta.env.VITE_API_MOCK === '1'
@@ -89,13 +117,17 @@ async function httpCreateAdmin(req: SetupCreateAdminReq): Promise<SetupResult> {
   if (res.status === 204) return { warnings: [] }
   const body = await res.json().catch(() => ({}))
   if (res.ok) {
-    const done = body as { warnings?: SetupFinding[]; bind_failed?: boolean }
+    const done = body as { warnings?: SetupFinding[]; share_failed?: boolean }
     // `settings.check_passed` is what the checker emits when it found nothing
     // to say: it is the absence of a warning, not one. Counted as a warning it
     // stops this screen on every successful setup, and the person has to press
     // the button a second time to get past a panel reporting that all is well.
     const warnings = (done.warnings ?? []).filter((w) => w.reason !== 'settings.check_passed')
-    return { warnings, bind_failed: done.bind_failed }
+    return { warnings, share_failed: done.share_failed }
+  }
+  const findings = setupFindings(body)
+  if (res.status === 422 && findings) {
+    throw new SetupValidationError(findings)
   }
   const err = (body as ApiErrorBody).error ?? { code: 'internal', message: res.statusText }
   throw new ApiError(res.status, err)

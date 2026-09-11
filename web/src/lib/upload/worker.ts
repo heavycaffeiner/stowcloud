@@ -6,33 +6,36 @@ import {
   CHUNK_SIZE_MIN,
   CHUNK_SIZE_STORAGE_KEY,
   ChunkScheduler,
-  DEFAULT_CONCURRENCY,
   loadStoredConcurrency,
   MAX_CONCURRENCY,
   MIN_CONCURRENCY,
   shrinkChunkSize,
   type ChunkDescriptor
 } from './chunk-planner'
-import { deleteResumeRecord, getResumeRecord, putResumeRecord, resumeKey } from './idb'
-import { setCsrfToken, UploadHttpError, mockTransport, transport, type CreatedSession } from './transport'
+import {
+  cleanupKey,
+  deleteCleanupRecord,
+  deleteResumeRecord,
+  getCleanupRecords,
+  getResumeRecord,
+  putCleanupRecord,
+  putResumeRecord,
+  resumeKey,
+  type CleanupRecord,
+  type ResumeKeyContext,
+  type ResumeRecord
+} from './idb'
+import { setCsrfToken, UploadHttpError, transport, type CreatedSession } from './transport'
 import { classifyFailure } from './retry'
 
-const IS_MOCK = import.meta.env.VITE_API_MOCK === '1'
-let maxInflight = loadStoredConcurrency()
 const PROGRESS_HZ_MS = 100 // at most 10 Hz
 
 /**
- * How many times each chunk has been retried, keyed by file and chunk index.
- *
- * Per chunk because MAX_INFLIGHT of them are on the wire together: one dropped
- * connection fails every chunk in flight, and a single counter shared by the
- * file read that as one failure per chunk rather than as one outage.
+ * How many times each chunk has been retried, keyed by file, plan generation
+ * and chunk index. A new chunk-size plan therefore owns a new retry budget.
  */
 const chunkRetries = new Map<string, number>()
 
-/** Drops every chunk's retry count for one file, which its keys are prefixed
- *  with. Called wherever a file leaves the map, so a long session does not
- *  accumulate counts for uploads that finished. */
 function forgetChunkRetries(fileId: string): void {
   const prefix = `${fileId}:`
   for (const key of chunkRetries.keys()) {
@@ -41,9 +44,22 @@ function forgetChunkRetries(fileId: string): void {
 }
 
 export interface AddItem {
+  id: string
   file: File
   dest: string
   relativePath?: string
+  /** True when the main thread prepared a whole ciphertext File. */
+  encrypted?: boolean
+  /** Account and browser-session context used to partition resume records. */
+  accountId?: string
+  sessionContext?: string
+  /** Original source metadata and digests, before the worker sees ciphertext. */
+  sourceName?: string
+  sourceSize?: number
+  sourceLastModified?: number
+  sourceIdentity?: string
+  /** Digest of the exact bytes in `file`, including encrypted ciphertext. */
+  ciphertextIdentity?: string
 }
 
 export type Cmd =
@@ -65,34 +81,64 @@ export type Evt =
   | { t: 'chunk-size-adjusted'; id: string; size: number }
   | { t: 'queued'; id: string; name: string; dest: string; total: number }
   | { t: 'canceled'; id: string }
+  /** The worker no longer retains the prepared File for this item. */
+  | { t: 'released'; id: string }
 
 interface FileState {
   id: string
   file: File
   dest: string
   relativePath?: string
+  encrypted: boolean
   chunkSize: number
+  /** Every replacement plan increments this token. */
+  generation: number
   status: 'uploading' | 'paused' | 'done' | 'error' | 'canceled'
   /** Aborts every chunk of this file that is still in flight. */
   abort: AbortController
   sessionId: string
+  resumeKey?: string
+  resumeRecord?: ResumeRecord
+  /** Server-confirmed contiguous prefix, safe as the next plan's start. */
   baseSentBytes: number
+  /** Fixed start and successful task bytes for the current generation. */
+  planStartOffset: number
+  acceptedBytes: number
   chunkProgress: Map<number, number>
   sentBytes: number
   lastPostAt: number
   lastPostBytes: number
   rate: number
+  /** True only after a successful terminal PATCH response. */
+  publicationConfirmed: boolean
+  /** Prevent duplicate zero-byte publication requests. */
+  publicationInFlight?: Promise<boolean>
+  /** A failed DELETE leaves this state available for a later cleanup retry. */
+  cleanupInFlight?: Promise<boolean>
+  preparedReleased: boolean
 }
 
 function updateSentBytes(f: FileState): void {
   let inflight = 0
   for (const b of f.chunkProgress.values()) inflight += b
-  f.sentBytes = Math.min(f.file.size, f.baseSentBytes + inflight)
+  f.sentBytes = Math.min(f.file.size, f.planStartOffset + f.acceptedBytes + inflight)
 }
 
 const files = new Map<string, FileState>()
+let maxInflight = loadStoredConcurrency()
 const scheduler = new ChunkScheduler(maxInflight)
 let inflightRequests = 0
+
+// A pause/cancel can arrive before addFile reaches its first post-await state.
+// Keep the intent until that asynchronous setup installs the FileState.
+const pendingControls = new Map<string, 'paused' | 'canceled'>()
+
+/** In-memory copies keep an uncertain session recoverable for this worker's
+ * lifetime even when IndexedDB is temporarily unavailable. The persisted copy
+ * is still written whenever the browser storage allows it. */
+const pendingCleanupRecords = new Map<string, CleanupRecord>()
+const cleanupInFlight = new Map<string, Promise<boolean>>()
+let cleanupRecoveryPromise: Promise<void> | null = null
 
 // Server-reported floor/default, updated by the `limits` Cmd. Start from
 // this file's own constants so a file added before the first `limits`
@@ -100,6 +146,16 @@ let inflightRequests = 0
 let serverChunkMin = CHUNK_SIZE_MIN
 let serverChunkDefault = CHUNK_SIZE_DEFAULT
 
+
+function releasePreparedItem(item: AddItem, id: string): void {
+  if (item.encrypted) post({ t: 'released', id })
+}
+
+function releasePreparedFile(f: FileState): void {
+  if (f.preparedReleased) return
+  f.preparedReleased = true
+  if (f.encrypted) post({ t: 'released', id: f.id })
+}
 function post(evt: Evt): void {
   ;(self as unknown as { postMessage(m: unknown): void }).postMessage(evt)
 }
@@ -120,6 +176,7 @@ function storeChunkSize(size: number): void {
     /* ignore (e.g. no localStorage in this worker context) */
   }
 }
+
 let creatingSessions = 0
 const pendingSessionCreations: (() => void)[] = []
 
@@ -142,104 +199,387 @@ function releaseSessionSlot(): void {
   }
 }
 
+function sourceDetails(item: AddItem): { name: string; size: number; lastModified: number } {
+  return {
+    name: item.sourceName ?? item.file.name,
+    size: item.sourceSize ?? item.file.size,
+    lastModified: item.sourceLastModified ?? item.file.lastModified
+  }
+}
+
+function resumeContextOf(item: AddItem): ResumeKeyContext | undefined {
+  if (!item.accountId || !item.sessionContext || !item.sourceIdentity || !item.ciphertextIdentity) return undefined
+  return {
+    accountId: item.accountId,
+    sessionContext: item.sessionContext,
+    dest: item.dest,
+    relativePath: item.relativePath
+  }
+}
+
+function resumeRecordMatches(record: ResumeRecord, item: AddItem, key: string): boolean {
+  const source = sourceDetails(item)
+  return (
+    record.key === key &&
+    record.accountId === item.accountId &&
+    record.sessionContext === item.sessionContext &&
+    record.dest === item.dest &&
+    record.relativePath === (item.relativePath ?? '') &&
+    record.sourceName === source.name &&
+    record.sourceSize === source.size &&
+    record.sourceLastModified === source.lastModified &&
+    record.sourceIdentity === item.sourceIdentity &&
+    record.ciphertextIdentity === item.ciphertextIdentity
+  )
+}
+
+function statusOf(err: unknown): number {
+  if (err instanceof UploadHttpError) return err.status
+  if (typeof err === 'object' && err !== null && 'status' in err && typeof err.status === 'number') {
+    return err.status
+  }
+  return 0
+}
+
+function validChunkSize(size: number): boolean {
+  return Number.isInteger(size) && size > 0
+}
+
+function validOffset(offset: number, total: number): boolean {
+  return Number.isSafeInteger(offset) && offset >= 0 && offset <= total
+}
+
+function postStartError(id: string, err: unknown): void {
+  const status = statusOf(err)
+  const isQuota = status === 507
+  const isDenied = status === 403
+  post({
+    t: 'error',
+    id,
+    code: isQuota ? 'upload.quota_exceeded' : isDenied ? 'upload.denied' : 'upload.failed',
+    message: isQuota
+      ? /* i18n */ 'upload.not_enough_storage_space_start'
+      : isDenied
+        ? /* i18n */ 'error.acl_denied'
+        : /* i18n */ 'upload.could_not_start_upload'
+  })
+}
+
+const CLEANUP_PENDING_CODE = /* i18n */ 'upload.cleanup_pending'
+const CLEANUP_PENDING_MESSAGE = /* i18n */ 'upload.cleanup_pending'
+
+function postCleanupPending(id: string): void {
+  post({ t: 'error', id, code: CLEANUP_PENDING_CODE, message: CLEANUP_PENDING_MESSAGE })
+}
+
+function statusConfirmsRemoval(err: unknown): boolean {
+  const status = statusOf(err)
+  return status === 404 || status === 410
+}
+
+async function deleteSessionConfirmed(sessionId: string): Promise<boolean> {
+  try {
+    await transport.deleteSession(sessionId)
+    return true
+  } catch (err) {
+    // A session that is already gone is the desired cancellation outcome,
+    // including transports that surface 404/410 as rejected promises.
+    return statusConfirmsRemoval(err)
+  }
+}
+
+function cleanupRecordFor(sessionId: string): CleanupRecord {
+  const existing = pendingCleanupRecords.get(sessionId)
+  if (existing) return existing
+  const record = { key: cleanupKey(sessionId), sessionId, updatedAt: Date.now() }
+  pendingCleanupRecords.set(sessionId, record)
+  return record
+}
+
+async function rememberCleanup(sessionId: string): Promise<CleanupRecord> {
+  const record = cleanupRecordFor(sessionId)
+  await putCleanupRecord(record).catch(() => {})
+  return record
+}
+
+async function forgetCleanup(sessionId: string): Promise<void> {
+  const record = pendingCleanupRecords.get(sessionId)
+  pendingCleanupRecords.delete(sessionId)
+  await deleteCleanupRecord(record?.key ?? cleanupKey(sessionId)).catch(() => {})
+}
+
+/** DELETE is confirmation of cancellation only when it resolves or explicitly
+ * reports that the session is gone. An uncertain request leaves both the
+ * resumable record (when present) and the independent cleanup record intact. */
+async function cleanupServerSession(record: ResumeRecord): Promise<boolean> {
+  return cleanupSession(record.sessionId, record)
+}
+
+async function cleanupCreatedSession(sessionId: string, record?: ResumeRecord): Promise<boolean> {
+  if (!sessionId) return true
+  return cleanupSession(sessionId, record)
+}
+
+function cleanupSession(sessionId: string, record?: ResumeRecord): Promise<boolean> {
+  if (!sessionId) return Promise.resolve(true)
+  const running = cleanupInFlight.get(sessionId)
+  if (running) return running
+
+  const run = (async (): Promise<boolean> => {
+    try {
+      await rememberCleanup(sessionId)
+      if (record) await putResumeRecord({ ...record, cleanupPending: true }).catch(() => {})
+      if (!(await deleteSessionConfirmed(sessionId))) return false
+      if (record) await deleteResumeRecord(record.key).catch(() => {})
+      await forgetCleanup(sessionId)
+      return true
+    } catch {
+      // Cleanup failures are represented by the pending result. The session id
+      // remains in memory and in IndexedDB whenever storage is available.
+      return false
+    }
+  })()
+  cleanupInFlight.set(sessionId, run)
+  void run.finally(() => {
+    if (cleanupInFlight.get(sessionId) === run) cleanupInFlight.delete(sessionId)
+  })
+  return run
+}
+
+/** Retry cleanup records retained by an earlier worker instance. A recovery
+ * attempt is deliberately serial so a burst of stale sessions cannot turn
+ * into another request storm. */
+async function recoverPendingCleanups(): Promise<void> {
+  const persisted = await getCleanupRecords().catch(() => [])
+  const records = new Map<string, CleanupRecord>()
+  for (const record of pendingCleanupRecords.values()) records.set(record.sessionId, record)
+  for (const record of persisted) records.set(record.sessionId, record)
+  for (const record of records.values()) await cleanupSession(record.sessionId)
+}
+
+function ensureCleanupRecovery(): Promise<void> {
+  if (cleanupRecoveryPromise) return cleanupRecoveryPromise
+  const run = recoverPendingCleanups().catch(() => {})
+  cleanupRecoveryPromise = run
+  void run.finally(() => {
+    if (cleanupRecoveryPromise === run) cleanupRecoveryPromise = null
+  })
+  return run
+}
+
+
+function recordFor(item: AddItem, key: string, sessionId: string, chunkSize: number): ResumeRecord | undefined {
+  const context = resumeContextOf(item)
+  if (!context || !item.sourceIdentity || !item.ciphertextIdentity) return undefined
+  const source = sourceDetails(item)
+  return {
+    key,
+    sessionId,
+    accountId: context.accountId,
+    sessionContext: context.sessionContext,
+    dest: context.dest,
+    relativePath: context.relativePath ?? '',
+    sourceName: source.name,
+    sourceSize: source.size,
+    sourceLastModified: source.lastModified,
+    sourceIdentity: item.sourceIdentity,
+    ciphertextIdentity: item.ciphertextIdentity,
+    chunkSize,
+    totalSize: item.file.size,
+    updatedAt: Date.now()
+  }
+}
 
 async function addFile(item: AddItem): Promise<void> {
-  const id = `f-${Math.random().toString(36).slice(2, 10)}`
-  // Posted before any await so a `createSession` failure below has a tray
-  // row to attach its error to: `UploadTrayState#patch` is a no-op against
-  // an id it has never seen `queued` for, which would otherwise swallow the
-  // failure silently instead of showing it.
+  const id = item.id || `f-${Math.random().toString(36).slice(2, 10)}`
+  // Posted before any await so a setup failure has a tray row to attach to.
   post({ t: 'queued', id, name: item.file.name, dest: item.dest, total: item.file.size })
-  const key = resumeKey(item.file.name, item.file.size, item.file.lastModified)
-
-  await acquireSessionSlot()
-  let sessionId: string
-  let resumeOffset = 0
-  let chunkSize = loadStoredChunkSize()
+  let handedOff = false
 
   try {
-    const existing = await getResumeRecord(key).catch(() => undefined)
-    if (existing) {
-      try {
-        const head = await transport.headSession(existing.sessionId)
-        sessionId = existing.sessionId
-        resumeOffset = head.offset
-        chunkSize = head.chunkSize ?? existing.chunkSize
-      } catch {
-        sessionId = ''
-      }
-    } else {
-      sessionId = ''
+    if (pendingControls.get(id) === 'canceled') {
+      pendingControls.delete(id)
+      post({ t: 'canceled', id })
+      return
     }
 
-    if (!sessionId) {
-      let created: CreatedSession
-      try {
-        created = await transport.createSession({
-          filename: item.file.name,
-          totalSize: item.file.size,
-          chunkSize,
-          dest: item.dest,
-          relativePath: item.relativePath,
-          mtimeNs: String(BigInt(item.file.lastModified) * 1_000_000n)
-        })
-      } catch (err) {
-        const status = err instanceof UploadHttpError ? err.status : 0
-        const isQuota = status === 507
-        const isDenied = status === 403
-        post({
-          t: 'error',
-          id,
-          code: isQuota ? 'upload.quota_exceeded' : isDenied ? 'upload.denied' : 'upload.failed',
-          message: isQuota
-            ? /* i18n */ 'upload.not_enough_storage_space_start'
-            : isDenied
-              ? /* i18n */ 'error.acl_denied'
-              : /* i18n */ 'upload.could_not_start_upload'
-        })
+    const context = resumeContextOf(item)
+    const source = sourceDetails(item)
+    const key = context
+      ? resumeKey(source.name, source.size, source.lastModified, context)
+      : undefined
+
+    await acquireSessionSlot()
+    let sessionId = ''
+    let resumeOffset = 0
+    let chunkSize = loadStoredChunkSize()
+    if (!validChunkSize(chunkSize)) chunkSize = CHUNK_SIZE_DEFAULT
+    let resumeRecord: ResumeRecord | undefined
+    try {
+      if (pendingControls.get(id) === 'canceled') {
+        pendingControls.delete(id)
+        post({ t: 'canceled', id })
         return
       }
-      sessionId = created.id
-      resumeOffset = created.offset
-      await putResumeRecord({
-        key,
-        sessionId,
-        dest: item.dest,
-        chunkSize,
-        totalSize: item.file.size,
-        updatedAt: Date.now()
-      })
+
+      const existing = key ? await getResumeRecord(key).catch(() => undefined) : undefined
+      if (existing) {
+        if (existing.cleanupPending) {
+          if (!(await cleanupServerSession(existing))) {
+            postCleanupPending(id)
+            return
+          }
+        } else if (key === undefined || !resumeRecordMatches(existing, item, key)) {
+          // Same metadata is not enough. Remove the old session only after the
+          // server confirms cancellation, otherwise retain its identity.
+          if (!(await cleanupServerSession(existing))) {
+            postCleanupPending(id)
+            return
+          }
+        } else {
+          try {
+            const head = await transport.headSession(existing.sessionId)
+            const resumedChunkSize = head.chunkSize ?? existing.chunkSize
+            if (
+              head.totalSize !== item.file.size ||
+              !validOffset(head.offset, item.file.size) ||
+              !validChunkSize(resumedChunkSize)
+            ) {
+              if (!(await cleanupServerSession(existing))) {
+                postCleanupPending(id)
+                return
+              }
+            } else {
+              sessionId = existing.sessionId
+              resumeRecord = existing
+              resumeOffset = head.offset
+              chunkSize = resumedChunkSize
+            }
+          } catch (err) {
+            const status = statusOf(err)
+            if (status === 404 || status === 410) {
+              // The server has confirmed that this old identity is gone.
+              await deleteResumeRecord(existing.key).catch(() => {})
+              await forgetCleanup(existing.sessionId)
+            } else {
+              // A timeout or authentication failure is not proof that the
+              // session disappeared. Keep the record recoverable.
+              postStartError(id, err)
+              return
+            }
+          }
+        }
+      }
+
+      if (!sessionId) {
+        if (pendingControls.get(id) === 'canceled') {
+          pendingControls.delete(id)
+          post({ t: 'canceled', id })
+          return
+        }
+        let created: CreatedSession
+        try {
+          created = await transport.createSession({
+            filename: item.file.name,
+            totalSize: item.file.size,
+            chunkSize,
+            dest: item.dest,
+            relativePath: item.relativePath,
+            mtimeNs: String(BigInt(item.file.lastModified) * 1_000_000n)
+          })
+        } catch (err) {
+          postStartError(id, err)
+          return
+        }
+        if (!created.id) {
+          postStartError(id, new Error('upload session did not return an id'))
+          return
+        }
+        sessionId = created.id
+        resumeRecord = key ? recordFor(item, key, sessionId, chunkSize) : undefined
+        if (!validOffset(created.offset, item.file.size)) {
+          const cleaned = resumeRecord
+            ? await cleanupServerSession(resumeRecord)
+            : await cleanupCreatedSession(sessionId)
+          if (!cleaned) postCleanupPending(id)
+          else postStartError(id, new Error('upload session returned an invalid offset'))
+          return
+        }
+        resumeOffset = created.offset
+        if (resumeRecord) await putResumeRecord(resumeRecord).catch(() => {})
+
+        if (pendingControls.get(id) === 'canceled') {
+          pendingControls.delete(id)
+          const cleaned = await cleanupCreatedSession(sessionId, resumeRecord)
+          if (cleaned) post({ t: 'canceled', id })
+          else postCleanupPending(id)
+          return
+        }
+      }
+    } catch (err) {
+      if (pendingControls.get(id) === 'canceled') {
+        pendingControls.delete(id)
+        if (!sessionId) {
+          post({ t: 'canceled', id })
+        } else {
+          const cleaned = await cleanupCreatedSession(sessionId, resumeRecord)
+          if (cleaned) post({ t: 'canceled', id })
+          else postCleanupPending(id)
+        }
+      } else {
+        postStartError(id, err)
+      }
+      return
+    } finally {
+      releaseSessionSlot()
+    }
+
+    const intent = pendingControls.get(id)
+    pendingControls.delete(id)
+    if (intent === 'canceled') {
+      const cleaned = await cleanupCreatedSession(sessionId, resumeRecord)
+      if (cleaned) post({ t: 'canceled', id })
+      else postCleanupPending(id)
+      return
+    }
+
+    const f: FileState = {
+      id,
+      file: item.file,
+      dest: item.dest,
+      relativePath: item.relativePath,
+      encrypted: item.encrypted === true,
+      chunkSize,
+      generation: 0,
+      status: intent === 'paused' ? 'paused' : 'uploading',
+      abort: new AbortController(),
+      sessionId,
+      resumeKey: resumeRecord?.key,
+      resumeRecord,
+      baseSentBytes: resumeOffset,
+      planStartOffset: resumeOffset,
+      acceptedBytes: 0,
+      chunkProgress: new Map(),
+      sentBytes: resumeOffset,
+      lastPostAt: 0,
+      lastPostBytes: resumeOffset,
+      rate: 0,
+      publicationConfirmed: false,
+      preparedReleased: false
+    }
+    files.set(id, f)
+    scheduler.addFile({ id, totalSize: item.file.size, chunkSize, resumeOffset, generation: f.generation })
+    if (f.status === 'paused') scheduler.pause(id)
+    handedOff = true
+    if (f.status === 'uploading') {
+      if (scheduler.isFileDone(id)) void finalizeIfDone(f)
+      else pump()
     }
   } finally {
-    releaseSessionSlot()
+    if (!handedOff) releasePreparedItem(item, id)
   }
-
-  files.set(id, {
-    id,
-    file: item.file,
-    dest: item.dest,
-    relativePath: item.relativePath,
-    chunkSize,
-    status: 'uploading',
-    abort: new AbortController(),
-    sessionId,
-    baseSentBytes: resumeOffset,
-    chunkProgress: new Map(),
-    sentBytes: resumeOffset,
-    lastPostAt: 0,
-    lastPostBytes: resumeOffset,
-    rate: 0
-  })
-
-  scheduler.addFile({ id, totalSize: item.file.size, chunkSize, resumeOffset })
-  if (item.file.size === 0) {
-    void finalizeIfDone(files.get(id)!).then((done) => {
-      if (done) pump()
-    })
-    return
-  }
-  pump()
 }
+
 function maybePostProgress(f: FileState, force = false): void {
   const now = Date.now()
   if (!force && now - f.lastPostAt < PROGRESS_HZ_MS) return
@@ -253,36 +593,83 @@ function maybePostProgress(f: FileState, force = false): void {
   post({ t: 'progress', id: f.id, sent: f.sentBytes, total: f.file.size, rate: f.rate, etaSec })
 }
 
-async function finalizeIfDone(f: FileState): Promise<boolean> {
-  if (!scheduler.isFileDone(f.id)) return false
-  const head = await transport.headSession(f.sessionId).catch(() => null)
-  const complete = head ? head.offset >= f.file.size : IS_MOCK ? mockTransport.getSession(f.sessionId)?.received === f.file.size : true
-  if (!complete) return false
-
-  f.status = 'done'
-  f.baseSentBytes = f.file.size
-  f.chunkProgress.clear()
-  f.sentBytes = f.file.size
-  maybePostProgress(f, true)
-  await deleteResumeRecord(resumeKey(f.file.name, f.file.size, f.file.lastModified)).catch(() => {})
-  post({
-    t: 'done',
-    id: f.id,
-    dest: f.dest,
-    name: f.relativePath ? f.relativePath.split('/').pop()! : f.file.name,
-    size: f.file.size,
-    mtimeNs: String(BigInt(f.file.lastModified) * 1_000_000n)
-  })
-  forgetChunkRetries(f.id)
+async function discardErroredFile(f: FileState): Promise<void> {
+  if (f.resumeRecord) await putResumeRecord(f.resumeRecord).catch(() => {})
+  else await rememberCleanup(f.sessionId)
   scheduler.removeFile(f.id)
   files.delete(f.id)
-  return true
 }
 
-async function sendChunk(task: ChunkDescriptor & { fileId: string }): Promise<void> {
+async function publicationError(f: FileState, err: unknown): Promise<void> {
+  if (f.status === 'canceled' || (err instanceof DOMException && err.name === 'AbortError')) return
+  f.status = 'error'
+  await discardErroredFile(f)
+  post({ t: 'error', id: f.id, code: 'upload.publication_uncertain', message: /* i18n */ 'upload.upload_failed_out_retries' })
+  releasePreparedFile(f)
+}
+
+/**
+ * A successful terminal PATCH is the publication outcome. For an empty file,
+ * and for a resumed session whose offset already equals the length, issue a
+ * supported zero-byte PATCH so the server's normal final-byte publication path
+ * runs. A failed HEAD is never treated as publication success.
+ */
+async function finalizeIfDone(f: FileState): Promise<boolean> {
+  if (f.status !== 'uploading' || !scheduler.isFileDone(f.id)) return false
+  if (f.publicationInFlight) return f.publicationInFlight
+
+  const run = (async (): Promise<boolean> => {
+    if (!f.publicationConfirmed) {
+      try {
+        const result = await transport.patchChunk(f.sessionId, f.file.size, new Blob(), f.abort.signal)
+        const current = files.get(f.id)
+        if (!current || current.generation !== f.generation || current.status !== 'uploading') return false
+        if (result.offset < f.file.size) {
+          await publicationError(f, new Error('publication response stopped before the declared length'))
+          return false
+        }
+        f.publicationConfirmed = true
+      } catch (err) {
+        await publicationError(f, err)
+        return false
+      }
+    }
+
+    if (!f.publicationConfirmed || f.status !== 'uploading') return false
+    f.status = 'done'
+    f.baseSentBytes = f.file.size
+    f.planStartOffset = f.file.size
+    f.acceptedBytes = 0
+    f.chunkProgress.clear()
+    f.sentBytes = f.file.size
+    maybePostProgress(f, true)
+    if (f.resumeKey) await deleteResumeRecord(f.resumeKey).catch(() => {})
+    post({
+      t: 'done',
+      id: f.id,
+      dest: f.dest,
+      name: f.relativePath ? f.relativePath.split('/').pop()! : f.file.name,
+      size: f.file.size,
+      mtimeNs: String(BigInt(f.file.lastModified) * 1_000_000n)
+    })
+    forgetChunkRetries(f.id)
+    scheduler.removeFile(f.id)
+    files.delete(f.id)
+    releasePreparedFile(f)
+    return true
+  })()
+  f.publicationInFlight = run
+  try {
+    return await run
+  } finally {
+    if (f.publicationInFlight === run) f.publicationInFlight = undefined
+  }
+}
+
+async function sendChunk(task: ChunkDescriptor & { fileId: string; generation: number }): Promise<void> {
   const f = files.get(task.fileId)
-  if (!f || f.status !== 'uploading') {
-    scheduler.complete(task.fileId, task.index)
+  if (!f || f.generation !== task.generation || f.status !== 'uploading') {
+    scheduler.complete(task.fileId, task.index, task.generation)
     pump()
     return
   }
@@ -290,37 +677,42 @@ async function sendChunk(task: ChunkDescriptor & { fileId: string }): Promise<vo
   inflightRequests++
   try {
     const blob = f.file.slice(task.offset, task.offset + task.length)
-    await transport.patchChunk(f.sessionId, task.offset, blob, f.abort.signal, (bytes) => {
+    const result = await transport.patchChunk(f.sessionId, task.offset, blob, f.abort.signal, (bytes) => {
       const cur = files.get(task.fileId)
-      if (cur && cur.status === 'uploading') {
+      if (cur && cur.generation === task.generation && cur.status === 'uploading') {
         cur.chunkProgress.set(task.index, bytes)
         updateSentBytes(cur)
         maybePostProgress(cur)
       }
     })
+
+    const current = files.get(task.fileId)
+    if (!current || current.generation !== task.generation || current.status === 'canceled' || current.status === 'error') {
+      scheduler.complete(task.fileId, task.index, task.generation)
+      return
+    }
     f.chunkProgress.delete(task.index)
-    f.baseSentBytes = Math.min(f.file.size, f.baseSentBytes + task.length)
+    f.acceptedBytes += task.length
+    if (Number.isSafeInteger(result.offset) && result.offset >= 0) {
+      f.baseSentBytes = Math.min(f.file.size, Math.max(f.baseSentBytes, result.offset))
+    }
     updateSentBytes(f)
-    chunkRetries.delete(`${task.fileId}:${task.index}`)
-    scheduler.complete(task.fileId, task.index)
+    chunkRetries.delete(`${task.fileId}:${task.generation}:${task.index}`)
+    scheduler.complete(task.fileId, task.index, task.generation)
+    if (result.offset >= f.file.size) f.publicationConfirmed = true
     maybePostProgress(f)
     await finalizeIfDone(f)
   } catch (err) {
-    scheduler.complete(task.fileId, task.index)
-    f.chunkProgress.delete(task.index)
-    updateSentBytes(f)
-    // Cancel deletes the session, so every chunk still in flight fails right
-    // after it. Those failures are the cancellation working, not a fault to
-    // recover from: retrying them put the row back to "retrying" and left a
-    // cancelled upload that could not be cancelled again, because the row it
-    // belonged to was already gone from `files`.
-    if (files.get(task.fileId)?.status !== 'uploading') return
+    scheduler.complete(task.fileId, task.index, task.generation)
+    const current = files.get(task.fileId)
+    // A callback from an old chunk-size plan has no authority over the new
+    // scheduler queue, progress, or retry budget.
+    if (!current || current.generation !== task.generation || current.status !== 'uploading') return
+    current.chunkProgress.delete(task.index)
+    updateSentBytes(current)
 
-    const status = err instanceof UploadHttpError ? err.status : 0
-    // Counted per chunk, not per file. Four chunks are in flight at once and a
-    // dropped connection fails all of them together, so a file-wide counter
-    // spent its whole budget on one outage and gave up on the first.
-    const key = `${task.fileId}:${task.index}`
+    const status = statusOf(err)
+    const key = `${task.fileId}:${task.generation}:${task.index}`
     const tries = chunkRetries.get(key) ?? 0
     const verdict = classifyFailure(status, tries)
 
@@ -328,24 +720,35 @@ async function sendChunk(task: ChunkDescriptor & { fileId: string }): Promise<vo
       const next = shrinkChunkSize(f.chunkSize, serverChunkMin)
       if (next === null) {
         f.status = 'error'
+        await discardErroredFile(f)
         post({ t: 'error', id: f.id, code: 'upload.chunk_too_large', message: /* i18n */ 'upload.proxy_rejected_even_smallest_chunk' })
+        releasePreparedFile(f)
       } else {
         f.chunkSize = next
+        f.generation++
         storeChunkSize(next)
         post({ t: 'chunk-size-adjusted', id: f.id, size: next })
-        // The remaining bytes are re-planned at the smaller size, so the old
-        // chunk indices no longer name anything.
+        // The remaining bytes are re-planned at the smaller size. The server
+        // response reports its contiguous prefix, unlike accepted byte totals:
+        // an out-of-order final chunk cannot skip a missing earlier range.
+        // Old tasks retain their generation and are ignored.
         forgetChunkRetries(f.id)
         f.chunkProgress.clear()
-        updateSentBytes(f)
+        f.planStartOffset = f.baseSentBytes
+        f.acceptedBytes = 0
+        f.sentBytes = f.baseSentBytes
+        f.lastPostBytes = f.baseSentBytes
+        f.lastPostAt = Date.now()
+        f.rate = 0
         scheduler.removeFile(f.id)
-        scheduler.addFile({ id: f.id, totalSize: f.file.size, chunkSize: next, resumeOffset: f.baseSentBytes })
+        scheduler.addFile({ id: f.id, totalSize: f.file.size, chunkSize: next, resumeOffset: f.baseSentBytes, generation: f.generation })
       }
       return
     }
 
     if (verdict.kind === 'give-up') {
       f.status = 'error'
+      await discardErroredFile(f)
       forgetChunkRetries(f.id)
       const told =
         verdict.reason === 'session-gone'
@@ -358,16 +761,19 @@ async function sendChunk(task: ChunkDescriptor & { fileId: string }): Promise<vo
                 ? { code: 'upload.denied', message: /* i18n */ 'error.acl_denied' }
                 : { code: 'upload.failed', message: /* i18n */ 'upload.upload_failed_out_retries' }
       post({ t: 'error', id: f.id, code: told.code, message: told.message })
+      releasePreparedFile(f)
       return
     }
 
     chunkRetries.set(key, tries + 1)
     post({ t: 'error', id: f.id, code: 'upload.retry', message: /* i18n */ 'upload.retrying', retryIn: verdict.afterMs })
     setTimeout(() => {
-      if (files.get(f.id)?.status === 'uploading') {
-        scheduler.requeue(task.fileId, task)
-        pump()
-      }
+      const latest = files.get(f.id)
+      if (!latest || latest.generation !== task.generation || latest.status === 'canceled' || latest.status === 'error' || latest.status === 'done') return
+      // Keep retry ownership in the scheduler while paused. Resume will
+      // unpause it and pump the same failed chunk exactly once.
+      scheduler.requeue(task.fileId, task, task.generation)
+      if (latest.status === 'uploading') pump()
     }, verdict.afterMs)
   } finally {
     inflightRequests--
@@ -383,6 +789,31 @@ function pump(): void {
   }
 }
 
+async function cancelFile(f: FileState): Promise<boolean> {
+  if (f.cleanupInFlight) return f.cleanupInFlight
+  const run = (async (): Promise<boolean> => {
+    const cleaned = await cleanupCreatedSession(f.sessionId, f.resumeRecord)
+    scheduler.removeFile(f.id)
+    files.delete(f.id)
+    return cleaned
+  })()
+  f.cleanupInFlight = run
+  try {
+    return await run
+  } finally {
+    if (f.cleanupInFlight === run) f.cleanupInFlight = undefined
+  }
+}
+
+function reportCancellation(f: FileState): void {
+  if (f.cleanupInFlight) return
+  void cancelFile(f).then((cleaned) => {
+    if (cleaned) post({ t: 'canceled', id: f.id })
+    else postCleanupPending(f.id)
+    releasePreparedFile(f)
+  })
+}
+
 self.addEventListener('message', (ev: MessageEvent<Cmd>) => {
   const cmd = ev.data
   switch (cmd.t) {
@@ -394,7 +825,9 @@ self.addEventListener('message', (ev: MessageEvent<Cmd>) => {
       serverChunkDefault = cmd.chunkDefault
       break
     case 'add':
-      for (const item of cmd.items) void addFile(item)
+      void ensureCleanupRecovery().then(() => {
+        for (const item of cmd.items) void addFile(item)
+      })
       break
     case 'concurrency':
       maxInflight = Math.max(MIN_CONCURRENCY, Math.min(MAX_CONCURRENCY, Math.round(cmd.maxInflight)))
@@ -403,32 +836,45 @@ self.addEventListener('message', (ev: MessageEvent<Cmd>) => {
       break
     case 'pause': {
       const f = files.get(cmd.id)
-      if (f) f.status = 'paused'
-      scheduler.pause(cmd.id)
+      if (f) {
+        if (f.status === 'uploading') f.status = 'paused'
+        scheduler.pause(cmd.id)
+      } else if (pendingControls.get(cmd.id) !== 'canceled') {
+        pendingControls.set(cmd.id, 'paused')
+      }
       break
     }
     case 'resume': {
       const f = files.get(cmd.id)
-      if (f) f.status = 'uploading'
-      scheduler.resume(cmd.id)
-      pump()
+      if (f) {
+        if (f.status === 'paused') f.status = 'uploading'
+        scheduler.resume(cmd.id)
+        if (f.status === 'uploading' && scheduler.isFileDone(cmd.id)) void finalizeIfDone(f)
+        pump()
+      } else if (pendingControls.get(cmd.id) !== 'canceled') {
+        pendingControls.delete(cmd.id)
+      }
       break
     }
     case 'cancel': {
       const f = files.get(cmd.id)
-      if (f) {
-        f.status = 'canceled'
-        // Stop the chunks already on the wire before the session goes, so a
-        // cancelled upload stops sending rather than running to completion
-        // and failing afterwards.
-        f.abort.abort()
-        void transport.deleteSession(f.sessionId).catch(() => {})
-        void deleteResumeRecord(resumeKey(f.file.name, f.file.size, f.file.lastModified)).catch(() => {})
-        forgetChunkRetries(cmd.id)
-        scheduler.removeFile(cmd.id)
-        files.delete(cmd.id)
-        post({ t: 'canceled', id: cmd.id })
+      if (!f) {
+        pendingControls.set(cmd.id, 'canceled')
+        break
       }
+      if (f.status === 'done' || f.status === 'canceled') {
+        reportCancellation(f)
+        break
+      }
+      f.status = 'canceled'
+      // Stop chunks already on the wire before the session goes, so a
+      // cancelled upload stops sending rather than running to completion.
+      f.abort.abort()
+      scheduler.removeFile(cmd.id)
+      forgetChunkRetries(cmd.id)
+      // Do not report cancellation until DELETE confirms removal. An
+      // uncertain request reports cleanup-pending and retains the session id.
+      reportCancellation(f)
       break
     }
   }

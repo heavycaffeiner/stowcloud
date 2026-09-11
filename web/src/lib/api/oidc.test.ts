@@ -11,7 +11,7 @@
 // Assertions are structural for the same reason. The catalogue defaults to
 // Korean and either language may be copy-edited, so pinning exact strings
 // would make this a test of the copy rather than of the mapping.
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { oidcErrorMessage, startOidcLogin } from './oidc'
 
 /** Every code the callback can actually put in `?oidc_error=`, taken from the
@@ -72,9 +72,9 @@ describe('oidcErrorMessage', () => {
 })
 
 describe('startOidcLogin', () => {
-  /** `window.location.href = ...` is a real navigation under jsdom, so the
-   *  property is replaced with a plain writable one for the duration. */
-  function captureNavigation(run: () => void): string {
+  /** `window.location.href` is a real navigation under jsdom, so the
+   * property is replaced with a plain writable one for the duration. */
+  async function captureNavigation(run: () => Promise<void>): Promise<string> {
     const original = Object.getOwnPropertyDescriptor(window, 'location')
     let href = ''
     Object.defineProperty(window, 'location', {
@@ -89,23 +89,53 @@ describe('startOidcLogin', () => {
       }
     })
     try {
-      run()
+      await run()
     } finally {
       if (original) Object.defineProperty(window, 'location', original)
     }
     return href
   }
 
-  it('navigates to the start route with no query when there is no returnTo', () => {
-    expect(captureNavigation(() => startOidcLogin())).toBe('/api/v1/auth/oidc/start')
-    expect(captureNavigation(() => startOidcLogin(null))).toBe('/api/v1/auth/oidc/start')
+  it('validates the JSON response and navigates to its authorization URL', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ authorize_url: 'https://idp.example.test/authorize?state=abc' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      )
+    )
+    await expect(
+      captureNavigation(() => startOidcLogin())
+    ).resolves.toBe('https://idp.example.test/authorize?state=abc')
   })
 
-  it('percent-encodes returnTo so a path with a query survives the round trip', () => {
-    const href = captureNavigation(() => startOidcLogin('/b/Docs?sort=name&order=desc'))
-    // `return_to`, not `returnTo`: the server decodes `c.Query("return_to")`
-    // (go/engine/lifecycle/oidc.go's authOIDCStart), snake_case like every
-    // other field this API reads off the wire.
-    expect(href).toBe('/api/v1/auth/oidc/start?return_to=%2Fb%2FDocs%3Fsort%3Dname%26order%3Ddesc')
+  it('does not navigate when the response has no valid authorization URL', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ authorize_url: 'javascript:alert(1)' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      )
+    )
+    await expect(captureNavigation(() => startOidcLogin())).resolves.toBe('')
+  })
+
+  it('percent-encodes returnTo in the start request', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ authorize_url: 'https://idp.example.test/authorize' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    await captureNavigation(() => startOidcLogin('/b/Docs?sort=name&order=desc'))
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/auth/oidc/start?return_to=%2Fb%2FDocs%3Fsort%3Dname%26order%3Ddesc',
+      expect.objectContaining({ credentials: 'include' })
+    )
   })
 })

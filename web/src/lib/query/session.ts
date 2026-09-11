@@ -1,9 +1,9 @@
 // The session, and the one decision the whole shell hangs off it.
 import { createQuery, mutationOptions, queryOptions, type CreateQueryResult } from '@tanstack/svelte-query'
-import { api, ApiError } from '../api/client'
+import { api } from '../api/client'
 import { fetchOidcConfig } from '../api/oidc'
 import { setupRequired } from '../api/setup'
-import type { SessionInfo } from '../api/types'
+import { isSessionDead, type SessionInfo } from '../api/types'
 import { lock } from '../crypto/e2ee'
 import { invalidateEncryptedShares } from '../crypto/encrypted-shares'
 import { queryClient } from './client'
@@ -99,15 +99,15 @@ export function logoutMutation() {
       // Everything in the cache belonged to the account that just left, and so
       // does the unlocked share key: without dropping it the next account
       // signing in on this tab would encrypt under the previous one's key.
-      queryClient.clear()
       lock()
+      queryClient.clear()
       invalidateEncryptedShares()
     }
   })
 }
 
 /** True when a failed session query means "not signed in" rather than "the
- *  server could not be reached", which is a different screen. */
+ * server could not be reached", which is a different screen. */
 export function isUnauthenticated(error: unknown): boolean {
-  return error instanceof ApiError && (error.status === 401 || error.status === 404)
+  return isSessionDead(error)
 }

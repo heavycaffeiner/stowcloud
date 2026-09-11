@@ -29,12 +29,10 @@
 
 <nav class="sc-nav-bar" aria-label={t('common.main_menu')}>
   {#each items as item (item.id)}
-    <!-- `disabled={false}` overrides the framework's own `disabled={selected}`
-         (it spreads rest props after that attribute, so this wins). MD3
-         disables the current destination because re-tapping it does nothing;
-         here "Files" is not a destination but the root drawer's opener, and
-         it is selected on every `/b/` page: disabled would make the drawer
-         unreachable from the one screen it matters on. -->
+    <!-- Keep every destination reachable on repeat taps. In particular,
+         Files returns to the last valid workspace instead of behaving like a
+         disabled current-page control. More opens its compact destination
+         menu. -->
     <NavCMLXItem
       variant="compact"
       icon={item.icon}
