@@ -11,17 +11,16 @@
   import { goto } from '$app/navigation'
   import { api } from '../api/client'
   import type { SearchDone, SearchHit } from '../api/client'
-  import { EXTENSION_PRESETS, resolveExtensions } from '../search/filters'
+  import { EXTENSION_PRESETS, parseExtensions, resolveExtensions } from '../search/filters'
   import { computeWindow } from '../virtual/windowing'
   import { formatBytes } from '../format/bytes'
   import { formatDateNs, t } from '../i18n'
-  import { Icon, MenuItem } from 'm3-svelte'
+  import { ConnectedButtons, Icon, MenuItem } from 'm3-svelte'
   import { icons } from '../icons'
   import Button from './Button.svelte'
-  import Divider from './Divider.svelte'
+  import Chip from './Chip.svelte'
   import Menu from './Menu.svelte'
   import ProgressCircular from './ProgressCircular.svelte'
-  import Select from './Select.svelte'
   import TextField from './TextField.svelte'
 
   interface Props {
@@ -65,7 +64,7 @@
   let flushTimer: ReturnType<typeof setTimeout> | null = null
 
   const FLUSH_MS = 100
-  const ROW_PX = 48
+  const ROW_PX = 60
 
   function flush(): void {
     if (flushTimer !== null) {
@@ -165,8 +164,8 @@
     kind = next
     if (next === 'dir') {
       // A folder carries no extension, so the pair matches nothing and the
-      // server refuses it. Dropping the type filter here is what the person
-      // asking for folders meant.
+      // server refuses it. The extension controls are gone while folders are
+      // the target rather than sitting there saying why they would not work.
       presets = []
       extText = ''
       extQuery = ''
@@ -222,9 +221,7 @@
 
   const dirCount = $derived(view.filter((h) => h.entry.kind === 'dir').length)
 
-  /** How many filters are on, which is what the button says when it is not
-   *  wide enough to list them. */
-  const activeCount = $derived((kind === 'any' ? 0 : 1) + presets.length + (extQuery.trim() === '' ? 0 : 1))
+  const fileCount = $derived(view.length - dirCount)
 
   let filtersOpen = $state(false)
   let filtersX = $state(0)
@@ -247,13 +244,20 @@
     queueMicrotask(() => filtersMenuEl?.querySelector<HTMLButtonElement>('button')?.focus())
   }
 
-  // Escape belongs to the menu while the menu is open. Without this the key
-  // reached the sheet's own dialog underneath and closed the whole search.
+  // Escape belongs to an open menu. Without this the key reached the sheet's
+  // own dialog underneath and closed the whole search.
   function onKeydownCapture(e: KeyboardEvent): void {
-    if (!filtersOpen || e.key !== 'Escape') return
+    if (e.key !== 'Escape') return
+    if (filtersOpen) {
+      e.preventDefault()
+      e.stopPropagation()
+      closeFilters()
+      return
+    }
+    if (!sortOpen) return
     e.preventDefault()
     e.stopPropagation()
-    closeFilters()
+    closeSort()
   }
 
   function closeFilters(): void {
@@ -262,15 +266,61 @@
     filtersTrigger = null
   }
 
-  /** What is narrowing the search right now, in the words the controls use. */
+  /** What is narrowing the search, in the words the controls use.
+   *
+   *  Groups by their own name rather than by what they expand to: one tap on
+   *  "images" is twelve extensions, and a line reading "jpg, jpeg, png, gif,
+   *  webp, heic…" says less about the filter than its name does. */
   const activeFilters = $derived.by(() => {
     const parts: string[] = []
-    if (kind === 'file') parts.push(t('search.kind_file'))
-    if (kind === 'dir') parts.push(t('search.kind_dir'))
-    const exts = resolveExtensions(presets, extQuery)
-    if (exts.length > 0) parts.push(exts.join(', '))
-    return parts.join(' + ')
+    for (const id of presets) {
+      const preset = EXTENSION_PRESETS.find((p) => p.id === id)
+      if (preset) parts.push(t(preset.labelKey))
+    }
+    parts.push(...parseExtensions(extQuery))
+    return parts.join(', ')
   })
+
+  const SORT_KEYS = [
+    ['relevance', /* i18n */ 'search.sort_relevance'],
+    ['name', /* i18n */ 'search.sort_name'],
+    ['size', /* i18n */ 'search.sort_size'],
+    ['date', /* i18n */ 'search.sort_date']
+  ] as const
+
+  const sortLabel = $derived(t(SORT_KEYS.find(([id]) => id === sortKey)?.[1] ?? 'search.sort_relevance'))
+
+  let sortOpen = $state(false)
+  let sortX = $state(0)
+  let sortY = $state(0)
+  let sortMenuEl: HTMLDivElement | undefined = $state()
+  let sortTrigger: HTMLElement | null = null
+
+  function openSort(e: MouseEvent): void {
+    if (sortOpen) {
+      closeSort()
+      return
+    }
+    e.stopPropagation()
+    const btn = e.currentTarget as HTMLElement
+    sortTrigger = btn
+    const rect = btn.getBoundingClientRect()
+    sortX = rect.right
+    sortY = rect.bottom + 4
+    sortOpen = true
+    queueMicrotask(() => sortMenuEl?.querySelector<HTMLButtonElement>('button')?.focus())
+  }
+
+  function closeSort(): void {
+    sortOpen = false
+    sortTrigger?.focus()
+    sortTrigger = null
+  }
+
+  function chooseSort(next: SortKey): void {
+    sortKey = next
+    closeSort()
+  }
 
   let fieldEl: HTMLDivElement | undefined = $state()
   let listEl: HTMLDivElement | undefined = $state()
@@ -356,57 +406,74 @@
   </div>
 
   <div class="sc-search__filters">
-    <!-- One button rather than a row of chips: the type list alone is six of
-         them, and they pushed the results down the panel to say what was
-         mostly "no filter". What is on is still visible beside the button. -->
-    <Button variant="outlined" onclick={openFilters} ariaLabel={t('search.filters')}>
-      {#snippet icon()}<Icon icon={icons.filter} size={18} />{/snippet}
-      {activeCount === 0 ? t('search.filters') : t('search.filters_active', { count: activeCount })}
-    </Button>
-    {#if activeFilters !== ''}
-      <span class="sc-search__active">{activeFilters}</span>
-    {/if}
+    <!-- The kind is three buttons rather than a row in a menu: it is the
+         filter people reach for, it has three values, and shown here it says
+         what it is set to without anything being opened. -->
+    <span class="sc-search__label" id="sc-search-kind">{t('search.kind_label')}</span>
+    <ConnectedButtons role="group" aria-labelledby="sc-search-kind">
+      {#each [['any', t('search.kind_any')], ['file', t('search.kind_file')], ['dir', t('search.kind_dir')]] as const as [id, label] (id)}
+        <Button
+          square
+          variant={kind === id ? 'filled' : 'tonal'}
+          pressed={kind === id}
+          onclick={() => setKind(id as Kind)}
+        >
+          {label}
+        </Button>
+      {/each}
+    </ConnectedButtons>
 
-    <div class="sc-search__exts" onfocusout={commitExts}>
-      <!-- Committed on Enter or on leaving the box, not per keystroke:
-           every commit starts a walk of every share, so "pdf" typed a
-           letter at a time would start three of them. -->
-      <TextField
-        bind:value={extText}
-        label={t('search.extensions')}
-        placeholder="pdf, hwp, zip"
-        onkeydown={(e) => {
-          if (e.key === 'Enter') commitExts()
-        }}
-      />
-    </div>
+    <!-- Gone, not disabled, while folders are the target: a folder carries no
+         extension, so every one of these would narrow the answer to nothing. -->
+    {#if kind !== 'dir'}
+      <Button variant="outlined" onclick={openFilters}>
+        {#snippet icon()}<Icon icon={icons.filter} size={18} />{/snippet}
+        {t('search.file_type')}
+      </Button>
+      <!-- The chosen groups, each one its own remove target. A summary line
+           said the same thing and took a trip to the menu to undo. -->
+      {#each presets as id (id)}
+        {@const preset = EXTENSION_PRESETS.find((p) => p.id === id)}
+        {#if preset}
+          <Chip
+            variant="filter"
+            selected
+            onremove={() => togglePreset(id)}
+            ariaLabel={t('search.remove_filter', { label: t(preset.labelKey) })}
+          >
+            {t(preset.labelKey)}
+          </Chip>
+        {/if}
+      {/each}
+
+      <div class="sc-search__exts" onfocusout={commitExts}>
+        <!-- Committed on Enter or on leaving the box, not per keystroke:
+             every commit starts a walk of every share, so "pdf" typed a
+             letter at a time would start three of them. -->
+        <TextField
+          bind:value={extText}
+          label={t('search.extensions')}
+          placeholder="pdf, hwp, zip"
+          onkeydown={(e) => {
+            if (e.key === 'Enter') commitExts()
+          }}
+        />
+      </div>
+    {/if}
   </div>
 
   <Menu open={filtersOpen} onclose={closeFilters} x={filtersX} y={filtersY} align="start">
     <div bind:this={filtersMenuEl} role="none">
-      {#each [['any', t('search.kind_any')], ['file', t('search.kind_file')], ['dir', t('search.kind_dir')]] as const as [id, label] (id)}
-        <MenuItem icon={kind === id ? icons.check : 'space'} onclick={() => setKind(id as Kind)}>
-          {kind === id ? t('search.filter_selected', { label }) : label}
+      {#each EXTENSION_PRESETS as preset (preset.id)}
+        <MenuItem
+          icon={presets.includes(preset.id) ? icons.check : 'space'}
+          onclick={() => togglePreset(preset.id)}
+        >
+          {presets.includes(preset.id)
+            ? t('search.filter_selected', { label: t(preset.labelKey) })
+            : t(preset.labelKey)}
         </MenuItem>
       {/each}
-      <Divider />
-      <!-- The type rows are gone rather than greyed out while folders are the
-           target: a folder has no extension, so each of them would narrow the
-           answer to nothing. -->
-      {#if kind === 'dir'}
-        <p class="sc-search__hint">{t('search.folders_have_no_extension')}</p>
-      {:else}
-        {#each EXTENSION_PRESETS as preset (preset.id)}
-          <MenuItem
-            icon={presets.includes(preset.id) ? icons.check : 'space'}
-            onclick={() => togglePreset(preset.id)}
-          >
-            {presets.includes(preset.id)
-              ? t('search.filter_selected', { label: t(preset.labelKey) })
-              : t(preset.labelKey)}
-          </MenuItem>
-        {/each}
-      {/if}
     </div>
   </Menu>
 
@@ -424,25 +491,34 @@
       {running ? '' : statusText}
     </span>
     <span class="sc-search__status-actions">
+      <!-- The split of the same list sits beside the control that reorders
+           it, away from the total on the left: two counts run together in
+           one sentence read as one number nobody can parse. Only when the
+           list holds both, since "0 folders" beside a total says nothing. -->
+      {#if !running && fileCount > 0 && dirCount > 0}
+        <span class="sc-search__breakdown">{t('search.summary', { files: fileCount, folders: dirCount })}</span>
+      {/if}
       {#if running}
         <Button variant="text" onclick={stop}>{t('search.stop')}</Button>
       {/if}
       {#if ran && view.length > 0}
-        <div class="sc-search__sort">
-          <Select
-            bind:value={sortKey}
-            label={t('search.sort')}
-            options={[
-              { value: 'relevance', text: t('search.sort_relevance') },
-              { value: 'name', text: t('search.sort_name') },
-              { value: 'size', text: t('search.sort_size') },
-              { value: 'date', text: t('search.sort_date') }
-            ]}
-          />
-        </div>
+        <Button variant="text" onclick={openSort} ariaLabel={t('search.sort_by', { key: sortLabel })}>
+          {#snippet icon()}<Icon icon={icons.sort} size={18} />{/snippet}
+          {sortLabel}
+        </Button>
       {/if}
     </span>
   </div>
+
+  <Menu open={sortOpen} onclose={closeSort} x={sortX} y={sortY} align="end">
+    <div bind:this={sortMenuEl} role="none">
+      {#each SORT_KEYS as [id, labelKey] (id)}
+        <MenuItem icon={sortKey === id ? icons.check : 'space'} onclick={() => chooseSort(id)}>
+          {t(labelKey)}
+        </MenuItem>
+      {/each}
+    </div>
+  </Menu>
 
   <div class="sc-search__results" bind:this={listEl} onscroll={onListScroll} tabindex="-1">
     {#if !ran}
@@ -462,14 +538,21 @@
         <ul class="sc-search__rows" style="transform: translate3d(0, {window_.padTop}px, 0)">
           {#each rows as hit (hit.path)}
             <li>
+              <!-- Two lines: the name reads at full width and the folder sits
+                   under it. Side by side, a long path took the width the name
+                   needed and both ended in an ellipsis. -->
               <button class="sc-search__row" type="button" onclick={() => open(hit)}>
                 <Icon icon={icons[hit.entry.kind === 'dir' ? 'folder' : 'file']} size={20} />
-                <span class="sc-search__name">{hit.entry.name}</span>
-                <span class="sc-search__folder">{folderOf(hit.path)}</span>
-                <span class="sc-search__size">
-                  {hit.entry.kind === 'dir' ? '' : formatBytes(hit.entry.size)}
+                <span class="sc-search__text">
+                  <span class="sc-search__name">{hit.entry.name}</span>
+                  <span class="sc-search__folder">{folderOf(hit.path)}</span>
                 </span>
-                <span class="sc-search__date">{formatDateNs(hit.entry.mtime_ns)}</span>
+                <span class="sc-search__cell">
+                  {#if hit.entry.kind !== 'dir'}
+                    <span class="sc-search__size">{formatBytes(hit.entry.size)}</span>
+                  {/if}
+                  <span class="sc-search__date">{formatDateNs(hit.entry.mtime_ns)}</span>
+                </span>
               </button>
             </li>
           {/each}
@@ -477,12 +560,6 @@
       </div>
     {/if}
   </div>
-
-  {#if ran && view.length > 0}
-    <p class="sc-search__summary">
-      {t('search.summary', { files: view.length - dirCount, folders: dirCount })}
-    </p>
-  {/if}
 </div>
 
 <style>
@@ -517,21 +594,16 @@
     gap: 8px;
   }
 
-  .sc-search__active {
-    flex: 1 1 auto;
-    min-width: 0;
-    overflow: hidden;
+  .sc-search__label {
     color: var(--m3c-on-surface-variant, inherit);
-    font: var(--m3-font-body-small);
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font: var(--m3-font-label-large);
   }
 
   .sc-search__exts {
     /* Sized to the list it holds rather than the row it sits in: stretched
        across the remaining width it read as the main input. */
-    flex: 0 1 240px;
-    min-width: 160px;
+    flex: 0 1 200px;
+    min-width: 140px;
   }
 
   .sc-search__status {
@@ -563,20 +635,25 @@
 
   .sc-search__count {
     display: flex;
-    align-items: center;
+    align-items: baseline;
     gap: 8px;
+    min-width: 0;
+    overflow: hidden;
     font: var(--m3-font-body-medium);
     color: var(--m3c-on-surface-variant, inherit);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sc-search__breakdown {
+    font: var(--m3-font-body-small);
   }
 
   .sc-search__status-actions {
     display: flex;
+    flex: 0 0 auto;
     align-items: center;
     gap: 8px;
-  }
-
-  .sc-search__sort {
-    min-width: 160px;
   }
 
   .sc-search__results {
@@ -604,11 +681,11 @@
 
   .sc-search__row {
     display: grid;
-    grid-template-columns: 20px minmax(0, 2fr) minmax(0, 3fr) 96px auto;
+    grid-template-columns: 20px minmax(0, 1fr) auto;
     align-items: center;
     gap: 12px;
     width: 100%;
-    height: 48px;
+    height: 60px;
     padding-inline: 12px;
     border: none;
     background: none;
@@ -616,6 +693,21 @@
     font: var(--m3-font-body-medium);
     text-align: start;
     cursor: pointer;
+  }
+
+  .sc-search__text,
+  .sc-search__cell {
+    display: flex;
+    flex-direction: column;
+    /* The row is one fixed height the virtual list measures every row by, so
+       neither column may grow: both lines are single-line and clipped. */
+    gap: 0;
+    min-width: 0;
+  }
+
+  .sc-search__cell {
+    align-items: end;
+    flex: 0 0 auto;
   }
 
   .sc-search__row:hover,
@@ -635,38 +727,22 @@
   .sc-search__date {
     color: var(--m3c-on-surface-variant, inherit);
     font: var(--m3-font-body-small);
-    /* A wrapped date would push the row past the fixed height the virtual
-       list measures every row by, and the window maths would drift. */
     white-space: nowrap;
     overflow: hidden;
   }
 
-  .sc-search__size {
-    text-align: end;
-    white-space: nowrap;
-  }
-
-  .sc-search__note,
-  .sc-search__summary {
+  .sc-search__note {
     margin: 0;
     padding: 16px;
     color: var(--m3c-on-surface-variant, inherit);
     font: var(--m3-font-body-medium);
   }
 
-  .sc-search__summary {
-    padding-block: 0;
-    padding-inline: 4px;
-    font: var(--m3-font-body-small);
-  }
-
-  @media (max-width: 840px) {
-    .sc-search__row {
-      grid-template-columns: 20px minmax(0, 1fr) 80px;
-    }
-
-    .sc-search__folder,
-    .sc-search__date {
+  @media (max-width: 600px) {
+    /* The date is the first thing to go: a phone row has room for the name,
+       the folder under it and one number. */
+    .sc-search__date,
+    .sc-search__breakdown {
       display: none;
     }
   }
