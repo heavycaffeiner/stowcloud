@@ -5,7 +5,7 @@
 // hand-rolled debounce/abort/generation bookkeeping: a filter change is a new
 // key, the old request is cancelled by the cache, and a late answer for an
 // abandoned filter lands under a key nothing is observing.
-import { infiniteQueryOptions, queryOptions } from '@tanstack/svelte-query'
+import { infiniteQueryOptions, queryOptions } from '@tanstack/react-query'
 import {
   PAGE_SIZE,
   pureBucketNs,

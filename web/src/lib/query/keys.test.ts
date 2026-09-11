@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { QueryClient } from '@tanstack/svelte-query'
+import { QueryClient } from '@tanstack/react-query'
 import { keys } from './keys'
 
 describe('file content query keys', () => {

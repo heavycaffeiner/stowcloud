@@ -350,7 +350,7 @@ try {
       "() => {",
       "  const code = document.querySelector('[data-testid=\"webdav-base-url\"]');",
       "  const row = code ? code.closest('.sc-webdav__token-row') : null;",
-      "  const button = row ? row.querySelector('button') : null;",
+      "  const button = row ? row.querySelector('mdui-button') : null;",
       "  if (button) button.focus();",
       "  return button !== null && document.activeElement === button;",
       "}"

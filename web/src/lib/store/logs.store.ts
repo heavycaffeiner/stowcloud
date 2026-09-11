@@ -4,7 +4,7 @@
 // the projection of this state (`query/logs.ts`), so a filter change is a new
 // key rather than a request this store has to cancel and reconcile.
 import { EMPTY_FILTERS, type LogFilters } from '../admin/log-view'
-import { defineStore } from './create.svelte'
+import { defineStore } from './create'
 
 export interface LogsFormState {
   readonly filters: LogFilters

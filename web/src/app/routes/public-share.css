@@ -1,0 +1,141 @@
+.sc-public-share {
+  width: min(100%, 40rem);
+  min-height: 100dvh;
+  margin-inline: auto;
+  padding: var(--sc-page-pad);
+}
+
+.sc-public-share__header {
+  margin-bottom: 32px;
+  color: var(--sc-content-secondary);
+}
+
+.sc-public-share__title {
+  margin: 0 0 16px;
+}
+
+.sc-public-share__status {
+  color: var(--sc-content-secondary);
+}
+
+.sc-public-share__status--error {
+  color: var(--sc-state-error-content);
+}
+
+.sc-public-share__state,
+.sc-public-share__unlock {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sc-public-share__state p,
+.sc-public-share__unlock > h1 {
+  margin: 0;
+}
+
+.sc-public-share__unlock {
+  max-width: 20rem;
+}
+
+.sc-public-share__unlock-actions {
+  align-self: flex-start;
+}
+
+.sc-public-share__drop {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.sc-public-share__file {
+  display: none;
+}
+
+.sc-public-share__list {
+  list-style: none;
+  margin: 0 0 24px;
+  padding: 0;
+  border: 1px solid var(--sc-content-secondary);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.sc-public-share__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--sc-content-secondary);
+}
+
+.sc-public-share__row:last-child {
+  border-bottom: none;
+}
+
+.sc-public-share__row--empty {
+  justify-content: center;
+  color: var(--sc-content-secondary);
+}
+
+.sc-public-share__row-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.sc-public-share__name {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.sc-public-share__size {
+  flex-shrink: 0;
+  color: var(--sc-content-secondary);
+}
+
+.sc-public-share__crumbs {
+  margin-bottom: 16px;
+}
+
+.sc-public-share__crumbs ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sc-public-share__crumbs li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.sc-public-share__crumb,
+.sc-public-share__folder {
+  padding: 4px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--mdui-color-primary, var(--sc-state-focus));
+  font: inherit;
+  cursor: pointer;
+  text-align: start;
+}
+
+.sc-public-share__crumb:hover,
+.sc-public-share__folder:hover {
+  background: var(--sc-raised-surface);
+}
+
+.sc-public-share__crumb-sep {
+  color: var(--sc-content-secondary);
+}

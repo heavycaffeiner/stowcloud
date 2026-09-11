@@ -1,8 +1,8 @@
 // Every icon the app uses, in one place.
 //
-// These come from Material Symbols, shipped with m3-svelte so there is no
-// extra dependency. Each icon is its own module, so the bundler drops the
-// roughly 36k this app does not touch and the initial-JS budget still holds.
+// These come from Material Symbols, so there is no extra dependency. Each
+// icon is its own module, so the bundler drops the roughly 36k this app does
+// not touch and the initial-JS budget still holds.
 //
 // The keyed record exists because several call sites pick an icon at runtime
 // (`icons[iconName(entry)]`); import the named export directly when the icon
@@ -46,6 +46,7 @@ import iconUploadFolder from '@ktibow/iconset-material-symbols/drive-folder-uplo
 import iconWarning from '@ktibow/iconset-material-symbols/warning-outline'
 import iconSort from '@ktibow/iconset-material-symbols/sort'
 import iconMovie from '@ktibow/iconset-material-symbols/movie-outline'
+import iconPerson from '@ktibow/iconset-material-symbols/person-outline'
 
 export {
   iconAccountTree,
@@ -82,28 +83,42 @@ export {
   iconUploadFolder,
   iconWarning,
   iconSort,
-  iconMovie
+  iconMovie,
+  iconPerson
 }
 
 /** Runtime lookup. Keys are the names the old inline icon set used. */
 export const icons = {
   add: iconAdd,
   admin: iconAdmin,
+  admin_panel_settings: iconAdmin,
+  'admin-panel-settings': iconAdmin,
   check: iconCheck,
   'chevron-left': iconChevronLeft,
   'chevron-right': iconChevronRight,
+  chevron_left: iconChevronLeft,
+  chevron_right: iconChevronRight,
   close: iconClose,
   pause: iconPause,
   resume: iconPlayArrow,
+  play_arrow: iconPlayArrow,
   copy: iconCopy,
+  content_copy: iconCopy,
   delete: iconDelete,
   download: iconDownload,
   'edit-document': iconEditDocument,
+  edit_document: iconEditDocument,
+  edit: iconRename,
   file: iconFile,
+  draft: iconFile,
   filter: iconFilter,
+  filter_list: iconFilter,
   folder: iconFolder,
   'folder-tree': iconAccountTree,
+  'account-tree': iconAccountTree,
+  account_tree: iconAccountTree,
   grid: iconGrid,
+  grid_view: iconGrid,
   home: iconHome,
   image: iconImage,
   info: iconInfo,
@@ -112,19 +127,27 @@ export const icons = {
   lock: iconLock,
   menu: iconMenu,
   'more-vert': iconMore,
+  more_vert: iconMore,
   move: iconMove,
   recent: iconRecent,
+  history: iconRecent,
   refresh: iconRefresh,
   rename: iconRename,
   restore: iconRestore,
   search: iconSearch,
   settings: iconSettings,
   trash: iconTrash,
+  delete_sweep: iconTrash,
+  'delete-sweep': iconTrash,
   upload: iconUpload,
+  upload_file: iconUpload,
   'upload-folder': iconUploadFolder,
+  upload_folder: iconUploadFolder,
   warning: iconWarning,
   sort: iconSort,
-  video: iconMovie
-} satisfies Record<string, IconifyIcon>
+  video: iconMovie,
+  movie: iconMovie,
+  person: iconPerson
+ } satisfies Record<string, IconifyIcon>
 
 export type IconName = keyof typeof icons

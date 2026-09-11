@@ -3,7 +3,7 @@
 // Only the ids live here: each job's progress is a query, so a job started on
 // one page keeps reporting after the user navigates away, and one started in
 // another tab is picked up from the job list.
-import { defineStore } from './create.svelte'
+import { defineStore } from './create'
 
 export interface JobTrayState {
   readonly ids: readonly string[]

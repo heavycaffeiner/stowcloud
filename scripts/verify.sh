@@ -312,7 +312,7 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   }
   CONTENT_URL_HITS=$(
     grep -rn 'files/\(read\|thumbnail\)' web/src \
-      --include='*.ts' --include='*.svelte' 2>/dev/null \
+      --include='*.ts' --include='*.tsx' 2>/dev/null \
       | grep -v '^web/src/lib/api/http\.ts:' | no_comment || true
   )
   # The API layer names them, and only with a claim.

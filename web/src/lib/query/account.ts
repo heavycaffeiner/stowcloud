@@ -4,7 +4,7 @@
 // Almost every write here changes something `GET /api/auth/session` reports
 // (`totp_enabled`, `smb_opt_out`, the OIDC hint), so the session is the query
 // they invalidate.
-import { mutationOptions, queryOptions } from '@tanstack/svelte-query'
+import { mutationOptions, queryOptions } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { queryClient } from './client'
 import { keys } from './keys'

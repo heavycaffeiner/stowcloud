@@ -9,9 +9,8 @@
 // route unmounts when a result opens. Keeping the submitted question, answer,
 // and scroll anchor in this one store lets that route remount without silently
 // changing the question or losing the item the user just opened.
-import { goto } from '$app/navigation'
 import type { SearchHit, SearchProgress } from '../api/client'
-import { defineStore } from './create.svelte'
+import { defineStore } from './create'
 import { ui } from './ui.store'
 
 export type SearchKind = 'any' | 'file' | 'dir'
@@ -63,17 +62,12 @@ export const search = defineStore({ open: false, scope: '', snapshot: null } as 
   }
 }))
 
-/**
- * Opens search in whichever shape the viewport calls for.
- *
- * One function so both callers agree: a sheet over a phone screen is a page
- * with extra steps, and a full navigation on a desktop throws away the folder
- * the person was looking at.
- */
+/** Computes the destination for the search surface without changing state. */
+export function searchTarget(scope = ''): string | null {
+  return ui.getState().compact ? (scope ? `/search?path=${encodeURIComponent(scope)}` : '/search') : null
+}
+
+/** Opens search in whichever shape the viewport calls for. */
 export function openSearch(scope = ''): void {
-  if (ui.peek().compact) {
-    void goto(scope ? `/search?path=${encodeURIComponent(scope)}` : '/search')
-    return
-  }
   search.openSheet(scope)
 }

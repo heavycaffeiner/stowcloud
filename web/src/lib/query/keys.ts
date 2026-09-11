@@ -34,6 +34,8 @@ export const keys = {
   // reads" only made it possible for a file's own `stat` to survive a change
   // to the folder holding it.
   path: (path: string) => ['path', path] as const,
+  /** Prefix for invalidating every directory, stat, size, content, and archive read. */
+  paths: () => ['path'] as const,
   pathList: (path: string, sort: Sort) => ['path', path, 'list', sort.key, sort.order] as const,
   pathStat: (path: string) => ['path', path, 'stat'] as const,
   pathSize: (path: string) => ['path', path, 'size'] as const,
@@ -62,6 +64,9 @@ export const keys = {
   adminGroups: () => ['admin', 'groups'] as const,
   adminShares: () => ['admin', 'shares'] as const,
   adminLinks: () => ['admin', 'links'] as const,
+  /** Prefix for all grant scopes; the empty scope is not a wildcard in
+   * TanStack Query's structural key matching. */
+  adminGrantsPrefix: () => ['admin', 'grants'] as const,
   adminGrants: (scope: GrantScope = {}) => ['admin', 'grants', scope] as const,
   adminSettings: () => ['admin', 'settings'] as const,
   adminOidcEndpoints: () => ['admin', 'oidc-endpoints'] as const,

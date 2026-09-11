@@ -605,9 +605,9 @@ export interface UpdateShareReq {
 }
 
 /** Who a grant applies to: `go/internal/acl`/`Principal::User`,
- *  the same union `GrantManagementSection.svelte` renders regardless of
- *  which one is reached from (`UserManagementSection`'s per-user entry point
- *  or `GroupManagementSection`'s per-group one). */
+ * the same union the grant management screen renders regardless of which one
+ * is reached from (the user's per-user entry point or the group's one).
+ */
 export interface GrantPrincipal {
   kind: 'user' | 'group'
   id: number
@@ -784,9 +784,9 @@ export interface AdminLogsTimeline {
 }
 
 /** One row of `GET /api/admin/grants` (not yet wired server-side, see
- *  `GrantManagementSection.svelte`'s top comment for the exact contract this
- *  type mirrors, `go/internal/acl` for the server shape it
- *  comes from). `sc-acl`'s depth-first evaluation
+ * the grant management screen's top comment for the exact contract this type
+ * mirrors, `go/internal/acl` for the server shape it comes from). `sc-acl`'s
+ * depth-first evaluation
  * is keyed on exactly these fields: which
  *  `share`/`subpath` this rule covers, whether it `inherit`s to
  *  descendants, and which bits it `allow`s/`deny`s: same-depth `deny`
@@ -1624,8 +1624,7 @@ export interface OidcSettingsReq {
 // argument, and `smb.config_dir` is read from the `smb` section (see
 // `SmbSettingsReq`), not from a `paths` section: a write to
 // `/admin/settings/paths` is accepted, stored, and read by nothing. Both
-// stay reported read-only, under `PATH_KEYS` in
-// `ui/admin/ServerSettingsSection.svelte`.
+// stay reported read-only under the settings screen's path key list.
 
 // share encryption (opt-in, zero-knowledge, per-share content encryption in rclone's own `crypt` format)
 

@@ -1,0 +1,12 @@
+/* Shared browser UI styles. Component-specific families live in separate files,
+   imported here because React components already import this stylesheet. */
+@import './file-table.css';
+@import './file-grid.css';
+@import './file-tree.css';
+@import './details-panel.css';
+
+.sc-delete-dialog__external-warning { display: flex; gap: 8px; color: var(--mdui-color-tertiary, var(--m3c-tertiary)); }
+.sc-dest__tree { max-height: 40vh; overflow-y: auto; padding-block: 4px; border: 1px solid var(--mdui-color-outline-variant, var(--m3c-outline-variant)); border-radius: 8px; }
+.sc-dest__tree ul { list-style: none; margin: 0; padding: 0; }
+.sc-dest__status { min-height: 20px; margin: 8px 0 0; color: var(--mdui-color-on-surface-variant, var(--m3c-on-surface-variant)); overflow-wrap: anywhere; }
+.sc-dest__status--warn { min-height: 20px; margin: 8px 0 0; color: var(--mdui-color-error, var(--m3c-error)); overflow-wrap: anywhere; }

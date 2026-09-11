@@ -1,5 +1,5 @@
 // The session, and the one decision the whole shell hangs off it.
-import { createQuery, mutationOptions, queryOptions, type CreateQueryResult } from '@tanstack/svelte-query'
+import { mutationOptions, queryOptions } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { fetchOidcConfig } from '../api/oidc'
 import { setupRequired } from '../api/setup'
@@ -9,15 +9,9 @@ import { invalidateEncryptedShares } from '../crypto/encrypted-shares'
 import { queryClient } from './client'
 import { keys } from './keys'
 
-/** What every screen that needs the signed-in account calls. One cache entry
- *  behind them all, so the tenth caller costs nothing. */
-export function createSession(): CreateQueryResult<SessionInfo, Error> {
-  return createQuery(() => sessionQuery())
-}
-
 /** `api.session()` also installs the CSRF token every write needs, so this is
  *  the query the rest of the app waits on before it can change anything. */
-function sessionQuery() {
+export function sessionQuery() {
   return queryOptions({
     queryKey: keys.session(),
     queryFn: () => api.session(),

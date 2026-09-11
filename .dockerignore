@@ -15,7 +15,6 @@ go/.tools
 # client.ts's throw-at-load guard) VITE_API_MOCK=1 cannot end up embedded:
 # the file carrying it never leaves the host.
 web/node_modules
-web/.svelte-kit
 web/build
 web/.env
 web/.env.development

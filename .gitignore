@@ -1,7 +1,6 @@
 /.ref
 /.vm
 node_modules
-web/.svelte-kit
 # The frontend builds into the embedding Go package: //go:embed cannot name a
 # path outside its own package directory, and refuses a symlink out of one.
 # Contents are ignored but the directory itself is kept (a .gitkeep), because

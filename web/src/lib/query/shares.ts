@@ -1,5 +1,5 @@
 // Public share links for one path.
-import { mutationOptions, queryOptions } from '@tanstack/svelte-query'
+import { mutationOptions, queryOptions } from '@tanstack/react-query'
 import { api, type ShareLinkCreateReq, type ShareLinkPatchReq } from '../api/client'
 import { queryClient } from './client'
 import { keys } from './keys'

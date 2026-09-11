@@ -4,7 +4,7 @@
 // The poll loop this replaces lived in `state/jobs.ts` and re-implemented
 // retry, cancellation and terminal detection by hand. Here the terminal states
 // are just where `refetchInterval` returns false.
-import { mutationOptions, queryOptions } from '@tanstack/svelte-query'
+import { mutationOptions, queryOptions } from '@tanstack/react-query'
 import { api, type JobState, type JobStatus } from '../api/client'
 import { queryClient } from './client'
 import { keys } from './keys'

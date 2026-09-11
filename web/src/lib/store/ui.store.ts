@@ -1,6 +1,6 @@
 // Theme and layout chrome. Persisted where a choice that resets on reload
 // would be a choice the user has to make again on every reload.
-import { defineStore } from './create.svelte'
+import { defineStore } from './create'
 import { readPref, writePref } from './persist'
 
 export type ThemePref = 'system' | 'light' | 'dark'

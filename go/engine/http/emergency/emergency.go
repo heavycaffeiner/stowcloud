@@ -481,9 +481,14 @@ func Redirecting(door http.Handler, page http.Handler, reason func() string) htt
 }
 
 // isAsset reports whether a path is a build artifact the page needs rather than
-// a route the client owns.
+// a route the client owns. The app bundle and favicon use their existing paths;
+// Vite worker chunks use /assets/, and the document registers the root service
+// worker directly.
 func isAsset(p string) bool {
-	return strings.HasPrefix(p, "/app/") || strings.HasPrefix(p, "/favicon")
+	return strings.HasPrefix(p, "/app/") ||
+		strings.HasPrefix(p, "/assets/") ||
+		strings.HasPrefix(p, "/favicon") ||
+		p == "/service-worker.js"
 }
 
 // decode reads a JSON body under the size limit.

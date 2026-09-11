@@ -5,7 +5,7 @@
 // listed simply matches nothing, so nothing has to prune it. The cursor is an
 // index, because a row that has not loaded yet can still be focused while its
 // page is on the way.
-import { defineStore } from './create.svelte'
+import { defineStore } from './create'
 
 export interface SelectionState {
   readonly names: ReadonlySet<string>

@@ -5,7 +5,7 @@
 // context. Components still read it from the provider (`useQueryClient`);
 // modules that run outside a component (the WebSocket bridge, the upload
 // worker glue) import it directly.
-import { MutationCache, QueryCache, QueryClient } from '@tanstack/svelte-query'
+import { MutationCache, QueryCache, QueryClient } from '@tanstack/react-query'
 import { ApiError, isSessionDead } from '../api/types'
 import { lock } from '../crypto/e2ee'
 import { invalidateEncryptedShares } from '../crypto/encrypted-shares'

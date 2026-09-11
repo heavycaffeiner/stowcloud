@@ -1,7 +1,6 @@
-// Pure virtual-scroll windowing maths.
-// Kept out of the Svelte component so it is testable
-// without a DOM and so the maths that must "stay bounded at 100k rows" can
-// be asserted directly.
+// Pure windowing maths.
+// Kept out of the UI component so it is testable without a DOM and so the
+// maths that must stay bounded at 100k rows can be asserted directly.
 
 export interface WindowResult {
   /** Index of the first rendered row (inclusive). */
@@ -127,22 +126,16 @@ export function exceedsSafeScrollHeight(itemCount: number, rowHeight: number): b
 }
 
 /**
- * FileTable/FileGrid used to be their own `overflow: auto` scroll container
- * and read `scrollTop`/`clientHeight` straight off the scroll event: see
- * the note above `.sc-file-table` in FileTable.svelte. A browser only
- * collapses its address bar chrome when *the document* scrolls, and this
- * app's document never did (the shell clipped everything with
- * `overflow: hidden` and scrolled an inner box instead), so the address
- * bar permanently ate ~56px of every phone screen. Fixing that means the
- * document has to become the scroller, which turns `computeWindow`'s two
- * inputs into a call-site problem rather than an algorithm problem: the
- * maths below only need "how far down" and "how tall the visible area is",
- * not which element does the scrolling. These two pure functions are that
- * translation, kept out of the component (like the rest of this file) so
- * they're testable without mounting anything.
- */
-
-/**
+ * File views used to be their own `overflow: auto` scroll container and read
+ * `scrollTop` and `clientHeight` straight off the scroll event. A browser only
+ * collapses its address bar chrome when the document scrolls, and this app's
+ * document did not, so the address bar permanently ate part of every phone
+ * screen. The document now owns scrolling, which turns `computeWindow`'s two
+ * inputs into a call-site concern rather than an algorithm concern: the maths
+ * below only need "how far down" and "how tall the visible area is", not which
+ * element does the scrolling. These two pure functions are that translation,
+ * kept out of the component so they are testable without mounting anything.
+ *
  * `scrollTop` in document-scroll terms: how far the *viewport element's own
  * top edge* has scrolled past the top of the window, clamped at 0 for the
  * (normal, if the viewport sits below other page content) case where the

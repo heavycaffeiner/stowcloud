@@ -2,7 +2,6 @@
 // would drop `DOM.Iterable` for every other file in the project, not just
 // this one, so it is omitted here.
 /// <reference lib="webworker" />
-/// <reference types="@sveltejs/kit" />
 
 // web/src/service-worker.ts answers two synthetic same-origin prefixes on
 // behalf of the page that registered them: one-shot downloads at

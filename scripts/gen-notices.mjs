@@ -12,8 +12,8 @@
 // asked of the toolchain with the tags the image builds with, so a module that
 // only serves tests or another build never appears. npm: only what the browser
 // downloads, which is not the same as `dependencies`. Vite compiles with
-// rollup/esbuild/postcss/the svelte compiler and ships none of them, so the
-// shipped set is listed explicitly below rather than derived.
+// rollup/esbuild/postcss and ships none of them, so the shipped set is listed
+// explicitly below rather than derived.
 
 import { readFileSync, readdirSync, existsSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -29,9 +29,8 @@ const BUILD_TAGS = 'embed_ui compat_nc'
 // Packages whose code or data reaches the browser. Everything else in
 // `web/package.json` is a build tool.
 const JS_RUNTIME = [
-  'svelte', '@sveltejs/kit', 'esm-env', 'clsx', 'devalue',
-  'm3-svelte', '@ktibow/iconset-material-symbols',
-  '@ktibow/material-color-utilities-nightly',
+  'react', 'react-dom', 'react-router-dom', '@tanstack/react-query', 'zustand',
+  'mdui', 'clsx', '@ktibow/iconset-material-symbols',
   '@fontsource-variable/google-sans-flex',
   'codemirror', '@marijn/find-cluster-break', 'style-mod', 'w3c-keyname', 'crelt',
 ]

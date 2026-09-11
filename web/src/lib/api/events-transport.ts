@@ -1,10 +1,9 @@
 // WebSocket transport for
-// `GET /api/v1/events` (`go/internal/httpapi/ws/ws.go`). Split out
-// from `state/events.ts` the same way `upload/transport.ts` is split from
-// `state/upload-tray.svelte.ts`: this file only knows how to open a socket
-// and shuttle JSON frames. Reconnection policy, which paths are "wanted",
-// and what an `inval` should do about it belong one layer up; this never
-// reconnects on its own, so the caller's backoff is the only backoff.
+// `GET /api/v1/events` (`go/internal/httpapi/ws/ws.go`). This file only knows
+// how to open a socket and shuttle JSON frames. Reconnection policy, which
+// paths are "wanted", and what an `inval` should do about it belong one layer
+// up; this never reconnects on its own, so the caller's backoff is the only
+// backoff.
 import { isMock } from './client'
 import type { ClientMsg, ServerMsg } from './types'
 

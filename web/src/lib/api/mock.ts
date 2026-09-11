@@ -445,10 +445,9 @@ async function del(paths: string[], permanent = false): Promise<{ results: Batch
       continue
     }
     removeEntry(parent, name)
-    // `permanent: false` (the default, `DeleteDialog.svelte`'s "this moves
-    // it to trash") lands in the mock
-    // trash store instead of vanishing outright, so `/trash` has something
-    // real to list/restore in `VITE_API_MOCK=1` mode too.
+    // `permanent: false` (the default, moving an item to trash) lands in the
+    // mock trash store instead of vanishing outright, so `/trash` has
+    // something real to list and restore in mock mode too.
     if (!permanent) trashInsert(entry, parent)
     results.push({ path: n, ok: true })
   }
@@ -1273,8 +1272,8 @@ async function revokeAppPassword(id: number): Promise<void> {
  *
  * It did not exist, and `api` is `mockApi | httpApi`, so the settings screen's
  * "mark as lost" button called a method that is not on the union: a type error
- * that nothing read until `svelte-check` became a CI gate, and a runtime
- * `is not a function` in mock mode before that.
+ * that was not caught by TypeScript, and a runtime `is not a function` in mock
+ * mode before this method was added.
  */
 async function wipeAppPassword(id: number): Promise<void> {
   await delay(30)
@@ -1396,11 +1395,11 @@ async function adminSetUploadSettings(req: UploadSettingsReq): Promise<UploadSet
 /** The cache spool switch, which the real server keeps in `upload_cache_settings`. */
 let mockUploadCacheEnabled = false
 
-// ── server settings (`go/internal/httpapi/handler/settings.go`): mirrors
+// Server settings (`go/internal/httpapi/handler/settings.go`): mirrors
 // `http.ts`'s real-server surface, same convention as every other section of
-// this file. Field keys match `go/internal/runtimecfg`'s dotted paths
-// exactly, since `ServerSettingsSection.svelte` groups by those literal
-// strings regardless of which backend answered them. ──
+// this file. Field keys match `go/internal/runtimecfg`'s dotted paths exactly,
+// since each admin settings screen groups by those literal strings regardless
+// of which backend answered them.
 
 const mockServerSettings = {
   smb: {
@@ -1581,10 +1580,10 @@ async function adminGetServerSettings(): Promise<SettingsSnapshot> {
         restart_required: true,
         readonly_reason_key: 'settings.readonly_local_password_login'
       },
-      // Owned by other admin screens, and reported live by the real bridge.
-      // Key and value have to match what `StorageIndexSection.svelte` (and
+      // Owned by the admin screens, and reported live by the real bridge.
+      // Key and value have to match what the storage index screen (and
       // the real backend, `http.ts`'s `adminIndexSettings`) read this field
-      // by: `search.name_index_enabled`, live off the same switch state
+      // by: `search.name_index_enabled`, live off the same switch state.
       // `adminSetIndexSettings`/`adminIndexStatus` already use.
       {
         key: 'search.name_index_enabled',
@@ -1874,11 +1873,10 @@ async function adminSetIndexSettings(nameEnabled: boolean): Promise<IndexSetting
 }
 
 /** One fixed id, unlike the real server which mints a fresh one per build:
- *  this mock only ever has one build in flight (`StorageIndexSection.svelte`
- *  disables the button while `jobTray` already tracks it), and `jobStatus`
- *  below needs a stable id to recognize. Progress is a function of elapsed
- *  time rather than a real crawl, since there is no mock filesystem large
- *  enough for `CrawlThrottle` pacing to mean anything. */
+ * this mock only ever has one build in flight, and `jobStatus` below needs a
+ * stable id to recognize. Progress is a function of elapsed time rather than
+ * a real crawl, since there is no mock filesystem large enough for crawl
+ * pacing to mean anything. */
 const MOCK_INDEX_BUILD_JOB = 'mock-index-build'
 const MOCK_INDEX_BUILD_SHARES = 3
 const MOCK_INDEX_BUILD_MS_PER_SHARE = 900
@@ -2064,15 +2062,10 @@ async function adminDeleteUser(id: number): Promise<void> {
 // `PATCH/DELETE /api/admin/grants/{id}`) ── Mirrors `go/internal/acl` closely enough to drive the admin UI in dev mode:
 // no-access-by-default, a grant needs at least one `allow` or `deny` bit,
 // `subpath`/`share`/`principal` are immutable once created (delete and
-// recreate instead: same rule `go/internal/acl` enforces
-// server-side).
-// The real endpoints now exist
-// (`go/internal/httpapi/handler/shares.go` (
-// `admin_update_share`/`admin_delete_share`/`admin_list_grants`/
-// `admin_create_grant`/`admin_update_grant`/`admin_delete_grant`); this mock
-// stays in sync with their wire shapes and error codes so
-// `ShareManagementSection.svelte`/`GrantManagementSection.svelte` behave
-// identically against either backend.
+// recreate instead: same rule `go/internal/acl` enforces server-side).
+// The mock stays in sync with the real endpoints' wire shapes and error codes
+// so the admin share and grant screens behave identically against either
+// backend.
 
 // The mock backend models one flat virtual tree (`STATIC_SEED`'s `/` listing),
 // not the real server's per-share roots: there is no mock equivalent of

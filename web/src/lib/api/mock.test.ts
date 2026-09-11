@@ -159,8 +159,7 @@ describe('mockApi admin user management', () => {
 })
 
 describe('mockApi admin share management', () => {
-  // `ShareManagementSection.svelte`: the screen that fixes "there is no
-  // setting to add folders".
+  // Admin share management covers the setting that registers server folders.
 
   it('creates a share and it appears in the list', async () => {
     const created = await mockApi.adminCreateShare({ name: 'Recipes', host: '/srv/recipes' })
@@ -219,10 +218,10 @@ describe('mockApi admin share management', () => {
 })
 
 describe('mockApi admin grant management', () => {
-  // The mock's own contract for `GET /api/admin/shares`/`/admin/grants*`:
-  // `GrantManagementSection.svelte` is built against exactly this. These
-  // once existed in mock.ts without being added to the exported `mockApi`
-  // object, so nothing could reach them at all; the tests pin them reachable.
+  // The mock's own contract for `GET /api/admin/shares` and `/admin/grants*`:
+  // grant management is built against exactly this. These methods once
+  // existed in mock.ts without being added to the exported `mockApi` object,
+  // so nothing could reach them at all; the tests pin them reachable.
 
   it('lists a fixed set of shares for the grant picker', async () => {
     const shares = await mockApi.adminListShares()
@@ -344,9 +343,8 @@ describe('mockApi admin grant management', () => {
 })
 
 describe('mockApi admin group management', () => {
-  // `GroupManagementSection.svelte`: group CRUD plus
-  // membership, then a group principal is handed to the same
-  // `GrantManagementSection` the user screen already uses.
+  // Group CRUD and membership, then a group principal is handed to the same
+  // grant management screen the user screen already uses.
 
   it('creates a group and it appears in the list', async () => {
     const created = await mockApi.adminCreateGroup({ name: 'Engineering' })
@@ -591,7 +589,7 @@ describe('mockApi jobs', () => {
 
 // The dialog's whole waiting path hangs off this: a confirmed restart drops
 // the socket for a bounded stretch and then answers again, exactly the shape
-// `RestartDialog.svelte` polls for.
+// the restart screen polls for.
 describe('mockApi system restart', () => {
   it('reports restarting with interruption counts', async () => {
     const res = await mockApi.adminSystemRestart()

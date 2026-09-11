@@ -996,12 +996,12 @@ func TestTheRedirectWrapperServesTheAssetsThePageNeeds(t *testing.T) {
 	})
 	h := Redirecting(door, page, nil)
 
-	for _, p := range []string{"/app/main.js", "/favicon.ico"} {
+	for _, p := range []string{"/app/main.js", "/assets/worker-123.js", "/favicon.ico", "/service-worker.js"} {
 		if w := ask(h, "GET", p, ""); w.Code != http.StatusOK {
 			t.Errorf("%s returned %d, so the repair screen cannot draw", p, w.Code)
 		}
 	}
-	if len(served) != 2 {
+	if len(served) != 4 {
 		t.Errorf("the page handler saw %v", served)
 	}
 }

@@ -3,7 +3,7 @@
 // A listing is a cursor walk, so it is an infinite query: one page per request,
 // appended in order. What used to be a sparse index-keyed cache with its own
 // LRU is now just `pages`, and "load more" is `fetchNextPage`.
-import { infiniteQueryOptions, mutationOptions, queryOptions } from '@tanstack/svelte-query'
+import { infiniteQueryOptions, mutationOptions, queryOptions } from '@tanstack/react-query'
 import { api } from '../api/client'
 import {
   permsFromNames,

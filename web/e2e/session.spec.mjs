@@ -85,9 +85,24 @@ try {
   console.log('the interface loads')
   const res = await page.goto(BASE, { waitUntil: 'domcontentloaded' })
   check('the document is served', res?.status() === 200, `status ${res?.status()}`)
-  const bundle = await page.evaluate(() => document.documentElement.innerHTML)
-  check('the embedded bundle is referenced', bundle.includes('app/immutable/'),
-    bundle.includes('app/immutable/') ? '' : bundle.slice(0, 80))
+  const assets = await page.evaluate(async () => {
+    const script = [...document.querySelectorAll('script[type="module"][src]')]
+      .map((node) => node.getAttribute('src') ?? '')
+      .find((src) => /(?:^|\/)app\/[^/]+\.js(?:$|\?)/.test(src)) ?? ''
+    const worker = await fetch('/service-worker.js', { cache: 'no-store' })
+    const bundle = script ? await fetch(script, { cache: 'no-store' }) : null
+    return {
+      script,
+      bundleStatus: bundle?.status ?? 0,
+      workerStatus: worker.status,
+      markup: document.documentElement.innerHTML
+    }
+  })
+  check('the generated module script is under app/', assets.script !== '', assets.markup.slice(0, 160))
+  check('the generated module script is reachable', assets.bundleStatus === 200,
+    `${assets.script || 'missing'} status ${assets.bundleStatus}`)
+  check('the root service worker is reachable', assets.workerStatus === 200,
+    `status ${assets.workerStatus}`)
 
   // The bundle referenced is not the bundle running. Everything below drives
   // the API with fetch, which no content policy stops, so the whole suite

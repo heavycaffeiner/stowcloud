@@ -1,8 +1,7 @@
-// web/src/lib/crypto/zip-listing.ts: lists a zip archive stored on an
-// end-to-end encrypted share, for PreviewDialog.svelte's archive branch, by
-// reading the archive's central directory through ranged ciphertext fetches
-// (the server holds no key for an encrypted share, so it cannot list this
-// itself). Character-encoding fallback mirrors archive.go's ListArchive.
+// Lists a zip archive stored on an end-to-end encrypted share by reading the
+// archive's central directory through ranged ciphertext fetches. The server
+// holds no key for an encrypted share, so it cannot list this itself.
+// Character-encoding fallback mirrors archive.go's ListArchive.
 import { ZipReader, Reader } from '@zip.js/zip.js'
 import { api } from '../api/client'
 import type { ArchiveEntry, ArchiveListing, Entry } from '../api/types'
@@ -208,8 +207,8 @@ class EncryptedZipReader extends Reader<void> {
 
 /**
  * Lists a zip archive stored on an encrypted share, in the same shape
- * `api.archiveList` returns for a plain one, so `PreviewDialog.svelte`
- * renders one listing type regardless of which share produced it.
+ * `api.archiveList` returns for a plain one, so the preview dialog renders one
+ * listing type regardless of which share produced it.
  *
  * `entry` is the archive's own listing row (its `size` is the file's
  * ciphertext length, its `content` reference is what `fetch` reads); `salt`

@@ -1,5 +1,5 @@
 // CI gate for the catalogues in src/lib/i18n.
-// Walks every `t('…')` call site and fails the build on any drift:
+// Walk every TypeScript call site and fail the build on any drift:
 //
 //   * a key missing from a catalogue: that language would render the raw key;
 //   * a catalogue entry no call site uses: dead copy, or a renamed key;
@@ -9,9 +9,8 @@
 //     someone passing display text straight into `t()`.
 //
 // Strings that cross a thread or module boundary as data (the upload worker
-// posts a key because it has no locale state, `job-tray.svelte.ts` stores one
-// for `JobTray.svelte` to render) are not `t()` calls at their source. They
-// are marked `/* i18n */` at the literal and collected here too.
+// posts a key because it has no locale state) are not `t()` calls at their
+// source. They are marked `/* i18n */` at the literal and collected here too.
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, relative } from 'node:path'
@@ -21,14 +20,15 @@ const SRC = join(root, 'src')
 const I18N = join(SRC, 'lib', 'i18n')
 const LOCALES = ['ko', 'en']
 
-/** Mock fixtures and tests carry sample data, not UI copy. */
-const SKIP = /\.test\.ts$|[\\/]mock(-seed)?\.ts$|[\\/]api[\\/]share\.ts$|[\\/]lib[\\/]i18n[\\/]/
+/** Fixtures, tests, API samples, and catalogue implementation carry no UI copy. */
+const SKIP = /(?:^|[\\/])(?:__tests__[\\/]|.*\.(?:test|spec)\.(?:ts|tsx)$|mock(?:-seed)?\.ts$|api[\\/]share\.ts$|lib[\\/]i18n(?:[\\/]|$))/
 
 function walk(dir, out = []) {
   for (const name of readdirSync(dir)) {
-    const p = join(dir, name)
-    if (statSync(p).isDirectory()) walk(p, out)
-    else if (/\.(svelte|ts)$/.test(p) && !SKIP.test(p)) out.push(p)
+    const path = join(dir, name)
+    if (statSync(path).isDirectory()) {
+      if (!SKIP.test(`${path.replace(/\\/g, '/')}/`)) walk(path, out)
+    } else if (/\.(ts|tsx)$/.test(name)) out.push(path)
   }
   return out
 }
@@ -42,6 +42,7 @@ const KEY_SHAPE = /^[a-z][a-z0-9_]*\.[a-z0-9_]+$/
 const used = new Map() // key -> first "file:line"
 
 for (const file of walk(SRC)) {
+  if (SKIP.test(file)) continue
   const text = readFileSync(file, 'utf8')
   for (const re of [CALL, DEFERRED]) {
     re.lastIndex = 0

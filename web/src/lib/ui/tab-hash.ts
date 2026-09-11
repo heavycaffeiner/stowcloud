@@ -2,11 +2,9 @@
 // (`/settings`, `/admin`).
 //
 // The sync has to run both ways. Writing only tab -> URL looks right until
-// someone opens `/settings#appearance` while already on `/settings`: SvelteKit
-// treats that as a same-document hash change, the tab never moves, and the
-// effect overwrites the URL back to the tab already on screen, so the link
-// silently does nothing.
-//
+// someone opens `/settings#appearance` while already on `/settings`: the
+// hash is a same-document change, so the tab must move without the effect
+// overwriting the URL back to the tab already on screen.
 // What makes the other direction tricky is that `replaceState` writes history
 // without touching `page.url`. That single stale hash cannot answer both
 // questions the sync asks, so each gets its own source:

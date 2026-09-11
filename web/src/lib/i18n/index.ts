@@ -12,7 +12,7 @@
 // uses, or when `{placeholder}` sets disagree between the two languages.
 import en from './en.json'
 import ko from './ko.json'
-import { i18nState, setLocale, type Locale } from './state.svelte'
+import { localeStore, setLocale, type Locale } from './state'
 
 export type { Locale }
 export { setLocale }
@@ -20,7 +20,7 @@ export { setLocale }
 const CATALOGUE: Record<Locale, Record<string, string>> = { ko, en }
 
 export function currentLocale(): Locale {
-  return i18nState.locale
+  return localeStore.getState().locale
 }
 
 /**
@@ -35,7 +35,7 @@ export function currentLocale(): Locale {
  * answer.
  */
 export function t(key: string, params?: Record<string, string | number>): string {
-  let s = CATALOGUE[i18nState.locale][key] ?? ko[key as keyof typeof ko] ?? key
+  let s = CATALOGUE[currentLocale()][key] ?? ko[key as keyof typeof ko] ?? key
   if (params) {
     for (const [k, v] of Object.entries(params)) s = s.replaceAll(`{${k}}`, String(v))
   }
@@ -58,7 +58,7 @@ export function tp(
 /** BCP 47 tag for the current locale: what `Intl` takes, and what the root
  *  layout writes into `<html lang>`. */
 export function localeTag(): string {
-  return i18nState.locale === 'ko' ? 'ko-KR' : 'en-US'
+  return currentLocale() === 'ko' ? 'ko-KR' : 'en-US'
 }
 
 /** mtime_ns (nanoseconds-as-string, per) → localized date/time. */

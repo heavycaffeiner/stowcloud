@@ -1,0 +1,209 @@
+@import 'mdui/mdui.css';
+@import '@fontsource-variable/google-sans-flex/opsz.css';
+
+
+/* Static brand palette matching the former #0B57D0 runtime scheme. */
+:root {
+  --mdui-color-primary-light: 11, 87, 208;
+  --mdui-color-primary-dark: 168, 199, 255;
+}
+:root {
+  color-scheme: light dark;
+  --sc-page-surface: rgb(var(--mdui-color-surface));
+  --sc-container-surface: rgb(var(--mdui-color-surface-container-low));
+  --sc-raised-surface: rgb(var(--mdui-color-surface-container));
+  --sc-overlay-surface: rgb(var(--mdui-color-surface-container-high));
+  --sc-content-primary: rgb(var(--mdui-color-on-surface));
+  --sc-content-secondary: rgb(var(--mdui-color-on-surface-variant));
+  --sc-state-selection: rgb(var(--mdui-color-secondary-container));
+  --sc-state-selection-content: rgb(var(--mdui-color-on-secondary-container));
+  --sc-state-focus: rgb(var(--mdui-color-secondary));
+  --sc-state-warning: rgb(var(--mdui-color-tertiary-container));
+  --sc-state-warning-content: rgb(var(--mdui-color-on-tertiary-container));
+  --sc-state-error: rgb(var(--mdui-color-error-container));
+  --sc-state-error-content: rgb(var(--mdui-color-on-error-container));
+  --sc-nav-bar-height: 4rem;
+  --sc-nav-drawer-width: 256px;
+  --sc-row-height: 48px;
+  --sc-page-pad: 16px;
+  font-family: 'Google Sans Flex Variable', 'Pretendard Variable', 'Noto Sans KR', system-ui, sans-serif;
+}
+
+@media (min-width: 600px) {
+  :root {
+    --sc-page-pad: 24px;
+  }
+}
+
+@media (min-width: 905px) {
+  :root {
+    --sc-page-pad: 32px;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  min-width: 320px;
+  background: var(--sc-page-surface);
+  color: var(--sc-content-primary);
+  font-feature-settings: 'tnum' 1;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  margin: 0;
+  word-break: keep-all;
+}
+
+.sc-focus-ring:focus-visible,
+.sc-focus-ring-within:has(:focus-visible) {
+  outline: 3px solid var(--sc-state-focus);
+  outline-offset: 2px;
+}
+
+.sc-icon-button {
+  display: inline-flex;
+  flex: none;
+}
+
+.sc-icon-button__tip {
+  position: fixed;
+  z-index: 40;
+  inset: auto;
+  margin: 0;
+  border: none;
+  transform: translateX(-50%);
+  max-width: 240px;
+  padding: 4px 8px;
+  border-radius: var(--mdui-shape-corner-extra-small);
+  background: rgb(var(--mdui-color-inverse-surface));
+  color: rgb(var(--mdui-color-inverse-on-surface));
+  font-size: var(--mdui-typescale-body-small-size);
+  font-weight: var(--mdui-typescale-body-small-weight);
+  letter-spacing: var(--mdui-typescale-body-small-tracking);
+  line-height: var(--mdui-typescale-body-small-line-height);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.sc-icon-button__tip--placed {
+  opacity: 1;
+}
+
+.sc-thumb__wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.sc-thumb__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.sc-thumb__badge {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--mdui-shape-corner-small, 4px);
+  background: rgb(0 0 0 / 65%);
+  color: #fff;
+  pointer-events: none;
+}
+
+.sc-thumb__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: rgb(var(--mdui-color-on-surface-variant));
+}
+
+.sc-touch-target {
+  position: relative;
+}
+
+.sc-touch-target::before {
+  content: '';
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: max(100%, 48px);
+  height: max(100%, 48px);
+  translate: -50% -50%;
+}
+
+.sc-filename {
+  direction: rtl;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  unicode-bidi: plaintext;
+}
+
+
+.sc-danger {
+  --mdui-color-primary: var(--mdui-color-error);
+  --mdui-color-on-primary: var(--mdui-color-on-error);
+  --mdui-color-primary-container: var(--mdui-color-error-container);
+  --mdui-color-on-primary-container: var(--mdui-color-on-error-container);
+}
+
+.sc-loading-page,
+.sc-error-page {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: var(--sc-page-pad);
+}
+
+.sc-error-page__card {
+  width: min(100%, 34rem);
+  padding: 24px;
+  border-radius: var(--mdui-shape-corner-large);
+  background: var(--sc-container-surface);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

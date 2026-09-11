@@ -1,7 +1,7 @@
 // How the file browser is laid out and ordered. All three outlive the page:
 // a toggle that resets on reload is one the user has to re-set on reload.
 import type { Order, SortKey } from '../api/types'
-import { defineStore } from './create.svelte'
+import { defineStore } from './create'
 import { readPref, writePref } from './persist'
 
 export type ViewMode = 'list' | 'grid'

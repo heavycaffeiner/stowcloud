@@ -1,6 +1,6 @@
 // The upload queue's state. The Worker that fills it lives in
 // `upload/queue.ts`; this file only holds what the tray renders.
-import { defineStore } from './create.svelte'
+import { defineStore } from './create'
 
 export type UploadStatus = 'queued' | 'uploading' | 'paused' | 'done' | 'error' | 'canceled'
 

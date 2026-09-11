@@ -1,6 +1,6 @@
 // Administrator screens: users, groups, grants, shares, server settings,
 // storage and the search index.
-import { mutationOptions, queryOptions } from '@tanstack/svelte-query'
+import { mutationOptions, queryOptions } from '@tanstack/react-query'
 import { api } from '../api/client'
 import type {
   ApplyOutcome,
@@ -205,13 +205,13 @@ export function adminShareMutation() {
   return mutationOptions({
     mutationFn: (action: AdminShareAction) => applyShareAction(action),
     // Settled, not succeeded: a refused write must not leave a control
-    // showing what the click proposed while the server holds the old value.
+    // showing what the click proposed while the server still holds the old value.
     onSettled: () => {
       invalidate(keys.adminShares())
       // A share is a root: the roots the session reports and every listing
       // built on them change with it.
       invalidate(keys.session())
-      invalidate(['dir'])
+      invalidate(keys.paths())
     }
   })
 }
@@ -240,7 +240,7 @@ export function adminGrantMutation() {
     onSuccess: () => {
       invalidate(keys.adminGrants())
       invalidate(keys.session())
-      invalidate(['dir'])
+      invalidate(keys.paths())
     }
   })
 }

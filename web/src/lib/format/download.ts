@@ -1,12 +1,10 @@
-// The two-step download every single-file
-// download in the app goes through: mint a ticket naming the file
-// (`POST /api/v1/files/download`), then hand its `url` to the browser's own
-// navigation so its download manager fetches the bytes. Nothing here reads
-// a response body: that is the whole point of the ticket. The archive
-// download (`POST /api/v1/files/archive`) is the same two-step shape with
-// its own multi-path ticket call, minted where the selection is built
-// (`(app)/b/[...path]/+page.svelte`) and handed to `triggerUrlDownload`
-// below.
+// The two-step download every single-file download in the app goes through:
+// mint a ticket naming the file (`POST /api/v1/files/download`), then hand its
+// `url` to the browser's own navigation so its download manager fetches the
+// bytes. Nothing here reads a response body: that is the whole point of the
+// ticket. Archive downloads use the same two-step shape with their own
+// multi-path ticket call, minted where the selection is built, and handed to
+// `triggerUrlDownload` below.
 //
 // `newTab` in `triggerUrlDownload` opens a malformed URL onto a tab nobody
 // was using. A same-tab `<a href>` to a host that answers nothing navigates

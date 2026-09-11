@@ -119,8 +119,9 @@ func main() {
 	os.Exit(1)
 }
 
-// readClient concatenates every TypeScript module under the client directory,
-// tests excluded: a mock's calls are the mock's contract, not this server's.
+// readClient concatenates every TypeScript module, including TSX, under the
+// client directory, tests excluded: a mock's calls are the mock's contract,
+// not this server's.
 //
 // Recursive, and that is load-bearing rather than tidy. The resumable upload
 // transport lives in a sibling directory, so a check that read one directory
@@ -145,7 +146,7 @@ func readClient(dir string) (string, error) {
 		// URL inline is calling the same route table, and reading only .ts
 		// reported four live routes as uncalled: the thumbnail, the public
 		// zip, and both halves of a share link's public surface.
-		isSource := strings.HasSuffix(name, ".ts") || strings.HasSuffix(name, ".svelte")
+        isSource := strings.HasSuffix(name, ".ts") || strings.HasSuffix(name, ".tsx")
 		if !isSource || strings.Contains(name, ".test.") {
 			return nil
 		}

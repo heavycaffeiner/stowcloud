@@ -20,7 +20,7 @@ function walk(dir: string, out: string[] = []): string[] {
       walk(p, out)
       continue
     }
-    if (/\.(svelte|ts)$/.test(p)) out.push(p)
+    if (/\.(ts|tsx)$/.test(p)) out.push(p)
   }
   return out
 }

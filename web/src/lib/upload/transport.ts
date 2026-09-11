@@ -8,13 +8,12 @@ import { classifyFailure, retryAfterMs, retryDelay } from './retry'
 const IS_MOCK = import.meta.env.VITE_API_MOCK === '1'
 const BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api/v1'
 
-// The session cookie is `__Host-sc_sid` (auth) and state-changing requests
-// additionally need the `Sc-Csrf` header: the same
-// requirement `api/http.ts` satisfies for every other endpoint. This module
-// runs inside the dedicated upload Worker though, a separate module realm
-// from `http.ts`'s module-scoped `csrfToken`, so the token can't just be
-// imported: `upload-tray.svelte.ts` posts it in over `worker.ts`'s message
-// channel instead (see that file's `csrf` Cmd) and it lands here.
+// The session cookie is `__Host-sc_sid` (auth), and state-changing requests
+// additionally need the `Sc-Csrf` header: the same requirement `api/http.ts`
+// satisfies for every other endpoint. This module runs inside the dedicated
+// upload Worker, a separate module realm from `http.ts`'s module-scoped
+// `csrfToken`, so the token is passed over `worker.ts`'s message channel and
+// lands here.
 let csrfToken = ''
 export function setCsrfToken(t: string): void {
   csrfToken = t

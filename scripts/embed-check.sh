@@ -38,9 +38,9 @@ else
   (cd web && pnpm build >/dev/null)
 fi
 
-WANT=$(grep -o 'app/immutable/entry/app[A-Za-z0-9._-]*\.js' "$BUNDLE_DIR/index.html" | head -1)
+WANT=$(grep -oE 'app/[^"'"'"'[:space:]]+\.js' "$BUNDLE_DIR/index.html" | head -1 || true)
 if [ -z "$WANT" ]; then
-  echo "FAIL: the built bundle names no entry script" >&2
+  echo "FAIL: the built bundle names no module script under app/" >&2
   exit 1
 fi
 echo "    built bundle: $WANT"
@@ -106,9 +106,9 @@ if [ "$READY" -ne 1 ]; then
 fi
 
 GOT=$(curl -sk -H "Host: localhost" https://127.0.0.1:18500/ \
-      | grep -o 'app/immutable/entry/app[A-Za-z0-9._-]*\.js' | head -1 || true)
+      | grep -oE 'app/[^"'"'"'[:space:]]+\.js' | head -1 || true)
 if [ -z "$GOT" ]; then
-  echo "FAIL: the server served no bundle reference" >&2
+  echo "FAIL: the server served no module script under app/" >&2
   sed -n '1,40p' "$DIR/log" >&2
   exit 1
 fi
@@ -125,6 +125,15 @@ fi
 CODE=$(curl -sk -o /dev/null -w '%{http_code}' -H "Host: localhost" "https://127.0.0.1:18500/$GOT")
 if [ "$CODE" != "200" ]; then
   echo "FAIL: the named bundle answered $CODE" >&2
+  exit 1
+fi
+
+# The worker is a separate root entry, not an app chunk. It must remain
+# reachable at the stable path the authenticated shell registers.
+SW_CODE=$(curl -sk -o /dev/null -w '%{http_code}' -H "Host: localhost" \
+  https://127.0.0.1:18500/service-worker.js)
+if [ "$SW_CODE" != "200" ]; then
+  echo "FAIL: /service-worker.js answered $SW_CODE" >&2
   exit 1
 fi
 
