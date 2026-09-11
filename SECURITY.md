@@ -38,10 +38,9 @@ root describes. In scope:
 
 Out of scope:
 
-- **The non-Linux VFS backend.** `crates/sc-vfs/src/backend/portable.rs` walks
-  paths in userspace instead of `openat2(RESOLVE_BENEATH)` and has no Landlock
-  behind it. It exists so the test suite runs on a developer's machine.
-  Windows and macOS are not deployment targets. See `README.md`.
+- **Non-Linux hosts.** The engine VFS and confinement model require Linux
+  `openat2`, Landlock, and seccomp support. Windows and macOS are not
+  deployment targets. See `README.md`.
 - Anything that requires administrator access to exploit. An administrator can
   already grant themselves any path.
 - Missing hardening in a deployment that ignores the shipped compose file: no
@@ -72,6 +71,7 @@ Stated in `README.md` as well, repeated here because it bears on what a report
 is worth: this code has never been reviewed by anyone outside this repository.
 There is no Litmus conformance run in CI and no automated sync-client
 regression suite. The Landlock and seccomp layers depend on kernel
-configuration. `docs/JAIL-PROOF.md` records what happens when they are
-unavailable, which is a downgrade under the default policy rather than a
-failure to start.
+configuration. Under the shipped `required` policy, a missing layer refuses
+startup. Operators who explicitly select `preferred` receive a reported
+degradation instead. `docs/internal/JAIL-PROOF.md` records the tested policy
+matrix and remaining architecture limits.
