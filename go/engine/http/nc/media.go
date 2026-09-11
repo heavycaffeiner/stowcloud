@@ -22,6 +22,8 @@ import (
 	"golang.org/x/image/math/fixed"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/apierr"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/httpheader"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/preview"
@@ -350,8 +352,11 @@ func (s *Server) directLink(c *fiber.Ctx, p Principal) (Val, bool, *Error) {
 		return Val{}, false, Failure("the link could not be minted")
 	}
 
-	origin := s.deps.Origin(originRequestOf(c))
-	return Obj(P("url", Str(origin+"/remote.php/direct/"+token))), true, nil
+	render := s.deps.ContentOrigin
+	if render == nil {
+		render = s.deps.Origin
+	}
+	return Obj(P("url", Str(render(originRequestOf(c))+"/remote.php/direct/"+token))), true, nil
 }
 
 // directStream serves the bytes a direct link names.
@@ -393,14 +398,22 @@ func (s *Server) directStream(c *fiber.Ctx) error {
 	if err != nil {
 		return c.SendStatus(fiber.StatusNotFound)
 	}
-	defer func() {
+	length, lerr := num.Narrow[int](stream.Remaining())
+	if lerr != nil {
 		if cerr := stream.Close(); cerr != nil {
 			s.log.Warn("a direct stream was not released", "error", cerr)
 		}
-	}()
+		return c.SendStatus(fiber.StatusNotFound)
+	}
 
-	c.Set(fiber.HeaderContentType, ContentTypeOf(false, fid.Name))
-	c.Set(fiber.HeaderContentLength, strconv.FormatUint(stream.Remaining(), 10))
+	contentType := ContentTypeOf(false, fid.Name)
+	c.Set(fiber.HeaderContentType, contentType)
+	c.Set(fiber.HeaderXContentTypeOptions, "nosniff")
+	if httpheader.IsExecutableMIME(contentType) {
+		c.Set(fiber.HeaderContentDisposition, httpheader.Attachment(fid.Name))
+	} else {
+		c.Set(fiber.HeaderContentSecurityPolicy, httpheader.SafeInlineCSP)
+	}
 	c.Set(fiber.HeaderAcceptRanges, "bytes")
 	status := fiber.StatusOK
 	if rng != nil {
@@ -408,7 +421,11 @@ func (s *Server) directStream(c *fiber.Ctx) error {
 		c.Set(fiber.HeaderContentRange, contentRangeHeader(rng[0], rng[1], entry.Size))
 	}
 	c.Status(status)
-	return c.SendStream(stream)
+	// The sized form: the body is read after this handler returns, so a
+	// stream closed here would be closed before it was sent, and a stream
+	// sent without its size would go out chunked under a Content-Length that
+	// no longer holds. The framework closes the stream once it has read it.
+	return c.SendStream(stream, length)
 }
 
 // parseSingleRange reads a Range header against a known size, refusing a

@@ -48,6 +48,20 @@ func (s *Server) fileID(ctx context.Context, e core.Entry) uint64 {
 	return id
 }
 
+// recordIDs makes the ids about to be handed out resolvable later.
+//
+// Best effort: a refusal, such as the cache's free-space guard, leaves the
+// response correct and the ids derived, and only a later request that names
+// a file by id alone answers absent.
+func (s *Server) recordIDs(ctx context.Context, entries []core.Entry) {
+	if len(entries) == 0 {
+		return
+	}
+	if err := s.deps.Store.RecordIDs(ctx, entries); err != nil {
+		s.log.Warn("the ids of a listing could not be recorded", "count", len(entries), "error", err)
+	}
+}
+
 // davIDOf renders an entry's identity as a client stores it, or the empty
 // string when it has none.
 func (s *Server) davIDOf(ctx context.Context, e core.Entry) string {
@@ -65,6 +79,7 @@ func (s *Server) davIDOf(ctx context.Context, e core.Entry) string {
 // which one client fails an upload that already succeeded on the ground that
 // it cannot tell what it just wrote.
 func (s *Server) setEntryHeaders(ctx context.Context, w http.ResponseWriter, e core.Entry) {
+	s.recordIDs(ctx, []core.Entry{e})
 	if tag := ETagValue(e.ETag); tag != "" {
 		w.Header().Set("ETag", tag)
 		w.Header().Set("OC-ETag", tag)

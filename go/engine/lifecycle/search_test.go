@@ -102,6 +102,13 @@ func TestSearchingFindsAFile(t *testing.T) {
 			hits = append(hits, stringField(hit, "name"))
 		case "done":
 			done++
+			var terminal map[string]any
+			if err := json.Unmarshal([]byte(e.data), &terminal); err != nil {
+				t.Fatalf("decoding terminal event %q: %v", e.data, err)
+			}
+			if truncated, ok := terminal["truncated"].(bool); !ok || truncated {
+				t.Errorf("a complete search reported truncated=%v", terminal["truncated"])
+			}
 		}
 	}
 

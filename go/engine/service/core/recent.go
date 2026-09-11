@@ -35,6 +35,20 @@ func leafOf(p vfs.SharePath) string {
 	return s
 }
 
+func pathInScope(path, scope string) bool {
+	path = strings.Trim(path, "/")
+	scope = strings.Trim(scope, "/")
+	if scope == "" {
+		return true
+	}
+	if path == scope {
+		return true
+	}
+	return len(path) > len(scope) &&
+		strings.HasPrefix(path, scope) &&
+		path[len(scope)] == '/'
+}
+
 type RecentHit struct {
 	Vpath   vfs.Vpath
 	Share   string
@@ -138,7 +152,7 @@ func (c *Core) Recent(ctx context.Context, user UserID, q RecentQuery) ([]Recent
 			// longer theirs to view.
 			continue
 		}
-		if q.Scope != "" && !strings.HasPrefix(vp.String(), q.Scope) {
+		if !pathInScope(vp.String(), q.Scope) {
 			continue
 		}
 		// Re-checked at the path, not at the share: a grant can be revoked on

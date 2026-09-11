@@ -6,6 +6,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"strings"
@@ -374,6 +375,58 @@ func TestANonArchiveRefuses(t *testing.T) {
 	}
 	if _, err := ListArchive(t.Context(), bytes.NewReader(raw), -5); !errors.Is(err, ErrNotArchive) {
 		t.Errorf("a negative size: %v", err)
+	}
+}
+
+// Physical and declared central-directory bounds are checked before
+// archive/zip allocates one File value per member.
+func TestOversizedCentralDirectoriesAreRejectedBeforeParsing(t *testing.T) {
+	end := func(entries uint16, directoryBytes uint32) []byte {
+		raw := make([]byte, zipEndLength)
+		binary.LittleEndian.PutUint32(raw, 0x06054b50)
+		binary.LittleEndian.PutUint16(raw[8:], entries)
+		binary.LittleEndian.PutUint16(raw[10:], entries)
+		binary.LittleEndian.PutUint32(raw[12:], directoryBytes)
+		return raw
+	}
+
+	// The EOCD lies after a directory-sized span even though its declared
+	// count and byte size are both zero. The physical bound must not trust
+	// either underreported field.
+	underreported := make([]byte, limits.ArchiveDirectoryBytes+zipEndLength+1)
+	copy(underreported[len(underreported)-zipEndLength:], end(0, 0))
+
+	// A partial ZIP64 sentinel can underreport the same fields. Keep the
+	// locator and record structurally valid so the physical check, rather
+	// than the ZIP64 parser's error path, is what rejects the oversized span.
+	directoryLength := limits.ArchiveDirectoryBytes + 1
+	zip64Offset := directoryLength
+	zip64EndOffset := zip64Offset + zip64EndLength
+	locatorOffset := zip64EndOffset
+	eocdOffset := locatorOffset + zip64LocatorLength
+	zip64Oversized := make([]byte, eocdOffset+zipEndLength)
+	zip64End := zip64Oversized[zip64Offset:zip64EndOffset]
+	binary.LittleEndian.PutUint32(zip64End, 0x06064b50)
+	binary.LittleEndian.PutUint64(zip64End[4:], 44)
+	binary.LittleEndian.PutUint64(zip64End[32:], 0)
+	binary.LittleEndian.PutUint64(zip64End[40:], 0)
+	binary.LittleEndian.PutUint64(zip64End[48:], 0)
+	locator := zip64Oversized[locatorOffset:eocdOffset]
+	binary.LittleEndian.PutUint32(locator, 0x07064b50)
+	binary.LittleEndian.PutUint64(locator[8:], uint64(zip64Offset))
+	binary.LittleEndian.PutUint32(locator[16:], 1)
+	copy(zip64Oversized[eocdOffset:], end(^uint16(0), ^uint32(0)))
+
+	for _, raw := range [][]byte{
+		end(uint16(limits.ArchiveEntriesParsed+1), 0),
+		end(1, uint32(limits.ArchiveDirectoryBytes+1)),
+		underreported,
+		zip64Oversized,
+	} {
+		_, err := ListArchive(t.Context(), bytes.NewReader(raw), int64(len(raw)))
+		if !errors.Is(err, ErrNotArchive) || !strings.Contains(err.Error(), "parser bound") {
+			t.Errorf("oversized directory returned %v", err)
+		}
 	}
 }
 

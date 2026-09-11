@@ -147,7 +147,7 @@ func (s *Service) VerifyAppPasswordID(ctx context.Context, token string) (Princi
 	if row.WipeWanted {
 		return Principal{}, Scope{}, 0, ErrCredentials
 	}
-	if row.ExpiresNs != nil && s.now() > *row.ExpiresNs {
+	if row.ExpiresNs != nil && s.now() >= *row.ExpiresNs {
 		return Principal{}, Scope{}, 0, ErrCredentials
 	}
 
@@ -164,7 +164,7 @@ func (s *Service) VerifyAppPasswordID(ctx context.Context, token string) (Princi
 
 	principal := principalOf(acct)
 	scope := Scope{Perms: row.ScopePerms, Shares: row.Shares}
-	s.cache.tokenStore(hash, principal, scope, row.ID, gen)
+	s.cache.tokenStore(hash, principal, scope, row.ID, row.ExpiresNs, gen)
 	s.noteAppPasswordUse(ctx, row.ID)
 	return principal, scope, row.ID, nil
 }

@@ -295,6 +295,7 @@ func anonymousWithCookie(
 	}
 	if cookie != "" {
 		req.Header.Set("Cookie", strings.Split(cookie, ";")[0])
+		req.Header.Set("Origin", req.URL.Scheme+"://"+req.Host)
 	}
 
 	resp, err := testClient().Do(req)

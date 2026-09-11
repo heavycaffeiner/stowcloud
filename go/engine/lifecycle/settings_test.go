@@ -85,6 +85,73 @@ func hostRequest(t *testing.T, base, host string) int {
 	return resp.StatusCode
 }
 
+// A named content host serves no application route.
+//
+// The boundary used to admit every path on the content host and only skip
+// the app CSP there, so the API, the interface and the native DAV mount all
+// answered on the origin meant to hold nothing but uploaded bytes. The app
+// host keeps serving them.
+func TestAContentHostServesNoApplicationRoute(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	if err != nil {
+		t.Fatalf("opening: %v", err)
+	}
+	if merr := e.State.MergeSettings(ctx, "network", map[string]any{
+		"app_hosts":     []any{"app.example"},
+		"content_hosts": []any{"files.example"},
+	}); merr != nil {
+		t.Fatalf("saving the hosts: %v", merr)
+	}
+	if cerr := e.Close(); cerr != nil {
+		t.Fatalf("closing: %v", cerr)
+	}
+	reopened, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	if err != nil {
+		t.Fatalf("reopening: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := reopened.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	})
+	base := serve(t, reopened)
+
+	if status := hostRequest(t, base, "app.example"); status != http.StatusOK {
+		t.Fatalf("the app host answered %d for the API", status)
+	}
+
+	for _, c := range []struct {
+		what   string
+		method string
+		path   string
+	}{
+		{"the native API", http.MethodGet, "/api/v1/system/health"},
+		{"the interface", http.MethodGet, "/b/"},
+		{"the native DAV mount", "PROPFIND", lifecycle.DavPrefix + "/"},
+		{"the public link surface", http.MethodGet, "/s/nosuchtoken"},
+	} {
+		req, rerr := http.NewRequest(c.method, base+c.path, nil)
+		if rerr != nil {
+			t.Fatalf("building: %v", rerr)
+		}
+		req.Host = "files.example"
+		resp, derr := testClient().Do(req)
+		if derr != nil {
+			t.Fatalf("requesting %s: %v", c.what, derr)
+		}
+		if cerr := resp.Body.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+		if resp.StatusCode != http.StatusMisdirectedRequest {
+			t.Errorf("%s answered %d on the content host, want 421", c.what, resp.StatusCode)
+		}
+	}
+}
+
 // A saved proxy range decides whether a forwarded address is believed.
 //
 // The chain resolves the client through this set. A range that was not saved

@@ -79,6 +79,47 @@ func newPool(t *testing.T, workers int, mode string) *Pool {
 	return p
 }
 
+func TestNewPoolDefaultsToAnEmptyChildEnvironment(t *testing.T) {
+	p, err := NewPool(PoolOptions{Exe: "preview-test-worker"})
+	if err != nil {
+		t.Fatalf("NewPool: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := p.Close(); cerr != nil {
+			t.Errorf("closing the pool: %v", cerr)
+		}
+	})
+
+	if p.opt.Env == nil {
+		t.Fatal("the default child environment is nil and would inherit the parent")
+	}
+	if len(p.opt.Env) != 0 {
+		t.Fatalf("the default child environment = %q, want empty", p.opt.Env)
+	}
+}
+
+func TestNewPoolPreservesAnExplicitChildEnvironment(t *testing.T) {
+	want := []string{"HELPER_MODE=die", "SC_PREVIEW_ERRNO=1"}
+	p, err := NewPool(PoolOptions{Exe: "preview-test-worker", Env: want})
+	if err != nil {
+		t.Fatalf("NewPool: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := p.Close(); cerr != nil {
+			t.Errorf("closing the pool: %v", cerr)
+		}
+	})
+
+	if len(p.opt.Env) != len(want) {
+		t.Fatalf("the child environment = %q, want %q", p.opt.Env, want)
+	}
+	for i := range want {
+		if p.opt.Env[i] != want[i] {
+			t.Fatalf("the child environment = %q, want %q", p.opt.Env, want)
+		}
+	}
+}
+
 // sourceFile writes an image and opens it, which is what the parent hands the
 // worker: a descriptor, never a path.
 func sourceFile(t *testing.T, w, h int) *os.File {

@@ -80,8 +80,15 @@ func (a answer) sessionCookie() *http.Cookie {
 	return nil
 }
 
-// postJSON sends a body with no credential.
+// postJSON sends a body with the app's own Origin, as a browser fetch does.
 func postJSON(t *testing.T, url string, body any) answer {
+	t.Helper()
+	return postJSONWithOrigin(t, url, body, "")
+}
+
+// postJSONWithOrigin lets a boundary regression exercise a foreign site
+// without changing the ordinary same-origin helper used by the login cases.
+func postJSONWithOrigin(t *testing.T, url string, body any, origin string) answer {
 	t.Helper()
 
 	encoded, err := json.Marshal(body)
@@ -93,6 +100,10 @@ func postJSON(t *testing.T, url string, body any) answer {
 		t.Fatalf("building: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if origin == "" {
+		origin = req.URL.Scheme + "://" + req.Host
+	}
+	req.Header.Set("Origin", origin)
 
 	resp, err := testClient().Do(req)
 	if err != nil {
@@ -139,6 +150,7 @@ func TestSigningInWithAPassword(t *testing.T) {
 
 	// The token itself must not be in the body. A cookie the browser attaches
 	// on its own is not readable by a page's scripts; the same secret in JSON
+
 	// is.
 	raw, err := json.Marshal(body)
 	if err != nil {
@@ -148,6 +160,48 @@ func TestSigningInWithAPassword(t *testing.T) {
 		if strings.Contains(string(raw), `"`+key+`"`) {
 			t.Errorf("the response carries a %q field: %s", key, raw)
 		}
+	}
+}
+
+// A top-level cross-site submission cannot install a new ambient session even
+// when the browser has no old cookie to trigger the ordinary CSRF rule.
+func TestACrossSiteCookieLessLoginIsRefused(t *testing.T) {
+	t.Parallel()
+	base, _, _ := bootForLogin(t)
+
+	resp := postJSONWithOrigin(t, base+"/api/v1/auth/login",
+		map[string]string{"login": loginName, "password": loginPassword},
+		"https://evil.example.test")
+	if resp.status != http.StatusMisdirectedRequest {
+		t.Fatalf("a cross-site cookie-less login answered %d, want 421", resp.status)
+	}
+	if resp.sessionCookie() != nil {
+		t.Fatal("a refused cross-site login set a session cookie")
+	}
+}
+
+func TestCookieLessLoginRequiresJSONContentType(t *testing.T) {
+	t.Parallel()
+	base, _, _ := bootForLogin(t)
+
+	req, err := http.NewRequest(http.MethodPost, base+"/api/v1/auth/login",
+		strings.NewReader(`{"login":"`+loginName+`","password":"`+loginPassword+`"}`))
+	if err != nil {
+		t.Fatalf("building: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", req.URL.Scheme+"://"+req.Host)
+	resp, err := testClient().Do(req)
+	if err != nil {
+		t.Fatalf("requesting: %v", err)
+	}
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	}()
+	if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
+		t.Fatalf("a form content type installed an authentication result: %d", resp.StatusCode)
 	}
 }
 
@@ -479,6 +533,7 @@ func logout(t *testing.T, base string, cookie *http.Cookie, csrf string) (int, [
 	}
 	req.AddCookie(cookie)
 	req.Header.Set("Sc-Csrf", csrf)
+	req.Header.Set("Origin", req.URL.Scheme+"://"+req.Host)
 
 	resp, err := testClient().Do(req)
 	if err != nil {

@@ -50,6 +50,7 @@ func mutate(t *testing.T, method, url string, cookie *http.Cookie, csrf string, 
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(cookie)
 	req.Header.Set("Sc-Csrf", csrf)
+	req.Header.Set("Origin", req.URL.Scheme+"://"+req.Host)
 
 	resp, err := testClient().Do(req)
 	if err != nil {

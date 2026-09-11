@@ -181,8 +181,8 @@ func TestAnArchiveWalkSurvivesASubtreeThatVanishes(t *testing.T) {
 	t.Parallel()
 	c, host, link := folderLink(t, acl.Read|acl.Download)
 	ctx := context.Background()
-	// Unreadable, so the descent into it fails the way a vanished directory
-	// does. It must contribute nothing rather than failing the archive.
+	// Unreadable, so the descent into it contributes no bytes and marks the
+	// archive incomplete rather than disappearing silently.
 	if err := os.Chmod(filepath.Join(host, "shared/inner"), 0o000); err != nil {
 		t.Fatalf("sealing the subtree: %v", err)
 	}
@@ -193,7 +193,11 @@ func TestAnArchiveWalkSurvivesASubtreeThatVanishes(t *testing.T) {
 	})
 
 	files := 0
-	if err := c.LinkArchiveWalk(ctx, link, "", func(_ WalkEntry, s *Stream) error {
+	sawUnreadable := false
+	if err := c.LinkArchiveWalk(ctx, link, "", func(e WalkEntry, s *Stream) error {
+		if e.RelPath == "inner" && !e.Readable {
+			sawUnreadable = true
+		}
 		if s != nil {
 			files++
 		}
@@ -203,6 +207,9 @@ func TestAnArchiveWalkSurvivesASubtreeThatVanishes(t *testing.T) {
 	}
 	if files != 2 {
 		t.Fatalf("the partial archive holds %d files, want the two readable ones", files)
+	}
+	if !sawUnreadable {
+		t.Fatal("the unreadable subtree was omitted without an unreadable archive row")
 	}
 }
 

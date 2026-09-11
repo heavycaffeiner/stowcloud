@@ -133,12 +133,13 @@ func (h *Handler) walk(
 				// reported: a 403 inside the listing would confirm it exists.
 				continue
 			}
-			href := EncodeHref(append(segs[:len(segs):len(segs)], e.Name), e.IsDir)
+			childSegs := append(segs[:len(segs):len(segs)], e.Name)
+			href := EncodeHref(childSegs, e.IsDir)
 			if werr := h.writeEntry(ctx, m, req, child, e, href); werr != nil {
 				return werr
 			}
 			if depth == DepthInfinity && e.IsDir {
-				if werr := h.walk(ctx, m, req, child, depth, segs); werr != nil {
+				if werr := h.walk(ctx, m, req, child, depth, childSegs); werr != nil {
 					return werr
 				}
 			}

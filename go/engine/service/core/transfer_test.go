@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/journal"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
@@ -35,6 +36,38 @@ func twoShares(t *testing.T) (c *Core, st *state.DB, srcHost, dstHost string, sr
 		t.Fatalf("resolving the destination root: %v", err)
 	}
 	return c, st, srcHost, dstHost, src, dst
+}
+
+type failedRestoreRoot struct {
+	vfs.Root
+	err error
+}
+
+func (r failedRestoreRoot) Rename(_, _ vfs.SafePath, _ bool) error {
+	return r.err
+}
+
+func TestFailedBackupRestorationReportsTheRecoveryPath(t *testing.T) {
+	t.Parallel()
+	cause := errors.New("preparation refused")
+	rollback := errors.New("restore refused")
+	dest := safe(t, "destination")
+	backup, err := vfs.RootPath().JoinControl(".scmeta-replace-recovery")
+	if err != nil {
+		t.Fatalf("building backup path: %v", err)
+	}
+
+	err = restoreTransferBackup(failedRestoreRoot{err: rollback}, dest, backup, cause)
+	var partial *PartialTransferError
+	if !errors.As(err, &partial) {
+		t.Fatalf("restore failure returned %T, want PartialTransferError", err)
+	}
+	if !partial.Destination.Equal(dest) || !partial.Backup.Equal(backup) {
+		t.Fatalf("recovery paths are destination=%q backup=%q", partial.Destination, partial.Backup)
+	}
+	if !errors.Is(err, cause) || !errors.Is(err, rollback) {
+		t.Fatalf("partial error does not preserve cause and rollback: %v", err)
+	}
 }
 
 // at re-paths a resolution without spending a second gate, which is how a
@@ -299,6 +332,35 @@ func TestOverwriteOntoANonEmptyDirectoryReplacesRatherThanMerges(t *testing.T) {
 	}
 }
 
+func TestMoveReplacementPreservesActiveUploadControls(t *testing.T) {
+	t.Parallel()
+	c, _, host, root := writable(t)
+	if err := os.MkdirAll(filepath.Join(host, "src"), 0o755); err != nil {
+		t.Fatalf("building the source: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(host, "dst"), 0o755); err != nil {
+		t.Fatalf("building the destination: %v", err)
+	}
+	writeFile(t, host, "src/new.txt", "new")
+	writeFile(t, host, "dst/old.txt", "old")
+	writeFile(t, host, "dst/.scpart-live", "upload in progress")
+
+	_, err := c.Move(context.Background(), at(t, root, "src"), at(t, root, "dst"),
+		MoveOpts{OnConflict: ConflictOverwrite})
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("replacement over an active upload returned %v, want ErrConflict", err)
+	}
+	if got := readHost(t, host, "src/new.txt"); got != "new" {
+		t.Fatalf("the rolled-back source holds %q", got)
+	}
+	if got := readHost(t, host, "dst/old.txt"); got != "old" {
+		t.Fatalf("the rolled-back destination holds %q", got)
+	}
+	if got := readHost(t, host, "dst/.scpart-live"); got != "upload in progress" {
+		t.Fatalf("the active upload control holds %q", got)
+	}
+}
+
 func TestMoveWithAValidatorIsRefusedWithTheCurrentToken(t *testing.T) {
 	t.Parallel()
 	c, _, host, root := writable(t)
@@ -369,6 +431,98 @@ func TestACrossShareMoveCopiesThenDeletes(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(srcHost, "tree")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("the source tree survived a completed cross-share move")
+	}
+}
+
+func TestACrossShareMoveNeedsMoveRatherThanDelete(t *testing.T) {
+	t.Parallel()
+	c, _, srcHost, dstHost, src, dst := twoShares(t)
+	writeFile(t, srcHost, "note.txt", "body")
+	from := at(t, src, "note.txt").WithMask(acl.Read | acl.Move)
+
+	if _, err := c.Move(context.Background(), from, at(t, dst, "note.txt"), MoveOpts{}); err != nil {
+		t.Fatalf("moving with Read and Move: %v", err)
+	}
+	if got := readHost(t, dstHost, "note.txt"); got != "body" {
+		t.Fatalf("the destination holds %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(srcHost, "note.txt")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("the source survived a completed move")
+	}
+}
+
+func TestACrossShareDirectoryMoveUsesMoveForSourceCleanup(t *testing.T) {
+	t.Parallel()
+	c, _, srcHost, dstHost, src, dst := twoShares(t)
+	ctx := context.Background()
+	if err := os.MkdirAll(filepath.Join(srcHost, "tree/inner"), 0o755); err != nil {
+		t.Fatalf("building the source tree: %v", err)
+	}
+	writeFile(t, srcHost, "tree/top.txt", "top")
+	writeFile(t, srcHost, "tree/inner/leaf.txt", "leaf")
+
+	// Read and Move are enough for a cross-device directory move. Delete is
+	// intentionally absent because Move authorizes removing the source.
+	from := at(t, src, "tree").WithMask(acl.Read | acl.Move)
+	if !from.Has(acl.Read|acl.Move) || from.Has(acl.Delete) {
+		t.Fatalf("the move test capability has permissions %s, want Read and Move without Delete", from.Perms())
+	}
+	res, err := c.Move(ctx, from, at(t, dst, "tree"), MoveOpts{})
+	if err != nil {
+		t.Fatalf("the Move-only cross-share directory move: %v", err)
+	}
+	if !res.WillCopy || res.Moved {
+		t.Fatalf("the Move-only cross-share move returned %+v, want WillCopy", res)
+	}
+	if got := readHost(t, dstHost, "tree/inner/leaf.txt"); got != "leaf" {
+		t.Fatalf("the copied leaf holds %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(srcHost, "tree")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("the source tree survived a Move-only cross-share move")
+	}
+}
+
+func denyMoveAt(t *testing.T, c *Core, st *state.DB, user int64, share ShareID, subpath string) {
+	t.Helper()
+	holder := user
+	if _, err := st.PersistGrant(context.Background(), state.GrantRow{
+		User:    &holder,
+		Share:   int64(share),
+		Subpath: subpath,
+		Allow:   uint16(acl.Read),
+		Deny:    uint16(acl.Move),
+		Inherit: true,
+	}, 0); err != nil {
+		t.Fatalf("persisting the move deny grant: %v", err)
+	}
+	if err := c.ReloadGrants(context.Background()); err != nil {
+		t.Fatalf("reloading the move deny grant: %v", err)
+	}
+}
+
+func TestACrossShareMovePreflightsMoveAuthorityBeforeStaging(t *testing.T) {
+	t.Parallel()
+	c, st, srcHost, dstHost, src, dst := twoShares(t)
+	if err := os.MkdirAll(filepath.Join(srcHost, "tree/blocked"), 0o755); err != nil {
+		t.Fatalf("building the source tree: %v", err)
+	}
+	writeFile(t, srcHost, "tree/top.txt", "top")
+	writeFile(t, srcHost, "tree/blocked/leaf.txt", "leaf")
+	denyMoveAt(t, c, st, 1, 10, "tree/blocked")
+
+	from := at(t, src, "tree").WithMask(acl.Read | acl.Move)
+	_, err := c.Move(context.Background(), from, at(t, dst, "tree"), MoveOpts{})
+	if !errors.Is(err, ErrDenied) {
+		t.Fatalf("a denied source descendant returned %v, want ErrDenied", err)
+	}
+	if _, err := os.Stat(filepath.Join(dstHost, "tree")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("the denied move published a destination before authority preflight")
+	}
+	if got := readHost(t, srcHost, "tree/top.txt"); got != "top" {
+		t.Fatalf("the denied move changed the source tree: %q", got)
+	}
+	if got := readHost(t, srcHost, "tree/blocked/leaf.txt"); got != "leaf" {
+		t.Fatalf("the denied move changed the blocked source tree: %q", got)
 	}
 }
 

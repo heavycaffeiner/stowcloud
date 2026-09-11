@@ -20,7 +20,6 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/oidc"
-	"github.com/heavycaffeiner/stowcloud/go/engine/service/preview"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/settings/runtimecfg"
 )
 
@@ -54,19 +53,20 @@ func (e *Engine) loadSettings(ctx context.Context) {
 		Content: values.ContentHosts,
 	}
 	e.trusted = parsePrefixes(values.TrustedProxy, e)
+	e.allowedOrigins = values.AllowedOrigins
+	e.compatCanonical = values.CompatCanonicalURL
 	e.oidcClient = provider
 	e.oidcName = values.OIDCDisplayName
 	e.settingsMu.Unlock()
 
-	// The search and archive bounds an administrator adjusts. Applied through
-	// each service's own setter, which leaves the search concurrency gate
-	// alone: it is a buffered channel established at construction, and
-	// swapping it while queries are in flight would lose the slots they hold.
+	// Search and archive bounds are adjusted through their own live setters.
+	// Lowering either bound leaves current work alone and makes new work
+	// fail fast until enough active work finishes.
 	if e.Search != nil {
 		concurrency, deadline := values.SearchConcurrentSSD, values.SearchDeadlineSSD
 		e.Search.SetBounds(concurrency, deadline)
 	}
-	preview.SetMaxListed(values.ArchiveMaxConcurrent)
+	e.archiveGate.SetLimit(values.ArchiveMaxConcurrent)
 
 	// The watcher's own setter rather than a rebuild: a rebuild would drop
 	// every live inotify watch and every pinned subscription, the latter

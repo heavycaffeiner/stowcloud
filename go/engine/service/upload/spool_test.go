@@ -443,6 +443,98 @@ func TestTheTwoModesRefuseEachOthersWrites(t *testing.T) {
 	}
 }
 
+// A rejected random-access replacement never reaches the accepted part file.
+func TestARejectedRandomReplacementPreservesAcceptedBytes(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newFixture(t)
+	const chunk = limits.UploadChunkFloor
+	good := chunkOf(0, chunk)
+	bad := chunkOf(91, chunk)
+	digest, err := Sum(AlgoBLAKE3, good)
+	if err != nil {
+		t.Fatalf("Sum: %v", err)
+	}
+	sum := Checksum{Algo: AlgoBLAKE3, Digest: digest}
+	s := f.create(t, "random-retry.bin", uint64(chunk), SessionSpec{RandomAccess: true})
+	if _, err := f.engine.PatchAt(ctx, f.root(t), s.ID, testUser, 0,
+		bytes.NewReader(good), &sum); err != nil {
+		t.Fatalf("initial PatchAt: %v", err)
+	}
+	if _, err := f.engine.PatchAt(ctx, f.root(t), s.ID, testUser, 0,
+		bytes.NewReader(bad), &sum); !errors.Is(err, ErrChecksum) {
+		t.Fatalf("bad replacement returned %v", err)
+	}
+	if _, err := f.engine.Finalize(ctx, f.resolve(t, "random-retry.bin"), s.ID); err != nil {
+		t.Fatalf("Finalize: %v", err)
+	}
+	if got := readPublished(t, f, "random-retry.bin", chunk); !bytes.Equal(got, good) {
+		t.Fatal("a rejected random replacement changed accepted bytes")
+	}
+}
+
+// A rejected name-ordered replacement leaves the original spooled member for
+// the later assembly.
+func TestARejectedNamedReplacementPreservesAcceptedBytes(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newFixture(t)
+	const chunk = limits.UploadChunkFloor
+	first, good := chunkOf(0, chunk), chunkOf(uint64(chunk), chunk)
+	bad := chunkOf(uint64(chunk)+91, chunk)
+	digest, err := Sum(AlgoBLAKE3, good)
+	if err != nil {
+		t.Fatalf("Sum: %v", err)
+	}
+	sum := Checksum{Algo: AlgoBLAKE3, Digest: digest}
+	s := f.create(t, "named-retry.bin", uint64(chunk*2), SessionSpec{Mode: SpoolNameOrdered})
+	if err := f.engine.PutNamed(ctx, f.root(t), s.ID, testUser, 2,
+		bytes.NewReader(good), &sum); err != nil {
+		t.Fatalf("initial named chunk: %v", err)
+	}
+	if err := f.engine.PutNamed(ctx, f.root(t), s.ID, testUser, 2,
+		bytes.NewReader(bad), &sum); !errors.Is(err, ErrChecksum) {
+		t.Fatalf("bad named replacement returned %v", err)
+	}
+	if err := f.engine.PutNamed(ctx, f.root(t), s.ID, testUser, 1,
+		bytes.NewReader(first), nil); err != nil {
+		t.Fatalf("first named chunk: %v", err)
+	}
+	if _, err := f.engine.Assemble(ctx, f.resolve(t, "named-retry.bin"), s.ID,
+		uint64(chunk*2), nil); err != nil {
+		t.Fatalf("Assemble: %v", err)
+	}
+	want := append(append([]byte(nil), first...), good...)
+	if got := readPublished(t, f, "named-retry.bin", len(want)); !bytes.Equal(got, want) {
+		t.Fatal("a rejected named replacement changed accepted bytes")
+	}
+}
+
+// Named out-of-order members are bounded by both the declared total and the
+// aggregate bytes already held in the session.
+func TestNamedOutOfOrderChunksRespectDeclaredBounds(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newFixture(t)
+	s := f.create(t, "named-bounds.bin", 8, SessionSpec{Mode: SpoolNameOrdered})
+	if err := f.engine.PutNamed(ctx, f.root(t), s.ID, testUser, 2,
+		bytes.NewReader([]byte("123456789")), nil); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("an oversized named chunk returned %v", err)
+	}
+	if err := f.engine.PutNamed(ctx, f.root(t), s.ID, testUser, 2,
+		bytes.NewReader([]byte("1234")), nil); err != nil {
+		t.Fatalf("first bounded named chunk: %v", err)
+	}
+	if err := f.engine.PutNamed(ctx, f.root(t), s.ID, testUser, 3,
+		bytes.NewReader([]byte("5678")), nil); err != nil {
+		t.Fatalf("second bounded named chunk: %v", err)
+	}
+	if err := f.engine.PutNamed(ctx, f.root(t), s.ID, testUser, 4,
+		bytes.NewReader([]byte("9")), nil); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("an aggregate-overflow named chunk returned %v", err)
+	}
+}
+
 // readPublished reads a published file back through the share root.
 func readPublished(t *testing.T, f *fixture, name string, n int) []byte {
 	t.Helper()

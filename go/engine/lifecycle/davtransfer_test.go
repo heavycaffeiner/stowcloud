@@ -204,26 +204,15 @@ func TestARecursiveCopyBecomesAJob(t *testing.T) {
 	}
 }
 
-// An overwriting copy onto a collection replaces it rather than merging.
-//
-// Merging leaves a member the destination had and the source does not, which
-// then survives a copy that was supposed to have replaced the whole thing.
-//
-// The replacement belongs to the core, inside the conflict decision that picks
-// the destination, so this pins the behaviour a client sees rather than which
-// layer produces it. The handler carried a second delete of the same directory
-// until this test showed removing it changed nothing.
-func TestCopyOntoACollectionReplacesRatherThanMerges(t *testing.T) {
+// An overwriting copy onto a collection preserves the old collection until a
+// complete replacement is ready, then replaces rather than merges it.
+func TestCopyOntoACollectionPublishesACompleteReplacement(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	f.mkdir(t, "src")
 	f.write(t, "src/kept.txt", "from the source")
 	f.mkdir(t, "dst")
 	f.write(t, "dst/stale.txt", "only in the destination")
-
-	if !f.exists("dst/stale.txt") {
-		t.Fatal("the fixture did not create the stale member")
-	}
 
 	w := httptest.NewRecorder()
 	f.h.Copy(w, request("COPY", "/files/src", "", nil),
@@ -232,14 +221,14 @@ func TestCopyOntoACollectionReplacesRatherThanMerges(t *testing.T) {
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("answered %d, want 202", w.Code)
 	}
+	if derr := f.core.DrainJobs(context.Background()); derr != nil {
+		t.Fatalf("draining the copy: %v", derr)
+	}
 	if f.exists("dst/stale.txt") {
 		t.Error("a member the source does not have survived the replacement")
 	}
-	if f.exists("dst") {
-		// The whole destination goes, not just its differing members. A
-		// handler that emptied it member by member would leave the directory
-		// and pass the check above.
-		t.Error("the destination collection itself was not removed before the copy")
+	if !f.exists("dst/kept.txt") {
+		t.Error("the complete replacement was not published")
 	}
 }
 

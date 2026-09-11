@@ -23,6 +23,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/archive"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/handler"
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/httpheader"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
@@ -244,14 +245,14 @@ func (e *Engine) sendStream(
 	// name to prevent stored cross-site scripting on the application origin.
 	// All inline responses additionally carry a sandboxing CSP.
 	if attachAs == "" {
-		if isExecutableMIME(contentType) {
+		if httpheader.IsExecutableMIME(contentType) {
 			attachAs = entry.Name
-			c.Set(fiber.HeaderContentDisposition, handler.ContentDisposition(attachAs))
+			c.Set(fiber.HeaderContentDisposition, httpheader.Attachment(attachAs))
 		} else {
-			c.Set(fiber.HeaderContentSecurityPolicy, "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'")
+			c.Set(fiber.HeaderContentSecurityPolicy, httpheader.SafeInlineCSP)
 		}
 	} else {
-		c.Set(fiber.HeaderContentDisposition, handler.ContentDisposition(attachAs))
+		c.Set(fiber.HeaderContentDisposition, httpheader.Attachment(attachAs))
 	}
 	c.Set(fiber.HeaderXContentTypeOptions, "nosniff")
 
@@ -276,21 +277,6 @@ func (e *Engine) sendStream(
 		logger: e.logger,
 	}, int(length))
 	return nil
-}
-
-// isExecutableMIME reports whether a media type is executable by a browser as
-// active content or script.
-func isExecutableMIME(ct string) bool {
-	base, _, _ := strings.Cut(ct, ";")
-	base = strings.TrimSpace(strings.ToLower(base))
-	switch base {
-	case "text/html", "application/xhtml+xml", "image/svg+xml",
-		"text/javascript", "application/javascript", "application/x-javascript",
-		"text/ecmascript", "application/ecmascript",
-		"text/xml", "application/xml", "text/xsl", "application/xslt+xml":
-		return true
-	}
-	return false
 }
 
 // loggedStream reports a read that failed after the response was committed.

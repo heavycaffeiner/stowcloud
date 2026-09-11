@@ -529,5 +529,10 @@
 # open a candidate directory passes a path that is not a constant, which is
 # the whole point of a picker. The candidates are a fixed list plus the paths
 # an administrator registered as shares, and nothing beneath them is read.
+#
+# 116: the audit remediation removed the archive listing's package-level
+# atomic. The live archive setting now bounds concurrent streams through the
+# engine's own gate, and the parser and listing bounds are compiled-in
+# constants again, so there is no global left for the exception to cover.
 24
-117
+116

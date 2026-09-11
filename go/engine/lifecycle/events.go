@@ -44,8 +44,16 @@ func (e *Engine) startEvents(ctx context.Context, cfg watchSettings) {
 		Backend:       cfg.Backend,
 		HotSetMax:     cfg.HotSetMax,
 		FullThreshold: cfg.FullThreshold,
+		OnCoverageLost: func() {
+			if e.Search != nil {
+				e.Search.SetIndexIncomplete(true)
+			}
+		},
 	}, e.clock, events)
 	if err != nil {
+		if e.Search != nil {
+			e.Search.SetIndexIncomplete(true)
+		}
 		e.logger.Warn("change notifications are unavailable; clients fall back to polling",
 			"error", err)
 		return
@@ -77,8 +85,10 @@ func (e *Engine) startEvents(ctx context.Context, cfg watchSettings) {
 // inotify to watch either.
 //
 // Safe to call with no watcher, which is a deployment whose kernel refused an
-// inotify descriptor. Every caller would otherwise repeat the same check.
 func (e *Engine) watchShare(def core.ShareDef) {
+	if e.Search != nil {
+		e.Search.SetIndexIncomplete(true)
+	}
 	if e.watcher == nil || def.BrokenReason != "" || def.Host == "" {
 		return
 	}

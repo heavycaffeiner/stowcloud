@@ -96,14 +96,15 @@ func Score(i RankInput) float32 {
 
 // InScope reports whether path sits at or beneath scope.
 //
-// Comparison is component-aware, so "photo" does not match "photography". An
-// empty scope contains everything, which is what a filter wants; Score reads the
-// same case as no scope having been supplied and omits the bonus.
+// Comparison is component-aware, so "photo" does not match "photography".
+// Wire paths may be rooted while the service's internal paths are not; both
+// spellings are the same scope after their boundary slashes are removed.
 func InScope(path, scope string) bool {
+	path = strings.Trim(path, "/")
+	scope = strings.Trim(scope, "/")
 	if scope == "" {
 		return true
 	}
-	scope = strings.TrimRight(scope, "/")
 	if path == scope {
 		return true
 	}

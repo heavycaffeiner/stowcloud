@@ -456,11 +456,15 @@ func parseRestoreDestination(r *http.Request) (Target, bool) {
 		return Target{}, false
 	}
 	u, err := url.Parse(raw)
-	if err != nil {
+	if err != nil || u.User != nil {
 		return Target{}, false
 	}
-	if u.Host != "" && !strings.EqualFold(hostWithoutPort(u.Host), hostWithoutPort(r.Host)) {
-		return Target{}, false
+	if u.Host != "" {
+		destinationHost := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
+		requestHost := authorityHostname(r.Host)
+		if destinationHost == "" || requestHost == "" || destinationHost != requestHost {
+			return Target{}, false
+		}
 	}
 	dest, ok := ParseTarget(collapseSlashes(u.EscapedPath()))
 	if !ok || dest.Kind != KindTrash || dest.Trash != TrashRestore {

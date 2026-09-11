@@ -356,14 +356,14 @@ func (ix *NameIndex) Query(needle []byte, limit int) (Result, error) {
 		out.CandidateBlocks = len(candidates)
 
 		for _, bid := range candidates {
+			before := len(hits)
 			entries, err := ix.base.Block(bid)
 			if err != nil {
 				return Result{}, err
 			}
 			out.ScannedEntries += len(entries)
-			before := len(hits)
 			for _, e := range entries {
-				if !matchesFolded(e.Path, folded) {
+				if !matchesName(e.Path, folded) {
 					continue
 				}
 				if ix.tombstonedLocked(e.Share, e.Path, 0) {
@@ -380,12 +380,9 @@ func (ix *NameIndex) Query(needle []byte, limit int) (Result, error) {
 			}
 		}
 	}
-
-	// The merge gate bounds the deltas, so a linear scan is appropriate: they
-	// can never exceed a fixed fraction of the base.
 	for _, d := range ix.delta {
 		out.ScannedEntries++
-		if !matchesFolded(d.path, folded) {
+		if !matchesName(d.path, folded) {
 			continue
 		}
 		if ix.tombstonedLocked(d.share, d.path, d.seq) {
@@ -709,7 +706,10 @@ func intersectTwo(a, b []uint32) []uint32 {
 	return out
 }
 
-func matchesFolded(path string, folded []byte) bool {
+func matchesName(path string, folded []byte) bool {
+	if i := strings.LastIndexByte(path, '/'); i >= 0 {
+		path = path[i+1:]
+	}
 	return search.Contains(search.FoldString(path), folded)
 }
 

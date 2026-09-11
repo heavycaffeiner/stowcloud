@@ -23,6 +23,12 @@ func (e *Engine) Create(ctx context.Context, r core.Resolved, spec SessionSpec) 
 	if dest.IsRoot() {
 		return Session{}, fmt.Errorf("%w: the destination has no file name", ErrBadRequest)
 	}
+
+	// Keep the admission check adjacent to row creation. Both account limits
+	// are derived from live receiving rows, so splitting this check from the
+	// insert lets concurrent requests all promise the same remaining capacity.
+	e.admissionMu.Lock()
+	defer e.admissionMu.Unlock()
 	if err := e.checkAccountLimits(ctx, r.User(), spec.TotalLen); err != nil {
 		return Session{}, err
 	}
@@ -51,24 +57,23 @@ func (e *Engine) Create(ctx context.Context, r core.Resolved, spec SessionSpec) 
 	if err != nil {
 		return Session{}, err
 	}
+	// Record the directory immediately after the first control file exists.
+	// A crash between this filesystem create and the session-row insert must
+	// still leave a bounded directory for the sweeper to inspect.
+	if terr := e.state.TouchUploadDir(ctx, int64(r.Share()), dest.Parent().String()); terr != nil {
+		e.log.Warn("could not record the directory an upload writes into; "+
+			"the sweep may miss an orphan there",
+			"dir", dest.Parent().String(), "error", terr)
+	}
 
 	sess, err := e.newRow(id, r, dest, spec)
 	if err != nil {
 		return Session{}, errors.Join(err, e.discardPart(r.Root(), part, f))
 	}
 	if err := e.state.CreateUploadSession(ctx, sess); err != nil {
-		// The row is what makes the part file findable. Without one the file is
-		// an orphan the sweep would have to notice, so it goes now.
+		// The touched directory remains intentionally. It is what makes a
+		// first-use crash orphan discoverable without walking the whole share.
 		return Session{}, errors.Join(err, e.discardPart(r.Root(), part, f))
-	}
-	// The directory is recorded before the first byte arrives and outlives the
-	// session. An orphan is a part file whose row is gone, so the rows cannot
-	// be what tells the sweep where to look. A failure here costs the sweep
-	// its record, not the upload.
-	if terr := e.state.TouchUploadDir(ctx, int64(r.Share()), dest.Parent().String()); terr != nil {
-		e.log.Warn("could not record the directory an upload writes into; "+
-			"the sweep may miss an orphan there",
-			"dir", dest.Parent().String(), "error", terr)
 	}
 
 	e.putHandle(id, f)
@@ -248,14 +253,32 @@ func (e *Engine) SetLength(ctx context.Context, id SessionID, user core.UserID, 
 // the bookkeeping lock: leaving it for the sweep meant an aborted session's
 // mutex sat in the map for a day.
 func (e *Engine) Abort(ctx context.Context, id SessionID, user core.UserID) error {
-	// Performed outside the row lock, since stopping a merger means waiting on a
-	// step that acquires it.
+	barrier, generation, owner, werr := e.closeWriters(ctx, id)
+	if werr != nil {
+		return werr
+	}
+	defer e.finishWriters(id, barrier)
+	terminal := false
+	defer func() {
+		if !terminal && owner {
+			e.reopenWriters(barrier, generation)
+		}
+	}()
+
+	// Performed after admission closes, since stopping a merger waits on work
+	// that may otherwise still be writing the part file.
 	e.stopMerger(id)
 
 	unlock := e.lockRow(id)
 	r, err := e.load(ctx, id)
 	if err != nil {
 		unlock()
+		// A missing row after a concurrent publication is already terminal;
+		// keep the gate closed rather than allowing a late writer to race a
+		// newly-created session with a reused in-memory id.
+		if errors.Is(err, ErrNotFound) {
+			terminal = true
+		}
 		return err
 	}
 	if oerr := requireOwner(r, user); oerr != nil {
@@ -264,6 +287,7 @@ func (e *Engine) Abort(ctx context.Context, id SessionID, user core.UserID) erro
 	}
 	if SessionState(r.sess.State) == StateDone {
 		unlock()
+		terminal = true
 		return ErrNotFound
 	}
 	r.sess.State = int64(StateAborted)
@@ -274,12 +298,13 @@ func (e *Engine) Abort(ctx context.Context, id SessionID, user core.UserID) erro
 		unlock()
 		return serr
 	}
-	// The cache is released now rather than at the sweep. Its contents can never
-	// be completed, and the spool is the small volume, so retaining a cancelled
-	// upload's window there for a day is exactly what fills it.
+	// The cache is released now rather than at the sweep. Its contents can
+	// never be completed, and the spool is the small volume, so retaining a
+	// cancelled upload's window there for a day is exactly what fills it.
 	e.releaseCache(r.sess.CacheDir)
 	e.closeHandle(id)
 	unlock()
 	e.forgetRow(id)
+	terminal = true
 	return nil
 }

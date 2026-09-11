@@ -3,8 +3,10 @@ package objstore
 import (
 	"encoding/hex"
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 // These three cases are drawn verbatim from the published AWS Signature
@@ -81,6 +83,27 @@ func TestSigV4CanonicalTestSuiteVectors(t *testing.T) {
 				t.Fatalf("authorization =\n%q\nwant\n%q", authz, tc.wantAuthz)
 			}
 		})
+	}
+}
+
+func TestSigV4SignsCopyObjectSourceHeader(t *testing.T) {
+	req, err := http.NewRequest(http.MethodPut, "https://objects.example.test/bucket/destination", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Host = "objects.example.test"
+	req.Header.Set("x-amz-copy-source", "/bucket/source")
+
+	s := &signer{
+		accessKey: sigV4TestAccessKey,
+		secret:    []byte(sigV4TestSecretKey),
+		region:    sigV4TestRegion,
+	}
+	s.sign(req, emptyPayloadHash(), time.Date(2011, 9, 9, 23, 36, 0, 0, time.UTC))
+
+	want := "SignedHeaders=host;x-amz-content-sha256;x-amz-copy-source;x-amz-date"
+	if !strings.Contains(req.Header.Get("Authorization"), want) {
+		t.Fatalf("authorization = %q, want %q", req.Header.Get("Authorization"), want)
 	}
 }
 

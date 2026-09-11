@@ -152,17 +152,13 @@ type signer struct {
 }
 
 // sign computes req's Authorization header and the two amz headers SigV4
-// requires alongside it, against the request as it stands: the caller adds
-// any header that must be authenticated, such as x-amz-copy-source, only
-// after sign returns, which is why this package never signs that header.
+// requires alongside it, against the request as it stands. CopyObject's
+// x-amz-copy-source is already present when this runs, so it is authenticated
+// with the operation instead of being added after the signature.
 //
-// Exactly three headers are signed: host, x-amz-content-sha256 and
-// x-amz-date. That is the minimum SigV4 accepts, not an economy: every
-// header this package sends beyond those three is either informational
-// (Content-Type) or, like x-amz-copy-source, applies to one call this
-// package itself issues and controls, so there is nothing an intermediary
-// could tamper with by editing an unsigned header that this package would
-// then act on differently.
+// Exactly three headers are signed for ordinary requests: host,
+// x-amz-content-sha256 and x-amz-date. CopyObject adds x-amz-copy-source to
+// that set because S3 requires the source to be covered by the signature.
 func (s *signer) sign(req *http.Request, payloadHashHex string, now time.Time) {
 	amzDate := now.UTC().Format("20060102T150405Z")
 	dateStamp := amzDate[:8]
@@ -181,7 +177,11 @@ func (s *signer) sign(req *http.Request, payloadHashHex string, now time.Time) {
 		"x-amz-content-sha256": payloadHashHex,
 		"x-amz-date":           amzDate,
 	}
-
+	if copySource := req.Header.Get("x-amz-copy-source"); copySource != "" {
+		signedHeaders = append(signedHeaders, "x-amz-copy-source")
+		headerValues["x-amz-copy-source"] = copySource
+	}
+	sort.Strings(signedHeaders)
 	creq := canonicalRequest(
 		req.Method,
 		req.URL.EscapedPath(),

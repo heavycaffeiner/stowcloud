@@ -86,8 +86,8 @@ type WalkOptions struct {
 // WalkResult holds what a walk produced.
 type WalkResult struct {
 	Hits []Hit
-	// Truncated indicates the limit shortened the result, letting a caller
-	// disclose that instead of presenting a partial answer as complete.
+	// Truncated indicates the result is incomplete because the limit or a
+	// traversal boundary shortened the answer.
 	Truncated bool
 	// DirsVisited and EntriesSeen record what it cost.
 	DirsVisited int64
@@ -156,16 +156,20 @@ func Walk(ctx context.Context, sources []Source, opt WalkOptions) (WalkResult, e
 
 	w.run(ctx)
 	if err := ctx.Err(); err != nil {
-		return WalkResult{}, err
+		// The worker pool has already stopped and the state it accumulated is
+		// still useful for a service-owned deadline. Caller cancellation is
+		// distinguished by the service layer, which turns it into ErrCanceled.
+		return w.finish(), err
 	}
 
 	if opt.Emit != nil {
 		// Every hit left through Emit already, one directory at a time, and
 		// the stat that a collecting walk defers ran there too.
-		return WalkResult{DirsVisited: w.dirs, EntriesSeen: w.entries}, nil
-	}
-	if opt.WithMetadata {
-		statAll(w.sources, w.pending)
+		return WalkResult{
+			DirsVisited: w.dirs,
+			EntriesSeen: w.entries,
+			Truncated:   w.partial,
+		}, nil
 	}
 	return w.finish(), nil
 }
@@ -182,6 +186,12 @@ type walker struct {
 	stopped bool
 	queue   []job
 	pending []pending
+	// top holds only the best limit hits when collection is bounded. A
+	// directory can still produce many matches, but the corpus no longer
+	// becomes one allocation just because a caller asked for ten rows.
+	top     []Hit
+	hasMore bool
+	partial bool
 	dirs    int64
 	entries int64
 	dirSeq  uint64
@@ -281,6 +291,9 @@ func (w *walker) visit(j job) {
 	w.mu.Unlock()
 
 	if j.depth > limits.SearchWalkDepth {
+		w.mu.Lock()
+		w.partial = true
+		w.mu.Unlock()
 		return
 	}
 
@@ -324,15 +337,33 @@ func (w *walker) visit(j job) {
 	if err != nil {
 		// An unreadable directory is skipped rather than failing the entire
 		// search, since one inaccessible subtree must not discard every other
-		// hit.
+		// hit. It does make an exhaustive answer impossible, so disclose it.
+		w.mu.Lock()
+		w.entries += seen
+		w.partial = true
+		w.mu.Unlock()
 		return
+	}
+
+	var bounded []Hit
+	if w.opt.Emit == nil && !w.opt.Unbounded {
+		if w.opt.WithMetadata {
+			statAll(w.sources, matched)
+		}
+		bounded = w.hitsOf(matched)
 	}
 
 	w.mu.Lock()
 	w.entries += seen
 	w.queue = append(w.queue, children...)
 	if w.opt.Emit == nil {
-		w.pending = append(w.pending, matched...)
+		if w.opt.Unbounded {
+			w.pending = append(w.pending, matched...)
+		} else {
+			for _, hit := range bounded {
+				w.addTopLocked(hit)
+			}
+		}
 	}
 	var due WalkProgress
 	if w.opt.Progress != nil && w.dirs-w.reported >= progressEvery {
@@ -392,16 +423,45 @@ func (w *walker) emit(batch []pending) {
 	w.opt.Emit(hits)
 }
 
+func (w *walker) addTopLocked(hit Hit) {
+	limit := w.opt.Limit
+	if limit <= 0 {
+		return
+	}
+	before := func(i int) bool {
+		if w.top[i].Score != hit.Score {
+			return w.top[i].Score < hit.Score
+		}
+		return w.top[i].Path > hit.Path
+	}
+	pos := sort.Search(len(w.top), before)
+	if len(w.top) >= limit && pos >= limit {
+		w.hasMore = true
+		return
+	}
+	w.top = append(w.top, Hit{})
+	copy(w.top[pos+1:], w.top[pos:])
+	w.top[pos] = hit
+	if len(w.top) > limit {
+		w.top = w.top[:limit]
+		w.hasMore = true
+	}
+}
+
 func (w *walker) finish() WalkResult {
 	out := WalkResult{DirsVisited: w.dirs, EntriesSeen: w.entries}
-	hits := w.hitsOf(w.pending)
-
-	SortHits(hits)
-	if !w.opt.Unbounded && len(hits) > w.opt.Limit {
-		hits = hits[:w.opt.Limit]
-		out.Truncated = true
+	if w.opt.Unbounded {
+		if w.opt.WithMetadata {
+			statAll(w.sources, w.pending)
+		}
+		hits := w.hitsOf(w.pending)
+		SortHits(hits)
+		out.Hits = hits
+		out.Truncated = w.partial
+		return out
 	}
-	out.Hits = hits
+	out.Hits = append([]Hit(nil), w.top...)
+	out.Truncated = w.partial || w.hasMore
 	return out
 }
 

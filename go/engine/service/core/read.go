@@ -220,7 +220,7 @@ func (c *Core) ArchiveWalk(ctx context.Context, r Resolved, visit func(WalkEntry
 
 	// RelPath starts at the root's own leaf name in both cases. A walk
 	// rooted at the share root has no leaf, so its descendants carry their
-	// own paths unprefixed.
+	// own paths.
 	base := r.path.Name()
 	if !st.Kind.IsDir() {
 		// A file root is the whole archive, so an open failure here fails
@@ -237,70 +237,74 @@ func (c *Core) ArchiveWalk(ctx context.Context, r Resolved, visit func(WalkEntry
 		}, stream)
 		return firstErr(verr, stream.Close())
 	}
-	// The root itself is announced when it is a directory, before anything
-	// under it. Only its descendants used to be visited, so archiving an
-	// empty directory produced an archive with nothing in it: the caller
-	// asked for a directory and got back a zip that extracts to nothing.
-	//
-	// Skipped for a share root, whose leaf name is empty. A zip member with
-	// no name is not a directory entry, and everything beneath it already
-	// carries its own path.
-	if base != "" {
-		if verr := visit(WalkEntry{
-			RelPath:  base,
-			IsDir:    true,
-			Readable: true,
-			MTimeNs:  st.MtimeNs,
-		}, nil); verr != nil {
-			return verr
-		}
-	}
+	// The directory itself is announced by walkArchive after its ReadDir
+	// succeeds. This keeps a directory to one row even when it vanishes or
+	// becomes unreadable between the parent's stat and that ReadDir.
 	return c.walkArchive(ctx, r, base, visit)
+}
+
+func reportUnreadableArchiveEntry(
+	visit func(WalkEntry, *Stream) error, rel string, isDir bool,
+) error {
+	return visit(WalkEntry{RelPath: rel, IsDir: isDir, Readable: false}, nil)
 }
 
 func (c *Core) walkArchive(ctx context.Context, r Resolved, rel string, visit func(WalkEntry, *Stream) error) error {
 	entries, err := r.root.ReadDir(r.path, vfs.HideReserved)
 	if err != nil {
 		// The directory vanished or turned unreadable after its parent's
-		// check. Nothing further under it is reported, and the archive
-		// carries on.
-		return nil
+		// check. Report the row so the archive carries its incomplete marker.
+		return reportUnreadableArchiveEntry(visit, rel, true)
+	}
+	if rel != "" {
+		if verr := visit(WalkEntry{RelPath: rel, IsDir: true, Readable: true}, nil); verr != nil {
+			return verr
+		}
 	}
 	for _, e := range entries {
-		childPath, jerr := r.path.JoinExisting(e.Name)
-		if jerr != nil {
-			continue
-		}
-		child, cerr := c.ResolveUnder(r, childPath, 0)
-		if cerr != nil {
-			continue
-		}
-		st, serr := r.root.Stat(childPath)
-		if serr != nil {
-			continue
-		}
 		childRel := e.Name
 		if rel != "" {
 			childRel = rel + "/" + e.Name
 		}
 
-		if st.Kind.IsDir() {
-			if verr := visit(WalkEntry{RelPath: childRel, IsDir: true, Readable: true}, nil); verr != nil {
+		childPath, jerr := r.path.JoinExisting(e.Name)
+		if jerr != nil {
+			if verr := reportUnreadableArchiveEntry(visit, childRel, e.Kind.IsDir()); verr != nil {
 				return verr
 			}
+			continue
+		}
+		child, cerr := c.ResolveUnder(r, childPath, 0)
+		if cerr != nil {
+			if verr := reportUnreadableArchiveEntry(visit, childRel, e.Kind.IsDir()); verr != nil {
+				return verr
+			}
+			continue
+		}
+		st, serr := r.root.Stat(childPath)
+		if serr != nil {
+			if verr := reportUnreadableArchiveEntry(visit, childRel, e.Kind.IsDir()); verr != nil {
+				return verr
+			}
+			continue
+		}
+
+		if st.Kind.IsDir() {
 			// A fresh evaluation at this path, not the root's bits: an
-			// unreadable subtree costs one directory row and nothing under
-			// it leaks.
+			// unreadable subtree costs a directory row, an incomplete marker,
+			// and nothing under it leaks.
 			if child.perms.Has(acl.Read) {
 				if werr := c.walkArchive(ctx, child, childRel, visit); werr != nil {
 					return werr
 				}
+			} else if verr := reportUnreadableArchiveEntry(visit, childRel, true); verr != nil {
+				return verr
 			}
 			continue
 		}
 
 		if !child.perms.Has(acl.Read) {
-			if verr := visit(WalkEntry{RelPath: childRel, Readable: false}, nil); verr != nil {
+			if verr := reportUnreadableArchiveEntry(visit, childRel, false); verr != nil {
 				return verr
 			}
 			continue
@@ -310,7 +314,7 @@ func (c *Core) walkArchive(ctx context.Context, r Resolved, rel string, visit fu
 			// It vanished between the stat and the open. Skipped, not
 			// failed: an archive missing one file and saying so beats a
 			// response that dies mid-body.
-			if verr := visit(WalkEntry{RelPath: childRel, Readable: false}, nil); verr != nil {
+			if verr := reportUnreadableArchiveEntry(visit, childRel, false); verr != nil {
 				return verr
 			}
 			continue

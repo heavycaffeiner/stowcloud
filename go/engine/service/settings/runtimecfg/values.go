@@ -43,8 +43,8 @@ import (
 // group fields on the screen; the server needs the values themselves and has no
 // use for ten separate shapes.
 type Values struct {
-	// Search tier limits. Both reach the running service directly and
-	// neither requires a restart.
+	// Search and archive concurrency limits. Both reach their running service
+	// directly and neither requires a restart.
 	SearchConcurrentSSD  int
 	SearchDeadlineSSD    time.Duration
 	ArchiveMaxConcurrent int
@@ -192,7 +192,7 @@ func Defaults() Values {
 	return Values{
 		SearchConcurrentSSD:  limits.ConcurrentSearches,
 		SearchDeadlineSSD:    limits.SearchWalkDeadline,
-		ArchiveMaxConcurrent: limits.ArchiveEntriesListed,
+		ArchiveMaxConcurrent: limits.ConcurrentArchives,
 		WatchHotSetMax:       defaultWatchHotSet,
 		RatePerSec:           defaultRatePerSec,
 		RateBurst:            defaultRateBurst,

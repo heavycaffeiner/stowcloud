@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -50,6 +51,13 @@ func (r *Root) newRequest(
 	ctx context.Context, method, objectKey string, query [][2]string,
 	body io.Reader, size int64, payloadHashHex string,
 ) (*http.Request, error) {
+	return r.newRequestWithHeaders(ctx, method, objectKey, query, body, size, payloadHashHex, nil)
+}
+
+func (r *Root) newRequestWithHeaders(
+	ctx context.Context, method, objectKey string, query [][2]string,
+	body io.Reader, size int64, payloadHashHex string, headers http.Header,
+) (*http.Request, error) {
 	scheme, host, path := r.requestTarget(objectKey)
 	u := &url.URL{
 		Scheme:   scheme,
@@ -65,6 +73,11 @@ func (r *Root) newRequest(
 	req.URL = u
 	req.Host = host
 	req.ContentLength = size
+	for name, values := range headers {
+		for _, value := range values {
+			req.Header.Add(name, value)
+		}
+	}
 	r.signer.sign(req, payloadHashHex, r.clk.Now())
 	return req, nil
 }
@@ -215,17 +228,18 @@ func (r *Root) deleteObjectForce(ctx context.Context, key string) (err error) {
 	return nil
 }
 
-// copyObject issues a server-side CopyObject from srcKey to destKey.
-// x-amz-copy-source is added after signing rather than folded into the
-// signed-header set: it names an operation this package itself issues and
-// controls, so there is nothing an intermediary tampering with an unsigned
-// header here could make this package do that it would not already do.
+// copyObject issues a server-side CopyObject from srcKey to destKey. The
+// source header is installed before signing because S3 authenticates it as
+// part of the request's signed-header set.
 func (r *Root) copyObject(ctx context.Context, srcKey, destKey string) (err error) {
-	req, err := r.newRequest(ctx, http.MethodPut, destKey, nil, nil, 0, emptyPayloadHash())
+	copySource := "/" + r.cfg.Bucket + "/" + awsURIEncode(srcKey, false)
+	req, err := r.newRequestWithHeaders(
+		ctx, http.MethodPut, destKey, nil, nil, 0, emptyPayloadHash(),
+		http.Header{"x-amz-copy-source": []string{copySource}},
+	)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("x-amz-copy-source", "/"+r.cfg.Bucket+"/"+awsURIEncode(srcKey, false))
 	res, err := r.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("objstore: copy object: %w", err)
@@ -238,7 +252,36 @@ func (r *Root) copyObject(ctx context.Context, srcKey, destKey string) (err erro
 	if res.StatusCode < 200 || res.StatusCode > 299 {
 		return classifyS3Error(res.StatusCode, body)
 	}
+	if err := parseCopyObjectResponse(body); err != nil {
+		return err
+	}
 	return nil
+}
+
+type copyObjectResponseXML struct {
+	XMLName xml.Name
+	ETag    string `xml:"ETag"`
+	Code    string `xml:"Code"`
+	Message string `xml:"Message"`
+}
+
+func parseCopyObjectResponse(body []byte) error {
+	var response copyObjectResponseXML
+	if err := xml.Unmarshal(body, &response); err != nil {
+		return fmt.Errorf("objstore: parse copy response: %w", err)
+	}
+	switch response.XMLName.Local {
+	case "CopyObjectResult":
+		if response.ETag == "" {
+			return errors.New("objstore: copy response has no ETag")
+		}
+		return nil
+	case "Error":
+		return fmt.Errorf("objstore: copy response: %s",
+			describeS3Error(http.StatusOK, s3ErrorXML{Code: response.Code, Message: response.Message}))
+	default:
+		return fmt.Errorf("objstore: copy response has unexpected root %q", response.XMLName.Local)
+	}
 }
 
 // putEmptyObject writes the zero-byte directory marker Mkdir and the

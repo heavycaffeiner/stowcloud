@@ -181,8 +181,10 @@ func (c *Core) CreateFile(
 	// truth; the precondition is advisory ordering on top, as it is in
 	// every If-Match implementation over a real filesystem.
 	st, serr := r.root.Stat(r.path)
+	var prior *vfs.Stat
 	switch {
 	case serr == nil:
+		prior = &st
 		if perr := precondition(ifMatch, st); perr != nil {
 			return Entry{}, perr
 		}
@@ -201,21 +203,15 @@ func (c *Core) CreateFile(
 		return Entry{}, mapVFSErr(serr)
 	}
 
-	if _, err := r.root.WriteDurable(r.path, mode, write); err != nil {
-		return Entry{}, mapVFSErr(err)
+	done, _, werr := c.writeDurableQuota(ctx, r, mode, prior, write)
+	if werr != nil {
+		return Entry{}, mapVFSErr(werr)
+	}
+	if done.OwnerRestore != nil {
+		c.warn("the replaced file's ownership could not be restored",
+			"path", r.path.String(), "error", done.OwnerRestore)
 	}
 
-	if newSt, err := r.root.Stat(r.path); err == nil {
-		if newSize, nerr := num.Narrow[int64](newSt.Size); nerr == nil {
-			delta := newSize
-			if serr == nil {
-				if oldSize, oerr := num.Narrow[int64](st.Size); oerr == nil {
-					delta = newSize - oldSize
-				}
-			}
-			c.chargeQuota(ctx, r.user, delta)
-		}
-	}
 	c.markDirty(ctx, r.share, r.path)
 	c.record(ctx, r, journal.OpUpload)
 	return c.buildEntry(r, r.path.Name(), r.path), nil
@@ -277,16 +273,15 @@ func (c *Core) Delete(ctx context.Context, r Resolved, permanent bool) error {
 			return c.trashMove(ctx, r, st)
 		}
 	}
-	return c.deleteResolved(ctx, r, st, true)
+	return c.deleteResolved(ctx, r, st, true, acl.Delete)
 }
 
-// deleteResolved is the permanent delete, with the ledger credit.
-//
-// charge false is for the callers that account the bytes themselves: the
-// cross-device leg of a move deletes a source whose bytes were already
-// charged at the destination copy, and crediting here would count the move
-// as a shrink.
-func (c *Core) deleteResolved(ctx context.Context, r Resolved, st vfs.Stat, charge bool) error {
+// deleteResolved is the permanent delete, with the ledger credit. Callers
+// that have already settled the bytes themselves can disable that credit;
+// ordinary cross-device moves now leave it enabled so copying and deleting
+// preserve the account's net usage. Authority controls the permission required
+// for every descendant of a recursive delete.
+func (c *Core) deleteResolved(ctx context.Context, r Resolved, st vfs.Stat, charge bool, authority acl.Perms) error {
 	var freed uint64
 	if st.Kind.IsDir() {
 		// Read the recursive size while the tree still exists: it is the
@@ -299,7 +294,7 @@ func (c *Core) deleteResolved(ctx context.Context, r Resolved, st vfs.Stat, char
 			return err
 		}
 		freed = agg.RSize
-		if err := c.deleteRecursive(ctx, r); err != nil {
+		if err := c.deleteRecursive(ctx, r, authority); err != nil {
 			return err
 		}
 	} else {
@@ -323,7 +318,7 @@ func (c *Core) deleteResolved(ctx context.Context, r Resolved, st vfs.Stat, char
 // is the backstop, since a directory still holding something the walk could
 // not remove fails there with ErrNotEmpty instead of being left half-gone
 // and reported deleted.
-func (c *Core) deleteRecursive(ctx context.Context, r Resolved) error {
+func (c *Core) deleteRecursive(ctx context.Context, r Resolved, authority acl.Perms) error {
 	entries, err := r.root.ReadDir(r.path, vfs.HideReserved)
 	if err != nil {
 		return mapVFSErr(err)
@@ -337,12 +332,12 @@ func (c *Core) deleteRecursive(ctx context.Context, r Resolved) error {
 		if serr != nil {
 			continue
 		}
-		under, uerr := c.ResolveUnder(r, child, acl.Delete)
+		under, uerr := c.ResolveUnder(r, child, authority)
 		if uerr != nil {
 			return uerr
 		}
 		if st.Kind.IsDir() {
-			if rerr := c.deleteRecursive(ctx, under); rerr != nil {
+			if rerr := c.deleteRecursive(ctx, under, authority); rerr != nil {
 				return rerr
 			}
 			continue
@@ -403,9 +398,12 @@ func (c *Core) PublishPart(
 		return Entry{}, errf(ErrDenied, "publish a part from another directory")
 	}
 
-	// One prior stat, deciding both the clobber flag and whose mode and
-	// ownership the published file keeps. Read exactly once because the
-	// rename below settles the race either way.
+	// Read the part before publication so quota admission is based on the
+	// bytes that will actually become visible.
+	partSt, perr := r.root.Stat(part)
+	if perr != nil {
+		return Entry{}, mapVFSErr(perr)
+	}
 	prior, serr := r.root.Stat(r.path)
 	replacing := serr == nil
 	if len(ifMatch) > 0 && ifMatch[0] != "" {
@@ -413,7 +411,9 @@ func (c *Core) PublishPart(
 			return Entry{}, fmt.Errorf("%w: nothing is at the destination", ErrPrecondition)
 		}
 		cur, _ := FileETag(prior)
-		return Entry{}, fmt.Errorf("%w: the destination's current token is %s", ErrPrecondition, cur)
+		if cur != ifMatch[0] {
+			return Entry{}, fmt.Errorf("%w: the destination's current token is %s", ErrPrecondition, cur)
+		}
 	}
 	switch {
 	case replacing:
@@ -427,10 +427,25 @@ func (c *Core) PublishPart(
 		return Entry{}, mapVFSErr(serr)
 	}
 
+	delta := deltaOf(partSt.Size, 0)
+	if replacing {
+		delta = deltaOf(partSt.Size, prior.Size)
+	}
+	var hold quotaReservation
+	if delta > 0 {
+		qhold, qerr := c.reserveQuota(ctx, r.user, uint64(delta))
+		if qerr != nil {
+			return Entry{}, qerr
+		}
+		hold = qhold
+	}
+
 	done, err := r.root.PublishPart(part, r.path, replacing)
 	if err != nil {
+		c.releaseQuota(ctx, r.user, &hold)
 		return Entry{}, mapVFSErr(err)
 	}
+	c.settleQuota(ctx, r.user, delta, &hold)
 	if done.OwnerRestore != nil {
 		// EPERM is the ordinary answer for an unprivileged process, so this
 		// is a warning. A mode that could not be restored already failed
@@ -445,20 +460,12 @@ func (c *Core) PublishPart(
 	// describes the file and the ledger only counts bytes.
 	c.markDirty(ctx, r.share, r.path)
 	c.record(ctx, r, journal.OpUpload)
-	if replacing {
-		c.chargeQuota(ctx, r.user, deltaOf(size, prior.Size))
-	} else {
-		c.chargeQuota(ctx, r.user, deltaOf(size, 0))
-	}
 	return c.buildEntry(r, r.path.Name(), r.path), nil
 }
 
-// deltaOf is the signed change the ledger sees, not the gross size.
-//
-// A size that does not fit the signed width is a number no filesystem
-// produced, and it charges nothing rather than wrapping the ledger by
-// petabytes. Saturating to zero, not to an extreme: garbage earns no charge
-// in either direction.
+// deltaOf returns the signed byte growth when both operands fit the ledger's
+// int64 accounting vocabulary. An unrepresentable size is rejected as an
+// accounting delta rather than wrapped into a false credit or debit.
 func deltaOf(now, before uint64) int64 {
 	a, err := num.Narrow[int64](now)
 	if err != nil {

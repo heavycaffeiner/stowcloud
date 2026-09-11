@@ -7,6 +7,7 @@ import (
 	"errors"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 )
 
@@ -285,17 +286,14 @@ type CopyStart struct {
 func (c *Core) StartCopy(
 	ctx context.Context, owner UserID, from, to Resolved, policy OnConflict,
 ) (CopyStart, error) {
-	// The source's own stat, never a zero value: copyRecursive branches on it
-	// to decide whether it is walking a tree or copying one file. An empty
-	// stat once said "not a directory" about every directory, so a recursive
-	// COPY took the single-file path, failed, and the caller had already been
-	// answered 202.
+	// The source's own stat is required before the synchronous authority walk:
+	// copy execution must never guess whether a target is a file or tree.
 	st, err := from.root.Stat(from.path)
 	if err != nil {
 		return CopyStart{}, mapVFSErr(err)
 	}
 
-	dest, _, done, err := c.applyConflict(ctx, to, policy, nil)
+	dest, overwriting, done, err := c.applyConflict(ctx, to, policy, nil)
 	if err != nil {
 		return CopyStart{}, err
 	}
@@ -303,12 +301,14 @@ func (c *Core) StartCopy(
 		return CopyStart{Dest: dest, Skipped: true}, nil
 	}
 
-	// Checked against the destination the policy settled on, not the one the
-	// request named. A duplicate asks to copy an entry onto itself and lets
-	// the rename pick the free name beside it; testing the requested path
-	// refused that before the rename ever ran, so the duplicate action was a
-	// 404 on every file.
+	// Conflict selection is read-only. Check the component relationship before
+	// any stage, quota booking, or operation row is created.
 	if err = RefuseSelfDescendant(from, dest); err != nil {
+		return CopyStart{}, err
+	}
+	if _, err = c.validateCopyTree(
+		ctx, from, dest, st, acl.Read|acl.Download, overwriting,
+	); err != nil {
 		return CopyStart{}, err
 	}
 
@@ -329,7 +329,7 @@ func (c *Core) StartCopy(
 	// the database it is about to write its outcome into.
 	runCtx := context.WithoutCancel(ctx)
 	c.jobs.Go(runCtx, "core: long copy", func() {
-		c.runCopy(runCtx, id, from, dest, st)
+		c.runCopyPolicy(runCtx, id, from, dest, st, overwriting)
 	})
 	return CopyStart{ID: OperationID(id), Dest: dest, Started: true}, nil
 }
@@ -373,12 +373,20 @@ func (c *Core) DrainJobs(ctx context.Context) error {
 // reached. FinishOp errors are ignored throughout, since the copy's own
 // outcome is already the answer and the row is best-effort bookkeeping.
 func (c *Core) runCopy(ctx context.Context, id int64, from, to Resolved, st vfs.Stat) {
+	c.runCopyPolicy(ctx, id, from, to, st, false)
+}
+
+func (c *Core) runCopyPolicy(
+	ctx context.Context, id int64, from, to Resolved, st vfs.Stat, overwriting bool,
+) {
 	if err := c.state.StartOpItem(ctx, id, 0); err != nil {
 		c.warn("marking a copy's item as started failed; the copy runs anyway",
 			"operation", id, "error", err)
 	}
 
-	err := c.copyRecursive(ctx, from, to, st, c.cancelGate(ctx, id))
+	err := c.copyTreeStaged(
+		ctx, from, to, st, acl.Read|acl.Download, c.cancelGate(ctx, id), overwriting,
+	)
 	now := c.clk.Nanos()
 	path := to.path.String()
 
@@ -392,9 +400,8 @@ func (c *Core) runCopy(ctx context.Context, id int64, from, to Resolved, st vfs.
 				"operation", id, "error", ierr)
 		}
 	case errors.Is(err, errOpCancelled):
-		// The one deliberate exception to the result-row rule: what was
-		// written stays and nothing undoes it, so the item is genuinely in an
-		// unknown state and recording no outcome is the honest answer.
+		// The one deliberate exception to the result-row rule: the stage was
+		// discarded before publication, so the item is genuinely unfinished.
 		c.finish(ctx, id, state.OpCancelled, 0, "", now, nil)
 	case err != nil:
 		results := []state.OpResult{{

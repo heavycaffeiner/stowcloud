@@ -40,6 +40,17 @@ const (
 	directPath     = "/remote.php/direct/:token"
 )
 
+// IsDirectPath reports whether a path is the direct stream in either
+// spelling. It is the one route family a content host serves, so the boundary
+// asks this before it decides which host role a request belongs to.
+func IsDirectPath(path string) bool {
+	rest, ok := strings.CutPrefix(path, "/remote.php/direct/")
+	if !ok {
+		rest, ok = strings.CutPrefix(path, frontPrefix+"/remote.php/direct/")
+	}
+	return ok && rest != "" && !strings.Contains(rest, "/")
+}
+
 // Mount claims every path.
 //
 // Mounted after the middleware chain like every other surface, so the
@@ -121,11 +132,20 @@ func requestScoped(h http.Handler) http.Handler {
 // this vocabulary's own clients include browser-hosted ones that preflight
 // every call, and a preflight that reaches a handler expecting a credential
 // answers 401 to a request that carried none by design.
+//
+// Only an origin the operator listed is answered, and it is echoed rather
+// than replaced by a wildcard: the allowlist is what makes a response
+// readable across origins, and no origin outside it reads one. Credentials
+// are never allowed across origins, so the list confers no trust.
 func (s *Server) ocs(v Version) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		c.Set("Access-Control-Allow-Origin", "*")
-		c.Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, OCS-APIRequest, Ocs-Apirequest")
+		if origin := c.Get(fiber.HeaderOrigin); origin != "" &&
+			s.deps.OriginAllowed != nil && s.deps.OriginAllowed(origin) {
+			c.Set(fiber.HeaderAccessControlAllowOrigin, origin)
+			c.Set(fiber.HeaderAccessControlAllowMethods, "GET, POST, PUT, DELETE, OPTIONS")
+			c.Set(fiber.HeaderAccessControlAllowHeaders, "Authorization, Content-Type, OCS-APIRequest, Ocs-Apirequest")
+			c.Vary(fiber.HeaderOrigin)
+		}
 		if c.Method() == fiber.MethodOptions {
 			return c.SendStatus(fiber.StatusOK)
 		}

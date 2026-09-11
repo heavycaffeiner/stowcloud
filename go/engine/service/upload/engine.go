@@ -41,6 +41,28 @@ type Options struct {
 	Logger *slog.Logger
 }
 
+// writerBarrier closes the admission gate before a terminal transition and
+// waits for every body that was admitted before that gate closed. The
+// generation makes a writer that was already in flight harmless after the
+// gate changes, even when it reaches its commit point last.
+type writerBarrier struct {
+	terminal       chan struct{}
+	mu             sync.Mutex
+	cond           *sync.Cond
+	active         int
+	closing        bool
+	terminalActive bool
+	generation     uint64
+	references     int
+}
+
+func newWriterBarrier() *writerBarrier {
+	b := &writerBarrier{terminal: make(chan struct{}, 1)}
+	b.terminal <- struct{}{}
+	b.cond = sync.NewCond(&b.mu)
+	return b
+}
+
 // handle is one session's part-file descriptor, opened lazily and guarded on
 // its own so a metadata write never waits for a disk write.
 type handle struct {
@@ -64,6 +86,15 @@ type Engine struct {
 	// disk write.
 	handlesMu sync.Mutex
 	handles   map[SessionID]*handle
+
+	// admissionMu keeps the account check and durable row creation one
+	// process-wide admission transaction. The state database serializes each
+	// write, but a read-then-create split otherwise lets concurrent requests
+	// all observe the same remaining capacity.
+	admissionMu sync.Mutex
+
+	writersMu sync.Mutex
+	writers   map[SessionID]*writerBarrier
 
 	rowsMu sync.Mutex
 	rows   map[SessionID]*sync.Mutex
@@ -109,6 +140,7 @@ func New(ctx context.Context, c *core.Core, st *state.DB, opt Options) (*Engine,
 		settings:  settings,
 		handles:   map[SessionID]*handle{},
 		rows:      map[SessionID]*sync.Mutex{},
+		writers:   map[SessionID]*writerBarrier{},
 		mergeCtx:  mergeCtx,
 		mergeStop: mergeStop,
 		mergers:   map[SessionID]*merger{},
@@ -206,6 +238,191 @@ func (e *Engine) rowLockCount() int {
 	e.rowsMu.Lock()
 	defer e.rowsMu.Unlock()
 	return len(e.rows)
+}
+
+// writerFor retains the admission barrier for one overlapping operation.
+// Once every writer and terminal caller releases its reference, the entry can
+// be removed: a later request still has to pass the durable session state.
+func (e *Engine) writerFor(id SessionID) *writerBarrier {
+	e.writersMu.Lock()
+	defer e.writersMu.Unlock()
+	if b, ok := e.writers[id]; ok {
+		b.references++
+		return b
+	}
+	b := newWriterBarrier()
+	b.references = 1
+	e.writers[id] = b
+	return b
+}
+
+func (e *Engine) releaseWriter(id SessionID, b *writerBarrier) {
+	e.writersMu.Lock()
+	defer e.writersMu.Unlock()
+	if current, ok := e.writers[id]; !ok || current != b {
+		return
+	}
+	if b.references > 0 {
+		b.references--
+	}
+	if b.references == 0 {
+		delete(e.writers, id)
+	}
+}
+
+func (e *Engine) writerBarrierCount() int {
+	e.writersMu.Lock()
+	defer e.writersMu.Unlock()
+	return len(e.writers)
+}
+
+type writerLease struct {
+	engine     *Engine
+	id         SessionID
+	barrier    *writerBarrier
+	generation uint64
+	released   bool
+}
+
+// admitWriter reserves an active-writer slot without holding the row lock
+// across body I/O. A terminal operation closes the same barrier and waits for
+// this slot before changing the durable state.
+func (e *Engine) admitWriter(id SessionID) (*writerLease, bool) {
+	b := e.writerFor(id)
+	b.mu.Lock()
+	if b.closing {
+		b.mu.Unlock()
+		e.releaseWriter(id, b)
+		return nil, false
+	}
+	b.active++
+	generation := b.generation
+	b.mu.Unlock()
+	return &writerLease{engine: e, id: id, barrier: b, generation: generation}, true
+}
+
+func (w *writerLease) valid() bool {
+	if w == nil {
+		return false
+	}
+	w.barrier.mu.Lock()
+	defer w.barrier.mu.Unlock()
+	return !w.barrier.closing && w.barrier.generation == w.generation
+}
+
+func (w *writerLease) release() {
+	if w == nil {
+		return
+	}
+	b := w.barrier
+	b.mu.Lock()
+	if w.released {
+		b.mu.Unlock()
+		return
+	}
+	w.released = true
+	if b.active > 0 {
+		b.active--
+	}
+	if b.active == 0 {
+		b.cond.Broadcast()
+	}
+	b.mu.Unlock()
+	w.engine.releaseWriter(w.id, b)
+}
+
+func (e *Engine) closeWriterGate(
+	ctx context.Context, id SessionID, terminalActive bool,
+) (*writerBarrier, uint64, bool, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	b := e.writerFor(id)
+	select {
+	case <-b.terminal:
+	case <-ctx.Done():
+		e.releaseWriter(id, b)
+		return nil, 0, false, ctx.Err()
+	}
+
+	b.mu.Lock()
+	b.terminalActive = terminalActive
+	owner := false
+	if !b.closing {
+		b.closing = true
+		b.generation++
+		owner = true
+	}
+	generation := b.generation
+	stopWake := context.AfterFunc(ctx, func() {
+		b.mu.Lock()
+		b.cond.Broadcast()
+		b.mu.Unlock()
+	})
+	for b.active != 0 && ctx.Err() == nil {
+		b.cond.Wait()
+	}
+	stopWake()
+	if err := ctx.Err(); err != nil {
+		if owner && b.closing && b.generation == generation {
+			b.closing = false
+			b.generation++
+			b.cond.Broadcast()
+		}
+		b.terminalActive = false
+		b.mu.Unlock()
+		b.terminal <- struct{}{}
+		e.releaseWriter(id, b)
+		return nil, 0, false, err
+	}
+	b.mu.Unlock()
+	return b, generation, owner, nil
+}
+
+// closeWriters stops new body admissions and waits for admitted writers. The
+// wait ends with the caller's context rather than pinning a terminal request
+// behind a body that has stopped producing bytes.
+func (e *Engine) closeWriters(
+	ctx context.Context, id SessionID,
+) (*writerBarrier, uint64, bool, error) {
+	return e.closeWriterGate(ctx, id, true)
+}
+
+func (e *Engine) finishWriters(id SessionID, b *writerBarrier) {
+	b.mu.Lock()
+	b.terminalActive = false
+	b.mu.Unlock()
+	b.terminal <- struct{}{}
+	e.releaseWriter(id, b)
+}
+
+func (e *Engine) terminalActive(id SessionID) bool {
+	b := e.writerFor(id)
+	defer e.releaseWriter(id, b)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.terminalActive
+}
+
+// fenceWriters serializes cleanup with terminal operations without marking the
+// cleanup itself as an active publication.
+func (e *Engine) fenceWriters(
+	ctx context.Context, id SessionID,
+) (*writerBarrier, uint64, bool, error) {
+	return e.closeWriterGate(ctx, id, false)
+}
+
+// reopenWriters reopens a gate after a terminal attempt fails before
+// publication. The generation check keeps a concurrent terminal caller from
+// reopening a gate it now owns.
+func (e *Engine) reopenWriters(b *writerBarrier, generation uint64) {
+	b.mu.Lock()
+	if b.closing && b.generation == generation {
+		b.closing = false
+		b.generation++
+		b.cond.Broadcast()
+	}
+	b.mu.Unlock()
 }
 
 // handleFor lazily reopens a part file and is the only place in the tree that

@@ -79,9 +79,10 @@ func indexSourcesOf(scan []core.ScanSource) []search.Source {
 			continue
 		}
 		out = append(out, search.Source{
-			Share: uint32(s.Share),
-			Root:  s.Root,
-			Base:  s.Base,
+			Share:     uint32(s.Share),
+			Root:      s.Root,
+			Base:      s.Base,
+			IndexBase: s.Base,
 		})
 	}
 	return out

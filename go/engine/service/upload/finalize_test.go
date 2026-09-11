@@ -160,29 +160,29 @@ func TestFinalizeRefusesHolesAndNamesThem(t *testing.T) {
 	}
 }
 
-// Verification failure leaves the part file in place and the session
-// recoverable: the client knows whether to resend a range or start again, and
-// discarding its bytes here would decide that for it.
+// Verification failure leaves the part file and session resumable. A repaired
+// range can be finalized without an explicit Abort.
 func TestAFailedWholeFileVerificationLeavesTheSessionResumable(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	const chunk = limits.UploadChunkFloor
-	body := chunkOf(0, chunk)
+	bad := chunkOf(0, chunk)
+	good := chunkOf(17, chunk)
 
-	wrong, err := Sum(AlgoBLAKE3, []byte("a different file"))
+	expected, err := Sum(AlgoBLAKE3, good)
 	if err != nil {
 		t.Fatalf("Sum: %v", err)
 	}
 	s := f.create(t, "verified.bin", uint64(chunk), SessionSpec{
-		Meta: Meta{Verify: &Verify{Algo: AlgoBLAKE3, Digest: wrong}},
+		RandomAccess: true,
+		Meta:         Meta{Verify: &Verify{Algo: AlgoBLAKE3, Digest: expected}},
 	})
-	f.patch(t, s.ID, 0, body)
+	f.patch(t, s.ID, 0, bad)
 
 	if _, ferr := f.engine.Finalize(ctx, f.resolve(t, "verified.bin"), s.ID); !errors.Is(ferr, ErrVerify) {
 		t.Fatalf("a wrong whole-file digest returned %v", ferr)
 	}
-	// The part file is still there and the session still exists.
 	part, perr := vfs.RootPath().JoinControl(partName(s.ID))
 	if perr != nil {
 		t.Fatalf("naming the part file: %v", perr)
@@ -194,16 +194,18 @@ func TestAFailedWholeFileVerificationLeavesTheSessionResumable(t *testing.T) {
 	if gerr != nil {
 		t.Fatalf("the session is gone after a failed verification: %v", gerr)
 	}
-	if got.State != StateFinalizing {
-		t.Fatalf("the session reads as state %d, want finalizing", got.State)
+	if got.State != StateReceiving {
+		t.Fatalf("the session reads as state %d, want receiving", got.State)
 	}
-	// Nothing was published.
-	dest, perr := vfs.ParseSafePath("verified.bin")
-	if perr != nil {
-		t.Fatalf("parsing: %v", perr)
+
+	// The incorrect accepted range is replaceable after the failed check.
+	f.patch(t, s.ID, 0, good)
+	if _, ferr := f.engine.Finalize(ctx, f.resolve(t, "verified.bin"), s.ID); ferr != nil {
+		t.Fatalf("repairing the failed verification: %v", ferr)
 	}
-	if _, serr := f.root(t).Stat(dest); !errors.Is(serr, vfs.ErrNotFound) {
-		t.Fatal("a failed verification published the file")
+	gotBytes := readPublished(t, f, "verified.bin", chunk)
+	if !bytes.Equal(gotBytes, good) {
+		t.Fatal("the repaired bytes were not published")
 	}
 }
 
@@ -227,28 +229,36 @@ func TestAMatchingWholeFileDigestPublishes(t *testing.T) {
 	}
 }
 
-// A finalizing session is not receiving, and the sweep leaves it alone: a
-// long assembly must not be collected halfway through its own publish.
+// A live finalizing session is not receiving, and the sweep leaves it alone:
+// a long assembly must not be collected halfway through its own publish.
+// Verification failures use the recoverable receiving state covered above.
 func TestAFinalizingSessionSurvivesTheSweep(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	const chunk = limits.UploadChunkFloor
-	body := chunkOf(0, chunk)
-	wrong, err := Sum(AlgoBLAKE3, []byte("elsewhere"))
+	s := f.create(t, "slow.bin", uint64(chunk), SessionSpec{})
+	f.patch(t, s.ID, 0, chunkOf(0, chunk))
+	barrier, generation, owner, err := f.engine.closeWriters(t.Context(), s.ID)
 	if err != nil {
-		t.Fatalf("Sum: %v", err)
+		t.Fatalf("closing writers: %v", err)
 	}
-	s := f.create(t, "slow.bin", uint64(chunk), SessionSpec{
-		Meta: Meta{Verify: &Verify{Algo: AlgoBLAKE3, Digest: wrong}},
-	})
-	f.patch(t, s.ID, 0, body)
-	// The failed verification leaves the session in the finalizing state.
-	if _, ferr := f.engine.Finalize(ctx, f.resolve(t, "slow.bin"), s.ID); !errors.Is(ferr, ErrVerify) {
-		t.Fatalf("Finalize returned %v", ferr)
+	if !owner {
+		t.Fatal("the test did not acquire finalization ownership")
 	}
-
+	defer f.engine.finishWriters(s.ID, barrier)
+	defer f.engine.reopenWriters(barrier, generation)
+	stored, err := f.state.ReadUploadSession(ctx, s.ID.Bytes())
+	if err != nil {
+		t.Fatalf("ReadUploadSession: %v", err)
+	}
+	stored.State = int64(StateFinalizing)
+	stored.ExpiresNs = f.clk.Nanos()
+	if err := f.state.UpdateUploadSession(ctx, stored); err != nil {
+		t.Fatalf("UpdateUploadSession: %v", err)
+	}
 	f.clk.advance(limits.UploadSessionTTL * 2)
+
 	rep, serr := f.engine.Sweep(ctx)
 	if serr != nil {
 		t.Fatalf("Sweep: %v", serr)
@@ -256,8 +266,12 @@ func TestAFinalizingSessionSurvivesTheSweep(t *testing.T) {
 	if rep.ExpiredSessions != 0 {
 		t.Fatalf("the sweep took %d finalizing sessions", rep.ExpiredSessions)
 	}
-	if _, gerr := f.engine.Get(ctx, s.ID, testUser); gerr != nil {
+	got, gerr := f.engine.Get(ctx, s.ID, testUser)
+	if gerr != nil {
 		t.Fatalf("the finalizing session was swept: %v", gerr)
+	}
+	if got.State != StateFinalizing {
+		t.Fatalf("the session reads as state %d, want finalizing", got.State)
 	}
 }
 

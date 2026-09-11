@@ -25,10 +25,12 @@ func (b Bound) Clamp(v int64) int64 {
 // to is not a bound. The compiler inlines them.
 func BoundSearchConcurrent() Bound { return Bound{Min: 1, Max: 64} }
 func BoundSearchDeadlineMs() Bound { return Bound{Min: 100, Max: 60_000} }
-func BoundArchiveEntries() Bound   { return Bound{Min: 100, Max: 1_000_000} }
-func BoundWatchHotSet() Bound      { return Bound{Min: 64, Max: 1 << 20} }
-func BoundRatePerSec() Bound       { return Bound{Min: 1, Max: 100_000} }
-func BoundRateBurst() Bound        { return Bound{Min: 1, Max: 1_000_000} }
+func BoundArchiveConcurrent() Bound {
+	return Bound{Min: 1, Max: 64}
+}
+func BoundWatchHotSet() Bound { return Bound{Min: 64, Max: 1 << 20} }
+func BoundRatePerSec() Bound  { return Bound{Min: 1, Max: 100_000} }
+func BoundRateBurst() Bound   { return Bound{Min: 1, Max: 1_000_000} }
 
 // BoundWatchFullThreshold is the point at which the watcher abandons per
 // directory tracking. It can only take effect above the hot-set bound, so it
@@ -74,7 +76,7 @@ func Bounds() map[string]Bound {
 	return map[string]Bound{
 		FieldSearchConcurrentFast: BoundSearchConcurrent(),
 		FieldSearchDeadlineFast:   BoundSearchDeadlineMs(),
-		FieldArchiveMaxConcurrent: BoundArchiveEntries(),
+		FieldArchiveMaxConcurrent: BoundArchiveConcurrent(),
 		FieldWatchHotSet:          BoundWatchHotSet(),
 		FieldWatchFullThreshold:   BoundWatchFullThreshold(),
 		FieldRatePerSec:           BoundRatePerSec(),

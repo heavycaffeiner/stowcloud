@@ -39,6 +39,28 @@ func TestADownloadCarriesItsValidator(t *testing.T) {
 	}
 }
 
+func TestCompatDownloadsDoNotRenderActiveContentOnTheAppOrigin(t *testing.T) {
+	t.Parallel()
+	f := newNCFixture(t, []byte("plain"))
+
+	if resp, body := f.request(t, "PUT", f.filePath("active.html"),
+		strings.NewReader("<script src=\"payload.js\"></script>"), nil); resp.StatusCode != 201 {
+		t.Fatalf("uploading active content answered %d: %s", resp.StatusCode, body)
+	}
+	active, _ := f.request(t, "GET", f.filePath("active.html"), nil, nil)
+	if !strings.HasPrefix(active.Header.Get("Content-Disposition"), "attachment;") {
+		t.Errorf("active content was not forced to attachment: %q", active.Header.Get("Content-Disposition"))
+	}
+	if got := active.Header.Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Errorf("active content carries X-Content-Type-Options %q", got)
+	}
+
+	passive, _ := f.request(t, "GET", f.filePath("doc.bin"), nil, nil)
+	if policies := strings.Join(passive.Header.Values("Content-Security-Policy"), "; "); !strings.Contains(policies, "sandbox") {
+		t.Errorf("inline passive content carries CSP values %q", policies)
+	}
+}
+
 // A resumed download asks for the tail it is missing.
 func TestARangeRequestAnswersThePartialContent(t *testing.T) {
 	t.Parallel()

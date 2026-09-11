@@ -3,10 +3,17 @@
 package lifecycle_test
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
+
+	emergencyHTTP "github.com/heavycaffeiner/stowcloud/go/engine/http/emergency"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
+	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 )
 
 // The repair door answers, and answers outside the middleware chain.
@@ -27,8 +34,192 @@ func TestTheRepairDoorIsReachable(t *testing.T) {
 	if err := json.Unmarshal(body, &state); err != nil {
 		t.Fatalf("decoding %s: %v", body, err)
 	}
+
 	if len(state) == 0 {
 		t.Error("the door reports nothing about the deployment")
+	}
+}
+
+// The repair door accepts the same one-use recovery factor as ordinary
+// sign-in, while still requiring the administrator password first. A second
+// attempt with the code is refused because consuming it is part of the
+// authentication operation.
+func TestEmergencyLoginAcceptsRecoveryCodeOnce(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
+	if err != nil {
+		t.Fatalf("opening: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := e.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	})
+
+	id, err := e.Auth.CreateAdmin(ctx, "root", "Root", secret.New([]byte("a-long-enough-password")))
+	if err != nil {
+		t.Fatalf("creating the administrator: %v", err)
+	}
+	enrol(t, e, id)
+	codes, err := e.Auth.GenerateRecoveryCodes(ctx, id, 1)
+	if err != nil || len(codes) != 1 {
+		t.Fatalf("generating a recovery code: %v", err)
+	}
+	base := serve(t, e)
+	login := func() (int, []byte) {
+		return doorRequest(t, http.MethodPost, base+"/emergency/api/login",
+			[]byte(`{"username":"root","password":"a-long-enough-password","factor":"`+codes[0]+`"}`), "")
+	}
+
+	status, body := login()
+	if status != http.StatusOK {
+		t.Fatalf("a valid recovery code was refused: %d %s", status, body)
+	}
+	var result map[string]any
+	if uerr := json.Unmarshal(body, &result); uerr != nil {
+		t.Fatalf("decoding the login result: %v", uerr)
+	}
+	if result["status"] != "ok" {
+		t.Fatalf("the recovery login answered %v", result["status"])
+	}
+
+	rows, _, err := e.Auth.AuditPage(ctx, auth.AuditFilter{})
+	if err != nil {
+		t.Fatalf("reading the audit log: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Event != emergencyHTTP.EventLogin || !rows[0].OK {
+		t.Fatalf("the recovery login produced the wrong audit flow: %+v", rows)
+	}
+	if status, _ := login(); status == http.StatusOK {
+		t.Fatal("the recovery code was accepted twice")
+	}
+}
+
+// A valid TOTP completes the emergency login without also recording an
+// ordinary login attempt. The door should produce one authentication event.
+func TestEmergencyLoginAcceptsTOTPOnce(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
+	if err != nil {
+		t.Fatalf("opening: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := e.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	})
+
+	id, err := e.Auth.CreateAdmin(ctx, "root", "Root", secret.New([]byte("a-long-enough-password")))
+	if err != nil {
+		t.Fatalf("creating the administrator: %v", err)
+	}
+	secretB32 := enrol(t, e, id)
+	base := serve(t, e)
+
+	status, body := doorRequest(t, http.MethodPost, base+"/emergency/api/login",
+		[]byte(`{"username":"root","password":"a-long-enough-password","factor":"`+
+			referenceCode(t, secretB32, nowStep())+`"}`), "")
+	if status != http.StatusOK {
+		t.Fatalf("a valid TOTP was refused: %d %s", status, body)
+	}
+	var result map[string]any
+	if uerr := json.Unmarshal(body, &result); uerr != nil {
+		t.Fatalf("decoding the login result: %v", uerr)
+	}
+	if result["status"] != "ok" {
+		t.Fatalf("the TOTP login answered %v", result["status"])
+	}
+
+	rows, _, err := e.Auth.AuditPage(ctx, auth.AuditFilter{})
+	if err != nil {
+		t.Fatalf("reading the audit log: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Event != emergencyHTTP.EventLogin || !rows[0].OK {
+		t.Fatalf("the TOTP login produced the wrong audit flow: %+v", rows)
+	}
+}
+
+// A recovery login has only one password attempt. Nine preceding password
+// checks leave exactly one service attempt, so a second Login call would
+// refuse the valid recovery code as rate limited.
+func TestEmergencyRecoveryDoesNotSpendASecondLoginAttempt(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
+	if err != nil {
+		t.Fatalf("opening: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := e.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	})
+
+	id, err := e.Auth.CreateAdmin(ctx, "root", "Root", secret.New([]byte("a-long-enough-password")))
+	if err != nil {
+		t.Fatalf("creating the administrator: %v", err)
+	}
+	enrol(t, e, id)
+	codes, err := e.Auth.GenerateRecoveryCodes(ctx, id, 1)
+	if err != nil || len(codes) != 1 {
+		t.Fatalf("generating a recovery code: %v", err)
+	}
+
+	for i := range 9 {
+		_, loginErr := e.Auth.Login(ctx, auth.LoginRequest{
+			Name: "root", Password: secret.New([]byte("a-long-enough-password")),
+			IP: "127.0.0.1",
+		}, 0)
+		if !errors.Is(loginErr, auth.ErrSecondFactor) {
+			t.Fatalf("password attempt %d returned %v", i+1, loginErr)
+		}
+	}
+
+	base := serve(t, e)
+	status, body := doorRequest(t, http.MethodPost, base+"/emergency/api/login",
+		[]byte(`{"username":"root","password":"a-long-enough-password","factor":"`+codes[0]+`"}`), "")
+	if status != http.StatusOK {
+		t.Fatalf("the valid recovery code was rate limited: %d %s", status, body)
+	}
+}
+
+// A recovery code never replaces the password check. A refused password also
+// leaves the code available for the account holder.
+func TestEmergencyRecoveryDoesNotBypassPassword(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
+	if err != nil {
+		t.Fatalf("opening: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := e.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	})
+
+	id, err := e.Auth.CreateAdmin(ctx, "root", "Root", secret.New([]byte("a-long-enough-password")))
+	if err != nil {
+		t.Fatalf("creating the administrator: %v", err)
+	}
+	enrol(t, e, id)
+	codes, err := e.Auth.GenerateRecoveryCodes(ctx, id, 1)
+	if err != nil || len(codes) != 1 {
+		t.Fatalf("generating a recovery code: %v", err)
+	}
+	base := serve(t, e)
+	login := func(password string) (int, []byte) {
+		return doorRequest(t, http.MethodPost, base+"/emergency/api/login",
+			[]byte(`{"username":"root","password":"`+password+`","factor":"`+codes[0]+`"}`), "")
+	}
+
+	if status, body := login("wrong-password-value"); status == http.StatusOK {
+		t.Fatalf("wrong password bypassed authentication: %s", body)
+	}
+	if status, body := login("a-long-enough-password"); status != http.StatusOK {
+		t.Fatalf("the recovery code was consumed by the refused password: %d %s", status, body)
 	}
 }
 

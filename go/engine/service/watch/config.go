@@ -67,6 +67,11 @@ type Config struct {
 	// staleness an NFS client already accepts in its attribute cache, so this
 	// introduces no delay the mount had not already tolerated.
 	RescanInterval time.Duration
+
+	// OnCoverageLost runs when the watcher can no longer guarantee that every
+	// registered directory's changes will reach consumers. The callback is for
+	// cache invalidation, not request failure.
+	OnCoverageLost func()
 }
 
 func DefaultConfig() Config {

@@ -31,154 +31,227 @@ func (e *Engine) PutNamed(
 	name uint32, body io.Reader, sum *Checksum,
 ) error {
 	unlock := e.lockRow(id)
-	defer unlock()
-
 	r, err := e.load(ctx, id)
 	if err != nil {
+		unlock()
 		return err
 	}
 	if oerr := requireOwner(r, user); oerr != nil {
+		unlock()
 		return oerr
 	}
 	if serr := e.requireReceiving(r); serr != nil {
+		unlock()
 		return serr
 	}
 	if r.mode() != SpoolNameOrdered {
+		unlock()
 		return fmt.Errorf("%w: this session is offset-addressed", ErrBadRequest)
 	}
 	if name == 0 {
+		unlock()
 		return fmt.Errorf("%w: a chunk name starts at one", ErrBadRequest)
 	}
 
 	next, nerr := num.Narrow[uint32](r.sess.NextName)
 	if nerr != nil {
+		unlock()
 		return nerr
 	}
-
-	if name == next {
-		// The chunk the assembly is waiting for goes straight onto the end of
-		// the part file and nothing is spooled.
-		if aerr := e.appendToPart(root, r, id, body, sum); aerr != nil {
-			return aerr
-		}
-		r.sess.NextName++
-		if derr := e.drainSpool(ctx, root, r, false); derr != nil {
-			return derr
-		}
-	} else {
-		if serr := e.spoolChunk(root, r, name, body, sum); serr != nil {
-			return serr
-		}
-		if !slices.Contains(r.sess.SpooledNames, name) {
-			if len(r.sess.SpooledNames) >= limits.UploadSpooledNames {
-				return &ExhaustedError{Limit: "out-of-order chunks held for this session"}
-			}
-			r.sess.SpooledNames = append(r.sess.SpooledNames, name)
-		}
+	isNext := name == next
+	if !isNext && !slices.Contains(r.sess.SpooledNames, name) &&
+		len(r.sess.SpooledNames) >= limits.UploadSpooledNames {
+		unlock()
+		return &ExhaustedError{Limit: "out-of-order chunks held for this session"}
+	}
+	lease, admitted := e.admitWriter(id)
+	if !admitted {
+		unlock()
+		return ErrSessionState
 	}
 
-	// The row is written only once every byte reaches disk, matching the
-	// offset-addressed path's ordering rule. A crash in between under-states
-	// what arrived, and the client sends it again.
-	r.sess.ExpiresNs = e.expiry()
-	return e.save(ctx, r)
-}
-
-// appendToPart writes a chunk body at the current write head and moves it
-// forward.
-func (e *Engine) appendToPart(
-	root vfs.Root, r *row, id SessionID, body io.Reader, sum *Checksum,
-) error {
 	part, err := e.partPathOf(r)
 	if err != nil {
+		lease.release()
+		unlock()
 		return err
 	}
-	f, err := e.handleFor(root, id, part)
-	if err != nil {
-		return err
+	logical := uint64(0)
+	stageDir := part.Parent()
+	if isNext {
+		logical, err = num.Narrow[uint64](r.sess.WriteHead)
+		if err != nil {
+			lease.release()
+			unlock()
+			return err
+		}
+	} else {
+		stageDir, err = e.spoolDirOf(r)
+		if err != nil {
+			lease.release()
+			unlock()
+			return err
+		}
+		if merr := root.Mkdir(stageDir); merr != nil && !errors.Is(merr, vfs.ErrExists) {
+			lease.release()
+			unlock()
+			return mapVFSErr(merr)
+		}
 	}
-	head, herr := num.Narrow[uint64](r.sess.WriteHead)
-	if herr != nil {
-		return herr
+	declared := false
+	if _, declared = r.totalLen(); !declared {
+		// Deferred-length named sessions still need a per-member bound. The
+		// captured session chunk size is the protocol's advertised maximum,
+		// and the aggregate bound below caps a run of held members.
+		maxChunk, merr := num.Narrow[uint64](r.sess.ChunkSize)
+		if merr != nil || maxChunk == 0 {
+			maxChunk = limits.UploadChunkSizeDefault
+		}
+		if maxChunk < uint64(1<<63-1) {
+			body = io.LimitReader(body, int64(maxChunk)+1)
+		}
 	}
-	n, digest, werr := e.writeBody(f, head, body, r, sum)
+	unlock()
+	defer lease.release()
+
+	stage, n, _, werr := e.stageBody(root, stageDir, logical, body, r, sum)
 	if werr != nil {
 		return werr
 	}
-	// The write head does not move over a chunk whose digest does not match, so
-	// the client resends the same name rather than the next one. The bytes are
-	// already on disk past the head and the resend overwrites them.
-	if sum != nil && digest != nil && !constantTimeEqual(digest, sum.Digest) {
-		return fmt.Errorf("%w: the %s digest does not match the %d bytes received",
-			ErrChecksum, sum.Algo, n)
+	cleanup := func() {
+		if uerr := root.Unlink(stage); uerr != nil && !errors.Is(uerr, vfs.ErrNotFound) {
+			e.log.Warn("a named upload staging file could not be removed", "error", uerr)
+		}
 	}
-	written, nerr := num.Narrow[int64](n)
+	defer cleanup()
+
+	if !declared {
+		maxChunk, merr := num.Narrow[uint64](r.sess.ChunkSize)
+		if merr != nil || maxChunk == 0 {
+			maxChunk = limits.UploadChunkSizeDefault
+		}
+		if n > maxChunk {
+			return fmt.Errorf("%w: named chunk %d has %d bytes, maximum is %d",
+				ErrTooLarge, name, n, maxChunk)
+		}
+	}
+	if !lease.valid() {
+		return ErrSessionState
+	}
+
+	relock := e.lockRow(id)
+	defer relock()
+	fresh, err := e.load(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !lease.valid() {
+		return ErrSessionState
+	}
+	if serr := e.requireReceiving(fresh); serr != nil {
+		return serr
+	}
+	if fresh.mode() != SpoolNameOrdered {
+		return fmt.Errorf("%w: this session is offset-addressed", ErrBadRequest)
+	}
+	currentNext, nerr := num.Narrow[uint32](fresh.sess.NextName)
 	if nerr != nil {
 		return nerr
 	}
-	r.sess.WriteHead += written
-	return nil
+	if name < currentNext {
+		// A response may have been lost after this name was assembled. The
+		// only safe idempotent result is a no-op: never overwrite an accepted
+		// range with a retry whose original bytes are no longer staged.
+		return nil
+	}
+	if name == currentNext {
+		head, herr := num.Narrow[uint64](fresh.sess.WriteHead)
+		if herr != nil {
+			return herr
+		}
+		if total, ok := fresh.totalLen(); ok {
+			if head > total || n > total-head {
+				return fmt.Errorf("%w: named chunk %d exceeds the declared length of %d",
+					ErrTooLarge, name, total)
+			}
+		}
+		if err := e.commitStagedAt(root, id, part, stage, head, n); err != nil {
+			return err
+		}
+		advanced, aerr := num.Narrow[int64](n)
+		if aerr != nil {
+			return aerr
+		}
+		fresh.sess.WriteHead += advanced
+		fresh.sess.NextName++
+		if err := e.save(ctx, fresh); err != nil {
+			return err
+		}
+		if err := e.drainSpool(ctx, root, fresh, false); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	held, herr := e.namedHeldBytes(root, fresh, name)
+	if herr != nil {
+		return herr
+	}
+	if n > ^uint64(0)-held {
+		return fmt.Errorf("%w: named chunks overflow the session byte bound", ErrTooLarge)
+	}
+	if total, ok := fresh.totalLen(); ok {
+		if held+n > total {
+			return fmt.Errorf("%w: named chunks total %d exceeds the declared length of %d",
+				ErrTooLarge, held+n, total)
+		}
+	} else if held+n > uint64(limits.UploadReservedBytesPerUser) {
+		return &ExhaustedError{Limit: "unassembled named upload bytes"}
+	}
+
+	dir, derr := e.spoolDirOf(fresh)
+	if derr != nil {
+		return derr
+	}
+	file, ferr := dir.JoinControl(chunkFileName(name))
+	if ferr != nil {
+		return ferr
+	}
+	if rerr := root.Rename(stage, file, false); rerr != nil {
+		return mapVFSErr(rerr)
+	}
+	if !slices.Contains(fresh.sess.SpooledNames, name) {
+		fresh.sess.SpooledNames = append(fresh.sess.SpooledNames, name)
+	}
+	fresh.sess.ExpiresNs = e.expiry()
+	return e.save(ctx, fresh)
 }
 
-// spoolChunk writes an out-of-order chunk into its own file within the session's
-// spool directory.
-//
-// A repeated name indicates a client retry and overwrites idempotently, since
-// the chunk carries identical bytes. Rejecting it would strand a client that
-// lost the response rather than the request.
-func (e *Engine) spoolChunk(
-	root vfs.Root, r *row, name uint32, body io.Reader, sum *Checksum,
-) error {
-	dir, err := e.spoolDirOf(r)
+// namedHeldBytes is the durable byte count that a name-ordered session would
+// assemble. Existing data for the replaced name is excluded so an idempotent
+// retry is charged by its replacement size, not twice.
+func (e *Engine) namedHeldBytes(
+	root vfs.Root, r *row, replacing uint32,
+) (uint64, error) {
+	head, err := num.Narrow[uint64](r.sess.WriteHead)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	if merr := root.Mkdir(dir); merr != nil && !errors.Is(merr, vfs.ErrExists) {
-		return mapVFSErr(merr)
-	}
-	file, err := dir.JoinControl(chunkFileName(name))
-	if err != nil {
-		return err
-	}
-
-	f, err := root.CreatePart(file)
-	if errors.Is(err, vfs.ErrExists) {
-		// The client resent a name it had already sent, a retry following a lost
-		// response. The previous file is deleted and recreated rather than
-		// reopened for writing, because reopening would introduce a second
-		// writable descriptor on a read path and the part-file handle is the
-		// only such descriptor in the tree. Unlinking first also ensures a
-		// partial write from the abandoned attempt cannot persist beneath a
-		// shorter one.
-		if uerr := root.Unlink(file); uerr != nil && !errors.Is(uerr, vfs.ErrNotFound) {
-			return mapVFSErr(uerr)
+	held := head
+	for _, name := range r.sess.SpooledNames {
+		if name == replacing {
+			continue
 		}
-		f, err = root.CreatePart(file)
-	}
-	if err != nil {
-		return mapVFSErr(err)
-	}
-	defer func() {
-		if cerr := f.Close(); cerr != nil {
-			e.log.Warn("closing a spooled upload chunk failed", "error", cerr)
+		size, serr := e.spooledChunkSize(root, r, name)
+		if serr != nil {
+			return 0, serr
 		}
-	}()
-
-	// The floor does not govern a spooled chunk, since it is measured against the
-	// assembled file and a name-ordered client does not select the offsets it
-	// would be measured at.
-	n, digest, werr := e.writeBody(f, 0, body, nil, sum)
-	if werr != nil {
-		return werr
+		if size > ^uint64(0)-held {
+			return 0, fmt.Errorf("%w: named chunks overflow the session byte bound", ErrTooLarge)
+		}
+		held += size
 	}
-	// A chunk that fails its digest is not recorded as spooled, so the name
-	// stays absent from the session and the client sends it again. The file it
-	// wrote is left for the resend to overwrite or the sweep to remove.
-	if sum != nil && digest != nil && !constantTimeEqual(digest, sum.Digest) {
-		return fmt.Errorf("%w: the %s digest does not match the %d bytes received",
-			ErrChecksum, sum.Algo, n)
-	}
-	return f.SyncData()
+	return held, nil
 }
 
 // drainSpool merges spooled chunks into the part file in ascending name order,
@@ -267,6 +340,12 @@ func (e *Engine) mergeChunk(root vfs.Root, r *row, name uint32) error {
 	if herr != nil {
 		return herr
 	}
+	if total, ok := r.totalLen(); ok {
+		if head > total || st.Size > total-head {
+			return fmt.Errorf("%w: assembling chunk %d would exceed the declared length of %d",
+				ErrTooLarge, name, total)
+		}
+	}
 	copied, cerr := vfs.CopyRange(src, 0, dst, head, st.Size)
 	if cerr != nil {
 		return mapVFSErr(cerr)
@@ -281,8 +360,8 @@ func (e *Engine) mergeChunk(root vfs.Root, r *row, name uint32) error {
 	r.sess.WriteHead += written
 
 	if uerr := root.Unlink(file); uerr != nil && !errors.Is(uerr, vfs.ErrNotFound) {
-		// The chunk already sits in the part file, so a failed removal leaves an
-		// unlistable orphan for the sweep instead of a failed assembly.
+		// The chunk already sits in the part file, so a failed removal leaves
+		// an unlistable orphan for the sweep instead of a failed assembly.
 		e.log.Warn("a merged upload chunk could not be removed; the sweep will collect it",
 			"error", uerr)
 	}

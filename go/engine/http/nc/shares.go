@@ -85,7 +85,9 @@ func (s *Server) listShares(c *fiber.Ctx, p Principal) (Val, bool, *Error) {
 			return Val{}, false, ocsErrorOf(err, apierr.VisibilityHidden)
 		}
 		for _, l := range links {
-			items = append(items, s.linkShareVal(c, l))
+			if s.linkInScope(ctx, p, l) {
+				items = append(items, s.linkShareVal(c, l))
+			}
 		}
 		return List(items...), true, nil
 	}
@@ -96,7 +98,7 @@ func (s *Server) listShares(c *fiber.Ctx, p Principal) (Val, bool, *Error) {
 	}
 
 	if !queryBool(c.Query("subfiles")) {
-		return List(s.sharesAtResolved(c, res)...), true, nil
+		return List(s.sharesAtResolved(c, p, res)...), true, nil
 	}
 
 	page, err := s.deps.Core.List(ctx, res, "")
@@ -113,7 +115,7 @@ func (s *Server) listShares(c *fiber.Ctx, p Principal) (Val, bool, *Error) {
 		if cerr != nil {
 			continue
 		}
-		items = append(items, s.sharesAtResolved(c, child)...)
+		items = append(items, s.sharesAtResolved(c, p, child)...)
 	}
 	return List(items...), true, nil
 }
@@ -130,14 +132,14 @@ func (s *Server) sharesUnderRoot(c *fiber.Ctx, p Principal) []Val {
 		if err != nil {
 			continue
 		}
-		items = append(items, s.sharesAtResolved(c, res)...)
+		items = append(items, s.sharesAtResolved(c, p, res)...)
 	}
 	return items
 }
 
 // sharesAtResolved answers every link the caller owns exactly at one path
 // they have already resolved for reading.
-func (s *Server) sharesAtResolved(c *fiber.Ctx, res core.Resolved) []Val {
+func (s *Server) sharesAtResolved(c *fiber.Ctx, p Principal, res core.Resolved) []Val {
 	ctx := c.UserContext()
 	items := make([]Val, 0)
 	links, err := s.deps.Core.ListLinks(ctx, res.User(), &res)
@@ -145,9 +147,27 @@ func (s *Server) sharesAtResolved(c *fiber.Ctx, res core.Resolved) []Val {
 		return items
 	}
 	for _, l := range links {
-		items = append(items, s.linkShareVal(c, l))
+		if s.linkInScope(ctx, p, l) {
+			items = append(items, s.linkShareVal(c, l))
+		}
 	}
 	return items
+}
+
+// linkInScope answers whether a link target is inside the caller's delegated
+// roots and still carries the Share capability. Link rows are owner-scoped in
+// the core, but owner scope alone is not enough for a restricted credential:
+// two links owned by one account can target different delegated roots.
+func (s *Server) linkInScope(ctx context.Context, p Principal, l core.Link) bool {
+	if s.deps.VpathOf == nil {
+		return false
+	}
+	path, err := s.deps.VpathOf(l.Owner, l.Share, l.Path.String())
+	if err != nil {
+		return false
+	}
+	_, err = s.resolve(ctx, p, path, acl.Share)
+	return err == nil
 }
 
 // createShare answers POST .../shares.
@@ -254,6 +274,9 @@ func (s *Server) getShare(c *fiber.Ctx, p Principal, id string) (Val, bool, *Err
 	if lerr != nil {
 		return Val{}, false, NotFound("The requested share could not be found")
 	}
+	if !s.linkInScope(ctx, p, link) {
+		return Val{}, false, NotFound("The requested share could not be found")
+	}
 	return s.linkShareVal(c, link), true, nil
 }
 
@@ -286,6 +309,9 @@ func (s *Server) updateLinkShare(c *fiber.Ctx, p Principal, id int64) (Val, bool
 	owner := user(p)
 	current, cerr := s.deps.Core.GetLink(ctx, owner, id)
 	if cerr != nil {
+		return Val{}, false, NotFound("The requested share could not be found")
+	}
+	if !s.linkInScope(ctx, p, current) {
 		return Val{}, false, NotFound("The requested share could not be found")
 	}
 
@@ -354,6 +380,10 @@ func (s *Server) deleteShare(c *fiber.Ctx, p Principal, id string) (Val, bool, *
 	ctx := c.UserContext()
 	storeID, ok := parseLinkID(id)
 	if !ok {
+		return Val{}, false, NotFound("The requested share could not be found")
+	}
+	current, cerr := s.deps.Core.GetLink(ctx, user(p), storeID)
+	if cerr != nil || !s.linkInScope(ctx, p, current) {
 		return Val{}, false, NotFound("The requested share could not be found")
 	}
 	if derr := s.deps.Core.DeleteLink(ctx, user(p), storeID); derr != nil {

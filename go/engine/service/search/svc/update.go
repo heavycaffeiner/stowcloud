@@ -4,13 +4,13 @@ package svc
 
 import (
 	"context"
-	"log/slog"
-	"time"
-
+	"errors"
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/limits"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/search"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/search/index"
+	"log/slog"
+	"time"
 )
 
 // Keeping the index current once a build has finished.
@@ -97,6 +97,13 @@ func NewUpdater(svc *Service, sources func() []search.Source, log *slog.Logger) 
 	}
 }
 
+// markIncomplete is deliberately cheap and idempotent. Every lost event or
+// unavailable directory is a coverage gap, and the index must decline until a
+// new build proves the gap closed.
+func (u *Updater) markIncomplete() {
+	u.svc.SetIndexIncomplete(true)
+}
+
 // Offer passes one event to the updater without blocking.
 //
 // The caller is the watcher's fan-out and must never be delayed. A dropped
@@ -107,6 +114,7 @@ func (u *Updater) Offer(ev Change) {
 	select {
 	case u.queue <- ev:
 	default:
+		u.markIncomplete()
 		u.log.Warn("the search index update queue is full; an update was dropped",
 			"share", ev.Share)
 	}
@@ -141,24 +149,22 @@ func (u *Updater) apply(ctx context.Context, ev Change) {
 	}
 	src, ok := u.sourceOf(ev.Share)
 	if !ok {
+		u.markIncomplete()
 		return
 	}
 
 	if ev.All {
 		// The watcher lost events, so precisely what changed is what nobody
-		// knows. Nothing can be replayed and no directory can be re-read.
-		//
-		// The index is retained rather than discarded. A stale index still
-		// answers most queries correctly, while discarding it converts every
-		// query into a walk until someone notices and rebuilds. What happens
-		// instead is a log line, since a share that has become unreconcilable is
-		// the one case on this path requiring an operator's attention.
+		// knows. Retaining the rows is useful for diagnostics, but they cannot
+		// answer until a successful coverage pass rebuilds the index.
+		u.markIncomplete()
 		u.log.Warn("change events were lost, so the search index for this share is now behind; rebuild it to catch up",
 			"share", ev.Share)
 		return
 	}
 
 	if err := u.reconcile(ctx, ix, src, ev.Dir); err != nil {
+		u.markIncomplete()
 		u.log.Warn("a directory could not be reconciled into the search index",
 			"share", ev.Share, "error", err)
 	}
@@ -199,6 +205,7 @@ func (u *Updater) reconcile(ctx context.Context, ix *index.NameIndex, src search
 		return err
 	}
 	if src.Root == nil {
+		u.markIncomplete()
 		return nil
 	}
 
@@ -216,7 +223,6 @@ func (u *Updater) reconcile(ctx context.Context, ix *index.NameIndex, src search
 	if herr != nil {
 		return herr
 	}
-
 	onDisk := map[string]bool{}
 	entries, rerr := src.Root.ReadDir(dirPath, vfs.HideReserved)
 	if rerr == nil {
@@ -229,12 +235,15 @@ func (u *Updater) reconcile(ctx context.Context, ix *index.NameIndex, src search
 			}
 			onDisk[child.String()] = true
 		}
+	} else if !errors.Is(rerr, vfs.ErrNotFound) {
+		// A permission, I/O, or parser failure is not evidence that the
+		// directory is empty. Leave its rows intact, but force a fresh build
+		// before the index may answer again.
+		u.markIncomplete()
+		return nil
 	}
-	// An unreadable directory is treated as empty, tombstoning whatever the
-	// index held for it. That is correct for the usual cause, the directory
-	// having been deleted, and wrong but safe for a permission change: the
-	// entries return on the next event or the next build, and until then those
-	// queries fall back to walking.
+	// ErrNotFound means the directory itself disappeared, so tombstoning its
+	// direct children is the one safe reconciliation.
 
 	var added, removed []index.Entry
 	heldSet := make(map[string]bool, len(held))

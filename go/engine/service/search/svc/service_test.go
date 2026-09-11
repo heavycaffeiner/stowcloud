@@ -151,14 +151,15 @@ func TestAnIncompleteIndexFallsBackAndTheWalkStillFinds(t *testing.T) {
 	}
 }
 
-// The gate refuses before any work starts, so a refused search costs a channel
-// send rather than a directory read. The source below has no root at all, so
-// anything that tried to read a directory would fail rather than answer.
+// The gate refuses before any work starts. The source below has no root at all,
+// so anything that tried to read a directory would fail rather than answer.
 func TestTheGateRefusesWithoutTouchingADirectory(t *testing.T) {
 	svc := New(Options{})
-	// Fill every slot so the next query has nowhere to go.
 	for range limits.ConcurrentSearches {
-		svc.slots <- struct{}{}
+		if !svc.acquireSearchSlot() {
+			t.Fatal("the gate refused before reaching its configured limit")
+		}
+		defer svc.releaseSearchSlot()
 	}
 
 	missing := search.Source{Share: 1, Base: vfs.RootPath()}
@@ -377,15 +378,22 @@ func TestSetBoundsIsReadBackAndMovesTheDeadline(t *testing.T) {
 	}
 }
 
-func TestSetBoundsChangesConcurrencyGate(t *testing.T) {
+func TestSetBoundsKeepsInflightQueriesInTheConcurrencyGate(t *testing.T) {
 	svc := New(Options{})
 	svc.SetBounds(2, 0)
-	svc.slots <- struct{}{}
-	svc.slots <- struct{}{}
+	first := svc.acquireSearchSlot()
+	second := svc.acquireSearchSlot()
+	if !first || !second {
+		t.Fatal("the initial limit did not admit two searches")
+	}
+	defer svc.releaseSearchSlot()
+	defer svc.releaseSearchSlot()
+
+	svc.SetBounds(1, 0)
 	missing := search.Source{Share: 1, Base: vfs.RootPath()}
 	_, err := svc.Query(t.Context(), []search.Source{missing}, QueryOptions{Query: "report"})
 	if !errors.Is(err, ErrBusy) {
-		t.Fatalf("expected ErrBusy with concurrency 2, got %v", err)
+		t.Fatalf("expected ErrBusy after lowering the live limit, got %v", err)
 	}
 }
 

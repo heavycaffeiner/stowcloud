@@ -143,8 +143,8 @@ func Of(values runtimecfg.Values, stored map[string]any) Snapshot {
 	}
 
 	fields := []Field{
-		// Search and archive reach the running service through its own setter,
-		// so a change applies without a restart.
+		// Search and archive reach their running services through their own
+		// live setters, so a change applies without a restart.
 		intField("search.max_concurrent_fast", int64(values.SearchConcurrentSSD), false),
 		intField("search.walk_deadline_fast_ms", values.SearchDeadlineSSD.Milliseconds(), false),
 		intField("archive.max_concurrent", int64(values.ArchiveMaxConcurrent), false),

@@ -646,6 +646,8 @@ func (r *Root) renameDir(from, to vfs.SafePath, noReplace bool) error {
 	if err != nil {
 		return fmt.Errorf("rename: %w", err)
 	}
+	// Keep deletion in a separate pass: a later copy failure must retain every
+	// source object, including children already copied successfully.
 	for _, k := range keys {
 		dest := toPrefix + strings.TrimPrefix(k, fromPrefix)
 		if err := r.copyObject(ctx, k, dest); err != nil {

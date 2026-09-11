@@ -64,12 +64,17 @@ func TestAnUnreadableStoreLoadsTheDefaults(t *testing.T) {
 // document.
 func TestAnOutOfBoundStoredValueIsClamped(t *testing.T) {
 	got := loadWith(t, map[string]any{
-		"search": map[string]any{"max_concurrent_fast": float64(1 << 20)},
-		"rate":   map[string]any{"per_sec": float64(-5)},
+		"search":  map[string]any{"max_concurrent_fast": float64(1 << 20)},
+		"archive": map[string]any{"max_concurrent": float64(1 << 20)},
+		"rate":    map[string]any{"per_sec": float64(-5)},
 	})
 
 	if want := BoundSearchConcurrent().Max; got.SearchConcurrentSSD != int(want) {
 		t.Errorf("a huge concurrency loaded as %d, want the ceiling %d", got.SearchConcurrentSSD, want)
+	}
+	if want := BoundArchiveConcurrent().Max; got.ArchiveMaxConcurrent != int(want) {
+		t.Errorf("a huge archive concurrency loaded as %d, want the ceiling %d",
+			got.ArchiveMaxConcurrent, want)
 	}
 	if want := BoundRatePerSec().Min; got.RatePerSec != float64(want) {
 		t.Errorf("a negative rate loaded as %v, want the floor %d", got.RatePerSec, want)
@@ -107,6 +112,7 @@ func TestMalformedStoredValuesLoadAsDefaults(t *testing.T) {
 func TestAWellFormedDocumentLoads(t *testing.T) {
 	got := loadWith(t, map[string]any{
 		"search":  map[string]any{"max_concurrent_fast": float64(8), "walk_deadline_fast_ms": float64(2000)},
+		"archive": map[string]any{"max_concurrent": float64(8)},
 		"watch":   map[string]any{"hot_set_max": float64(1024)},
 		"rate":    map[string]any{"per_sec": float64(50), "burst": float64(200)},
 		"network": map[string]any{"bind": "127.0.0.1:9443", "app_hosts": []any{"files.example.test"}},
@@ -115,6 +121,9 @@ func TestAWellFormedDocumentLoads(t *testing.T) {
 
 	if got.SearchConcurrentSSD != 8 {
 		t.Errorf("concurrency is %d", got.SearchConcurrentSSD)
+	}
+	if got.ArchiveMaxConcurrent != 8 {
+		t.Errorf("archive concurrency is %d", got.ArchiveMaxConcurrent)
 	}
 	if got.SearchDeadlineSSD != 2*time.Second {
 		t.Errorf("the deadline is %v", got.SearchDeadlineSSD)
@@ -433,7 +442,7 @@ func fullDocument() map[string]any {
 		"search": map[string]any{
 			"max_concurrent_fast": float64(8), "walk_deadline_fast_ms": float64(2000),
 		},
-		"archive": map[string]any{"max_concurrent": float64(500)},
+		"archive": map[string]any{"max_concurrent": float64(8)},
 		"watch":   map[string]any{"hot_set_max": float64(1024), "full_threshold": float64(9000)},
 		"rate":    map[string]any{"per_sec": float64(50), "burst": float64(200)},
 		"network": map[string]any{

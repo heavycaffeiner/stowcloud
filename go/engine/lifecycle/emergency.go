@@ -14,15 +14,61 @@ package lifecycle
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/netip"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/adaptor"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/emergency"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 )
+
+// emergencyAuthenticator adds the ordinary one-use recovery-code fallback to
+// the repair door without creating a second password check. Login first asks
+// the service to verify the password with no factor. Once that returns
+// ErrSecondFactor, this wrapper applies the ordinary TOTP-first contract and
+// then tries one-use recovery. The clock is supplied by the engine so the
+// factor window agrees with the password flow.
+type emergencyAuthenticator struct {
+	*auth.Service
+	now func() int64
+}
+
+func (a emergencyAuthenticator) Login(
+	ctx context.Context, req auth.LoginRequest, ttl time.Duration,
+) (auth.Session, error) {
+	passwordOnly := req
+	passwordOnly.Factor = ""
+	session, err := a.Service.Login(ctx, passwordOnly, ttl)
+	if err == nil || !errors.Is(err, auth.ErrSecondFactor) || req.Factor == "" {
+		return session, err
+	}
+
+	userID, lookupErr := a.UserIDByName(ctx, req.Name)
+	if lookupErr != nil {
+		return session, lookupErr
+	}
+
+	accepted, factorErr := a.VerifyTOTP(ctx, userID, req.Factor, a.now())
+	if factorErr != nil {
+		return session, factorErr
+	}
+	if !accepted {
+		accepted, factorErr = a.UseRecoveryCode(ctx, userID, req.Factor)
+		if factorErr != nil {
+			return session, factorErr
+		}
+	}
+	if !accepted {
+		a.Record(ctx, userID, auth.EventLogin, req.Name, req.IP, req.UA, false)
+		return session, auth.ErrCredentials
+	}
+	return a.CreateSession(ctx, userID, req.IP, req.UA, req.AMR, ttl)
+}
 
 // mountEmergency claims the door's one prefix.
 //
@@ -31,7 +77,7 @@ import (
 // after it would be refused by the boundary check it repairs.
 func (e *Engine) mountEmergency(app *fiber.App) {
 	door := adaptor.HTTPHandler(detachContext(emergency.Handler(emergency.Deps{
-		Auth:  e.Auth,
+		Auth:  emergencyAuthenticator{Service: e.Auth, now: e.clk().Nanos},
 		State: e.State,
 
 		// The door's own screen. An interface page drawing the repair form
@@ -42,7 +88,6 @@ func (e *Engine) mountEmergency(app *fiber.App) {
 		// The homes probe falls back to this when a submitted section names
 		// no root of its own.
 		DataDir: e.dataDir,
-
 		// Empty: this is the always-on route on a healthy deployment, so
 		// nobody was sent here and there is nothing to put in the banner. A
 		// process with no engine at all is a different entrance that owns its

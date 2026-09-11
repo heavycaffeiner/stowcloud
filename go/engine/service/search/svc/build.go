@@ -86,11 +86,11 @@ func (s *Service) Build(
 		return BuildProgress{}, ErrNoIndex
 	}
 
-	// A rebuild begins from whatever the previous one left behind. Should that
-	// one have stopped at the ceiling while this one does not, the index is
-	// complete again, and a flag nothing ever clears would make every query walk
-	// indefinitely.
-	ix.SetIncomplete(false)
+	// A rebuild never makes a partial index look complete. It becomes eligible
+	// only after every source was traversed and the resulting segment published.
+	// Keeping the flag set through all early exits also covers caller
+	// cancellation, a refused gate, unreadable subtrees, and a failed merge.
+	ix.SetIncomplete(true)
 
 	b := &builder{
 		ix:      ix,
@@ -119,8 +119,19 @@ func (s *Service) Build(
 	// rather than only past the ratio: the merge is what folds the previous
 	// build's copy of a name into this one, so without it a rebuild leaves
 	// two rows per file and the index reports twice the corpus it holds.
+	if gate != nil && !gate() {
+		b.progress.Partial = true
+		return b.progress, nil
+	}
 	if err := ix.Merge(ctx, gate); err != nil {
 		return b.progress, fmt.Errorf("merging the index after the build: %w", err)
+	}
+	if gate != nil && !gate() {
+		b.progress.Partial = true
+		return b.progress, nil
+	}
+	if !b.progress.Partial {
+		ix.SetIncomplete(false)
 	}
 	return b.progress, nil
 }
@@ -129,30 +140,32 @@ func (s *Service) Build(
 // which is either the gate refusing or the entry ceiling being reached.
 func (b *builder) walkSource(ctx context.Context, src search.Source) (bool, error) {
 	if src.Root == nil {
+		// A missing root is not an empty share. It is coverage we could not
+		// inspect, so a build containing one cannot be published as complete.
+		b.progress.Partial = true
 		return false, nil
 	}
+
 	stack := []vfs.SafePath{src.Base}
 	for len(stack) > 0 {
 		if err := ctx.Err(); err != nil {
+			b.progress.Partial = true
 			return false, err
 		}
 		if b.gate != nil && !b.gate() {
-			// Stopped rather than failed. Whatever was appended is genuine and
-			// remains, since the index may hold less than the corpus and a
-			// query that misses falls back to walking.
+			b.progress.Partial = true
+			// Stopped rather than failed. Whatever was appended is genuine,
+			// but the index does not cover the remainder of the corpus.
 			return true, nil
 		}
 
 		dir := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
-
-		// The server's own control directories are not part of the corpus.
-		// Indexing them would surface them in query results.
 		entries, rerr := src.Root.ReadDir(dir, vfs.HideReserved)
 		if rerr != nil {
 			// An unreadable directory is skipped rather than failing the
-			// build, since the remaining corpus is still worth indexing and a
-			// query covering what was skipped falls back.
+			// entire build, but it prevents claiming full coverage.
+			b.progress.Partial = true
 			continue
 		}
 		b.progress.Dirs++

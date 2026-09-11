@@ -28,14 +28,15 @@ const everyPermission = acl.Read | acl.Write | acl.Create | acl.Delete |
 // deps builds what the chain needs from this engine.
 func (e *Engine) deps() middleware.Deps {
 	return middleware.Deps{
-		Hosts:     e.hosts,
-		Trusted:   e.trustedProxies,
-		Limiter:   e.limiter,
-		Clock:     e.clk(),
-		Principal: e.ResolvePrincipal,
-		CSRFKey:   e.csrfKey,
-		Audit:     nil,
-		Access:    accessLog{e},
+		Hosts:        e.hosts,
+		Trusted:      e.trustedProxies,
+		Limiter:      e.limiter,
+		ContentRoute: e.contentRoute,
+		Clock:        e.clk(),
+		Principal:    e.ResolvePrincipal,
+		CSRFKey:      e.csrfKey,
+		Audit:        nil,
+		Access:       accessLog{e},
 		// The interface's own inline bootstrap, admitted by hash. Empty in a
 		// build without the bundle, which keeps the policy as strict as a
 		// server with no pages to serve should be.
@@ -112,6 +113,24 @@ func (e *Engine) trustedProxies() []netip.Prefix {
 	e.settingsMu.RLock()
 	defer e.settingsMu.RUnlock()
 	return e.trusted
+}
+
+// originAllowed reports whether a request Origin may read a compatibility
+// response across origins. Only an operator-listed origin is, matched exactly
+// after normalization; the list never widens the host guard.
+func (e *Engine) originAllowed(origin string) bool {
+	e.settingsMu.RLock()
+	allowed := e.allowedOrigins
+	e.settingsMu.RUnlock()
+	return middleware.OriginAllowed(origin, allowed)
+}
+
+// compatCanonicalURL is the base URL the compatibility surface falls back to
+// when a request carries no host to render one from. Empty when unset.
+func (e *Engine) compatCanonicalURL() string {
+	e.settingsMu.RLock()
+	defer e.settingsMu.RUnlock()
+	return e.compatCanonical
 }
 
 // csrfKey returns the deployment's durable derivation key.

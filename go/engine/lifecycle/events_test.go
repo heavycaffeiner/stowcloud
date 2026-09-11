@@ -83,7 +83,7 @@ func hostLogin(t *testing.T, base, login string) *http.Cookie {
 	}
 	req.Host = eventsHost
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Origin", "https://"+eventsHost)
+	req.Header.Set("Origin", "http://"+eventsHost)
 
 	resp, err := testClient().Do(req)
 	if err != nil {
@@ -118,7 +118,7 @@ func dialEvents(t *testing.T, base string, cookie *http.Cookie) *websocket.Conn 
 	// method: the socket that follows is a channel a cross-site page would
 	// otherwise open carrying the caller's cookie. The boundary refuses
 	// without one, which this satisfies rather than bypasses.
-	header.Set("Origin", "https://"+eventsHost)
+	header.Set("Origin", "http://"+eventsHost)
 
 	dialer := *websocket.DefaultDialer
 	conn, resp, err := dialer.Dial(url, header)
@@ -159,7 +159,7 @@ func watchedShare(t *testing.T, base string, cookie *http.Cookie, name string) (
 	}
 	req.Host = eventsHost
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Origin", "https://"+eventsHost)
+	req.Header.Set("Origin", "http://"+eventsHost)
 	req.Header.Set("Sc-Csrf", csrfFor(t, base, cookie))
 	req.AddCookie(cookie)
 
@@ -300,7 +300,7 @@ func TestTheChangeChannelNeedsACredential(t *testing.T) {
 	url := "ws" + strings.TrimPrefix(base, "http") + "/api/v1/events"
 	header := http.Header{}
 	header.Set("Host", eventsHost)
-	header.Set("Origin", "https://"+eventsHost)
+	header.Set("Origin", "http://"+eventsHost)
 	conn, resp, err := websocket.DefaultDialer.Dial(url, header)
 	if err == nil {
 		if cerr := conn.Close(); cerr != nil {
@@ -565,7 +565,7 @@ func revokeGrant(t *testing.T, base string, adminCookie *http.Cookie, id string)
 		t.Fatalf("building: %v", err)
 	}
 	req.Host = eventsHost
-	req.Header.Set("Origin", "https://"+eventsHost)
+	req.Header.Set("Origin", "http://"+eventsHost)
 	req.Header.Set("Sc-Csrf", csrfFor(t, base, adminCookie))
 	req.AddCookie(adminCookie)
 
@@ -592,7 +592,7 @@ func hostPost(t *testing.T, base, path string, cookie *http.Cookie, body string)
 	}
 	req.Host = eventsHost
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Origin", "https://"+eventsHost)
+	req.Header.Set("Origin", "http://"+eventsHost)
 	req.Header.Set("Sc-Csrf", csrfFor(t, base, cookie))
 	req.AddCookie(cookie)
 

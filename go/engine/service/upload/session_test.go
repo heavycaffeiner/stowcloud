@@ -197,6 +197,9 @@ func TestAbortForgetsTheRowLock(t *testing.T) {
 	if n := f.engine.rowLockCount(); n != 0 {
 		t.Fatalf("%d bookkeeping locks survived the abort", n)
 	}
+	if n := f.engine.writerBarrierCount(); n != 0 {
+		t.Fatalf("%d writer barriers survived the abort", n)
+	}
 
 	// The row survives until the sweep takes the part file with it, and it
 	// reads as aborted rather than as a session anything can still write to.
@@ -210,6 +213,23 @@ func TestAbortForgetsTheRowLock(t *testing.T) {
 	if _, err := f.engine.PatchAt(ctx, f.root(t), s.ID, testUser, 10,
 		bytes.NewReader([]byte("x")), nil); err == nil {
 		t.Fatal("a chunk against an aborted session was accepted")
+	}
+}
+
+func TestCanceledFinalizationDoesNotWaitForAWriter(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	s := f.create(t, "blocked.bin", uint64(limits.UploadChunkFloor), SessionSpec{})
+	lease, admitted := f.engine.admitWriter(s.ID)
+	if !admitted {
+		t.Fatal("the test writer was not admitted")
+	}
+	defer lease.release()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, _, _, err := f.engine.closeWriters(ctx, s.ID); !errors.Is(err, context.Canceled) {
+		t.Fatalf("a canceled finalization returned %v, want context.Canceled", err)
 	}
 }
 

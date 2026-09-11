@@ -219,6 +219,19 @@ func TestAPublicLinkServesTheFileToAStranger(t *testing.T) {
 	if string(served) != content {
 		t.Errorf("the link served %q", served)
 	}
+	alias := f.base + "/index.php/s/" + token
+	resp, _ = ncAnonymous(t, "GET", alias, nil)
+	if resp.StatusCode != 200 && resp.StatusCode != 302 {
+		t.Fatalf("the front-controller link answered %d to a stranger", resp.StatusCode)
+	}
+
+	resp, served = ncAnonymous(t, "GET", alias+"/download", nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("the front-controller download answered %d", resp.StatusCode)
+	}
+	if string(served) != content {
+		t.Errorf("the front-controller link served %q", served)
+	}
 }
 
 // A link is listed back on the path it was made for, which is how the client
@@ -294,6 +307,45 @@ func TestTheShareListAnswersJSONWhenAsked(t *testing.T) {
 	}
 	if got.Permissions == 0 {
 		t.Error("permissions are zero, which no client can render")
+	}
+}
+
+// A signed-in browser follows a front-controller link as a public token flow.
+// Its ambient session cookie must not make the CSRF step intercept the unlock.
+func TestSignedInBrowserCanUnlockFrontControllerLinkAlias(t *testing.T) {
+	t.Parallel()
+	f := newNCFixture(t, []byte("hello"))
+	status, body := createLink(t, f, "/"+f.share+"/doc.bin",
+		url.Values{"password": {"a-long-enough-secret"}})
+	if status != 200 {
+		t.Fatalf("creating answered %d\n%s", status, body)
+	}
+	token := xmlField(t, body, "token")
+	cookie := f.sess.cookie.Name + "=" + f.sess.cookie.Value
+	unlocked, headers, response := anonymousWithCookie(t, "POST",
+		f.base+"/index.php/s/"+token+"/auth", cookie,
+		[]byte(`{"password":"a-long-enough-secret"}`)...)
+	if unlocked != 204 {
+		t.Fatalf("the alias unlock answered %d: %s", unlocked, response)
+	}
+	linkCookie := headers.Get("Set-Cookie")
+	if !strings.Contains(strings.ToLower(linkCookie),
+		"path=/index.php/s/"+strings.ToLower(token)) {
+		t.Errorf("the alias unlock cookie is not scoped to the alias: %q", linkCookie)
+	}
+}
+
+// The alias keeps the JSON body class, so an oversized unlock is rejected by
+// the chain before the public handler attempts to decode it.
+func TestFrontControllerLinkUnlockHonorsJSONBodyLimit(t *testing.T) {
+	t.Parallel()
+	f := newNCFixture(t, []byte("hello"))
+	resp, body := f.request(t, "POST",
+		f.base+"/index.php/s/not-a-token/auth",
+		strings.NewReader(strings.Repeat("x", 1<<20+100)),
+		map[string]string{"Content-Type": "application/json"})
+	if resp.StatusCode != 413 {
+		t.Fatalf("oversized alias unlock answered %d\n%s", resp.StatusCode, body)
 	}
 }
 

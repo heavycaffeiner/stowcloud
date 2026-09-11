@@ -21,21 +21,39 @@ import (
 // if cleanup needs retrying, because a filesystem commit cannot be undone and
 // presenting one as a resumable upload whose destination already exists is worse
 // than carrying the debt.
-func (e *Engine) Finalize(ctx context.Context, r core.Resolved, id SessionID) (core.Entry, error) {
-	// The cache drains before the row lock is taken: draining needs that lock
-	// itself, and the merger has to be stopped before the part file is synced
-	// and closed under it.
+func (e *Engine) Finalize(ctx context.Context, r core.Resolved, id SessionID) (entry core.Entry, retErr error) {
+	barrier, generation, owner, werr := e.closeWriters(ctx, id)
+	if werr != nil {
+		return core.Entry{}, werr
+	}
+	defer e.finishWriters(id, barrier)
+	completed := false
+	defer func() {
+		if !completed && owner {
+			e.reopenWriters(barrier, generation)
+		}
+	}()
+
+	// The cache drains after admission closes and before the row lock is taken:
+	// the merger needs that lock itself, and it must be stopped before the part
+	// file is synced and closed under finalization.
 	if err := e.drainCache(ctx, id); err != nil {
 		return core.Entry{}, err
 	}
 	unlock := e.lockRow(id)
 	defer unlock()
-	return e.finalize(ctx, r, id)
+	entry, retErr = e.finalize(ctx, r, id)
+	if retErr == nil {
+		completed = true
+	}
+	return entry, retErr
 }
 
 // finalize is the shared path both spool modes converge on. The caller holds
-// the row lock.
-func (e *Engine) finalize(ctx context.Context, r core.Resolved, id SessionID) (core.Entry, error) {
+// the row lock and has already closed the writer admission gate.
+func (e *Engine) finalize(
+	ctx context.Context, r core.Resolved, id SessionID,
+) (entry core.Entry, retErr error) {
 	rw, err := e.load(ctx, id)
 	if err != nil {
 		return core.Entry{}, err
@@ -51,12 +69,14 @@ func (e *Engine) finalize(ctx context.Context, r core.Resolved, id SessionID) (c
 		return core.Entry{}, err
 	}
 	// Publication targets the destination the session was created against. A
-	// resolution pointing elsewhere describes a different file, and honouring it
-	// would publish through a permission check performed on another path. This
-	// is verified before anything is modified.
+	// resolution pointing elsewhere describes a different file, and honouring
+	// it would publish through a permission check performed on another path.
 	if !dest.Equal(r.Path()) {
 		return core.Entry{}, fmt.Errorf("%w: this session publishes to %s",
 			ErrBadRequest, rw.sess.Dest)
+	}
+	if st := e.effectiveState(rw); st != StateReceiving && st != StateFinalizing {
+		return core.Entry{}, ErrSessionState
 	}
 
 	total, declared := rw.totalLen()
@@ -64,20 +84,27 @@ func (e *Engine) finalize(ctx context.Context, r core.Resolved, id SessionID) (c
 		return core.Entry{}, fmt.Errorf("%w: this session never declared a length", ErrBadRequest)
 	}
 	if !rw.set.IsComplete(total) {
-		// The refusal names what is missing, so the client resends the holes
-		// rather than the file.
 		return core.Entry{}, &IncompleteError{Missing: rw.set.Missing(total)}
 	}
 
 	// A session that is publishing is not receiving, and the sweep leaves a
 	// finalizing session alone: a long assembly must not be collected halfway
-	// through its own publish.
-	if rw.sess.State != int64(StateFinalizing) {
-		rw.sess.State = int64(StateFinalizing)
-		if serr := e.save(ctx, rw); serr != nil {
-			return core.Entry{}, serr
-		}
+	// through its own publish. Any pre-publication error restores receiving so
+	// PATCH can repair it and the normal expiry path can reclaim it.
+	rw.sess.State = int64(StateFinalizing)
+	if serr := e.save(ctx, rw); serr != nil {
+		return core.Entry{}, serr
 	}
+	defer func() {
+		if retErr == nil || rw.sess.State != int64(StateFinalizing) {
+			return
+		}
+		rw.sess.State = int64(StateReceiving)
+		rw.sess.ExpiresNs = e.expiry()
+		if serr := e.save(ctx, rw); serr != nil {
+			retErr = errors.Join(retErr, serr)
+		}
+	}()
 
 	part, err := e.partPathOf(rw)
 	if err != nil {
@@ -91,21 +118,23 @@ func (e *Engine) finalize(ctx context.Context, r core.Resolved, id SessionID) (c
 			return core.Entry{}, herr
 		}
 		if verr := VerifyWholeFile(f, *v, total); verr != nil {
-			// The session stays and the part file stays on disk. The client's
-			// declared digest does not match what landed, and it is the client
-			// that knows whether to resend a range or start again; discarding
-			// its bytes here decides that for it.
 			return core.Entry{}, verr
 		}
 	}
 
-	entry, err := e.publish(ctx, r, rw, part, total)
+	entry, err = e.publish(ctx, r, rw, part, total)
 	if err != nil {
 		return core.Entry{}, err
 	}
 
-	// Everything from here is after the commit point, so none of it can fail
-	// the upload. A surviving session row is cleanup debt the sweep collects.
+	// Mark the row terminal before cleanup. If deletion itself fails, the
+	// sweeper can reclaim a completed row instead of treating it as a live
+	// finalization forever.
+	rw.sess.State = int64(StateDone)
+	if serr := e.save(ctx, rw); serr != nil {
+		e.log.Warn("an upload was published but its terminal state could not be saved",
+			"session", id.String(), "error", serr)
+	}
 	e.releaseCache(rw.sess.CacheDir)
 	e.closeHandle(id)
 	e.forgetRow(id)
@@ -198,10 +227,21 @@ func (e *Engine) checkIfMatch(root vfs.Root, dest vfs.SafePath, ifMatch string) 
 // session; only the layer that parsed the header can name it.
 func (e *Engine) Assemble(
 	ctx context.Context, r core.Resolved, id SessionID, total uint64, mtimeNs *int64,
-) (core.Entry, error) {
+) (entry core.Entry, retErr error) {
+	barrier, generation, owner, werr := e.closeWriters(ctx, id)
+	if werr != nil {
+		return core.Entry{}, werr
+	}
+	defer e.finishWriters(id, barrier)
+	completed := false
+	defer func() {
+		if !completed && owner {
+			e.reopenWriters(barrier, generation)
+		}
+	}()
+
 	unlock := e.lockRow(id)
 	defer unlock()
-
 	rw, err := e.load(ctx, id)
 	if err != nil {
 		return core.Entry{}, err
@@ -209,29 +249,42 @@ func (e *Engine) Assemble(
 	if oerr := requireOwner(rw, r.User()); oerr != nil {
 		return core.Entry{}, oerr
 	}
+	if serr := e.requireReceiving(rw); serr != nil {
+		return core.Entry{}, serr
+	}
 	if rw.mode() != SpoolNameOrdered {
 		return core.Entry{}, fmt.Errorf("%w: this session is offset-addressed", ErrBadRequest)
 	}
+	if perr := r.Require(acl.Write | acl.Create); perr != nil {
+		return core.Entry{}, perr
+	}
 
-	if derr := e.drainSpool(ctx, r.Root(), rw, true); derr != nil {
-		return core.Entry{}, derr
+	declared, declaredLen := rw.totalLen()
+	if total != 0 && declaredLen && total != declared {
+		return core.Entry{}, fmt.Errorf("%w: the session declared a length of %d, not %d",
+			ErrBadRequest, declared, total)
+	}
+	bound := total
+	if bound == 0 && declaredLen {
+		bound = declared
+	}
+	if bound > 0 {
+		held, herr := e.namedHeldBytes(r.Root(), rw, 0)
+		if herr != nil {
+			return core.Entry{}, herr
+		}
+		if held > bound {
+			return core.Entry{}, fmt.Errorf("%w: named chunks total %d exceeds the declared length of %d",
+				ErrTooLarge, held, bound)
+		}
 	}
 
 	head, herr := num.Narrow[uint64](rw.sess.WriteHead)
 	if herr != nil {
 		return core.Entry{}, herr
 	}
-	// A total the caller passed wins, then the one captured when the session
-	// was opened. Without the second, a transfer whose trailing chunk never
-	// arrived assembled cleanly: the spool is gap-free once the missing name
-	// is past the end, so the drain above finds nothing wrong, and adopting
-	// the write head as the length published a truncated file and answered
-	// 201. The client deletes its local copy on that answer.
-	_, declaredLen := rw.totalLen()
-	if total == 0 {
-		if declared, ok := rw.totalLen(); ok {
-			total = declared
-		}
+	if total == 0 && declaredLen {
+		total = declared
 	}
 	if total > 0 && head != total {
 		if head < total {
@@ -242,29 +295,17 @@ func (e *Engine) Assemble(
 			ErrBadRequest, head, total)
 	}
 	if total == 0 {
-		// Nothing arrived, and no length was ever named. Publishing here would
-		// answer 201 for a transfer that sent nothing, and both reference
-		// clients read that as "uploaded" and drop their local copy, so an
-		// assembly racing an abandoned or retargeted collection would destroy
-		// the file it was meant to store.
-		//
-		// A transfer that means to store an empty file says so, either at open
-		// or at assembly, and that one publishes: the length it named and the
-		// bytes it sent agree.
 		if head == 0 && !declaredLen {
 			return core.Entry{}, fmt.Errorf("%w: no bytes were received", ErrIncomplete)
 		}
 		total = head
 	}
 
-	// Assembly produces a contiguous file by construction, so the set reduces to
-	// the single range covering it. Writing that now is what gives finalize's
-	// completeness check identical meaning across both modes.
-	declared, nerr := num.Narrow[int64](total)
+	declaredValue, nerr := num.Narrow[int64](total)
 	if nerr != nil {
 		return core.Entry{}, nerr
 	}
-	rw.sess.TotalLen = &declared
+	rw.sess.TotalLen = &declaredValue
 	if mtimeNs != nil {
 		rw.sess.MtimeNs = mtimeNs
 	}
@@ -276,13 +317,15 @@ func (e *Engine) Assemble(
 		return core.Entry{}, cerr
 	}
 
-	entry, err := e.finalize(ctx, r, id)
-	if err != nil {
-		return core.Entry{}, err
+	entry, retErr = e.finalize(ctx, r, id)
+	if retErr != nil {
+		return core.Entry{}, retErr
 	}
-	// The spool directory is empty at this point and removing it is best effort:
-	// an orphan beneath the reserved prefix stays unlistable and the sweep
-	// collects it.
+	completed = true
+
+	// The spool directory is empty at this point and removing it is best
+	// effort: an orphan beneath the reserved prefix stays unlistable and the
+	// sweep collects it.
 	if dir, derr := e.spoolDirOf(rw); derr == nil {
 		if rerr := r.Root().Rmdir(dir); rerr != nil && !errors.Is(rerr, vfs.ErrNotFound) {
 			e.log.Warn("an upload spool directory survived assembly; the sweep will collect it",

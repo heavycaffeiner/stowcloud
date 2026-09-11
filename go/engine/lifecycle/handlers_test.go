@@ -43,6 +43,7 @@ func (s session) attach(req *http.Request) {
 	req.AddCookie(s.cookie)
 	if req.Method != http.MethodGet && req.Method != http.MethodHead {
 		req.Header.Set(middleware.CSRFHeader, s.csrf)
+		req.Header.Set("Origin", req.URL.Scheme+"://"+req.Host)
 	}
 }
 

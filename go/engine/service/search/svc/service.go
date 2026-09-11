@@ -77,10 +77,9 @@ type Service struct {
 	clk  clock.Clock
 	cpus int
 
-	mu    sync.Mutex
-	ix    *index.NameIndex
-	slots chan struct{}
-
+	mu             sync.Mutex
+	ix             *index.NameIndex
+	activeSearches int
 	// The bounds an administrator adjusts from the settings screen. They are held
 	// here rather than read from the compiled-in limits, because a value the
 	// screen changed must be the one the next query uses. A setting that is
@@ -99,18 +98,12 @@ func New(o Options) *Service {
 	if clk == nil {
 		clk = clock.System()
 	}
-	concurrency := o.Concurrency
-	if concurrency <= 0 {
-		concurrency = limits.ConcurrentSearches
-	}
-	s := &Service{
+	return &Service{
 		clk:         clk,
 		cpus:        o.CPUs,
 		ix:          o.Index,
 		concurrency: o.Concurrency,
-		slots:       make(chan struct{}, concurrency),
 	}
-	return s
 }
 
 // SetBounds adjusts the query bounds, which is what the settings screen's search
@@ -118,13 +111,6 @@ func New(o Options) *Service {
 func (s *Service) SetBounds(concurrency int, deadline time.Duration) {
 	s.mu.Lock()
 	s.concurrency, s.deadline = concurrency, deadline
-	targetCap := concurrency
-	if targetCap <= 0 {
-		targetCap = limits.ConcurrentSearches
-	}
-	if targetCap != cap(s.slots) {
-		s.slots = make(chan struct{}, targetCap)
-	}
 	s.mu.Unlock()
 }
 
@@ -134,6 +120,31 @@ func (s *Service) Bounds() (concurrency int, deadline time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.concurrency, s.deadline
+}
+
+func effectiveConcurrency(configured int) int {
+	if configured > 0 {
+		return configured
+	}
+	return limits.ConcurrentSearches
+}
+
+func (s *Service) acquireSearchSlot() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.activeSearches >= effectiveConcurrency(s.concurrency) {
+		return false
+	}
+	s.activeSearches++
+	return true
+}
+
+func (s *Service) releaseSearchSlot() {
+	s.mu.Lock()
+	if s.activeSearches > 0 {
+		s.activeSearches--
+	}
+	s.mu.Unlock()
 }
 
 // walkDeadline bounds how long a walk may run, and an administrator may adjust
@@ -146,6 +157,16 @@ func (s *Service) walkDeadline() time.Duration {
 		return d
 	}
 	return limits.SearchWalkDeadline
+}
+
+// SetIndexIncomplete marks the attached index as requiring a new coverage
+// pass. It is used by lifecycle and watcher wiring when an external freshness
+// guarantee is lost; a stale cache must fall back rather than answer a partial
+// corpus as complete.
+func (s *Service) SetIndexIncomplete(v bool) {
+	if ix := s.index(); ix != nil {
+		ix.SetIncomplete(v)
+	}
 }
 
 // SetIndex attaches or detaches the index while running, which is what the
@@ -227,7 +248,8 @@ type Results struct {
 	// Fallback explains why the index declined, where it did. Reporting it lets
 	// an operator see that an index exists and did not contribute.
 	Fallback index.FallbackReason
-	// Truncated indicates the limit shortened the result.
+	// Truncated indicates the result is incomplete because a limit or a walk
+	// boundary shortened the answer.
 	Truncated bool
 	// Deadline indicates the walk exhausted its time and the result is partial.
 	// It is flagged rather than raised as an error, since a partial answer now
@@ -253,25 +275,23 @@ func (s *Service) Query(ctx context.Context, sources []search.Source, opt QueryO
 		opt.Limit = limits.SearchResults
 	}
 
-	// The gate is acquired before any work begins, so a rejected search costs a
-	// channel send instead of a directory read.
-	s.mu.Lock()
-	slots := s.slots
-	s.mu.Unlock()
-
-	select {
-	case slots <- struct{}{}:
-		defer func() { <-slots }()
-	case <-ctx.Done():
+	// The count survives live limit changes. Lowering the setting while old
+	// searches run admits nothing new until the shared count falls below it.
+	if ctx.Err() != nil {
 		return Results{}, ErrCanceled
-	default:
+	}
+	if !s.acquireSearchSlot() {
 		return Results{}, ErrBusy
 	}
+	defer s.releaseSearchSlot()
 	start := s.clk.Now()
 	needle := search.FoldString(opt.Query)
 
 	if ix := s.index(); ix != nil && indexCanAnswer(opt) {
-		res, err := ix.Query([]byte(opt.Query), opt.Limit)
+		// Candidate filtering happens after live ACL, kind, extension and stat
+		// checks. Ask the index for all candidates so an early denied or stale
+		// row cannot consume the caller's result limit.
+		res, err := ix.Query([]byte(opt.Query), 0)
 		switch {
 		case err != nil:
 			// The index is a cache, so a corrupt segment costs speed and never
@@ -284,11 +304,19 @@ func (s *Service) Query(ctx context.Context, sources []search.Source, opt QueryO
 			out.Fallback = res.Fallback
 			return out, werr
 		default:
-			hits := s.promote(ctx, sources, res.Hits, opt)
+			hits := s.promote(ctx, sources, res.Hits, opt, needle)
+			if ctx.Err() != nil {
+				return Results{}, ErrCanceled
+			}
+			search.SortHits(hits)
+			truncated := opt.Limit > 0 && len(hits) > opt.Limit
+			if truncated {
+				hits = hits[:opt.Limit]
+			}
 			return Results{
 				Hits:      hits,
 				Tier:      TierIndex,
-				Truncated: opt.Limit > 0 && len(res.Hits) >= opt.Limit,
+				Truncated: truncated,
 				Elapsed:   s.clk.Now().Sub(start),
 			}, nil
 		}
@@ -325,8 +353,9 @@ func (s *Service) walk(
 		Progress:     opt.Progress,
 	})
 	if err != nil {
-		// Cancellation by the caller is an error while the deadline is not, since
-		// producing a partial answer is exactly what the deadline exists for.
+		// Cancellation by the caller is an error, never an empty successful
+		// result. A service-owned deadline is the deliberate partial-answer
+		// path and retains the hits Walk accumulated before it stopped.
 		if ctx.Err() != nil {
 			return Results{}, ErrCanceled
 		}
@@ -334,12 +363,17 @@ func (s *Service) walk(
 			return Results{}, fmt.Errorf("search: the walk failed: %w", err)
 		}
 	}
+	if ctx.Err() != nil {
+		return Results{}, ErrCanceled
+	}
+	deadline := errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(wctx.Err(), context.DeadlineExceeded)
 
 	return Results{
 		Hits:      res.Hits,
 		Tier:      TierWalk,
 		Truncated: res.Truncated,
-		Deadline:  wctx.Err() != nil && ctx.Err() == nil,
+		Deadline:  deadline,
 		Elapsed:   s.clk.Now().Sub(start),
 	}, nil
 }
@@ -366,7 +400,11 @@ func (s *Service) walkContext(ctx context.Context, opt QueryOptions) (context.Co
 // revalidated rather than assumed still legal, and nothing read from disk
 // reaches a client without meeting the live tree again.
 func pathUnder(src search.Source, stored string) (vfs.SafePath, error) {
-	p := src.Base
+	base := src.IndexBase
+	if base.IsRoot() && src.Base.IsRoot() {
+		base = src.Base
+	}
+	p := base
 	for _, comp := range strings.Split(stored, "/") {
 		if comp == "" {
 			continue
@@ -377,7 +415,7 @@ func pathUnder(src search.Source, stored string) (vfs.SafePath, error) {
 		}
 		p = next
 	}
-	if !p.Under(src.Base) {
+	if !p.Under(base) {
 		return vfs.SafePath{}, errors.New("search: an indexed path outside its source")
 	}
 	return p, nil
@@ -385,14 +423,10 @@ func pathUnder(src search.Source, stored string) (vfs.SafePath, error) {
 
 // promote expands bare index hits into full results.
 //
-// Only names live in the index. A hit becomes a result via a stat run after the
-// caller's permission check, and that stat serves as the staleness check too: an
-// entry for a file that no longer exists is dropped rather than returned.
-//
-// A streamed query never arrives here, since it walks, so this is the bounded
-// caller's path alone.
+// Only names live in the index. A hit becomes a result via a stat run after
+// the caller's permission check, and that stat serves as the staleness check.
 func (s *Service) promote(
-	ctx context.Context, sources []search.Source, hits []index.Hit, opt QueryOptions,
+	ctx context.Context, sources []search.Source, hits []index.Hit, opt QueryOptions, needle []byte,
 ) []search.Hit {
 	byShare := map[uint32]search.Source{}
 	for _, src := range sources {
@@ -417,10 +451,14 @@ func (s *Service) promote(
 			continue
 		}
 		p, err := pathUnder(src, h.Path)
-		if err != nil {
+		if err != nil || !p.Under(src.Base) {
+			// The stored row is root-relative, while Base may be a scoped
+			// traversal root. Never let a non-root DAV scope duplicate or widen
+			// the coordinate.
 			continue
 		}
-		if src.Allow != nil && !src.Allow(p, false) {
+		displayPath := src.Prefix + p.String()
+		if opt.Scope != "" && !search.InScope(displayPath, opt.Scope) {
 			continue
 		}
 
@@ -430,24 +468,39 @@ func (s *Service) promote(
 			// revalidation doing its job.
 			continue
 		}
-		if !opt.Filter.Admits(h.Name, st.Kind.IsDir()) {
-			// The index holds files, but it holds yesterday's files: a name
-			// that is a folder today is judged on what it is now.
+		isDir := st.Kind.IsDir()
+		if src.Allow != nil && !src.Allow(p, isDir) {
+			continue
+		}
+		if !opt.Filter.Admits(h.Name, isDir) {
+			// The index holds yesterday's kinds: a name that is a folder today
+			// is judged on what it is now.
 			continue
 		}
 
+		var mtime *int64
+		if opt.WithMetadata {
+			value := st.MtimeNs
+			mtime = &value
+		}
 		hit := search.Hit{
-			Share: h.Share,
-			Path:  src.Prefix + p.String(),
-			Name:  h.Name,
-			IsDir: st.Kind.IsDir(),
-			Score: h.Score,
+			Share:   h.Share,
+			Path:    displayPath,
+			Name:    h.Name,
+			IsDir:   isDir,
+			MTimeNs: mtime,
+			Score: search.Score(search.RankInput{
+				NameFolded: search.FoldString(h.Name),
+				Needle:     needle,
+				Path:       displayPath,
+				MTimeNs:    mtime,
+				NowNs:      s.clk.Now().UnixNano(),
+				Scope:      opt.Scope,
+			}),
 		}
 		if opt.WithMetadata {
 			size := st.Size
-			mtime := st.MtimeNs
 			hit.Size = &size
-			hit.MTimeNs = &mtime
 		}
 		out = append(out, hit)
 	}

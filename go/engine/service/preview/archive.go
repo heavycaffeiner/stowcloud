@@ -5,15 +5,16 @@ package preview
 import (
 	"archive/zip"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"slices"
 	"strings"
-	"sync/atomic"
 	"unicode/utf8"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/limits"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/uniname"
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/charmap"
@@ -43,19 +44,9 @@ var ErrNotArchive = errors.New("preview: not a readable archive")
 const maxArchiveNameBytes = 4096
 
 // maxArchiveNameSampleBytes bounds the detection sample built from entries
-// that need decoding, the same way maxListed bounds the entries kept: without
-// it, an archive of a million oddly-encoded entries would concatenate every
-// one of their names before the first Charset call. Detection accuracy
-// saturates after a few dozen bytes, so this is generous relative to what the
-// detector actually needs.
+// that need decoding. Detection accuracy saturates after a few dozen bytes,
+// so this is generous relative to what the detector actually needs.
 const maxArchiveNameSampleBytes = 1 << 16
-
-// archiveMaxListed is the live bound on how many entries a listing keeps, an
-// operator's adjustment of the compiled-in default. A package-level atomic
-// rather than a field on some archive-specific type, because ListArchive is a
-// bare function with no service to hold one: the setting is process-wide, the
-// same way the compiled-in constant it replaces was.
-var archiveMaxListed atomic.Int64 //nolint:gochecknoglobals // ListArchive is a bare function with no service to hold this; the bound it replaces was a compiled-in constant, equally process-wide.
 
 // ArchiveEntry describes a single member as the central directory records it.
 type ArchiveEntry struct {
@@ -85,30 +76,166 @@ type ArchiveListing struct {
 	TotalUncompressed uint64
 }
 
-// SetMaxListed applies an operator's change to how many entries a listing
-// keeps, without a restart. Zero or negative restores the compiled-in
-// default, the same convention SetBounds uses elsewhere in this tree.
-func SetMaxListed(n int) {
-	if n <= 0 {
-		n = limits.ArchiveEntriesListed
-	}
-	archiveMaxListed.Store(int64(n))
-}
-
-// maxListed is the bound ListArchive enforces: the operator's setting once
-// one has been stored, the compiled-in default otherwise.
-func maxListed() int64 {
-	if n := archiveMaxListed.Load(); n > 0 {
-		return n
-	}
-	return limits.ArchiveEntriesListed
-}
-
 // archiveNameNeedsDecode reports whether a central directory entry's raw name
 // bytes are something other than UTF-8: either the UTF-8 flag was clear, or
 // Go's reader found the bytes not valid UTF-8 regardless of the flag.
 func archiveNameNeedsDecode(f *zip.File) bool {
 	return f.NonUTF8 || !utf8.ValidString(f.Name)
+}
+
+const (
+	zipEndLength       = 22
+	zipMaxComment      = 1<<16 - 1
+	zip64LocatorLength = 20
+	zip64EndLength     = 56
+)
+
+// validateArchiveDirectory rejects a central directory before archive/zip
+// allocates one File value per declared member. The physical span from the
+// declared directory start to the directory end is checked in addition to the
+// format's declared byte and entry counts, so underreported metadata cannot
+// make a large directory look small.
+func validateArchiveDirectory(r io.ReaderAt, size int64) error {
+	total, err := num.Narrow[uint64](size)
+	if err != nil {
+		return fmt.Errorf("%w: negative size", ErrNotArchive)
+	}
+	tailLength := int64(zipEndLength + zipMaxComment)
+	if tailLength > size {
+		tailLength = size
+	}
+	tail := make([]byte, int(tailLength))
+	if _, err := r.ReadAt(tail, size-tailLength); err != nil {
+		return fmt.Errorf("%w: reading the directory trailer: %v", ErrNotArchive, err)
+	}
+
+	var end []byte
+	var endOffset int64
+	for i := len(tail) - zipEndLength; i >= 0; i-- {
+		if binary.LittleEndian.Uint32(tail[i:]) != 0x06054b50 {
+			continue
+		}
+		commentLength := int(binary.LittleEndian.Uint16(tail[i+20:]))
+		if i+zipEndLength+commentLength != len(tail) {
+			continue
+		}
+		end = tail[i : i+zipEndLength]
+		endOffset = size - tailLength + int64(i)
+		break
+	}
+	if end == nil {
+		return fmt.Errorf("%w: no end of central directory", ErrNotArchive)
+	}
+
+	entries := uint64(binary.LittleEndian.Uint16(end[10:]))
+	directoryBytes := uint64(binary.LittleEndian.Uint32(end[12:]))
+	directoryOffset := uint64(binary.LittleEndian.Uint32(end[16:]))
+	directoryEndOffset := endOffset
+	if entries == uint64(^uint16(0)) ||
+		directoryBytes == uint64(^uint32(0)) ||
+		directoryOffset == uint64(^uint32(0)) {
+		if endOffset < zip64LocatorLength {
+			return fmt.Errorf("%w: missing ZIP64 locator", ErrNotArchive)
+		}
+		var locator [zip64LocatorLength]byte
+		if _, err := r.ReadAt(locator[:], endOffset-zip64LocatorLength); err != nil {
+			return fmt.Errorf("%w: reading the ZIP64 locator: %v", ErrNotArchive, err)
+		}
+		if binary.LittleEndian.Uint32(locator[:]) != 0x07064b50 ||
+			binary.LittleEndian.Uint32(locator[4:]) != 0 ||
+			binary.LittleEndian.Uint32(locator[16:]) != 1 {
+			return fmt.Errorf("%w: invalid ZIP64 locator", ErrNotArchive)
+		}
+		zip64Offset := binary.LittleEndian.Uint64(locator[8:])
+		if size < zip64EndLength || zip64Offset > uint64(size-zip64EndLength) {
+			return fmt.Errorf("%w: invalid ZIP64 directory offset", ErrNotArchive)
+		}
+		zip64Start, nerr := num.Narrow[int64](zip64Offset)
+		if nerr != nil {
+			return fmt.Errorf("%w: invalid ZIP64 directory offset", ErrNotArchive)
+		}
+		var zip64End [zip64EndLength]byte
+		if _, rerr := r.ReadAt(zip64End[:], zip64Start); rerr != nil {
+			return fmt.Errorf("%w: reading the ZIP64 directory: %v", ErrNotArchive, rerr)
+		}
+		recordSize := binary.LittleEndian.Uint64(zip64End[4:])
+		locatorOffset := uint64(endOffset - zip64LocatorLength)
+		if binary.LittleEndian.Uint32(zip64End[:]) != 0x06064b50 ||
+			recordSize < 44 ||
+			recordSize > total-zip64Offset-12 ||
+			zip64Offset+12+recordSize != locatorOffset {
+			return fmt.Errorf("%w: invalid ZIP64 directory", ErrNotArchive)
+		}
+		entries = binary.LittleEndian.Uint64(zip64End[32:])
+		directoryBytes = binary.LittleEndian.Uint64(zip64End[40:])
+		directoryOffset = binary.LittleEndian.Uint64(zip64End[48:])
+		directoryEndOffset = zip64Start
+	}
+
+	if directoryOffset > uint64(directoryEndOffset) {
+		return fmt.Errorf("%w: invalid central directory offset", ErrNotArchive)
+	}
+	physicalDirectoryBytes := uint64(directoryEndOffset) - directoryOffset
+	if physicalDirectoryBytes > limits.ArchiveDirectoryBytes {
+		return fmt.Errorf("%w: a %d-byte central directory exceeds the parser bound", ErrNotArchive, physicalDirectoryBytes)
+	}
+	if entries > limits.ArchiveEntriesParsed {
+		return fmt.Errorf("%w: %d entries exceed the parser bound", ErrNotArchive, entries)
+	}
+	if directoryBytes > limits.ArchiveDirectoryBytes || directoryBytes > total {
+		return fmt.Errorf("%w: a %d-byte central directory exceeds the parser bound", ErrNotArchive, directoryBytes)
+	}
+	if directoryBytes != physicalDirectoryBytes {
+		return fmt.Errorf("%w: declared central directory size %d differs from its physical span %d",
+			ErrNotArchive, directoryBytes, physicalDirectoryBytes)
+	}
+	if entries > 0 && directoryBytes < entries*46 {
+		return fmt.Errorf("%w: the central directory is too short for %d entries", ErrNotArchive, entries)
+	}
+	if err := validateCentralDirectory(r, directoryOffset, uint64(directoryEndOffset), entries); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateCentralDirectory(r io.ReaderAt, offset, end, declaredEntries uint64) error {
+	var (
+		header [46]byte
+		actual uint64
+	)
+	for offset < end {
+		remaining := end - offset
+		if remaining < uint64(len(header)) {
+			return fmt.Errorf("%w: trailing bytes in the central directory", ErrNotArchive)
+		}
+		at, nerr := num.Narrow[int64](offset)
+		if nerr != nil {
+			return fmt.Errorf("%w: a central directory offset is out of range", ErrNotArchive)
+		}
+		if _, err := r.ReadAt(header[:], at); err != nil {
+			return fmt.Errorf("%w: reading a central directory header: %v", ErrNotArchive, err)
+		}
+		if binary.LittleEndian.Uint32(header[:]) != 0x02014b50 {
+			return fmt.Errorf("%w: malformed central directory header", ErrNotArchive)
+		}
+		recordBytes := uint64(len(header)) +
+			uint64(binary.LittleEndian.Uint16(header[28:])) +
+			uint64(binary.LittleEndian.Uint16(header[30:])) +
+			uint64(binary.LittleEndian.Uint16(header[32:]))
+		if recordBytes > remaining {
+			return fmt.Errorf("%w: a central directory record exceeds its span", ErrNotArchive)
+		}
+		offset += recordBytes
+		actual++
+		if actual > limits.ArchiveEntriesParsed {
+			return fmt.Errorf("%w: %d entries exceed the parser bound", ErrNotArchive, actual)
+		}
+	}
+	if actual != declaredEntries {
+		return fmt.Errorf("%w: central directory declares %d entries but contains %d",
+			ErrNotArchive, declaredEntries, actual)
+	}
+	return nil
 }
 
 // ListArchive parses a zip's central directory.
@@ -118,6 +245,9 @@ func archiveNameNeedsDecode(f *zip.File) bool {
 func ListArchive(ctx context.Context, r io.ReaderAt, size int64) (ArchiveListing, error) {
 	if size <= 0 {
 		return ArchiveListing{}, fmt.Errorf("%w: an empty file", ErrNotArchive)
+	}
+	if err := validateArchiveDirectory(r, size); err != nil {
+		return ArchiveListing{}, err
 	}
 	zr, err := zip.NewReader(r, size)
 	if err != nil {
@@ -145,21 +275,25 @@ func ListArchive(ctx context.Context, r io.ReaderAt, size int64) (ArchiveListing
 		cs = uniname.Charset(sample, charmap.CodePage437)
 	}
 
-	var out ArchiveListing
+	var (
+		out  ArchiveListing
+		seen int64
+	)
 	for _, f := range zr.File {
 		// Cancellation is polled per entry rather than per directory as in a
-		// filesystem walk. An archive's directory already sits in memory, so the
-		// loop is bounded by the entry count and the check costs little beside
-		// it.
+		// filesystem walk. An archive's directory already sits in memory, so
+		// the loop is bounded by the entry count and the check costs little
+		// beside it.
 		if cerr := ctx.Err(); cerr != nil {
 			return ArchiveListing{}, cerr
 		}
-		if int64(len(out.Entries)) >= maxListed() {
-			// Truncated rather than rejected, so a caller can still display what
-			// exists while the flag prevents it appearing complete.
+		if seen >= limits.ArchiveEntriesListed {
+			// Truncated rather than rejected, so a caller can still display
+			// what exists while the flag prevents it appearing complete.
 			out.Truncated = true
 			break
 		}
+		seen++
 
 		// An entry that needed decoding goes through the sample's detected
 		// encoding, or CP437 when the sample could not be placed; one that was
@@ -189,7 +323,11 @@ func ListArchive(ctx context.Context, r io.ReaderAt, size int64) (ArchiveListing
 			e.ModTimeNs = mt.UnixNano()
 		}
 		out.Entries = append(out.Entries, e)
-		out.TotalUncompressed += f.UncompressedSize64
+		if ^uint64(0)-out.TotalUncompressed < f.UncompressedSize64 {
+			out.TotalUncompressed = ^uint64(0)
+		} else {
+			out.TotalUncompressed += f.UncompressedSize64
+		}
 	}
 	return out, nil
 }

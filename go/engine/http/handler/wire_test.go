@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/apierr"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/httpheader"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
 
@@ -118,7 +119,7 @@ func TestContentDispositionCannotEscapeEitherForm(t *testing.T) {
 		"\u00e9t\u00e9.pdf",
 		"файл.pdf",
 	} {
-		got := ContentDisposition(name)
+		got := httpheader.Attachment(name)
 
 		// The header is one line: a CR or LF anywhere in it is a second header
 		// the caller did not write.
@@ -139,7 +140,7 @@ func TestContentDispositionCannotEscapeEitherForm(t *testing.T) {
 // The RFC 5987 form carries the real name, so a client that reads it gets the
 // characters the fallback could not represent.
 func TestTheEncodedFilenameRoundTrips(t *testing.T) {
-	got := ContentDisposition("été.pdf")
+	got := httpheader.Attachment("été.pdf")
 	// é is C3 A9 in UTF-8.
 	if !strings.Contains(got, "%C3%A9t%C3%A9.pdf") {
 		t.Errorf("the encoded form is wrong: %q", got)

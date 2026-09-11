@@ -307,24 +307,29 @@ func (c *Core) TrashPurge(ctx context.Context, r Resolved, id *string) error {
 
 		var freed uint64
 		if st.Kind.IsDir() {
-			// Best-effort by design: the rollup refuses a path under a
-			// control prefix, and treating that refusal as fatal stopped
-			// every directory purge before the delete, leaving the entry on
-			// disk while the caller was told it was gone. Losing the ledger
-			// credit is worth strictly less than losing the delete.
-			if agg, aerr := c.Aggregate(ctx, r.share, p); aerr == nil {
-				freed = agg.RSize
+			// Trash entries are control-path children, so the aggregate cache
+			// cannot resolve them. Measure the exact subtree before and after
+			// the recursive delete, including a partial failure's progress.
+			var before uint64
+			if total, aerr := treeBytes(r.root, p, vfs.HideReserved); aerr == nil {
+				before = total
 			}
 			under := Resolved{user: r.user, share: r.share, root: r.root, path: p, perms: r.perms}
-			if derr := c.deleteRecursive(ctx, under); derr != nil {
+			derr := c.deleteRecursive(ctx, under, acl.Delete)
+			switch after, aerr := treeBytes(r.root, p, vfs.HideReserved); {
+			case aerr == nil && after <= before:
+				freed = before - after
+			case errors.Is(aerr, ErrNotFound):
+				freed = before
+			}
+			if derr != nil {
 				failures = errors.Join(failures, derr)
-				continue
 			}
 		} else {
 			freed = st.Size
 			if uerr := r.root.Unlink(p); uerr != nil {
 				failures = errors.Join(failures, mapVFSErr(uerr))
-				continue
+				freed = 0
 			}
 		}
 		if freed > 0 {

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"math"
 
+	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 )
@@ -124,6 +125,10 @@ func (c *Core) CheckQuota(ctx context.Context, user UserID, bytes uint64) error 
 	if c.quota == nil || bytes == 0 {
 		return nil
 	}
+	signed, err := num.Narrow[int64](bytes)
+	if err != nil {
+		return err
+	}
 	ok, err := c.quota.Reserve(ctx, int64(user), bytes)
 	if err != nil {
 		return err
@@ -131,10 +136,193 @@ func (c *Core) CheckQuota(ctx context.Context, user UserID, bytes uint64) error 
 	if !ok {
 		return ErrQuotaExceeded
 	}
-	if rel, nerr := num.Narrow[int64](bytes); nerr == nil {
-		if rerr := c.quota.Release(ctx, int64(user), rel); rerr != nil {
-			c.warn("releasing quota reservation failed", "error", rerr)
-		}
+	if rerr := c.quota.Release(ctx, int64(user), signed); rerr != nil {
+		c.warn("releasing quota reservation failed", "error", rerr)
 	}
 	return nil
+}
+
+// quotaReservation is a positive-growth booking held until the filesystem
+// publication succeeds. Reserve books immediately, so a failed pre-commit
+// operation must release the same bytes rather than trying to repair usage
+// after the fact.
+type quotaReservation struct {
+	bytes  uint64
+	active bool
+}
+
+// reserveQuota admits prospective growth before a filesystem change commits.
+// A false reservation is the quota refusal, not a ledger failure.
+func (c *Core) reserveQuota(ctx context.Context, user UserID, bytes uint64) (quotaReservation, error) {
+	if c.quota == nil || bytes == 0 {
+		return quotaReservation{}, nil
+	}
+	if _, err := num.Narrow[int64](bytes); err != nil {
+		return quotaReservation{}, err
+	}
+	ok, err := c.quota.Reserve(ctx, int64(user), bytes)
+	if err != nil {
+		return quotaReservation{}, err
+	}
+	if !ok {
+		return quotaReservation{}, ErrQuotaExceeded
+	}
+	return quotaReservation{bytes: bytes, active: true}, nil
+}
+
+// commitQuota closes a reservation after the corresponding publication. The
+// state ledger's Commit is intentionally idempotent, and a bookkeeping failure
+// cannot turn a durable filesystem change into a reported failure.
+func (c *Core) commitQuota(ctx context.Context, user UserID, hold *quotaReservation) {
+	if hold == nil || !hold.active || c.quota == nil {
+		return
+	}
+	if err := c.quota.Commit(ctx, int64(user), hold.bytes); err != nil {
+		c.warn("committing quota reservation failed; the filesystem change has committed",
+			"error", err)
+	}
+	hold.active = false
+}
+
+// releaseQuota returns a pre-commit booking when publication did not happen.
+func (c *Core) releaseQuota(ctx context.Context, user UserID, hold *quotaReservation) {
+	if hold == nil || !hold.active || c.quota == nil {
+		return
+	}
+	if rel, err := num.Narrow[int64](hold.bytes); err != nil {
+		c.warn("releasing quota reservation failed; its size does not fit the ledger",
+			"bytes", hold.bytes, "error", err)
+	} else if rerr := c.quota.Release(ctx, int64(user), rel); rerr != nil {
+		c.warn("releasing quota reservation failed", "error", rerr)
+	}
+	hold.active = false
+}
+
+// resizeQuota adjusts a held booking before publication when the staged
+// result's actual size differs from the initial estimate.
+func (c *Core) resizeQuota(
+	ctx context.Context, user UserID, hold *quotaReservation, target uint64,
+) error {
+	if hold == nil || c.quota == nil {
+		return nil
+	}
+	switch {
+	case target > hold.bytes:
+		additional := target - hold.bytes
+		next, err := c.reserveQuota(ctx, user, additional)
+		if err != nil {
+			return err
+		}
+		hold.bytes += next.bytes
+	case target < hold.bytes:
+		credit := hold.bytes - target
+		rel, err := num.Narrow[int64](credit)
+		if err != nil {
+			return err
+		}
+		if err := c.quota.Release(ctx, int64(user), rel); err != nil {
+			return err
+		}
+		hold.bytes = target
+	}
+	hold.active = hold.bytes > 0
+	return nil
+}
+
+// settleQuota completes a filesystem byte delta. Positive growth must already
+// have a reservation; negative growth is a post-commit credit.
+func (c *Core) settleQuota(
+	ctx context.Context, user UserID, delta int64, hold *quotaReservation,
+) {
+	if delta > 0 {
+		c.commitQuota(ctx, user, hold)
+		return
+	}
+	if delta < 0 {
+		c.chargeQuota(ctx, user, delta)
+	}
+}
+
+// writeDurableQuota wraps the common durable-write boundary. The callback
+// writes into VFS's private staging file, so its final stat is available before
+// publication and quota admission can still refuse without touching the old
+// destination.
+func (c *Core) writeDurableQuota(
+	ctx context.Context,
+	r Resolved,
+	mode vfs.DurableOpts,
+	prior *vfs.Stat,
+	write func(*vfs.File) error,
+) (vfs.Durable, int64, error) {
+	var oldSize uint64
+	if prior != nil {
+		oldSize = prior.Size
+	}
+	var (
+		hold  quotaReservation
+		delta int64
+	)
+	done, err := r.root.WriteDurable(r.path, mode, func(f *vfs.File) error {
+		if err := write(f); err != nil {
+			return err
+		}
+		st, err := f.Stat()
+		if err != nil {
+			return err
+		}
+		delta = deltaOf(st.Size, oldSize)
+		if delta <= 0 {
+			return nil
+		}
+		hold, err = c.reserveQuota(ctx, r.user, uint64(delta))
+		return err
+	})
+	if err != nil {
+		c.releaseQuota(ctx, r.user, &hold)
+		return done, delta, err
+	}
+	c.settleQuota(ctx, r.user, delta, &hold)
+	return done, delta, nil
+}
+
+// treeBytes measures file bytes beneath a path without using the aggregate
+// cache. Control paths are deliberately supported here because trash entries
+// live beneath one; the policy decides whether reserved children participate.
+func treeBytes(root vfs.Root, p vfs.SafePath, policy vfs.ReservedPolicy) (uint64, error) {
+	st, err := root.Stat(p)
+	if err != nil {
+		return 0, mapVFSErr(err)
+	}
+	if !st.Kind.IsDir() {
+		return st.Size, nil
+	}
+	entries, err := root.ReadDir(p, policy)
+	if err != nil {
+		return 0, mapVFSErr(err)
+	}
+	var total uint64
+	for _, e := range entries {
+		child, jerr := joinTreeChild(p, e.Name)
+		if jerr != nil {
+			return 0, mapVFSErr(jerr)
+		}
+		size, serr := treeBytes(root, child, policy)
+		if serr != nil {
+			return 0, serr
+		}
+		if ^uint64(0)-total < size {
+			return ^uint64(0), nil
+		}
+		total += size
+	}
+	return total, nil
+}
+
+// joinTreeChild preserves the validation distinction between a name read from
+// an ordinary listing and a trusted control name read by a maintenance walk.
+func joinTreeChild(parent vfs.SafePath, name string) (vfs.SafePath, error) {
+	if vfs.IsReservedName(name) {
+		return parent.JoinControl(name)
+	}
+	return parent.JoinExisting(name)
 }

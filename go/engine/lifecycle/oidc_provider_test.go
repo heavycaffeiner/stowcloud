@@ -493,6 +493,7 @@ func TestSuccessfulLinkRedirectsToReturnTo(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(f.userCookie)
 	req.Header.Set("Sc-Csrf", f.userCSRF)
+	req.Header.Set("Origin", req.URL.Scheme+"://"+req.Host)
 	state, nonce, binding := startFlow(t, req)
 	fp.setToken(nonce, "alices-new-identity")
 
@@ -541,6 +542,7 @@ func TestALinkWhoseSessionChangedIsRefused(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(f.userCookie)
 	req.Header.Set("Sc-Csrf", f.userCSRF)
+	req.Header.Set("Origin", req.URL.Scheme+"://"+req.Host)
 	state, nonce, binding := startFlow(t, req)
 	fp.setToken(nonce, "somebody-elses-identity")
 
@@ -592,6 +594,7 @@ func TestALinkToAnAlreadyLinkedIdentityIsRefused(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(f.userCookie)
 	req.Header.Set("Sc-Csrf", f.userCSRF)
+	req.Header.Set("Origin", req.URL.Scheme+"://"+req.Host)
 	state, nonce, binding := startFlow(t, req)
 	fp.setToken(nonce, "shared-subject")
 

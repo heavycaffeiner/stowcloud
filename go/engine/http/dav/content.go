@@ -6,11 +6,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/httpheader"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
 
 // KeyOf is how a caller turns an entry into the key its store understands.
@@ -97,6 +99,8 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request, res core.Resolved,
 	}
 
 	entry := h.core.EntryAt(res, st)
+
+	h.setContentPolicy(w, entry.Name)
 	if h.notModified(w, r, entry) {
 		return
 	}
@@ -111,7 +115,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request, res core.Resolved,
 		return
 	}
 
-	opened, stream, oerr := h.core.OpenStream(r.Context(), res, rng)
+	_, stream, oerr := h.core.OpenStream(r.Context(), res, rng)
 	if oerr != nil {
 		h.fail(w, r, oerr)
 		return
@@ -120,7 +124,6 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request, res core.Resolved,
 
 	w.Header().Set("ETag", ETagHeader(entry.ETag, entry.ETagWeak))
 	w.Header().Set("Last-Modified", httpDateOf(entry.MTimeNs))
-	w.Header().Set("Content-Type", ContentTypeOf(opened.Name))
 	w.Header().Set("Content-Length", strconv.FormatUint(stream.Remaining(), 10))
 	w.Header().Set("Accept-Ranges", "bytes")
 
@@ -173,6 +176,20 @@ func anyValidatorMatches(header, etag string) bool {
 		}
 	}
 	return false
+}
+
+// setContentPolicy keeps byte-serving responses safe when a browser receives
+// them as a top-level document. Active content is downloaded under its real
+// name; ordinary previews remain inline but are sandboxed.
+func (h *Handler) setContentPolicy(w http.ResponseWriter, name string) {
+	contentType := ContentTypeOf(name)
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if httpheader.IsExecutableMIME(contentType) {
+		w.Header().Set("Content-Disposition", httpheader.Attachment(name))
+		return
+	}
+	w.Header().Set("Content-Security-Policy", httpheader.SafeInlineCSP)
 }
 
 // Put writes a file.

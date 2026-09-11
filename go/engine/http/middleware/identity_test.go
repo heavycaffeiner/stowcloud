@@ -308,7 +308,7 @@ func TestCSRFIsCheckedThroughTheChain(t *testing.T) {
 	post := func(token string) int {
 		r := httptest.NewRequest("POST", "http://app.example.test/thing", nil)
 		r.AddCookie(cookie)
-		r.Header.Set("Origin", "https://app.example.test")
+		r.Header.Set("Origin", "http://app.example.test")
 		if token != "" {
 			r.Header.Set(CSRFHeader, token)
 		}
@@ -393,7 +393,7 @@ func TestNoCSRFKeyRefusesTheMutation(t *testing.T) {
 		r := httptest.NewRequest("POST", "http://app.example.test/thing", nil)
 		cookie := sessionCookie()
 		r.AddCookie(cookie)
-		r.Header.Set("Origin", "https://app.example.test")
+		r.Header.Set("Origin", "http://app.example.test")
 		r.Header.Set(CSRFHeader, CSRFToken(nil, cookie.Value))
 		if got := send(t, app, r).status; got != fiber.StatusForbidden {
 			t.Errorf("%s answered %d, want 403", c.what, got)

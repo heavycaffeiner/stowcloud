@@ -221,7 +221,7 @@ func TestATrustedPeersClientsAreThrottledApart(t *testing.T) {
 
 // A mutating cookie request without an Origin is refused by the boundary, and
 // with a matching one it is admitted. The chain wires the rule the boundary
-// test already proved, so this checks the wiring rather than the rule.
+// already proved, so this checks the wiring rather than the rule.
 func TestTheBoundaryRuleAppliesThroughTheChain(t *testing.T) {
 	h := newHarness(t, namedHosts())
 
@@ -233,9 +233,43 @@ func TestTheBoundaryRuleAppliesThroughTheChain(t *testing.T) {
 
 	req = httptest.NewRequest("POST", "http://app.example.test/thing", nil)
 	req.AddCookie(sessionCookie())
-	req.Header.Set("Origin", "https://app.example.test")
+	req.Header.Set("Origin", "http://app.example.test")
 	if got := h.do(t, req).status; got != fiber.StatusOK {
 		t.Fatalf("a cookie mutation with a matching Origin answered %d", got)
+	}
+
+	// The in-process transport is not trusted, so an attacker cannot turn an
+	// HTTP request into an HTTPS origin by sending X-Forwarded-Proto.
+	req = httptest.NewRequest("POST", "http://app.example.test/thing", nil)
+	req.AddCookie(sessionCookie())
+	req.Header.Set("Origin", "https://app.example.test")
+	req.Header.Set(fiber.HeaderXForwardedProto, "https")
+	if got := h.do(t, req).status; got != fiber.StatusMisdirectedRequest {
+		t.Fatalf("an untrusted forwarded scheme answered %d, want 421", got)
+	}
+}
+
+// The chain marks only the browser password and factor routes as ambient
+// session creation. Header-authenticated protocol requests keep their
+// non-browser origin policy.
+func TestBrowserAuthenticationIsBoundThroughTheChain(t *testing.T) {
+	h := newHarness(t, namedHosts())
+
+	req := httptest.NewRequest("POST", "http://app.example.test/api/v1/auth/login", nil)
+	if got := h.do(t, req).status; got != fiber.StatusMisdirectedRequest {
+		t.Fatalf("a cookie-less login without Origin answered %d, want 421", got)
+	}
+
+	req = httptest.NewRequest("POST", "http://app.example.test/api/v1/auth/login", nil)
+	req.Header.Set("Origin", "https://evil.example.test")
+	if got := h.do(t, req).status; got != fiber.StatusMisdirectedRequest {
+		t.Fatalf("a cookie-less login from a foreign Origin answered %d, want 421", got)
+	}
+
+	req = httptest.NewRequest("POST", "http://app.example.test/api/v1/auth/login", nil)
+	req.Header.Set("Origin", "http://app.example.test")
+	if got := h.do(t, req).status; got != fiber.StatusOK {
+		t.Fatalf("a cookie-less login from the app Origin answered %d", got)
 	}
 }
 

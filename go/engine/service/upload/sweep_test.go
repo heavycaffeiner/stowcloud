@@ -45,6 +45,103 @@ func TestTheSweepCollectsAnExpiredSession(t *testing.T) {
 	}
 }
 
+// A crash before publication leaves the durable part, so recovery makes the
+// session receiving again.
+func TestTheSweepRecoversAFinalizingSessionBeforePublication(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newFixture(t)
+	s := f.create(t, "recoverable.bin", uint64(limits.UploadChunkFloor), SessionSpec{})
+	f.patch(t, s.ID, 0, chunkOf(0, limits.UploadChunkFloor))
+	part, err := vfs.RootPath().JoinControl(partName(s.ID))
+	if err != nil {
+		t.Fatalf("naming the part file: %v", err)
+	}
+	stored, err := f.state.ReadUploadSession(ctx, s.ID.Bytes())
+	if err != nil {
+		t.Fatalf("ReadUploadSession: %v", err)
+	}
+	stored.State = int64(StateFinalizing)
+	stored.ExpiresNs = f.clk.Nanos()
+	if uerr := f.state.UpdateUploadSession(ctx, stored); uerr != nil {
+		t.Fatalf("UpdateUploadSession: %v", uerr)
+	}
+	f.clk.advance(limits.UploadSessionTTL * 2)
+
+	rep, err := f.engine.Sweep(ctx)
+	if err != nil {
+		t.Fatalf("Sweep: %v", err)
+	}
+	if rep.ExpiredSessions != 0 {
+		t.Fatalf("the sweep collected %d recoverable sessions", rep.ExpiredSessions)
+	}
+	got, err := f.engine.Get(ctx, s.ID, testUser)
+	if err != nil {
+		t.Fatalf("the recovered session is missing: %v", err)
+	}
+	if got.State != StateReceiving {
+		t.Fatalf("the recovered session state is %d, want receiving", got.State)
+	}
+	if got.ExpiresNs <= f.clk.Nanos() {
+		t.Fatalf("the recovered session was not given a fresh expiry: %d", got.ExpiresNs)
+	}
+	if _, err := f.root(t).Stat(part); err != nil {
+		t.Fatalf("the durable part file is gone after pre-publication recovery: %v", err)
+	}
+}
+
+// A crash after the durable rename leaves no part to resume, so recovery
+// completes the session and retires its terminal bookkeeping.
+func TestTheSweepCompletesAFinalizingSessionAfterPublication(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newFixture(t)
+	const chunk = limits.UploadChunkFloor
+	body := chunkOf(0, chunk)
+	s := f.create(t, "published.bin", uint64(chunk), SessionSpec{})
+	f.patch(t, s.ID, 0, body)
+	stored, err := f.state.ReadUploadSession(ctx, s.ID.Bytes())
+	if err != nil {
+		t.Fatalf("ReadUploadSession: %v", err)
+	}
+	stored.State = int64(StateFinalizing)
+	stored.ExpiresNs = f.clk.Nanos()
+	if uerr := f.state.UpdateUploadSession(ctx, stored); uerr != nil {
+		t.Fatalf("UpdateUploadSession: %v", uerr)
+	}
+	part, err := vfs.RootPath().JoinControl(partName(s.ID))
+	if err != nil {
+		t.Fatalf("naming the part file: %v", err)
+	}
+	if _, perr := f.core.PublishPart(ctx, f.resolve(t, "published.bin"), part, uint64(chunk)); perr != nil {
+		t.Fatalf("publishing the part: %v", perr)
+	}
+	f.clk.advance(limits.UploadSessionTTL * 2)
+
+	rep, err := f.engine.Sweep(ctx)
+	if err != nil {
+		t.Fatalf("Sweep: %v", err)
+	}
+	if rep.ExpiredSessions != 0 {
+		t.Fatalf("the sweep counted a published session as expired: %d", rep.ExpiredSessions)
+	}
+	if _, err := f.engine.Get(ctx, s.ID, testUser); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("the published session remained resumable: %v", err)
+	}
+	if _, err := f.root(t).Stat(part); !errors.Is(err, vfs.ErrNotFound) {
+		t.Fatalf("the published part file survived recovery: %v", err)
+	}
+	if got := readPublished(t, f, "published.bin", len(body)); !bytes.Equal(got, body) {
+		t.Fatal("the published bytes changed during recovery")
+	}
+	if n := f.engine.rowLockCount(); n != 0 {
+		t.Fatalf("%d bookkeeping locks survived published recovery", n)
+	}
+	if n := f.engine.writerBarrierCount(); n != 0 {
+		t.Fatalf("%d writer barriers survived published recovery", n)
+	}
+}
+
 // An orphan is a part file whose session row is already gone, which is why
 // the sweep walks the directories a part file was ever created in rather than
 // the live sessions.

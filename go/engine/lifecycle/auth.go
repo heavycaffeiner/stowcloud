@@ -12,7 +12,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"math"
+	"mime"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -47,10 +49,22 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
+// decodeAuthBody accepts only the JSON media type used by the browser auth
+// forms. The route's body class bounds and parses the bytes, but without this
+// check a cross-site form could reach the same credential decoder with a
+// browser-simple content type.
+func decodeAuthBody(c *fiber.Ctx, into any) error {
+	media, _, err := mime.ParseMediaType(c.Get(fiber.HeaderContentType))
+	if err != nil || !strings.EqualFold(media, fiber.MIMEApplicationJSON) {
+		return errors.New("the authentication body is not JSON")
+	}
+	return decodeBody(c, into)
+}
+
 // login verifies a password and either issues a session or asks for a code.
 func (e *Engine) login(c *fiber.Ctx) error {
 	var req loginRequest
-	if err := decodeBody(c, &req); err != nil {
+	if err := decodeAuthBody(c, &req); err != nil {
 		return refuse(c, apierr.Classified{Class: apierr.Malformed})
 	}
 	if req.Login == "" || req.Password == "" {
@@ -110,7 +124,7 @@ type totpRequest struct {
 // loginTOTP completes a sign-in whose password already verified.
 func (e *Engine) loginTOTP(c *fiber.Ctx) error {
 	var req totpRequest
-	if err := decodeBody(c, &req); err != nil {
+	if err := decodeAuthBody(c, &req); err != nil {
 		return refuse(c, apierr.Classified{Class: apierr.Malformed})
 	}
 

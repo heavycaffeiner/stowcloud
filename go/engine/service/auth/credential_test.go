@@ -120,9 +120,14 @@ func TestAnExpiredOrDisownedCredentialRefuses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAppPassword: %v", err)
 	}
+	// Warm the positive bypass before the row reaches its deadline. A cache hit
+	// must still carry and enforce the credential's absolute expiry.
+	if _, _, verr := f.svc.VerifyAppPassword(ctx, expiring); verr != nil {
+		t.Fatalf("the fresh credential did not verify: %v", verr)
+	}
 	clk.advance(2 * time.Hour)
 	if _, _, verr := f.svc.VerifyAppPassword(ctx, expiring); !errors.Is(verr, auth.ErrCredentials) {
-		t.Fatalf("an expired credential returned %v", verr)
+		t.Fatalf("an expired credential returned from its warm cache: %v", verr)
 	}
 
 	lasting, err := f.svc.CreateAppPassword(ctx, id, "phone", auth.Scope{}, 0)

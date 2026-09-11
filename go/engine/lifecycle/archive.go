@@ -17,14 +17,15 @@ import (
 	"io"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/archive"
-	"github.com/heavycaffeiner/stowcloud/go/engine/http/dav"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/handler"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/httpheader"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/limits"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
@@ -176,14 +177,20 @@ func archiveToken() (string, error) {
 // reaching through c there is a nil dereference, measured on the first
 // archive built.
 func (e *Engine) streamArchive(c *fiber.Ctx, roots []core.Resolved, name string) error {
+	release, ok := e.tryAcquireArchive()
+	if !ok {
+		return refuse(c, archiveBusy())
+	}
+
 	c.Set(fiber.HeaderContentType, "application/zip")
-	c.Set(fiber.HeaderContentDisposition, contentDisposition(name))
+	c.Set(fiber.HeaderContentDisposition, httpheader.Attachment(name))
 	// No length: a zip's size is not known until it is built, and a wrong one
 	// is worse than none.
 	c.Status(fiber.StatusOK)
 
 	ctx := context.WithoutCancel(c.UserContext())
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+		defer release()
 		if err := e.buildArchive(ctx, w, roots, name); err != nil {
 			e.logger.Warn("an archive ended early", "name", name, "error", err)
 		}
@@ -199,60 +206,217 @@ func (e *Engine) streamArchive(c *fiber.Ctx, roots []core.Resolved, name string)
 // caller can ask for with one request.
 const archiveMaxRoots = 256
 
+// archiveConcurrencyGate is a fail-fast bound on archive work. It tracks
+// active streams rather than handing out a channel, so a settings change takes
+// effect on the next request even while existing streams finish.
+type archiveConcurrencyGate struct {
+	mu     sync.Mutex
+	active int
+	limit  int
+}
+
+func (g *archiveConcurrencyGate) SetLimit(limit int) {
+	if limit <= 0 {
+		limit = limits.ConcurrentArchives
+	}
+	g.mu.Lock()
+	g.limit = limit
+	g.mu.Unlock()
+}
+
+func (g *archiveConcurrencyGate) TryAcquire() bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	limit := g.limit
+	if limit <= 0 {
+		limit = limits.ConcurrentArchives
+	}
+	if g.active >= limit {
+		return false
+	}
+	g.active++
+	return true
+}
+
+func (g *archiveConcurrencyGate) Release() {
+	g.mu.Lock()
+	if g.active > 0 {
+		g.active--
+	}
+	g.mu.Unlock()
+}
+
+// tryAcquireArchive reserves one archive slot until the returned release
+// function runs. The value gate's zero limit selects its compiled-in default,
+// so manually assembled engines remain bounded too.
+func (e *Engine) tryAcquireArchive() (release func(), ok bool) {
+	if !e.archiveGate.TryAcquire() {
+		return nil, false
+	}
+	return e.archiveGate.Release, true
+}
+
+func archiveBusy() apierr.Classified {
+	return apierr.Classified{Class: apierr.ResourceExhausted, Key: "archive.busy"}
+}
+
+// archiveIncompleteName is a visible member name, not a log-only signal:
+// streaming has already committed the response by the time a walk can hit a
+// bound, so a saved archive needs a durable indication that it is partial.
+const archiveIncompleteName = "__stowcloud_incomplete__.txt"
+
+const archiveIncompleteBody = "This archive is incomplete. One or more requested entries were omitted because an archive bound was reached or an entry changed while it was being read.\n"
+const (
+	archiveContentEntries = limits.ArchivePackedEntries
+	archiveContentBytes   = limits.ArchivePackedBytes
+)
+
+// archiveBuilder applies one set of limits to both authenticated and public
+// archive streams.
+type archiveBuilder struct {
+	z          *archive.Writer
+	entries    int64
+	packed     uint64
+	incomplete bool
+	names      map[string]struct{}
+}
+
+// archiveEntryReader keeps a member within its admitted size while it streams.
+// It turns a short or overlong source into EOF and records the mismatch so the
+// finished archive carries the incomplete marker instead of silently claiming
+// a complete member.
+type archiveEntryReader struct {
+	source     io.Reader
+	remaining  uint64
+	read       uint64
+	incomplete bool
+}
+
+func (r *archiveEntryReader) Read(p []byte) (int, error) {
+	if r.remaining == 0 {
+		var extra [1]byte
+		n, err := r.source.Read(extra[:])
+		if n > 0 || (err != nil && !errors.Is(err, io.EOF)) {
+			r.incomplete = true
+		}
+		return 0, io.EOF
+	}
+	if uint64(len(p)) > r.remaining {
+		p = p[:r.remaining]
+	}
+	n, err := r.source.Read(p)
+	if n > 0 {
+		r.remaining -= uint64(n)
+		r.read += uint64(n)
+	}
+	if err != nil {
+		if !errors.Is(err, io.EOF) || r.remaining > 0 {
+			r.incomplete = true
+		}
+		return n, io.EOF
+	}
+	return n, nil
+}
+
+func (b *archiveBuilder) add(entry core.WalkEntry, stream *core.Stream) error {
+	if b.entries >= archiveContentEntries {
+		b.incomplete = true
+		return errArchiveBounded
+	}
+	b.entries++
+
+	if !entry.Readable {
+		b.incomplete = true
+		return nil
+	}
+	if entry.IsDir {
+		if err := b.z.AddDir(entry.RelPath, time.Unix(0, entry.MTimeNs)); err != nil {
+			return err
+		}
+		b.rememberName(entry.RelPath)
+		return nil
+	}
+	if b.packed >= archiveContentBytes ||
+		entry.Size > archiveContentBytes-b.packed {
+		b.incomplete = true
+		return errArchiveBounded
+	}
+	if stream == nil {
+		b.incomplete = true
+		return nil
+	}
+
+	reader := &archiveEntryReader{source: stream, remaining: entry.Size}
+	if err := b.z.AddFile(entry.RelPath, reader, time.Unix(0, entry.MTimeNs)); err != nil {
+		return err
+	}
+	b.rememberName(entry.RelPath)
+	b.packed += reader.read
+	if reader.incomplete {
+		b.incomplete = true
+	}
+	return nil
+}
+
+func (b *archiveBuilder) rememberName(name string) {
+	if b.names == nil {
+		b.names = make(map[string]struct{})
+	}
+	b.names[name] = struct{}{}
+}
+
+func (b *archiveBuilder) addMarker() error {
+	if !b.incomplete {
+		return nil
+	}
+	name := archiveIncompleteName
+	for suffix := 2; ; suffix++ {
+		if _, exists := b.names[name]; !exists {
+			break
+		}
+		name = fmt.Sprintf("__stowcloud_incomplete__%d.txt", suffix)
+	}
+	return b.z.AddBytes(name, []byte(archiveIncompleteBody), time.Unix(0, 0))
+}
+
 // buildArchive writes the zip for one selection.
 //
-// It reports failure rather than only logging it. A stream cannot act on the
-// error, its status having been sent already, but a held archive must not be
-// published half-built: that would hand somebody a Content-Length and a
-// truncated file, which is worse than a download that failed outright.
+// The response is committed before the walk finishes. If a content ceiling or
+// a changing source stops it, the archive is still closed but carries a
+// visible marker, and the sentinel is returned for logging.
 //
 // It takes a context rather than the request, because for a stream the
 // request is gone by the time this runs.
 func (e *Engine) buildArchive(ctx context.Context, w io.Writer, roots []core.Resolved, name string) error {
 	z := archive.NewWriter(w)
+	builder := archiveBuilder{z: z}
 
-	var failure error
-	var entries int64
-	var packed uint64
+	var walkErr error
 	for _, r := range roots {
 		werr := e.Core.ArchiveWalk(ctx, r, func(entry core.WalkEntry, stream *core.Stream) error {
-			if entries >= limits.ArchivePackedEntries || packed >= limits.ArchivePackedBytes {
-				return errArchiveBounded
-			}
-			entries++
-			switch {
-			case entry.IsDir:
-				// A zip has no directory concept beyond a zero-length member
-				// whose name ends in a slash. Without one an empty directory
-				// disappears on extraction.
-				return z.AddDir(entry.RelPath, time.Unix(0, entry.MTimeNs))
-			case !entry.Readable:
+			if !entry.IsDir && !entry.Readable {
 				// An entry that exists and could not be read is skipped, not
 				// fatal: one unreadable file must not lose the rest of the
 				// archive the person asked for.
 				e.logger.Warn("skipped an unreadable entry", "path", entry.RelPath)
-				return nil
-			default:
-				if aerr := z.AddFile(entry.RelPath, stream, time.Unix(0, entry.MTimeNs)); aerr != nil {
-					return aerr
-				}
-				packed += entry.Size
-				return nil
 			}
+			return builder.add(entry, stream)
 		})
 		if werr != nil {
-			if !errors.Is(werr, errArchiveBounded) {
-				failure = werr
-			}
+			walkErr = werr
+			builder.incomplete = true
 			break
 		}
 	}
-	// Closed regardless, because a zip without its central directory is not
-	// a zip: the bytes already written are unreadable without it, and a
-	// client that saved them has a file nothing will open.
+	if merr := builder.addMarker(); merr != nil && walkErr == nil {
+		walkErr = merr
+	}
+
+	// Closed regardless, because a zip without its central directory is not a
+	// zip: the bytes already written are unreadable without it.
 	cerr := z.Close()
-	if failure != nil {
-		return failure
+	if walkErr != nil {
+		return walkErr
 	}
 	if cerr != nil {
 		return fmt.Errorf("closing the archive %q: %w", name, cerr)
@@ -288,17 +452,6 @@ func archiveFilename(requested string) (string, bool) {
 // and short enough that the header stays a header.
 const archiveNameMax = 200
 
-// contentDisposition builds the header for a validated name.
-//
-// Both spellings: the plain one for clients that read it and the RFC 5987 one
-// for anything non-ASCII, which the plain form cannot carry. The encoded half
-// comes from the tree's one escaper rather than a second copy, since two
-// answers to "how is this escaped" only have to differ once.
-func contentDisposition(name string) string {
-	encoded := strings.TrimPrefix(dav.EncodeHref([]string{name}, false), "/")
-	return `attachment; filename="` + name + `"; filename*=UTF-8''` + encoded
-}
-
 // filesArchiveList answers what is inside an existing zip.
 //
 // Nothing is extracted: the archive's own central directory sits at the end
@@ -323,6 +476,11 @@ func (e *Engine) filesArchiveList(c *fiber.Ctx) error {
 	} else if enc {
 		return refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 	}
+	release, ok := e.tryAcquireArchive()
+	if !ok {
+		return refuse(c, archiveBusy())
+	}
+	defer release()
 
 	entry, random, err := e.Core.OpenRandom(c.UserContext(), r)
 	if err != nil {

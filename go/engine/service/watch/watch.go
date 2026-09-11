@@ -84,9 +84,10 @@ type Watcher struct {
 	overflow atomic.Bool
 	degraded atomic.Int64
 
-	stop     chan struct{}
-	stopOnce sync.Once
-	wg       sync.WaitGroup
+	onCoverageLost func()
+	stop           chan struct{}
+	stopOnce       sync.Once
+	wg             sync.WaitGroup
 }
 
 // Start launches the watcher. Each debounced directory produces one event on
@@ -105,16 +106,17 @@ func Start(ctx context.Context, cfg Config, clk clock.Clock, sink chan<- InvalEv
 	}
 
 	w := &Watcher{
-		cfg:     cfg,
-		clk:     clk,
-		sink:    sink,
-		inotify: os.NewFile(uintptr(fd), "inotify"),
-		hot:     newHotSet(cfg.HotSetMax),
-		wdToKey: make(map[int]key),
-		keyToWd: make(map[key]int),
-		shares:  make(map[vfs.ShareID]share),
-		pending: make(map[key]time.Time),
-		stop:    make(chan struct{}),
+		cfg:            cfg,
+		clk:            clk,
+		sink:           sink,
+		inotify:        os.NewFile(uintptr(fd), "inotify"),
+		hot:            newHotSet(cfg.HotSetMax),
+		wdToKey:        make(map[int]key),
+		keyToWd:        make(map[key]int),
+		shares:         make(map[vfs.ShareID]share),
+		pending:        make(map[key]time.Time),
+		onCoverageLost: cfg.OnCoverageLost,
+		stop:           make(chan struct{}),
 	}
 	w.fullThreshold.Store(int64(cfg.FullThreshold))
 
@@ -135,6 +137,15 @@ func (w *Watcher) AddShare(id vfs.ShareID, hostRoot string, rescan bool) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.shares[id] = share{host: hostRoot, rescan: rescan}
+}
+
+// loseCoverage notifies cache consumers that the sensor cannot establish
+// freshness. The callback is cheap and idempotent at the consumer, so repeated
+// loss signals are allowed after a later registration recovers.
+func (w *Watcher) loseCoverage() {
+	if w.onCoverageLost != nil {
+		w.onCoverageLost()
+	}
 }
 
 // Subscribe pins a directory together with every ancestor, returning only once
@@ -248,6 +259,7 @@ func (w *Watcher) register(k key) {
 	host, ok := w.hostPath(k)
 	if !ok {
 		w.degraded.Add(1)
+		w.loseCoverage()
 		return
 	}
 
@@ -257,10 +269,10 @@ func (w *Watcher) register(k key) {
 	for _, e := range evicted {
 		w.unregister(e)
 	}
-
 	wd, err := w.addWatch(host)
 	if err != nil {
 		w.degraded.Add(1)
+		w.loseCoverage()
 		reason := "the kernel refused a watch registration"
 		if errors.Is(err, unix.ENOSPC) {
 			reason = "the per-user watch limit is reached, which a container cannot raise"
@@ -369,6 +381,7 @@ func (w *Watcher) readLoop() {
 				return
 			default:
 			}
+			w.loseCoverage()
 			slog.Warn("the watch descriptor stopped reading; change detection is now the rescan alone",
 				slog.Any("error", err))
 			return
@@ -415,6 +428,7 @@ func (w *Watcher) consume(buf []byte) {
 			// consumed, leaving the dirty set incomplete and unusable. This
 			// record's watch descriptor is unspecified, so no individual
 			// directory can be marked and full invalidation is the response.
+			w.loseCoverage()
 			w.overflow.Store(true)
 		case mask&(unix.IN_IGNORED|unix.IN_UNMOUNT) != 0:
 			w.forget(wd)
@@ -427,6 +441,7 @@ func (w *Watcher) consume(buf []byte) {
 // escalate turns a parse failure into a whole-share invalidation, which the
 // flush loop performs on its next tick.
 func (w *Watcher) escalate(reason string) {
+	w.loseCoverage()
 	slog.Warn("the inotify stream could not be parsed; invalidating whole shares",
 		slog.String("reason", reason))
 	w.overflow.Store(true)
@@ -447,17 +462,18 @@ func (w *Watcher) markDirty(wd int) {
 }
 
 // forget clears the bookkeeping for a watch the kernel has already released,
-// the outcome of a directory being deleted or unmounted.
 func (w *Watcher) forget(wd int) {
 	w.mu.Lock()
-	defer w.mu.Unlock()
 	k, ok := w.wdToKey[wd]
 	if !ok {
+		w.mu.Unlock()
 		return
 	}
 	delete(w.wdToKey, wd)
 	delete(w.keyToWd, k)
 	w.hot.markUnregistered(k)
+	w.mu.Unlock()
+	w.loseCoverage()
 }
 
 // flushLoop emits directories that have remained dirty across the debounce
@@ -508,6 +524,7 @@ func (w *Watcher) ready() []key {
 }
 
 func (w *Watcher) invalidateEverything(kernelOverflow bool, pendingLen int) {
+	w.loseCoverage()
 	w.mu.Lock()
 	clear(w.pending)
 	ids := make([]vfs.ShareID, 0, len(w.shares))
@@ -540,6 +557,7 @@ func (w *Watcher) emit(ev InvalEvent) {
 	case w.sink <- ev:
 	case <-w.stop:
 	default:
+		w.loseCoverage()
 		w.overflow.Store(true)
 	}
 }

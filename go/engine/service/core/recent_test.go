@@ -138,8 +138,12 @@ func TestScopeKeepsOnlyRowsUnderOneSubtree(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(host, "inner"), 0o755); err != nil {
 		t.Fatalf("building the tree: %v", err)
 	}
+	if err := os.MkdirAll(filepath.Join(host, "inner2"), 0o755); err != nil {
+		t.Fatalf("building the sibling tree: %v", err)
+	}
 	mustCreate(t, c, at(t, root, "top.txt"), "x")
 	mustCreate(t, c, at(t, root, "inner/leaf.txt"), "y")
+	mustCreate(t, c, at(t, root, "inner2/not-in-scope.txt"), "z")
 
 	hits, err := c.Recent(ctx, 1, RecentQuery{Limit: 10, Scope: "Documents/inner"})
 	if err != nil {

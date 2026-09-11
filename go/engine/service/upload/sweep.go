@@ -53,9 +53,14 @@ func (e *Engine) Sweep(ctx context.Context) (SweepReport, error) {
 		return rep, err
 	}
 	for _, sess := range expired {
-		// A session that is publishing is not abandoned: a long assembly must
-		// not be collected halfway through its own publish.
+		id := sessionIDOrZero(sess.ID)
 		if SessionState(sess.State) == StateFinalizing {
+			if e.terminalActive(id) {
+				continue
+			}
+			// A crash can leave this state either side of the publication
+			// rename. Recover it as resumable before any part can be removed.
+			e.recoverFinalizing(ctx, id)
 			continue
 		}
 		if e.collectExpired(ctx, sess) {
@@ -136,6 +141,91 @@ func (e *Engine) touchedDirs(ctx context.Context) (map[shareDir]vfs.SafePath, er
 	return out, nil
 }
 
+// recoverFinalizing resolves a stale publication marker by checking the part
+// while no writer or merger can change it. A present part means publication
+// did not happen and the session can receive again. An absent part means the
+// durable rename already committed, so the row is terminal even if cleanup
+// was interrupted.
+func (e *Engine) recoverFinalizing(ctx context.Context, id SessionID) {
+	barrier, generation, owner, err := e.fenceWriters(ctx, id)
+	if err != nil {
+		return
+	}
+	published := false
+	defer func() {
+		if !published && owner {
+			e.reopenWriters(barrier, generation)
+		}
+		e.finishWriters(id, barrier)
+	}()
+
+	// A cached merger can still be present when recovery runs in the same
+	// process. Stop it before inspecting or reclaiming the part.
+	e.stopMerger(id)
+	unlock := e.lockRow(id)
+	r, err := e.load(ctx, id)
+	if err != nil || SessionState(r.sess.State) != StateFinalizing {
+		unlock()
+		return
+	}
+	part, err := e.partPathOf(r)
+	if err != nil {
+		unlock()
+		e.log.Warn("could not inspect a finalizing upload after restart",
+			"session", id.String(), "error", err)
+		return
+	}
+	share, ok := shareIDOf(r.sess.Share)
+	if !ok {
+		unlock()
+		e.log.Warn("could not inspect a finalizing upload after restart",
+			"session", id.String(), "error", "invalid share id")
+		return
+	}
+	root, ok := e.core.ShareRoot(share)
+	if !ok {
+		unlock()
+		e.log.Warn("could not inspect a finalizing upload after restart",
+			"session", id.String(), "error", "share is unavailable")
+		return
+	}
+	_, statErr := root.Stat(part)
+	if statErr == nil {
+		r.sess.State = int64(StateReceiving)
+		r.sess.ExpiresNs = e.expiry()
+		if err := e.save(ctx, r); err != nil {
+			e.log.Warn("could not recover a finalizing upload after restart",
+				"session", id.String(), "error", err)
+		}
+		unlock()
+		return
+	}
+	if !errors.Is(statErr, vfs.ErrNotFound) {
+		unlock()
+		e.log.Warn("could not inspect a finalizing upload after restart",
+			"session", id.String(), "error", statErr)
+		return
+	}
+
+	// The part's absence is the post-rename crash case. Keep the writer gate
+	// closed while the terminal row and its in-memory bookkeeping are retired.
+	published = true
+	r.sess.State = int64(StateDone)
+	if err := e.save(ctx, r); err != nil {
+		e.log.Warn("an upload was published but its terminal state could not be saved",
+			"session", id.String(), "error", err)
+	}
+	cacheDir := r.sess.CacheDir
+	unlock()
+	e.releaseCache(cacheDir)
+	e.closeHandle(id)
+	e.forgetRow(id)
+	if err := e.state.DeleteUploadSession(ctx, id.Bytes()); err != nil {
+		e.log.Warn("an upload published but its session row survived; the sweep will collect it",
+			"session", id.String(), "error", err)
+	}
+}
+
 // collectExpired deletes an expired session's part file, spool directory and
 // row.
 //
@@ -143,6 +233,34 @@ func (e *Engine) touchedDirs(ctx context.Context) (map[shareDir]vfs.SafePath, er
 // rather than aborting the entire pass. One bad row halting every other share's
 // cleanup is precisely the failure a periodic sweep is meant to withstand.
 func (e *Engine) collectExpired(ctx context.Context, sess state.UploadSession) bool {
+	id := sessionIDOrZero(sess.ID)
+	barrier, generation, owner, err := e.fenceWriters(ctx, id)
+	if err != nil {
+		return false
+	}
+	completed := false
+	defer func() {
+		if !completed && owner {
+			e.reopenWriters(barrier, generation)
+		}
+		e.finishWriters(id, barrier)
+	}()
+	e.stopMerger(id)
+	unlock := e.lockRow(id)
+	fresh, err := e.load(ctx, id)
+	if err != nil {
+		unlock()
+		return false
+	}
+	state := SessionState(fresh.sess.State)
+	if state == StateFinalizing ||
+		(state == StateReceiving && e.clk.Nanos() <= fresh.sess.ExpiresNs) {
+		unlock()
+		return false
+	}
+	sess = fresh.sess
+	unlock()
+
 	share, ok := shareIDOf(sess.Share)
 	if !ok {
 		return false
@@ -173,8 +291,6 @@ func (e *Engine) collectExpired(ctx context.Context, sess state.UploadSession) b
 	// The cache spool is not a share, so no directory walk reaches it. The
 	// session row is the only thing that names this directory, and it is about
 	// to be deleted.
-	id := sessionIDOrZero(sess.ID)
-	e.stopMerger(id)
 	e.releaseCache(sess.CacheDir)
 
 	if derr := e.state.DeleteUploadSession(ctx, sess.ID); derr != nil {
@@ -184,6 +300,7 @@ func (e *Engine) collectExpired(ctx context.Context, sess state.UploadSession) b
 	}
 	e.closeHandle(id)
 	e.forgetRow(id)
+	completed = true
 	return true
 }
 

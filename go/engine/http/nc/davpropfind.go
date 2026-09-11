@@ -78,6 +78,7 @@ func (s *Server) davPropfind(w http.ResponseWriter, r *http.Request, p Principal
 	m.Open()
 
 	selfHref := t.Href(t.Path, self.IsDir)
+	s.recordIDs(ctx, []core.Entry{self})
 	found, missing := s.renderFileEntry(ctx, query, self, res.Perms(), false, favSet, ownerID, ownerName, quota)
 	m.Response(selfHref, found, missing)
 
@@ -107,10 +108,16 @@ func (s *Server) walkChildren(
 		if err != nil {
 			return err
 		}
+		// The members this caller may reach, resolved before anything is
+		// rendered so their ids are recorded in one write and the record is
+		// consulted by the rendering that follows.
+		type member struct {
+			entry core.Entry
+			perms acl.Perms
+		}
+		members := make([]member, 0, len(page.Entries))
+		entries := make([]core.Entry, 0, len(page.Entries))
 		for _, e := range page.Entries {
-			if written >= davDepthOneCeiling {
-				return nil
-			}
 			childPath, jerr := res.Path().JoinExisting(e.Name)
 			if jerr != nil {
 				continue
@@ -122,8 +129,16 @@ func (s *Server) walkChildren(
 				// it exists.
 				continue
 			}
-			href := t.Href(append(t.Path[:len(t.Path):len(t.Path)], e.Name), e.IsDir)
-			found, missing := s.renderFileEntry(ctx, query, e, child.Perms(), false, favSet, ownerID, ownerName, quota)
+			members = append(members, member{entry: e, perms: child.Perms()})
+			entries = append(entries, e)
+		}
+		s.recordIDs(ctx, entries)
+		for _, mem := range members {
+			if written >= davDepthOneCeiling {
+				return nil
+			}
+			href := t.Href(append(t.Path[:len(t.Path):len(t.Path)], mem.entry.Name), mem.entry.IsDir)
+			found, missing := s.renderFileEntry(ctx, query, mem.entry, mem.perms, false, favSet, ownerID, ownerName, quota)
 			m.Response(href, found, missing)
 			written++
 		}

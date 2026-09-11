@@ -65,9 +65,8 @@ const (
 
 // defaultHTTPClient is what Options.Client nil falls back to: connect and
 // handshake timeouts so a wedged endpoint fails instead of hanging a
-// request forever, and a refusal of any redirect to a different host, since
-// a redirect is this package's only way an endpoint could point it
-// somewhere the admin never configured.
+// request forever, and refusal of redirects that this signed S3 client cannot
+// safely follow, since the signature is tied to the configured endpoint.
 func defaultHTTPClient() *http.Client {
 	return &http.Client{
 		CheckRedirect: refuseCrossHostRedirect,
@@ -85,10 +84,17 @@ func refuseCrossHostRedirect(req *http.Request, via []*http.Request) error {
 	if len(via) >= 5 {
 		return errors.New("objstore: too many redirects")
 	}
+	if len(via) == 0 {
+		return errors.New("objstore: refusing a redirect without an origin request")
+	}
+	previous := via[len(via)-1]
+	if previous.URL.Scheme == "https" && req.URL.Scheme == "http" {
+		return fmt.Errorf("objstore: refusing an HTTPS to HTTP redirect to %s", req.URL.Host)
+	}
 	if req.URL.Host != via[0].URL.Host {
 		return fmt.Errorf("objstore: refusing a redirect from %s to a different host %s", via[0].URL.Host, req.URL.Host)
 	}
-	return nil
+	return errors.New("objstore: refusing an unsupported S3 redirect")
 }
 
 // readBounded reads at most limit+1 bytes so a body exactly at the limit is

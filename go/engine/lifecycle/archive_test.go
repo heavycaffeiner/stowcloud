@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -14,6 +15,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 )
 
 // An archive of a subtree reads back through the standard library.
@@ -386,6 +389,23 @@ func TestAnArchiveWithoutANameGetsADefault(t *testing.T) {
 	}
 }
 
+// A non-ASCII archive name uses the shared validated attachment builder for
+// both its ASCII fallback and its UTF-8 form.
+func TestAnArchiveUsesSharedContentDisposition(t *testing.T) {
+	t.Parallel()
+	base, sess, share := contentShare(t, everyPerm(), []byte("x"))
+
+	status, header, _ := fetchArchive(t, base, sess,
+		map[string]any{"paths": []string{"/" + share + "/doc.bin"}, "name": "café"})
+	if status != http.StatusOK {
+		t.Fatalf("answered %d", status)
+	}
+	const want = `attachment; filename="caf_.zip"; filename*=UTF-8''caf%C3%A9.zip`
+	if got := header.Get("Content-Disposition"); got != want {
+		t.Errorf("the disposition is %q, want %q", got, want)
+	}
+}
+
 // The listing reads an existing zip's own directory.
 func TestListingInsideAnArchive(t *testing.T) {
 	t.Parallel()
@@ -583,6 +603,7 @@ func TestAnUnreadableEntryDoesNotLoseTheArchive(t *testing.T) {
 	}
 
 	var readable int
+	var incomplete bool
 	for _, f := range zr.File {
 		if strings.HasSuffix(f.Name, "readable-one.txt") || strings.HasSuffix(f.Name, "readable-two.txt") {
 			readable++
@@ -590,9 +611,118 @@ func TestAnUnreadableEntryDoesNotLoseTheArchive(t *testing.T) {
 		if strings.HasSuffix(f.Name, "locked.txt") {
 			t.Errorf("the archive holds %q, which could not be read", f.Name)
 		}
+		if f.Name == "__stowcloud_incomplete__.txt" {
+			incomplete = true
+		}
 	}
 	if readable != 2 {
 		t.Errorf("the archive holds %d of the 2 readable files", readable)
+	}
+	if !incomplete {
+		t.Error("the omitted entry left no incomplete marker")
+	}
+}
+
+// A public folder archive carries the same incomplete marker when an entry
+// becomes unreadable after the link was minted.
+func TestAPublicArchiveMarksAnUnreadableEntryIncomplete(t *testing.T) {
+	t.Parallel()
+	base, token, host := linkEngineOverFolderAt(t, acl.Read|acl.Download)
+
+	locked := filepath.Join(host, "locked.txt")
+	if err := os.WriteFile(locked, []byte("hidden"), 0o600); err != nil {
+		t.Fatalf("writing the locked file: %v", err)
+	}
+	if err := os.Chmod(locked, 0o000); err != nil {
+		t.Fatalf("locking the file: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chmod(locked, 0o600); err != nil {
+			t.Errorf("unlocking the file: %v", err)
+		}
+	})
+
+	status, _, body := anonymous(t, http.MethodGet, base+"/s/"+token+"/zip", nil)
+	if status != http.StatusOK {
+		t.Fatalf("the public archive answered %d: %s", status, body)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		t.Fatalf("the public archive is unreadable: %v", err)
+	}
+
+	var sawReadable, sawIncomplete bool
+	for _, f := range zr.File {
+		switch f.Name {
+		case "inside.txt":
+			sawReadable = true
+		case "locked.txt":
+			t.Error("the public archive included an unreadable file")
+		case "__stowcloud_incomplete__.txt":
+			sawIncomplete = true
+		}
+	}
+	if !sawReadable {
+		t.Error("the public archive omitted its readable file")
+	}
+	if !sawIncomplete {
+		t.Error("the public archive omitted an unreadable file without an incomplete marker")
+	}
+}
+
+func TestIncompleteMarkerDoesNotCollideWithASelectedFile(t *testing.T) {
+	t.Parallel()
+	const markerName = "__stowcloud_incomplete__.txt"
+	base, sess, share, host := contentShareAt(t, everyPerm(), []byte("root"))
+	const userBody = "user-owned marker name"
+	if status, out := upload(t, base, sess, "/"+share+"/__stowcloud_incomplete__.txt", []byte(userBody)); status != http.StatusOK {
+		t.Fatalf("writing the selected file answered %d: %s", status, out)
+	}
+	if status, out := upload(t, base, sess, "/"+share+"/sub/locked.txt", []byte("hidden")); status != http.StatusOK {
+		t.Fatalf("writing the unreadable file answered %d: %s", status, out)
+	}
+	locked := filepath.Join(host, "sub", "locked.txt")
+	if err := os.Chmod(locked, 0o000); err != nil {
+		t.Fatalf("locking the file: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chmod(locked, 0o600); err != nil {
+			t.Errorf("unlocking the file: %v", err)
+		}
+	})
+
+	status, _, body := fetchArchive(t, base, sess, map[string]any{
+		"paths": []string{
+			"/" + share + "/__stowcloud_incomplete__.txt",
+			"/" + share + "/sub",
+		},
+	})
+	if status != http.StatusOK {
+		t.Fatalf("archiving answered %d: %s", status, body)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		t.Fatalf("the response is not a zip: %v", err)
+	}
+	got := make(map[string]string)
+	for _, member := range zr.File {
+		reader, err := member.Open()
+		if err != nil {
+			t.Fatalf("opening %q: %v", member.Name, err)
+		}
+		content, readErr := io.ReadAll(reader)
+		closeErr := reader.Close()
+		if readErr != nil || closeErr != nil {
+			t.Fatalf("reading %q: %v", member.Name, errors.Join(readErr, closeErr))
+		}
+		got[member.Name] = string(content)
+	}
+	if got[markerName] != userBody {
+		t.Fatalf("the selected marker-named file holds %q", got[markerName])
+	}
+	marker, exists := got["__stowcloud_incomplete__2.txt"]
+	if !exists || !strings.Contains(marker, "archive is incomplete") {
+		t.Fatal("the archive has no distinct incomplete marker")
 	}
 }
 

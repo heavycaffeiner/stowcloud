@@ -194,13 +194,14 @@ func (e *Engine) writeSearchStream(
 		return
 	}
 
-	// Complete by construction: this route sets no limit and takes no
-	// deadline, so the only thing that ends a search early is the reader
-	// leaving, and that path never reaches here.
+	// A complete request has no result limit or deadline, but traversal can
+	// still encounter an unreadable subtree or depth boundary. Surface that
+	// partiality on the terminal event instead of claiming full coverage.
 	writeSSEEvent(w, "done", map[string]any{
 		"count":      count,
 		"tier":       results.Tier.String(),
 		"elapsed_ms": results.Elapsed.Milliseconds(),
+		"truncated":  results.Truncated,
 	}, e)
 
 	if ferr := w.Flush(); ferr != nil {

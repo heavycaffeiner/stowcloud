@@ -200,7 +200,7 @@ func loadSearch(d document, out *Values) {
 	d.intOf("search", "walk_deadline_fast_ms", BoundSearchDeadlineMs(), func(v int64) {
 		out.SearchDeadlineSSD = time.Duration(v) * time.Millisecond
 	})
-	d.intOf("archive", "max_concurrent", BoundArchiveEntries(), func(v int64) {
+	d.intOf("archive", "max_concurrent", BoundArchiveConcurrent(), func(v int64) {
 		out.ArchiveMaxConcurrent = int(v)
 	})
 }

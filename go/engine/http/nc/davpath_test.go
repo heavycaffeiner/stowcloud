@@ -3,6 +3,7 @@
 package nc
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 )
@@ -117,6 +118,28 @@ func TestAnHrefKeepsTheRequestsOwnPrefix(t *testing.T) {
 		if !strings.HasSuffix(target.Href([]string{"docs"}, true), "/") {
 			t.Error("a collection href carries no trailing slash")
 		}
+	}
+}
+
+func TestDestinationAuthorityComparesCompleteIPv6Hosts(t *testing.T) {
+	request := func(destination string) *http.Request {
+		r, err := http.NewRequest("MOVE", "https://[2001:db8::1]/remote.php/dav/files/alice/a", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.Host = "[2001:db8::1]"
+		r.Header.Set("Destination", destination)
+		return r
+	}
+
+	if _, ok := parseDestination(request("https://[2001:db8::1]/remote.php/dav/files/alice/b")); !ok {
+		t.Error("the same IPv6 authority was refused")
+	}
+	if _, ok := parseDestination(request("https://[2001:db8::2]/remote.php/dav/files/alice/b")); ok {
+		t.Error("a different IPv6 authority was treated as local")
+	}
+	if _, ok := parseDestination(request("https://user@[2001:db8::1]/remote.php/dav/files/alice/b")); ok {
+		t.Error("a Destination carrying user information was accepted")
 	}
 }
 

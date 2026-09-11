@@ -352,105 +352,114 @@ func (e *Engine) syncPart(root vfs.Root, id SessionID, part vfs.SafePath) error 
 	return nil
 }
 
-// patchCached is the cached path's half of the write: make room, write the
-// chunk to the spool, then ask the merger to drain it.
+// patchCached stages a validated chunk in the cache. It does not publish the
+// final cache name until the caller has revalidated the session and committed
+// its interval, so a terminal transition cannot leave an uncommitted chunk for
+// the merger to consume.
 func (e *Engine) patchCached(
 	ctx context.Context, root vfs.Root, r *row, id SessionID,
 	part vfs.SafePath, off uint64, body io.Reader, sum *Checksum,
-) (uint64, []byte, error) {
+) (vfs.SafePath, uint64, []byte, error) {
 	m := e.mergerFor(id)
-	// Opening happens here rather than inside the merger, so a failure to open
-	// rejects the chunk instead of surfacing as a warning in a background loop
-	// the client never observes.
 	if _, herr := e.handleFor(root, id, part); herr != nil {
-		return 0, nil, herr
+		return vfs.SafePath{}, 0, nil, herr
 	}
 	if rerr := e.waitForRoom(ctx, m, id, off); rerr != nil {
-		return 0, nil, rerr
+		return vfs.SafePath{}, 0, nil, rerr
 	}
-	n, digest, werr := e.writeCached(r, off, func(f *vfs.File) (uint64, []byte, error) {
-		// Zero within the cache file, offset within the finished file. The
-		// declared length and chunk floor constrain the file being assembled
-		// rather than the staging file the bytes temporarily occupy.
-		return e.writeBodyAt(f, 0, off, body, r, sum)
-	})
-	m.nudge()
-	return n, digest, werr
+	return e.stageCached(r, off, body, sum)
 }
 
-// chunkWriter is the write half of a chunk, so the caller decides how the
-// body is read and this file decides only where it lands.
-type chunkWriter func(*vfs.File) (uint64, []byte, error)
-
-// writeCached stores a chunk in the cache rather than the part file.
-//
-// Writing goes to a staging name, renamed into position once the chunk is
-// complete and durable. This is not housekeeping: the merger runs concurrently
-// and chooses what to copy from the directory listing, so a file bearing its
-// final name before completion is one the merger can partially copy, advance its
-// frontier beyond, and delete from under the writer. The staging name does not
-// parse as a chunk, keeping it invisible to the merger, and renaming within a
-// single directory is atomic.
-func (e *Engine) writeCached(r *row, off uint64, body chunkWriter) (uint64, []byte, error) {
+// stageCached writes a complete, checksum-validated chunk under a staging
+// name. The merger only sees the final offset name after commitCached.
+func (e *Engine) stageCached(
+	r *row, off uint64, body io.Reader, sum *Checksum,
+) (vfs.SafePath, uint64, []byte, error) {
 	dir, err := cacheDirOf(r.sess.CacheDir)
 	if err != nil {
-		return 0, nil, err
+		return vfs.SafePath{}, 0, nil, err
 	}
 	if merr := e.cache.root.Mkdir(dir); merr != nil && !errors.Is(merr, vfs.ErrExists) {
-		return 0, nil, mapVFSErr(merr)
+		return vfs.SafePath{}, 0, nil, mapVFSErr(merr)
 	}
 	stagingName, serr := cacheStagingName()
 	if serr != nil {
-		return 0, nil, serr
+		return vfs.SafePath{}, 0, nil, serr
 	}
 	staging, jerr := dir.JoinControl(stagingName)
 	if jerr != nil {
-		return 0, nil, jerr
+		return vfs.SafePath{}, 0, nil, jerr
 	}
-	file, jerr := dir.JoinControl(cacheChunkName(off))
-	if jerr != nil {
-		return 0, nil, jerr
-	}
-
 	f, cerr := e.cache.root.CreatePart(staging)
 	if cerr != nil {
-		return 0, nil, mapVFSErr(cerr)
+		return vfs.SafePath{}, 0, nil, mapVFSErr(cerr)
 	}
 	done := false
 	defer func() {
-		if closeErr := f.Close(); closeErr != nil {
-			e.log.Warn("closing a cached upload chunk failed", "error", closeErr)
-		}
-		if done {
-			return
-		}
-		// A chunk that failed midway leaves nothing: it never acquired its final
-		// name, so nothing will ever search for it.
-		if uerr := e.cache.root.Unlink(staging); uerr != nil && !errors.Is(uerr, vfs.ErrNotFound) {
-			e.log.Warn("an abandoned cached upload chunk could not be removed", "error", uerr)
+		if !done {
+			if uerr := e.cache.root.Unlink(staging); uerr != nil && !errors.Is(uerr, vfs.ErrNotFound) {
+				e.log.Warn("an abandoned cached upload chunk could not be removed", "error", uerr)
+			}
 		}
 	}()
 
-	n, digest, werr := body(f)
+	// A failure after the descriptor is open releases it before answering;
+	// the staged file itself is removed by the deferred cleanup above.
+	abandon := func(err error) error {
+		if cerr := f.Close(); cerr != nil {
+			e.log.Warn("a staged cached upload chunk was not released", "error", cerr)
+		}
+		return err
+	}
+	n, digest, werr := e.writeBodyAt(f, 0, off, body, r, sum)
 	if werr != nil {
-		return n, digest, werr
+		return staging, n, digest, abandon(werr)
 	}
-	// Made durable in the cache before recording the range, matching the direct
-	// path's ordering: crashing between the two under-reports what arrived and
-	// the client resends it.
+	if derr := verifyChunkChecksum(sum, digest, n); derr != nil {
+		return staging, n, digest, abandon(derr)
+	}
 	if syncErr := f.SyncData(); syncErr != nil {
-		return n, digest, mapVFSErr(syncErr)
+		return staging, n, digest, abandon(mapVFSErr(syncErr))
 	}
-	// Replaced rather than rejected, since a repeated offset indicates a client
-	// retry after a lost response carrying identical bytes.
-	if rerr := e.cache.root.Rename(staging, file, false); rerr != nil {
-		return n, digest, mapVFSErr(rerr)
+	if closeErr := f.Close(); closeErr != nil {
+		return staging, n, digest, mapVFSErr(closeErr)
 	}
 	done = true
-	if size, nerr := num.Narrow[int64](n); nerr == nil {
-		e.cache.used.Add(size)
+	return staging, n, digest, nil
+}
+
+// commitCached atomically exposes a validated chunk to the merger and accounts
+// only the replacement delta. Replacing an equal-sized retry therefore costs
+// no additional cache budget.
+func (e *Engine) commitCached(
+	staging vfs.SafePath, r *row, off, n uint64,
+) error {
+	dir, err := cacheDirOf(r.sess.CacheDir)
+	if err != nil {
+		return err
 	}
-	return n, digest, nil
+	file, err := dir.JoinControl(cacheChunkName(off))
+	if err != nil {
+		return err
+	}
+	var oldSize int64
+	if st, serr := e.cache.root.Stat(file); serr == nil {
+		oldSize, err = num.Narrow[int64](st.Size)
+		if err != nil {
+			return err
+		}
+	} else if !errors.Is(serr, vfs.ErrNotFound) {
+		return mapVFSErr(serr)
+	}
+	newSize, nerr := num.Narrow[int64](n)
+	if nerr != nil {
+		return nerr
+	}
+	if rerr := e.cache.root.Rename(staging, file, false); rerr != nil {
+		return mapVFSErr(rerr)
+	}
+	e.cache.used.Add(newSize - oldSize)
+	return nil
 }
 
 // waitForRoom blocks until the cache can accept another chunk, or reports that

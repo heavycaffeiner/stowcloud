@@ -132,6 +132,10 @@ func NewPool(opt PoolOptions) (*Pool, error) {
 		opt.Args = []string{"preview-worker"}
 	}
 
+	if opt.Env == nil {
+		opt.Env = []string{}
+	}
+
 	p := &Pool{opt: opt, free: make(chan int, opt.Workers)}
 	for i := range opt.Workers {
 		p.slots = append(p.slots, &slot{})

@@ -79,6 +79,10 @@ func (e *Engine) openSearchIndex(ctx context.Context) {
 		// unreadable one does not.
 		return
 	}
+	// Disk state may predate changes made while this process was down. A
+	// persisted index is useful as a cache, but it cannot claim current
+	// coverage until a new traversal proves there was no restart gap.
+	ix.SetIncomplete(true)
 	if opened == svc.OpenAbsent {
 		e.logger.Info("the search index is enabled and empty; build it to use it",
 			"dir", indexDir(e.dataDir))
@@ -222,18 +226,22 @@ func (e *Engine) runIndexBuild(ctx context.Context, id int64, sources []search.S
 
 	now := e.clock.Nanos()
 	if err != nil {
-		// Recorded as failed rather than done. No test reaches it and the
-		// mutation reporting it as done is absorbed: a build fails when a
-		// segment write fails, which takes a disk that is refusing writes, and
-		// the fixture for that costs more than the branch. What it protects is
-		// an operator reading "done" on a build that indexed nothing and
-		// concluding their search is now fast.
+		// Recorded as failed rather than done. A failed build leaves the index
+		// incomplete, so a later query cannot mistake its prefix for coverage.
 		e.logger.Warn("the index build failed", "error", err, "files", progress.Files)
 		if ferr := e.State.FinishOp(ctx, id, state.OpFailed,
 			indexedCount(progress.Files), err.Error(), now, nil); ferr != nil {
 			e.logger.Warn("the index build's failure could not be recorded", "error", ferr)
 		}
 		return
+	}
+
+	// Without live watch coverage, changes after this traversal have no
+	// freshness signal. Keep the index available for diagnostics, but force
+	// queries to use the authoritative walk until coverage is restored.
+	if e.watcher == nil {
+		e.Search.SetIndexIncomplete(true)
+		progress.Partial = true
 	}
 
 	// What this build actually measured replaces the compiled-in guess for

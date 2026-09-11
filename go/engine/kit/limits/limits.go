@@ -73,6 +73,18 @@ const BatchPaths = 1_000
 // response marks it as truncated.
 const ArchiveEntriesListed = 10_000
 
+// ConcurrentArchives bounds simultaneous archive streams and ZIP directory
+// parses. It is independent from the search gate even though both defaults
+// currently have the same value.
+const ConcurrentArchives = 4
+
+// ArchiveEntriesParsed and ArchiveDirectoryBytes reject central directories
+// whose in-memory parse would exceed a fixed process bound.
+const (
+	ArchiveEntriesParsed  = 50_000
+	ArchiveDirectoryBytes = 32 << 20
+)
+
 // ArchivePackedEntries and ArchivePackedBytes bound what one archive request
 // actually walks and copies, as opposed to ArchiveEntriesListed, which
 // bounds only the paths named and nothing about what they contain. An

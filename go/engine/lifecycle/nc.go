@@ -11,7 +11,9 @@ package lifecycle
 
 import (
 	"context"
+	"net"
 	"net/netip"
+	"net/url"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -35,6 +37,12 @@ import (
 // in that client whatever the document says.
 const ncVersion = "31.0.4"
 
+// declarePublicLinkAliases announces the front-controller spelling before the
+// middleware chain, using the same requirement contract as the short spelling.
+func (e *Engine) declarePublicLinkAliases(app *fiber.App) {
+	e.declarePublicLinkPrefix(app, frontController+PublicLinkPrefix)
+}
+
 // mountNCTagged claims the compatibility paths.
 func (e *Engine) mountNCTagged(app *fiber.App) {
 	e.ncServer().Mount(app)
@@ -49,6 +57,13 @@ func (e *Engine) mountNCTagged(app *fiber.App) {
 	app.Get(frontController+PublicLinkPrefix+"/:token/download", e.linkDownload)
 	app.Get(frontController+PublicLinkPrefix+"/:token/zip", e.linkZip)
 	app.Post(frontController+PublicLinkPrefix+"/:token/drop", e.linkDrop)
+}
+
+// contentRoute names the direct stream as the content host's route family.
+// GET and HEAD only: the stream is a fetch, and a mutation on that path is
+// nothing this surface answers.
+func (e *Engine) contentRoute(method, path string) bool {
+	return (method == fiber.MethodGet || method == fiber.MethodHead) && nc.IsDirectPath(path)
 }
 
 // frontController is the prefix the other product's clients prepend when they
@@ -68,6 +83,8 @@ func (e *Engine) ncServer() *nc.Server {
 
 		Features:       e.ncFeatures,
 		Origin:         e.ncOrigin,
+		ContentOrigin:  e.ncContentOrigin,
+		OriginAllowed:  e.originAllowed,
 		ConsentPage:    e.ncLoginConsent,
 		Resolve:        e.ncResolve,
 		VpathOf:        e.ncVpathOf,
@@ -144,26 +161,59 @@ func (e *Engine) ncVpathOf(
 //
 // A forwarded name is honoured only from a trusted peer, because the header
 // is a client's claim about who it reached and this value ends up in a URL a
-// client will send a credential to. An absent host answers the empty string,
-// which leaves the caller to refuse rather than to invent a name.
+// client will send a credential to. An absent host answers the canonical URL
+// the operator declared, or the empty string when none is, which leaves the
+// caller to refuse rather than to invent a name.
 func (e *Engine) ncOrigin(r nc.OriginRequest) string {
-	host := r.Host
+	host, scheme := e.ncRequestAuthority(r)
+	if host == "" {
+		return e.compatCanonicalURL()
+	}
+	return scheme + "://" + host
+}
+
+// ncContentOrigin renders the base URL a direct stream is fetched from.
+//
+// The content host when one is named, on the request's own scheme and port:
+// the host lists carry names alone and the listener decides the port, so a
+// deployment that answers on 8443 answers its content host there too. With no
+// content host the request's own origin serves the stream, as it always has.
+func (e *Engine) ncContentOrigin(r nc.OriginRequest) string {
+	content := e.hosts().Content
+	if len(content) == 0 {
+		return e.ncOrigin(r)
+	}
+	host, scheme := e.ncRequestAuthority(r)
+	if host == "" {
+		canonical, err := url.Parse(e.compatCanonicalURL())
+		if err != nil || canonical.Host == "" {
+			return ""
+		}
+		host, scheme = canonical.Host, canonical.Scheme
+	}
+	name := content[0]
+	if _, port, err := net.SplitHostPort(host); err == nil && port != "" {
+		name = net.JoinHostPort(strings.Trim(name, "[]"), port)
+	}
+	return scheme + "://" + name
+}
+
+// ncRequestAuthority resolves the host and scheme a request arrived on,
+// believing a forwarded pair only from a trusted peer.
+func (e *Engine) ncRequestAuthority(r nc.OriginRequest) (host, scheme string) {
+	host = r.Host
 	trusted := e.ncPeerTrusted(r.PeerAddr)
 	if trusted && r.ForwardedHost != "" && !strings.ContainsAny(r.ForwardedHost, "/\\@") {
 		host = r.ForwardedHost
 	}
-	if host == "" {
-		return ""
-	}
-
-	scheme := "http"
+	scheme = "http"
 	switch {
 	case r.TLS:
 		scheme = "https"
 	case trusted && strings.EqualFold(r.ForwardedProto, "https"):
 		scheme = "https"
 	}
-	return scheme + "://" + host
+	return host, scheme
 }
 
 // ncPeerTrusted reports whether a peer address is one whose forwarding
@@ -294,6 +344,12 @@ func (s ncStore) FileID(ctx context.Context, entry core.Entry) (uint64, error) {
 		return num.Narrow[uint64](recorded)
 	}
 	return num.Narrow[uint64](cache.DeriveID(entry.Ident, 0))
+}
+
+// RecordIDs makes a listing's ids resolvable, which is what a preview or a
+// direct link asked for by id alone needs.
+func (s ncStore) RecordIDs(ctx context.Context, entries []core.Entry) error {
+	return s.e.Core.RecordFileIDs(ctx, entries)
 }
 
 // Favorites reads the caller's starred set once for a whole request.

@@ -113,7 +113,7 @@ func (e *Engine) DavHandler(h *dav.Handler) http.Handler {
 			return
 		}
 
-		user, ok := davUser(r)
+		principal, ok := davPrincipal(r)
 		if !ok {
 			// A WebDAV client does not send a credential until it is asked,
 			// and this is what asks. Without the challenge the client reports
@@ -123,6 +123,7 @@ func (e *Engine) DavHandler(h *dav.Handler) http.Handler {
 			apierr.WriteClassified(w, apierr.Classified{Class: apierr.AuthRequired})
 			return
 		}
+		user := core.UserID(principal.UserID)
 
 		r = r.WithContext(context.WithValue(r.Context(), keyDavPath, path))
 
@@ -133,7 +134,7 @@ func (e *Engine) DavHandler(h *dav.Handler) http.Handler {
 		// after a sign-in that succeeded.
 		if davIsRoot(path) {
 			if r.Method == "PROPFIND" {
-				baseProps, children := e.davRootProps(r.Context(), user)
+				baseProps, children := e.davRootProps(r.Context(), principal)
 				h.RootPropfind(w, r, baseProps, children)
 				return
 			}
@@ -200,18 +201,18 @@ func (e *Engine) davRefused(r *http.Request, path string, err error) {
 		"method", r.Method, "path", path, "subsystem", "dav", "error", err)
 }
 
-// davUser reads the caller the chain authenticated.
+// davPrincipal reads the caller the chain authenticated.
 //
 // The key is the plain string form, which is what the chain stores the
 // principal under: the value crosses the framework boundary into the request
 // context, whose lookup compares keys as interfaces, and the constant's
 // defined type would not match the string the chain wrote.
-func davUser(r *http.Request) (core.UserID, bool) {
+func davPrincipal(r *http.Request) (middleware.Principal, bool) {
 	p, ok := r.Context().Value(middleware.KeyCredential).(middleware.Principal)
 	if !ok || p.UserID == 0 {
-		return 0, false
+		return middleware.Principal{}, false
 	}
-	return core.UserID(p.UserID), true
+	return p, true
 }
 
 // davIsRoot reports whether a path names the virtual root.
@@ -303,11 +304,15 @@ func (e *Engine) davDestination(user core.UserID, r *http.Request) (dav.Target, 
 	}, nil
 }
 
-// davRootProps lists the caller's shares as the virtual root's children.
-func (e *Engine) davRootProps(ctx context.Context, user core.UserID) ([]dav.Prop, []dav.RootChild) {
-	roots := e.Core.Roots(user)
+// davRootProps lists the caller's visible shares as the virtual root's
+// children.
+func (e *Engine) davRootProps(ctx context.Context, p middleware.Principal) ([]dav.Prop, []dav.RootChild) {
+	roots := e.Core.Roots(core.UserID(p.UserID))
 	children := make([]dav.RootChild, 0, len(roots))
 	for _, rt := range roots {
+		if !davRootVisible(p, rt) {
+			continue
+		}
 		children = append(children, dav.RootChild{
 			Label: rt.Label,
 			Props: []dav.Prop{
@@ -316,4 +321,24 @@ func (e *Engine) davRootProps(ctx context.Context, user core.UserID) ([]dav.Prop
 		})
 	}
 	return nil, children
+}
+
+// davRootVisible applies the same credential narrowing used for a concrete
+// path before a root label is disclosed.
+func davRootVisible(p middleware.Principal, rt acl.RootEntry) bool {
+	if !rt.Perms.Has(acl.Read) {
+		return false
+	}
+	if !p.Mask.IsEmpty() && !p.Mask.Has(acl.Read) {
+		return false
+	}
+	if len(p.Shares) == 0 {
+		return true
+	}
+	for _, label := range p.Shares {
+		if label == rt.Label {
+			return true
+		}
+	}
+	return false
 }

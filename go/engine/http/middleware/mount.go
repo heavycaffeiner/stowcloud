@@ -81,6 +81,11 @@ type Deps struct {
 	// refused. Nil logs nothing, which is what a test with no sink wired
 	// does.
 	Access AccessSink
+
+	// ContentRoute names the route family the content host serves. Nil means
+	// no route is one, so a named content host answers nothing: a build with
+	// no direct stream has nothing to isolate there.
+	ContentRoute func(method, path string) bool
 }
 
 // Record is one entry in a replay: which step ran, and whether it passed the
@@ -408,12 +413,15 @@ func originOf(c *fiber.Ctx) Origin {
 // boundaryHandler admits or refuses, and records which origin admitted it.
 func boundaryHandler(c *fiber.Ctx, d Deps) error {
 	dec := Decide(d.Hosts(), BoundaryRequest{
-		Host:       string(c.Request().Host()),
-		Origin:     c.Get(fiber.HeaderOrigin),
-		Method:     c.Method(),
-		Client:     ClientOf(c),
-		CookieAuth: c.Cookies(SessionCookieName) != "",
-		WebSocket:  isUpgrade(c),
+		Host:         string(c.Request().Host()),
+		Scheme:       requestScheme(c, d),
+		Origin:       c.Get(fiber.HeaderOrigin),
+		Method:       c.Method(),
+		Client:       ClientOf(c),
+		CookieAuth:   c.Cookies(SessionCookieName) != "",
+		BrowserAuth:  isBrowserAuthPath(c.Method(), c.Path()),
+		WebSocket:    isUpgrade(c),
+		ContentRoute: d.ContentRoute != nil && d.ContentRoute(c.Method(), c.Path()),
 	})
 	if !dec.Admitted {
 		// 421 asks the connection to close, which is what stops a client from
@@ -427,6 +435,21 @@ func boundaryHandler(c *fiber.Ctx, d Deps) error {
 	}
 	c.Locals(string(KeyOrigin), dec.Origin)
 	return c.Next()
+}
+
+// requestScheme follows the scheme contract used by the engine: transport TLS
+// is authoritative, and X-Forwarded-Proto is believed only from a trusted
+// transport peer and only for the forwarded https value.
+func requestScheme(c *fiber.Ctx, d Deps) string {
+	if c.Context().IsTLS() {
+		return "https"
+	}
+	peer, err := netip.ParseAddr(c.Context().RemoteIP().String())
+	if err == nil && PeerTrusted(peer, d.Trusted()) &&
+		strings.EqualFold(strings.TrimSpace(c.Get(fiber.HeaderXForwardedProto)), "https") {
+		return "https"
+	}
+	return "http"
 }
 
 func resolveClient(c *fiber.Ctx, d Deps) netip.Addr {

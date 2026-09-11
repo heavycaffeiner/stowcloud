@@ -159,11 +159,13 @@ func (e *Engine) session(r *row) (Session, error) {
 	return out, nil
 }
 
-// effectiveState computes expiry from the clock instead of a stored flag, so a
-// session expires without requiring a writer to observe it.
+// effectiveState computes expiry from the clock instead of a stored flag. A
+// finalizing session is protected by the terminal transition barrier and must
+// remain visible as finalizing until publication or a recoverable failure
+// restores receiving.
 func (e *Engine) effectiveState(r *row) SessionState {
 	st := SessionState(r.sess.State)
-	if st.live() && e.clk.Nanos() > r.sess.ExpiresNs {
+	if st == StateReceiving && e.clk.Nanos() > r.sess.ExpiresNs {
 		return StateExpired
 	}
 	return st

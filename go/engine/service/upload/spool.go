@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
@@ -61,82 +60,196 @@ func (e *Engine) PatchAt(
 		unlock()
 		return 0, verr
 	}
+	lease, admitted := e.admitWriter(id)
+	if !admitted {
+		unlock()
+		return 0, ErrSessionState
+	}
 
 	part, err := e.partPathOf(r)
 	if err != nil {
+		lease.release()
 		unlock()
 		return 0, err
 	}
 	cached := r.cached() && e.cache != nil
-	var f *vfs.File
-	if !cached {
-		if f, err = e.handleFor(root, id, part); err != nil {
-			unlock()
-			return 0, err
-		}
-	}
 	unlock()
+	defer lease.release()
 
-	// Writing and hashing happen in a single pass. Nothing buffers the whole
-	// chunk, so a per-chunk checksum costs a hasher rather than a copy.
+	// Every body is staged and validated before it can touch an accepted
+	// range. This is what makes a rejected replacement observationally
 	var (
-		n      uint64
-		digest []byte
-		werr   error
+		stage vfs.SafePath
+		n     uint64
+		werr  error
 	)
 	if cached {
-		n, digest, werr = e.patchCached(ctx, root, r, id, part, off, body, sum)
+		stage, n, _, werr = e.patchCached(ctx, root, r, id, part, off, body, sum)
 	} else {
-		n, digest, werr = e.writeBody(f, off, body, r, sum)
+		stage, n, _, werr = e.stageBody(
+			root, part.Parent(), off, body, r, sum,
+		)
 	}
 	if werr != nil {
-		// A cancellation closes the part file while chunks of the same session
-		// are still writing, and this is what those writes hit. The session is
-		// gone on purpose, so it is reported as gone: answering with a server
-		// fault made clients read a deliberate cancellation as one and retry.
-		if errors.Is(werr, os.ErrClosed) {
-			return 0, ErrNotFound
-		}
 		return 0, werr
 	}
+	cleanup := func() {
+		if stage.IsRoot() {
+			return
+		}
+		cacheRoot := root
+		if cached {
+			cacheRoot = e.cache.root
+		}
+		if uerr := cacheRoot.Unlink(stage); uerr != nil && !errors.Is(uerr, vfs.ErrNotFound) {
+			e.log.Warn("an upload staging file could not be removed", "error", uerr)
+		}
+	}
+	defer cleanup()
 
-	// Checksum verification precedes recording the range. A failing chunk leaves
-	// the set unchanged, so the client resends that same range instead of
-	// resuming beyond a gap it believes is filled. The bytes already on disk are
-	// simply overwritten by the resend.
-	if sum != nil && digest != nil && !constantTimeEqual(digest, sum.Digest) {
-		return 0, fmt.Errorf("%w: the %s digest does not match the %d bytes received",
-			ErrChecksum, sum.Algo, n)
+	if !lease.valid() {
+		return 0, ErrSessionState
 	}
 
-	// Reacquired to record what arrived. The row is re-read while holding the
-	// lock instead of reusing the earlier copy, because another chunk of this
-	// same file has very likely committed its own range meanwhile, and writing
-	// back a stale set would discard it.
+	// The row is re-read only after the body has been validated. The barrier
+	// makes this state check meaningful: a finalizer may not turn the session
+	// terminal while this writer still owns its admission slot.
 	relock := e.lockRow(id)
 	defer relock()
-
 	fresh, err := e.load(ctx, id)
 	if err != nil {
 		return 0, err
 	}
+	if !lease.valid() {
+		return 0, ErrSessionState
+	}
+	if serr := e.requireReceiving(fresh); serr != nil {
+		return 0, serr
+	}
+	var nextSet *IntervalSet
 	if n > 0 {
-		if ierr := fresh.set.Insert(off, off+n); ierr != nil {
+		nextSet, err = LoadIntervalSet(fresh.set.Runs())
+		if err != nil {
+			return 0, err
+		}
+		if ierr := nextSet.Insert(off, off+n); ierr != nil {
 			return 0, ierr
 		}
+	} else {
+		nextSet = fresh.set
 	}
+	if n > 0 {
+		if cached {
+			if cerr := e.commitCached(stage, fresh, off, n); cerr != nil {
+				return 0, cerr
+			}
+		} else if cerr := e.commitStagedAt(root, id, part, stage, off, n); cerr != nil {
+			return 0, cerr
+		}
+	}
+	fresh.set = nextSet
 	if cerr := e.commitRange(ctx, fresh); cerr != nil {
 		return 0, cerr
+	}
+	if cached {
+		e.mergerFor(id).nudge()
 	}
 	return fresh.set.ContiguousPrefix(), nil
 }
 
-// writeBody streams body into f at off, hashing as it goes when the client
-// supplied a checksum.
-func (e *Engine) writeBody(
-	f *vfs.File, off uint64, body io.Reader, r *row, sum *Checksum,
-) (uint64, []byte, error) {
-	return e.writeBodyAt(f, off, off, body, r, sum)
+// stageBody writes one validated body to a control file in the destination
+// directory. The file is never given a discoverable final name until the
+// checksum and all stream bounds have passed.
+func (e *Engine) stageBody(
+	root vfs.Root, dir vfs.SafePath, logical uint64, body io.Reader,
+	r *row, sum *Checksum,
+) (vfs.SafePath, uint64, []byte, error) {
+	name, err := cacheStagingName()
+	if err != nil {
+		return vfs.SafePath{}, 0, nil, err
+	}
+	stage, err := dir.JoinControl(name)
+	if err != nil {
+		return vfs.SafePath{}, 0, nil, err
+	}
+	f, err := root.CreatePart(stage)
+	if err != nil {
+		return vfs.SafePath{}, 0, nil, mapVFSErr(err)
+	}
+	closed := false
+	done := false
+	defer func() {
+		if !closed {
+			if cerr := f.Close(); cerr != nil {
+				e.log.Warn("closing an upload staging file failed", "error", cerr)
+			}
+		}
+		if done {
+			return
+		}
+		if uerr := root.Unlink(stage); uerr != nil && !errors.Is(uerr, vfs.ErrNotFound) {
+			e.log.Warn("an upload staging file could not be removed", "error", uerr)
+		}
+	}()
+
+	n, digest, werr := e.writeBodyAt(f, 0, logical, body, r, sum)
+	if werr != nil {
+		return stage, n, digest, werr
+	}
+	if derr := verifyChunkChecksum(sum, digest, n); derr != nil {
+		return stage, n, digest, derr
+	}
+	if serr := f.SyncData(); serr != nil {
+		return stage, n, digest, mapVFSErr(serr)
+	}
+	if cerr := f.Close(); cerr != nil {
+		return stage, n, digest, mapVFSErr(cerr)
+	}
+	closed = true
+	done = true
+	return stage, n, digest, nil
+}
+
+// commitStagedAt copies a validated chunk onto the part file and makes that
+// replacement durable before the interval transaction records it.
+func (e *Engine) commitStagedAt(
+	root vfs.Root, id SessionID, part, stage vfs.SafePath, off, n uint64,
+) error {
+	src, err := root.OpenRead(stage, vfs.IntentRead)
+	if err != nil {
+		return mapVFSErr(err)
+	}
+	defer func() {
+		if cerr := src.Close(); cerr != nil {
+			e.log.Warn("closing an upload staging source failed", "error", cerr)
+		}
+	}()
+	dst, err := e.handleFor(root, id, part)
+	if err != nil {
+		return err
+	}
+	copied, err := vfs.CopyRange(src, 0, dst, off, n)
+	if err != nil {
+		return mapVFSErr(err)
+	}
+	if copied != n {
+		return fmt.Errorf("staging copy moved %d of %d bytes", copied, n)
+	}
+	if err := dst.SyncData(); err != nil {
+		return mapVFSErr(err)
+	}
+	if err := root.Unlink(stage); err != nil && !errors.Is(err, vfs.ErrNotFound) {
+		e.log.Warn("an upload staging file could not be removed", "error", err)
+	}
+	return nil
+}
+
+func verifyChunkChecksum(sum *Checksum, digest []byte, n uint64) error {
+	if sum == nil || digest == nil || constantTimeEqual(digest, sum.Digest) {
+		return nil
+	}
+	return fmt.Errorf("%w: the %s digest does not match the %d bytes received",
+		ErrChecksum, sum.Algo, n)
 }
 
 // writeBodyAt is writeBody with its two offsets kept apart: the position the

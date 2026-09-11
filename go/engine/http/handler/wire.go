@@ -1,13 +1,9 @@
 // Linux only, because it serves a Linux-only engine.
 //go:build linux
 
-// Package handler holds the wire discipline every route family shares: the
-// PATCH tri-state, bounded parsing of untrusted request values, the two
-// filename encodings of Content-Disposition, and the return-path check.
-//
-// These live together because they are the rules that must be the same
-// everywhere. A second spelling of any of them is how one endpoint ends up
-// accepting what the others refuse.
+// Package handler holds the wire discipline shared by route families,
+// including PATCH tri-state values, bounded request parsing, and return-path
+// validation.
 package handler
 
 import (
@@ -108,58 +104,4 @@ func SafeReturnTo(raw string) (string, error) {
 		}
 	}
 	return raw, nil
-}
-
-// ContentDisposition builds the header for a download, in both forms.
-//
-// The quoted form is the fallback every client understands, sanitised so no
-// byte can end the quoted string or the header. The RFC 5987 form carries the
-// real UTF-8 name for clients that read it.
-func ContentDisposition(filename string) string {
-	fallback := sanitizeFilename(filename)
-	if fallback == "" {
-		fallback = "download"
-	}
-	return fmt.Sprintf(`attachment; filename="%s"; filename*=UTF-8''%s`,
-		fallback, percentEncode(filename))
-}
-
-// sanitizeFilename strips everything that could escape the quoted form or the
-// header itself: CR, LF, the quote, the backslash, and any control byte.
-func sanitizeFilename(name string) string {
-	out := make([]byte, 0, len(name))
-	for _, r := range name {
-		switch {
-		case r == '"' || r == '\\' || r == '\r' || r == '\n':
-			out = append(out, '_')
-		case r < 0x20 || r == 0x7f:
-			out = append(out, '_')
-		case r > 0x7e:
-			// Outside ASCII the fallback cannot represent it, and the RFC 5987
-			// form carries the real name.
-			out = append(out, '_')
-		default:
-			out = append(out, byte(r))
-		}
-	}
-	return string(out)
-}
-
-// percentEncode writes the RFC 5987 attr-char set, escaping everything else.
-func percentEncode(s string) string {
-	const unreserved = "!#$&+-.^_`|~"
-	const hex = "0123456789ABCDEF"
-
-	out := make([]byte, 0, len(s))
-	for _, c := range []byte(s) {
-		switch {
-		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
-			out = append(out, c)
-		case strings.IndexByte(unreserved, c) >= 0:
-			out = append(out, c)
-		default:
-			out = append(out, '%', hex[c>>4], hex[c&0x0f])
-		}
-	}
-	return string(out)
 }

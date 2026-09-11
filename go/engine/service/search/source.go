@@ -13,8 +13,12 @@ import (
 type Source struct {
 	Share uint32
 	Root  vfs.Root
-	// Base gives the starting point within the share.
+	// Base gives the starting point within the share for a live walk.
 	Base vfs.SafePath
+	// IndexBase is the source-relative coordinate system used by stored index
+	// paths. A scoped walk may move Base below it, but indexed rows always
+	// remain relative to this original root.
+	IndexBase vfs.SafePath
 	// Prefix is prepended to any reported path, so a hit identifies what the
 	// caller asked about instead of a share-relative fragment.
 	Prefix string
@@ -22,10 +26,10 @@ type Source struct {
 	// entry is scored, so a query matching many invisible entries cannot take
 	// measurably longer than one that matches nothing.
 	//
-	// Nil admits everything, the administrator-scoped form. The walker skips the
-	// call entirely rather than treating nil as a call returning true, so the
-	// administrator path bears no per-entry closure cost. A non-nil closure is
-	// invoked from several goroutines simultaneously and must handle that
+	// Nil admits everything, the administrator-scoped form. The walker skips
+	// the call entirely rather than treating nil as a call returning true, so
+	// the administrator path bears no per-entry closure cost. A non-nil closure
+	// is invoked from several goroutines simultaneously and must handle that
 	// itself.
 	Allow func(p vfs.SafePath, isDir bool) bool
 }
@@ -43,10 +47,11 @@ type Source struct {
 // core.
 func sourceOf(s core.ScanSource) Source {
 	return Source{
-		Share: uint32(s.Share),
-		Root:  s.Root,
-		Base:  s.Base,
-		Allow: s.Allow,
+		Share:     uint32(s.Share),
+		Root:      s.Root,
+		Base:      s.Base,
+		IndexBase: s.Base,
+		Allow:     s.Allow,
 	}
 }
 

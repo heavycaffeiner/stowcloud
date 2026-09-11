@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"io"
 	"sort"
 	"strings"
@@ -26,9 +27,9 @@ import (
 // exhausted" would disclose the target's history to anyone holding a stale
 // token.
 //
-// A link's permissions cover its entire subtree. No per-entry ACL check occurs
-// beneath a link, because a link constitutes one grant: the token holder gets
-// exactly what the link was issued with and nothing further.
+// A link's permissions cover its issued root, while descendants are narrowed
+// by the originating owner's current ACL. A bearer therefore cannot use an
+// old link to read a child the owner can no longer read.
 
 // linkLive is the expiry and cap half of the rule, which every surface runs
 // before it touches the filesystem.
@@ -103,6 +104,27 @@ func linkResolvedAt(link Link, root vfs.Root, p vfs.SafePath, perms acl.Perms) R
 	return Resolved{user: link.Owner, share: link.Share, root: root, path: p, perms: perms}
 }
 
+// linkChildResolved applies the link's requested operation and the owner's
+// current descendant ACL. A creator-side denial is intentionally hidden as a
+// missing public child, while a link lacking its own operation remains a
+// direct denial just as it was at issuance.
+func (c *Core) linkChildResolved(
+	link Link, root vfs.Root, base, target vfs.SafePath, need acl.Perms,
+) (Resolved, error) {
+	if !link.Perms.Has(need) {
+		return Resolved{}, ErrDenied
+	}
+	parent := linkResolvedAt(link, root, base, link.Perms)
+	child, err := c.ResolveUnder(parent, target, need)
+	if err != nil {
+		if errors.Is(err, ErrDenied) {
+			return Resolved{}, ErrNotFound
+		}
+		return Resolved{}, err
+	}
+	return child, nil
+}
+
 // LinkPublic resolves a token for a bearer, enforcing every liveness rule.
 func (c *Core) LinkPublic(ctx context.Context, token string) (Link, Entry, error) {
 	link, ok, err := c.resolveLink(ctx, token)
@@ -139,9 +161,6 @@ func (c *Core) LinkStream(ctx context.Context, link Link, range_ *[2]uint64) (Fi
 	return c.OpenStream(ctx, linkResolvedAt(link, root, base, link.Perms), range_)
 }
 
-// LinkStreamAt opens one file beneath a folder link, or the link's own file
-// when sub is empty.
-//
 // A missing or directory subpath is ErrNotFound rather than a dead link: the
 // subpath layer is a listing namespace, and a missing entry inside a live
 // link is an ordinary miss.
@@ -155,14 +174,22 @@ func (c *Core) LinkStreamAt(
 	if err != nil {
 		return FidEntry{}, nil, err
 	}
-	if _, _, berr := c.linkBase(link); berr != nil {
+	_, base, berr := c.linkBase(link)
+	if berr != nil {
 		return FidEntry{}, nil, berr
 	}
 	st, serr := root.Stat(target)
 	if serr != nil || st.Kind.IsDir() {
 		return FidEntry{}, nil, ErrNotFound
 	}
-	return c.OpenStream(ctx, linkResolvedAt(link, root, target, link.Perms), range_)
+	r := linkResolvedAt(link, root, target, link.Perms)
+	if !target.Equal(base) {
+		r, err = c.linkChildResolved(link, root, base, target, acl.Download)
+		if err != nil {
+			return FidEntry{}, nil, err
+		}
+	}
+	return c.OpenStream(ctx, r, range_)
 }
 
 // LinkCheckPassword tests a candidate against a link's stored hash.
@@ -218,6 +245,11 @@ func (c *Core) LinkBrowse(ctx context.Context, link Link, sub string) (LinkListi
 	if err != nil {
 		return LinkListing{}, err
 	}
+	if !target.Equal(base) {
+		if _, rerr := c.linkChildResolved(link, root, base, target, acl.Read); rerr != nil {
+			return LinkListing{}, rerr
+		}
+	}
 
 	st, serr := root.Stat(target)
 	if serr != nil {
@@ -245,16 +277,23 @@ func (c *Core) LinkBrowse(ctx context.Context, link Link, sub string) (LinkListi
 	}
 	out.Entries = make([]LinkEntry, 0, len(all))
 	for _, e := range all {
+		p, jerr := target.JoinExisting(e.Name)
+		if jerr != nil {
+			continue
+		}
+		if _, aerr := c.linkChildResolved(link, root, base, p, acl.Read); aerr != nil {
+			// A creator-side denial is indistinguishable from a missing
+			// public child. A link without Read simply has no browse rows.
+			continue
+		}
 		row := LinkEntry{Name: e.Name, IsDir: e.Kind.IsDir()}
 		// Obtaining the size costs one stat per entry, justified for a listing
 		// behind a public token: the page displays it, and reporting every file
 		// as zero bytes would be incorrect rather than merely incomplete.
 		// Entries whose stat fails retain the readdir kind and a zero size.
-		if p, jerr := target.JoinExisting(e.Name); jerr == nil {
-			if es, eerr := root.Stat(p); eerr == nil {
-				row.Size = es.Size
-				row.IsDir = es.Kind.IsDir()
-			}
+		if es, eerr := root.Stat(p); eerr == nil {
+			row.Size = es.Size
+			row.IsDir = es.Kind.IsDir()
 		}
 		out.Entries = append(out.Entries, row)
 	}
@@ -281,7 +320,16 @@ func (c *Core) LinkResolved(link Link, sub string) (Resolved, error) {
 	if err != nil {
 		return Resolved{}, err
 	}
-	return linkResolvedAt(link, root, target, link.Perms), nil
+	_, base, err := c.linkBase(link)
+	if err != nil {
+		return Resolved{}, err
+	}
+	if target.Equal(base) {
+		return linkResolvedAt(link, root, target, link.Perms), nil
+	}
+	// Need zero so the full current descendant ACL is intersected into the
+	// returned capability. Consumers still Require the operation they need.
+	return c.linkChildResolved(link, root, base, target, 0)
 }
 
 // LinkArchiveWalk traverses a shared folder for the zip endpoint.
@@ -300,12 +348,29 @@ func (c *Core) LinkArchiveWalk(
 	if err != nil {
 		return err
 	}
+	_, base, err := c.linkBase(link)
+	if err != nil {
+		return err
+	}
 	st, serr := root.Stat(target)
 	if serr != nil {
 		return ErrNotFound
 	}
 
+	if st.Kind.IsDir() && !link.Perms.Has(acl.Read) {
+		return ErrDenied
+	}
 	r := linkResolvedAt(link, root, target, link.Perms)
+	if !target.Equal(base) {
+		need := acl.Download
+		if st.Kind.IsDir() {
+			need = acl.Read
+		}
+		r, err = c.linkChildResolved(link, root, base, target, need)
+		if err != nil {
+			return err
+		}
+	}
 	if !st.Kind.IsDir() {
 		entry, stream, oerr := c.OpenStream(ctx, r, nil)
 		if oerr != nil {
@@ -324,32 +389,59 @@ func (c *Core) LinkArchiveWalk(
 func (c *Core) linkWalkRec(
 	ctx context.Context, r Resolved, rel string, visit func(WalkEntry, *Stream) error,
 ) error {
+
+	if rel != "" {
+		// Re-evaluate a descendant directory before reading it. The link's
+		// issued root remains flat, while every child authority is current.
+		current, err := c.ResolveUnder(r, r.path, acl.Read)
+		if err != nil {
+			return reportUnreadableArchiveEntry(visit, rel, true)
+		}
+		r = current
+	}
 	entries, err := r.root.ReadDir(r.path, vfs.HideReserved)
 	if err != nil {
 		// Disappeared or became unreadable between the parent's check and this
-		// step. Its contents are omitted rather than failing the entire
-		// archive.
-		return nil
+		// step. Report the row so the archive carries its incomplete marker.
+		return reportUnreadableArchiveEntry(visit, rel, true)
+	}
+	if rel != "" {
+		if verr := visit(WalkEntry{RelPath: rel, IsDir: true, Readable: true}, nil); verr != nil {
+			return verr
+		}
 	}
 	for _, e := range entries {
-		childPath, jerr := r.path.JoinExisting(e.Name)
-		if jerr != nil {
-			continue
-		}
 		childRel := e.Name
 		if rel != "" {
 			childRel = rel + "/" + e.Name
 		}
-		st, serr := r.root.Stat(childPath)
-		if serr != nil {
-			continue
-		}
-		child := Resolved{share: r.share, root: r.root, path: childPath, perms: r.perms}
-
-		if st.Kind.IsDir() {
-			if verr := visit(WalkEntry{RelPath: childRel, IsDir: true, Readable: true}, nil); verr != nil {
+		childPath, jerr := r.path.JoinExisting(e.Name)
+		if jerr != nil {
+			if verr := reportUnreadableArchiveEntry(visit, childRel, e.Kind.IsDir()); verr != nil {
 				return verr
 			}
+			continue
+		}
+		st, serr := r.root.Stat(childPath)
+		if serr != nil {
+			if verr := reportUnreadableArchiveEntry(visit, childRel, e.Kind.IsDir()); verr != nil {
+				return verr
+			}
+			continue
+		}
+		need := acl.Download
+		if st.Kind.IsDir() {
+			need = acl.Read
+		}
+		child, aerr := c.ResolveUnder(r, childPath, need)
+		if aerr != nil {
+			if verr := reportUnreadableArchiveEntry(visit, childRel, st.Kind.IsDir()); verr != nil {
+				return verr
+			}
+			continue
+		}
+
+		if st.Kind.IsDir() {
 			if rerr := c.linkWalkRec(ctx, child, childRel, visit); rerr != nil {
 				return rerr
 			}
@@ -360,7 +452,7 @@ func (c *Core) linkWalkRec(
 		if oerr != nil {
 			// A file that will not open is visited as unreadable rather than
 			// failing the archive around it.
-			if verr := visit(WalkEntry{RelPath: childRel, Readable: false}, nil); verr != nil {
+			if verr := reportUnreadableArchiveEntry(visit, childRel, false); verr != nil {
 				return verr
 			}
 			continue
@@ -431,17 +523,23 @@ func (c *Core) LinkDrop(ctx context.Context, link Link, name string, body []byte
 
 	// NoClobber, so the no-overwrite decision is enforced by the filesystem
 	// open rather than only by the check above it: a race with a concurrent
-	// upload cannot clobber.
+	// upload cannot clobber. Quota is reserved while WriteDurable is still
+	// staging, before the new bytes become visible.
 	opts := vfs.DurableOpts{Mode: root.Policy().ModeFile, NoClobber: true}
-	if _, werr := root.WriteDurable(dest, opts, func(f *vfs.File) error {
+	r := linkResolvedAt(link, root, dest, link.Perms)
+	done, _, werr := c.writeDurableQuota(ctx, r, opts, nil, func(f *vfs.File) error {
 		_, cerr := f.WriteAt(body, 0)
 		return cerr
-	}); werr != nil {
+	})
+	if werr != nil {
 		return Entry{}, mapVFSErr(werr)
+	}
+	if done.OwnerRestore != nil {
+		c.warn("the dropped file's ownership could not be restored",
+			"path", dest.String(), "error", done.OwnerRestore)
 	}
 
 	c.markDirty(ctx, link.Share, dest)
-	r := linkResolvedAt(link, root, dest, link.Perms)
 	entry := c.buildEntry(r, dest.Name(), dest)
 	entry.Perms = link.Perms
 	return entry, nil

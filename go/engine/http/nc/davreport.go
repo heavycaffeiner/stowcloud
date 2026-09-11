@@ -347,9 +347,6 @@ func (s *Server) searchByName(
 				continue
 			}
 			out = append(out, searchHit{res: res, entry: entry, vpath: h.Path})
-			if !complete && len(out) >= limit {
-				break
-			}
 		}
 		return out, nil
 	}
@@ -395,8 +392,13 @@ func (s *Server) searchSourcesUnder(ctx context.Context, p Principal, scopeVpath
 		// share root, so the prefix that turns it back into a vpath is still
 		// the share's own label: narrowing it too spelled every hit as
 		// "/Files/reports/reports/file", which resolves to nothing.
+		// Preserve the index's coordinate system while narrowing the live
+		// root. Indexed paths stay relative to the share root; only the walk
+		// starting point changes for this request.
+		src.IndexBase = src.Base
 		src.Base = res.Path()
 		return []search.Source{src}, true
+
 	}
 	return nil, false
 }

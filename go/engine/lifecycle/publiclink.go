@@ -29,9 +29,9 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/archive"
-	"github.com/heavycaffeiner/stowcloud/go/engine/http/handler"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/route"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/httpheader"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/limits"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
@@ -41,8 +41,9 @@ import (
 // PublicLinkPrefix is where the public link surface is mounted.
 const PublicLinkPrefix = "/s"
 
-// errArchiveBounded stops the walk once a zip has reached its ceiling. Not a
-// failure: the archive closes carrying what it packed.
+// errArchiveBounded stops the walk once the content ceiling is reached. The
+// caller writes an explicit marker before closing the archive, then returns
+// this sentinel so the committed stream is also recorded as incomplete.
 var errArchiveBounded = errors.New("archive bounds reached")
 
 // mountPublicLinks binds the five routes a link's holder reaches.
@@ -68,17 +69,22 @@ func (e *Engine) mountPublicLinks(app *fiber.App) {
 // a mutating request and refuses the unlock and the drop for every signed-in
 // browser, including the owner testing their own link.
 //
-// One app.Use rather than a registration per path, for the reason Announce
-// gives: app.Use matches without making the path "found", so an address
-// nothing serves still answers 404 rather than reaching a handler with
-// nothing after it. It matches the prefix, so the body class is chosen here
-// rather than by registration order.
+// A pass-through app.Use per spelling rather than a registration per path, for
+// the reason Announce gives: app.Use matches without making the path "found",
+// so an address nothing serves still answers 404 rather than reaching a
+// handler with nothing after it. It matches the prefix, so the body class is
+// chosen here rather than by registration order.
 func (e *Engine) declarePublicLinks(app *fiber.App) {
-	app.Use(PublicLinkPrefix+"/:token", func(c *fiber.Ctx) error {
+	e.declarePublicLinkPrefix(app, PublicLinkPrefix)
+	e.declarePublicLinkAliases(app)
+}
+
+// declarePublicLinkPrefix attaches one public-link spelling's requirement
+// metadata before the middleware chain, including its mutation body class.
+func (e *Engine) declarePublicLinkPrefix(app *fiber.App, prefix string) {
+	app.Use(prefix+"/:token", func(c *fiber.Ctx) error {
 		body := route.BodyNone
 		if c.Method() == fiber.MethodPost {
-			// The two mutating routes, and the only two that carry a body:
-			// the password answer is JSON, the drop upload is bytes.
 			switch {
 			case strings.HasSuffix(c.Path(), "/auth"):
 				body = route.BodyJSON
@@ -122,6 +128,19 @@ func linkPasswordRefusal() apierr.Classified {
 // cover both would make answering one password enough to open the other.
 func linkCookie(id int64) string {
 	return "sc_link_" + strconv.FormatInt(id, 10)
+}
+
+// publicLinkCookiePath scopes an unlock proof to the spelling that accepted
+// it. The compatibility front-controller alias has a different browser path
+// from the canonical route, so sharing one cookie path would make one flow
+// unusable while broadening it to the whole site would leak proof elsewhere.
+func publicLinkCookiePath(c *fiber.Ctx, token string) string {
+	const aliasPrefix = "/index.php" + PublicLinkPrefix
+	prefix := PublicLinkPrefix
+	if strings.HasPrefix(c.Path(), aliasPrefix+"/") {
+		prefix = aliasPrefix
+	}
+	return prefix + "/" + token
 }
 
 // linkUnlocked verifies the HMAC unlock ticket against the stored password hash.
@@ -246,7 +265,7 @@ func (e *Engine) linkLanding(c *fiber.Ctx) error {
 		return e.serveFrontendDocument(c)
 	}
 
-	link, _, err := e.Core.LinkPublic(c.UserContext(), c.Params("token"))
+	link, root, err := e.Core.LinkPublic(c.UserContext(), c.Params("token"))
 	if err != nil {
 		return fail(c, err)
 	}
@@ -258,9 +277,24 @@ func (e *Engine) linkLanding(c *fiber.Ctx) error {
 		return writeJSON(c, fiber.StatusOK, fiber.Map{"protected": true})
 	}
 
-	listing, lerr := e.Core.LinkBrowse(c.UserContext(), link, c.Query("path"))
-	if lerr != nil {
-		return fail(c, lerr)
+	sub := strings.Trim(c.Query("path"), "/")
+	var listing core.LinkListing
+	if sub != "" && !link.Perms.Has(acl.Read) {
+		// A create-only link has no authority to inspect descendants. Refuse
+		// before LinkBrowse can stat a guessed path, and use the same not-found
+		// answer for existing and absent descendants.
+		return fail(c, core.ErrNotFound)
+	}
+	if sub == "" && !link.Perms.Has(acl.Read) {
+		listing = core.LinkListing{
+			Path: "", IsDir: root.IsDir, Name: root.Name, Size: root.Size,
+		}
+	} else {
+		var lerr error
+		listing, lerr = e.Core.LinkBrowse(c.UserContext(), link, sub)
+		if lerr != nil {
+			return fail(c, lerr)
+		}
 	}
 
 	out := fiber.Map{
@@ -360,7 +394,7 @@ func (e *Engine) linkUnlock(c *fiber.Ctx) error {
 		Name:  linkCookie(link.ID),
 		Value: ticket,
 		// Scoped to this link, so unlocking one sends the proof nowhere else.
-		Path:     PublicLinkPrefix + "/" + c.Params("token"),
+		Path:     publicLinkCookiePath(c, c.Params("token")),
 		HTTPOnly: true,
 		Secure:   true,
 		SameSite: "Lax",
@@ -402,7 +436,7 @@ func (e *Engine) linkDownload(c *fiber.Ctx) error {
 
 	c.Set(fiber.HeaderContentType, fiber.MIMEOctetStream)
 	c.Set(fiber.HeaderContentLength, strconv.FormatInt(length, 10))
-	c.Set(fiber.HeaderContentDisposition, handler.ContentDisposition(entry.Name))
+	c.Set(fiber.HeaderContentDisposition, httpheader.Attachment(entry.Name))
 	c.Status(fiber.StatusOK)
 	c.Context().SetBodyStream(&loggedStream{
 		inner:  stream,
@@ -428,6 +462,9 @@ func (e *Engine) linkZip(c *fiber.Ctx) error {
 	}
 
 	sub := c.Query("path")
+	if strings.Trim(sub, "/") != "" && !link.Perms.Has(acl.Read) {
+		return fail(c, core.ErrNotFound)
+	}
 	listing, lerr := e.Core.LinkBrowse(c.UserContext(), link, sub)
 	if lerr != nil {
 		return fail(c, lerr)
@@ -435,12 +472,17 @@ func (e *Engine) linkZip(c *fiber.Ctx) error {
 	if !listing.IsDir {
 		return refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "fs.link_not_a_folder"})
 	}
+	release, ok := e.tryAcquireArchive()
+	if !ok {
+		return refuse(c, archiveBusy())
+	}
 	if nerr := e.Core.NoteLinkDownload(c.UserContext(), link); nerr != nil {
+		release()
 		return fail(c, nerr)
 	}
 
 	c.Set(fiber.HeaderContentType, "application/zip")
-	c.Set(fiber.HeaderContentDisposition, handler.ContentDisposition(listing.Name+".zip"))
+	c.Set(fiber.HeaderContentDisposition, httpheader.Attachment(listing.Name+".zip"))
 	// No length: a zip's size is not known until it is built, and a wrong one
 	// is worse than none.
 	c.Status(fiber.StatusOK)
@@ -451,6 +493,7 @@ func (e *Engine) linkZip(c *fiber.Ctx) error {
 	ctx := context.WithoutCancel(c.UserContext())
 	name := listing.Name
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+		defer release()
 		e.writeLinkArchive(ctx, w, link, sub, name)
 	})
 	return nil
@@ -458,42 +501,24 @@ func (e *Engine) linkZip(c *fiber.Ctx) error {
 
 // writeLinkArchive builds a link's zip into a committed response.
 //
-// Bounded by the same ceilings the authenticated archive uses: a link is
-// reachable by anyone holding the address, so an unbounded walk is work a
-// stranger can ask for with one request.
+// Bounded by the same ceilings as authenticated archive downloads: a link is
+// reachable by anyone holding the address, and a visible marker records when
+// a walk cannot include every requested entry.
 func (e *Engine) writeLinkArchive(
 	ctx context.Context, w *bufio.Writer, link core.Link, sub, name string,
 ) {
 	z := archive.NewWriter(w)
-
-	var entries int64
-	var packed uint64
-	werr := e.Core.LinkArchiveWalk(ctx, link, sub,
+	builder := archiveBuilder{z: z}
+	walkErr := e.Core.LinkArchiveWalk(ctx, link, sub,
 		func(entry core.WalkEntry, stream *core.Stream) error {
-			if entries >= limits.ArchivePackedEntries || packed >= limits.ArchivePackedBytes {
-				return errArchiveBounded
-			}
-			entries++
-			switch {
-			case entry.IsDir:
-				// A zip has no directory concept beyond a zero-length member
-				// whose name ends in a slash. Without one an empty directory
-				// disappears on extraction.
-				return z.AddDir(entry.RelPath, time.Unix(0, entry.MTimeNs))
-			case !entry.Readable:
-				// Skipped rather than fatal: one unreadable file must not lose
-				// the rest of the archive.
-				return nil
-			default:
-				if aerr := z.AddFile(entry.RelPath, stream, time.Unix(0, entry.MTimeNs)); aerr != nil {
-					return aerr
-				}
-				packed += entry.Size
-				return nil
-			}
+			return builder.add(entry, stream)
 		})
-	if werr != nil && !errors.Is(werr, errArchiveBounded) {
-		e.logger.Warn("a link archive ended early", "name", name, "error", werr)
+	if walkErr != nil {
+		builder.incomplete = true
+		e.logger.Warn("a link archive ended early", "name", name, "error", walkErr)
+	}
+	if merr := builder.addMarker(); merr != nil {
+		e.logger.Warn("adding the incomplete archive marker failed", "name", name, "error", merr)
 	}
 
 	// Closed regardless, because a zip without its central directory is not a

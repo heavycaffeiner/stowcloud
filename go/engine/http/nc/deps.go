@@ -38,6 +38,12 @@ type Store interface {
 	// identity for a file that may be gone by the time the client acts on it.
 	FileID(ctx context.Context, e core.Entry) (uint64, error)
 
+	// RecordIDs makes the ids a response is about to hand out resolvable by
+	// LocateFile later. The explicit allocation FileID refuses to do
+	// implicitly: called with the entries a listing or a write actually
+	// reports, so a client that names one of them by id alone is answered.
+	RecordIDs(ctx context.Context, entries []core.Entry) error
+
 	// Favorites reads the caller's starred set once, for a request that asks
 	// about many entries.
 	Favorites(ctx context.Context, user core.UserID) (FavoriteSet, error)
@@ -135,6 +141,13 @@ type Deps struct {
 	// Origin renders the base URL a request arrived on, without a trailing
 	// slash. Every absolute URL this surface hands a client is built from it.
 	Origin func(OriginRequest) string
+	// ContentOrigin renders the base URL a direct stream is fetched from:
+	// the content host when the deployment names one, the request's own
+	// origin otherwise. Nil falls back to Origin.
+	ContentOrigin func(OriginRequest) string
+	// OriginAllowed reports whether a request Origin may read an OCS response
+	// across origins. Nil allows none, which answers no CORS headers at all.
+	OriginAllowed func(origin string) bool
 	// ConsentPage answers the page a person approves a device login on.
 	//
 	// A whole handler rather than a document: the page carries a script nonce,

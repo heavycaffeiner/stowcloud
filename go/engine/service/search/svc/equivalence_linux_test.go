@@ -191,34 +191,18 @@ func TestBothTiersFindTheFilesThatExist(t *testing.T) {
 	}
 }
 
-// The first divergence, pinned. The index searches the whole stored path, so a
-// query naming a folder returns its contents; the walk tests the entry's own
-// name, so it returns the folder.
-//
-// Changing either side is a product decision the family document sets out. This
-// fails when one is changed without the other, which is the point.
-func TestTheIndexMatchesThePathAndTheWalkMatchesTheName(t *testing.T) {
+// Both tiers match the entry name, so enabling the index does not change what
+// a filename query returns for files nested below a similarly named folder.
+func TestBothTiersMatchEntryNames(t *testing.T) {
 	s, src, _ := built(t)
 
 	indexed, walked := bothTiers(t, s, []search.Source{src}, "holiday")
-
-	// The index returns the folder and the files beneath it, because every
-	// one of their stored paths contains the needle.
-	wantIndexed := []string{
-		"photos/holiday",
-		"photos/holiday/beach-2.jpg",
-		"photos/holiday/beach.jpg",
-		"photos/holiday/sunset.jpg",
+	want := []string{"photos/holiday"}
+	if got := hitPaths(indexed.Hits); !slices.Equal(got, want) {
+		t.Errorf("the index matched %v, want %v", got, want)
 	}
-	slices.Sort(wantIndexed)
-	if got := hitPaths(indexed.Hits); !slices.Equal(got, wantIndexed) {
-		t.Errorf("the index matched %v, want the files under the folder %v", got, wantIndexed)
-	}
-
-	// The walk returns the folder itself and nothing under it, because only its
-	// own name contains the needle.
-	if got := hitPaths(walked.Hits); !slices.Equal(got, []string{"photos/holiday"}) {
-		t.Errorf("the walk matched %v, want just the folder", got)
+	if got := hitPaths(walked.Hits); !slices.Equal(got, want) {
+		t.Errorf("the walk matched %v, want %v", got, want)
 	}
 }
 

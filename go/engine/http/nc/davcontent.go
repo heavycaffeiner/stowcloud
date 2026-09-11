@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/apierr"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/httpheader"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
@@ -98,10 +99,16 @@ func (s *Server) davGet(w http.ResponseWriter, r *http.Request, p Principal, t T
 	}()
 
 	s.setEntryHeaders(ctx, w, entry)
-	w.Header().Set("Content-Type", ContentTypeOf(false, entry.Name))
-	// setEntryHeaders wrote the whole file's size; a ranged answer's body is
-	// shorter than that, and Content-Length has to match what actually
-	// follows.
+	contentType := ContentTypeOf(false, entry.Name)
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if httpheader.IsExecutableMIME(contentType) {
+		w.Header().Set("Content-Disposition", httpheader.Attachment(entry.Name))
+	} else {
+		w.Header().Set("Content-Security-Policy", httpheader.SafeInlineCSP)
+	}
+	// setEntryHeaders wrote the whole file size. A ranged response must replace
+	// it with the number of bytes that follow.
 	w.Header().Set("Content-Length", strconv.FormatUint(stream.Remaining(), 10))
 	w.Header().Set("Accept-Ranges", "bytes")
 
@@ -342,11 +349,15 @@ func parseDestination(r *http.Request) (Target, bool) {
 		return Target{}, false
 	}
 	u, err := url.Parse(raw)
-	if err != nil {
+	if err != nil || u.User != nil {
 		return Target{}, false
 	}
-	if u.Host != "" && !strings.EqualFold(hostWithoutPort(u.Host), hostWithoutPort(r.Host)) {
-		return Target{}, false
+	if u.Host != "" {
+		destinationHost := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
+		requestHost := authorityHostname(r.Host)
+		if destinationHost == "" || requestHost == "" || destinationHost != requestHost {
+			return Target{}, false
+		}
 	}
 	dest, ok := ParseTarget(collapseSlashes(u.EscapedPath()))
 	if !ok || dest.Kind != KindFiles {
@@ -355,13 +366,14 @@ func parseDestination(r *http.Request) (Target, bool) {
 	return dest, true
 }
 
-// hostWithoutPort strips a trailing ":port" for the host comparison a
-// Destination header's authority is checked against.
-func hostWithoutPort(h string) string {
-	if i := strings.LastIndexByte(h, ':'); i >= 0 {
-		return h[:i]
+// authorityHostname parses a request authority without confusing an IPv6
+// address colon with a port separator.
+func authorityHostname(authority string) string {
+	u, err := url.Parse("//" + strings.TrimSpace(authority))
+	if err != nil || u.User != nil || u.Hostname() == "" {
+		return ""
 	}
-	return h
+	return strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
 }
 
 // davTransfer answers MOVE and COPY.

@@ -235,5 +235,5 @@ func (c *Core) CleanupHome(ctx context.Context, user UserID) error {
 		return err
 	}
 	home := Resolved{user: user, share: homeShareID, root: root, path: subpath, perms: homePerms}
-	return c.deleteRecursive(ctx, home)
+	return c.deleteRecursive(ctx, home, acl.Delete)
 }

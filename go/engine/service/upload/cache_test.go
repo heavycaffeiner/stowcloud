@@ -105,6 +105,26 @@ func TestACachedUploadPublishesWhatWasSent(t *testing.T) {
 	}
 }
 
+// Replacing an unmerged cached chunk accounts only the size delta.
+func TestCachedReplacementDoesNotInflateUsage(t *testing.T) {
+	t.Parallel()
+	f := cached(t)
+	const chunk = limits.UploadChunkFloor
+	s := f.create(t, "cached-retry.bin", uint64(chunk*2),
+		SessionSpec{RandomAccess: true})
+	f.engine.setCacheBoundsForTest(1<<62, 1<<62)
+	body := chunkOf(uint64(chunk), chunk)
+	f.patch(t, s.ID, uint64(chunk), body)
+	first := f.engine.cacheUsedForTest()
+	if first != int64(len(body)) {
+		t.Fatalf("the first cached chunk accounts for %d bytes, want %d", first, len(body))
+	}
+	f.patch(t, s.ID, uint64(chunk), body)
+	if got := f.engine.cacheUsedForTest(); got != first {
+		t.Fatalf("an equal-sized cached retry changed usage from %d to %d", first, got)
+	}
+}
+
 // The budget refuses a chunk that cannot fit and would not unblock the merge,
 // and the refusal carries how long to wait, because what it waits for is a
 // disk write already under way.

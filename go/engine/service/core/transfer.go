@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
@@ -29,6 +30,48 @@ const (
 	// ConflictSkip leaves the destination alone and reports done.
 	ConflictSkip
 )
+
+// PartialTransferError reports a transfer whose destination state could not
+// be restored automatically. Backup names are server-owned paths retained for
+// recovery and must not be discarded by a generic cleanup pass.
+type PartialTransferError struct {
+	Destination vfs.SafePath
+	Backup      vfs.SafePath
+	Cause       error
+	Rollback    error
+}
+
+func (e *PartialTransferError) Error() string {
+	return fmt.Sprintf(
+		"transfer destination %q requires recovery from backup %q; cause: %v; rollback: %v",
+		e.Destination.String(), e.Backup.String(), e.Cause, e.Rollback,
+	)
+}
+
+func (e *PartialTransferError) Unwrap() []error {
+	out := make([]error, 0, 2)
+	if e.Cause != nil {
+		out = append(out, e.Cause)
+	}
+	if e.Rollback != nil {
+		out = append(out, e.Rollback)
+	}
+	return out
+}
+
+func restoreTransferBackup(
+	root vfs.Root, dest, backup vfs.SafePath, cause error,
+) error {
+	if restoreErr := root.Rename(backup, dest, true); restoreErr != nil {
+		return &PartialTransferError{
+			Destination: dest,
+			Backup:      backup,
+			Cause:       cause,
+			Rollback:    mapVFSErr(restoreErr),
+		}
+	}
+	return cause
+}
 
 // ParseOnConflict maps a wire spelling to its policy.
 //
@@ -127,18 +170,38 @@ func (c *Core) Move(ctx context.Context, from, to Resolved, opt MoveOpts) (MoveR
 		return MoveResult{Created: dest.path, Skipped: true}, nil
 	}
 	to = dest
+	if err := RefuseSelfDescendant(from, to); err != nil {
+		return MoveResult{}, err
+	}
+
+	if overwriting {
+		dstSt, serr := to.root.Stat(to.path)
+		if serr != nil {
+			return MoveResult{}, mapVFSErr(serr)
+		}
+		if dstSt.Kind.IsDir() {
+			if err := c.validateDeleteTree(to, acl.Delete); err != nil {
+				return MoveResult{}, err
+			}
+		}
+	}
 
 	res := MoveResult{Created: to.path}
 	if crossesDevice(from, to, srcSt.Dev) {
 		res.WillCopy = true
-		// A nil gate: a move answers inline, so there is no job row for
-		// anybody to mark cancelled.
-		if cerr := c.copyRecursive(ctx, from, to, srcSt, nil); cerr != nil {
+		if srcSt.Kind.IsDir() {
+			// A cross-device directory move removes the source under Move,
+			// so every descendant must be authorized before staging starts.
+			if err := c.validateDeleteTree(from, acl.Move); err != nil {
+				return MoveResult{}, err
+			}
+		}
+		// Move already authorizes removing the source. Requiring Delete here
+		// would make the same operation depend on the storage-device boundary.
+		if cerr := c.copyTreeStaged(ctx, from, to, srcSt, acl.Read, nil, overwriting); cerr != nil {
 			return MoveResult{}, cerr
 		}
-		// Crediting off: the bytes were charged at the destination copy, and
-		// crediting here would count the move as a shrink.
-		if derr := c.deleteResolved(ctx, from, srcSt, false); derr != nil {
+		if derr := c.deleteResolved(ctx, from, srcSt, true, acl.Move); derr != nil {
 			// The partial completion is reported, never dropped: the caller
 			// is told a duplicate exists.
 			return MoveResult{}, errf(ErrCrossShare, "the copy completed but removing the source failed")
@@ -147,7 +210,15 @@ func (c *Core) Move(ctx context.Context, from, to Resolved, opt MoveOpts) (MoveR
 		// The no-replace flag is on unless an existing entry is being
 		// replaced, so a race that fills the name between the check and the
 		// rename is a refusal rather than a clobber.
-		if rerr := to.root.Rename(from.path, to.path, !overwriting); rerr != nil {
+		if overwriting {
+			removedBytes, rerr := c.replaceRename(to.root, from.path, to.path)
+			if rerr != nil {
+				return MoveResult{}, rerr
+			}
+			if removedBytes > 0 {
+				c.chargeQuota(ctx, to.user, int64Minus(removedBytes))
+			}
+		} else if rerr := to.root.Rename(from.path, to.path, true); rerr != nil {
 			return MoveResult{}, mapVFSErr(rerr)
 		}
 		res.Moved = true
@@ -156,9 +227,6 @@ func (c *Core) Move(ctx context.Context, from, to Resolved, opt MoveOpts) (MoveR
 	// Both ends: the entry left one listing and joined another.
 	c.markDirty(ctx, from.share, from.path)
 	c.markDirty(ctx, to.share, to.path)
-	// One move row against the source, even on the copy leg, where copyFile
-	// has already recorded its own copy rows per file. That split is the
-	// existing observable behavior.
 	c.record(ctx, from, journal.OpMove)
 	return res, nil
 }
@@ -201,19 +269,9 @@ func (c *Core) applyConflict(
 		if perr := precondition(ifMatch, dstSt); perr != nil {
 			return Resolved{}, false, false, perr
 		}
-		if dstSt.Kind.IsDir() {
-			// An overwrite replaces the destination, and a rename cannot do
-			// that to a directory holding anything: the kernel answers
-			// ENOTEMPTY, which used to surface as a conflict on every
-			// collection move onto an existing collection. A copy has the
-			// same rule for a different reason, since copying into an
-			// existing directory merges the two and a member only the
-			// destination had would survive a replace. Crediting is off
-			// because the transfer accounts its own bytes.
-			if derr := c.deleteResolved(ctx, to, dstSt, false); derr != nil {
-				return Resolved{}, false, false, derr
-			}
-		}
+		// Conflict selection is a read-only decision. In particular, never
+		// delete an existing directory here: validation and the staged
+		// publisher must retain it until a complete replacement is ready.
 		return to, true, false, nil
 	default:
 		// ConflictFail, and anything a caller invented. Refusing an unknown
@@ -235,6 +293,660 @@ func (c *Core) WouldCopy(from, to Resolved) bool {
 		return false
 	}
 	return crossesDevice(from, to, st.Dev)
+}
+
+func transferContextErr(ctx context.Context) error {
+	if ctx == nil {
+		return nil
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		return nil
+	}
+}
+
+// validateDeleteTree performs the authority walk needed before replacing a
+// destination or removing a cross-device source. It does not mutate anything.
+func (c *Core) validateDeleteTree(r Resolved, authority acl.Perms) error {
+	current, err := c.ResolveUnder(r, r.path, authority)
+	if err != nil {
+		return err
+	}
+	st, err := current.root.Stat(current.path)
+	if err != nil {
+		return mapVFSErr(err)
+	}
+	if !st.Kind.IsDir() {
+		return nil
+	}
+	entries, err := current.root.ReadDir(current.path, vfs.HideReserved)
+	if err != nil {
+		return mapVFSErr(err)
+	}
+	for _, e := range entries {
+		child, jerr := current.path.JoinExisting(e.Name)
+		if jerr != nil {
+			continue
+		}
+		if _, serr := current.root.Stat(child); serr != nil {
+			if errors.Is(mapVFSErr(serr), ErrNotFound) {
+				continue
+			}
+			return mapVFSErr(serr)
+		}
+		childResolved, derr := c.ResolveUnder(current, child, authority)
+		if derr != nil {
+			return derr
+		}
+		if derr := c.validateDeleteTree(childResolved, authority); derr != nil {
+			return derr
+		}
+	}
+	return nil
+}
+
+// validateCopyTree checks every source descendant and every destination name
+// before a copy starts. The destination walk is against the final path, not a
+// temporary staging path, so a grant cannot be bypassed by copying into a
+// control sibling and renaming later.
+func (c *Core) validateCopyTree(
+	ctx context.Context,
+	from, to Resolved,
+	srcSt vfs.Stat,
+	sourceFileNeed acl.Perms,
+	overwriting bool,
+) (uint64, error) {
+	if err := transferContextErr(ctx); err != nil {
+		return 0, err
+	}
+	sourceNeed := sourceFileNeed
+	if srcSt.Kind.IsDir() {
+		sourceNeed = acl.Read
+	}
+	sourceRoot, err := c.ResolveUnder(from, from.path, sourceNeed)
+	if err != nil {
+		return 0, err
+	}
+	destinationRoot, err := c.ResolveUnder(to, to.path, acl.Write|acl.Create)
+	if err != nil {
+		return 0, err
+	}
+	taken, err := pathExists(destinationRoot.root, destinationRoot.path)
+	if err != nil {
+		return 0, err
+	}
+	if taken {
+		if !overwriting {
+			return 0, ErrExists
+		}
+		dstSt, serr := destinationRoot.root.Stat(destinationRoot.path)
+		if serr != nil {
+			return 0, mapVFSErr(serr)
+		}
+		if dstSt.Kind.IsDir() {
+			if err := c.validateDeleteTree(destinationRoot, acl.Delete); err != nil {
+				return 0, err
+			}
+		}
+	}
+	return c.validateCopyNode(
+		ctx, sourceRoot, destinationRoot, srcSt, sourceFileNeed,
+	)
+}
+
+func (c *Core) validateCopyNode(
+	ctx context.Context,
+	source, destination Resolved,
+	st vfs.Stat,
+	sourceFileNeed acl.Perms,
+) (uint64, error) {
+	if err := transferContextErr(ctx); err != nil {
+		return 0, err
+	}
+	if !st.Kind.IsDir() {
+		if err := source.Require(sourceFileNeed); err != nil {
+			return 0, err
+		}
+		if err := destination.Require(acl.Write | acl.Create); err != nil {
+			return 0, err
+		}
+		return st.Size, nil
+	}
+	if err := source.Require(acl.Read); err != nil {
+		return 0, err
+	}
+	if err := destination.Require(acl.Write | acl.Create); err != nil {
+		return 0, err
+	}
+	entries, err := source.root.ReadDir(source.path, vfs.HideReserved)
+	if err != nil {
+		return 0, mapVFSErr(err)
+	}
+	var total uint64
+	for _, e := range entries {
+		if err := transferContextErr(ctx); err != nil {
+			return 0, err
+		}
+		srcChild, jerr := source.path.JoinExisting(e.Name)
+		if jerr != nil {
+			continue
+		}
+		childSt, serr := source.root.Stat(srcChild)
+		if serr != nil {
+			if errors.Is(mapVFSErr(serr), ErrNotFound) {
+				continue
+			}
+			return 0, mapVFSErr(serr)
+		}
+		dstChild, jerr := destination.path.JoinExisting(e.Name)
+		if jerr != nil {
+			continue
+		}
+		need := sourceFileNeed
+		destinationNeed := acl.Write | acl.Create
+		if childSt.Kind.IsDir() {
+			need = acl.Read
+			destinationNeed = acl.Create
+		}
+		srcResolved, serr := c.ResolveUnder(source, srcChild, need)
+		if serr != nil {
+			return 0, serr
+		}
+		dstResolved, derr := c.ResolveUnder(destination, dstChild, destinationNeed)
+		if derr != nil {
+			return 0, derr
+		}
+		size, nerr := c.validateCopyNode(
+			ctx, srcResolved, dstResolved, childSt, sourceFileNeed,
+		)
+		if nerr != nil {
+			return 0, nerr
+		}
+		if ^uint64(0)-total < size {
+			total = ^uint64(0)
+		} else {
+			total += size
+		}
+	}
+	return total, nil
+}
+
+// copyTreeStaged writes an entire copy into a hidden sibling, then publishes
+// that completed tree in one rename sequence. Existing destination content is
+// moved to a backup only after the staged tree and the second authority walk
+// have succeeded.
+func (c *Core) copyTreeStaged(
+	ctx context.Context,
+	from, to Resolved,
+	srcSt vfs.Stat,
+	sourceFileNeed acl.Perms,
+	cancelled func() bool,
+	overwriting bool,
+) error {
+	if err := transferContextErr(ctx); err != nil {
+		return err
+	}
+	if cancelled != nil && cancelled() {
+		return errOpCancelled
+	}
+	srcBytes, err := c.validateCopyTree(ctx, from, to, srcSt, sourceFileNeed, overwriting)
+	if err != nil {
+		return err
+	}
+
+	oldBytes := uint64(0)
+	taken, err := pathExists(to.root, to.path)
+	if err != nil {
+		return err
+	}
+	if taken {
+		if !overwriting {
+			return ErrExists
+		}
+		oldBytes, err = treeBytes(to.root, to.path, vfs.HideReserved)
+		if err != nil {
+			return err
+		}
+	}
+	delta := deltaOf(srcBytes, oldBytes)
+	var hold quotaReservation
+	if delta > 0 {
+		hold, err = c.reserveQuota(ctx, to.user, uint64(delta))
+		if err != nil {
+			return err
+		}
+	}
+
+	stage, err := c.newControlSibling(to.root, to.path.Parent(), ".scmeta-copy-")
+	if err != nil {
+		c.releaseQuota(ctx, to.user, &hold)
+		return err
+	}
+	cleanupStage := func() {
+		if cerr := removeTree(to.root, stage, vfs.IncludeReserved); cerr != nil &&
+			!errors.Is(cerr, ErrNotFound) {
+			c.warn("cleaning a failed transfer stage failed",
+				"path", stage.String(), "error", cerr)
+		}
+	}
+
+	sourceRoot, err := c.ResolveUnder(from, from.path, func() acl.Perms {
+		if srcSt.Kind.IsDir() {
+			return acl.Read
+		}
+		return sourceFileNeed
+	}())
+	if err != nil {
+		c.releaseQuota(ctx, to.user, &hold)
+		return err
+	}
+	destinationRoot, err := c.ResolveUnder(to, to.path, acl.Write|acl.Create)
+	if err != nil {
+		c.releaseQuota(ctx, to.user, &hold)
+		return err
+	}
+	stageRoot := Resolved{
+		user: to.user, share: to.share, root: to.root, path: stage, perms: to.perms,
+	}
+	if srcSt.Kind.IsDir() {
+		if merr := to.root.Mkdir(stage); merr != nil {
+			c.releaseQuota(ctx, to.user, &hold)
+			return mapVFSErr(merr)
+		}
+	} else if cerr := c.copyFileRaw(ctx, sourceRoot, stageRoot); cerr != nil {
+		cleanupStage()
+		c.releaseQuota(ctx, to.user, &hold)
+		return cerr
+	}
+	if srcSt.Kind.IsDir() {
+		if serr := c.copyIntoStage(
+			ctx, sourceRoot, destinationRoot, stageRoot, srcSt, sourceFileNeed, cancelled,
+		); serr != nil {
+			cleanupStage()
+			c.releaseQuota(ctx, to.user, &hold)
+			return serr
+		}
+	}
+
+	stagedBytes, err := treeBytes(to.root, stage, vfs.HideReserved)
+	if err != nil {
+		cleanupStage()
+		c.releaseQuota(ctx, to.user, &hold)
+		return err
+	}
+	if _, verr := c.validateCopyTree(ctx, from, to, srcSt, sourceFileNeed, overwriting); verr != nil {
+		cleanupStage()
+		c.releaseQuota(ctx, to.user, &hold)
+		return verr
+	}
+
+	removedBytes, err := c.publishStage(
+		to.root, stage, to.path, overwriting,
+		func(currentOld uint64) error {
+			finalDelta := deltaOf(stagedBytes, currentOld)
+			targetHold := uint64(0)
+			if finalDelta > 0 {
+				targetHold = uint64(finalDelta)
+			}
+			return c.resizeQuota(ctx, to.user, &hold, targetHold)
+		},
+	)
+	if err != nil {
+		cleanupStage()
+		c.releaseQuota(ctx, to.user, &hold)
+		return err
+	}
+	c.settleQuota(ctx, to.user, deltaOf(stagedBytes, removedBytes), &hold)
+	c.markDirty(ctx, to.share, to.path)
+	c.record(ctx, to, journal.OpCopy)
+	return nil
+}
+
+func (c *Core) copyIntoStage(
+	ctx context.Context,
+	source, destination, stage Resolved,
+	st vfs.Stat,
+	sourceFileNeed acl.Perms,
+	cancelled func() bool,
+) error {
+	if err := transferContextErr(ctx); err != nil {
+		return err
+	}
+	if cancelled != nil && cancelled() {
+		return errOpCancelled
+	}
+	if !st.Kind.IsDir() {
+		return c.copyFileRaw(ctx, source, stage)
+	}
+	entries, err := source.root.ReadDir(source.path, vfs.HideReserved)
+	if err != nil {
+		return mapVFSErr(err)
+	}
+	for _, e := range entries {
+		if err := transferContextErr(ctx); err != nil {
+			return err
+		}
+		if cancelled != nil && cancelled() {
+			return errOpCancelled
+		}
+		srcChild, jerr := source.path.JoinExisting(e.Name)
+		if jerr != nil {
+			continue
+		}
+		childSt, serr := source.root.Stat(srcChild)
+		if serr != nil {
+			if errors.Is(mapVFSErr(serr), ErrNotFound) {
+				continue
+			}
+			return mapVFSErr(serr)
+		}
+		dstChild, jerr := destination.path.JoinExisting(e.Name)
+		if jerr != nil {
+			continue
+		}
+		stageChild, jerr := stage.path.JoinExisting(e.Name)
+		if jerr != nil {
+			continue
+		}
+		need := sourceFileNeed
+		destinationNeed := acl.Write | acl.Create
+		if childSt.Kind.IsDir() {
+			need = acl.Read
+			destinationNeed = acl.Create
+		}
+		srcResolved, serr := c.ResolveUnder(source, srcChild, need)
+		if serr != nil {
+			return serr
+		}
+		dstResolved, derr := c.ResolveUnder(destination, dstChild, destinationNeed)
+		if derr != nil {
+			return derr
+		}
+		stageResolved := Resolved{
+			user: stage.user, share: stage.share, root: stage.root,
+			path: stageChild, perms: stage.perms,
+		}
+		if childSt.Kind.IsDir() {
+			if merr := stage.root.Mkdir(stageChild); merr != nil {
+				return mapVFSErr(merr)
+			}
+		}
+		if err := c.copyIntoStage(
+			ctx, srcResolved, dstResolved, stageResolved,
+			childSt, sourceFileNeed, cancelled,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *Core) newControlSibling(
+	root vfs.Root, parent vfs.SafePath, prefix string,
+) (vfs.SafePath, error) {
+	for range 8 {
+		id, err := newTrashID()
+		if err != nil {
+			return vfs.SafePath{}, err
+		}
+		p, err := parent.JoinControl(prefix + id)
+		if err != nil {
+			return vfs.SafePath{}, err
+		}
+		taken, err := pathExists(root, p)
+		if err != nil {
+			return vfs.SafePath{}, err
+		}
+		if !taken {
+			return p, nil
+		}
+	}
+	return vfs.SafePath{}, ErrExists
+}
+
+// removeTree cleans hidden transfer stages and backups. Its caller chooses
+// whether this operation owns reserved descendants or must preserve them.
+func removeTree(root vfs.Root, p vfs.SafePath, policy vfs.ReservedPolicy) error {
+	st, err := root.Stat(p)
+	if err != nil {
+		if errors.Is(mapVFSErr(err), ErrNotFound) {
+			return nil
+		}
+		return mapVFSErr(err)
+	}
+	if st.Kind.IsDir() {
+		entries, err := root.ReadDir(p, policy)
+		if err != nil {
+			return mapVFSErr(err)
+		}
+		for _, e := range entries {
+			child, jerr := joinTreeChild(p, e.Name)
+			if jerr != nil {
+				continue
+			}
+			if err := removeTree(root, child, policy); err != nil {
+				return err
+			}
+		}
+		return mapVFSErr(root.Rmdir(p))
+	}
+	return mapVFSErr(root.Unlink(p))
+}
+
+// treeContainsReserved detects control data before cleanup touches any visible
+// child. Once a destination has been moved under a hidden backup name, no new
+// path-based upload can enter it, so this check remains valid through removal.
+func treeContainsReserved(root vfs.Root, p vfs.SafePath) (bool, error) {
+	st, err := root.Stat(p)
+	if err != nil {
+		return false, mapVFSErr(err)
+	}
+	if !st.Kind.IsDir() {
+		return false, nil
+	}
+	entries, err := root.ReadDir(p, vfs.IncludeReserved)
+	if err != nil {
+		return false, mapVFSErr(err)
+	}
+	for _, entry := range entries {
+		if vfs.IsReservedName(entry.Name) {
+			return true, nil
+		}
+		child, jerr := joinTreeChild(p, entry.Name)
+		if jerr != nil {
+			return false, mapVFSErr(jerr)
+		}
+		found, rerr := treeContainsReserved(root, child)
+		if rerr != nil {
+			return false, rerr
+		}
+		if found {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// publishStage performs the final atomic replacement. The destination remains
+// untouched while the stage is built and checked; if preparation or the second
+// rename fails, the backup is restored before the error reaches the caller.
+func (c *Core) publishStage(
+	root vfs.Root,
+	stage, dest vfs.SafePath,
+	overwriting bool,
+	prepare func(removedBytes uint64) error,
+) (uint64, error) {
+	taken, err := pathExists(root, dest)
+	if err != nil {
+		return 0, err
+	}
+	if taken && !overwriting {
+		return 0, ErrExists
+	}
+	var backup vfs.SafePath
+	removedBytes := uint64(0)
+	if taken {
+		backup, err = c.newControlSibling(root, dest.Parent(), ".scmeta-replace-")
+		if err != nil {
+			return 0, err
+		}
+		if rerr := root.Rename(dest, backup, true); rerr != nil {
+			return 0, mapVFSErr(rerr)
+		}
+		hasReserved, rerr := treeContainsReserved(root, backup)
+		if rerr != nil || hasReserved {
+			if hasReserved {
+				rerr = errf(ErrConflict, "the destination contains active control data")
+			}
+			return 0, restoreTransferBackup(root, dest, backup, rerr)
+		}
+		removedBytes, err = treeBytes(root, backup, vfs.HideReserved)
+		if err != nil {
+			return 0, restoreTransferBackup(root, dest, backup, err)
+		}
+	}
+	if err := prepare(removedBytes); err != nil {
+		if backup.String() != "" {
+			return 0, restoreTransferBackup(root, dest, backup, err)
+		}
+		return 0, err
+	}
+	if err := root.Rename(stage, dest, true); err != nil {
+		if backup.String() != "" {
+			if rerr := root.Rename(backup, dest, true); rerr != nil {
+				return 0, &PartialTransferError{
+					Destination: dest, Backup: backup,
+					Cause: mapVFSErr(err), Rollback: mapVFSErr(rerr),
+				}
+			}
+		}
+		return 0, mapVFSErr(err)
+	}
+	if backup.String() == "" {
+		return 0, nil
+	}
+	// Reserved children may belong to an active upload. Leaving one makes the
+	// backup non-empty and rolls the replacement back instead of deleting it.
+	if err := removeTree(root, backup, vfs.HideReserved); err != nil {
+		rerr := c.rollbackPublished(root, dest, backup)
+		if rerr != nil {
+			return 0, &PartialTransferError{
+				Destination: dest, Backup: backup,
+				Cause: mapVFSErr(err), Rollback: rerr,
+			}
+		}
+		return 0, fmt.Errorf(
+			"transfer replacement cleanup failed and was rolled back: %w", err,
+		)
+	}
+	return removedBytes, nil
+}
+
+// rollbackPublished restores the old destination after the new tree was
+// published but removing the backup failed. The new tree is quarantined first,
+// so restoration never overwrites either version.
+func (c *Core) rollbackPublished(
+	root vfs.Root, dest, backup vfs.SafePath,
+) error {
+	quarantine, err := c.newControlSibling(root, dest.Parent(), ".scmeta-failed-")
+	if err != nil {
+		return err
+	}
+	if err := root.Rename(dest, quarantine, true); err != nil {
+		return mapVFSErr(err)
+	}
+	if err := root.Rename(backup, dest, true); err != nil {
+		restoreErr := root.Rename(quarantine, dest, true)
+		return errors.Join(mapVFSErr(err), mapVFSErr(restoreErr))
+	}
+	return removeTree(root, quarantine, vfs.HideReserved)
+}
+
+// rollbackMoved restores both ends of a same-device move after replacement
+// cleanup failed. The original source is not considered gone until this
+// routine has put the new tree back there.
+func (c *Core) rollbackMoved(
+	root vfs.Root, source, dest, backup vfs.SafePath,
+) error {
+	quarantine, err := c.newControlSibling(root, source.Parent(), ".scmeta-failed-")
+	if err != nil {
+		return err
+	}
+	if err := root.Rename(dest, quarantine, true); err != nil {
+		return mapVFSErr(err)
+	}
+	if err := root.Rename(backup, dest, true); err != nil {
+		restoreErr := root.Rename(quarantine, dest, true)
+		return errors.Join(mapVFSErr(err), mapVFSErr(restoreErr))
+	}
+	if err := root.Rename(quarantine, source, true); err != nil {
+		return mapVFSErr(err)
+	}
+	return nil
+}
+
+// replaceRename is the same backup protocol for a same-device move, where the
+// source itself is the staged tree and must remain available until the final
+// rename succeeds. It returns the visible bytes actually removed from the
+// destination after the destination is isolated under its backup name.
+func (c *Core) replaceRename(
+	root vfs.Root, source, dest vfs.SafePath,
+) (uint64, error) {
+	taken, err := pathExists(root, dest)
+	if err != nil {
+		return 0, err
+	}
+	if !taken {
+		if rerr := root.Rename(source, dest, true); rerr != nil {
+			return 0, mapVFSErr(rerr)
+		}
+		return 0, nil
+	}
+	backup, err := c.newControlSibling(root, dest.Parent(), ".scmeta-replace-")
+	if err != nil {
+		return 0, err
+	}
+	if rerr := root.Rename(dest, backup, true); rerr != nil {
+		return 0, mapVFSErr(rerr)
+	}
+	hasReserved, rerr := treeContainsReserved(root, backup)
+	if rerr != nil || hasReserved {
+		if hasReserved {
+			rerr = errf(ErrConflict, "the destination contains active control data")
+		}
+		return 0, restoreTransferBackup(root, dest, backup, rerr)
+	}
+	removedBytes, err := treeBytes(root, backup, vfs.HideReserved)
+	if err != nil {
+		return 0, restoreTransferBackup(root, dest, backup, err)
+	}
+	if err := root.Rename(source, dest, true); err != nil {
+		rerr := root.Rename(backup, dest, true)
+		if rerr != nil {
+			return 0, &PartialTransferError{
+				Destination: dest, Backup: backup,
+				Cause: mapVFSErr(err), Rollback: mapVFSErr(rerr),
+			}
+		}
+		return 0, mapVFSErr(err)
+	}
+	// A reserved child can be a live upload control. It must make replacement
+	// fail and roll back, never be deleted with the old destination.
+	if err := removeTree(root, backup, vfs.HideReserved); err != nil {
+		rerr := c.rollbackMoved(root, source, dest, backup)
+		if rerr != nil {
+			return 0, &PartialTransferError{
+				Destination: dest, Backup: backup,
+				Cause: mapVFSErr(err), Rollback: rerr,
+			}
+		}
+		return 0, fmt.Errorf(
+			"move replacement cleanup failed and was rolled back: %w", err,
+		)
+	}
+	return removedBytes, nil
 }
 
 // crossesDevice holds the single rule shared by the move and its preflight.
@@ -311,6 +1023,9 @@ func (c *Core) copyRecursive(
 // atomically; there is no window with neither version present. CopyRange
 // inside it is a reflink on btrfs and XFS when aligned, an in-kernel copy
 // otherwise.
+// copyFile duplicates one file's content for the direct, single-file path.
+// Its durable boundary books positive growth before publication and credits a
+// replacement shrink after publication.
 func (c *Core) copyFile(ctx context.Context, from, to Resolved) error {
 	src, err := from.root.OpenRead(from.path, vfs.IntentRead)
 	if err != nil {
@@ -327,8 +1042,17 @@ func (c *Core) copyFile(ctx context.Context, from, to Resolved) error {
 	if err != nil {
 		return mapVFSErr(err)
 	}
+	priorSt, perr := to.root.Stat(to.path)
+	var prior *vfs.Stat
+	switch {
+	case perr == nil:
+		prior = &priorSt
+	case errors.Is(mapVFSErr(perr), ErrNotFound):
+	default:
+		return mapVFSErr(perr)
+	}
 	opts := vfs.DurableOpts{Mode: to.root.Policy().ModeFile}
-	if _, err := to.root.WriteDurable(to.path, opts, func(dst *vfs.File) error {
+	if _, _, err := c.writeDurableQuota(ctx, to, opts, prior, func(dst *vfs.File) error {
 		_, cerr := vfs.CopyRange(src, 0, dst, 0, st.Size)
 		return cerr
 	}); err != nil {
@@ -337,6 +1061,34 @@ func (c *Core) copyFile(ctx context.Context, from, to Resolved) error {
 
 	c.markDirty(ctx, to.share, to.path)
 	c.record(ctx, to, journal.OpCopy)
+	return nil
+}
+
+// copyFileRaw writes a file into a fresh hidden stage. It deliberately has no
+// quota or journal side effects; the enclosing tree operation settles one
+// reservation and one operation row at the final publication boundary.
+func (c *Core) copyFileRaw(ctx context.Context, from, to Resolved) error {
+	src, err := from.root.OpenRead(from.path, vfs.IntentRead)
+	if err != nil {
+		return mapVFSErr(err)
+	}
+	defer func() {
+		if cerr := src.Close(); cerr != nil {
+			c.warn("closing a staged copy source failed",
+				"path", from.path.String(), "error", cerr)
+		}
+	}()
+	st, err := src.Stat()
+	if err != nil {
+		return mapVFSErr(err)
+	}
+	opts := vfs.DurableOpts{Mode: to.root.Policy().ModeFile, NoClobber: true}
+	if _, err := to.root.WriteDurable(to.path, opts, func(dst *vfs.File) error {
+		_, cerr := vfs.CopyRange(src, 0, dst, 0, st.Size)
+		return cerr
+	}); err != nil {
+		return mapVFSErr(err)
+	}
 	return nil
 }
 

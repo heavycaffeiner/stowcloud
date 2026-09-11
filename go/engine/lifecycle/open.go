@@ -144,6 +144,9 @@ type Engine struct {
 	// Archives names selections a browser is about to fetch. Never nil: a
 	// folder download is minted here before the navigation that collects it.
 	Archives *archive.Tickets
+	// archiveGate bounds the archive streams and ZIP directory parses that may
+	// run at once. Its limit is live through the settings path.
+	archiveGate archiveConcurrencyGate
 
 	// Search answers filename queries. Never nil: the walking tier needs no
 	// index and no subprocess, so every deployment has one.
@@ -183,15 +186,20 @@ type Engine struct {
 
 	// The chain reads these per request, so an operator's settings change
 	// takes effect on the next request rather than at the next restart.
-	settingsMu    sync.RWMutex
-	appHosts      middleware.Hosts
-	trusted       []netip.Prefix
-	csrf          []byte
-	claimKey      handler.ClaimKey
-	linkLimiter   *linkLimiter
-	totpLimiter   *linkLimiter
-	indexBuilding atomic.Bool
-	davLocks      *DavLocks
+	settingsMu sync.RWMutex
+	appHosts   middleware.Hosts
+	trusted    []netip.Prefix
+	// allowedOrigins and compatCanonical belong to the compatibility surface:
+	// the origins that may read its responses across origins, and the base
+	// URL it renders when a request carries no usable host.
+	allowedOrigins  []string
+	compatCanonical string
+	csrf            []byte
+	claimKey        handler.ClaimKey
+	linkLimiter     *linkLimiter
+	totpLimiter     *linkLimiter
+	indexBuilding   atomic.Bool
+	davLocks        *DavLocks
 	// The provider client, rebuilt when the settings change. Nil is off, and
 	// off is the ordinary state: a deployment without single sign-on is one
 	// where people use passwords.

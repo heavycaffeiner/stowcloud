@@ -32,6 +32,12 @@ type fakeBucket struct {
 	objects map[string][]byte
 	mtimes  map[string]time.Time
 	clk     clock.Clock
+
+	copyCalls               int
+	copyFailAt              int
+	copyErrorStatus         int
+	copyErrorBody           []byte
+	requireSignedCopySource bool
 }
 
 func newFakeBucket() *fakeBucket {
@@ -241,7 +247,26 @@ func (b *fakeBucket) handleCopy(w http.ResponseWriter, r *http.Request, destKey 
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+	if b.requireSignedCopySource &&
+		!strings.Contains(r.Header.Get("Authorization"), "SignedHeaders=host;x-amz-content-sha256;x-amz-copy-source;x-amz-date") {
+		http.Error(w, "copy source was not signed", http.StatusForbidden)
+		return
+	}
 	b.mu.Lock()
+	b.copyCalls++
+	copyCall := b.copyCalls
+	if b.copyFailAt == copyCall {
+		status := b.copyErrorStatus
+		if status == 0 {
+			status = http.StatusOK
+		}
+		body := append([]byte(nil), b.copyErrorBody...)
+		b.mu.Unlock()
+		w.Header().Set("Content-Type", "application/xml")
+		w.WriteHeader(status)
+		mustWriteTestResponse(w, body)
+		return
+	}
 	content, ok := b.objects[srcKey]
 	if ok {
 		b.objects[destKey] = content
@@ -389,7 +414,8 @@ func TestRootEndToEnd(t *testing.T) {
 }
 
 func TestRootRenameDirectoryMovesEveryChild(t *testing.T) {
-	srv, _ := newFakeS3Server(t, "bucket-dir")
+	srv, fb := newFakeS3Server(t, "bucket-dir")
+	fb.requireSignedCopySource = true
 	root := openTestRoot(t, srv.URL, "bucket-dir", "")
 
 	for _, name := range []string{"docs/a.txt", "docs/b.txt", "docs/sub/c.txt"} {
@@ -412,6 +438,86 @@ func TestRootRenameDirectoryMovesEveryChild(t *testing.T) {
 	}
 	if _, err := root.Stat(mustSafePath(t, "docs")); !errors.Is(err, vfs.ErrNotFound) {
 		t.Fatalf("Stat(old dir) = %v, want ErrNotFound", err)
+	}
+}
+
+func TestRootRenameRetainsSourceForInvalidCopyResponses(t *testing.T) {
+	tests := []struct {
+		name string
+		body []byte
+	}{
+		{
+			name: "embedded error",
+			body: []byte(`<Error><Code>InternalError</Code><Message>copy failed</Message></Error>`),
+		},
+		{
+			name: "malformed XML",
+			body: []byte(`<CopyObjectResult>`),
+		},
+		{
+			name: "empty success result",
+			body: []byte(`<CopyObjectResult/>`),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, fb := newFakeS3Server(t, "bucket-copy-response")
+			fb.copyFailAt = 1
+			fb.copyErrorBody = tc.body
+			root := openTestRoot(t, srv.URL, "bucket-copy-response", "")
+
+			source := mustSafePath(t, "source.txt")
+			if _, err := root.WriteDurable(source, vfs.DurableOpts{}, func(f *vfs.File) error {
+				_, err := f.WriteAt([]byte("source"), 0)
+				return err
+			}); err != nil {
+				t.Fatalf("WriteDurable: %v", err)
+			}
+
+			if err := root.Rename(source, mustSafePath(t, "destination.txt"), false); err == nil {
+				t.Fatal("Rename succeeded for an invalid CopyObject response")
+			}
+
+			fb.mu.Lock()
+			_, sourceStillExists := fb.objects["source.txt"]
+			_, destinationExists := fb.objects["destination.txt"]
+			fb.mu.Unlock()
+			if !sourceStillExists {
+				t.Fatal("the source was deleted after an invalid CopyObject response")
+			}
+			if destinationExists {
+				t.Fatal("the destination was committed for an invalid CopyObject response")
+			}
+		})
+	}
+}
+
+func TestRootRenameDirectoryRetainsSourcesAfterChildCopyFailure(t *testing.T) {
+	srv, fb := newFakeS3Server(t, "bucket-copy-child")
+	fb.copyFailAt = 2
+	fb.copyErrorBody = []byte(`<Error><Code>InternalError</Code><Message>copy failed</Message></Error>`)
+	root := openTestRoot(t, srv.URL, "bucket-copy-child", "")
+
+	for _, name := range []string{"docs/a.txt", "docs/b.txt"} {
+		p := mustSafePath(t, name)
+		if _, err := root.WriteDurable(p, vfs.DurableOpts{}, func(f *vfs.File) error {
+			_, err := f.WriteAt([]byte(name), 0)
+			return err
+		}); err != nil {
+			t.Fatalf("WriteDurable(%q): %v", name, err)
+		}
+	}
+
+	if err := root.Rename(mustSafePath(t, "docs"), mustSafePath(t, "archive"), false); err == nil {
+		t.Fatal("Rename succeeded after a child CopyObject failure")
+	}
+
+	fb.mu.Lock()
+	defer fb.mu.Unlock()
+	for _, name := range []string{"docs/a.txt", "docs/b.txt"} {
+		if _, ok := fb.objects[name]; !ok {
+			t.Fatalf("source %q was deleted after a child copy failure", name)
+		}
 	}
 }
 
