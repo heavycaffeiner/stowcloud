@@ -44,6 +44,20 @@ func (e *Engine) adminIndexEstimate(c *fiber.Ctx) error {
 	return writeJSON(c, fiber.StatusOK, handler.IndexEstimateOf(result, estimate))
 }
 
+// adminIndexStatus reports what the attached index holds.
+//
+// Cheap on purpose, so a screen can poll it: it asks the index about itself
+// rather than measuring the corpus, which is what the estimate above does and
+// why that one costs a full traversal. It exists because "the build said
+// done" and "search is now answered from an index" are different claims, and
+// an operator had no way to tell them apart.
+func (e *Engine) adminIndexStatus(c *fiber.Ctx) error {
+	if _, ok, written := e.admin(c); !ok {
+		return written
+	}
+	return writeJSON(c, fiber.StatusOK, handler.IndexStatusOf(e.Search.IndexStateOf()))
+}
+
 // indexBlockSize is how many entries share a block. It is the value the
 // estimator was calibrated against, so passing anything else would report a
 // size for an index this build does not produce.

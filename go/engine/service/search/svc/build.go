@@ -34,6 +34,12 @@ import (
 // held in memory.
 const buildBatch = 10_000
 
+// buildReportEvery sets how many indexed names pass between progress reports.
+// Progress used to travel only with a batch write, so a corpus smaller than
+// one batch reported nothing at all until it was already finished, and the
+// screen watching it had a spinner and no numbers for the whole run.
+const buildReportEvery = 500
+
 // ErrNoIndex is a build with no index open to build into.
 var ErrNoIndex = errors.New("search: no index is open, so there is nothing to build into")
 
@@ -53,11 +59,15 @@ type BuildProgress struct {
 // builder carries one build's state, so the walk below is a method rather than
 // a closure over six variables.
 type builder struct {
-	ix       *index.NameIndex
-	gate     func() bool
-	report   func(BuildProgress)
-	ceiling  uint64
-	batch    []index.Entry
+	ix      *index.NameIndex
+	gate    func() bool
+	report  func(BuildProgress)
+	ceiling uint64
+	batch   []index.Entry
+	// reported is the file count the last report carried, so the next one is
+	// due a fixed number of names later rather than when a batch happens to
+	// fill.
+	reported uint64
 	progress BuildProgress
 }
 
@@ -105,12 +115,12 @@ func (s *Service) Build(
 	}
 
 	// A build appends every entry as a single delta over whatever preceded it,
-	// precisely the shape a merge exists to collapse. Omitting the merge leaves
-	// the index correct while every query bears the cost.
-	if ix.NeedsMerge() {
-		if err := ix.Merge(ctx, gate); err != nil {
-			return b.progress, fmt.Errorf("merging the index after the build: %w", err)
-		}
+	// precisely the shape a merge exists to collapse. Merged unconditionally
+	// rather than only past the ratio: the merge is what folds the previous
+	// build's copy of a name into this one, so without it a rebuild leaves
+	// two rows per file and the index reports twice the corpus it holds.
+	if err := ix.Merge(ctx, gate); err != nil {
+		return b.progress, fmt.Errorf("merging the index after the build: %w", err)
 	}
 	return b.progress, nil
 }
@@ -179,6 +189,9 @@ func (b *builder) walkSource(ctx context.Context, src search.Source) (bool, erro
 					return false, err
 				}
 			}
+			if b.progress.Files-b.reported >= buildReportEvery {
+				b.tell()
+			}
 		}
 	}
 	return false, nil
@@ -193,8 +206,14 @@ func (b *builder) flush() error {
 		return fmt.Errorf("appending to the index: %w", err)
 	}
 	b.batch = b.batch[:0]
+	b.tell()
+	return nil
+}
+
+// tell hands the current counters to the caller watching the build.
+func (b *builder) tell() {
+	b.reported = b.progress.Files
 	if b.report != nil {
 		b.report(b.progress)
 	}
-	return nil
 }

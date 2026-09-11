@@ -46,6 +46,7 @@ const SERVER_KEYS = new Set<string>([
   /* i18n */ 'settings.bind_pinned_by_flag',
   /* i18n */ 'settings.must_be_a_string',
   /* i18n */ 'admin.share_rejected',
+  /* i18n */ 'admin.fs_denied',
   /* i18n */ 'admin.chunk_below_floor',
   // Registering or editing a share, refused for something about the request
   // itself. Each names one field or one rule, because the add dialog has

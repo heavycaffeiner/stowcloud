@@ -75,6 +75,12 @@ type WalkOptions struct {
 	//
 	// With Emit set, WalkResult carries the counters and no hits.
 	Emit func(hits []Hit)
+	// Progress receives the walk's running counters while it runs. A search
+	// that has matched nothing yet emits nothing, which is indistinguishable
+	// from a search that has stopped; this is what tells a waiting person the
+	// difference. Calls are serialised with Emit and arrive at directory
+	// boundaries, not per entry.
+	Progress func(p WalkProgress)
 }
 
 // WalkResult holds what a walk produced.
@@ -87,6 +93,17 @@ type WalkResult struct {
 	DirsVisited int64
 	EntriesSeen int64
 }
+
+// WalkProgress is how far a running walk has got.
+type WalkProgress struct {
+	DirsVisited int64
+	EntriesSeen int64
+}
+
+// progressEvery is how many directories pass between progress reports. Often
+// enough to look live on a slow tree, rare enough that a fast one does not
+// spend the search writing counters.
+const progressEvery = 64
 
 // pending holds a matched entry awaiting the stat phase.
 type pending struct {
@@ -168,6 +185,10 @@ type walker struct {
 	dirs    int64
 	entries int64
 	dirSeq  uint64
+	// reported is the directory count the last progress report carried, so the
+	// next one is due a fixed number of directories later rather than at a
+	// count each worker would have to agree on.
+	reported int64
 
 	// emitMu serialises the callback. It is not w.mu: a consumer writing to a
 	// socket must not hold the lock the queue is handed around under, or the
@@ -313,10 +334,23 @@ func (w *walker) visit(j job) {
 	if w.opt.Emit == nil {
 		w.pending = append(w.pending, matched...)
 	}
+	var due WalkProgress
+	if w.opt.Progress != nil && w.dirs-w.reported >= progressEvery {
+		w.reported = w.dirs
+		due = WalkProgress{DirsVisited: w.dirs, EntriesSeen: w.entries}
+	}
 	w.mu.Unlock()
 
 	if w.opt.Emit != nil && len(matched) > 0 {
 		w.emit(matched)
+	}
+	if due.DirsVisited > 0 {
+		// Behind the same lock the hits go through, so a consumer writing to a
+		// socket sees one caller at a time and the counters cannot overtake
+		// the hits they are counting.
+		w.emitMu.Lock()
+		w.opt.Progress(due)
+		w.emitMu.Unlock()
 	}
 }
 

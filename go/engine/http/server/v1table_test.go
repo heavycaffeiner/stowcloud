@@ -283,6 +283,7 @@ func TestOnlyTheNamedRoutesArePublic(t *testing.T) {
 		"GET " + Base + "/system/health",
 		"GET " + Base + "/system/setup",
 		"POST " + Base + "/system/setup",
+		"POST " + Base + "/system/setup/browse",
 	}
 	var got []string
 	for _, r := range Table() {

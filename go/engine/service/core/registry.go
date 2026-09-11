@@ -404,6 +404,38 @@ func (c *Core) Roots(user UserID) []acl.RootEntry {
 		roots[i].SharedExternally = def.SharedExternally
 		roots[i].BrokenReason = def.BrokenReason
 	}
+	return c.applyRootOrder(user, roots)
+}
+
+// applyRootOrder reorders a listing by the account's own stored preference.
+// Labels the account never mentioned keep the relative order the listing
+// already had, and a label the account mentioned but no longer holds a root
+// under is simply absent from the sort, never invented.
+func (c *Core) applyRootOrder(user UserID, roots []acl.RootEntry) []acl.RootEntry {
+	order, err := c.state.RootOrder(context.Background(), int64(user))
+	if err != nil {
+		c.warn("reading the stored root order failed; listing in the default order",
+			"user", int64(user), "error", err)
+		return roots
+	}
+	if len(order) == 0 {
+		return roots
+	}
+	pos := make(map[string]int, len(order))
+	for i, label := range order {
+		if _, exists := pos[label]; !exists {
+			pos[label] = i
+		}
+	}
+	rank := func(r acl.RootEntry) int {
+		if i, ok := pos[r.Label]; ok {
+			return i
+		}
+		return len(order)
+	}
+	slices.SortStableFunc(roots, func(a, b acl.RootEntry) int {
+		return rank(a) - rank(b)
+	})
 	return roots
 }
 

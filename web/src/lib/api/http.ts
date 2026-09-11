@@ -35,6 +35,8 @@ import {
   type Entry,
   type HomesSettingsReq,
   type IndexEstimate,
+  type IndexStatus,
+  type HostListing,
   type IndexSettings,
   type JobListResponse,
   type JobStatus,
@@ -79,7 +81,7 @@ import {
   permsFromNames,
   permNamesOf
 } from './types'
-import type { ListOpts, SearchDone, SearchHit, SearchRequest } from './mock'
+import type { ListOpts, SearchDone, SearchHit, SearchProgress, SearchRequest } from './mock'
 import { normalizePath } from './path-utils'
 import { decryptDownload, encryptForUpload } from '../crypto/e2ee'
 import { encryptionForLabel, shareLabelOf } from '../crypto/encrypted-shares'
@@ -725,7 +727,11 @@ async function recentList(opts: RecentQuery = {}): Promise<{ hits: RecentHit[] }
 interface WireJob {
   id: string
   kind: JobStatus['kind']
-  state: JobStatus['state']
+  /** `failed` is the server's own spelling for a job that broke. The app
+   *  calls that state `error`, and a state nothing in the app recognises is
+   *  a job the tray polls for ever, so it is folded here at the boundary
+   *  rather than left for every reader to remember. */
+  state: JobStatus['state'] | 'failed'
   progress: string
   total: string
   message?: string
@@ -737,7 +743,7 @@ function jobFromWire(w: WireJob): JobStatus {
   return {
     id: w.id,
     kind: w.kind,
-    state: w.state,
+    state: w.state === 'failed' ? 'error' : w.state,
     done: Number(w.progress ?? 0),
     total: Number(w.total ?? 0),
     // The wire carries one message rather than a running item name, and an
@@ -1352,6 +1358,48 @@ async function adminBuildIndex(): Promise<JobStatus> {
   return jobFromWire(await request<WireJob>('/admin/index/build', { method: 'POST' }))
 }
 
+/** `GET /api/v1/admin/index/status`: what the attached index holds right now.
+ *
+ *  Cheap enough to poll, unlike the estimate above, which measures the whole
+ *  corpus. It answers the question a build's "done" does not: whether search
+ *  is now answered from an index or still walking. */
+async function adminIndexStatus(): Promise<IndexStatus> {
+  const w = await request<{ enabled: boolean; entries: string; incomplete: boolean }>('/admin/index/status')
+  return {
+    enabled: Boolean(w.enabled),
+    // A decimal string on the wire, for the reason every count here is one.
+    entries: Number(w.entries ?? 0),
+    incomplete: Boolean(w.incomplete)
+  }
+}
+
+/** `GET /api/v1/admin/fs`: one directory of the server's own filesystem, for
+ *  the picker beside a path field. An empty path answers the places this
+ *  server can open at all, which under its sandbox is a short list. */
+async function browseHostPath(path: string): Promise<HostListing> {
+  return request<HostListing>(`/admin/fs${qs({ path: path || undefined })}`)
+}
+
+/** `POST /api/v1/system/setup/browse`: the same listing during first-run
+ *  setup, where no account exists yet. The setup token stands in for the
+ *  session and is checked without being spent, so browsing does not consume
+ *  the one thing that creates the administrator. */
+async function browseSetupPath(token: string, path: string): Promise<HostListing> {
+  return request<HostListing>('/system/setup/browse', {
+    method: 'POST',
+    body: JSON.stringify({ token, path })
+  })
+}
+
+/** `POST /api/v1/account/roots/order`: the order this account wants its
+ *  shares listed in. The labels are the ones the session payload carries. */
+async function setRootOrder(order: readonly string[]): Promise<void> {
+  await requestNoContent('/account/roots/order', {
+    method: 'POST',
+    body: JSON.stringify({ order })
+  })
+}
+
 /** `PATCH /api/v1/admin/settings/upload`: sets the
  *  server-global chunk floor/default every account's `GET /api/v1/auth/session`
  *  reads, persisted across restarts. */
@@ -1962,10 +2010,19 @@ function toSearchHit(raw: RawSearchHit): SearchHit {
  * server finds it, there is no page to ask for and no ceiling to hit, so the
  * `done` event carries a count rather than a "there was more" flag.
  *
+ * `onProgress` receives the walk's counters while it runs. A search of a
+ * large tree can go a long time without matching anything, and a stream that
+ * says nothing for that long is indistinguishable from one that stopped.
+ *
  * `metadata=1` because the result list shows a size and a date; without it
  * the server skips the stat and both are absent.
  */
-function searchStream(req: SearchRequest, onHit: (hit: SearchHit) => void, onDone: (done: SearchDone) => void): () => void {
+function searchStream(
+  req: SearchRequest,
+  onHit: (hit: SearchHit) => void,
+  onDone: (done: SearchDone) => void,
+  onProgress?: (p: SearchProgress) => void
+): () => void {
   const exts = req.exts && req.exts.length > 0 ? req.exts.join(',') : undefined
   const url = `${BASE}/search/stream${qs({ q: req.query, kind: req.kind, ext: exts, path: req.scope, metadata: '1' })}`
   const es = new EventSource(url, { withCredentials: true })
@@ -1974,6 +2031,20 @@ function searchStream(req: SearchRequest, onHit: (hit: SearchHit) => void, onDon
   es.addEventListener('hit', (ev: MessageEvent) => {
     count++
     onHit(toSearchHit(JSON.parse((ev as MessageEvent).data)))
+  })
+  es.addEventListener('progress', (ev: MessageEvent) => {
+    if (!onProgress) return
+    try {
+      const raw = JSON.parse(ev.data) as { dirs?: unknown; files?: unknown; found?: unknown }
+      onProgress({
+        dirs: typeof raw.dirs === 'number' ? raw.dirs : 0,
+        files: typeof raw.files === 'number' ? raw.files : 0,
+        found: typeof raw.found === 'number' ? raw.found : count
+      })
+    } catch {
+      // A counter frame nobody can parse is dropped: it says nothing the
+      // search needs, and the next one arrives in under a second.
+    }
   })
   es.addEventListener('done', (ev: MessageEvent) => {
     let done: SearchDone = { count }
@@ -2155,6 +2226,10 @@ export const httpApi = {
   shareEncryptionList,
   adminEnableShareEncryption,
   adminDisableShareEncryption,
+  browseHostPath,
+  browseSetupPath,
+  adminIndexStatus,
+  setRootOrder,
   registerUploadedEntry(): void {
     // no-op for the real backend: the server's own state is authoritative;
     // the browse UI calls refresh() after an upload completes instead.

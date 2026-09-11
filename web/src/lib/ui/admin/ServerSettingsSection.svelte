@@ -40,6 +40,7 @@
   import Switch from '../Switch.svelte'
   import ProgressCircular from '../ProgressCircular.svelte'
   import RestartDialog from './RestartDialog.svelte'
+  import PathPickerDialog from '../PathPickerDialog.svelte'
 
   const SMB_TOTP_OPTIONS = [
     { value: 'require_separate', text: t('server.require_separate_smb_password_default') },
@@ -229,6 +230,14 @@
 
   let restartOutcome = $state<ApplyOutcome | null>(null)
   let restartOpen = $state(false)
+
+  // One shared picker for every server-path field on this screen, same
+  // reasoning as ShareManagementSection's own `pathPicker`.
+  let pathPicker = $state<{ mode: 'folder' | 'file'; start: string; onpick: (path: string) => void } | null>(null)
+
+  function openPathPicker(mode: 'folder' | 'file', start: string, onpick: (path: string) => void): void {
+    pathPicker = { mode, start, onpick }
+  }
 
   function onSettingsSaved(outcome: ApplyOutcome): void {
     if (outcome.restart_required) {
@@ -875,7 +884,13 @@
       </div>
       <div class="sc-server-settings__form">
         <Switch checked={thumbnailEnabled} onchange={(v) => (thumbnailEnabled = v)} label={t('server.thumbnail_enabled')} />
-        <TextField label={t('server.thumbnail_storage_dir')} bind:value={thumbnailDir} />
+        <div class="sc-server-settings__path-row">
+          <TextField label={t('server.thumbnail_storage_dir')} bind:value={thumbnailDir} />
+          <Button variant="outlined" onclick={() => openPathPicker('folder', thumbnailDir, (path) => (thumbnailDir = path))}>
+            {#snippet icon()}<Icon icon={icons.folder} size={18} />{/snippet}
+            {t('picker.browse_folder')}
+          </Button>
+        </div>
         <p class="sc-admin-section__hint">{t('server.thumbnail_storage_dir_description')}</p>
         <Button variant="filled" onclick={saveThumbnail} loading={thumbnailMutation.isPending}>{t('common.save')}</Button>
         {#if thumbnailError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={thumbnailError}>{thumbnailError}</p>{/if}
@@ -968,7 +983,13 @@
       </div>
       <div class="sc-server-settings__form">
         <Switch checked={homesEnabled} onchange={(v) => (homesEnabled = v)} label={t('server.enable_home_folders')} />
-        <TextField label={t('server.homes_root_path')} bind:value={homesRoot} />
+        <div class="sc-server-settings__path-row">
+          <TextField label={t('server.homes_root_path')} bind:value={homesRoot} />
+          <Button variant="outlined" onclick={() => openPathPicker('folder', homesRoot, (path) => (homesRoot = path))}>
+            {#snippet icon()}<Icon icon={icons.folder} size={18} />{/snippet}
+            {t('picker.browse_folder')}
+          </Button>
+        </div>
         <Button variant="filled" onclick={saveHomes} loading={homesMutation.isPending}>{t('common.save')}</Button>
         {#if homesError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={homesError}>{homesError}</p>{/if}
         {#if homesOutcome}
@@ -1044,7 +1065,13 @@
         <TextField label={t('settings.oidc_scopes')} bind:value={oidcScopes} />
         <TextField label={t('settings.oidc_display_name')} bind:value={oidcDisplayName} />
         <Switch checked={oidcAllowPrivateEndpoints} onchange={(v) => (oidcAllowPrivateEndpoints = v)} label={t('settings.oidc_allow_private_endpoints')} />
-        <TextField label={t('field.oidc_ca_cert_file')} bind:value={oidcCaCertFile} />
+        <div class="sc-server-settings__path-row">
+          <TextField label={t('field.oidc_ca_cert_file')} bind:value={oidcCaCertFile} />
+          <Button variant="outlined" onclick={() => openPathPicker('file', oidcCaCertFile, (path) => (oidcCaCertFile = path))}>
+            {#snippet icon()}<Icon icon={icons.file} size={18} />{/snippet}
+            {t('picker.browse_file')}
+          </Button>
+        </div>
         <p class="sc-admin-section__hint">{t('server.connected_accounts_cannot_use_smb')}</p>
         <Button variant="filled" onclick={saveOidc} loading={oidcMutation.isPending}>{t('common.save')}</Button>
         {#if oidcError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={oidcError}>{oidcError}</p>{/if}
@@ -1145,6 +1172,17 @@
   onrestarted={() => {
     restartOpen = false
     queryClient.invalidateQueries({ queryKey: keys.adminSettings() })
+  }}
+/>
+
+<PathPickerDialog
+  open={pathPicker !== null}
+  mode={pathPicker?.mode ?? 'folder'}
+  start={pathPicker?.start ?? ''}
+  onclose={() => (pathPicker = null)}
+  onpick={(path) => {
+    pathPicker?.onpick(path)
+    pathPicker = null
   }}
 />
 
@@ -1256,6 +1294,17 @@
   }
   .sc-server-settings__form :global(.m3-container:has(> select)) {
     width: 100%;
+  }
+  .sc-server-settings__path-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+    width: 100%;
+  }
+  .sc-server-settings__path-row :global(.field) {
+    width: auto;
+    flex: 1 1 auto;
+    min-width: 0;
   }
   .sc-server-settings__other {
     margin: 0 0 16px;

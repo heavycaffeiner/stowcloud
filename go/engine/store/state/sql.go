@@ -673,6 +673,25 @@ ALTER TABLE oidc_flow_v16 RENAME TO oidc_flow;
 CREATE INDEX oidc_flow_created ON oidc_flow(created_ns);
 `
 
+// Step 17 lets an account choose the order its own roots are drawn in. The
+// sidebar's existing order, whatever the evaluator happens to produce, is
+// what a user who never sets one keeps seeing: this table only overrides
+// that order, so its absence is not a missing setting but the default one.
+//
+// The key is (user, label) rather than (user, share), because a label is
+// what the sidebar reorders and what a person recognises there; the same
+// share can be granted twice under two labels, and a stored order naming a
+// label the account no longer holds is simply skipped when the order is
+// applied, not an orphaned reference to guard against here.
+const schemaV17 = `
+CREATE TABLE root_order (
+  user     INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+  label    TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  PRIMARY KEY (user, label)
+) WITHOUT ROWID;
+`
+
 // migrations is a function instead of a package-level slice so nothing can
 // reassign the list. Position determines version, so a released step is never
 // modified, renumbered or moved.
@@ -702,5 +721,6 @@ func migrations() []dbfile.Migration {
 		{Name: "14: share backends", SQL: schemaV14},
 		{Name: "15: client-held share encryption", SQL: schemaV15},
 		{Name: "16: a single-sign-on flow may have no account yet", SQL: schemaV16},
+		{Name: "17: an account's own root order", SQL: schemaV17},
 	}
 }

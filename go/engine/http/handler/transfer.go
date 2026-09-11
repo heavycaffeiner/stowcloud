@@ -9,6 +9,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/preview"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/search"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/search/svc"
 )
 
 // MoveView reports where an entry landed and how it got there.
@@ -252,5 +253,32 @@ func IndexEstimateOf(r search.ScanResult, e search.IndexEstimate) IndexEstimateV
 		Files:        strconv.FormatUint(r.Stats.Files, 10),
 		NameBytes:    strconv.FormatUint(r.Stats.NameBytesTotal, 10),
 		Partial:      r.Partial,
+	}
+}
+
+// IndexStatusView is what the attached index holds right now.
+type IndexStatusView struct {
+	// Enabled is whether an index is open at all. False means every search
+	// walks, which is the ordinary state of a deployment that never turned
+	// the index on.
+	Enabled bool `json:"enabled"`
+
+	// Entries is the number of names held, as a decimal string for the same
+	// reason the estimate's byte count is one. Zero with Enabled set means
+	// the switch is on and no build has finished.
+	Entries string `json:"entries"`
+
+	// Incomplete says the index knows it covers less than the corpus, so
+	// every query declines it and walks. A build that stopped at its ceiling
+	// or was interrupted leaves this set.
+	Incomplete bool `json:"incomplete"`
+}
+
+// IndexStatusOf projects the search service's account of its index.
+func IndexStatusOf(s svc.IndexState) IndexStatusView {
+	return IndexStatusView{
+		Enabled:    s.Attached,
+		Entries:    strconv.FormatUint(s.Entries, 10),
+		Incomplete: s.Incomplete,
 	}
 }

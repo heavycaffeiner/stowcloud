@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 
@@ -108,6 +109,11 @@ func (e *Engine) searchStream(c *fiber.Ctx) error {
 // reaches a matcher run against every entry in a walk.
 const searchQueryMax = 512
 
+// searchProgressEvery bounds how often a running search reports its counters.
+// Often enough to read as alive, rare enough that the stream is results with
+// a pulse rather than a pulse with results.
+const searchProgressEvery = 400 * time.Millisecond
+
 // writeSearchStream runs the query into a committed response.
 //
 // Every hit is written the moment the walk hands it over, and the walk stops
@@ -140,6 +146,33 @@ func (e *Engine) writeSearchStream(
 		if ferr := w.Flush(); ferr != nil {
 			// The reader is gone. Cancelling here is what keeps a walk of a
 			// whole tree from running on for a screen nobody is watching.
+			broken = true
+			cancel()
+		}
+	}
+
+	// The counters, so a search that has matched nothing still shows movement.
+	// A walk of a large tree can run for a long time before its first hit, and
+	// a stream that says nothing for that long reads as a stalled one.
+	// Throttled by the clock rather than by the walk's own cadence: how often
+	// directories pass is a property of the disk, not of what a person can
+	// read.
+	var lastProgress time.Time
+	opt.Progress = func(p search.WalkProgress) {
+		if broken {
+			return
+		}
+		now := e.clock.Now()
+		if !lastProgress.IsZero() && now.Sub(lastProgress) < searchProgressEvery {
+			return
+		}
+		lastProgress = now
+		writeSSEEvent(w, "progress", map[string]any{
+			"dirs":  p.DirsVisited,
+			"files": p.EntriesSeen,
+			"found": count,
+		}, e)
+		if ferr := w.Flush(); ferr != nil {
 			broken = true
 			cancel()
 		}

@@ -120,3 +120,11 @@ export function oidcLinkStartMutation() {
 export function oidcUnlinkMutation() {
   return mutationOptions({ mutationFn: (password: string) => api.oidcUnlink(password), onSuccess: invalidateSession })
 }
+
+/** The order the drawer shows the account's roots in. `roots[].label` is
+ *  what the server matches on, and `GET /api/auth/session` echoes the saved
+ *  order back in `roots`, so this invalidates the session rather than
+ *  caching an order of its own. */
+export function setRootOrderMutation() {
+  return mutationOptions({ mutationFn: (order: string[]) => api.setRootOrder(order), onSuccess: invalidateSession })
+}

@@ -567,6 +567,14 @@ func (ix *NameIndex) Incomplete() bool {
 	return ix.incomplete
 }
 
+// Entries is how many names the index holds, base segment and overlay
+// together. What an operator reads to tell a built index from an empty one.
+func (ix *NameIndex) Entries() uint64 {
+	ix.mu.RLock()
+	defer ix.mu.RUnlock()
+	return ix.entryCount()
+}
+
 // SetIncomplete records that the index holds less than the tree it covers, which
 // is what hitting the entry ceiling amounts to.
 //

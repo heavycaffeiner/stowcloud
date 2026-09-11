@@ -524,5 +524,10 @@
 # produce. The whole vocabulary table beside it is functions rather than
 # variables for the same reason, so this is the only exception the package
 # needs.
+#
+# The path picker's browse endpoint adds one: probing whether this process can
+# open a candidate directory passes a path that is not a constant, which is
+# the whole point of a picker. The candidates are a fixed list plus the paths
+# an administrator registered as shares, and nothing beneath them is read.
 24
-116
+117

@@ -244,6 +244,16 @@ broken.
 
 ![The folder-permission dialog for an account, showing one grant scoped to a subpath with read and download allowed](docs/screenshots/folder-grants.png)
 
+Every place a server path is asked for, the first-run wizard and the folder
+share and server settings screens alike, has a browse button beside the box.
+It lists what the server itself can open, which under the sandbox is the
+mount points it was granted and nothing else, so a path that will be refused
+is one you never get to pick. Typing the path still works.
+
+The order the shares are listed in is each account's own: the sidebar has a
+reorder control, and the order it saves follows that account to its next
+sign-in.
+
 ### Text and code are editable in place
 
 Small text files open in a browser editor with syntax highlighting and save

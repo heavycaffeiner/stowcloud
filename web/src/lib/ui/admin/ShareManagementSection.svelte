@@ -43,6 +43,7 @@
   import Switch from '../Switch.svelte'
   import Select from '../Select.svelte'
   import TextField from '../TextField.svelte'
+  import PathPickerDialog from '../PathPickerDialog.svelte'
 
   const sharesQuery = createQuery(() => adminSharesQuery())
   const shares = $derived(sharesQuery.data ?? [])
@@ -58,6 +59,16 @@
   function describeError(err: unknown, fallback: string): string {
     if (err instanceof ApiError && err.code === 'fs.not_found') return t('common.share_no_longer_exists')
     return describeApiError(err, fallback)
+  }
+
+  // One shared picker rather than one per field: `hostPath` on the add
+  // dialog, `hostPath` on the edit dialog and `vaultContainer` in whichever
+  // form `vaultFields` is rendering for are three triggers for what is
+  // otherwise the identical browse-and-write interaction.
+  let pathPicker = $state<{ mode: 'folder' | 'file'; start: string; onpick: (path: string) => void } | null>(null)
+
+  function openPathPicker(mode: 'folder' | 'file', start: string, onpick: (path: string) => void): void {
+    pathPicker = { mode, start, onpick }
   }
 
   // What the SMB republish that every write here triggers did. It is reported
@@ -794,12 +805,19 @@
 {/snippet}
 
 {#snippet vaultFields(form: BackendForm, creating: boolean)}
-  <TextField
-    label={t('folder_share.vault_container')}
-    bind:value={form.vaultContainer}
-    placeholder={t('folder_share.e_g_vault_container')}
-    autocomplete="off"
-  />
+  <div class="sc-shares__path-row">
+    <TextField
+      label={t('folder_share.vault_container')}
+      bind:value={form.vaultContainer}
+      placeholder={t('folder_share.e_g_vault_container')}
+      autocomplete="off"
+    />
+    <Button variant="outlined" onclick={() => openPathPicker('file', form.vaultContainer, (path) => (form.vaultContainer = path))}>
+      {#snippet icon()}<Icon icon={icons.file} size={18} />{/snippet}
+      {t('picker.browse_file')}
+    </Button>
+  </div>
+  <!-- Browsing only finds a container that already exists; a new one being created here is still typed in by hand. -->
   <TextField
     label={t('folder_share.vault_pim')}
     bind:value={form.vaultPIM}
@@ -849,12 +867,18 @@
       testid="share-backend-select"
     />
     {#if addBackend === 'local'}
-      <TextField
-        label={t('folder_share.server_path')}
-        bind:value={addForm.hostPath}
-        placeholder={t('folder_share.e_g_srv_photos')}
-        autocomplete="off"
-      />
+      <div class="sc-shares__path-row">
+        <TextField
+          label={t('folder_share.server_path')}
+          bind:value={addForm.hostPath}
+          placeholder={t('folder_share.e_g_srv_photos')}
+          autocomplete="off"
+        />
+        <Button variant="outlined" onclick={() => openPathPicker('folder', addForm.hostPath, (path) => (addForm.hostPath = path))}>
+          {#snippet icon()}<Icon icon={icons.folder} size={18} />{/snippet}
+          {t('picker.browse_folder')}
+        </Button>
+      </div>
       <p class="sc-shares__field-hint">{t('folder_share.enter_path_folder_already_exists')}</p>
     {:else if addBackend === 's3'}
       {@render s3Fields(addForm, true)}
@@ -881,7 +905,13 @@
         {t('folder_share.backend_fixed', { backend: backendLabel(editTarget.backend) })}
       </p>
       {#if editTarget.backend === 'local'}
-        <TextField label={t('folder_share.server_path')} bind:value={editForm.hostPath} autocomplete="off" />
+        <div class="sc-shares__path-row">
+          <TextField label={t('folder_share.server_path')} bind:value={editForm.hostPath} autocomplete="off" />
+          <Button variant="outlined" onclick={() => openPathPicker('folder', editForm.hostPath, (path) => (editForm.hostPath = path))}>
+            {#snippet icon()}<Icon icon={icons.folder} size={18} />{/snippet}
+            {t('picker.browse_folder')}
+          </Button>
+        </div>
       {:else}
         <p class="sc-shares__field-hint" data-testid="edit-share-source">
           {t('folder_share.current_location', { source: editTarget.source })}
@@ -973,6 +1003,17 @@
     </Button>
   {/snippet}
 </Dialog>
+
+<PathPickerDialog
+  open={pathPicker !== null}
+  mode={pathPicker?.mode ?? 'folder'}
+  start={pathPicker?.start ?? ''}
+  onclose={() => (pathPicker = null)}
+  onpick={(path) => {
+    pathPicker?.onpick(path)
+    pathPicker = null
+  }}
+/>
 
 <style>
   .sc-shares {
@@ -1171,5 +1212,14 @@
     margin: calc(-1 * 8px) 0 0;
     color: var(--m3c-on-surface-variant);
     @apply --m3-body-small;
+  }
+  .sc-shares__path-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+  }
+  .sc-shares__path-row > :global(.field) {
+    flex: 1 1 auto;
+    min-width: 0;
   }
 </style>

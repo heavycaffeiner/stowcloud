@@ -265,16 +265,22 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.adminStorage
 		case "admin.index.estimate":
 			out[r.Name] = e.adminIndexEstimate
+		case "admin.index.status":
+			out[r.Name] = e.adminIndexStatus
 		case "admin.index.build":
 			out[r.Name] = e.adminIndexBuild
 		case "admin.smb.apply":
 			out[r.Name] = e.adminSMBApply
+		case "admin.fs.browse":
+			out[r.Name] = e.adminFsBrowse
 		case "events":
 			out[r.Name] = e.eventsSocket()
 		case "system.setup.get":
 			out[r.Name] = e.systemSetupGet
 		case "system.setup.post":
 			out[r.Name] = e.systemSetupPost
+		case "system.setup.browse":
+			out[r.Name] = e.setupFsBrowse
 		case "files.thumbnail":
 			out[r.Name] = e.filesThumbnail
 		case "search.stream":
@@ -295,6 +301,8 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.accountSMBPasswordSet
 		case "account.smb.password.delete":
 			out[r.Name] = e.accountSMBPasswordDelete
+		case "account.roots.order":
+			out[r.Name] = e.accountRootsOrder
 		case "admin.users.oidc.get":
 			out[r.Name] = e.adminUserOIDCGet
 		case "admin.users.oidc.delete":

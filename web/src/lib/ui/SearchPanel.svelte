@@ -10,11 +10,11 @@
   // batch would spend the whole search sorting.
   import { goto } from '$app/navigation'
   import { api } from '../api/client'
-  import type { SearchDone, SearchHit } from '../api/client'
+  import type { SearchDone, SearchHit, SearchProgress } from '../api/client'
   import { EXTENSION_PRESETS, parseExtensions, resolveExtensions } from '../search/filters'
   import { computeWindow } from '../virtual/windowing'
   import { formatBytes } from '../format/bytes'
-  import { formatDateNs, t } from '../i18n'
+  import { formatDateNs, formatNumber, t } from '../i18n'
   import { ConnectedButtons, Icon, MenuItem } from 'm3-svelte'
   import { icons } from '../icons'
   import Button from './Button.svelte'
@@ -56,6 +56,11 @@
   let ran = $state(false)
   let failure = $state<string | null>(null)
   let elapsedMs = $state<number | null>(null)
+  /** What the walk has looked through so far. A search of a large tree can
+   *  run a long time before its first match, and a count that moves is the
+   *  difference between "still going" and "stuck". Null until the server
+   *  says, which for a fast search is never. */
+  let scanned = $state<SearchProgress | null>(null)
 
   let cancel: (() => void) | null = null
   /** Hits arrive one frame at a time; rendering per hit would spend the
@@ -98,6 +103,7 @@
     hits = []
     failure = null
     elapsedMs = null
+    scanned = null
     scrollTop = 0
     listEl?.scrollTo({ top: 0 })
 
@@ -123,6 +129,9 @@
         cancel = null
         elapsedMs = done.elapsedMs ?? null
         failure = done.error ?? null
+      },
+      (p: SearchProgress) => {
+        scanned = p
       }
     )
   }
@@ -370,7 +379,12 @@
   }
 
   const statusText = $derived.by(() => {
-    if (running) return t('search.searching', { count: hits.length })
+    if (running) {
+      const found = t('search.searching', { count: hits.length })
+      // The folder count only appears once the server has sent one, which on
+      // a search that answers in a moment it never does.
+      return scanned === null ? found : `${found}, ${t('search.scanning', { dirs: formatNumber(scanned.dirs) })}`
+    }
     if (!ran) return ''
     if (failure === 'stopped') return t('search.stopped', { count: view.length })
     if (failure === 'busy') return t('search.busy')

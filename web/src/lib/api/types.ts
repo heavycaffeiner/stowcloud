@@ -315,6 +315,40 @@ export interface IndexEstimate {
   confidence: string
 }
 
+/** `GET /api/v1/admin/index/status`: what the attached index holds right
+ *  now, as opposed to what building one would cost. `entries` is zero with
+ *  `enabled` set when the switch is on and no build has finished, and
+ *  `incomplete` says the index knows it covers less than the corpus, so
+ *  every search walks regardless. */
+export interface IndexStatus {
+  enabled: boolean
+  entries: number
+  incomplete: boolean
+}
+
+/** One entry of the server's own filesystem, as the path picker reads it.
+ *  `path` is absolute and comes from the server rather than being joined by
+ *  the client, which is what keeps a name holding a slash or a space from
+ *  turning into a path that does not exist. */
+export interface HostEntry {
+  name: string
+  path: string
+  is_dir: boolean
+}
+
+/** `GET /api/v1/admin/fs` and `POST /api/v1/system/setup/browse`.
+ *
+ *  An empty `path` is the list of places the server can open at all, which
+ *  under its sandbox is a short list of mount points rather than the whole
+ *  filesystem. `parent` is empty at the top. `truncated` marks a directory
+ *  with more entries than one listing carries. */
+export interface HostListing {
+  path: string
+  parent: string
+  entries: HostEntry[]
+  truncated: boolean
+}
+
 /** `GET`/`PATCH /api/admin/index/settings`: the
  *  persisted (survives-restart, `index.db`-backed) runtime override for the
  *  off-by-default name index, independent of the stored `[index]

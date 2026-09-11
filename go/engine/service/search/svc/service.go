@@ -160,6 +160,29 @@ func (s *Service) SetIndex(ix *index.NameIndex) {
 // query is served from the index or from a walk.
 func (s *Service) HasIndex() bool { return s.index() != nil }
 
+// IndexState is what the attached index holds, for an operator asking whether
+// building it worked.
+type IndexState struct {
+	// Attached is false when no index is open, which is the ordinary state of
+	// a deployment that never turned it on.
+	Attached bool
+	// Entries counts the names held. Zero with Attached means the switch is on
+	// and no build has run, which answers "why is search still walking".
+	Entries uint64
+	// Incomplete says the index knows it covers less than the corpus, so every
+	// query declines it. A build that stopped at its ceiling leaves this set.
+	Incomplete bool
+}
+
+// IndexStateOf reads the attached index's own account of itself.
+func (s *Service) IndexStateOf() IndexState {
+	ix := s.index()
+	if ix == nil {
+		return IndexState{}
+	}
+	return IndexState{Attached: true, Entries: ix.Entries(), Incomplete: ix.Incomplete()}
+}
+
 func (s *Service) index() *index.NameIndex {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -189,6 +212,11 @@ type QueryOptions struct {
 	// Calls are serialised and block the walk, which is how a consumer that
 	// stops reading stops the search.
 	Stream func(hits []search.Hit)
+	// Progress receives the walk's running counters. A complete search over a
+	// large tree can run for a long time without matching anything, and
+	// silence for that long is indistinguishable from a search that has
+	// stopped. Nil asks for nothing, which is what the bounded tier does.
+	Progress func(p search.WalkProgress)
 }
 
 // Results holds what a query produced.
@@ -294,6 +322,7 @@ func (s *Service) walk(
 		WithMetadata: opt.WithMetadata,
 		NowNs:        s.clk.Now().UnixNano(),
 		Emit:         opt.Stream,
+		Progress:     opt.Progress,
 	})
 	if err != nil {
 		// Cancellation by the caller is an error while the deadline is not, since

@@ -137,6 +137,10 @@ func exceptions() map[string]exception {
 			route.Requirement{Access: route.AccessPublic},
 			"first-boot only, guarded by the same gate rather than by a credential",
 		},
+		"POST " + Base + "/system/setup/browse": {
+			route.Requirement{Access: route.AccessPublic},
+			"first-boot only too: the token itself is what the handler verifies",
+		},
 
 		// Reading a file needs Read; writing to one needs more. Stated per route
 		// because the files category is one noun covering both.
@@ -255,6 +259,7 @@ func Table() []route.Route {
 	add("DELETE", "/account/smb/password", "account.smb.password.delete", route.BodyNone)
 	add("POST", "/account/oidc-link/start", "account.oidc-link.start", route.BodyJSON)
 	add("DELETE", "/account/oidc-link", "account.oidc-link.delete", route.BodyNone)
+	add("POST", "/account/roots/order", "account.roots.order", route.BodyJSON)
 
 	// files: RPC verbs, with the path as an argument rather than a URL segment.
 	add("GET", "/files/list", "files.list", route.BodyNone)
@@ -337,15 +342,18 @@ func Table() []route.Route {
 	add("POST", "/admin/smb/apply", "admin.smb.apply", route.BodyNone)
 	add("POST", "/admin/index/build", "admin.index.build", route.BodyJSON)
 	add("GET", "/admin/index/estimate", "admin.index.estimate", route.BodyNone)
+	add("GET", "/admin/index/status", "admin.index.status", route.BodyNone)
 	add("GET", "/admin/settings", "admin.settings.get", route.BodyNone)
 	add("GET", "/admin/oidc/endpoints", "admin.oidc.endpoints", route.BodyNone)
 	add("PATCH", "/admin/settings/{section}", "admin.settings.patch", route.BodyJSON)
 	add("POST", "/admin/system/restart", "admin.system.restart", route.BodyNone)
+	add("GET", "/admin/fs", "admin.fs.browse", route.BodyNone)
 
 	// system.
 	add("GET", "/system/health", "system.health", route.BodyNone)
 	add("GET", "/system/setup", "system.setup.get", route.BodyNone)
 	add("POST", "/system/setup", "system.setup.post", route.BodyJSON)
+	add("POST", "/system/setup/browse", "system.setup.browse", route.BodyJSON)
 	add("GET", "/events", "events", route.BodyNone)
 
 	return out

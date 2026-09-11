@@ -49,6 +49,8 @@ import {
   type Entry,
   type HomesSettingsReq,
   type IndexEstimate,
+  type IndexStatus,
+  type HostListing,
   type IndexSettings,
   type JobKindWire,
   type JobListResponse,
@@ -941,6 +943,21 @@ async function logout(): Promise<{ end_session_url?: string }> {
   return endSessionUrl ? { end_session_url: endSessionUrl } : {}
 }
 
+/** The roots this account sees, in the order it last asked for.
+ *
+ *  One root is all the mock serves, so the sort is mostly a statement of
+ *  where the order is applied: the real server sorts the same list from the
+ *  same stored labels. */
+function orderedMockRoots(): SessionInfo['roots'] {
+  const rows: SessionInfo['roots'] = [
+    { label: 'home', perms: defaultPerms(), share_kind: 'Home', shared_externally: false, trash_enabled: false }
+  ]
+  const rank = new Map(mockRootOrder.map((label, i) => [label, i]))
+  return [...rows].sort(
+    (a, b) => (rank.get(a.label) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.label) ?? Number.MAX_SAFE_INTEGER)
+  )
+}
+
 async function session(): Promise<SessionInfo> {
   await delay(10)
   if (!mockAuthState.loggedIn) {
@@ -957,9 +974,7 @@ async function session(): Promise<SessionInfo> {
       smb_enabled: mockAuthState.smbEnabled,
       ...mockSmbCredential()
     },
-    roots: [
-      { label: 'home', perms: defaultPerms(), share_kind: 'Home', shared_externally: false, trash_enabled: false }
-    ],
+    roots: orderedMockRoots(),
     csrf: 'mock-csrf-token',
     limits: { chunk_size: mockAuthState.chunkDefault, chunk_min: mockAuthState.chunkMin, max_file_size: null, parallel: 4 },
     features: {
@@ -1554,9 +1569,13 @@ async function adminGetServerSettings(): Promise<SettingsSnapshot> {
         readonly_reason_key: 'settings.readonly_local_password_login'
       },
       // Owned by other admin screens, and reported live by the real bridge.
+      // Key and value have to match what `StorageIndexSection.svelte` (and
+      // the real backend, `http.ts`'s `adminIndexSettings`) read this field
+      // by: `search.name_index_enabled`, live off the same switch state
+      // `adminSetIndexSettings`/`adminIndexStatus` already use.
       {
-        key: 'index.name_enabled',
-        value: false,
+        key: 'search.name_index_enabled',
+        value: mockAuthState.indexNameEnabled,
         source: 'builtin_default',
         restart_required: false,
         readonly_reason_key: 'settings.readonly_owned_by_index_section'
@@ -2833,6 +2852,18 @@ export interface SearchDone {
   error?: string
 }
 
+/** The `progress` event of `GET /api/v1/search/stream`.
+ *
+ *  A walk of a large tree can run for a long time before it matches
+ *  anything, and silence for that long reads as a search that has stopped.
+ *  These are the counters the walk has reached, never an estimate of what is
+ *  left: nothing knows the size of a tree until it has been walked. */
+export interface SearchProgress {
+  dirs: number
+  files: number
+  found: number
+}
+
 /** The extension of a name, without the dot and lowercased. Mirrors the
  *  server's own rule: a dotfile's leading dot is its name. */
 function extensionOf(name: string): string {
@@ -2850,7 +2881,12 @@ function admits(req: SearchRequest, e: Entry): boolean {
   return req.exts.includes(extensionOf(e.name))
 }
 
-function searchStream(req: SearchRequest, onHit: (hit: SearchHit) => void, onDone: (done: SearchDone) => void): () => void {
+function searchStream(
+  req: SearchRequest,
+  onHit: (hit: SearchHit) => void,
+  onDone: (done: SearchDone) => void,
+  onProgress?: (p: SearchProgress) => void
+): () => void {
   let cancelled = false
   let count = 0
   const q = req.query.trim().toLowerCase()
@@ -2881,6 +2917,7 @@ function searchStream(req: SearchRequest, onHit: (hit: SearchHit) => void, onDon
         if (isTombstoned(BENCH_DIR, e.name)) continue
         if (e.name.toLowerCase().includes(q) && admits(req, e)) hit(joinPath(BENCH_DIR, e.name), e)
       }
+      onProgress?.({ dirs: 1 + Math.floor(end / BATCH), files: STATIC_SEED.length + end, found: count })
       await delay(0)
     }
     if (!cancelled) onDone({ count, tier: 'walk' })
@@ -2890,6 +2927,81 @@ function searchStream(req: SearchRequest, onHit: (hit: SearchHit) => void, onDon
   return () => {
     cancelled = true
   }
+}
+
+// The host filesystem a path picker browses: go/engine/lifecycle/adminfs.go.
+//
+// A fixed tree rather than anything derived from the mock shares, because
+// what the picker is for is choosing a folder no share covers yet.
+const MOCK_HOST_FS: Record<string, { name: string; isDir: boolean }[]> = {
+  '': [
+    { name: '/home', isDir: true },
+    { name: '/mnt', isDir: true },
+    { name: '/srv', isDir: true }
+  ],
+  '/home': [{ name: 'alice', isDir: true }],
+  '/home/alice': [
+    { name: 'documents', isDir: true },
+    { name: 'vault.hc', isDir: false }
+  ],
+  '/home/alice/documents': [{ name: 'notes.txt', isDir: false }],
+  '/mnt': [{ name: 'photos', isDir: true }],
+  '/mnt/photos': [
+    { name: '2025', isDir: true },
+    { name: '2026', isDir: true }
+  ],
+  '/mnt/photos/2025': [],
+  '/mnt/photos/2026': [{ name: 'holiday.jpg', isDir: false }],
+  '/srv': [{ name: 'shared', isDir: true }],
+  '/srv/shared': []
+}
+
+function hostListingOf(path: string): HostListing {
+  const at = path === '/' ? '' : path
+  const rows = MOCK_HOST_FS[at]
+  if (rows === undefined) {
+    throw new ApiError(404, { code: 'fs.not_found', message: 'no such path' })
+  }
+  const cut = at.lastIndexOf('/')
+  return {
+    path: at,
+    parent: at === '' ? '' : at.slice(0, cut) || '/',
+    entries: rows.map((r) => ({
+      name: r.name,
+      path: at === '' ? r.name : `${at}/${r.name}`,
+      is_dir: r.isDir
+    })),
+    truncated: false
+  }
+}
+
+async function browseHostPath(path: string): Promise<HostListing> {
+  await delay(20)
+  return hostListingOf(path)
+}
+
+async function browseSetupPath(_token: string, path: string): Promise<HostListing> {
+  await delay(20)
+  return hostListingOf(path)
+}
+
+async function adminIndexStatus(): Promise<IndexStatus> {
+  await delay(15)
+  return {
+    enabled: mockAuthState.indexNameEnabled,
+    entries: mockAuthState.indexNameEnabled ? 214_882 : 0,
+    incomplete: false
+  }
+}
+
+/** The order the sidebar lists roots in. Stored per account on the real
+ *  server; here it is one module-level list, which is all one mock account
+ *  needs. */
+let mockRootOrder: string[] = []
+
+async function setRootOrder(order: string[]): Promise<void> {
+  await delay(20)
+  mockRootOrder = [...order]
 }
 
 // share encryption (opt-in, zero-knowledge, per-share content encryption in rclone's own crypt format): go/engine/lifecycle/shareenc.go
@@ -3079,6 +3191,10 @@ export const mockApi = {
   shareEncryptionList,
   adminEnableShareEncryption,
   adminDisableShareEncryption,
+  browseHostPath,
+  browseSetupPath,
+  adminIndexStatus,
+  setRootOrder,
   /** Called by the upload worker (via the browse UI) once a mock upload finalizes. */
   registerUploadedEntry(destDir: string, entry: Entry): void {
     addOverlayEntry(destDir, entry)

@@ -13,7 +13,10 @@
   import { keys } from '../../lib/query/keys'
   import { loginMutation } from '../../lib/query/session'
   import { scorePasswordStrength } from '../../lib/format/password-strength'
+  import { Icon } from 'm3-svelte'
+  import { icons } from '../../lib/icons'
   import Button from '../../lib/ui/Button.svelte'
+  import PathPickerDialog from '../../lib/ui/PathPickerDialog.svelte'
   import ProgressLinear from '../../lib/ui/ProgressLinear.svelte'
   import TextField from '../../lib/ui/TextField.svelte'
 
@@ -41,6 +44,7 @@
   let sharePath = $state('')
   let warnings = $state<SetupFinding[]>([])
   let bindFailed = $state(false)
+  let pathPickerOpen = $state(false)
 
   function toList(v: string): string[] {
     return v
@@ -207,7 +211,13 @@
       <h2 class="sc-auth-card__section">{t('setup.first_shared_folder')}</h2>
       <p class="sc-auth-card__hint">{t('setup.first_share_hint')}</p>
       <TextField label={t('common.name')} bind:value={shareName} autocomplete="off" />
-      <TextField label={t('folder_share.server_path')} bind:value={sharePath} autocomplete="off" />
+      <div class="sc-auth-card__path-row">
+        <TextField label={t('folder_share.server_path')} bind:value={sharePath} autocomplete="off" />
+        <Button variant="outlined" onclick={() => (pathPickerOpen = true)}>
+          {#snippet icon()}<Icon icon={icons.folder} size={18} />{/snippet}
+          {t('picker.browse_folder')}
+        </Button>
+      </div>
 
       {#if errorMsg}
         <p class="sc-auth-card__error" role="alert">{errorMsg}</p>
@@ -239,6 +249,18 @@
     {/if}
   </form>
 </div>
+
+<PathPickerDialog
+  open={pathPickerOpen}
+  mode="folder"
+  start={sharePath}
+  {token}
+  onclose={() => (pathPickerOpen = false)}
+  onpick={(path) => {
+    sharePath = path
+    pathPickerOpen = false
+  }}
+/>
 
 <style>
   .sc-auth-page {
@@ -335,5 +357,14 @@
   }
   .sc-auth-card__setup-link:hover {
     text-decoration: underline;
+  }
+  .sc-auth-card__path-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+  }
+  .sc-auth-card__path-row > :global(.field) {
+    flex: 1 1 auto;
+    min-width: 0;
   }
 </style>

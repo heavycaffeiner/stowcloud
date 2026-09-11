@@ -21,7 +21,10 @@
   import { formatDuration, formatNumber, t } from '../../i18n'
   import { describeApiError } from '../../api/error-text'
   import { formatBytes } from '../../format/bytes'
-  import { adminBuildIndexMutation, adminIndexEstimateQuery, adminIndexSettingsMutation, adminSettingsQuery, adminStorageQuery } from '../../query/admin'
+  import { adminBuildIndexMutation, adminIndexEstimateQuery, adminIndexSettingsMutation, adminIndexStatusQuery, adminSettingsQuery, adminStorageQuery } from '../../query/admin'
+  import { queryClient } from '../../query/client'
+  import { jobQuery } from '../../query/jobs'
+  import { keys } from '../../query/keys'
   import { jobTray } from '../../store/jobs.store'
   import Button from '../Button.svelte'
   import ProgressCircular from '../ProgressCircular.svelte'
@@ -45,6 +48,23 @@
   const storage = $derived(storageQuery.data ?? null)
   const storageLoading = $derived(storageQuery.isPending)
   const storageError = $derived(storageQuery.error ? describeApiError(storageQuery.error, t('storage.could_not_load_storage_information')) : null)
+
+  // The index's own state, shown unconditionally: whether it is on at all,
+  // whether a completed build ever populated it, and whether it covers less
+  // than the corpus. This is the answer to "is the index actually in use",
+  // which used to be answerable only by starting a build and watching it.
+  const indexStatusQuery = createQuery(() => adminIndexStatusQuery())
+  const indexStatus = $derived(indexStatusQuery.data ?? null)
+  const indexStatusLoading = $derived(indexStatusQuery.isPending)
+  const indexStatusError = $derived(
+    indexStatusQuery.error ? describeApiError(indexStatusQuery.error, t('storage.could_not_load_index_status')) : null
+  )
+  const indexStatusText = $derived.by(() => {
+    if (!indexStatus) return null
+    if (!indexStatus.enabled) return t('storage.index_off')
+    if (indexStatus.entries === 0) return t('storage.index_empty')
+    return t('storage.index_holding', { count: formatNumber(indexStatus.entries) })
+  })
 
   // The estimate is deliberately not fetched until asked: it walks every
   // shared folder, so it stays a button rather than something this screen
@@ -79,13 +99,50 @@
 
   // Fire-and-forget through the shared job queue (`JobTray`, mounted once at
   // the app layout): same pattern as `downloadAsArchive`'s `jobTray.track`
-  // call, not a second progress mechanism just for this button.
+  // call, not a second progress mechanism just for this button. This screen
+  // additionally tracks the job it started itself, so this build's own
+  // progress and terminal state show up here, not only in the global tray.
   const buildMut = createMutation(() => adminBuildIndexMutation())
-  const buildRunning = $derived(buildMut.isPending)
+  const buildStarting = $derived(buildMut.isPending)
   const buildError = $derived(buildMut.error ? describeApiError(buildMut.error, t('storage.could_not_start_index_build')) : null)
 
+  let buildJobId = $state<string | null>(null)
+  const buildJobQuery = createQuery(() => ({ ...jobQuery(buildJobId ?? ''), enabled: buildJobId !== null }))
+  const buildJob = $derived(buildJobQuery.data ?? null)
+  const buildJobRunning = $derived(buildJob !== null && buildJob.state === 'running')
+  const buildStatusText = $derived.by(() => {
+    if (!buildJob) return null
+    switch (buildJob.state) {
+      case 'running':
+        return t('storage.build_running', { count: formatNumber(buildJob.done) })
+      case 'done':
+        return t('storage.build_done', { count: formatNumber(buildJob.done) })
+      case 'cancelled':
+      case 'interrupted':
+        return t('storage.build_stopped', { count: formatNumber(buildJob.done) })
+      case 'error':
+        return t('storage.build_failed')
+    }
+  })
+
+  // Once the tracked build reaches a terminal state its own job status can
+  // no longer change, but the index's own entry count is now stale: refresh
+  // it here rather than waiting on whatever else happens to invalidate it.
+  // Runs once per terminal arrival, since `buildJob`'s identity only changes
+  // when the query's data actually changes and a terminal job stops polling.
+  $effect(() => {
+    if (buildJob && buildJob.state !== 'running') {
+      void queryClient.invalidateQueries({ queryKey: keys.adminIndexStatus() })
+    }
+  })
+
   function startBuild(): void {
-    buildMut.mutate(undefined, { onSuccess: (job) => jobTray.track(job.id) })
+    buildMut.mutate(undefined, {
+      onSuccess: (job) => {
+        jobTray.track(job.id)
+        buildJobId = job.id
+      }
+    })
   }
 </script>
 
@@ -116,6 +173,19 @@
 <section class="sc-admin-section">
   <h3>{t('storage.search_index')}</h3>
   <p class="sc-admin-section__hint">{t('storage.what_the_index_is_for')}</p>
+
+  <div class="sc-admin-section__row">
+    <span class="sc-admin-section__index-status-label">{t('storage.index_status')}</span>
+    {#if indexStatusLoading}
+      <ProgressCircular size={20} />
+    {:else if indexStatusText}
+      <span>{indexStatusText}</span>
+    {/if}
+  </div>
+  {#if indexStatusError}<p class="sc-admin-section__error">{indexStatusError}</p>{/if}
+  {#if indexStatus?.incomplete}
+    <p class="sc-admin-section__warning" role="alert">{t('storage.index_incomplete')}</p>
+  {/if}
 
   {#if settingsLoading}
     <ProgressCircular />
@@ -164,13 +234,16 @@
     <div class="sc-admin-section__row">
       <Button
         variant="outlined"
-        loading={buildRunning}
-        disabled={!nameEnabled}
+        loading={buildStarting}
+        disabled={!nameEnabled || buildJobRunning}
         onclick={startBuild}
       >
         {t('storage.start_index_build')}
       </Button>
     </div>
+    {#if buildStatusText}
+      <p class="sc-admin-section__note" aria-live="polite">{buildStatusText}</p>
+    {/if}
     <p class="sc-admin-section__note">
       {nameEnabled ? t('storage.first_build_is_manual') : t('storage.turn_it_on_before_building')}
     </p>
@@ -274,5 +347,19 @@
     margin: 0;
     color: var(--m3c-on-surface);
     @apply --m3-title-medium;
+  }
+  .sc-admin-section__index-status-label {
+    color: var(--m3c-on-surface-variant);
+  }
+  /* Same colours as `ServerSettingsSection.svelte`'s `.sc-admin-section__warning`:
+     a scoped style block, so the class has to be repeated here rather than
+     shared, but the two screens should still read as one visual language. */
+  .sc-admin-section__warning {
+    padding: 12px 16px;
+    border-radius: var(--m3-shape-extra-small);
+    background: var(--m3c-error-container);
+    color: var(--m3c-on-error-container);
+    @apply --m3-body-medium;
+    margin: 0 0 12px;
   }
 </style>

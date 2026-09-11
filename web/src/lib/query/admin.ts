@@ -76,6 +76,15 @@ export function adminIndexEstimateQuery() {
   return queryOptions({ queryKey: keys.adminIndexEstimate(), queryFn: () => api.adminIndexEstimate() })
 }
 
+/** The index's own state: on/off, empty or holding names, and whether it
+ *  covers less than the corpus. Plain query, not polled: the screen that
+ *  shows it invalidates this key itself once a build it is tracking
+ *  reaches a terminal state, rather than this query guessing at an
+ *  interval while nothing here is actually changing on its own. */
+export function adminIndexStatusQuery() {
+  return queryOptions({ queryKey: keys.adminIndexStatus(), queryFn: () => api.adminIndexStatus() })
+}
+
 /** Polled only while a restart is expected, which is why the interval is the
  *  caller's to set. A 503 is a valid answer here, not a failure. */
 export function systemHealthQuery(pollMs: number | false) {
@@ -313,7 +322,12 @@ export function adminUploadSettingsMutation() {
 export function adminIndexSettingsMutation() {
   return mutationOptions({
     mutationFn: (nameEnabled: boolean) => api.adminSetIndexSettings(nameEnabled),
-    onSettled: () => invalidate(keys.adminSettings())
+    // Flipping the switch changes what the index status query reports
+    // (`enabled`), so that cache entry is as stale as the settings one.
+    onSettled: () => {
+      invalidate(keys.adminSettings())
+      invalidate(keys.adminIndexStatus())
+    }
   })
 }
 

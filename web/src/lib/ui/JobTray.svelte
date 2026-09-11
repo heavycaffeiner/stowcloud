@@ -166,7 +166,10 @@
         void queryClient.invalidateQueries({ queryKey: ['path'] })
         const label = kindLabel(item.kind)
         if (item.status === 'done') {
-          say('polite', tp('job.job_finished_items_processed', item.total, { kind: label }))
+          // The count it reached rather than the count it was given: a job
+          // that never knew its own total, an index build among them,
+          // announced "0 items processed" after indexing a whole corpus.
+          say('polite', tp('job.job_finished_items_processed', item.total > 0 ? item.total : item.done, { kind: label }))
         } else if (item.status === 'cancelled') {
           say('polite', tp('job.job_cancelled_items_completed', item.done, { kind: label }))
         } else if (item.status === 'interrupted') {

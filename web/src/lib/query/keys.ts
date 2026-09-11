@@ -65,6 +65,7 @@ export const keys = {
   adminOidcEndpoints: () => ['admin', 'oidc-endpoints'] as const,
   adminStorage: () => ['admin', 'storage'] as const,
   adminIndexEstimate: () => ['admin', 'index-estimate'] as const,
+  adminIndexStatus: () => ['admin', 'index-status'] as const,
   adminLogs: (query: AdminLogQuery) => ['admin', 'logs', query] as const,
   adminAudit: (query: AuditQuery) => ['admin', 'audit', query] as const,
   adminTimeline: (query: AdminLogsTimelineQuery) => ['admin', 'timeline', query] as const,
