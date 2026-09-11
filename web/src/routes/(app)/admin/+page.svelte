@@ -17,9 +17,7 @@
   // now, so only the open tab loads and fetches; the rest cost nothing until
   // they are asked for.
   //
-  // Five is the ceiling, not a coincidence: m3-svelte's `Tabs` positions its
-  // indicator with `nth-of-type(-n + 5)` rules, so a sixth tab would render
-  // with no indicator at all. Another section means regrouping, not appending.
+  // The current tab set stays bounded so every category remains direct.
   //
   // Which is what the server log did: the last tab is "Logs", and it holds
   // one section covering both logs, the audit log (who did what) and the
@@ -27,15 +25,11 @@
   // a graph over both. They are the two things an operator opens for the
   // same reason, and a sixth tab was not available to give the second one.
   //
-  // `VariableTabs`, not `Tabs`: the fixed variant gives every tab an equal
-  // share of the width with a 5rem floor, so five of them need 400px and a
-  // 360px phone clipped "Audit log" to "Audit" against the right edge with no
-  // way to reach it. The variable one sizes each tab to its label and scrolls
-  // the overflow, which is MD3's own answer for a set that doesn't fit.
+  // Variable tabs keep long translated labels from being squeezed or clipped.
   import { t } from '../../../lib/i18n'
   import { replaceState } from '$app/navigation'
   import { page } from '$app/state'
-  import { Tabs } from 'm3-svelte'
+  import { VariableTabs } from 'm3-svelte'
   import { icons } from '../../../lib/icons'
   import { createSession } from '../../../lib/query/session'
   import { syncTabHash } from '../../../lib/ui/tab-hash'
@@ -86,10 +80,9 @@
     </div>
   {:else}
     <div class="sc-admin__head">
-      <!-- Group name on the wrapper, not on `Tabs`: see the twin comment in
-           `/settings` for why an `aria-label` there names every radio. -->
+      <!-- The wrapper names the group without replacing each radio label. -->
       <div class="sc-admin__head-inner" role="radiogroup" aria-label={t('admin.admin_sections')}>
-        <Tabs bind:tab items={tabs} />
+        <VariableTabs bind:tab items={tabs} />
       </div>
     </div>
 
@@ -151,17 +144,8 @@
 </div>
 
 <style>
-  /* Same restructuring as web/src/routes/(app)/settings/+page.svelte, same
-   * root cause: this used to be one element carrying both the max-width
-   * cap *and* `overflow-y: auto`, with `margin-inline` left at its default
-   * of 0, so the capped column sat flush against the nav rail instead of
-   * centered, leaving the rest of a wide window as dead space with the
-   * scrollbar rendered mid-window instead of at its edge. `.sc-admin`
-   * (outer) is now just the full-width scroll owner (free width via
-   * `.sc-app-shell__main`'s `align-items: stretch`) and `.sc-admin__inner`
-   * is the capped, centered, padded column. Cap widened 720 -> ~960 too:
-   * this page's user table benefits from the extra width same as
-   * `/settings`' rows do. */
+  /* The outer pane owns scrolling. Title, tabs, and content share one
+     centered column while wide management tables keep their usable width. */
   .sc-admin {
     overflow-y: auto;
     word-break: keep-all;
@@ -169,16 +153,16 @@
   .sc-admin__title,
   .sc-admin__head-inner,
   .sc-admin__inner {
+    width: 100%;
     max-width: min(960px, 100%);
+    box-sizing: border-box;
     margin-inline: auto;
     padding-inline: var(--sc-page-pad);
   }
   .sc-admin__title {
-    padding-block: var(--sc-page-pad) 0;
+    padding-block: 16px 4px;
   }
-  /* Title scrolls, tabs pin: see the twin rule in `/settings` for why the
-   * sticky and the background sit on the full-width band rather than on the
-   * capped column inside it. */
+  /* The title scrolls away while the tab strip stays available. */
   .sc-admin__head {
     position: sticky;
     top: 0;
@@ -187,35 +171,34 @@
   }
   .sc-admin__head-inner {
     padding-inline: 0;
-    overflow-x: auto;
   }
-  /* The framework gives a tab an 80px floor and 16px of inline padding, which
-     is 400px for five of them: ten past a 390px phone and a scrollbar under a
-     bar that is meant to show every destination at once. The floor goes and
-     the padding shrinks, so the five divide the width they have. */
-  @media (max-width: 599px) {
-    .sc-admin__head-inner :global(label) {
-      min-width: 0;
+  .sc-admin__head-inner :global(.m3-container) {
+    scrollbar-width: none;
+  }
+  .sc-admin__head-inner :global(.m3-container::-webkit-scrollbar) {
+    display: none;
+  }
+  @media (max-width: 599.98px) {
+    .sc-admin__title {
+      padding-block-start: 12px;
+    }
+    .sc-admin__head-inner :global(.m3-container) {
       padding-inline: 4px;
+    }
+    .sc-admin__head-inner :global(label) {
+      padding-inline: 12px;
     }
   }
   .sc-admin__inner {
-    padding-block: 0 var(--sc-page-pad);
+    padding-block: 12px var(--sc-page-pad);
   }
-  /* Same fix as web/src/routes/(app)/settings/+page.svelte: global.css zeroes
-   * heading margins but never sets font-size/line-height, so an unstyled h1
-   * renders at the UA default font-size (~32px) inside a line box sized by
-   * the inherited body line-height (24px). The glyphs overflow their own
-   * box. This page's h1 wasn't visibly colliding with anything only because
-   * the first section already carries a 32px margin-top big enough to clear
-   * the overflow; it had the same underlying defect as Settings/Theme on the
-   * settings page. */
+  /* Explicit heading metrics avoid inheriting the body line height. */
   .sc-admin__title h1 {
-    margin: 0 0 16px;
+    margin: 0;
     @apply --m3-headline-small;
   }
   .sc-admin__section {
-    margin-top: 32px;
+    margin-top: 24px;
   }
   .sc-admin__section h2 {
     margin: 0 0 8px;

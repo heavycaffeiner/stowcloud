@@ -1102,7 +1102,7 @@
     <p class="sc-admin-section__error" role="alert">{loadError}</p>
   {:else if snapshot}
     <nav class="sc-server-settings__nav" aria-label={t('admin.server_settings_navigation')}>
-      <span class="sc-server-settings__nav-label">{t('admin.server_settings_navigation')}</span>
+      <span class="sc-sr-only">{t('admin.server_settings_navigation')}</span>
       <div class="sc-server-settings__nav-items">
         <button type="button" onclick={() => scrollToServerCard('server-smb')}>{t('admin.server_smb')}</button>
         <button type="button" onclick={() => scrollToServerCard('server-search')}>{t('admin.server_search')}</button>
@@ -1665,36 +1665,37 @@
     position: sticky;
     top: 0;
     z-index: 1;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px 16px;
     margin: 0 0 16px;
-    padding: 8px 12px;
+    padding: 8px;
     border: 1px solid var(--m3c-outline-variant);
-    border-radius: var(--m3-shape-small);
-    background: var(--m3c-surface);
-  }
-  .sc-server-settings__nav-label {
-    @apply --m3-label-large;
-    color: var(--m3c-on-surface);
+    border-radius: var(--m3-shape-medium);
+    background: color-mix(in srgb, var(--m3c-surface) 92%, transparent);
+    backdrop-filter: blur(12px);
   }
   .sc-server-settings__nav-items {
     display: flex;
-    flex-wrap: wrap;
-    gap: 4px 12px;
+    gap: 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .sc-server-settings__nav-items::-webkit-scrollbar {
+    display: none;
   }
   .sc-server-settings__nav button {
+    flex: none;
+    min-height: 36px;
     border: 0;
-    padding: 4px 0;
-    color: var(--m3c-primary);
+    border-radius: var(--m3-shape-full);
+    padding: 0 12px;
+    color: var(--m3c-on-surface-variant);
     background: transparent;
     cursor: pointer;
-    @apply --m3-label-medium;
+    white-space: nowrap;
+    @apply --m3-label-large;
   }
-  .sc-server-settings__nav button:hover,
-  .sc-server-settings__nav button:focus-visible {
-    text-decoration: underline;
+  .sc-server-settings__nav button:hover {
+    background: var(--m3c-surface-container-high);
+    color: var(--m3c-on-surface);
   }
   .sc-server-settings__nav button:focus-visible {
     outline: 2px solid var(--m3c-primary);

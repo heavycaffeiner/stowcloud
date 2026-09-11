@@ -1658,8 +1658,23 @@
     box-shadow: 0 1px 0 var(--m3c-outline-variant);
   }
   .sc-browse__toolbar--compact {
-    padding-inline: 8px;
+    padding: 8px 12px 12px;
     gap: 8px;
+  }
+  @media (max-width: 599.98px) {
+    .sc-browse__folder-context {
+      align-items: flex-start;
+      padding: 12px 16px 4px;
+    }
+    .sc-browse__folder-heading h1 {
+      @apply --m3-title-large;
+    }
+    .sc-browse__folder-state {
+      display: none;
+    }
+    .sc-browse__toolbar {
+      box-shadow: 0 1px 0 var(--m3c-outline-variant);
+    }
   }
   .sc-browse__toolbar-actions {
     display: flex;

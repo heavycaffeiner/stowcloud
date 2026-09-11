@@ -55,23 +55,21 @@
     }))
   )
 
-  // The desktop drawer also lists the secondary destinations so they remain
-  // reachable without a shortcut. Compact navigation deliberately has exactly
-  // Files, Recent, Trash, Links, and More; Settings and role-gated Admin live
-  // in More.
+  // Compact navigation keeps the three high-frequency destinations visible.
+  // Folder switching, secondary destinations, and settings live in Menu.
   const navItems = $derived([
     { id: 'files', label: t('nav.files'), icon: icons.home, href: '/b' },
     { id: 'recent', label: t('nav.recent'), icon: icons.recent, href: '/recent' },
     { id: 'trash', label: t('common.trash'), icon: icons.trash, href: '/trash' },
     { id: 'links', label: t('nav.links'), icon: icons.link, href: '/links' },
-    { id: 'more', label: t('nav.more'), icon: icons['more-vert'] },
+    { id: 'settings', label: t('common.settings'), icon: icons.settings, href: '/settings' },
     ...(session.data?.user.is_admin
       ? [{ id: 'admin', label: t('nav.admin'), icon: icons.admin, href: '/admin' }]
       : []),
-    { id: 'settings', label: t('common.settings'), icon: icons.settings, href: '/settings' }
+    { id: 'more', label: t('nav.more'), icon: icons.menu }
   ])
 
-  const compactNavItems = $derived(navItems.filter((item) => ['files', 'recent', 'trash', 'links', 'more'].includes(item.id)))
+  const compactNavItems = $derived(navItems.filter((item) => ['files', 'recent', 'trash', 'more'].includes(item.id)))
 
   const activeNav = $derived.by(() => {
     const p = page.url.pathname
@@ -83,7 +81,7 @@
     return 'files'
   })
 
-  const compactActiveNav = $derived(activeNav === 'settings' || activeNav === 'admin' ? 'more' : activeNav)
+  const compactActiveNav = $derived(['links', 'settings', 'admin'].includes(activeNav) ? 'more' : activeNav)
 
   function isBrowsePathname(pathname: string): boolean {
     return pathname.startsWith('/b') && (pathname.length === 2 || pathname[2] === '/')
@@ -309,8 +307,11 @@
     {/if}
     {#if moreOpen}
       <Menu open={true} onclose={() => (moreOpen = false)} x={moreX} y={moreY} align="end">
-        <MenuItem icon={icons['folder-tree']} onclick={() => { moreOpen = false; folderSelectorOpen = true }}>
+        <MenuItem icon={icons.folder} onclick={() => { moreOpen = false; folderSelectorOpen = true }}>
           {t('nav.browse_folders')}
+        </MenuItem>
+        <MenuItem icon={icons.link} onclick={() => navigateTo('links', '/links')}>
+          {t('nav.links')}
         </MenuItem>
         <MenuItem icon={icons.settings} onclick={() => navigateTo('settings', '/settings')}>
           {t('common.settings')}

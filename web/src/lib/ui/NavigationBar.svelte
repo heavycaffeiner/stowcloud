@@ -29,10 +29,8 @@
 
 <nav class="sc-nav-bar" aria-label={t('common.main_menu')}>
   {#each items as item (item.id)}
-    <!-- Keep every destination reachable on repeat taps. In particular,
-         Files returns to the last valid workspace instead of behaving like a
-         disabled current-page control. More opens its compact destination
-         menu. -->
+    <!-- Repeat taps stay active. Files returns to the last valid workspace;
+         Menu opens the remaining destinations. -->
     <NavCMLXItem
       variant="compact"
       icon={item.icon}
@@ -47,10 +45,11 @@
 
 <style>
   .sc-nav-bar {
-    /* The declarations `NavCMLX variant="compact"` would have applied, minus
-       its `justify-content: space-evenly` -- see the segment rule below. */
     display: flex;
+    justify-content: center;
     background: var(--m3c-surface-container);
+    border-top: 1px solid var(--m3c-outline-variant);
+    box-shadow: 0 -4px 16px color-mix(in srgb, var(--m3c-scrim) 8%, transparent);
 
     /* Was a plain flex sibling of `<main>` in `.sc-app-shell`'s column --
        that worked only because `.sc-app-shell__main` clipped everything
@@ -95,19 +94,9 @@
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
-  /* MD3 divides the bar into equal segments, one per destination. The
-     framework instead sizes each item to its own label and lets
-     `space-evenly` share out what's left, so a row of Files/Admin/Settings
-     lands its items at 26 / 147 / 269 px -- symmetric, but every edge on a
-     half pixel, which is the "subtly warped" blur, and with 25px of dead
-     strip at each end of a bar that is supposed to be tappable corner to
-     corner.
-     `flex: 1 1 0` with no cap consumes the row exactly, so there is no
-     remainder to distribute and no `justify-content` to fractionalise it.
-     The visible pill does not grow with the segment: it is the item's own
-     `.icon`, fixed by the framework at 3.5rem x 2rem and centred. */
   .sc-nav-bar :global(> *) {
-    flex: 1 1 0;
+    flex: 0 1 6.5rem;
     min-width: 0;
+    max-width: 7rem;
   }
 </style>

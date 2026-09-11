@@ -51,7 +51,6 @@
 
 
   let dialogEl: HTMLDialogElement | undefined = $state()
-  let foldersExpanded = $state(true)
 
   const setOrderMut = createMutation(() => setRootOrderMutation())
 
@@ -90,9 +89,6 @@
     if (e.target === dialogEl) onclose?.()
   }
 
-  function toggleFolders(): void {
-    foldersExpanded = !foldersExpanded
-  }
 
   function handleFilesClick(): void {
     onnavselect?.({ id: 'files', label: t('nav.files'), icon: icons.home, href: '/b' })
@@ -157,32 +153,12 @@
     </ul>
     {/if}
 
-    <!-- Folder switching is a separate, named control rather than a side
-         effect of activating the Files destination. -->
-    <div class="sc-nav-drawer__section-title">{t('nav.folders')}</div>
+    {#if !folderSelectorOnly}
+      <div class="sc-nav-drawer__section-title">{t('nav.folders')}</div>
+    {/if}
     <ul class="sc-nav-drawer__list" aria-label={t('nav.folder_selector')}>
       <li class="sc-nav-drawer__entry">
-        <button
-          type="button"
-          class="sc-nav-drawer__item"
-          aria-expanded={foldersExpanded}
-          aria-controls="sc-nav-drawer-folders"
-          onclick={toggleFolders}
-        >
-          <span class="sc-nav-drawer__item-icon"><Icon icon={icons['folder-tree']} size={20} /></span>
-          <span class="sc-nav-drawer__item-label">{t('nav.browse_folders')}</span>
-          {#if displayRoots.length > 0}
-            <span
-              class="sc-nav-drawer__twisty-right"
-              class:sc-nav-drawer__twisty-right--expanded={foldersExpanded}
-              aria-hidden="true"
-            >
-              <Icon icon={icons['chevron-right']} size={16} />
-            </span>
-          {/if}
-        </button>
-
-        {#if foldersExpanded && displayRoots.length > 0}
+        {#if displayRoots.length > 0}
           <ul id="sc-nav-drawer-folders" class="sc-nav-drawer__sublist">
             <li class="sc-nav-drawer__reorder-row">
               <button type="button" class="sc-nav-drawer__reorder-toggle" aria-pressed={reordering} onclick={toggleReordering}>
@@ -193,7 +169,6 @@
               <li>
                 {#if reordering}
                   <div class="sc-nav-drawer__subitem sc-nav-drawer__subitem--reorder">
-                    <span class="sc-nav-drawer__indent" aria-hidden="true"></span>
                     <span class="sc-nav-drawer__item-icon"><Icon icon={icons.folder} size={18} /></span>
                     <span class="sc-nav-drawer__subitem-label sc-filename">{root.label}</span>
                     <span class="sc-nav-drawer__reorder-actions">
@@ -224,7 +199,6 @@
                       if (overlay) onclose?.()
                     }}
                   >
-                    <span class="sc-nav-drawer__indent" aria-hidden="true"></span>
                     <span class="sc-nav-drawer__item-icon"><Icon icon={icons.folder} size={18} /></span>
                     <span class="sc-nav-drawer__subitem-label sc-filename">{root.label}</span>
                   </button>
@@ -328,7 +302,7 @@
     oncancel={() => onclose?.()}
   >
     <div class="sc-nav-drawer__overlay-header">
-      <span class="sc-nav-drawer__app-name">{folderSelectorOnly ? t('nav.browse_folders') : 'Stowcloud'}</span>
+      <span class="sc-nav-drawer__app-name">{folderSelectorOnly ? t('nav.folders') : 'Stowcloud'}</span>
       <IconButton label={t('common.close')} onclick={() => onclose?.()}><Icon icon={icons.close} /></IconButton>
     </div>
     {@render content()}
@@ -436,18 +410,6 @@
   .sc-nav-drawer__item--active:hover {
     background: var(--m3c-surface-container-high);
   }
-  .sc-nav-drawer__twisty-right {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-left: auto;
-    color: inherit;
-    flex: none;
-    transition: rotate var(--m3-duration-fast) var(--m3-easing);
-  }
-  .sc-nav-drawer__twisty-right--expanded {
-    rotate: 90deg;
-  }
   .sc-nav-drawer__item-icon {
     display: flex;
     align-items: center;
@@ -469,24 +431,23 @@
     flex-direction: column;
     gap: 4px;
   }
-  .sc-nav-drawer__indent {
-    width: 16px;
-    flex: none;
+  .sc-nav-drawer--overlay .sc-nav-drawer__sublist {
+    margin-top: 0;
   }
   .sc-nav-drawer__subitem {
-    height: 36px;
+    height: 40px;
     margin: 0 12px;
     padding: 0 12px;
     border-radius: var(--m3-shape-small);
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 12px;
     border: none;
     background: transparent;
     cursor: pointer;
     width: calc(100% - 24px);
     color: var(--m3c-on-surface-variant);
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 500;
     text-align: left;
     transition: background var(--m3-duration-fast) var(--m3-easing);
@@ -530,6 +491,13 @@
   .sc-nav-drawer__subitem--reorder {
     cursor: default;
   }
+  .sc-nav-drawer--overlay .sc-nav-drawer__reorder-toggle {
+    width: fit-content;
+    height: 40px;
+    margin-block-end: 4px;
+    justify-content: flex-start;
+    background: var(--m3c-surface-container);
+  }
   .sc-nav-drawer__reorder-actions {
     display: flex;
     align-items: center;
@@ -559,31 +527,34 @@
     top: 0;
     bottom: calc(var(--sc-nav-bar-height) + env(safe-area-inset-bottom, 0px));
     height: auto;
-    inset-inline-start: 0;
+    inset-inline: 0;
     margin: 0;
-    max-width: min(var(--sc-nav-drawer-width), calc(100vw - 56px));
+    max-width: none;
     width: 100%;
     padding: 0;
     border: none;
-    box-shadow: var(--m3-elevation-3);
+    border-radius: 0;
+    background: var(--m3c-surface-container-low);
+    box-shadow: none;
     translate: 0 0;
     transition:
       translate var(--m3-duration) var(--m3-easing),
       display var(--m3-duration) allow-discrete,
       overlay var(--m3-duration) allow-discrete;
   }
-  .sc-nav-drawer--overlay .sc-nav-drawer__item {
-    height: 44px;
+  .sc-nav-drawer--overlay .sc-nav-drawer__body {
+    padding: 8px 4px 16px;
   }
+  .sc-nav-drawer--overlay .sc-nav-drawer__item,
   .sc-nav-drawer--overlay .sc-nav-drawer__subitem {
-    height: 40px;
+    height: 48px;
   }
   .sc-nav-drawer--overlay:not([open]) {
-    translate: -100% 0;
+    translate: 0 1rem;
   }
   @starting-style {
     .sc-nav-drawer--overlay[open] {
-      translate: -100% 0;
+      translate: 0 1rem;
     }
   }
   .sc-nav-drawer--overlay::backdrop {

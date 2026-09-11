@@ -14,7 +14,7 @@
   import { currentLocale, setLocale, t } from '../../../lib/i18n'
   import { goto, replaceState } from '$app/navigation'
   import { page } from '$app/state'
-  import { ConnectedButtons, Icon, Tabs } from 'm3-svelte'
+  import { ConnectedButtons, Icon, VariableTabs } from 'm3-svelte'
   import { icons } from '../../../lib/icons'
   import { createSession, logoutMutation, oidcConfigQuery } from '../../../lib/query/session'
   import Button from '../../../lib/ui/Button.svelte'
@@ -115,18 +115,10 @@
     <h1>{t('common.settings')}</h1>
   </div>
   <div class="sc-settings__head">
-    <!-- The group name goes on a wrapper, not on `Tabs`: the component spreads
-         its extra attributes onto every `<input type="radio">` it renders, so
-         an `aria-label` there overrode each tab's own `<label>` and a screen
-         reader announced three radios all called "Settings sections".
-
-         Those inputs carry `pointer-events: none` from the framework, so a
-         synthetic click aimed at the input itself does nothing. That is the
-         standard hidden-input pattern and the `<label>` is the real target:
-         a real pointer, a tap and the keyboard all work. Automation has to
-         click the label or set the value, not the input. -->
+    <!-- The group name stays on a wrapper because the tabs component spreads
+         extra attributes onto every radio and would replace their labels. -->
     <div class="sc-settings__head-inner" role="radiogroup" aria-label={t('settings.settings_sections')}>
-      <Tabs bind:tab items={tabs} />
+      <VariableTabs bind:tab items={tabs} />
     </div>
   </div>
 
@@ -367,31 +359,8 @@
 </div>
 
 <style>
-  /* `.sc-settings` (outer) owns the scroll and spans the FULL width of
-   * `.sc-app-shell__main`: `main` is a column flexbox, so this stretches
-   * full width for free via the default `align-items: stretch`. It is only
-   * a scroll owner today because each page currently scrolls itself; the
-   * shell may later move that ownership to the document (so the mobile
-   * address bar can collapse); if/when that happens, this rule is the only
-   * one that needs to change (delete `overflow-y: auto` here), since the
-   * centered column below is a separate element and doesn't care which
-   * ancestor scrolls.
-   *
-   * `.sc-settings__inner` is the actual reading column: capped and
-   * *centered* (`margin-inline: auto`), not pinned to the left edge of the
-   * (much wider, at desktop widths) scroll owner. It previously had no
-   * inner wrapper at all: `.sc-settings` itself carried both the
-   * max-width and the padding with `margin-inline` left at its default of
-   * 0, which put the whole page flush against the nav rail and left
-   * everything past 640px (736px of a 1440px window) as dead space, with
-   * the scrollbar rendered by the browser at the *content's* right edge:
-   * i.e. floating mid-window, not at the window edge where a scrollbar
-   * reads as "the page has more below," not "the layout stopped halfway."
-   * The cap itself is also widened from 640 to a bit under 1000: 640 was
-   * reading-measure-only sizing applied to the whole pane, including rows
-   * (app passwords, sessions) and, on `/admin`, a user table: content
-   * that isn't prose and benefits from more width. Individual prose
-   * elements (`.sc-settings__hint`) keep their own narrower measure. */
+  /* The outer pane owns scrolling. The inner blocks share one centered width
+     so the title, tabs, and cards stay aligned at every breakpoint. */
   .sc-settings {
     overflow-y: auto;
     word-break: keep-all;
@@ -399,18 +368,15 @@
   .sc-settings__title,
   .sc-settings__head-inner,
   .sc-settings__inner {
-    max-width: min(960px, 100%);
+    width: 100%;
+    max-width: min(880px, 100%);
+    box-sizing: border-box;
     margin-inline: auto;
     padding-inline: var(--sc-page-pad);
   }
   .sc-settings__title {
-    padding-block: var(--sc-page-pad) 0;
+    padding-block: 16px 4px;
   }
-  /* MD3's pattern for a tabbed screen: the title scrolls away, the tabs pin.
-   * Sticky resolves against `.sc-settings` (the scroll owner two levels up),
-   * so the outer band is what carries the sticky and the background; the
-   * inner column only carries the horizontal inset, otherwise content would
-   * pass through the padding strips on either side of the capped column. */
   .sc-settings__head {
     position: sticky;
     top: 0;
@@ -420,11 +386,17 @@
   .sc-settings__head-inner {
     padding-inline: 0;
   }
+  .sc-settings__head-inner :global(.m3-container) {
+    scrollbar-width: none;
+  }
+  .sc-settings__head-inner :global(.m3-container::-webkit-scrollbar) {
+    display: none;
+  }
   .sc-settings__inner {
     display: flex;
     flex-direction: column;
-    gap: 24px;
-    padding-block: 24px var(--sc-page-pad);
+    gap: 16px;
+    padding-block: 16px var(--sc-page-pad);
   }
   /* global.css resets h1..h6 margin to 0 but never sets font-size or
    * line-height, so headings fell back to the browser's UA default
@@ -437,7 +409,7 @@
    * StorageIndexSection's h3 and this page's own admin sibling already do
    * this correctly, this page's h1/h2 just never got it. */
   .sc-settings__title h1 {
-    margin: 0 0 16px;
+    margin: 0;
     @apply --m3-headline-small;
   }
   .sc-settings__inner h2 {
@@ -470,7 +442,7 @@
   .sc-settings__card {
     display: flex;
     flex-direction: column;
-    padding: 24px;
+    padding: 20px;
     border-radius: var(--m3-shape-large);
     border: 1px solid var(--m3c-outline-variant);
     background: var(--m3c-surface-container-low);
@@ -527,8 +499,18 @@
     @apply --m3-body-small;
   }
   @media (max-width: 599.98px) {
+    .sc-settings__title {
+      padding-block-start: 12px;
+    }
+    .sc-settings__head-inner :global(.m3-container) {
+      padding-inline: 4px;
+    }
+    .sc-settings__head-inner :global(label) {
+      padding-inline: 12px;
+    }
     .sc-settings__inner {
-      gap: 16px;
+      gap: 12px;
+      padding-block-start: 12px;
     }
     .sc-settings__card {
       padding: 16px;
