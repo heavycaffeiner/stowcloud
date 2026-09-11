@@ -8,9 +8,8 @@
   import { page } from '$app/state'
   import { goto } from '$app/navigation'
   import { createQuery } from '@tanstack/svelte-query'
-  import { Icon, Snackbar as M3Snackbar, MenuItem } from 'm3-svelte'
+  import { Snackbar as M3Snackbar, MenuItem } from 'm3-svelte'
   import { icons } from '../../lib/icons'
-  import Button from '../../lib/ui/Button.svelte'
   import Menu from '../../lib/ui/Menu.svelte'
   import NavigationBar from '../../lib/ui/NavigationBar.svelte'
   import NavigationDrawer from '../../lib/ui/NavigationDrawer.svelte'
@@ -284,6 +283,7 @@
         active={currentRoot ?? ''}
         onselect={selectRoot}
         onnavselect={(item) => navigateTo(item.id, item.href)}
+        onsearch={openGlobalSearch}
       />
     {/if}
     <main
@@ -307,6 +307,9 @@
     {/if}
     {#if moreOpen}
       <Menu open={true} onclose={() => (moreOpen = false)} x={moreX} y={moreY} align="end">
+        <MenuItem icon={icons.search} onclick={() => { moreOpen = false; openGlobalSearch() }}>
+          {t('common.search')}
+        </MenuItem>
         <MenuItem icon={icons.folder} onclick={() => { moreOpen = false; folderSelectorOpen = true }}>
           {t('nav.browse_folders')}
         </MenuItem>
@@ -323,16 +326,6 @@
         {/if}
       </Menu>
     {/if}
-    <div class="sc-app-shell__global-search">
-      <Button
-        variant="outlined"
-        ariaLabel={`${t('common.search')}: ${t('search.scope_all_accessible')}`}
-        onclick={openGlobalSearch}
-      >
-        {#snippet icon()}<Icon icon={icons.search} size={18} />{/snippet}
-        {t('common.search')}
-      </Button>
-    </div>
   </div>
   <!-- Shared fixed-position corner: `JobTray` above `UploadTray` so a job
        started on one page (and the upload tray, unrelated but the same
@@ -399,7 +392,6 @@
     min-width: 0;
     display: flex;
     flex-direction: column;
-    padding-top: 64px;
     /* Was `overflow: hidden` -- the shell's clip point, and the reason
        nothing below it ever reached the document no matter how tall it
        wanted to be: a browser only collapses its address-bar chrome when
@@ -439,29 +431,6 @@
     /* Standard (>=905px) width: Google Drive unified sidebar docked at left: 0
        with width var(--sc-nav-drawer-width), so main reserves only this width. */
     padding-left: var(--sc-nav-drawer-width);
-  }
-  /* One search entry point is present on every authenticated destination.
-     It is fixed so secondary pages cannot accidentally hide it in their own
-     scroll containers, and the page content keeps its existing geometry. */
-  .sc-app-shell__global-search {
-    position: fixed;
-    top: 12px;
-    right: 0;
-    left: 0;
-    z-index: 20;
-    display: flex;
-    justify-content: flex-end;
-    box-sizing: border-box;
-    padding-inline: 24px;
-    pointer-events: none;
-  }
-  .sc-app-shell__global-search :global(button) {
-    pointer-events: auto;
-    max-width: min(22rem, calc(100vw - 2rem));
-  }
-  .sc-app-shell--compact .sc-app-shell__global-search {
-    top: 8px;
-    padding-inline: 16px;
   }
   .sc-tray-stack {
     /* Carries the fixed/right/bottom/z-index that used to live directly on

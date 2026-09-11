@@ -32,6 +32,7 @@
     active?: string
     onselect?: (item: RootItem) => void
     onnavselect?: (item: NavItem) => void
+    onsearch?: () => void
     overlay?: boolean
     onclose?: () => void
     folderSelectorOnly?: boolean
@@ -44,6 +45,7 @@
     active = '',
     onselect,
     onnavselect,
+    onsearch,
     overlay = false,
     onclose,
     folderSelectorOnly = false
@@ -125,10 +127,13 @@
 </script>
 
 {#snippet content()}
-  <!-- Top brand header (desktop: clean text title without home icon, overlay has close button) -->
+  <!-- Desktop app header. Search stays attached to navigation. -->
   {#if !overlay}
     <div class="sc-nav-drawer__brand">
       <span class="sc-nav-drawer__app-name">Stowcloud</span>
+      {#if onsearch}
+        <IconButton label={t('common.search')} onclick={onsearch}><Icon icon={icons.search} /></IconButton>
+      {/if}
     </div>
   {/if}
 
@@ -331,6 +336,7 @@
   .sc-nav-drawer__brand {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     height: 56px;
     padding-inline: 16px;
     flex: none;
