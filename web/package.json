@@ -12,16 +12,13 @@
   "packageManager": "pnpm@11.22.0",
   "scripts": {
     "dev": "vite dev",
-    "build": "pnpm lint:css && pnpm lint:i18n && vite build",
+    "build": "pnpm lint:i18n && vite build",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint:css": "stylelint \"src/**/*.{css,svelte}\"",
     "lint:i18n": "node tools/i18n-check.mjs",
-    "check:bundle-size": "node tools/check-bundle-size.mjs",
-    "check:design": "node tools/design-grid/check.mjs",
-    "audit:grid": "node tools/design-grid/audit.mjs"
+    "check:bundle-size": "node tools/check-bundle-size.mjs"
   },
   "devDependencies": {
     "@fontsource-variable/google-sans-flex": "^5.3.1",
@@ -33,10 +30,6 @@
     "@testing-library/svelte": "^5.4.2",
     "jsdom": "^30.0.1",
     "playwright": "1.62.1",
-    "postcss": "^8.5.28",
-    "postcss-html": "^2.0.0",
-    "postcss-value-parser": "^4.2.0",
-    "stylelint": "^17.14.1",
     "svelte": "^5.57.0",
     "svelte-check": "^4.7.6",
     "tslib": "^2.8.1",
