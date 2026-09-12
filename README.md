@@ -14,8 +14,8 @@ exactly where they were, with the same names, readable by every other program
 on that machine.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/browse-dark.png?v=0.14.0">
-  <img alt="The Stowcloud file browser listing the Photos folder in a table, with the navigation rail, breadcrumb, sorting controls, file sizes, and modified dates" src="docs/screenshots/browse-light.png?v=0.14.0">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/browse-dark-v0.14.0.png">
+  <img alt="The Stowcloud file browser listing the Photos folder in a table, with the navigation rail, breadcrumb, sorting controls, file sizes, and modified dates" src="docs/screenshots/browse-light-v0.14.0.png">
 </picture>
 
 > Every screenshot on this page uses the current web interface from this
@@ -141,7 +141,7 @@ expected: the server issued it to itself, because a private address has no
 public name for a certificate authority to vouch for. Accept it once per
 browser. There is no `http://` port to use instead.
 
-![The first-run screen asking for the setup token, an administrator username, and a password](docs/screenshots/setup.png?v=0.14.0)
+![The first-run screen asking for the setup token, an administrator username, and a password](docs/screenshots/setup-v0.14.0.png)
 
 The token is single-use, expires after 15 minutes, and stops existing the
 moment an administrator does. It is also written to `data/setup-token` if the
@@ -200,7 +200,7 @@ shipping.
 The folder pane walks the same directories your shares point at. Nothing was
 imported, so what you see here is what `ls` sees.
 
-![The file browser with the folder tree open, showing the home root and a nested folder under Documents](docs/screenshots/tree.png?v=0.14.0)
+![The file browser with the folder tree open, showing the home root and a nested folder under Documents](docs/screenshots/tree-v0.14.0.png)
 
 ### Search reaches across folders
 
@@ -217,7 +217,7 @@ On a desktop the search button opens a sheet over the folder you were in, so
 closing it puts you back where you started. Ctrl+K, or Cmd+K, opens the same
 sheet from any screen. On a phone it opens a screen of its own.
 
-![The search sheet over the file browser: a query for 2026, the Show buttons and the File type menu beside them, and results from two shares each carrying its folder, size and date](docs/screenshots/search.png?v=0.14.0)
+![The search sheet over the file browser: a query for 2026, the Show buttons and the File type menu beside them, and results from two shares each carrying its folder, size and date](docs/screenshots/search-v0.14.0.png)
 
 ### A link is created once, and shown once
 
@@ -226,12 +226,12 @@ afterwards, which is why the dialog says so out loud. Copy it before you
 close the box. Expiry, password and download cap are chosen at creation;
 revoking is permanent, and the same link can never be recreated.
 
-![The share-link dialog just after creating a link: the one-time URL, a copy button, and the link's expiry](docs/screenshots/share-link.png?v=0.14.0)
+![The share-link dialog just after creating a link: the one-time URL, a copy button, and the link's expiry](docs/screenshots/share-link-v0.14.0.png)
 
 Whoever opens it sees this and nothing else. No account, no other folder, no
 hint that anything else exists on the server.
 
-![The public share page a recipient sees: a title, the files in the shared folder, and a download button](docs/screenshots/share-public.png?v=0.14.0)
+![The public share page a recipient sees: a title, the files in the shared folder, and a download button](docs/screenshots/share-public-v0.14.0.png)
 
 ### You decide who sees what
 
@@ -241,7 +241,7 @@ parent, or anything else in the share, exists. An account with no grant sees
 an empty screen, and that is the intended default rather than something
 broken.
 
-![The folder-permission dialog for an account, showing a root grant with read and download access and controls to inspect, edit, or remove it](docs/screenshots/folder-grants.png?v=0.14.0)
+![The folder-permission dialog for an account, showing a root grant with read and download access and controls to inspect, edit, or remove it](docs/screenshots/folder-grants-v0.14.0.png)
 
 Every place a server path is asked for, the first-run wizard and the folder
 share and server settings screens alike, has a browse button beside the box.
@@ -259,14 +259,14 @@ Small text files open in a browser editor with syntax highlighting and save
 back through the same conflict check as everything else, so two people
 editing one file get a conflict screen rather than a lost edit.
 
-![A text file open in the built-in editor with its size, save control, and editing surface](docs/screenshots/editor.png?v=0.14.0)
+![A text file open in the built-in editor with its size, save control, and editing surface](docs/screenshots/editor-v0.14.0.png)
 
 ### Nothing is deleted in a hurry
 
 You switch the trash on per folder. Until you do, a delete is a delete, and
 the setting says so rather than leaving you to guess.
 
-![The trash listing deleted items with their sizes and deletion times, and restore and purge actions](docs/screenshots/trash.png?v=0.14.0)
+![The trash listing deleted items with their sizes and deletion times, and restore and purge actions](docs/screenshots/trash-v0.14.0.png)
 
 ## What you need
 
