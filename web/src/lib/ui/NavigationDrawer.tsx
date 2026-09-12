@@ -265,7 +265,7 @@ export function NavigationDrawer({
         event.preventDefault()
         onclose?.()
       }}
-      onClose={() => onclose?.()}
+      onClose={(event) => { if (!event.currentTarget.open) onclose?.() }}
     >
       <div className="sc-nav-drawer__overlay-header">
         <span className="sc-nav-drawer__app-name">{folderSelectorOnly ? t('nav.folders') : 'Stowcloud'}</span>

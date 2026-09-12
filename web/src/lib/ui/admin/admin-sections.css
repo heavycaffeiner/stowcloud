@@ -230,6 +230,7 @@
 
 @media (max-width: 599.98px) {
   .sc-path-row, .sc-upload-form, .sc-admin-section__upload-form { align-items: stretch; flex-direction: column; }
+  .sc-upload-form .sc-field, .sc-admin-section__upload-form .sc-field { flex: none; }
   .sc-path-row > .sc-button-wrap { align-self: flex-start; }
   .sc-storage-list li { align-items: flex-start; flex-direction: column; gap: 8px; }
   .sc-storage-list strong { width: 100%; text-align: start; }

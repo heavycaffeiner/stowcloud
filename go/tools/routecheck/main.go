@@ -146,7 +146,7 @@ func readClient(dir string) (string, error) {
 		// URL inline is calling the same route table, and reading only .ts
 		// reported four live routes as uncalled: the thumbnail, the public
 		// zip, and both halves of a share link's public surface.
-        isSource := strings.HasSuffix(name, ".ts") || strings.HasSuffix(name, ".tsx")
+		isSource := strings.HasSuffix(name, ".ts") || strings.HasSuffix(name, ".tsx")
 		if !isSource || strings.Contains(name, ".test.") {
 			return nil
 		}

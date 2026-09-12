@@ -13,6 +13,7 @@ import { computeWindow } from '../virtual/windowing'
 import { Button } from './Button'
 import { TextField } from './TextField'
 import { Icon } from './Icon'
+import './SearchPanel.css'
 
 export interface SearchPanelHandle {
   focus: () => void

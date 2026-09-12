@@ -66,7 +66,7 @@ function DialogFrame({ open, title, className, onClose, children }: { open: bool
     dialog.addEventListener('close', close)
     return () => dialog.removeEventListener('close', close)
   }, [open, onClose])
-  return <mdui-dialog ref={ref} className={className} headline={title} close-on-overlay-click={false} close-on-esc={false}>{children}</mdui-dialog>
+  return <mdui-dialog ref={ref} className={className} role="dialog" aria-label={title} close-on-overlay-click={false} close-on-esc={false}>{children}</mdui-dialog>
 }
 
 function levelOf(entries: ArchiveEntry[], cwd: string): { path: string; label: string; kind: 'dir' | 'file'; size: number }[] {
@@ -216,19 +216,22 @@ export function PreviewDialog({ open, entry, path, hasPrev, hasNext, onClose, on
       <div ref={previewRef} className="sc-preview">
         <header className="sc-preview__bar">
           <IconButton label={t('common.close')} onClick={onClose}><Icon name="close" /></IconButton>
-          <span className="sc-preview__name" title={entry.name}>{entry.name}</span>
-          <span className="sc-preview__size">{formatEntrySize(entry.size, encryption !== null)}</span>
-          <span className="sc-preview__gap"></span>
+          <div className="sc-preview__meta">
+            <span className="sc-preview__name" title={entry.name}>{entry.name}</span>
+            <span className="sc-preview__size">{formatEntrySize(entry.size, encryption !== null)}</span>
+          </div>
           {body.kind === 'text' || body.kind === 'too-large-text' ? <IconButton label={t('browse.open_text_editor')} onClick={() => onEdit(entry)}><Icon name="edit_document" /></IconButton> : null}
           <IconButton label={t('common.download')} onClick={() => onDownload(entry)}><Icon name="download" /></IconButton>
         </header>
         <div className="sc-preview__body">
-          <div className={`sc-preview__nav ${hasPrev ? '' : 'sc-preview__nav--empty'}`}><IconButton label={t('preview.previous')} disabled={!hasPrev} onClick={onPrev}><Icon name="chevron_left" /></IconButton></div>
           <div className="sc-preview__stage">
             {loading ? <mdui-circular-progress></mdui-circular-progress> : videoUrl ? <div className="sc-preview__video-container"><video ref={videoRef} className="sc-preview__video" src={videoUrl} controls autoPlay playsInline preload="metadata" onError={() => setVideoGaveUp(true)}><track kind="captions" />{t('preview.cannot_preview')}</video></div> : imageUrl ? <img className="sc-preview__image" src={imageUrl} alt={entry.name} onError={() => { const own = api.contentUrl(entry); if (!encryption && imageUrl !== own) setImageOverride(own); else setImageGaveUp(true) }} /> : textQuery.data?.content !== undefined ? <pre className="sc-preview__text">{textQuery.data.content}</pre> : archiveListing ? <div className="sc-preview__archive"><p className="sc-preview__archive-count">{tp('preview.archive_entries', level.length)} {archiveListing.skipped ? <span className="sc-preview__archive-skipped">{tp('preview.archive_skipped', archiveListing.skipped)}</span> : null} {archiveListing.truncated ? <span className="sc-preview__archive-skipped">{t('preview.archive_truncated', { limit: archiveListing.limit })}</span> : null}</p><nav className="sc-preview__crumbs" aria-label={t('preview.archive_location')}><button type="button" className="sc-preview__crumb" disabled={!cwd} onClick={() => setCwd('')}>{entry.name}</button>{crumbs.map((crumb, index) => <span key={crumb.path}><span className="sc-preview__crumb-sep" aria-hidden="true">/</span><button type="button" className="sc-preview__crumb" disabled={index === crumbs.length - 1} onClick={() => setCwd(crumb.path)}>{crumb.label}</button></span>)}</nav>{level.length === 0 ? <p className="sc-preview__archive-empty">{t('preview.archive_empty')}</p> : <ul className="sc-preview__archive-list">{cwd ? <li><button type="button" className="sc-preview__archive-row sc-preview__archive-row--up" onClick={archiveUp}><Icon name="chevron_left" /><span>{t('preview.archive_up')}</span></button></li> : null}{level.map((row) => <li key={row.path}>{row.kind === 'dir' ? <button type="button" className="sc-preview__archive-row sc-preview__archive-row--dir" onClick={() => setCwd(row.path)}><Icon name="folder" /><span className="sc-preview__archive-name">{row.label}</span><span>{t('details.folder')}</span></button> : <div className="sc-preview__archive-row"><Icon name="draft" /><span className="sc-preview__archive-name">{row.label}</span><span>{t('details.file')}</span><span>{formatBytes(row.size)}</span></div>}</li>)}</ul>}</div> : <div className="sc-preview__card" role={failed ? 'alert' : undefined}><p className="sc-preview__card-title">{locked ? t('preview.locked_title') : t('preview.cannot_preview')}</p><p className="sc-preview__card-reason">{locked ? t('preview.locked_reason') : failed ?? (body.kind === 'too-large-text' ? t('preview.too_large_for_text') : t('preview.no_preview'))}</p>{typeof failedDetail === 'string' ? <p className="sc-preview__card-detail">{failedDetail}</p> : null}<div className="sc-preview__card-actions">{locked ? <Button onClick={() => setUnlockOpen(true)}>{t('encryption.unlock')}</Button> : <><Button onClick={() => onDownload(entry)}>{t('common.download')}</Button>{body.kind === 'too-large-text' ? <Button variant="outlined" onClick={() => onEdit(entry)}>{t('browse.open_text_editor')}</Button> : null}</>}</div></div>}
           </div>
-          <div className={`sc-preview__nav ${hasNext ? '' : 'sc-preview__nav--empty'}`}><IconButton label={t('preview.next')} disabled={!hasNext} onClick={onNext}><Icon name="chevron_right" /></IconButton></div>
         </div>
+        {hasPrev || hasNext ? <div className="sc-preview__nav">
+          <IconButton label={t('preview.previous')} disabled={!hasPrev} onClick={onPrev}><Icon name="chevron_left" /></IconButton>
+          <IconButton label={t('preview.next')} disabled={!hasNext} onClick={onNext}><Icon name="chevron_right" /></IconButton>
+        </div> : null}
       </div>
     </DialogFrame>
     <UnlockShareDialog open={unlockOpen} salt={encryption?.salt ?? ''} verifier={encryption?.verifier ?? ''} onUnlock={() => { setUnlockOpen(false); setUnlockGeneration((value) => value + 1) }} onClose={() => setUnlockOpen(false)} />

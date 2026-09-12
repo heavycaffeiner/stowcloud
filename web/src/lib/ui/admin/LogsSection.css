@@ -88,7 +88,7 @@
 @container sc-logs (max-width: 599.98px) {
   .sc-logs__source-button, .sc-logs__table-wrap summary { min-block-size: 44px; }
   .sc-logs__fields { flex-direction: column; align-items: stretch; }
-  .sc-logs__fields > .sc-field { width: 100%; max-width: none; }
+  .sc-logs__fields > .sc-field { flex: none; width: 100%; max-width: none; }
   .sc-logs__row { align-items: flex-start; gap: 8px 12px; padding-inline: 12px; }
   .sc-logs__body { flex-basis: calc(100% - 100px); }
   .sc-logs__disclose { width: 100%; justify-content: flex-end; }
