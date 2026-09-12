@@ -32,7 +32,12 @@ export interface FileGridProps {
   onSearchFocus?: () => void
   encrypted?: boolean
 }
-export interface FileGridHandle { focusEntry: (name: string) => boolean; entriesInRect: (rect: Rect) => Entry[] }
+export interface FileGridHandle {
+  focusEntry: (name: string) => boolean
+  entriesInRect: (rect: Rect) => Entry[]
+  scrollBounds: () => { top: number; height: number }
+  scrollBy: (delta: number) => void
+}
 
 export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileGrid({ entries, total, dirs, loading, loadingMore, requestMore, onOpen, onContextMenu, menuFor, onRename, onDelete, onSearchFocus, encrypted = false }, ref) {
   const { t } = useI18n()
@@ -60,18 +65,20 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
 
   const update = () => {
     if (!viewport.current) return
-    const scroll = window.scrollY
+    const scroll = compact ? viewport.current.scrollTop : window.scrollY
+    const viewportTop = compact ? viewport.current.getBoundingClientRect().top : 0
     setMetrics({
       width: viewport.current.clientWidth,
       scroll,
-      height: window.visualViewport?.height ?? window.innerHeight,
-      foldersTop: folderEl.current ? folderEl.current.getBoundingClientRect().top + scroll : 0,
-      filesTop: fileEl.current ? fileEl.current.getBoundingClientRect().top + scroll : 0
+      height: compact ? viewport.current.clientHeight : window.visualViewport?.height ?? window.innerHeight,
+      foldersTop: folderEl.current ? folderEl.current.getBoundingClientRect().top - viewportTop + scroll : 0,
+      filesTop: fileEl.current ? fileEl.current.getBoundingClientRect().top - viewportTop + scroll : 0
     })
   }
   useEffect(() => {
     update()
-    window.addEventListener('scroll', update, { passive: true })
+    const scrollTarget = compact ? viewport.current : window
+    scrollTarget?.addEventListener('scroll', update, { passive: true })
     window.addEventListener('resize', update)
     window.visualViewport?.addEventListener('resize', update)
     const element = viewport.current
@@ -81,13 +88,13 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
       observer.observe(element)
     }
     return () => {
-      window.removeEventListener('scroll', update)
+      scrollTarget?.removeEventListener('scroll', update)
       window.removeEventListener('resize', update)
       window.visualViewport?.removeEventListener('resize', update)
       resizeObserverRef.current?.disconnect()
       resizeObserverRef.current = null
     }
-  }, [entries, density, total])
+  }, [entries, density, total, compact])
 
   useEffect(() => {
     if (!loadingMore && Math.max(folderWin.end * columns, folderCount + fileWin.end * columns) > entries.length) requestMore()
@@ -115,8 +122,9 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
     const rowCount = p.section === 0 ? folderRows : fileRows
     const top = (p.section === 0 ? metrics.foldersTop : metrics.filesTop) + rowIndexToScrollTop(p.row, computeScaleMapping(rowCount, rowH), rowH)
     const bottom = top + rowH
-    if (top < window.scrollY) window.scrollTo({ top })
-    else if (bottom > window.scrollY + metrics.height) window.scrollTo({ top: bottom - metrics.height })
+    const scrollTarget = compact ? viewport.current : window
+    if (top < metrics.scroll) scrollTarget?.scrollTo({ top })
+    else if (bottom > metrics.scroll + metrics.height) scrollTarget?.scrollTo({ top: bottom - metrics.height })
   }
 
   const openMenuForFocused = () => {
@@ -145,8 +153,17 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
         ...indicesInRect(rect, { ...common, top: (fileEl.current?.getBoundingClientRect().top ?? 0) + window.scrollY, rowHeight: fileRowH, cellHeight: card.fileH, startIndex: folderCount, count: fileCount })
       ]
       return hits.map((index) => entries[index]).filter((entry): entry is Entry => Boolean(entry))
+    },
+    scrollBounds() {
+      if (!compact || !viewport.current) return { top: 0, height: window.visualViewport?.height ?? window.innerHeight }
+      const box = viewport.current.getBoundingClientRect()
+      return { top: box.top, height: box.height }
+    },
+    scrollBy(delta) {
+      if (compact && viewport.current) viewport.current.scrollTop += delta
+      else window.scrollBy(0, delta)
     }
-  }), [entries, folderCount, fileCount, columns, cardW, card, folderRowH, fileRowH, metrics])
+  }), [entries, folderCount, fileCount, columns, cardW, card, folderRowH, fileRowH, metrics, compact])
 
   const moveFocus = (delta: number, extend: boolean) => {
     const next = focused === null ? (delta < 0 ? total - 1 : 0) : Math.min(Math.max(focused + delta, 0), total - 1)
@@ -236,7 +253,7 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
 
   const active = focusedName && document.getElementById(domId(focusedName)) ? domId(focusedName) : undefined
   return (
-    <div ref={viewport} data-density={density} className={`sc-file-grid${compact ? ' sc-file-grid--reserve-bar' : ''}${names.size ? ' sc-file-grid--reserve-selection' : ''}`} style={{ touchAction: 'manipulation' }} role="grid" aria-multiselectable="true" aria-rowcount={folderRows + fileRows} aria-colcount={columns} aria-label={t('grid.file_grid')} aria-activedescendant={active} aria-busy={loadingMore} tabIndex={0} onKeyDown={keyDown} onPointerDown={(event) => { if (!(event.target as HTMLElement).closest('[aria-selected]')) activation.cancel() }} onContextMenu={activation.cancel}>
+    <div ref={viewport} data-density={density} className={`sc-file-grid${compact ? ' sc-file-grid--contained' : ''}${names.size ? ' sc-file-grid--reserve-selection' : ''}`} style={{ touchAction: 'manipulation' }} role="grid" aria-multiselectable="true" aria-rowcount={folderRows + fileRows} aria-colcount={columns} aria-label={t('grid.file_grid')} aria-activedescendant={active} aria-busy={loadingMore} tabIndex={0} onKeyDown={keyDown} onPointerDown={(event) => { if (!(event.target as HTMLElement).closest('[aria-selected]')) activation.cancel() }} onContextMenu={activation.cancel}>
       {total === 0 && !loading ? <p className="sc-file-grid__empty">{t('common.folder_empty')}</p> : <>
         {folderCount > 0 ? <><p className="sc-file-grid__group" aria-hidden="true">{t('grid.folders')}</p><div ref={folderEl} className="sc-file-grid__section" role="rowgroup" aria-label={t('grid.folders')} style={{ height: folderWin.totalHeight }}><div className="sc-file-grid__window" style={{ transform: `translate3d(0,${folderWin.padTop}px,0)` }}>{renderSection(true)}</div></div></> : null}
         {fileCount > 0 ? <><p className="sc-file-grid__group" aria-hidden="true">{t('grid.files')}</p><div ref={fileEl} className="sc-file-grid__section" role="rowgroup" aria-label={t('grid.files')} style={{ height: fileWin.totalHeight }}><div className="sc-file-grid__window" style={{ transform: `translate3d(0,${fileWin.padTop}px,0)` }}>{renderSection(false)}</div></div></> : null}

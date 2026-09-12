@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useI18n } from '../../../lib/i18n/use-i18n'
 import { adminSettingsQuery, adminUploadSettingsMutation } from '../../../lib/query/admin'
 import { describeApiError } from '../../../lib/api/error-text'
 import { BYTES_PER_MB, bytesToMb, formatBytes } from '../../../lib/format/bytes'
-import { CHUNK_SIZE_MIN, CHUNK_SIZE_STORAGE_KEY, DEFAULT_CONCURRENCY, loadStoredConcurrency, MAX_CONCURRENCY, MIN_CONCURRENCY } from '../../../lib/upload/chunk-planner'
-import { setUploadConcurrency } from '../../../lib/upload/queue'
+import { CHUNK_SIZE_MIN, DEFAULT_CONCURRENCY, loadStoredChunkSize, loadStoredConcurrency, MAX_CONCURRENCY, MIN_CONCURRENCY, subscribeUploadPreferences, validChunkSizeOverride } from '../../../lib/upload/chunk-planner'
+import { setUploadChunkSize, setUploadConcurrency } from '../../../lib/upload/queue'
 import { Button } from '../Button'
 import { Icon } from '../Icon'
 import { Switch } from '../Switch'
@@ -29,22 +29,72 @@ export function UploadSettingsSection() {
   const [cacheEnabled, setCacheEnabled] = useState<boolean | null>(null)
   const [cacheAvailable, setCacheAvailable] = useState<boolean | null>(null)
   const [cacheTouched, setCacheTouched] = useState(false)
-  const [override, setOverride] = useState<number | null>(() => { try { const value = localStorage.getItem(CHUNK_SIZE_STORAGE_KEY); return value ? Number(value) : null } catch { return null } })
-  const [inputMb, setInputMb] = useState('')
+  const override = useSyncExternalStore(subscribeUploadPreferences, () => loadStoredChunkSize(serverMin), () => null)
+  const [inputMb, setInputMb] = useState(() => String((override ?? serverDefault) / BYTES_PER_MB))
   const [overrideError, setOverrideError] = useState<string | null>(null)
   const [overrideSaved, setOverrideSaved] = useState(false)
-  const [concurrencyInput, setConcurrencyInput] = useState(String(loadStoredConcurrency()))
-  const [activeConcurrency, setActiveConcurrency] = useState(loadStoredConcurrency())
+  const activeConcurrency = useSyncExternalStore(subscribeUploadPreferences, loadStoredConcurrency, () => DEFAULT_CONCURRENCY)
+  const [concurrencyInput, setConcurrencyInput] = useState(() => String(activeConcurrency))
   const [concurrencyError, setConcurrencyError] = useState<string | null>(null)
   const [concurrencySaved, setConcurrencySaved] = useState(false)
-  useEffect(() => { if (override !== null && inputMb === '') setInputMb(String(bytesToMb(override))) }, [override, inputMb])
+  useEffect(() => { setInputMb(String((override ?? serverDefault) / BYTES_PER_MB)) }, [override, serverDefault])
+  useEffect(() => { setConcurrencyInput(String(activeConcurrency)) }, [activeConcurrency])
   useEffect(() => { if (!settings.data) return; const fingerprint = JSON.stringify({ min: serverMin, def: serverDefault }); if (expected !== null && expected !== fingerprint) return; if (expected === fingerprint) setExpected(null); if (hydrated && baseline !== fingerprint) return; setMinMb(String(bytesToMb(serverMin))); setDefaultMb(String(bytesToMb(serverDefault))); setBaseline(fingerprint); setHydrated(true) }, [settings.data, serverMin, serverDefault, expected, hydrated, baseline])
   const serverDirty = hydrated && baseline !== JSON.stringify({ min: Math.round(Number(minMb) * BYTES_PER_MB), def: Math.round(Number(defaultMb) * BYTES_PER_MB) })
   async function saveServer(): Promise<void> { setServerValidation(null); setServerSaved(false); const min = Number(minMb); const def = Number(defaultMb); if (!Number.isFinite(min) || !Number.isFinite(def) || min <= 0 || def <= 0) { setServerValidation(t('upload_settings.enter_valid_number')); return } const minBytes = Math.round(min * BYTES_PER_MB); const defBytes = Math.round(def * BYTES_PER_MB); if (minBytes < CHUNK_SIZE_MIN) { setServerValidation(t('upload_settings.minimum_must_at_least', { min: formatBytes(CHUNK_SIZE_MIN) })); return } if (defBytes < minBytes) { setServerValidation(t('upload_settings.default_cannot_smaller_than_minimum')); return } try { const response = await mutation.mutateAsync({ chunk_min: minBytes, chunk_default: defBytes, ...(cacheTouched && cacheEnabled !== null ? { cache_enabled: cacheEnabled } : {}) }); const fingerprint = JSON.stringify({ min: response.chunk_min, def: response.chunk_default }); setMinMb(String(bytesToMb(response.chunk_min))); setDefaultMb(String(bytesToMb(response.chunk_default))); setBaseline(fingerprint); setExpected(fingerprint); setCacheEnabled(response.cache_enabled); setCacheAvailable(response.cache_available); setCacheTouched(false); setServerSaved(true) } catch { /* rendered below */ } }
-  function saveOverride(): void { setOverrideError(null); setOverrideSaved(false); const mb = Number(inputMb); if (!Number.isFinite(mb) || mb <= 0) { setOverrideError(t('upload_settings.enter_valid_number')); return } const bytes = Math.round(mb * BYTES_PER_MB); if (bytes < serverMin) { setOverrideError(t('upload_settings.must_at_least_server_minimum', { min: formatBytes(serverMin) })); return } try { localStorage.setItem(CHUNK_SIZE_STORAGE_KEY, String(bytes)); setOverride(bytes); setOverrideSaved(true) } catch { setOverrideError(t('common.could_not_save_settings')) } }
-  function resetOverride(): void { try { localStorage.removeItem(CHUNK_SIZE_STORAGE_KEY) } catch { /* ignore */ } setOverride(null); setInputMb(''); setOverrideError(null); setOverrideSaved(false) }
-  function saveConcurrency(): void { setConcurrencyError(null); setConcurrencySaved(false); const value = Number(concurrencyInput); if (!Number.isInteger(value) || value < MIN_CONCURRENCY || value > MAX_CONCURRENCY) { setConcurrencyError(t('upload_settings.concurrency_must_between', { min: MIN_CONCURRENCY, max: MAX_CONCURRENCY })); return } setUploadConcurrency(value); setActiveConcurrency(value); setConcurrencySaved(true) }
-  function resetConcurrency(): void { setUploadConcurrency(DEFAULT_CONCURRENCY); setActiveConcurrency(DEFAULT_CONCURRENCY); setConcurrencyInput(String(DEFAULT_CONCURRENCY)); setConcurrencySaved(false) }
+  function saveOverride(): void {
+    setOverrideError(null)
+    setOverrideSaved(false)
+    const mb = Number(inputMb)
+    const bytes = Math.round(mb * BYTES_PER_MB)
+    if (!Number.isFinite(mb) || mb <= 0 || !Number.isSafeInteger(bytes)) {
+      setOverrideError(t('upload_settings.enter_valid_number'))
+      return
+    }
+    if (!validChunkSizeOverride(bytes, serverMin)) {
+      setOverrideError(t('upload_settings.must_at_least_server_minimum', { min: formatBytes(serverMin) }))
+      return
+    }
+    if (!setUploadChunkSize(bytes, serverMin)) {
+      setOverrideError(t('common.could_not_save_settings'))
+      return
+    }
+    setInputMb(String(bytes / BYTES_PER_MB))
+    setOverrideSaved(true)
+  }
+  function resetOverride(): void {
+    setOverrideError(null)
+    setOverrideSaved(false)
+    if (!setUploadChunkSize(null)) {
+      setOverrideError(t('common.could_not_save_settings'))
+      return
+    }
+    setInputMb(String(serverDefault / BYTES_PER_MB))
+  }
+  function saveConcurrency(): void {
+    setConcurrencyError(null)
+    setConcurrencySaved(false)
+    const value = Number(concurrencyInput)
+    if (!Number.isInteger(value) || value < MIN_CONCURRENCY || value > MAX_CONCURRENCY) {
+      setConcurrencyError(t('upload_settings.concurrency_must_between', { min: MIN_CONCURRENCY, max: MAX_CONCURRENCY }))
+      return
+    }
+    if (!setUploadConcurrency(value)) {
+      setConcurrencyError(t('common.could_not_save_settings'))
+      return
+    }
+    setConcurrencyInput(String(value))
+    setConcurrencySaved(true)
+  }
+  function resetConcurrency(): void {
+    setConcurrencyError(null)
+    setConcurrencySaved(false)
+    if (!setUploadConcurrency(DEFAULT_CONCURRENCY)) {
+      setConcurrencyError(t('common.could_not_save_settings'))
+      return
+    }
+    setConcurrencyInput(String(DEFAULT_CONCURRENCY))
+  }
   return (
     <>
       <article className="sc-admin-card">

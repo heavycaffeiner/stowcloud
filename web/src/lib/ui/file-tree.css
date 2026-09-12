@@ -8,6 +8,8 @@
   color: var(--sc-content-primary, rgb(var(--mdui-color-on-surface)));
 }
 ul[role='tree'] { list-style: none; margin: 0; padding: 0; }
+.sc-file-tree__list { min-width: 0; }
+.sc-file-tree__list > ul { width: 100%; }
 @container sc-browse-content (max-width: 839.98px) { .sc-file-tree { flex-basis: 200px; width: 200px; } }
 .sc-file-tree--overlay {
   position: fixed;
@@ -29,7 +31,7 @@ ul[role='tree'] { list-style: none; margin: 0; padding: 0; }
 .sc-file-tree--overlay::backdrop { background: color-mix(in srgb, rgb(var(--mdui-color-scrim)) 32%, transparent); transition: background-color var(--mdui-motion-easing-standard, cubic-bezier(.2,0,0,1)), display var(--mdui-motion-duration-medium2, .25s) allow-discrete, overlay var(--mdui-motion-duration-medium2, .25s) allow-discrete; }
 .sc-file-tree--overlay:not([open])::backdrop { background: color-mix(in srgb, rgb(var(--mdui-color-scrim)) 0%, transparent); }
 @starting-style { .sc-file-tree--overlay[open]::backdrop { background: color-mix(in srgb, rgb(var(--mdui-color-scrim)) 0%, transparent); } }
-.sc-file-tree__overlay-header { position: sticky; top: 0; display: flex; align-items: center; justify-content: flex-end; height: 56px; padding-inline: 8px; box-shadow: 0 1px 0 rgb(var(--mdui-color-outline-variant)); background: var(--sc-page-surface, rgb(var(--mdui-color-surface))); }
+.sc-file-tree__overlay-header { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: flex-end; height: 56px; padding-inline: 8px; box-shadow: 0 1px 0 rgb(var(--mdui-color-outline-variant)); background: var(--sc-page-surface, rgb(var(--mdui-color-surface))); }
 .sc-file-tree__overlay-header button { width: 40px; height: 40px; border: 0; border-radius: 50%; background: transparent; color: inherit; font-size: 1.5rem; cursor: pointer; }
 .sc-tree-row { display: flex; align-items: center; height: 40px; border-radius: var(--mdui-shape-corner-full, 999px); color: var(--sc-content-primary, rgb(var(--mdui-color-on-surface))); transition: background-color 150ms ease, color 150ms ease; }
 .sc-tree-row--ancestor { background: color-mix(in srgb, rgb(var(--mdui-color-secondary-container)) 40%, transparent); }
@@ -41,9 +43,8 @@ ul[role='tree'] { list-style: none; margin: 0; padding: 0; }
 .sc-tree-row__twisty-icon--expanded { transform: rotate(90deg); }
 .sc-tree-row__label { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; height: 100%; padding-inline: 0 8px; border: none; background: transparent; color: inherit; font-size: var(--mdui-typescale-body-medium-size, .875rem); font-weight: var(--mdui-typescale-body-medium-weight, 400); line-height: var(--mdui-typescale-body-medium-line-height, 1.25rem); letter-spacing: var(--mdui-typescale-body-medium-tracking, .016rem); text-align: start; cursor: pointer; }
 .sc-tree-row__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sc-tree-row__status { display: flex; align-items: center; height: 28px; margin: 0; color: var(--sc-content-secondary, rgb(var(--mdui-color-on-surface-variant))); font-size: var(--mdui-typescale-body-small-size, .75rem); line-height: var(--mdui-typescale-body-small-line-height, 1rem); }
+.sc-tree-row__status { display: flex; align-items: center; min-height: 28px; margin: 0; padding-block: 4px; overflow-wrap: anywhere; color: var(--sc-content-secondary, rgb(var(--mdui-color-on-surface-variant))); font-size: var(--mdui-typescale-body-small-size, .75rem); line-height: var(--mdui-typescale-body-small-line-height, 1rem); }
 .sc-tree-row__status--error { color: rgb(var(--mdui-color-error)); }
 .sc-tree-row__more { display: flex; align-items: center; width: 100%; min-height: 36px; padding-block: 4px; border: 0; background: transparent; text-align: start; cursor: pointer; font-size: var(--mdui-typescale-body-small-size, .75rem); line-height: var(--mdui-typescale-body-small-line-height, 1rem); }
-ul[role='group'] { list-style: none; margin: 0; padding: 0; }
 .sc-tree-row__twisty:focus-visible, .sc-tree-row__label:focus-visible, .sc-tree-row__more:focus-visible { outline: 2px solid rgb(var(--mdui-color-primary)); outline-offset: -2px; }
 @media (prefers-reduced-motion: reduce) { .sc-tree-row, .sc-tree-row__twisty, .sc-tree-row__twisty-icon { transition: none; } }

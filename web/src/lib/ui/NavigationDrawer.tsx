@@ -5,6 +5,7 @@ import { useI18n } from '../i18n/use-i18n'
 import { setRootOrderMutation } from '../query/account'
 import { Icon } from './Icon'
 import { IconButton } from './IconButton'
+import { VirtualList } from './VirtualList'
 
 export interface NavItem {
   readonly id: string
@@ -160,10 +161,13 @@ export function NavigationDrawer({
         <ul className="sc-nav-drawer__list" aria-label={t('nav.folder_selector')}>
           <li className="sc-nav-drawer__entry">
             {displayRoots.length > 0 ? (
-              <ul className={overlay ? 'sc-nav-drawer__sublist sc-nav-drawer__sublist--overlay' : 'sc-nav-drawer__sublist'}>
-                {displayRoots.map((root, index) => (
-                  <li key={root.id}>
-                    {reordering ? (
+              <>
+                <VirtualList
+                  className={overlay ? 'sc-nav-drawer__sublist sc-nav-drawer__sublist--overlay' : 'sc-nav-drawer__sublist'}
+                  items={displayRoots}
+                  itemKey={(root) => root.id}
+                  estimateSize={overlay ? 48 : 40}
+                  renderItem={(root, index) => reordering ? (
                       <div className="sc-nav-drawer__subitem sc-nav-drawer__subitem--reorder">
                         <span className="sc-nav-drawer__item-icon"><Icon name={root.icon ?? 'folder'} /></span>
                         <span className="sc-nav-drawer__subitem-label sc-filename">{root.label}</span>
@@ -202,10 +206,9 @@ export function NavigationDrawer({
                         <span className="sc-nav-drawer__subitem-label sc-filename">{root.label}</span>
                       </button>
                     )}
-                  </li>
-                ))}
-                {orderError ? <li className="sc-nav-drawer__reorder-error" role="alert">{orderError}</li> : null}
-              </ul>
+                />
+                {orderError ? <p className="sc-nav-drawer__reorder-error" role="alert">{orderError}</p> : null}
+              </>
             ) : null}
           </li>
         </ul>

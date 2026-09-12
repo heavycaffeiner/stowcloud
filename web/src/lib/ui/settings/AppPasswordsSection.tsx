@@ -8,6 +8,7 @@ import { appPasswordsQuery, createAppPasswordMutation, revokeAppPasswordMutation
 import { Button } from '../Button'
 import { Switch } from '../Switch'
 import { TextField } from '../TextField'
+import { VirtualList } from '../VirtualList'
 import { SettingsDialog } from './SettingsDialog'
 
 export function AppPasswordsSection() {
@@ -66,9 +67,25 @@ export function AppPasswordsSection() {
   return (
     <div className="sc-app-passwords">
       {list.isPending ? <p>{t('common.loading')}</p> : list.isError ? <p className="sc-app-passwords__error">{t('common.could_not_load_list')}</p> : (list.data ?? []).length === 0 ? <p className="sc-app-passwords__empty">{t('app_password.no_app_passwords_issued_yet')}</p> : (
-        <ul className="sc-app-passwords__list">
-          {(list.data ?? []).map((item) => <li key={item.id}><div><strong className="sc-app-passwords__name">{item.name}</strong>{item.read_only ? <span className="sc-settings-badge">{t('common.read_only')}</span> : null}<p>{t('app_password.issued', { date: formatDateNs(item.created_ns) })} - {item.last_used_ns ? t('app_password.last_used', { date: formatDateNs(item.last_used_ns) }) : t('app_password.never_used')}{isExpired(item) ? ` - ${t('app_password.expired')}` : item.expires_ns ? ` - ${t('app_password.expires', { date: formatDateNs(item.expires_ns) })}` : ''}</p></div><div className="sc-settings-card__buttons">{!isExpired(item) ? <Button variant="text" ariaLabel={t('app_password.wipe', { name: item.name })} onClick={() => { setActionError(null); setWipeTarget(item) }}>{t('app_password.wipe_2')}</Button> : null}<Button variant="text" ariaLabel={t('app_password.revoke', { name: item.name })} onClick={() => { setActionError(null); setRevokeTarget(item) }}>{t('app_password.revoke_2')}</Button></div></li>)}
-        </ul>
+        <VirtualList
+          className="sc-app-passwords__list"
+          items={list.data ?? []}
+          itemKey={(item) => item.id}
+          estimateSize={96}
+          renderItem={(item) => (
+            <>
+              <div>
+                <strong className="sc-app-passwords__name">{item.name}</strong>
+                {item.read_only ? <span className="sc-settings-badge">{t('common.read_only')}</span> : null}
+                <p>{t('app_password.issued', { date: formatDateNs(item.created_ns) })} - {item.last_used_ns ? t('app_password.last_used', { date: formatDateNs(item.last_used_ns) }) : t('app_password.never_used')}{isExpired(item) ? ` - ${t('app_password.expired')}` : item.expires_ns ? ` - ${t('app_password.expires', { date: formatDateNs(item.expires_ns) })}` : ''}</p>
+              </div>
+              <div className="sc-settings-card__buttons">
+                {!isExpired(item) ? <Button variant="text" ariaLabel={t('app_password.wipe', { name: item.name })} onClick={() => { setActionError(null); setWipeTarget(item) }}>{t('app_password.wipe_2')}</Button> : null}
+                <Button variant="text" ariaLabel={t('app_password.revoke', { name: item.name })} onClick={() => { setActionError(null); setRevokeTarget(item) }}>{t('app_password.revoke_2')}</Button>
+              </div>
+            </>
+          )}
+        />
       )}
       <div className="sc-app-passwords__actions"><Button variant="outlined" onClick={openCreate}>{t('app_password.new_app_password')}</Button></div>
       <SettingsDialog open={createOpen} title={t('app_password.new_app_password')} onClose={() => setCreateOpen(false)} actions={<><Button variant="text" onClick={() => setCreateOpen(false)}>{t('common.cancel')}</Button><Button onClick={confirmCreate} disabled={!newName.trim() || !newCurrent} loading={create.isPending}>{t('common.create')}</Button></>}>

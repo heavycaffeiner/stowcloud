@@ -9,6 +9,7 @@ import { normalizePath, parentOf } from '../../lib/api/path-utils'
 import { recentQuery } from '../../lib/query/files'
 import { useDocumentTitle } from '../use-document-title'
 import { Icon } from '../../lib/ui/Icon'
+import { VirtualList } from '../../lib/ui/VirtualList'
 import './simple-pages.css'
 
 const RECENT_LIMIT = 100
@@ -57,12 +58,15 @@ export function RecentPage() {
         {recent.error ? <p className="sc-secondary-page__error" role="alert">{describeApiError(recent.error, t('recent.could_not_load'))}</p> : null}
         {!recent.isPending && !recent.error && hits.length === 0 ? <p className="sc-secondary-page__empty">{t('recent.nothing_recent')}</p> : null}
         {hits.length > 0 ? (
-          <ul className="sc-secondary-page__list">
-            {hits.map((hit) => {
+          <VirtualList
+            className="sc-secondary-page__list"
+            items={hits}
+            itemKey={(hit) => `${hit.at_ns}:${hit.vpath}`}
+            estimateSize={56}
+            renderItem={(hit) => {
               const parent = parentOfVpath(hit.vpath)
               const href = `${parent === '/' ? '/b' : `/b${parent}`}?focus=${encodeURIComponent(hit.name)}`
               return (
-                <li key={`${hit.at_ns}:${hit.vpath}`}>
                   <button type="button" className="sc-secondary-page__row sc-recent__row" aria-label={t('recent.open_item', { name: hit.name, folder: parent })} onClick={() => void navigate(href)}>
                     <span className="sc-secondary-page__icon"><Icon name="draft" /></span>
                     <span className="sc-secondary-page__text"><span className="sc-secondary-page__name">{hit.name}</span><span className="sc-secondary-page__path">{parent}</span></span>
@@ -70,10 +74,9 @@ export function RecentPage() {
                     <span className="sc-secondary-page__meta">{formatBytes(hit.size)}</span>
                     <span className="sc-secondary-page__meta">{formatDateNs(hit.at_ns)}</span>
                   </button>
-                </li>
               )
-            })}
-          </ul>
+            }}
+          />
         ) : null}
       </div>
     </section>

@@ -32,6 +32,7 @@ import { RenameDialog } from '../../lib/ui/RenameDialog'
 import { DeleteDialog } from '../../lib/ui/DeleteDialog'
 import { ConflictDialog } from '../../lib/ui/ConflictDialog'
 import { DestinationPickerDialog } from '../../lib/ui/DestinationPickerDialog'
+import { VirtualList } from '../../lib/ui/VirtualList'
 import { UnlockShareDialog } from '../../lib/ui/UnlockShareDialog'
 import { PreviewDialog } from '../../lib/ui/PreviewDialog'
 import { Button } from '../../lib/ui/Button'
@@ -144,9 +145,11 @@ export function BrowsePage() {
 
   const autoScrollTick = () => {
     if (!dragOrigin.current) return
-    const step = autoScrollStep(dragPointer.current.y, window.innerHeight)
+    const activeView = mode === 'grid' ? gridRef.current : tableRef.current
+    const bounds = activeView?.scrollBounds() ?? { top: 0, height: window.innerHeight }
+    const step = autoScrollStep(dragPointer.current.y - bounds.top, bounds.height)
     if (step !== 0) {
-      window.scrollBy(0, step)
+      activeView?.scrollBy(step)
       updateMarquee()
     }
     dragFrame.current = requestAnimationFrame(autoScrollTick)
@@ -556,7 +559,7 @@ export function BrowsePage() {
         </div>
       </header>
       {selected.length ? <div className="sc-browse__selection-bar"><div className="sc-browse__selection-bar-inner"><IconButton label={t('browse.clear_selection')} onClick={() => selection.clear()}><Icon name="close" /></IconButton><span className="sc-browse__selection-count">{compact ? t('common.item_count', { count: selected.length }) : t('browse.selected', { count: selected.length, size: formatBytes(selectionBytes) })}</span><span className="sc-browse__selection-gap" /><IconButton label={t('browse.select_all')} onClick={() => selection.all(entries.map((entry) => entry.name))}><Icon name="check" /></IconButton>{actions.map((action) => <IconButton key={action.key} label={action.label} onClick={action.run}><Icon name={ACTION_ICON_NAMES[action.key] ?? 'more-vert'} /></IconButton>)}</div></div> : null}
-      {operation ? <section className="sc-browse__operation" role="status" aria-live="polite"><div className="sc-browse__operation-heading"><h2>{operation.kind === 'delete' ? t('common.delete') : operation.kind === 'move' ? t('common.move') : t('common.copy')}</h2><button type="button" className="sc-browse__operation-close" onClick={() => setOperation(null)}>{t('common.close')}</button></div><ul>{operation.results.map((result) => <li key={result.path} className={!result.ok ? 'sc-browse__operation-error' : undefined}><span>{result.destination ? `${result.path} to ${result.destination}` : result.path}</span><span>{result.ok ? result.skipped ? t('browse.items_skipped_name_taken', { count: 1 }) : t('common.done') : batchErrorKey(result.error)?.key ? t(batchErrorKey(result.error)!.key, batchErrorKey(result.error)!.params) : t('error.internal')}</span></li>)}</ul>{operation.results.some((result) => result.skipped) ? <p>{t('browse.items_skipped_name_taken', { count: operation.results.filter((result) => result.skipped).length })}</p> : null}</section> : null}
+      {operation ? <section className="sc-browse__operation" role="status" aria-live="polite"><div className="sc-browse__operation-heading"><h2>{operation.kind === 'delete' ? t('common.delete') : operation.kind === 'move' ? t('common.move') : t('common.copy')}</h2><button type="button" className="sc-browse__operation-close" onClick={() => setOperation(null)}>{t('common.close')}</button></div><VirtualList items={operation.results} itemKey={(result) => result.path} estimateSize={48} itemProps={(result) => ({ className: !result.ok ? 'sc-browse__operation-error' : undefined })} renderItem={(result) => <><span>{result.destination ? `${result.path} to ${result.destination}` : result.path}</span><span>{result.ok ? result.skipped ? t('browse.items_skipped_name_taken', { count: 1 }) : t('common.done') : batchErrorKey(result.error)?.key ? t(batchErrorKey(result.error)!.key, batchErrorKey(result.error)!.params) : t('error.internal')}</span></>} />{operation.results.some((result) => result.skipped) ? <p>{t('browse.items_skipped_name_taken', { count: operation.results.filter((result) => result.skipped).length })}</p> : null}</section> : null}
       <div className="sc-browse__content">
         {treeOpen ? <FileTree currentPath={path} onNavigate={(next) => { setTreeOpen(false); void navigate(`/b${next}`) }} overlay={compact} onClose={() => setTreeOpen(false)} /> : null}
         <div className={`sc-browse__table-wrap${dragOver ? ' sc-browse__table-wrap--dragover' : ''}${marqueeRect ? ' sc-browse__table-wrap--marquee' : ''}`} onPointerDown={onMarqueePointerDown} onContextMenu={openBlankMenu} onClick={onEmptyAreaClick}>

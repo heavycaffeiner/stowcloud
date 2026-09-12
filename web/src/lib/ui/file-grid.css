@@ -7,10 +7,10 @@
   background: var(--sc-page-surface, rgb(var(--mdui-color-surface)));
   container-type: inline-size;
   container-name: sc-file-grid;
-  padding-bottom: calc(var(--sc-reserve-nav, 0px) + var(--sc-reserve-selection, 0px));
+  padding-bottom: calc(24px + var(--sc-reserve-selection, 0px));
 }
 .sc-file-grid:focus-visible { outline: 3px solid var(--sc-state-focus, rgb(var(--mdui-color-secondary))); outline-offset: -3px; }
-.sc-file-grid--reserve-bar { --sc-reserve-nav: calc(var(--sc-nav-bar-height) + env(safe-area-inset-bottom, 0px)); }
+.sc-file-grid--contained { align-self: stretch; min-height: 0; overflow: auto; overscroll-behavior-y: contain; }
 .sc-file-grid--reserve-selection { --sc-reserve-selection: 80px; }
 .sc-file-grid__group {
   margin: 0;

@@ -16,10 +16,12 @@ import { formatBytes } from '../../lib/format/bytes'
 import { useI18n } from '../../lib/i18n/use-i18n'
 import { Button } from '../../lib/ui/Button'
 import { TextField } from '../../lib/ui/TextField'
+import { VirtualList } from '../../lib/ui/VirtualList'
 import { useDocumentTitle } from '../use-document-title'
 import './public-share.css'
 
 type DropItem = {
+  id: number
   file: File
   status: 'pending' | 'uploading' | 'done' | 'error'
   storedAs: string
@@ -37,6 +39,7 @@ export function PublicSharePage() {
   const [unlocking, setUnlocking] = useState(false)
   const [queue, setQueue] = useState<DropItem[]>([])
   const queueRef = useRef<DropItem[]>([])
+  const nextQueueId = useRef(0)
   const uploadingRef = useRef(false)
   const [uploading, setUploading] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
@@ -132,6 +135,7 @@ export function PublicSharePage() {
     if (!files.length) return
     const limit = info?.maxUploadBytes ?? null
     const additions = files.map((file): DropItem => ({
+      id: nextQueueId.current++,
       file,
       status: limit !== null && file.size > limit ? 'error' : 'pending',
       storedAs: '',
@@ -207,17 +211,22 @@ export function PublicSharePage() {
               {queue.length > 0 ? (
                 <>
                   <p className="sc-public-share__status">{t('share_drop.uploading', { done: doneCount, total: queue.length })}</p>
-                  <ul className="sc-public-share__list">
-                    {queue.map((item, index) => (
-                      <li className="sc-public-share__row" key={`${item.file.name}-${index}`}>
+                  <VirtualList
+                    className="sc-public-share__list"
+                    items={queue}
+                    itemKey={(item) => item.id}
+                    estimateSize={56}
+                    itemProps={() => ({ className: 'sc-public-share__row' })}
+                    renderItem={(item, index) => (
+                      <>
                         <span className="sc-filename sc-public-share__name">{item.file.name}</span>
                         <span className={`sc-public-share__size${item.status === 'error' ? ' sc-public-share__status--error' : ''}`}>
                           {item.status === 'done' ? t('share_drop.uploaded_as', { name: item.storedAs }) : item.failure === 'too_large' ? t('share_drop.too_large') : item.failure === 'failed' ? t('share_drop.failed') : item.status === 'uploading' ? t('share_drop.in_progress') : formatBytes(item.file.size)}
                         </span>
                         {item.status === 'error' ? <div className="sc-public-share__row-actions"><Button variant="text" onClick={() => retryUpload(index)}>{t('share_drop.retry')}</Button><Button variant="text" onClick={() => removeFailedUpload(index)}>{t('share_drop.remove')}</Button></div> : null}
-                      </li>
-                    ))}
-                  </ul>
+                      </>
+                    )}
+                  />
                 </>
               ) : null}
             </>
@@ -228,16 +237,21 @@ export function PublicSharePage() {
             </>
           ) : (
             <>
-              <ul className="sc-public-share__list">
-                {(info.entries ?? []).map((entry) => (
-                  <li className="sc-public-share__row" key={entry.name}>
+              {(info.entries ?? []).length > 0 ? <VirtualList
+                key={path}
+                className="sc-public-share__list"
+                items={info.entries ?? []}
+                itemKey={(entry) => entry.name}
+                estimateSize={56}
+                itemProps={() => ({ className: 'sc-public-share__row' })}
+                renderItem={(entry) => (
+                  <>
                     {entry.kind === 'dir' ? <button type="button" className="sc-filename sc-public-share__name sc-public-share__folder sc-focus-ring" aria-label={t('public_share.open_folder', { name: entry.name })} onClick={() => openFolder(childPath(entry.name))}>{entry.name}</button> : <span className="sc-filename sc-public-share__name">{entry.name}</span>}
                     <span className="sc-public-share__size">{entry.kind === 'dir' ? '-' : formatBytes(entry.size)}</span>
                     {entry.kind === 'file' && info.canDownload ? <Button variant="text" onClick={() => download(childPath(entry.name))}>{t('common.download')}</Button> : null}
-                  </li>
-                ))}
-                {(info.entries ?? []).length === 0 ? <li className="sc-public-share__row sc-public-share__row--empty">{t('public_share.empty')}</li> : null}
-              </ul>
+                  </>
+                )}
+              /> : <ul className="sc-public-share__list"><li className="sc-public-share__row sc-public-share__row--empty">{t('public_share.empty')}</li></ul>}
               {info.canDownload ? <Button onClick={downloadFolder}>{t('public_share.download_folder')}</Button> : null}
             </>
           )}

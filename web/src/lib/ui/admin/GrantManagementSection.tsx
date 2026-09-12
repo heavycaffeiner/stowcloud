@@ -15,6 +15,7 @@ import { ListItem } from '../ListItem'
 import { ProgressCircular } from '../ProgressCircular'
 import { Select, type SelectOption } from '../Select'
 import { TextField } from '../TextField'
+import { VirtualList } from '../VirtualList'
 import './admin.css'
 
 interface GrantManagementSectionProps {
@@ -207,13 +208,17 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
                 <p>{t('grant.no_folders_granted_yet_signing')}</p>
               </div>
             ) : (
-              <ul className="sc-admin-list">
-                {grants.map((grant) => {
+              <VirtualList
+                className="sc-admin-list"
+                items={grants}
+                itemKey={(grant) => grant.id}
+                estimateSize={96}
+                pinnedKeys={[editTarget?.id, deleteTarget?.id].filter((id): id is number => id != null)}
+                renderItem={(grant) => {
                   const expanded = expandedIds.has(grant.id)
                   const overlap = grant.allow.filter((permission) => grant.deny.includes(permission))
                   const grantName = grant.label || shareName(grant.share)
                   return (
-                    <li key={grant.id}>
                       <ListItem
                         headline={
                           <>
@@ -262,10 +267,9 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
                           </span>
                         }
                       />
-                    </li>
                   )
-                })}
-              </ul>
+                }}
+              />
             )}
             <Button variant="tonal" icon={<Icon name="add" />} onClick={openAdd}>{t('common.add_folder')}</Button>
           </>

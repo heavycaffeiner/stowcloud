@@ -15,6 +15,7 @@ import { shareLinksQuery } from '../../lib/query/shares'
 import { useDocumentTitle } from '../use-document-title'
 import { ShareManageDialog } from '../../lib/ui/ShareManageDialog'
 import { Icon } from '../../lib/ui/Icon'
+import { VirtualList } from '../../lib/ui/VirtualList'
 import './simple-pages.css'
 
 type LinkRow = ShareLinkInfo | OwnedShareLinkInfo
@@ -123,10 +124,10 @@ export function LinksPage() {
         {loading ? <div className="sc-secondary-page__loading"><mdui-circular-progress></mdui-circular-progress></div> : null}
         {activeQuery.error ? <p className="sc-secondary-page__error" role="alert">{describeApiError(activeQuery.error, t('links.could_not_load'))}</p> : null}
         {!loading && !activeQuery.error && rows.length === 0 ? <p className="sc-secondary-page__empty">{t('links.empty')}</p> : null}
-        {rows.length > 0 ? <ul className="sc-secondary-page__list sc-links__list">{rows.map((link) => {
+        {rows.length > 0 ? <VirtualList className="sc-secondary-page__list sc-links__list" items={rows} itemKey={(link) => link.id} estimateSize={80} pinnedKeys={managing ? [managing.id] : undefined} renderItem={(link) => {
           const mine = isMine(link)
           const path = normalizePath(link.path)
-          return <li key={link.id}>
+          return <>
             <button type="button" className={mine ? 'sc-secondary-page__row sc-links__row' : 'sc-secondary-page__row sc-links__row sc-links__row--readonly'} aria-disabled={!mine || resolvingPath !== null ? 'true' : undefined} aria-busy={resolvingPath === path ? 'true' : undefined} aria-label={mine ? `${t('links.manage_link', { path: link.path })}. ${targetSummary(link)}` : t('links.owned_elsewhere', { path: link.path })} onClick={() => void openManagement(link)}>
               <span className="sc-secondary-page__icon"><Icon name={link.has_password ? 'lock' : 'link'} /></span>
               <span className="sc-secondary-page__text"><span className="sc-secondary-page__name">{link.path}</span>{mine ? <span className="sc-secondary-page__path">{targetSummary(link)}</span> : null}<span className="sc-links__meta">{isOwned(link) ? `${t('links.owner')}: ${link.owner_name || t('common.user', { id: link.owner })} - ` : ''}{isDropLink(link) ? t('share.kind_drop') : t('share.used_times', { count: link.max_downloads ? `${link.downloads}/${link.max_downloads}` : link.downloads })} - {link.has_password ? t('links.password_protected') : t('links.no_password')}</span></span>
@@ -134,8 +135,8 @@ export function LinksPage() {
               {isExpired(link) ? <span className="sc-links__flag sc-links__flag--warn">{t('links.expired')}</span> : isExhausted(link) ? <span className="sc-links__flag sc-links__flag--warn">{t('links.exhausted')}</span> : null}
             </button>
             {targetErrorPath === path && targetError ? <p className="sc-links__target-error" role="alert">{targetError}</p> : null}
-          </li>
-        })}</ul> : null}
+          </>
+        }} /> : null}
       </div>
       {managing ? <ShareManageDialog open path={normalizePath(managing.path)} targetName={baseName(managing.path) || managing.path} targetIsDir={managingTarget?.kind === 'dir'} onclose={() => { setManaging(null); setManagingTarget(null) }} /> : null}
     </section>

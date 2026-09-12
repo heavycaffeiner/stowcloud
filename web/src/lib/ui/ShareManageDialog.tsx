@@ -13,6 +13,7 @@ import { IconButton } from './IconButton'
 import { ProgressCircular } from './ProgressCircular'
 import { Select, type SelectOption } from './Select'
 import { TextField } from './TextField'
+import { VirtualList } from './VirtualList'
 import './share-manage.css'
 
 export interface ShareManageDialogProps {
@@ -283,9 +284,15 @@ export function ShareManageDialog({ open, path, targetName, targetIsDir, onClose
         {sharesQuery.isPending ? <div className="sc-share__loading"><ProgressCircular /></div> : loadError ? <p className="sc-share__error" role="alert">{loadError}</p> : (
           <>
             {links.length === 0 && !creatingOpen ? <p className="sc-share__empty">{t('share.no_share_links_item')}</p> : null}
-            <ul className="sc-share__list">
-              {links.map((link) => (
-                <li className="sc-share__item" key={link.id}>
+            <VirtualList
+              className="sc-share__list"
+              items={links}
+              itemKey={(link) => link.id}
+              estimateSize={112}
+              itemProps={() => ({ className: 'sc-share__item' })}
+              pinnedKeys={editingId === null ? [] : [editingId]}
+              renderItem={(link) => (
+                <>
                   {editingId === link.id ? (
                     <div className="sc-share__edit-form">
                       <div className="sc-share__perm-row">
@@ -315,9 +322,9 @@ export function ShareManageDialog({ open, path, targetName, targetIsDir, onClose
                       </div>
                     </div>
                   )}
-                </li>
-              ))}
-            </ul>
+                </>
+              )}
+            />
             {creatingOpen ? (
               <div className="sc-share__create-form">
                 <h3>{t('share.create_new_link')}</h3>

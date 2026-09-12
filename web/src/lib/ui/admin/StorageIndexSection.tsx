@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { formatBytes } from '../../../lib/format/bytes'
 import { formatDuration, formatNumber } from '../../../lib/i18n'
@@ -11,6 +11,7 @@ import { Button } from '../Button'
 import { Icon } from '../Icon'
 import { Switch } from '../Switch'
 import { ProgressCircular } from '../ProgressCircular'
+import { VirtualList } from '../VirtualList'
 import './admin-sections.css'
 
 const ACCURACY: Record<string, string> = { measured: 'storage.accuracy_counted_everything', modelled: 'storage.accuracy_counted_a_sample' }
@@ -21,6 +22,7 @@ export function StorageIndexSection() {
   const { t } = useI18n()
   const qc = useQueryClient()
   const storage = useQuery(adminStorageQuery())
+  const storageItems = useMemo(() => storage.data ? [storage.data, ...storage.data.shares] : [], [storage.data])
   const status = useQuery(adminIndexStatusQuery())
   const settings = useQuery(adminSettingsQuery())
   const [estimateRequested, setEstimateRequested] = useState(false)
@@ -54,24 +56,29 @@ export function StorageIndexSection() {
         ) : storage.error ? (
           <p className="sc-admin-error">{describeApiError(storage.error, t('storage.could_not_load_storage_information'))}</p>
         ) : storage.data ? (
-          <ul className="sc-storage-list">
-            <li>
-              <div className="sc-storage__item-label">
-                <Icon name="database" size={18} />
-                <span>{t('storage.file_database')}</span>
-              </div>
-              <strong>{formatBytes(storage.data.db_bytes)}</strong>
-            </li>
-            {storage.data.shares.map((share) => (
-              <li key={share.label}>
+          <VirtualList
+            className="sc-storage-list"
+            items={storageItems}
+            itemKey={(item) => 'db_bytes' in item ? 'database' : `share:${item.label}`}
+            estimateSize={48}
+            renderItem={(item) => 'db_bytes' in item ? (
+              <>
+                <div className="sc-storage__item-label">
+                  <Icon name="database" size={18} />
+                  <span>{t('storage.file_database')}</span>
+                </div>
+                <strong>{formatBytes(item.db_bytes)}</strong>
+              </>
+            ) : (
+              <>
                 <div className="sc-storage__item-label">
                   <Icon name="folder" size={18} />
-                  <span className="sc-filename">{share.label}</span>
+                  <span className="sc-filename">{item.label}</span>
                 </div>
-                <strong>{t('storage.free', { free: formatBytes(share.free_bytes), total: formatBytes(share.total_bytes) })}</strong>
-              </li>
-            ))}
-          </ul>
+                <strong>{t('storage.free', { free: formatBytes(item.free_bytes), total: formatBytes(item.total_bytes) })}</strong>
+              </>
+            )}
+          />
         ) : null}
       </article>
 

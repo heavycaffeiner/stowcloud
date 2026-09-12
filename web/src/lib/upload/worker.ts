@@ -4,12 +4,12 @@
 import {
   CHUNK_SIZE_DEFAULT,
   CHUNK_SIZE_MIN,
-  CHUNK_SIZE_STORAGE_KEY,
   ChunkScheduler,
-  loadStoredConcurrency,
+  DEFAULT_CONCURRENCY,
   MAX_CONCURRENCY,
   MIN_CONCURRENCY,
   shrinkChunkSize,
+  validChunkSizeOverride,
   type ChunkDescriptor
 } from './chunk-planner'
 import {
@@ -73,6 +73,7 @@ export type Cmd =
   // an admin's `[upload]` config instead of this file's own hardcoded
   // constants. Same separate-module-realm reason `csrf` exists as a Cmd.
   | { t: 'limits'; chunkMin: number; chunkDefault: number }
+  | { t: 'chunk-size'; size: number | null }
   | { t: 'concurrency'; maxInflight: number }
 export type Evt =
   | { t: 'progress'; id: string; sent: number; total: number; rate: number; etaSec: number }
@@ -125,7 +126,7 @@ function updateSentBytes(f: FileState): void {
 }
 
 const files = new Map<string, FileState>()
-let maxInflight = loadStoredConcurrency()
+let maxInflight = DEFAULT_CONCURRENCY
 const scheduler = new ChunkScheduler(maxInflight)
 let inflightRequests = 0
 
@@ -145,6 +146,7 @@ let cleanupRecoveryPromise: Promise<void> | null = null
 // message (or against an older server that doesn't send one) still works.
 let serverChunkMin = CHUNK_SIZE_MIN
 let serverChunkDefault = CHUNK_SIZE_DEFAULT
+let chunkSizeOverride: number | null = null
 
 
 function releasePreparedItem(item: AddItem, id: string): void {
@@ -160,22 +162,6 @@ function post(evt: Evt): void {
   ;(self as unknown as { postMessage(m: unknown): void }).postMessage(evt)
 }
 
-function loadStoredChunkSize(): number {
-  try {
-    const v = self.localStorage?.getItem(CHUNK_SIZE_STORAGE_KEY)
-    return v ? Number(v) : serverChunkDefault
-  } catch {
-    return serverChunkDefault
-  }
-}
-
-function storeChunkSize(size: number): void {
-  try {
-    self.localStorage?.setItem(CHUNK_SIZE_STORAGE_KEY, String(size))
-  } catch {
-    /* ignore (e.g. no localStorage in this worker context) */
-  }
-}
 
 let creatingSessions = 0
 const pendingSessionCreations: (() => void)[] = []
@@ -412,8 +398,9 @@ async function addFile(item: AddItem): Promise<void> {
     await acquireSessionSlot()
     let sessionId = ''
     let resumeOffset = 0
-    let chunkSize = loadStoredChunkSize()
-    if (!validChunkSize(chunkSize)) chunkSize = CHUNK_SIZE_DEFAULT
+    let chunkSize = chunkSizeOverride !== null && validChunkSizeOverride(chunkSizeOverride, serverChunkMin)
+      ? chunkSizeOverride
+      : serverChunkDefault
     let resumeRecord: ResumeRecord | undefined
     try {
       if (pendingControls.get(id) === 'canceled') {
@@ -726,7 +713,7 @@ async function sendChunk(task: ChunkDescriptor & { fileId: string; generation: n
       } else {
         f.chunkSize = next
         f.generation++
-        storeChunkSize(next)
+        chunkSizeOverride = next
         post({ t: 'chunk-size-adjusted', id: f.id, size: next })
         // The remaining bytes are re-planned at the smaller size. The server
         // response reports its contiguous prefix, unlike accepted byte totals:
@@ -821,8 +808,12 @@ self.addEventListener('message', (ev: MessageEvent<Cmd>) => {
       setCsrfToken(cmd.token)
       break
     case 'limits':
-      serverChunkMin = cmd.chunkMin
-      serverChunkDefault = cmd.chunkDefault
+      if (validChunkSizeOverride(cmd.chunkMin)) serverChunkMin = cmd.chunkMin
+      if (validChunkSizeOverride(cmd.chunkDefault, serverChunkMin)) serverChunkDefault = cmd.chunkDefault
+      else serverChunkDefault = Math.max(serverChunkDefault, serverChunkMin)
+      break
+    case 'chunk-size':
+      chunkSizeOverride = cmd.size !== null && validChunkSizeOverride(cmd.size, serverChunkMin) ? cmd.size : null
       break
     case 'add':
       void ensureCleanupRecovery().then(() => {
@@ -830,6 +821,7 @@ self.addEventListener('message', (ev: MessageEvent<Cmd>) => {
       })
       break
     case 'concurrency':
+      if (!Number.isFinite(cmd.maxInflight)) break
       maxInflight = Math.max(MIN_CONCURRENCY, Math.min(MAX_CONCURRENCY, Math.round(cmd.maxInflight)))
       scheduler.setMaxInflight(maxInflight)
       pump()

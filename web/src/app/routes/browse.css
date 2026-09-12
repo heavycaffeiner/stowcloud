@@ -7,6 +7,7 @@
 @keyframes sc-snackbar-enter { from { opacity: 0; transform: translate(-50%, 12px) scale(0.96); } to { opacity: 1; transform: translate(-50%, 0) scale(1); } }
 
 .sc-browse { display: flex; flex-direction: column; height: 100%; min-height: 0; position: relative; background: var(--sc-page-surface, var(--mdui-color-surface, var(--m3c-surface))); }
+.sc-app-shell--compact .sc-browse { flex: 1; height: auto; }
 .sc-browse__toolbar { display: flex; flex-wrap: wrap; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 8px 16px; width: 100%; min-height: 56px; padding: 8px 16px; box-sizing: border-box; border-bottom: none; background: rgb(var(--mdui-color-surface-container-low)); }
 .sc-browse__toolbar--compact { padding: 6px 16px; gap: 8px; }
 .sc-browse__folder-heading { display: flex; flex-wrap: wrap; flex: 1 1 360px; align-items: center; gap: 8px 12px; min-width: min(100%, 320px); max-width: 100%; }

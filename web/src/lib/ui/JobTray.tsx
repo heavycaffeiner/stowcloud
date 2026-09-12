@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQueries, useQuery } from '@tanstack/react-query'
 import type { JobKindWire, JobState, JobStatus } from '../api/client'
 import { batchErrorKey } from '../api/error-text'
@@ -9,6 +9,7 @@ import { jobTray } from '../store/jobs.store'
 import { useStore } from '../store/use-store'
 import { Icon } from './Icon'
 import { IconButton } from './IconButton'
+import { VirtualList } from './VirtualList'
 
 interface JobRow {
   id: string
@@ -46,6 +47,7 @@ export function JobTray() {
   const { t, tp } = useI18n()
   const ids = useStore(jobTray, (state) => state.ids)
   const open = useStore(jobTray, (state) => state.open)
+  const [expandedJobs, setExpandedJobs] = useState<ReadonlySet<string>>(() => new Set())
   const list = useQuery(jobListQuery())
   const statuses = useQueries({ queries: ids.map((id) => jobQuery(id)) })
   const cancel = useMutation(jobCancelMutation())
@@ -57,6 +59,14 @@ export function JobTray() {
   useEffect(() => {
     jobTray.track(...(list.data?.jobs ?? []).map((job) => job.id))
   }, [list.data?.jobs])
+
+  useEffect(() => {
+    setExpandedJobs((current) => {
+      const tracked = new Set(ids)
+      const retained = new Set([...current].filter((id) => tracked.has(id)))
+      return retained.size === current.size ? current : retained
+    })
+  }, [ids])
 
   const announce = (target: 'polite' | 'assertive', text: string): void => {
     const element = (target === 'polite' ? politeRef : assertiveRef).current
@@ -112,24 +122,56 @@ export function JobTray() {
         </header>
         {list.isError ? <p className="sc-job-tray__stale">{t('job.server_unreachable_so_may_not')}</p> : null}
         {open ? (
-          <ul className="sc-job-tray__list">
-            {rows.map((item) => {
+          <div className="sc-job-tray__scroll">
+            <VirtualList
+              className="sc-job-tray__list"
+              items={rows}
+              itemKey={(item) => item.id}
+              estimateSize={128}
+              itemProps={() => ({ className: 'sc-job-tray__item' })}
+              renderItem={(item) => {
               const label = kindLabel(item.kind, t)
-              const outstanding = [...item.attempting, ...item.pending]
+              const outstandingCount = item.attempting.length + item.pending.length
               return (
-                <li key={item.id} className="sc-job-tray__item">
+                <>
                   <div className="sc-job-tray__row"><span className="sc-job-tray__name"><Icon name={item.kind === 'delete' ? 'delete' : item.kind === 'copy' ? 'content_copy' : 'search'} />{label}</span><span className="sc-job-tray__meta">{item.done} / {item.total || '?'}</span></div>
                   <mdui-linear-progress value={item.total > 0 ? Math.min(Math.max(item.done / item.total, 0), 1) : undefined} aria-label={t('job.job', { kind: label })}></mdui-linear-progress>
                   {item.status === 'error' && item.message ? <p className="sc-job-tray__message">{t(item.message, item.messageParams)}</p> : null}
                   {item.status === 'cancelled' ? <p className="sc-job-tray__message">{t('job.cancelled_completed', { count: item.done })}</p> : null}
                   {item.status === 'interrupted' ? <p className="sc-job-tray__message">{t('job.interrupted_by_server_restart_completed', { count: item.done })}</p> : null}
-                  {outstanding.length > 0 ? (
-                    <details className="sc-job-tray__outstanding">
-                      <summary>{t('job.items_left', { count: outstanding.length })}</summary>
-                      <ul>
-                        {item.attempting.map((path) => <li key={`attempting-${path}`}><span className="sc-job-tray__tag sc-job-tray__tag--check">{t('job.needs_checking')}</span>{path}</li>)}
-                        {item.pending.map((path) => <li key={`pending-${path}`}><span className="sc-job-tray__tag">{t('job.not_started')}</span>{path}</li>)}
-                      </ul>
+                  {outstandingCount > 0 ? (
+                    <details
+                      className="sc-job-tray__outstanding"
+                      open={expandedJobs.has(item.id)}
+                      onToggle={(event) => {
+                        const expanded = event.currentTarget.open
+                        setExpandedJobs((current) => {
+                          if (current.has(item.id) === expanded) return current
+                          const next = new Set(current)
+                          if (expanded) next.add(item.id)
+                          else next.delete(item.id)
+                          return next
+                        })
+                      }}
+                    >
+                      <summary>{t('job.items_left', { count: outstandingCount })}</summary>
+                      {expandedJobs.has(item.id) ? (
+                        <div className="sc-job-tray__outstanding-scroll">
+                          <VirtualList
+                            items={[...item.attempting, ...item.pending]}
+                            itemKey={(path, index) => `${index < item.attempting.length ? 'attempting' : 'pending'}-${path}`}
+                            estimateSize={32}
+                            renderItem={(path, index) => (
+                              <>
+                                {index < item.attempting.length
+                                  ? <span className="sc-job-tray__tag sc-job-tray__tag--check">{t('job.needs_checking')}</span>
+                                  : <span className="sc-job-tray__tag">{t('job.not_started')}</span>}
+                                {path}
+                              </>
+                            )}
+                          />
+                        </div>
+                      ) : null}
                       {item.attempting.length > 0 ? <p className="sc-job-tray__message">{t('job.server_stopped_mid_item_anything')}</p> : null}
                       <p className="sc-job-tray__message">{t('job.anything_marked_not_started_untouched')}</p>
                     </details>
@@ -137,10 +179,11 @@ export function JobTray() {
                   <div className="sc-job-tray__controls">
                     {item.status === 'running' ? <IconButton label={t('job.cancel_job')} onClick={() => cancel.mutate(item.id)}><Icon name="close" /></IconButton> : <IconButton label={t('common.clear')} onClick={() => jobTray.forget(item.id)}><Icon name="close" /></IconButton>}
                   </div>
-                </li>
+                </>
               )
-            })}
-          </ul>
+              }}
+            />
+          </div>
         ) : null}
       </section>
     </>

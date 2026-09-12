@@ -1,13 +1,12 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { currentLocale } from '../../lib/i18n'
 import { localeStore } from '../../lib/i18n/state'
 import { useI18n } from '../../lib/i18n/use-i18n'
 import { logoutMutation, oidcConfigQuery, sessionQuery } from '../../lib/query/session'
 import { ui } from '../../lib/store/ui.store'
 import { useStore } from '../../lib/store/use-store'
-import { loadStoredConcurrency } from '../../lib/upload/chunk-planner'
+import { DEFAULT_CONCURRENCY, loadStoredConcurrency, subscribeUploadPreferences } from '../../lib/upload/chunk-planner'
 import { setUploadConcurrency } from '../../lib/upload/queue'
 import { Button } from '../../lib/ui/Button'
 import { Icon } from '../../lib/ui/Icon'
@@ -24,10 +23,12 @@ const OidcSection = lazy(() => import('../../lib/ui/settings/OidcSection').then(
 
 const tabs = ['account', 'security', 'connections', 'appearance'] as const
 type Tab = (typeof tabs)[number]
+const concurrencyPresets: readonly number[] = [1, 2, 4, 8]
 function hashTab(): Tab {
   const value = window.location.hash.slice(1)
   return (tabs as readonly string[]).includes(value) ? value as Tab : 'account'
 }
+
 
 export function SettingsPage() {
   const { t } = useI18n()
@@ -36,9 +37,13 @@ export function SettingsPage() {
   const oidcConfig = useQuery(oidcConfigQuery())
   const logout = useMutation(logoutMutation())
   const theme = useStore(ui, (state) => state.theme)
-  useStore(localeStore, (state) => state.locale)
+  const locale = useStore(localeStore, (state) => state.locale)
   const [tab, setTab] = useState<Tab>(hashTab)
-  const [concurrency, setConcurrency] = useState(loadStoredConcurrency())
+  const concurrency = useSyncExternalStore(subscribeUploadPreferences, loadStoredConcurrency, () => DEFAULT_CONCURRENCY)
+  const [concurrencySaveFailed, setConcurrencySaveFailed] = useState(false)
+  const concurrencyChoices = useMemo(() => concurrencyPresets.includes(concurrency)
+    ? concurrencyPresets
+    : [...concurrencyPresets, concurrency].sort((a, b) => a - b), [concurrency])
 
   useDocumentTitle(t('settings.settings_stowcloud'))
   useEffect(() => {
@@ -67,9 +72,10 @@ export function SettingsPage() {
     window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}#${value}`)
     setTab(value)
   }
-  function onSetConcurrency(value: number): void {
-    setConcurrency(value)
-    setUploadConcurrency(value)
+  function onSetConcurrency(value: number): boolean {
+    const saved = setUploadConcurrency(value)
+    setConcurrencySaveFailed(!saved)
+    return saved
   }
   async function signOut(): Promise<void> {
     try {
@@ -224,7 +230,12 @@ export function SettingsPage() {
               </div>
             </div>
             <div className="sc-settings-row">
-              <mdui-segmented-button-group value={theme} onChange={(event: any) => ui.setTheme(event.target.value)}>
+              <mdui-segmented-button-group selects="single" aria-label={t('settings.theme')} value={theme} onChange={(event) => {
+                const group = event.currentTarget as HTMLElement & { value: string | string[] }
+                const value = group.value
+                if (value === 'system' || value === 'light' || value === 'dark') ui.setTheme(value)
+                else queueMicrotask(() => { group.value = theme })
+              }}>
                 <mdui-segmented-button value="system">{t('common.system')}</mdui-segmented-button>
                 <mdui-segmented-button value="light">{t('settings.light')}</mdui-segmented-button>
                 <mdui-segmented-button value="dark">{t('settings.dark')}</mdui-segmented-button>
@@ -240,7 +251,12 @@ export function SettingsPage() {
               </div>
             </div>
             <div className="sc-settings-row">
-              <mdui-segmented-button-group value={currentLocale()} onChange={(event: any) => localeStore.setLocale(event.target.value)}>
+              <mdui-segmented-button-group selects="single" aria-label={t('settings.language')} value={locale} onChange={(event) => {
+                const group = event.currentTarget as HTMLElement & { value: string | string[] }
+                const value = group.value
+                if (value === 'ko' || value === 'en') localeStore.setLocale(value)
+                else queueMicrotask(() => { group.value = locale })
+              }}>
                 <mdui-segmented-button value="ko">한국어</mdui-segmented-button>
                 <mdui-segmented-button value="en">English</mdui-segmented-button>
               </mdui-segmented-button-group>
@@ -255,14 +271,20 @@ export function SettingsPage() {
               </div>
             </div>
             <div className="sc-settings-row">
-              <mdui-segmented-button-group value={String(concurrency)} onChange={(event: any) => onSetConcurrency(Number(event.target.value) || 1)}>
-                {[1, 2, 4, 8].map((count) => (
+              <mdui-segmented-button-group selects="single" aria-label={t('settings.upload_concurrency')} value={String(concurrency)} onChange={(event) => {
+                const group = event.currentTarget as HTMLElement & { value: string | string[] }
+                const value = group.value
+                if (typeof value === 'string' && concurrencyChoices.some((count) => String(count) === value) && onSetConcurrency(Number(value))) return
+                queueMicrotask(() => { group.value = String(concurrency) })
+              }}>
+                {concurrencyChoices.map((count) => (
                   <mdui-segmented-button key={count} value={String(count)}>
                     {count}
                   </mdui-segmented-button>
                 ))}
               </mdui-segmented-button-group>
             </div>
+            {concurrencySaveFailed ? <p className="sc-settings-error" role="alert">{t('common.could_not_save_settings')}</p> : null}
           </article>
         </div>
       ) : null}

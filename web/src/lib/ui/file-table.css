@@ -8,16 +8,14 @@
   color: var(--sc-content-primary, var(--mdui-color-on-surface, var(--m3c-on-surface)));
   container-type: inline-size;
   container-name: sc-file-table;
-  padding-bottom: calc(var(--sc-reserve-nav, 0px) + var(--sc-reserve-selection, 0px));
+  padding-bottom: calc(24px + var(--sc-reserve-selection, 0px));
 }
 .sc-file-table:focus-visible { outline: 3px solid var(--sc-state-focus, var(--mdui-color-secondary, var(--m3c-secondary))); outline-offset: -3px; }
 .sc-file-table:not(:focus) .sc-row--focused { outline: none; }
-.sc-file-table--reserve-bar { --sc-reserve-nav: calc(var(--sc-nav-bar-height) + env(safe-area-inset-bottom, 0px)); }
+.sc-file-table--contained { align-self: stretch; min-height: 0; overflow: auto; overscroll-behavior-y: contain; }
 .sc-file-table--reserve-selection { --sc-reserve-selection: 80px; }
 
-/* The heading remains in the list's scroll flow so the relationship between
-   column labels and rows stays clear. It is sticky when the document scrolls
-   a long virtualized directory. */
+/* Keep column labels visible within either the page or contained file viewport. */
 .sc-file-table__header {
   position: sticky;
   z-index: 2;

@@ -9,15 +9,58 @@
 export const CHUNK_SIZE_MIN = 5 * 1024 * 1024 // 5 MB, server-enforced floor
 export const CHUNK_SIZE_DEFAULT = 10 * 1024 * 1024 // 10 MB
 
-// The client-side chunk-size override (worker.ts's 413 shrink-adaptation
-// persists here; the admin upload-settings section reads/writes the same
-// key so both agree on what "the next session" starts from).
+// Browser preferences are persisted by the window and sent to the upload worker.
 export const CHUNK_SIZE_STORAGE_KEY = 'sc.chunk_size'
 
 export const UPLOAD_CONCURRENCY_STORAGE_KEY = 'sc.upload_concurrency'
 export const DEFAULT_CONCURRENCY = 4
 export const MIN_CONCURRENCY = 1
 export const MAX_CONCURRENCY = 16
+
+const preferenceListeners = new Set<() => void>()
+
+export function subscribeUploadPreferences(listener: () => void): () => void {
+  preferenceListeners.add(listener)
+  const onStorage = (event: StorageEvent): void => {
+    if (event.key === null || event.key === CHUNK_SIZE_STORAGE_KEY || event.key === UPLOAD_CONCURRENCY_STORAGE_KEY) listener()
+  }
+  if (typeof window !== 'undefined') window.addEventListener('storage', onStorage)
+  return () => {
+    preferenceListeners.delete(listener)
+    if (typeof window !== 'undefined') window.removeEventListener('storage', onStorage)
+  }
+}
+
+function notifyPreferences(): void {
+  for (const listener of preferenceListeners) listener()
+}
+
+export function validChunkSizeOverride(value: number, min = CHUNK_SIZE_MIN): boolean {
+  return Number.isSafeInteger(value) && value >= Math.max(CHUNK_SIZE_MIN, min)
+}
+
+export function loadStoredChunkSize(min = CHUNK_SIZE_MIN): number | null {
+  try {
+    const raw = localStorage.getItem(CHUNK_SIZE_STORAGE_KEY)
+    if (!raw) return null
+    const value = Number(raw)
+    return validChunkSizeOverride(value, min) ? value : null
+  } catch {
+    return null
+  }
+}
+
+export function storeChunkSize(value: number | null, min = CHUNK_SIZE_MIN): boolean {
+  if (value !== null && !validChunkSizeOverride(value, min)) return false
+  try {
+    if (value === null) localStorage.removeItem(CHUNK_SIZE_STORAGE_KEY)
+    else localStorage.setItem(CHUNK_SIZE_STORAGE_KEY, String(value))
+  } catch {
+    return false
+  }
+  notifyPreferences()
+  return true
+}
 
 export function loadStoredConcurrency(): number {
   try {
@@ -31,13 +74,16 @@ export function loadStoredConcurrency(): number {
   }
 }
 
-export function storeConcurrency(value: number): void {
+export function storeConcurrency(value: number): boolean {
+  if (!Number.isFinite(value)) return false
   try {
     const clamped = Math.max(MIN_CONCURRENCY, Math.min(MAX_CONCURRENCY, Math.round(value)))
     localStorage.setItem(UPLOAD_CONCURRENCY_STORAGE_KEY, String(clamped))
   } catch {
-    /* ignore */
+    return false
   }
+  notifyPreferences()
+  return true
 }
 
 export interface ChunkDescriptor {

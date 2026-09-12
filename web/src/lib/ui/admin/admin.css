@@ -87,6 +87,16 @@
   gap: 4px;
   flex: 0 0 auto;
 }
+.sc-user-mgmt > .sc-admin-list > li > .sc-admin-row > .sc-admin-chip {
+  flex: 0 0 10rem;
+  width: 10rem;
+  max-width: 100%;
+  height: auto;
+  min-height: 28px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
 .sc-admin-state {
   display: flex;
   align-items: center;

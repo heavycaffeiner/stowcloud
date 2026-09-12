@@ -13,6 +13,7 @@ import { Button } from '../../lib/ui/Button'
 import { useDocumentTitle } from '../use-document-title'
 import './simple-pages.css'
 import { Icon } from '../../lib/ui/Icon'
+import { VirtualList } from '../../lib/ui/VirtualList'
 
 function resultError(result: BatchItemResult, t: (key: string, params?: Record<string, string | number>) => string): string {
   const key = batchErrorKey(result.error)
@@ -120,11 +121,11 @@ export function TrashPage() {
           </div>
         ) : null}
         {notice ? <p className="sc-trash__notice" role="status" aria-live="polite">{notice} <button type="button" onClick={() => setNotice(null)}>{t('common.close')}</button></p> : null}
-        {operation ? <section className="sc-trash__operation" role="status" aria-live="polite"><div className="sc-trash__operation-heading"><h2>{operation.kind === 'restore' ? t('trash.restore') : t('trash.purge')}</h2><button type="button" onClick={() => setOperation(null)}>{t('common.close')}</button></div><ul>{operation.results.map((result) => <li key={result.path} className={result.ok ? undefined : 'error'}><span>{result.path}</span><span>{result.ok ? t('common.done') : resultError(result, t)}</span></li>)}</ul></section> : null}
+        {operation ? <section className="sc-trash__operation" role="status" aria-live="polite"><div className="sc-trash__operation-heading"><h2>{operation.kind === 'restore' ? t('trash.restore') : t('trash.purge')}</h2><button type="button" onClick={() => setOperation(null)}>{t('common.close')}</button></div><VirtualList items={operation.results} itemKey={(result) => result.path} estimateSize={20} itemProps={(result) => ({ className: result.ok ? undefined : 'error' })} renderItem={(result) => <><span>{result.path}</span><span>{result.ok ? t('common.done') : resultError(result, t)}</span></>} /></section> : null}
         {trash.isPending ? <div className="sc-secondary-page__loading"><mdui-circular-progress></mdui-circular-progress></div> : null}
         {trash.error ? <p className="sc-secondary-page__error" role="alert">{describeApiError(trash.error, t('trash.could_not_load_trash'))}</p> : null}
         {!trash.isPending && !trash.error && entries.length === 0 ? <p className="sc-secondary-page__empty">{t('trash.trash_empty')}</p> : null}
-        {entries.length > 0 ? <ul className="sc-secondary-page__list">{entries.map((entry) => <TrashRow key={entry.id} entry={entry} selected={selected.has(entry.id)} disabled={busy} onToggle={() => selection.toggle(entry.id)} onRestore={() => void restoreItems([entry.id])} onPurge={() => requestPurge(entry.id)} t={t} />)}</ul> : null}
+        {entries.length > 0 ? <VirtualList className="sc-secondary-page__list" items={entries} itemKey={(entry) => entry.id} estimateSize={61} itemProps={() => ({ className: 'sc-trash__row' })} pinnedKeys={purgeOpen && purgeSingle !== null ? [purgeSingle] : undefined} renderItem={(entry) => <TrashRow entry={entry} selected={selected.has(entry.id)} disabled={busy} onToggle={() => selection.toggle(entry.id)} onRestore={() => void restoreItems([entry.id])} onPurge={() => requestPurge(entry.id)} t={t} />} /> : null}
       </div>
       <mdui-dialog ref={purgeDialogRef} open={purgeOpen} headline={t('trash.delete_permanently')} close-on-esc>
         <p>{t('trash.permanently_deletes_items_cannot_undone', { count: purgeCount })}</p>
@@ -146,5 +147,5 @@ interface TrashRowProps {
 }
  
 function TrashRow({ entry, selected, disabled, onToggle, onRestore, onPurge, t }: TrashRowProps) {
-  return <li className="sc-trash__row"><label className="sc-trash__checkbox"><input type="checkbox" checked={selected} disabled={disabled} aria-label={t('common.select', { name: entry.name })} onChange={onToggle} /></label><span className="sc-trash__name" title={entry.name}>{entry.name}</span>{!entry.is_dir ? <span className="sc-trash__meta">{formatBytes(entry.size)}</span> : null}<span className="sc-trash__meta">{t('trash.deleted', { date: formatDateNs(entry.deleted_at_ns) })}</span><div className="sc-trash__row-actions"><button type="button" className="sc-route-icon-button" disabled={disabled} aria-label={t('trash.restore')} onClick={onRestore}><Icon name="restore" /></button><button type="button" className="sc-route-icon-button sc-route-icon-button--danger" disabled={disabled} aria-label={t('trash.purge')} onClick={onPurge}><Icon name="delete" /></button></div></li>
+  return <><label className="sc-trash__checkbox"><input type="checkbox" checked={selected} disabled={disabled} aria-label={t('common.select', { name: entry.name })} onChange={onToggle} /></label><span className="sc-trash__name" title={entry.name}>{entry.name}</span>{!entry.is_dir ? <span className="sc-trash__meta">{formatBytes(entry.size)}</span> : null}<span className="sc-trash__meta">{t('trash.deleted', { date: formatDateNs(entry.deleted_at_ns) })}</span><div className="sc-trash__row-actions"><button type="button" className="sc-route-icon-button" disabled={disabled} aria-label={t('trash.restore')} onClick={onRestore}><Icon name="restore" /></button><button type="button" className="sc-route-icon-button sc-route-icon-button--danger" disabled={disabled} aria-label={t('trash.purge')} onClick={onPurge}><Icon name="delete" /></button></div></>
 }

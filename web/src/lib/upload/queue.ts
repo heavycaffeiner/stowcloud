@@ -13,7 +13,7 @@ import { queryClient } from '../query/client'
 import { invalidateDirs } from '../query/files'
 import { keys } from '../query/keys'
 import { uploads } from '../store/upload.store'
-import { loadStoredConcurrency, storeConcurrency } from './chunk-planner'
+import { CHUNK_SIZE_MIN, loadStoredChunkSize, loadStoredConcurrency, storeChunkSize, storeConcurrency, subscribeUploadPreferences } from './chunk-planner'
 import type { AddItem, Cmd, Evt } from './worker'
 
 let worker: Worker | null = null
@@ -84,6 +84,7 @@ export function handle(evt: Evt): void {
       })
       break
     case 'chunk-size-adjusted':
+      storeChunkSize(evt.size, currentChunkMin())
       uploads.patch(evt.id, {
         message: /* i18n */ 'upload.chunk_size_adjusted_mb',
         messageParams: { size: bytesToMb(evt.size) }
@@ -98,13 +99,13 @@ export function handle(evt: Evt): void {
   }
 }
 
-function send(cmd: Cmd): void {
-  if (worker === null) {
-    worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })
-    worker.addEventListener('message', (ev: MessageEvent<Evt>) => handle(ev.data))
-  }
+function currentChunkMin(): number {
+  return queryClient.getQueryData<SessionInfo>(keys.session())?.limits.chunk_min ?? CHUNK_SIZE_MIN
+}
+
+function syncWorkerPreferences(): void {
+  if (worker === null) return
   const session = queryClient.getQueryData<SessionInfo>(keys.session())
-  worker.postMessage({ t: 'csrf', token: session?.csrf ?? '' } satisfies Cmd)
   if (session?.limits) {
     worker.postMessage({
       t: 'limits',
@@ -112,7 +113,19 @@ function send(cmd: Cmd): void {
       chunkDefault: session.limits.chunk_size
     } satisfies Cmd)
   }
+  worker.postMessage({ t: 'chunk-size', size: loadStoredChunkSize(currentChunkMin()) } satisfies Cmd)
   worker.postMessage({ t: 'concurrency', maxInflight: loadStoredConcurrency() } satisfies Cmd)
+}
+
+function send(cmd: Cmd): void {
+  if (worker === null) {
+    worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })
+    worker.addEventListener('message', (ev: MessageEvent<Evt>) => handle(ev.data))
+    subscribeUploadPreferences(syncWorkerPreferences)
+  }
+  const session = queryClient.getQueryData<SessionInfo>(keys.session())
+  worker.postMessage({ t: 'csrf', token: session?.csrf ?? '' } satisfies Cmd)
+  syncWorkerPreferences()
   worker.postMessage(cmd)
 }
 
@@ -416,7 +429,12 @@ export function cancelUpload(id: string): void {
   send({ t: 'cancel', id })
 }
 
-export function setUploadConcurrency(value: number): void {
-  storeConcurrency(value)
+export function setUploadChunkSize(value: number | null, min = currentChunkMin()): boolean {
+  return storeChunkSize(value, min)
+}
+
+export function setUploadConcurrency(value: number): boolean {
+  if (!storeConcurrency(value)) return false
   send({ t: 'concurrency', maxInflight: loadStoredConcurrency() })
+  return true
 }

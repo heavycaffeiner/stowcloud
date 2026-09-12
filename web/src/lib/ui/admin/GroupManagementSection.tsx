@@ -10,6 +10,7 @@ import { Dialog } from '../Dialog'
 import { Icon } from '../Icon'
 import { ProgressCircular } from '../ProgressCircular'
 import { TextField } from '../TextField'
+import { VirtualList } from '../VirtualList'
 import { GrantManagementSection } from './GrantManagementSection'
 import './admin.css'
 
@@ -163,9 +164,13 @@ export function GroupManagementSection() {
           <p>{t('group.no_groups_yet')}</p>
         </div>
       ) : (
-        <ul className="sc-admin-list">
-          {groups.map((group) => (
-            <li key={group.id}>
+        <VirtualList
+          className="sc-admin-list"
+          items={groups}
+          itemKey={(group) => group.id}
+          estimateSize={72}
+          pinnedKeys={[renameTarget?.id, deleteTarget?.id, membersTargetId, grantsTarget?.id].filter((id): id is number => id != null)}
+          renderItem={(group) => (
               <div className="sc-admin-row">
                 <div className="sc-admin-row__body">
                   <div className="sc-admin-row__title">
@@ -188,9 +193,8 @@ export function GroupManagementSection() {
                   </Button>
                 </div>
               </div>
-            </li>
-          ))}
-        </ul>
+          )}
+        />
       )}
 
       <Dialog open={createOpen} title={t('group.add_group')} onClose={closeCreate} actions={
@@ -231,16 +235,19 @@ export function GroupManagementSection() {
         {membersTarget ? (
           <div className="sc-admin-form">
             {membersTarget.members.length ? (
-              <ul className="sc-admin-chips">
-                {membersTarget.members.map((id) => (
-                  <li key={id}>
+              <VirtualList
+                className="sc-admin-chips"
+                items={membersTarget.members}
+                itemKey={(id) => id}
+                estimateSize={40}
+                pinnedKeys={memberBusyId === null ? [] : [memberBusyId]}
+                renderItem={(id) => (
                     <span className="sc-admin-chip">
                       {memberBusyId === id ? t('common.loading') : userName(id)}
                       <Button variant="text" square ariaLabel={t('group.remove_member', { name: userName(id) })} disabled={memberBusyId === id} onClick={() => submitRemoveMember(id)}><Icon name="close" /></Button>
                     </span>
-                  </li>
-                ))}
-              </ul>
+                )}
+              />
             ) : <p className="sc-admin-section__field-hint">{t('group.no_members_yet')}</p>}
 
             {availableUsers.length ? (

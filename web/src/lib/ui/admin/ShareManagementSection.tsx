@@ -19,6 +19,7 @@ import { ProgressCircular } from '../ProgressCircular'
 import { Select } from '../Select'
 import { Switch } from '../Switch'
 import { TextField } from '../TextField'
+import { VirtualList } from '../VirtualList'
 import './admin-sections.css'
 
 interface BackendForm {
@@ -481,11 +482,15 @@ export function ShareManagementSection() {
                 <p>{t('folder_share.no_shares_registered_add_folder')}</p>
               </div>
             ) : (
-              <ul className="sc-shares__list">
-                {shares.map((share) => {
+              <VirtualList
+                className="sc-shares__list"
+                items={shares}
+                itemKey={(share) => share.id}
+                estimateSize={112}
+                pinnedKeys={[editTarget?.id, deleteTarget?.id, encEnableTarget?.id, encDisableTarget?.id, trashTogglingId, retryingId].filter((id): id is number => id != null)}
+                renderItem={(share) => {
                   const encryption = encryptedByShare.get(share.id)
                   return (
-                    <li key={share.id}>
                       <ListItem
                         leading={<Icon name="folder" size={20} />}
                         headline={<><span>{share.name}</span>{share.backend !== 'local' ? <small className="sc-share-backend">{backendLabel(t, share.backend)}</small> : null}</>}
@@ -526,10 +531,9 @@ export function ShareManagementSection() {
                           </>
                         )}
                       />
-                    </li>
                   )
-                })}
-              </ul>
+                }}
+              />
             )}
             {trashError ? <p className="sc-admin-error" role="alert">{trashError}</p> : null}
             {retryError ? <p className="sc-admin-error" role="alert">{retryError}</p> : null}

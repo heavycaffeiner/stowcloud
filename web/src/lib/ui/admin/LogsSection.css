@@ -36,11 +36,12 @@
 .sc-logs__legend-source { color: rgb(var(--mdui-color-on-surface-variant)); }
 .sc-logs__swatch { display: inline-block; inline-size: 16px; block-size: 16px; border: none; border-radius: var(--mdui-shape-corner-extra-small); }
 .sc-logs__plot { display: flex; align-items: flex-end; gap: 4px; block-size: 160px; min-width: 0; padding: 8px; border: none; border-radius: var(--mdui-shape-corner-medium); background: rgb(var(--mdui-color-surface-container-lowest)); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2); overflow: hidden; }
-.sc-logs__bar { display: flex; align-items: flex-end; flex: 1 1 0; min-inline-size: 4px; block-size: 100%; padding: 0; border: 0; border-radius: 2px; background: none; cursor: pointer; }
+.sc-logs__bar { display: flex; align-items: flex-end; flex: 1 1 0; min-inline-size: 0; block-size: 100%; padding: 0; border: 0; border-radius: 2px; background: none; cursor: pointer; }
 .sc-logs__bar--active { background: rgb(var(--mdui-color-surface-container-high)); outline: 1px solid rgb(var(--mdui-color-outline)); }
 .sc-logs__stack { display: flex; flex-direction: column-reverse; justify-content: flex-start; inline-size: 100%; block-size: 100%; }
-.sc-logs__seg { inline-size: 100%; min-block-size: 1px; }
+.sc-logs__seg { flex-shrink: 0; inline-size: 100%; min-block-size: 1px; }
 .sc-logs__baseline { inline-size: 100%; block-size: 2px; background: rgb(var(--mdui-color-outline-variant)); }
+.sc-logs__seg, .sc-logs__swatch { background: rgb(var(--mdui-color-outline)); }
 .sc-logs__seg--server-debug { background: rgb(var(--mdui-color-surface-container-highest)); }
 .sc-logs__seg--server-info { background: rgb(var(--mdui-color-secondary-container)); background-image: repeating-linear-gradient(45deg, transparent 0 3px, rgb(var(--mdui-color-on-secondary-container)) 3px 4px); }
 .sc-logs__seg--server-warn { background: rgb(var(--mdui-color-tertiary-container)); background-image: repeating-linear-gradient(-45deg, transparent 0 3px, rgb(var(--mdui-color-on-tertiary-container)) 3px 4px); }
@@ -86,6 +87,7 @@
 .sc-logs__more { display: flex; justify-content: center; margin-top: 16px; }
 .sc-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 @container sc-logs (max-width: 599.98px) {
+  .sc-logs__plot { gap: 2px; }
   .sc-logs__source-button, .sc-logs__table-wrap summary { min-block-size: 44px; }
   .sc-logs__fields { flex-direction: column; align-items: stretch; }
   .sc-logs__fields > .sc-field { flex: none; width: 100%; max-width: none; }

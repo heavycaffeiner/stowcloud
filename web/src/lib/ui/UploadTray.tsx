@@ -6,6 +6,7 @@ import { uploads, type UploadItem } from '../store/upload.store'
 import { useStore } from '../store/use-store'
 import { Icon } from './Icon'
 import { IconButton } from './IconButton'
+import { VirtualList } from './VirtualList'
 
 export function UploadTray() {
   const { t } = useI18n()
@@ -83,9 +84,15 @@ export function UploadTray() {
             </div>
           </header>
           {open ? (
-            <ul className="sc-upload-tray__list">
-              {items.map((item) => (
-                <li key={item.id} className="sc-upload-tray__item">
+            <div className="sc-upload-tray__scroll">
+              <VirtualList
+                className="sc-upload-tray__list"
+                items={items}
+                itemKey={(item) => item.id}
+                estimateSize={120}
+                itemProps={() => ({ className: 'sc-upload-tray__item' })}
+                renderItem={(item) => (
+                <>
                   <div className="sc-upload-tray__row">
                     <span className="sc-filename sc-upload-tray__name">{item.name}</span>
                     <span className="sc-upload-tray__meta">
@@ -106,9 +113,10 @@ export function UploadTray() {
                       <IconButton label={t('common.cancel')} onClick={() => cancelUpload(item.id)}><Icon name="close" /></IconButton>
                     )}
                   </div>
-                </li>
-              ))}
-            </ul>
+                </>
+                )}
+              />
+            </div>
           ) : null}
         </section>
       ) : null}

@@ -12,6 +12,7 @@ import { PathPickerDialog } from '../PathPickerDialog'
 import { TextField } from '../TextField'
 import { Icon } from '../Icon'
 import { Switch } from '../Switch'
+import { VirtualList } from '../VirtualList'
 import { RestartDialog } from './RestartDialog'
 import './ServerSettingsSection.css'
 
@@ -177,7 +178,14 @@ function requestFor(group: Group, values: Values, secret = ''): Values {
 function findingList(outcome: ApplyOutcome | null, t: Translator): ReactNode {
   const findings = (outcome?.findings ?? []).filter((finding) => finding.reason !== 'settings.check_passed')
   if (!findings.length) return null
-  return <ul className="sc-server-settings__findings">{findings.map((finding, index) => <li key={`${finding.section}-${finding.field ?? ''}-${finding.reason}-${index}`} className={`sc-server-settings__finding ${finding.blocking ? 'sc-server-settings__finding--block' : 'sc-server-settings__finding--ok'}`}><strong>{finding.blocking ? t('settings.finding_blocking') : t('settings.finding_advisory')}</strong>{finding.field ? <code>{finding.field}</code> : null}{t(finding.reason, finding.args ?? {})}</li>)}</ul>
+  return <VirtualList
+    className="sc-server-settings__findings"
+    items={findings}
+    itemKey={(finding, index) => `${finding.section}-${finding.field ?? ''}-${finding.reason}-${index}`}
+    estimateSize={72}
+    itemProps={(finding) => ({ className: `sc-server-settings__finding ${finding.blocking ? 'sc-server-settings__finding--block' : 'sc-server-settings__finding--ok'}` })}
+    renderItem={(finding) => <><strong>{finding.blocking ? t('settings.finding_blocking') : t('settings.finding_advisory')}</strong>{finding.field ? <code>{finding.field}</code> : null}{t(finding.reason, finding.args ?? {})}</>}
+  />
 }
 
 export function ServerSettingsSection() {
@@ -279,7 +287,7 @@ export function ServerSettingsSection() {
   return <>
     <section className="sc-admin-section"><h3>{t('server.server_settings')}</h3><p className="sc-admin-section__hint">{t('server.anything_settable_config_toml_can')}</p><nav className="sc-server-settings__nav" aria-label={t('admin.server_settings_navigation')}><div className="sc-server-settings__nav-items">{[['server-smb', 'admin.server_smb'], ['server-search', 'admin.server_search'], ['server-network', 'admin.server_network'], ['server-transfers', 'admin.server_transfers'], ['server-security', 'admin.server_security'], ['server-storage', 'admin.server_storage_paths']].map(([id, key]) => <button key={id} type="button" onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>{t(key)}</button>)}</div></nav>
       {snapshot.smb_public_bind_warning ? <p className="sc-admin-section__warning" role="alert">{t('server.smb_reachable_from_outside_private')}</p> : null}
-      {snapshot.smb_overgrants?.length ? <div className="sc-admin-section__warning" role="alert"><p>{t('server.smb_grants_more_than_configured')}</p><ul>{snapshot.smb_overgrants.map((item) => <li key={`${item.share}-${item.user}-${item.key}`}>{t(item.key, { share: item.share, user: item.user, detail: item.detail.join(', ') })}</li>)}</ul></div> : null}
+      {snapshot.smb_overgrants?.length ? <div className="sc-admin-section__warning"><p role="alert">{t('server.smb_grants_more_than_configured')}</p><VirtualList items={snapshot.smb_overgrants} itemKey={(item) => `${item.share}-${item.user}-${item.key}`} estimateSize={56} renderItem={(item) => t(item.key, { share: item.share, user: item.user, detail: item.detail.join(', ') })} /></div> : null}
       {card('server-smb', 'SMB', t('server.all_apply_immediately_no_restart'), <>{toggle('smb.enabled', t('server.enable_smb'))}{input('smb.workgroup', t('server.workgroup'))}{input('smb.server_name', t('server.smb_server_name'))}{!String(values['smb.server_name'] ?? '').trim() && emptyNote(snapshot, 'smb.server_name', t) ? <p className="sc-server-settings__empty-note">{emptyNote(snapshot, 'smb.server_name', t)}</p> : null}{input('smb.service_user', t('server.service_account_name'))}{toggle('smb.allow_public_bind', t('server.allow_access_from_outside_private'))}<label>{t('server.smb_access_2fa_users')}<select value={String(values['smb.totp_policy'] ?? 'require_separate')} onChange={(event) => setValue('smb.totp_policy', event.currentTarget.value)}><option value="require_separate">{t('server.require_separate_smb_password_default')}</option><option value="block">{t('server.smb_not_allowed')}</option></select></label>{input('smb.service_gid', t('server.service_account_gid'), { type: 'number' })}{input('smb.interfaces', t('settings.smb_interfaces'))}<p className="sc-admin-section__hint">{t('settings.smb_interfaces_hint')}</p>{saveButton('smb')}{snapshot.smb_agent ? <div className={snapshot.smb_agent.ok ? 'sc-admin-section__hint' : 'sc-admin-section__warning'} role={snapshot.smb_agent.ok ? 'status' : 'alert'}><p>{t(snapshot.smb_agent.key, { shares: snapshot.smb_agent.shares?.length ?? 0, interfaces: snapshot.smb_agent.interfaces, smbd: snapshot.smb_agent.smbd, error: snapshot.smb_agent.detail ?? '' })}</p>{snapshot.smb_agent.missing_paths?.length ? <p>{t('smb.agent_missing_paths', { paths: snapshot.smb_agent.missing_paths.join(', ') })}</p> : null}{snapshot.smb_agent.missing_passdb?.length ? <p>{t('smb.agent_missing_passdb', { users: snapshot.smb_agent.missing_passdb.join(', ') })}</p> : null}</div> : null}</>)}
       {card('server-storage', t('server.storage_paths'), t('settings.paths_readonly_reason'), <><dl className="sc-server-settings__other">{PATH_KEYS.map((key) => <div key={key}><dt>{fieldLabel(t, key)}</dt><dd>{displayValue(t, fields[key])}</dd></div>)}<div><dt>{fieldLabel(t, 'symlink_policy')}</dt><dd><span className="sc-server-settings__reason">{t('settings.readonly_per_share_symlink_policy')}</span></dd></div></dl>{otherFields.length ? <><h5 className="sc-admin-section__subhead">{t('settings.settings_sections')}</h5><dl className="sc-server-settings__other">{otherFields.map((item) => <div key={item.key}><dt>{fieldLabel(t, item.key)}</dt><dd>{displayValue(t, item.value)}{item.readonly_reason_key ? <><br /><span className="sc-server-settings__reason">{serverKeyText(item.readonly_reason_key)}</span></> : null}</dd></div>)}</dl></> : null}</>)}
       {card('server-search', t('common.search'), t('server.all_apply_immediately_no_restart'), <>{input('search.max_concurrent_fast', t('server.concurrent_fast_searches'), { type: 'number' })}{input('search.walk_deadline_fast_ms', t('server.fast_search_timeout_ms'), { type: 'number' })}{saveButton('search')}</>)}

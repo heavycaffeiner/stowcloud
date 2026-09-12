@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { destinationProblem } from '../api/path-utils'
 import { statQuery } from '../query/files'
@@ -6,7 +6,7 @@ import { sessionQuery } from '../query/session'
 import { useI18n } from '../i18n/use-i18n'
 import { Button } from './Button'
 import { BrowseDialog } from './browse-dialog'
-import { FileTreeItem } from './FileTreeItem'
+import { FileTreeList } from './FileTree'
 export function DestinationPickerDialog({
   open,
   sources,
@@ -24,9 +24,8 @@ export function DestinationPickerDialog({
 }) {
   const { t } = useI18n()
   const session = useQuery(sessionQuery())
-  const roots = (session.data?.roots ?? []).map((root) => ({ path: `/${root.label}`, name: root.label }))
+  const roots = useMemo(() => (session.data?.roots ?? []).map((root) => ({ path: `/${root.label}`, name: root.label })), [session.data?.roots])
   const [selected, setSelected] = useState<string | null>(null)
-  const [activeDescendant, setActiveDescendant] = useState<string | undefined>(undefined)
   const stat = useQuery({ ...statQuery(selected ?? ''), enabled: open && selected !== null })
   const problem = selected ? destinationProblem(selected, sources) : null
   const writable = stat.data?.perms.create ?? false
@@ -37,26 +36,8 @@ export function DestinationPickerDialog({
   useEffect(() => {
     if (!open) {
       setSelected(null)
-      setActiveDescendant(undefined)
     }
   }, [open])
-
-  const treeFocus = (event: React.FocusEvent<HTMLUListElement>) => {
-    const tree = event.currentTarget
-    const target = event.target as HTMLElement
-    const labelTarget = target.closest<HTMLElement>('[data-tree-label], [data-tree-more]')
-    if (labelTarget) {
-      tree.tabIndex = -1
-      if (labelTarget.id) setActiveDescendant(labelTarget.id)
-      return
-    }
-    const first = tree.querySelector<HTMLElement>('[aria-current="page"] [data-tree-label], [data-tree-label], [data-tree-more]')
-    if (first) {
-      tree.tabIndex = -1
-      if (first.id) setActiveDescendant(first.id)
-      first.focus()
-    }
-  }
 
   return (
     <BrowseDialog
@@ -84,21 +65,12 @@ export function DestinationPickerDialog({
       <div className="sc-dest">
         <p className="sc-dest__prompt">{t('dest.choose_destination_folder', { count: sources.length })}</p>
         <div className="sc-dest__tree">
-          <ul role="tree" tabIndex={0} aria-label={t('dest.destination_folder')} aria-activedescendant={activeDescendant} onFocusCapture={treeFocus}>
-            {roots.map((root, index) => (
-              <FileTreeItem
-                key={root.path}
-                path={root.path}
-                name={root.name}
-                depth={0}
-                currentPath={selected ?? ''}
-                onNavigate={setSelected}
-                initial={index === 0}
-                position={index + 1}
-                setSize={roots.length}
-              />
-            ))}
-          </ul>
+          <FileTreeList
+            roots={roots}
+            currentPath={selected ?? ''}
+            onNavigate={setSelected}
+            aria-label={t('dest.destination_folder')}
+          />
         </div>
         <p className={`sc-dest__status${isWarn ? ' sc-dest__status--warn' : ''}`} aria-live="polite">
           {problem === 'into_itself'
