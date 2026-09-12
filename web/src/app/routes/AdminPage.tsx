@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { Component, lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useI18n } from '../../lib/i18n/use-i18n'
 import { sessionQuery } from '../../lib/query/session'
+import { Icon } from '../../lib/ui/Icon'
 import { useDocumentTitle } from '../use-document-title'
 import './admin.css'
 
@@ -101,37 +102,40 @@ export function AdminPage() {
   }
 
   if (session.isPending) {
-    return <section className="sc-admin"><div className="sc-admin__title"><h1>{t('common.administrator')}</h1></div><div className="sc-admin__inner"><SectionLoading label={t('common.loading')} /></div></section>
+    return <section className="sc-settings-page sc-admin"><header><h1>{t('common.administrator')}</h1></header><div className="sc-admin__inner"><SectionLoading label={t('common.loading')} /></div></section>
   }
   if (session.isError || !session.data) {
-    return <section className="sc-admin"><div className="sc-admin__title"><h1>{t('common.administrator')}</h1></div><div className="sc-admin__inner"><p className="sc-admin__error" role="alert">{t('common.could_not_load_list')}</p></div></section>
+    return <section className="sc-settings-page sc-admin"><header><h1>{t('common.administrator')}</h1></header><div className="sc-admin__inner"><p className="sc-admin__error" role="alert">{t('common.could_not_load_list')}</p></div></section>
   }
   if (!session.data.user.is_admin) {
-    return <section className="sc-admin"><div className="sc-admin__title"><h1>{t('common.administrator')}</h1></div><div className="sc-admin__inner"><p className="sc-admin__denied">{t('admin.only_administrators_can_see_screen')}</p></div></section>
+    return <section className="sc-settings-page sc-admin"><header><h1>{t('common.administrator')}</h1></header><div className="sc-admin__inner"><p className="sc-admin__denied">{t('admin.only_administrators_can_see_screen')}</p></div></section>
   }
 
   return (
-    <section className="sc-admin">
-      <div className="sc-admin__title"><h1>{t('common.administrator')}</h1></div>
-      <div className="sc-admin__head">
-        <div className="sc-admin__head-inner" role="tablist" aria-label={t('admin.admin_sections')}>
-          <div className="sc-admin__tabs">
-            <mdui-button role="tab" aria-selected={tab === 'users'} variant={tab === 'users' ? 'tonal' : 'text'} onClick={() => selectTab('users')}>{t('admin.people_and_access')}</mdui-button>
-            <mdui-button role="tab" aria-selected={tab === 'shares'} variant={tab === 'shares' ? 'tonal' : 'text'} onClick={() => selectTab('shares')}>{t('admin.shared_folders')}</mdui-button>
-            <mdui-button role="tab" aria-selected={tab === 'storage'} variant={tab === 'storage' ? 'tonal' : 'text'} onClick={() => selectTab('storage')}>{t('admin.storage_and_transfers')}</mdui-button>
-            <mdui-button role="tab" aria-selected={tab === 'server'} variant={tab === 'server' ? 'tonal' : 'text'} onClick={() => selectTab('server')}>{t('admin.server_and_security')}</mdui-button>
-            <mdui-button role="tab" aria-selected={tab === 'logs'} variant={tab === 'logs' ? 'tonal' : 'text'} onClick={() => selectTab('logs')}>{t('common.logs')}</mdui-button>
-          </div>
-        </div>
-      </div>
+    <section className="sc-settings-page sc-admin">
+      <header><h1>{t('common.administrator')}</h1></header>
+      <nav className="sc-settings-page__tabs" aria-label={t('admin.admin_sections')}>
+        {([
+          { value: 'users', label: t('admin.people_and_access'), icon: 'admin' },
+          { value: 'shares', label: t('admin.shared_folders'), icon: 'folder' },
+          { value: 'storage', label: t('admin.storage_and_transfers'), icon: 'grid' },
+          { value: 'server', label: t('admin.server_and_security'), icon: 'settings' },
+          { value: 'logs', label: t('common.logs'), icon: 'recent' }
+        ] as const).map((item) => (
+          <button key={item.value} type="button" className="sc-settings-page__tab" aria-current={item.value === tab ? 'page' : undefined} onClick={() => selectTab(item.value)}>
+            <Icon name={item.icon} />
+            {item.label}
+          </button>
+        ))}
+      </nav>
       <div className="sc-admin__inner">
         <SectionErrorBoundary key={tab} message={t('common.could_not_load_list')}>
           <Suspense fallback={<SectionLoading label={t('common.loading')} />}>
-            {tab === 'users' ? <><section className="sc-admin__section"><h2>{t('admin.users')}</h2><UserManagementSection /></section><section className="sc-admin__section"><h2>{t('admin.groups')}</h2><GroupManagementSection /></section></> : null}
-            {tab === 'shares' ? <section className="sc-admin__section"><ShareManagementSection /></section> : null}
-            {tab === 'storage' ? <><section className="sc-admin__section"><StorageIndexSection /></section><section className="sc-admin__section"><UploadSettingsSection /></section></> : null}
+            {tab === 'users' ? <><section className="sc-admin__section sc-settings-card"><h2>{t('admin.users')}</h2><UserManagementSection /></section><section className="sc-admin__section sc-settings-card"><h2>{t('admin.groups')}</h2><GroupManagementSection /></section></> : null}
+            {tab === 'shares' ? <section className="sc-admin__section sc-settings-card"><ShareManagementSection /></section> : null}
+            {tab === 'storage' ? <section className="sc-admin__section"><StorageIndexSection /><UploadSettingsSection /></section> : null}
             {tab === 'server' ? <section className="sc-admin__section"><ServerSettingsSection /></section> : null}
-            {tab === 'logs' ? <section className="sc-admin__section"><LogsSection /></section> : null}
+            {tab === 'logs' ? <section className="sc-admin__section sc-settings-card"><LogsSection /></section> : null}
           </Suspense>
         </SectionErrorBoundary>
       </div>

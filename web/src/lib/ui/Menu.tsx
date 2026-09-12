@@ -64,10 +64,13 @@ export function Menu({ open, onClose, onclose, x, y, align = 'start', children }
   if (!open) return null
   if (compact) {
     return (
-      <dialog className="sc-sheet" open aria-label={t('common.main_menu')} onCancel={(event) => { event.preventDefault(); close() }} onClick={(event) => { if (event.target === event.currentTarget) close() }}>
-        <div className="sc-sheet-handle-wrap" aria-hidden="true"><div className="sc-sheet-handle" /></div>
-        <div className="sc-sheet-content">{children}</div>
-      </dialog>
+      <>
+        <div className="sc-sheet-scrim" onClick={close} aria-hidden="true" />
+        <dialog className="sc-sheet" open aria-label={t('common.main_menu')} onCancel={(event) => { event.preventDefault(); close() }}>
+          <div className="sc-sheet-handle-wrap" aria-hidden="true"><div className="sc-sheet-handle" /></div>
+          <div className="sc-sheet-content">{children}</div>
+        </dialog>
+      </>
     )
   }
   return (

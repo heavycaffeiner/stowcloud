@@ -1,5 +1,5 @@
 .sc-edit { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.sc-edit__toolbar { display: flex; align-items: center; gap: 16px; padding: 16px; border-bottom: 1px solid var(--mdui-color-outline-variant, var(--m3c-outline-variant)); }
+.sc-edit__toolbar { display: flex; align-items: center; gap: 16px; padding: 16px; border-bottom: none; background: rgb(var(--mdui-color-surface-container-low)); }
 .sc-edit__title { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
 .sc-edit__filename { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; font-size: 1.125rem; font-weight: 500; }
 .sc-edit__filename > bdi { direction: ltr; }

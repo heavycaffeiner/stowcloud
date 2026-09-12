@@ -3,6 +3,8 @@
   align-items: center;
   justify-content: center;
   min-height: 100dvh;
+  min-width: 0;
+  overflow-y: auto;
   padding: var(--sc-page-pad);
 }
 
@@ -11,20 +13,26 @@
   flex-direction: column;
   gap: 16px;
   width: min(640px, 100%);
+  min-width: 0;
   padding: 24px;
   border-radius: 24px;
   background: var(--sc-container-surface);
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.2);
 }
-
 .sc-emergency__title {
   margin: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--mdui-typescale-headline-small-size);
+  font-weight: var(--mdui-typescale-headline-small-weight);
+  line-height: var(--mdui-typescale-headline-small-line-height);
+  letter-spacing: var(--mdui-typescale-headline-small-tracking);
 }
 
 .sc-emergency__subtitle,
 .sc-emergency__hint {
   margin: 0;
   color: var(--sc-content-secondary);
+  overflow-wrap: anywhere;
 }
 
 .sc-emergency__form {
@@ -37,25 +45,42 @@
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  align-items: center;
 }
 
 .sc-emergency__label {
-  font-weight: 600;
+  font-size: var(--mdui-typescale-label-large-size);
+  font-weight: var(--mdui-typescale-label-large-weight);
+  line-height: var(--mdui-typescale-label-large-line-height);
+  letter-spacing: var(--mdui-typescale-label-large-tracking);
 }
 
 .sc-emergency__select,
 .sc-emergency__doc {
+  width: 100%;
+  min-width: 0;
   padding: 8px 12px;
-  border: 1px solid var(--sc-content-secondary);
-  border-radius: 4px;
-  background: var(--sc-page-surface);
+  border: none;
+  border-radius: var(--mdui-shape-corner-small, 8px);
+  background: rgb(var(--mdui-color-surface-container-highest));
   color: var(--sc-content-primary);
   font: inherit;
+}
+
+.sc-emergency__select {
+  min-height: 48px;
+}
+
+.sc-emergency__select:focus-visible,
+.sc-emergency__doc:focus-visible {
+  outline: 3px solid var(--sc-state-focus);
+  outline-offset: 2px;
 }
 
 .sc-emergency__doc {
   min-height: 18rem;
   font-family: ui-monospace, monospace;
+  max-width: 100%;
   resize: vertical;
 }
 
@@ -82,6 +107,7 @@
   margin: 0;
   padding: 12px 16px;
   border-radius: 8px;
+  overflow-wrap: anywhere;
 }
 
 .sc-emergency__banner,
@@ -98,4 +124,39 @@
 .sc-emergency__ok {
   margin: 0;
   color: var(--mdui-color-primary, var(--sc-state-focus));
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 599.98px) {
+  .sc-emergency {
+    align-items: flex-start;
+    padding-block: 16px;
+  }
+
+  .sc-emergency__card {
+    gap: 14px;
+    padding: 20px 16px;
+    border-radius: 20px;
+  }
+
+  .sc-emergency__actions > .sc-button-wrap > mdui-button {
+    min-height: 44px;
+  }
+
+  .sc-emergency__facts {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+
+  .sc-emergency__facts dd + dt {
+    margin-top: 8px;
+  }
+
+  .sc-emergency__actions > .sc-button-wrap {
+    flex: 1 1 12rem;
+  }
+
+  .sc-emergency__actions > .sc-button-wrap > mdui-button {
+    width: 100%;
+  }
 }

@@ -6,6 +6,9 @@ export interface NavigationBarItem {
   readonly label: string
   readonly icon: string
   readonly href?: string
+  readonly popup?: 'dialog'
+  readonly expanded?: boolean
+  readonly controls?: string
 }
 
 export interface NavigationBarProps {
@@ -25,11 +28,17 @@ export function NavigationBar({ items, active, onselect }: NavigationBarProps) {
             key={item.id}
             type="button"
             className={selected ? 'sc-nav-bar__item is-active' : 'sc-nav-bar__item'}
-            aria-current={selected ? 'page' : undefined}
-            onClick={() => onselect(item.id)}
+            aria-current={selected && !item.popup ? 'page' : undefined}
+            aria-haspopup={item.popup}
+            aria-expanded={item.popup ? item.expanded : undefined}
+            aria-controls={item.controls}
+            onClick={(event) => {
+              if (item.popup) event.currentTarget.focus()
+              onselect(item.id)
+            }}
           >
-            <Icon name={item.icon} />
-            <span>{item.label}</span>
+            <span className="sc-nav-bar__icon"><Icon name={item.icon} /></span>
+            <span className="sc-nav-bar__label">{item.label}</span>
           </button>
         )
       })}

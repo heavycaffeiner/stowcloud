@@ -14,6 +14,21 @@ loadLocale((locale) => {
 })
 
 
+import { setColorScheme } from 'mdui/functions/setColorScheme.js'
+
+export function initMdui(): void {
+  try {
+    setColorScheme('#0e385e', {
+      customColors: [
+        { name: 'success', value: '#2e7d32' },
+        { name: 'warning', value: '#ed6c02' }
+      ]
+    })
+  } catch {
+    // non-DOM environment
+  }
+}
+
 export function applyMduiTheme(theme: ThemePref): void {
   setTheme(theme === 'system' ? 'auto' : theme)
 }

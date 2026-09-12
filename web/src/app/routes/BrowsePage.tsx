@@ -539,27 +539,23 @@ export function BrowsePage() {
   if (path === '/' && session.data?.roots[0]) return <NavigateToRoot path={session.data.roots[0].label} search={location.search} />
   return (
     <div className="sc-browse" role="region" aria-label={t('browse.file_browser')} onDragOver={(event) => { event.preventDefault(); setDragOver(canCreate) }} onDragLeave={() => setDragOver(false)} onDrop={onDrop}>
-      <div className="sc-browse__bar-stack">
-        <div className="sc-browse__folder-context">
-          <div className="sc-browse__folder-heading">
-            <Breadcrumb crumbs={crumbs} onNavigate={(next) => void navigate(`/b${next}`)} />
-            {root?.shared_externally ? <span className="sc-browse__external-badge">⚠ {t('common.shared_with_other_services')}</span> : null}
-            {encrypted ? unlocked ? <span className="sc-browse__encrypted-badge">🔒 {t('browse.encrypted_badge')}</span> : <button type="button" className="sc-browse__encrypted-badge sc-browse__encrypted-badge--locked" onClick={() => { if (encryption.data) openUnlockFor(encryption.data, () => {}) }}>🔒 {t('browse.encrypted_locked_badge')}</button> : null}
-            {root?.broken_reason ? <span className="sc-browse__broken-badge">⚠ {t('browse.this_folder_is_unavailable')}</span> : null}
-          </div>
-          <div className="sc-browse__folder-state"><span>{mode === 'list' ? t('browse.list_view') : t('browse.grid_view')}</span><span>{t('browse.sort_selected', { label: sortLabel, direction: sortOrder === 'asc' ? t('browse.sort_ascending') : t('browse.sort_descending') })}</span></div>
+      <header className={`sc-browse__toolbar${compact ? ' sc-browse__toolbar--compact' : ''}`}>
+        <div className="sc-browse__folder-heading">
+          <h1 className="sc-sr-only">{crumbs.at(-1)?.label ?? t('browse.home')}</h1>
+          <Breadcrumb crumbs={crumbs} onNavigate={(next) => void navigate(`/b${next}`)} />
+          {root?.shared_externally ? <span className="sc-browse__external-badge"><Icon name="warning" size={14} />{t('common.shared_with_other_services')}</span> : null}
+          {encrypted ? unlocked ? <span className="sc-browse__encrypted-badge"><Icon name="lock" size={14} />{t('browse.encrypted_badge')}</span> : <button type="button" className="sc-browse__encrypted-badge sc-browse__encrypted-badge--locked" onClick={() => { if (encryption.data) openUnlockFor(encryption.data, () => {}) }}><Icon name="lock" size={14} />{t('browse.encrypted_locked_badge')}</button> : null}
+          {root?.broken_reason ? <span className="sc-browse__broken-badge"><Icon name="warning" size={14} />{t('browse.this_folder_is_unavailable')}</span> : null}
         </div>
-        <header className={`sc-browse__toolbar${compact ? ' sc-browse__toolbar--compact' : ''}`}>
-          <div className="sc-browse__toolbar-actions">
-            <IconButton label={t('common.search')} onClick={startSearch}><Icon name="search" /></IconButton>
-            {canCreate ? <Button variant="filled" onClick={openNewMenu} icon={<Icon name="add" />}>{t('browse.new')}</Button> : null}
-            {!compact ? <><IconButton label={t('common.refresh')} onClick={refresh}><Icon name="refresh" /></IconButton><IconButton label={treeOpen ? t('browse.hide_folder_tree') : t('browse.show_folder_tree')} selected={treeOpen} onClick={toggleTree}><Icon name="folder-tree" /></IconButton><IconButton label={mode === 'list' ? t('browse.grid_view') : t('browse.list_view')} onClick={toggleView}><Icon name={mode === 'list' ? 'grid' : 'list'} /></IconButton><IconButton label={details ? t('details.hide') : t('details.show')} expanded={details} onClick={() => ui.setDetails(!details)}><Icon name="info" /></IconButton></> : null}
-            <IconButton label={t('browse.sort_by', { key: sortLabel })} selected={sortMenuOpen} expanded={sortMenuOpen} onClick={openSort}><Icon name="sort" /></IconButton>
-            <IconButton label={t('browse.more')} selected={overflowOpen} expanded={overflowOpen} onClick={openOverflow}><Icon name="more-vert" /></IconButton>
-          </div>
-        </header>
-      </div>
-      {selected.length ? <div className="sc-browse__selection-bar"><div className="sc-browse__selection-bar-inner"><IconButton label={t('browse.clear_selection')} onClick={() => selection.clear()}><Icon name="close" /></IconButton><IconButton label={t('browse.select_all')} onClick={() => selection.all(entries.map((entry) => entry.name))}><Icon name="check" /></IconButton><span className="sc-browse__selection-count">{compact ? t('common.item_count', { count: selected.length }) : t('browse.selected', { count: selected.length, size: formatBytes(selectionBytes) })}</span>{actions.map((action) => <IconButton key={action.key} label={action.label} onClick={action.run}><Icon name={ACTION_ICON_NAMES[action.key] ?? 'more-vert'} /></IconButton>)}</div></div> : null}
+        <div className="sc-browse__toolbar-actions">
+          {!compact ? <IconButton label={t('common.search')} onClick={startSearch}><Icon name="search" /></IconButton> : null}
+          {canCreate ? <Button variant="filled" square={compact} ariaLabel={t('browse.new')} onClick={openNewMenu} icon={<Icon name="add" />}>{compact ? undefined : t('browse.new')}</Button> : null}
+          {!compact ? <><IconButton label={t('common.refresh')} onClick={refresh}><Icon name="refresh" /></IconButton><IconButton label={treeOpen ? t('browse.hide_folder_tree') : t('browse.show_folder_tree')} selected={treeOpen} onClick={toggleTree}><Icon name="folder-tree" /></IconButton><IconButton label={mode === 'list' ? t('browse.grid_view') : t('browse.list_view')} onClick={toggleView}><Icon name={mode === 'list' ? 'grid' : 'list'} /></IconButton><IconButton label={details ? t('details.hide') : t('details.show')} expanded={details} onClick={() => ui.setDetails(!details)}><Icon name="info" /></IconButton></> : null}
+          <IconButton label={t('browse.sort_by', { key: sortLabel })} selected={sortMenuOpen} expanded={sortMenuOpen} onClick={openSort}><Icon name="sort" /></IconButton>
+          <IconButton label={t('browse.more')} selected={overflowOpen} expanded={overflowOpen} onClick={openOverflow}><Icon name="more-vert" /></IconButton>
+        </div>
+      </header>
+      {selected.length ? <div className="sc-browse__selection-bar"><div className="sc-browse__selection-bar-inner"><IconButton label={t('browse.clear_selection')} onClick={() => selection.clear()}><Icon name="close" /></IconButton><span className="sc-browse__selection-count">{compact ? t('common.item_count', { count: selected.length }) : t('browse.selected', { count: selected.length, size: formatBytes(selectionBytes) })}</span><span className="sc-browse__selection-gap" /><IconButton label={t('browse.select_all')} onClick={() => selection.all(entries.map((entry) => entry.name))}><Icon name="check" /></IconButton>{actions.map((action) => <IconButton key={action.key} label={action.label} onClick={action.run}><Icon name={ACTION_ICON_NAMES[action.key] ?? 'more-vert'} /></IconButton>)}</div></div> : null}
       {operation ? <section className="sc-browse__operation" role="status" aria-live="polite"><div className="sc-browse__operation-heading"><h2>{operation.kind === 'delete' ? t('common.delete') : operation.kind === 'move' ? t('common.move') : t('common.copy')}</h2><button type="button" className="sc-browse__operation-close" onClick={() => setOperation(null)}>{t('common.close')}</button></div><ul>{operation.results.map((result) => <li key={result.path} className={!result.ok ? 'sc-browse__operation-error' : undefined}><span>{result.destination ? `${result.path} to ${result.destination}` : result.path}</span><span>{result.ok ? result.skipped ? t('browse.items_skipped_name_taken', { count: 1 }) : t('common.done') : batchErrorKey(result.error)?.key ? t(batchErrorKey(result.error)!.key, batchErrorKey(result.error)!.params) : t('error.internal')}</span></li>)}</ul>{operation.results.some((result) => result.skipped) ? <p>{t('browse.items_skipped_name_taken', { count: operation.results.filter((result) => result.skipped).length })}</p> : null}</section> : null}
       <div className="sc-browse__content">
         {treeOpen ? <FileTree currentPath={path} onNavigate={(next) => { setTreeOpen(false); void navigate(`/b${next}`) }} overlay={compact} onClose={() => setTreeOpen(false)} /> : null}

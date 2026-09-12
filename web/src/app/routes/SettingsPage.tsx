@@ -10,6 +10,7 @@ import { useStore } from '../../lib/store/use-store'
 import { loadStoredConcurrency } from '../../lib/upload/chunk-planner'
 import { setUploadConcurrency } from '../../lib/upload/queue'
 import { Button } from '../../lib/ui/Button'
+import { Icon } from '../../lib/ui/Icon'
 import { useDocumentTitle } from '../use-document-title'
 import './settings.css'
 
@@ -56,6 +57,12 @@ export function SettingsPage() {
     if (value === 'connections') return t('settings.connections')
     return t('settings.browser_preferences')
   }
+  function tabIcon(value: Tab): string {
+    if (value === 'account') return 'admin'
+    if (value === 'security') return 'lock'
+    if (value === 'connections') return 'folder-tree'
+    return 'settings'
+  }
   function selectTab(value: Tab): void {
     window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}#${value}`)
     setTab(value)
@@ -80,18 +87,38 @@ export function SettingsPage() {
   return (
     <section className="sc-settings-page">
       <header><h1>{t('common.settings')}</h1></header>
-      <div className="sc-settings-page__tabs" role="tablist" aria-label={t('settings.settings_sections')}>
-        {visibleTabs.map((item) => <mdui-button key={item} variant={tab === item ? 'tonal' : 'text'} onClick={() => selectTab(item)}>{tabLabel(item)}</mdui-button>)}
-      </div>
+      <nav className="sc-settings-page__tabs" aria-label={t('common.settings')}>
+        {visibleTabs.map((item) => (
+          <button key={item} type="button" className="sc-settings-page__tab" aria-current={item === tab ? 'page' : undefined} onClick={() => selectTab(item)}>
+            <Icon name={tabIcon(item)} />
+            {tabLabel(item)}
+          </button>
+        ))}
+      </nav>
 
       {tab === 'account' ? (
         <div className="sc-settings-page__grid">
           <article className="sc-settings-card">
-            <h2>{t('settings.account')}</h2>
-            <p>{session.data?.user.display_name || session.data?.user.name}</p>
-            <p>@{session.data?.user.name}</p>
-            <p>{session.data?.user.is_admin ? t('common.administrator') : t('common.user_2')}</p>
-            <Button variant="outlined" loading={logout.isPending} onClick={() => void signOut()}>{t('common.sign_out')}</Button>
+            <div className="sc-settings-card__head">
+              <div className="sc-settings__avatar">
+                {((session.data?.user.display_name || session.data?.user.name || 'U')[0] ?? 'U').toUpperCase()}
+              </div>
+              <div className="sc-settings-card__meta">
+                <h2>{t('settings.account')}</h2>
+                <p className="sc-settings__account-name">{session.data?.user.display_name || session.data?.user.name}</p>
+                {session.data?.user.display_name && session.data?.user.name && session.data?.user.display_name !== session.data?.user.name ? (
+                  <p className="sc-settings__username">@{session.data?.user.name}</p>
+                ) : null}
+              </div>
+              <span className="sc-settings-badge">
+                {session.data?.user.is_admin ? t('common.administrator') : t('common.user_2')}
+              </span>
+            </div>
+            <div className="sc-settings-row">
+              <Button variant="outlined" icon={<Icon name="close" size={18} />} loading={logout.isPending} onClick={() => void signOut()}>
+                {t('common.sign_out')}
+              </Button>
+            </div>
           </article>
         </div>
       ) : null}
@@ -100,30 +127,55 @@ export function SettingsPage() {
         <Suspense fallback={<p>{t('common.loading')}</p>}>
           <div className="sc-settings-page__grid">
             <article className="sc-settings-card">
-              <h2>{t('common.password')}</h2>
-              <p className="sc-settings-card__hint">{t('settings.at_least_10_characters_changing')}</p>
+              <div className="sc-settings-card__head">
+                <div className="sc-settings__card-icon"><Icon name="lock" size={20} /></div>
+                <div className="sc-settings-card__meta">
+                  <h2>{t('common.password')}</h2>
+                  <p className="sc-settings-card__hint">{t('settings.at_least_10_characters_changing')}</p>
+                </div>
+              </div>
               <PasswordSection />
             </article>
             <article className="sc-settings-card">
-              <h2>{t('settings.two_factor_authentication')}</h2>
-              <p className="sc-settings-card__hint">{t('settings.asks_6_digit_code_from')}</p>
+              <div className="sc-settings-card__head">
+                <div className="sc-settings__card-icon"><Icon name="lock" size={20} /></div>
+                <div className="sc-settings-card__meta">
+                  <h2>{t('settings.two_factor_authentication')}</h2>
+                  <p className="sc-settings-card__hint">{t('settings.asks_6_digit_code_from')}</p>
+                </div>
+              </div>
               <TotpSection />
             </article>
             {oidcVisible ? (
               <article className="sc-settings-card">
-                <h2>{t('settings.single_sign_on')}</h2>
-                <p className="sc-settings-card__hint">{t('settings.sign_your_organisations_identity_provider')}</p>
+                <div className="sc-settings-card__head">
+                  <div className="sc-settings__card-icon"><Icon name="admin" size={20} /></div>
+                  <div className="sc-settings-card__meta">
+                    <h2>{t('settings.single_sign_on')}</h2>
+                    <p className="sc-settings-card__hint">{t('settings.sign_your_organisations_identity_provider')}</p>
+                  </div>
+                </div>
                 <OidcSection />
               </article>
             ) : null}
             <article className="sc-settings-card">
-              <h2>{t('settings.app_passwords')}</h2>
-              <p className="sc-settings-card__hint">{t('settings.use_one_where_your_account')}</p>
+              <div className="sc-settings-card__head">
+                <div className="sc-settings__card-icon"><Icon name="lock" size={20} /></div>
+                <div className="sc-settings-card__meta">
+                  <h2>{t('settings.app_passwords')}</h2>
+                  <p className="sc-settings-card__hint">{t('settings.use_one_where_your_account')}</p>
+                </div>
+              </div>
               <AppPasswordsSection />
             </article>
             <article className="sc-settings-card">
-              <h2>{t('settings.active_sessions')}</h2>
-              <p className="sc-settings-card__hint">{t('settings.devices_currently_signed_account_sign')}</p>
+              <div className="sc-settings-card__head">
+                <div className="sc-settings__card-icon"><Icon name="recent" size={20} /></div>
+                <div className="sc-settings-card__meta">
+                  <h2>{t('settings.active_sessions')}</h2>
+                  <p className="sc-settings-card__hint">{t('settings.devices_currently_signed_account_sign')}</p>
+                </div>
+              </div>
               <SessionsSection />
             </article>
           </div>
@@ -135,15 +187,25 @@ export function SettingsPage() {
           <div className="sc-settings-page__grid">
             {session.data?.features.smb ? (
               <article className="sc-settings-card">
-                <h2>{t('admin.server_smb')}</h2>
-                <p className="sc-settings-card__hint">{t('settings.mount_as_network_drive_file')}</p>
+                <div className="sc-settings-card__head">
+                  <div className="sc-settings__card-icon"><Icon name="folder-tree" size={20} /></div>
+                  <div className="sc-settings-card__meta">
+                    <h2>{t('admin.server_smb')}</h2>
+                    <p className="sc-settings-card__hint">{t('settings.mount_as_network_drive_file')}</p>
+                  </div>
+                </div>
                 <SmbSection />
               </article>
             ) : null}
             {session.data?.features.webdav ? (
               <article className="sc-settings-card">
-                <h2>{t('settings.connections')}</h2>
-                <p className="sc-settings-card__hint">{t('webdav.connect_from_your_os_file_manager')}</p>
+                <div className="sc-settings-card__head">
+                  <div className="sc-settings__card-icon"><Icon name="link" size={20} /></div>
+                  <div className="sc-settings-card__meta">
+                    <h2>{t('settings.connections')}</h2>
+                    <p className="sc-settings-card__hint">{t('webdav.connect_from_your_os_file_manager')}</p>
+                  </div>
+                </div>
                 <WebdavSection />
               </article>
             ) : null}
@@ -154,26 +216,53 @@ export function SettingsPage() {
       {tab === 'appearance' ? (
         <div className="sc-settings-page__grid">
           <article className="sc-settings-card">
-            <h2>{t('settings.theme')}</h2>
-            <p className="sc-settings-card__hint">{t('settings.choosing_system_follows_your_device')}</p>
-            <div className="sc-settings-card__buttons">
-              <mdui-button variant={theme === 'system' ? 'tonal' : 'outlined'} onClick={() => ui.setTheme('system')}>{t('common.system')}</mdui-button>
-              <mdui-button variant={theme === 'light' ? 'tonal' : 'outlined'} onClick={() => ui.setTheme('light')}>{t('settings.light')}</mdui-button>
-              <mdui-button variant={theme === 'dark' ? 'tonal' : 'outlined'} onClick={() => ui.setTheme('dark')}>{t('settings.dark')}</mdui-button>
+            <div className="sc-settings-card__head">
+              <div className="sc-settings__card-icon"><Icon name="settings" size={20} /></div>
+              <div className="sc-settings-card__meta">
+                <h2>{t('settings.theme')}</h2>
+                <p className="sc-settings-card__hint">{t('settings.choosing_system_follows_your_device')}</p>
+              </div>
+            </div>
+            <div className="sc-settings-row">
+              <mdui-segmented-button-group value={theme} onChange={(event: any) => ui.setTheme(event.target.value)}>
+                <mdui-segmented-button value="system">{t('common.system')}</mdui-segmented-button>
+                <mdui-segmented-button value="light">{t('settings.light')}</mdui-segmented-button>
+                <mdui-segmented-button value="dark">{t('settings.dark')}</mdui-segmented-button>
+              </mdui-segmented-button-group>
             </div>
           </article>
           <article className="sc-settings-card">
-            <h2>{t('settings.language')}</h2>
-            <p className="sc-settings-card__hint">{t('settings.language_choice_stays_this_browser')}</p>
-            <div className="sc-settings-card__buttons">
-              <mdui-button variant={currentLocale() === 'ko' ? 'tonal' : 'outlined'} onClick={() => localeStore.setLocale('ko')}>{t('settings.language')}</mdui-button>
-              <mdui-button variant={currentLocale() === 'en' ? 'tonal' : 'outlined'} onClick={() => localeStore.setLocale('en')}>{t('settings.language')}</mdui-button>
+            <div className="sc-settings-card__head">
+              <div className="sc-settings__card-icon"><Icon name="info" size={20} /></div>
+              <div className="sc-settings-card__meta">
+                <h2>{t('settings.language')}</h2>
+                <p className="sc-settings-card__hint">{t('settings.language_choice_stays_this_browser')}</p>
+              </div>
+            </div>
+            <div className="sc-settings-row">
+              <mdui-segmented-button-group value={currentLocale()} onChange={(event: any) => localeStore.setLocale(event.target.value)}>
+                <mdui-segmented-button value="ko">한국어</mdui-segmented-button>
+                <mdui-segmented-button value="en">English</mdui-segmented-button>
+              </mdui-segmented-button-group>
             </div>
           </article>
           <article className="sc-settings-card">
-            <h2>{t('settings.upload_concurrency')}</h2>
-            <p className="sc-settings-card__hint">{t('settings.upload_concurrency_hint')}</p>
-            <input type="number" min="1" max="16" value={concurrency} onChange={(event) => onSetConcurrency(Math.min(16, Math.max(1, Number(event.target.value) || 1)))} />
+            <div className="sc-settings-card__head">
+              <div className="sc-settings__card-icon"><Icon name="upload" size={20} /></div>
+              <div className="sc-settings-card__meta">
+                <h2>{t('settings.upload_concurrency')}</h2>
+                <p className="sc-settings-card__hint">{t('settings.upload_concurrency_hint')}</p>
+              </div>
+            </div>
+            <div className="sc-settings-row">
+              <mdui-segmented-button-group value={String(concurrency)} onChange={(event: any) => onSetConcurrency(Number(event.target.value) || 1)}>
+                {[1, 2, 4, 8].map((count) => (
+                  <mdui-segmented-button key={count} value={String(count)}>
+                    {count}
+                  </mdui-segmented-button>
+                ))}
+              </mdui-segmented-button-group>
+            </div>
           </article>
         </div>
       ) : null}

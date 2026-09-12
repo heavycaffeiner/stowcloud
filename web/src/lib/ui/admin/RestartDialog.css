@@ -1,1 +1,13 @@
-.sc-restart__status{display:inline-flex;align-items:center;gap:12px}.sc-restart__error{color:var(--mdui-color-error)}
+.sc-restart__status {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.sc-restart__error {
+  color: rgb(var(--mdui-color-error));
+  overflow-wrap: anywhere;
+}

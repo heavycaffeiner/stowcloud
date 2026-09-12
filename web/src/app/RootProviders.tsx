@@ -6,11 +6,15 @@ import { localeStore } from '../lib/i18n/state'
 import { queryClient } from '../lib/query/client'
 import { useStore } from '../lib/store/use-store'
 import { ui } from '../lib/store/ui.store'
-import { applyMduiLocale, applyMduiTheme } from '../lib/ui/mdui-runtime'
+import { applyMduiLocale, applyMduiTheme, initMdui } from '../lib/ui/mdui-runtime'
 
 export function RootProviders({ children }: PropsWithChildren) {
   const theme = useStore(ui, (state) => state.theme)
   const locale = useStore(localeStore, (state) => state.locale)
+
+  useEffect(() => {
+    initMdui()
+  }, [])
 
   useEffect(() => {
     applyMduiTheme(theme)

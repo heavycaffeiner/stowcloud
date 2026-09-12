@@ -236,9 +236,7 @@ export function GroupManagementSection() {
                   <li key={id}>
                     <span className="sc-admin-chip">
                       {memberBusyId === id ? t('common.loading') : userName(id)}
-                      <Button square ariaLabel={t('group.remove_member', { name: userName(id) })} disabled={memberBusyId === id} onClick={() => submitRemoveMember(id)}>
-                        <Icon name="close" />
-                      </Button>
+                      <Button variant="text" square ariaLabel={t('group.remove_member', { name: userName(id) })} disabled={memberBusyId === id} onClick={() => submitRemoveMember(id)}><Icon name="close" /></Button>
                     </span>
                   </li>
                 ))}

@@ -142,21 +142,25 @@ export function NavigationDrawer({
           </>
         ) : null}
 
-        {!folderSelectorOnly ? <div className="sc-nav-drawer__section-title">{t('nav.folders')}</div> : null}
+        {!folderSelectorOnly ? (
+          <div className="sc-nav-drawer__section-header">
+            <span className="sc-nav-drawer__section-title">{t('nav.folders')}</span>
+            {displayRoots.length > 0 ? (
+              <button
+                type="button"
+                className="sc-nav-drawer__reorder-toggle"
+                aria-pressed={reordering}
+                onClick={() => setReordering((value) => !value)}
+              >
+                {reordering ? t('nav.reorder_done') : t('nav.reorder')}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         <ul className="sc-nav-drawer__list" aria-label={t('nav.folder_selector')}>
           <li className="sc-nav-drawer__entry">
             {displayRoots.length > 0 ? (
               <ul className={overlay ? 'sc-nav-drawer__sublist sc-nav-drawer__sublist--overlay' : 'sc-nav-drawer__sublist'}>
-                <li className="sc-nav-drawer__reorder-row">
-                  <button
-                    type="button"
-                    className="sc-nav-drawer__reorder-toggle"
-                    aria-pressed={reordering}
-                    onClick={() => setReordering((value) => !value)}
-                  >
-                    {reordering ? t('nav.reorder_done') : t('nav.reorder')}
-                  </button>
-                </li>
                 {displayRoots.map((root, index) => (
                   <li key={root.id}>
                     {reordering ? (
@@ -168,12 +172,20 @@ export function NavigationDrawer({
                             label={t('nav.move_up', { name: root.label })}
                             disabled={index === 0}
                             onClick={() => moveRoot(index, -1)}
-                          ><Icon name="chevron_left" /></IconButton>
+                          >
+                            <span className="sc-nav-drawer__reorder-chevron sc-nav-drawer__reorder-chevron--up">
+                              <Icon name="chevron_right" size={16} />
+                            </span>
+                          </IconButton>
                           <IconButton
                             label={t('nav.move_down', { name: root.label })}
                             disabled={index === displayRoots.length - 1}
                             onClick={() => moveRoot(index, 1)}
-                          ><Icon name="chevron_right" /></IconButton>
+                          >
+                            <span className="sc-nav-drawer__reorder-chevron sc-nav-drawer__reorder-chevron--down">
+                              <Icon name="chevron_right" size={16} />
+                            </span>
+                          </IconButton>
                         </span>
                       </div>
                     ) : (

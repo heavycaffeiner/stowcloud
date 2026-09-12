@@ -167,7 +167,7 @@ export function PublicSharePage() {
       <header className="sc-public-share__header"><strong>Stowcloud</strong>{t('public_share.public_share_link')}</header>
       {share.isPending ? <p className="sc-public-share__status">{t('common.loading')}</p> : null}
       {loadError ? (
-        <section role="alert" className="sc-public-share__state">
+        <section role="alert" className="sc-public-share__state sc-public-share__state--error">
           <p>{loadError}</p>
           {retryableError ? <Button variant="outlined" loading={share.isFetching} onClick={() => void share.refetch()}>{t('public_share.retry')}</Button> : null}
         </section>

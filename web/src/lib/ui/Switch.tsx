@@ -10,6 +10,7 @@ export interface SwitchProps {
   name?: string
   value?: string
   onChange?: (checked: boolean) => void
+  onchange?: (checked: boolean) => void
   children?: ReactNode
 }
 
@@ -27,6 +28,7 @@ export function Switch({
   name,
   value,
   onChange,
+  onchange,
   children
 }: SwitchProps) {
   const ref = useRef<SwitchElement | null>(null)
@@ -42,10 +44,11 @@ export function Switch({
       const wanted = element.checked
       element.checked = checked
       onChange?.(wanted)
+      onchange?.(wanted)
     }
     element.addEventListener('change', propose)
     return () => element.removeEventListener('change', propose)
-  }, [checked, onChange])
+  }, [checked, onChange, onchange])
 
   const accessibleLabel = label ?? (typeof children === 'string' ? children : undefined)
   return (

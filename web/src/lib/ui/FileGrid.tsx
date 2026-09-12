@@ -12,6 +12,7 @@ import { cellPos, sectionRows, verticalTarget } from '../virtual/grid-sections'
 import { indicesInRect, type Rect } from './marquee'
 import { isVideoFile } from './media-utils'
 import { Thumbnail } from './Thumbnail'
+import { useFileActivation } from './FileRow'
 import { Icon } from './Icon'
 import './browse-ui.css'
 
@@ -42,7 +43,6 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
   const viewport = useRef<HTMLDivElement>(null)
   const folderEl = useRef<HTMLDivElement>(null)
   const fileEl = useRef<HTMLDivElement>(null)
-  const suppressTouchClick = useRef(false)
   const [metrics, setMetrics] = useState({ width: 0, scroll: 0, height: 0, foldersTop: 0, filesTop: 0 })
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
   const card = density === 'compact' ? { w: 192, folderH: 44, fileH: 176, gap: 8 } : density === 'spacious' ? { w: 256, folderH: 60, fileH: 244, gap: 16 } : { w: 224, folderH: 52, fileH: 208, gap: 12 }
@@ -155,8 +155,15 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
     if (extend && name) selection.range(loadedNames, name)
     scrollIntoView(next)
   }
+  const activation = useFileActivation((entry, index, event) => {
+    viewport.current?.focus()
+    if (event.shiftKey) selection.range(loadedNames, entry.name)
+    else if (event.ctrlKey || event.metaKey) selection.toggle(entry.name, index)
+    else selection.only(entry.name, index)
+  }, onOpen)
 
   const keyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    activation.cancel()
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
       if (focused === null) moveFocus(0, event.shiftKey)
@@ -186,41 +193,32 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
     const selected = names.has(entry.name)
     const focusedCard = focusedName === entry.name
     const icon = entry.kind === 'dir' ? 'folder' : isVideoFile(entry.name) ? 'video' : entry.preview?.available ? 'image' : 'file'
-    const compactOpen = (event: PointerEvent<HTMLSpanElement>) => {
-      if (!compact || (event.pointerType !== 'touch' && event.pointerType !== 'pen') || event.button !== 0) return
-      suppressTouchClick.current = true
-      event.preventDefault()
+    const cancelControlPointer = (event: PointerEvent) => {
       event.stopPropagation()
-      viewport.current?.focus()
-      onOpen(entry)
-    }
-    const onCardClick = (event: ReactMouseEvent<HTMLDivElement>) => {
-      if (suppressTouchClick.current) { suppressTouchClick.current = false; event.preventDefault(); event.stopPropagation(); return }
-      viewport.current?.focus()
-      if (event.shiftKey) selection.range(loadedNames, entry.name)
-      else if (event.ctrlKey || event.metaKey) selection.toggle(entry.name, index)
-      else selection.only(entry.name, index)
+      activation.cancel()
     }
     return (
-      <div id={domId(entry.name)} key={entry.name} className={`sc-file-grid__card sc-file-grid__card--${isFolder ? 'folder' : 'file'}${selected ? ' sc-file-grid__card--selected' : ''}${focusedCard ? ' sc-file-grid__card--focused' : ''}`} role="gridcell" aria-colindex={col + 1} aria-selected={selected} style={{ width: cardW }} onClick={onCardClick} onDoubleClick={() => onOpen(entry)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); onContextMenu(entry, event) }}>
+      <div id={domId(entry.name)} key={entry.path} className={`sc-file-grid__card sc-file-grid__card--${isFolder ? 'folder' : 'file'}${selected ? ' sc-file-grid__card--selected' : ''}${focusedCard ? ' sc-file-grid__card--focused' : ''}`} role="gridcell" aria-colindex={col + 1} aria-selected={selected} style={{ width: cardW }} {...activation.handlers(entry, index)} onContextMenu={(event) => { activation.cancel(); event.preventDefault(); event.stopPropagation(); onContextMenu(entry, event) }}>
         {isFolder ? (
           <>
-            <span className="sc-file-grid__check sc-touch-target" onClick={(event) => { event.stopPropagation(); selection.toggle(entry.name, index) }} onDoubleClick={(event) => event.stopPropagation()}><input type="checkbox" checked={selected} readOnly tabIndex={-1} aria-label={t('common.select', { name: entry.name })} /></span>
+            <span className="sc-file-grid__check sc-touch-target" onClick={(event) => { event.stopPropagation(); activation.cancel(); selection.toggle(entry.name, index) }} onPointerDown={cancelControlPointer} onPointerUp={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()}><mdui-checkbox checked={selected} tabIndex={-1}><span className="sc-sr-only">{t('common.select', { name: entry.name })}</span></mdui-checkbox></span>
             <span className="sc-file-grid__type"><Icon name="folder" /></span>
-            <span className="sc-file-grid__name" onPointerDown={compactOpen}><bdi>{entry.name}</bdi></span>
+            <span className="sc-file-grid__name"><bdi>{entry.name}</bdi></span>
+            {entry.confusable ? <span className="sc-file-grid__badge" title={t('common.look_alike_characters')}><Icon name="warning" /></span> : null}
+            <button type="button" className="sc-file-grid__kebab" tabIndex={-1} aria-expanded={menuFor === entry.name} aria-label={t('grid.more_actions', { name: entry.name })} onClick={(event) => { event.stopPropagation(); activation.cancel(); onContextMenu(entry, event) }} onPointerDown={cancelControlPointer} onPointerUp={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()}><Icon name="more-vert" size={18} /></button>
           </>
         ) : (
           <>
             <div className="sc-file-grid__head">
-              <span className="sc-file-grid__check sc-touch-target" onClick={(event) => { event.stopPropagation(); selection.toggle(entry.name, index) }} onDoubleClick={(event) => event.stopPropagation()}><input type="checkbox" checked={selected} readOnly tabIndex={-1} aria-label={t('common.select', { name: entry.name })} /></span>
-              <span className="sc-file-grid__name" onPointerDown={compactOpen}><bdi>{entry.name}</bdi></span>
+              <span className="sc-file-grid__check sc-touch-target" onClick={(event) => { event.stopPropagation(); activation.cancel(); selection.toggle(entry.name, index) }} onPointerDown={cancelControlPointer} onPointerUp={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()}><mdui-checkbox checked={selected} tabIndex={-1}><span className="sc-sr-only">{t('common.select', { name: entry.name })}</span></mdui-checkbox></span>
+              <span className="sc-file-grid__name"><bdi>{entry.name}</bdi></span>
+              {entry.confusable ? <span className="sc-file-grid__badge" title={t('common.look_alike_characters')}><Icon name="warning" /></span> : null}
+              <button type="button" className="sc-file-grid__kebab" tabIndex={-1} aria-expanded={menuFor === entry.name} aria-label={t('grid.more_actions', { name: entry.name })} onClick={(event) => { event.stopPropagation(); activation.cancel(); onContextMenu(entry, event) }} onPointerDown={cancelControlPointer} onPointerUp={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()}><Icon name="more-vert" size={18} /></button>
             </div>
-            <div className="sc-file-grid__thumb" onPointerDown={compactOpen}><Thumbnail entry={entry} dim={512} fallback={icon} iconSize={40} /></div>
+            <div className="sc-file-grid__thumb"><Thumbnail entry={entry} dim={512} fallback={icon} iconSize={40} /></div>
             <span className="sc-file-grid__meta">{formatEntrySize(entry.size, encrypted)}</span>
           </>
         )}
-        {entry.confusable ? <span className="sc-file-grid__badge" title={t('common.look_alike_characters')}><Icon name="warning" /></span> : null}
-        <button type="button" className="sc-file-grid__kebab" tabIndex={-1} aria-expanded={menuFor === entry.name} aria-label={t('grid.more_actions', { name: entry.name })} onClick={(event) => { event.stopPropagation(); onContextMenu(entry, event) }} onDoubleClick={(event) => event.stopPropagation()}>⋮</button>
       </div>
     )
   }
@@ -238,7 +236,7 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
 
   const active = focusedName && document.getElementById(domId(focusedName)) ? domId(focusedName) : undefined
   return (
-    <div ref={viewport} data-density={density} className={`sc-file-grid${compact ? ' sc-file-grid--reserve-bar' : ''}${names.size ? ' sc-file-grid--reserve-selection' : ''}`} role="grid" aria-multiselectable="true" aria-rowcount={folderRows + fileRows} aria-colcount={columns} aria-label={t('grid.file_grid')} aria-activedescendant={active} aria-busy={loadingMore} tabIndex={0} onKeyDown={keyDown}>
+    <div ref={viewport} data-density={density} className={`sc-file-grid${compact ? ' sc-file-grid--reserve-bar' : ''}${names.size ? ' sc-file-grid--reserve-selection' : ''}`} style={{ touchAction: 'manipulation' }} role="grid" aria-multiselectable="true" aria-rowcount={folderRows + fileRows} aria-colcount={columns} aria-label={t('grid.file_grid')} aria-activedescendant={active} aria-busy={loadingMore} tabIndex={0} onKeyDown={keyDown} onPointerDown={(event) => { if (!(event.target as HTMLElement).closest('[aria-selected]')) activation.cancel() }} onContextMenu={activation.cancel}>
       {total === 0 && !loading ? <p className="sc-file-grid__empty">{t('common.folder_empty')}</p> : <>
         {folderCount > 0 ? <><p className="sc-file-grid__group" aria-hidden="true">{t('grid.folders')}</p><div ref={folderEl} className="sc-file-grid__section" role="rowgroup" aria-label={t('grid.folders')} style={{ height: folderWin.totalHeight }}><div className="sc-file-grid__window" style={{ transform: `translate3d(0,${folderWin.padTop}px,0)` }}>{renderSection(true)}</div></div></> : null}
         {fileCount > 0 ? <><p className="sc-file-grid__group" aria-hidden="true">{t('grid.files')}</p><div ref={fileEl} className="sc-file-grid__section" role="rowgroup" aria-label={t('grid.files')} style={{ height: fileWin.totalHeight }}><div className="sc-file-grid__window" style={{ transform: `translate3d(0,${fileWin.padTop}px,0)` }}>{renderSection(false)}</div></div></> : null}

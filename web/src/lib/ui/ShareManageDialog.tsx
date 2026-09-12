@@ -6,7 +6,7 @@ import { formatDateNs } from '../i18n'
 import { useI18n } from '../i18n/use-i18n'
 import { shareCreateMutation, shareDeleteMutation, shareLinksQuery, shareUpdateMutation } from '../query/shares'
 import { Button } from './Button'
-import { Checkbox } from './Checkbox'
+import { Switch } from './Switch'
 import { Dialog } from './Dialog'
 import { Icon } from './Icon'
 import { IconButton } from './IconButton'
@@ -267,7 +267,7 @@ export function ShareManageDialog({ open, path, targetName, targetIsDir, onClose
 
   return (
     <>
-      <Dialog open={dialogOpen} title={t('share.share_links', { name: targetName })} onClose={closeIssued} role="dialog" closedby="any" actions={<Button variant="text" onClick={closeIssued}>{t('common.close')}</Button>}>
+      <Dialog className="sc-share-dialog" open={dialogOpen} title={t('share.share_links', { name: targetName })} onClose={closeIssued} role="dialog" closedby="any" actions={<Button variant="text" onClick={closeIssued}>{t('common.close')}</Button>}>
         {justCreated ? (
           <div className="sc-share__issued">
             <p className="sc-share__issued-note">{t('share.link_shown_only_now_cannot')}</p>
@@ -289,14 +289,14 @@ export function ShareManageDialog({ open, path, targetName, targetIsDir, onClose
                   {editingId === link.id ? (
                     <div className="sc-share__edit-form">
                       <div className="sc-share__perm-row">
-                        <Checkbox checked={editRead} label={t('share.read_view')} onchange={setEditRead} />
-                        <Checkbox checked={editDownload} label={t('common.download')} onchange={setEditDownload} />
+                        <Switch checked={editRead} label={t('share.read_view')} onChange={setEditRead} />
+                        <Switch checked={editDownload} label={t('common.download')} onChange={setEditDownload} />
                       </div>
                       <Select label={t('share.expiry')} options={editExpiryChoices} value={editExpiry} onValueChange={setEditExpiry} />
                       {editExpiry === 'custom' ? <TextField type="date" label={t('share.expiry_date')} value={editExpiryDate} onValueChange={setEditExpiryDate} error={editExpiryDate && editExpiryBad ? t('share.expiry_date_must_be_in_the_future') : null} /> : null}
                       <TextField value={editMaxDownloads} label={t('share.download_limit_optional')} placeholder={t('share.no_limit')} onValueChange={setEditMaxDownloads} />
                       <TextField value={editLabel} label={t('share.label_optional')} onValueChange={setEditLabel} />
-                      {link.has_password && !editClearPassword ? <Checkbox checked={editClearPassword} label={t('share.remove_password')} onchange={setEditClearPassword} /> : null}
+                      {link.has_password && !editClearPassword ? <Switch checked={editClearPassword} label={t('share.remove_password')} onChange={setEditClearPassword} /> : null}
                       {!editClearPassword ? <TextField value={editNewPassword} type="password" label={t('share.new_password_optional')} onValueChange={setEditNewPassword} /> : null}
                       <div className="sc-share__edit-actions"><Button variant="text" onClick={() => setEditingId(null)}>{t('common.cancel')}</Button><Button disabled={updateMut.isPending || editExpiryBad} onClick={() => void submitEdit(link)}>{t('common.save')}</Button></div>
                     </div>
@@ -322,7 +322,7 @@ export function ShareManageDialog({ open, path, targetName, targetIsDir, onClose
               <div className="sc-share__create-form">
                 <h3>{t('share.create_new_link')}</h3>
                 <Select label={t('share.kind_label')} options={newKindOptions} value={newKind} onValueChange={setNewKind} />
-                {newKind === 'drop' ? <p className="sc-share__hint">{t('share.drop_hint')}</p> : <div className="sc-share__perm-row"><Checkbox checked={newRead} label={t('share.read_view')} onchange={setNewRead} /><Checkbox checked={newDownload} label={t('common.download')} onchange={setNewDownload} /></div>}
+                {newKind === 'drop' ? <p className="sc-share__hint">{t('share.drop_hint')}</p> : <div className="sc-share__perm-row"><Switch checked={newRead} label={t('share.read_view')} onChange={setNewRead} /><Switch checked={newDownload} label={t('common.download')} onChange={setNewDownload} /></div>}
                 <Select label={t('share.expiry')} options={newExpiryChoices} value={newExpiry} onValueChange={setNewExpiry} />
                 {newExpiry === 'custom' ? <TextField type="date" label={t('share.expiry_date')} value={newExpiryDate} onValueChange={setNewExpiryDate} error={newExpiryDate && newExpiryBad ? t('share.expiry_date_must_be_in_the_future') : null} /> : null}
                 <TextField value={newPassword} type="password" label={t('share.password_optional')} onValueChange={setNewPassword} />
@@ -335,7 +335,7 @@ export function ShareManageDialog({ open, path, targetName, targetIsDir, onClose
           </>
         )}
       </Dialog>
-      <Dialog open={revokeTarget !== null} title={t('share.revoke_share_link')} onClose={() => setRevokeTarget(null)} actions={<><Button variant="text" onClick={() => setRevokeTarget(null)}>{t('common.cancel')}</Button><Button danger onClick={() => void confirmRevoke()}>{t('share.revoke')}</Button></>}>
+      <Dialog className="sc-share-dialog" open={revokeTarget !== null} title={t('share.revoke_share_link')} onClose={() => setRevokeTarget(null)} actions={<><Button variant="text" onClick={() => setRevokeTarget(null)}>{t('common.cancel')}</Button><Button danger onClick={() => void confirmRevoke()}>{t('share.revoke')}</Button></>}>
         <p>{t('share.link_stops_working_cannot_undone')}</p>
       </Dialog>
     </>

@@ -49,6 +49,7 @@ export function AppShell() {
   const [lastBrowsePath, setLastBrowsePath] = useState<string | null>(null)
   const [moreOpen, setMoreOpen] = useState(false)
   const [folderSelectorOpen, setFolderSelectorOpen] = useState(false)
+  const moreDialogRef = useRef<HTMLDialogElement | null>(null)
   const trayStackRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -57,6 +58,23 @@ export function AppShell() {
     resize()
     return () => window.removeEventListener('resize', resize)
   }, [])
+
+  useEffect(() => {
+    setMoreOpen(false)
+    setFolderSelectorOpen(false)
+  }, [compact, location.pathname, location.search, screen])
+
+  useEffect(() => {
+    const dialog = moreDialogRef.current
+    if (!compact || !moreOpen || screen !== 'browser' || !dialog) return
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    dialog.showModal()
+    dialog.querySelector<HTMLButtonElement>('button')?.focus()
+    return () => {
+      if (dialog.open) dialog.close()
+      if (trigger?.isConnected) trigger.focus()
+    }
+  }, [compact, moreOpen, screen])
 
   useEffect(() => {
     const browsePath = browsePathFromUrl(location.pathname)
@@ -74,6 +92,8 @@ export function AppShell() {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (screen !== 'browser' || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'k') return
       event.preventDefault()
+      setMoreOpen(false)
+      setFolderSelectorOpen(false)
       const scope = browsePathFromUrl(location.pathname)
       const target = searchTarget(scope && scope !== '/' ? scope : '')
       if (target) void navigate(target)
@@ -115,6 +135,8 @@ export function AppShell() {
   const browseHref = (path: string): string => path === '/' ? '/b' : `/b${path}`
   const browseScope = browsePath && browsePath !== '/' ? browsePath : lastBrowsePath?.split('?')[0] && lastBrowsePath?.split('?')[0] !== '/' ? lastBrowsePath.split('?')[0] : ''
   const openSearch = (): void => {
+    setMoreOpen(false)
+    setFolderSelectorOpen(false)
     const target = searchTarget(browseScope)
     if (target) void navigate(target)
     else openSearchStore(browseScope)
@@ -138,9 +160,9 @@ export function AppShell() {
     navItems.find((item) => item.id === 'recent')!,
     navItems.find((item) => item.id === 'trash')!,
     navItems.find((item) => item.id === 'links')!,
-    { id: 'more', label: t('nav.more'), icon: 'menu' }
-  ], [navItems, t])
-  const compactActive = ['links', 'settings', 'admin'].includes(activeNav) ? 'more' : activeNav
+    { id: 'more', label: t('nav.more'), icon: 'menu', popup: 'dialog', expanded: moreOpen, controls: 'sc-shell-more' }
+  ], [moreOpen, navItems, t])
+  const compactActive = ['settings', 'admin'].includes(activeNav) ? 'more' : activeNav
 
   const navigateTo = (id: string, href?: string): void => {
     if (id === 'files') {
@@ -185,13 +207,29 @@ export function AppShell() {
         {compact ? <NavigationBar items={compactItems} active={compactActive} onselect={(id) => navigateTo(id, compactItems.find((item) => item.id === id)?.href)} /> : null}
         {compact && folderSelectorOpen ? <NavigationDrawer items={rootItems} active={browsePath?.split('/').filter(Boolean)[0] ?? ''} folderSelectorOnly overlay onclose={() => setFolderSelectorOpen(false)} onselect={(root) => { setFolderSelectorOpen(false); void navigate(`/b/${encodeURIComponent(root.id)}`) }} /> : null}
         {compact && moreOpen ? (
-          <div className="sc-shell__more" role="dialog" aria-label={t('nav.more')}>
-            <button type="button" onClick={openSearch}><Icon name="search" />{t('common.search')}</button>
-            <button type="button" onClick={() => { setMoreOpen(false); setFolderSelectorOpen(true) }}><Icon name="folder" />{t('nav.browse_folders')}</button>
-            <button type="button" onClick={() => navigateTo('links', '/links')}><Icon name="link" />{t('nav.links')}</button>
-            <button type="button" onClick={() => navigateTo('settings', '/settings')}><Icon name="settings" />{t('common.settings')}</button>
-            {session.data?.user.is_admin ? <button type="button" onClick={() => navigateTo('admin', '/admin')}><Icon name="admin_panel_settings" />{t('nav.admin')}</button> : null}
-          </div>
+          <dialog
+            ref={moreDialogRef}
+            id="sc-shell-more"
+            className="sc-shell__more"
+            aria-label={t('nav.more')}
+            aria-modal="true"
+            onCancel={(event) => {
+              event.preventDefault()
+              setMoreOpen(false)
+            }}
+            onClose={() => setMoreOpen(false)}
+            onClick={(event) => {
+              if (event.target !== event.currentTarget) return
+              const bounds = event.currentTarget.getBoundingClientRect()
+              if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) setMoreOpen(false)
+            }}
+          >
+              <button type="button" onClick={openSearch}><Icon name="search" />{t('common.search')}</button>
+              <button type="button" onClick={() => { setMoreOpen(false); setFolderSelectorOpen(true) }}><Icon name="folder" />{t('nav.browse_folders')}</button>
+              <button type="button" onClick={() => navigateTo('links', '/links')}><Icon name="link" />{t('nav.links')}</button>
+              <button type="button" onClick={() => navigateTo('settings', '/settings')}><Icon name="settings" />{t('common.settings')}</button>
+              {session.data?.user.is_admin ? <button type="button" onClick={() => navigateTo('admin', '/admin')}><Icon name="admin_panel_settings" />{t('nav.admin')}</button> : null}
+          </dialog>
         ) : null}
       </div>
       <div ref={trayStackRef} className={compact ? 'sc-tray-stack sc-tray-stack--compact' : 'sc-tray-stack'}>

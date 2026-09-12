@@ -54,6 +54,16 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: false,
+    // Reaching this server from another machine (a phone, another laptop) needs
+    // both `--host` and the name that machine uses in its address bar: Vite
+    // refuses a Host it was not told about, and a DNS name is not covered by the
+    // loopback and IP-literal defaults. `SC_DEV_HOSTS` takes a comma-separated
+    // list, where a leading dot matches that domain and its subdomains, so a
+    // tailnet name is one entry rather than a per-machine config edit.
+    allowedHosts: (process.env.SC_DEV_HOSTS ?? '')
+      .split(',')
+      .map((host) => host.trim())
+      .filter((host) => host !== ''),
     proxy: Object.fromEntries(
       [
         '^/api(/|$)',

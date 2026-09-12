@@ -11,6 +11,7 @@ import { Button } from '../Button'
 import { PathPickerDialog } from '../PathPickerDialog'
 import { TextField } from '../TextField'
 import { Icon } from '../Icon'
+import { Switch } from '../Switch'
 import { RestartDialog } from './RestartDialog'
 import './ServerSettingsSection.css'
 
@@ -265,7 +266,7 @@ export function ServerSettingsSection() {
   function input(key: string, label: string, options: { type?: 'text' | 'number' | 'password'; min?: number; max?: number; placeholder?: string } = {}) {
     return <TextField label={label} value={key === 'oidc.secret' ? secret : String(values[key] ?? '')} type={options.type} min={options.min} max={options.max} placeholder={options.placeholder} onValueChange={(value) => key === 'oidc.secret' ? setSecret(value) : setValue(key, value)} />
   }
-  function toggle(key: string, label: string) { return <label className="sc-server-settings__switch"><input type="checkbox" checked={Boolean(values[key])} onChange={(event) => setValue(key, event.currentTarget.checked)} />{label}</label> }
+  function toggle(key: string, label: string) { return <Switch checked={Boolean(values[key])} label={label} onChange={(checked) => setValue(key, checked)} /> }
   function saveButton(group: Group) { return <>{status(group)}<Button onClick={() => submit(group)} loading={mutation.isPending && activeGroup === group}>{t('common.save')}</Button>{activeGroup === group && outcome ? findingList(outcome, t) : null}</> }
   function card(id: string, title: string, subtitle: string, children: ReactNode) { return <div className="sc-admin-card" id={id}><div className="sc-admin-card-head"><div className="sc-admin-card-icon"><Icon name="settings" /></div><div className="sc-admin-card-meta"><h4 className="sc-admin-card-title">{title}</h4><p className="sc-admin-card-subtitle">{subtitle}</p></div></div><div className="sc-server-settings__form">{children}</div></div> }
   async function copyEndpoint(uri: string, name: string) { try { await navigator.clipboard.writeText(uri); setAnnouncement(t('settings.oidc_endpoint_copied', { name })) } catch { /* selectable fallback */ } }

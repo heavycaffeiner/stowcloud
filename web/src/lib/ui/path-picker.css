@@ -20,7 +20,8 @@
 .sc-picker__body {
   max-height: 40vh;
   overflow-y: auto;
-  border: 1px solid var(--sc-content-secondary);
+  border: none;
+  background: rgb(var(--mdui-color-surface-container-high));
   border-radius: 8px;
 }
 

@@ -6,6 +6,7 @@ import { adminGrantMutation, adminGrantsQuery, adminSharesQuery } from '../../qu
 import { useI18n } from '../../i18n/use-i18n'
 import { Button } from '../Button'
 import { Checkbox } from '../Checkbox'
+import { Switch } from '../Switch'
 import { Chip } from '../Chip'
 import { Dialog } from '../Dialog'
 import { Icon } from '../Icon'
@@ -287,7 +288,7 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
           <TextField label={t('grant.subpath_leave_empty_whole_share')} placeholder={t('grant.e_g_vacation')} value={addSubpath} autoComplete="off" onValueChange={setAddSubpath} />
           <p className="sc-admin-section__field-hint">{t('grant.left_empty_whole_share_appears')}</p>
           <PermissionGrid allow={addAllow} deny={addDeny} setAllow={setAddAllow} setDeny={setAddDeny} permLabel={permLabel} t={t} />
-          <Checkbox checked={addInherit} label={t('grant.apply_subfolders')} onchange={setAddInherit} />
+          <Switch checked={addInherit} label={t('grant.apply_subfolders')} onChange={setAddInherit} />
           <TextField label={t('grant.display_name_optional')} placeholder={t('grant.defaults_folder_name')} value={addLabel} autoComplete="off" onValueChange={setAddLabel} />
           {addError ? <p className="sc-admin-section__error" role="alert">{addError}</p> : null}
         </form>
@@ -316,7 +317,7 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
                 {t('grant.permission_listed_both_allow_deny')}
               </p>
             ) : null}
-            <Checkbox checked={editInherit} label={t('grant.apply_subfolders')} onchange={setEditInherit} />
+            <Switch checked={editInherit} label={t('grant.apply_subfolders')} onChange={setEditInherit} />
             <TextField label={t('grant.display_name_optional')} placeholder={t('grant.defaults_folder_name')} value={editLabel} autoComplete="off" onValueChange={setEditLabel} />
             {editError ? <p className="sc-admin-section__error" role="alert">{editError}</p> : null}
           </form>

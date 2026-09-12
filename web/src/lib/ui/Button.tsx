@@ -58,8 +58,9 @@ export function Button({
   const { t } = useI18n()
   const ref = useRef<ButtonElement | null>(null)
   useEffect(() => { syncButtonAria(ref.current, ariaLabel, pressed, loading) }, [ariaLabel, pressed, loading])
+  const squareIcon = square ? (icon ?? children) : null
   return (
-    <span className={danger ? 'sc-danger' : undefined}>
+    <span className={`sc-button-wrap${danger ? ' sc-danger' : ''}`}>
       <mdui-button
         ref={ref}
         variant={variant}
@@ -75,9 +76,11 @@ export function Button({
         aria-busy={loading ? 'true' : undefined}
         onClick={onClick}
       >
-        {icon ? <span slot="icon">{icon}</span> : null}
-        {loading ? <span className="sc-button__loading-label">{t('button.working')}</span> : children}
-        {endIcon ? <span slot="end-icon">{endIcon}</span> : null}
+        {square
+          ? squareIcon !== null && squareIcon !== undefined ? <span slot="icon">{squareIcon}</span> : null
+          : icon ? <span slot="icon">{icon}</span> : null}
+        {!square ? (loading ? <span className="sc-button__loading-label">{t('button.working')}</span> : children) : null}
+        {!square && endIcon ? <span slot="end-icon">{endIcon}</span> : null}
       </mdui-button>
     </span>
   )

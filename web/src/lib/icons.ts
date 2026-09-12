@@ -47,6 +47,11 @@ import iconWarning from '@ktibow/iconset-material-symbols/warning-outline'
 import iconSort from '@ktibow/iconset-material-symbols/sort'
 import iconMovie from '@ktibow/iconset-material-symbols/movie-outline'
 import iconPerson from '@ktibow/iconset-material-symbols/person-outline'
+import iconDatabase from '@ktibow/iconset-material-symbols/database-outline'
+import iconHardDrive from '@ktibow/iconset-material-symbols/hard-drive-outline'
+import iconStorage from '@ktibow/iconset-material-symbols/storage'
+import iconSpeed from '@ktibow/iconset-material-symbols/speed-outline'
+import iconTune from '@ktibow/iconset-material-symbols/tune'
 
 export {
   iconAccountTree,
@@ -84,7 +89,12 @@ export {
   iconWarning,
   iconSort,
   iconMovie,
-  iconPerson
+  iconPerson,
+  iconDatabase,
+  iconHardDrive,
+  iconStorage,
+  iconSpeed,
+  iconTune
 }
 
 /** Runtime lookup. Keys are the names the old inline icon set used. */
@@ -147,7 +157,13 @@ export const icons = {
   sort: iconSort,
   video: iconMovie,
   movie: iconMovie,
-  person: iconPerson
+  person: iconPerson,
+  database: iconDatabase,
+  storage: iconStorage,
+  'hard-drive': iconHardDrive,
+  hard_drive: iconHardDrive,
+  speed: iconSpeed,
+  tune: iconTune
  } satisfies Record<string, IconifyIcon>
 
 export type IconName = keyof typeof icons

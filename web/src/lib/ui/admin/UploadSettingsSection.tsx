@@ -7,7 +7,8 @@ import { BYTES_PER_MB, bytesToMb, formatBytes } from '../../../lib/format/bytes'
 import { CHUNK_SIZE_MIN, CHUNK_SIZE_STORAGE_KEY, DEFAULT_CONCURRENCY, loadStoredConcurrency, MAX_CONCURRENCY, MIN_CONCURRENCY } from '../../../lib/upload/chunk-planner'
 import { setUploadConcurrency } from '../../../lib/upload/queue'
 import { Button } from '../Button'
-import { Checkbox } from '../Checkbox'
+import { Icon } from '../Icon'
+import { Switch } from '../Switch'
 import { TextField } from '../TextField'
 import './admin-sections.css'
 
@@ -44,5 +45,99 @@ export function UploadSettingsSection() {
   function resetOverride(): void { try { localStorage.removeItem(CHUNK_SIZE_STORAGE_KEY) } catch { /* ignore */ } setOverride(null); setInputMb(''); setOverrideError(null); setOverrideSaved(false) }
   function saveConcurrency(): void { setConcurrencyError(null); setConcurrencySaved(false); const value = Number(concurrencyInput); if (!Number.isInteger(value) || value < MIN_CONCURRENCY || value > MAX_CONCURRENCY) { setConcurrencyError(t('upload_settings.concurrency_must_between', { min: MIN_CONCURRENCY, max: MAX_CONCURRENCY })); return } setUploadConcurrency(value); setActiveConcurrency(value); setConcurrencySaved(true) }
   function resetConcurrency(): void { setUploadConcurrency(DEFAULT_CONCURRENCY); setActiveConcurrency(DEFAULT_CONCURRENCY); setConcurrencyInput(String(DEFAULT_CONCURRENCY)); setConcurrencySaved(false) }
-  return <section className="sc-admin-section"><h3>{t('upload_settings.upload_chunk_size')}</h3><h4>{t('upload_settings.server_wide_setting')}</h4><p className="sc-admin-hint">{t('upload_settings.two_values_below_apply_server')}</p><div className="sc-upload-form"><TextField label={t('upload_settings.minimum_chunk_size_mb')} value={minMb} onValueChange={setMinMb} placeholder={String(bytesToMb(serverMin))} /><TextField label={t('upload_settings.default_chunk_size_mb')} value={defaultMb} onValueChange={setDefaultMb} placeholder={String(bytesToMb(serverDefault))} /><Button onClick={() => void saveServer()} loading={mutation.isPending}>{t('common.save')}</Button></div>{serverValidation || mutation.error ? <p className="sc-admin-error" role="alert">{serverValidation ?? describeApiError(mutation.error, t('common.could_not_save'))}</p> : mutation.isPending ? <p className="sc-admin-note">{t('common.saving')}</p> : serverDirty ? <p className="sc-admin-note">{t('settings.unsaved_changes')}</p> : serverSaved ? <p className="sc-admin-saved" role="status">{t('upload_settings.server_wide_setting_saved')}</p> : null}<dl className="sc-upload-estimate"><div><dt>{t('upload_settings.current_server_minimum')}</dt><dd>{formatBytes(serverMin)}</dd></div><div><dt>{t('upload_settings.current_server_default')}</dt><dd>{formatBytes(serverDefault)}</dd></div></dl><h4>{t('upload_settings.cache_spool')}</h4><p className="sc-admin-hint">{t('upload_settings.cache_spool_hint')}</p>{cacheAvailable === false ? <p className="sc-admin-error" role="alert">{t('upload_settings.cache_spool_unavailable')}</p> : <><Checkbox checked={cacheEnabled === true} indeterminate={cacheEnabled === null} label={t('upload_settings.cache_spool_enable')} onChange={(checked) => { setCacheEnabled(checked); setCacheTouched(true) }} />{cacheEnabled === null ? <p className="sc-admin-note">{t('upload_settings.cache_spool_state_unknown')}</p> : null}</>}<h4>{t('upload_settings.override_browser_only')}</h4><p className="sc-admin-hint">{t('upload_settings.unlike_server_wide_setting_above')}</p><div className="sc-upload-form"><TextField label={t('upload_settings.browser_default_chunk_size_mb')} value={inputMb} error={overrideError} placeholder={String(bytesToMb(serverDefault))} onValueChange={setInputMb} /><div className="sc-upload-actions"><Button onClick={saveOverride}>{t('common.save')}</Button><Button variant="text" onClick={resetOverride} disabled={override === null}>{t('upload_settings.reset_server_default')}</Button></div></div>{overrideSaved ? <p className="sc-admin-saved" role="status">{t('upload_settings.saved_uploads_started_from_now', { size: formatBytes(override ?? 0) })}</p> : override !== null ? <p className="sc-admin-note">{t('upload_settings.current_override', { size: formatBytes(override) })}</p> : <p className="sc-admin-note">{t('upload_settings.currently_using_server_default')}</p>}<h4>{t('upload_settings.concurrency_limit')}</h4><p className="sc-admin-hint">{t('upload_settings.concurrency_limit_hint')}</p><div className="sc-upload-form"><TextField label={t('upload_settings.concurrency_limit')} value={concurrencyInput} error={concurrencyError} placeholder={String(DEFAULT_CONCURRENCY)} onValueChange={setConcurrencyInput} /><div className="sc-upload-actions"><Button onClick={saveConcurrency}>{t('common.save')}</Button><Button variant="text" onClick={resetConcurrency} disabled={activeConcurrency === DEFAULT_CONCURRENCY}>{t('upload_settings.reset_concurrency_default')}</Button></div></div>{concurrencySaved ? <p className="sc-admin-saved" role="status">{t('upload_settings.concurrency_saved')}</p> : <p className="sc-admin-note">{t('upload_settings.current_concurrency', { count: activeConcurrency })}</p>}</section>
+  return (
+    <>
+      <article className="sc-admin-card">
+        <div className="sc-admin-card-head">
+          <div className="sc-admin-card-icon"><Icon name="upload" /></div>
+          <div className="sc-admin-card-meta">
+            <h3 className="sc-admin-card-title">{t('upload_settings.upload_chunk_size')}</h3>
+            <p className="sc-admin-card-subtitle"><strong>{t('upload_settings.server_wide_setting')}</strong>: {t('upload_settings.two_values_below_apply_server')}</p>
+          </div>
+        </div>
+
+        <div className="sc-upload-form">
+          <TextField label={t('upload_settings.minimum_chunk_size_mb')} value={minMb} onValueChange={setMinMb} placeholder={String(bytesToMb(serverMin))} />
+          <TextField label={t('upload_settings.default_chunk_size_mb')} value={defaultMb} onValueChange={setDefaultMb} placeholder={String(bytesToMb(serverDefault))} />
+          <Button onClick={() => void saveServer()} loading={mutation.isPending}>{t('common.save')}</Button>
+        </div>
+
+        {serverValidation || mutation.error ? <p className="sc-admin-error" role="alert">{serverValidation ?? describeApiError(mutation.error, t('common.could_not_save'))}</p> : mutation.isPending ? <p className="sc-admin-note">{t('common.saving')}</p> : serverDirty ? <p className="sc-admin-note">{t('settings.unsaved_changes')}</p> : serverSaved ? <p className="sc-admin-saved" role="status">{t('upload_settings.server_wide_setting_saved')}</p> : null}
+
+        <dl className="sc-upload-estimate">
+          <div>
+            <dt>{t('upload_settings.current_server_minimum')}</dt>
+            <dd>{formatBytes(serverMin)}</dd>
+          </div>
+          <div>
+            <dt>{t('upload_settings.current_server_default')}</dt>
+            <dd>{formatBytes(serverDefault)}</dd>
+          </div>
+        </dl>
+      </article>
+
+      <article className="sc-admin-card">
+        <div className="sc-admin-card-head">
+          <div className="sc-admin-card-icon"><Icon name="history" /></div>
+          <div className="sc-admin-card-meta">
+            <h3 className="sc-admin-card-title">{t('upload_settings.cache_spool')}</h3>
+            <p className="sc-admin-card-subtitle">{t('upload_settings.cache_spool_hint')}</p>
+          </div>
+        </div>
+
+        {cacheAvailable === false ? (
+          <p className="sc-admin-error" role="alert">{t('upload_settings.cache_spool_unavailable')}</p>
+        ) : (
+          <div className="sc-storage__toggle-row">
+            <Switch
+              checked={cacheEnabled === true}
+              label={t('upload_settings.cache_spool_enable')}
+              onChange={(checked) => { setCacheEnabled(checked); setCacheTouched(true) }}
+            />
+            {cacheEnabled === null ? <p className="sc-admin-note">{t('upload_settings.cache_spool_state_unknown')}</p> : null}
+          </div>
+        )}
+      </article>
+
+      <article className="sc-admin-card">
+        <div className="sc-admin-card-head">
+          <div className="sc-admin-card-icon"><Icon name="settings" /></div>
+          <div className="sc-admin-card-meta">
+            <h3 className="sc-admin-card-title">{t('upload_settings.override_browser_only')}</h3>
+            <p className="sc-admin-card-subtitle">{t('upload_settings.unlike_server_wide_setting_above')}</p>
+          </div>
+        </div>
+
+        <div className="sc-upload-form">
+          <TextField label={t('upload_settings.browser_default_chunk_size_mb')} value={inputMb} error={overrideError} placeholder={String(bytesToMb(serverDefault))} onValueChange={setInputMb} />
+          <div className="sc-upload-actions">
+            <Button onClick={saveOverride}>{t('common.save')}</Button>
+            <Button variant="text" onClick={resetOverride} disabled={override === null}>{t('upload_settings.reset_server_default')}</Button>
+          </div>
+        </div>
+
+        {overrideSaved ? <p className="sc-admin-saved" role="status">{t('upload_settings.saved_uploads_started_from_now', { size: formatBytes(override ?? 0) })}</p> : override !== null ? <p className="sc-admin-note">{t('upload_settings.current_override', { size: formatBytes(override) })}</p> : <p className="sc-admin-note">{t('upload_settings.currently_using_server_default')}</p>}
+      </article>
+
+      <article className="sc-admin-card">
+        <div className="sc-admin-card-head">
+          <div className="sc-admin-card-icon"><Icon name="speed" /></div>
+          <div className="sc-admin-card-meta">
+            <h3 className="sc-admin-card-title">{t('upload_settings.concurrency_limit')}</h3>
+            <p className="sc-admin-card-subtitle">{t('upload_settings.concurrency_limit_hint')}</p>
+          </div>
+        </div>
+
+        <div className="sc-upload-form">
+          <TextField label={t('upload_settings.concurrency_limit')} value={concurrencyInput} error={concurrencyError} placeholder={String(DEFAULT_CONCURRENCY)} onValueChange={setConcurrencyInput} />
+          <div className="sc-upload-actions">
+            <Button onClick={saveConcurrency}>{t('common.save')}</Button>
+            <Button variant="text" onClick={resetConcurrency} disabled={activeConcurrency === DEFAULT_CONCURRENCY}>{t('upload_settings.reset_concurrency_default')}</Button>
+          </div>
+        </div>
+
+        {concurrencySaved ? <p className="sc-admin-saved" role="status">{t('upload_settings.concurrency_saved')}</p> : <p className="sc-admin-note">{t('upload_settings.current_concurrency', { count: activeConcurrency })}</p>}
+      </article>
+    </>
+  )
 }

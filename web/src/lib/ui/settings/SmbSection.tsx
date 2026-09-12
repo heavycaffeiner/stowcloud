@@ -8,6 +8,7 @@ import { smbPasswordMutation, smbSettingsMutation } from '../../query/account'
 import { Button } from '../Button'
 import { TextField } from '../TextField'
 import { SettingsDialog } from './SettingsDialog'
+import { Switch } from '../Switch'
 
 export function SmbSection() {
   const { t } = useI18n()
@@ -101,8 +102,8 @@ export function SmbSection() {
     <div className="sc-smb">
       <p className="sc-smb__note">{t('smb.smb_reachable_only_from_local')}</p>
       <p className="sc-smb__state">{stateLine}</p>
-      <div className="sc-smb__row"><label className="sc-settings-switch"><input type="checkbox" checked={enabled} onChange={(event) => openToggle(optOut, event.currentTarget.checked)} />{t('smb.allow_smb_access')}</label></div>
-      <div className="sc-smb__row"><label className="sc-settings-switch"><input type="checkbox" checked={optOut} onChange={(event) => openToggle(event.currentTarget.checked, event.currentTarget.checked ? false : enabled)} />{t('smb.do_not_store_smb_credentials')}</label></div>
+      <div className="sc-smb__row"><Switch checked={enabled} label={t('smb.allow_smb_access')} onChange={(checked) => openToggle(optOut, checked)} /></div>
+      <div className="sc-smb__row"><Switch checked={optOut} label={t('smb.do_not_store_smb_credentials')} onChange={(checked) => openToggle(checked, checked ? false : enabled)} /></div>
       <div className="sc-smb__actions">
         <Button variant={credential === 'dedicated' ? 'outlined' : 'filled'} onClick={openSet}>{credential === 'dedicated' ? t('smb.change_separate_password') : t('smb.set_separate_password')}</Button>
         {credential === 'dedicated' ? <Button variant="text" onClick={openClear}>{t('smb.remove_separate_password')}</Button> : null}

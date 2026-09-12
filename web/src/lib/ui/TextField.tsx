@@ -30,6 +30,7 @@ export interface TextFieldProps {
   value?: string
   label?: string
   placeholder?: string
+  helper?: string
   variant?: 'filled' | 'outlined'
   type?: TextFieldType
   error?: string | null
@@ -49,6 +50,7 @@ export interface TextFieldProps {
 
 export function TextField({
   value = '',
+  helper,
   label,
   placeholder,
   variant = 'outlined',
@@ -112,7 +114,7 @@ export function TextField({
   }, [autoFocus])
 
   return (
-    <div className="sc-field">
+    <div className={`sc-field${error ? ' sc-field--error' : ''}`}>
       <mdui-text-field
         ref={ref}
         variant={variant}
@@ -125,6 +127,7 @@ export function TextField({
         disabled={disabled}
         required={required}
         name={name}
+        helper={error ?? helper}
         aria-invalid={error ? 'true' : undefined}
         aria-describedby={describedBy}
         onKeyDown={onKeyDown}

@@ -6,6 +6,7 @@ import { formatDateNs } from '../../i18n'
 import { useI18n } from '../../i18n/use-i18n'
 import { appPasswordsQuery, createAppPasswordMutation, revokeAppPasswordMutation } from '../../query/account'
 import { Button } from '../Button'
+import { Switch } from '../Switch'
 import { TextField } from '../TextField'
 import { SettingsDialog } from './SettingsDialog'
 
@@ -71,7 +72,7 @@ export function AppPasswordsSection() {
       )}
       <div className="sc-app-passwords__actions"><Button variant="outlined" onClick={openCreate}>{t('app_password.new_app_password')}</Button></div>
       <SettingsDialog open={createOpen} title={t('app_password.new_app_password')} onClose={() => setCreateOpen(false)} actions={<><Button variant="text" onClick={() => setCreateOpen(false)}>{t('common.cancel')}</Button><Button onClick={confirmCreate} disabled={!newName.trim() || !newCurrent} loading={create.isPending}>{t('common.create')}</Button></>}>
-        {actionError ? <p className="sc-app-passwords__error" role="alert">{actionError}</p> : null}<p>{t('app_password.use_one_where_your_account')}</p><TextField label={t('common.name')} placeholder={t('app_password.e_g_rclone_backup')} value={newName} onValueChange={setNewName} /><TextField type="password" label={t('common.current_password')} autoComplete="current-password" value={newCurrent} onValueChange={setNewCurrent} /><label><input type="checkbox" checked={newReadOnly} onChange={(event) => setNewReadOnly(event.currentTarget.checked)} /> {t('app_password.read_only_download_only_no')}</label><p>{t('app_password.read_only_recommended_anywhere_only')}</p>
+        {actionError ? <p className="sc-app-passwords__error" role="alert">{actionError}</p> : null}<p>{t('app_password.use_one_where_your_account')}</p><TextField label={t('common.name')} placeholder={t('app_password.e_g_rclone_backup')} value={newName} onValueChange={setNewName} /><TextField type="password" label={t('common.current_password')} autoComplete="current-password" value={newCurrent} onValueChange={setNewCurrent} /><Switch checked={newReadOnly} label={t('app_password.read_only_download_only_no')} onChange={setNewReadOnly} /><p>{t('app_password.read_only_recommended_anywhere_only')}</p>
       </SettingsDialog>
       <SettingsDialog open={!!issuedToken} title={t('app_password.app_password_issued')} onClose={closeIssued} dismissible={false} actions={<Button onClick={acknowledgeIssued}>{t('app_password.acknowledge_saved')}</Button>}>
         <p>{t('app_password.once_you_close_cannot_shown')}</p><div className="sc-token-row"><input readOnly value={issuedToken ?? ''} aria-label={t('app_password.app_password_issued')} /><Button variant="text" onClick={() => void copyToken()}>{tokenCopyState === 'copied' ? t('common.copied') : t('common.copy')}</Button></div>{tokenCopyState === 'failed' ? <p className="sc-app-passwords__copy-feedback" role="alert">{t('app_password.copy_failed')}</p> : null}

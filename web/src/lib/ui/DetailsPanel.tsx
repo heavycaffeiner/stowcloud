@@ -10,6 +10,7 @@ import { useI18n } from '../i18n/use-i18n'
 import { useStore } from '../store/use-store'
 import { ui } from '../store/ui.store'
 import { Button } from './Button'
+import { IconButton } from './IconButton'
 import { Icon } from './Icon'
 import './browse-ui.css'
 
@@ -89,8 +90,16 @@ export function DetailsPanel({ path, selected, total, dirs, encrypted = false, o
   const title = many ? t('details.multiple_selected', { count: selected.length }) : one?.name ?? (path.split('/').filter(Boolean).at(-1) ?? t('browse.home'))
   return (
     <aside ref={panel} className={`sc-details${compact ? ' sc-details--sheet' : ''}`} role={compact ? 'dialog' : 'complementary'} aria-modal={compact ? 'true' : undefined} aria-label={t('details.title')}>
-      <header className="sc-details__head"><span aria-hidden="true"><Icon name={many ? 'check' : one?.kind === 'dir' || !one ? 'folder' : 'draft'} /></span><h2 className="sc-details__title"><bdi>{title}</bdi></h2><button type="button" aria-label={t('common.close')} onClick={onClose}>×</button></header>
-      {one?.confusable ? <p className="sc-details__warning">⚠ {t('common.look_alike_characters')}</p> : null}
+      <header className="sc-details__head">
+        <span className="sc-details__head-icon" aria-hidden="true">
+          <Icon name={many ? 'check' : one?.kind === 'dir' || !one ? 'folder' : 'draft'} />
+        </span>
+        <h2 className="sc-details__title"><bdi>{title}</bdi></h2>
+        <IconButton label={t('common.close')} onClick={onClose}>
+          <Icon name="close" />
+        </IconButton>
+      </header>
+      {one?.confusable ? <p className="sc-details__warning"><Icon name="warning" size={16} /><span>{t('common.look_alike_characters')}</span></p> : null}
       <dl className="sc-details__fields">{fields.map((field) => <div key={field.label}><dt>{field.label}</dt><dd><bdi>{field.value}</bdi></dd></div>)}{measured !== 'idle' ? <div><dt>{many ? t('details.download_size') : t('details.total_size')}</dt><dd>{measured === 'done' ? <>{formatBytes(bytes)} <small>{t('details.size_file_count', { count: files })}</small></> : measured === 'failed' ? <><small role="alert">{queries.some((query) => query.error instanceof ApiError && query.error.code === 'fs.denied') ? t('details.size_hidden_by_permissions') : t('details.could_not_measure')}</small><Button variant="text" onClick={() => queries.forEach((query) => void query.refetch())}>{t('common.retry')}</Button></> : <small role="status">{t('details.measuring')}</small>}</dd></div> : null}</dl>
     </aside>
   )
