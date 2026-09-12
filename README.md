@@ -54,7 +54,7 @@ docker compose exec sc cat /var/lib/stowcloud/setup-token
 
 Open `https://<server-address>:8443/setup`, enter the token, and choose an administrator username and password.
 
-![The first-run screen asking for the setup token, an administrator username, and a password](docs/screenshots/setup-v0.14.0.png)
+![The first-run screen asking for the setup token, an administrator username, and a password](docs/screenshots/setup.png)
 
 After signing in, add mounted folders from the administration screen. For access from the public internet, place Stowcloud behind a reverse proxy with a trusted certificate.
 
@@ -65,8 +65,8 @@ Stowcloud adds a web file manager, sharing, WebDAV, SMB, and sync-client access 
 Point Stowcloud at a photo library, project archive, family folder, or media collection. Browse it from a phone, mount it as a network drive, grant someone access to one subtree, or send a public link without making another copy.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/browse-dark-v0.15.1.png">
-  <img alt="The Stowcloud file browser listing the home folder in a table, with the navigation rail, breadcrumb, sorting controls, file sizes, and modified dates" src="docs/screenshots/browse-light-v0.15.1.png">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/browse-dark.png">
+  <img alt="The Stowcloud file browser listing the home folder in a table, with the navigation rail, breadcrumb, sorting controls, file sizes, and modified dates" src="docs/screenshots/browse-light.png">
 </picture>
 
 ## Features
@@ -77,7 +77,7 @@ Point Stowcloud at a photo library, project archive, family folder, or media col
 - **Public links:** Share folders with optional passwords, expiration dates, download limits, or upload-only access.
 - **Per-folder permissions:** Give each account access to an entire share or only one subtree, with separate read and write permissions.
 - **Network drives:** Connect through WebDAV from Windows, macOS, or Linux. Enable SMB from the administration screen when needed.
-- **Sync clients:** Use compatible desktop and mobile sync clients with your Stowcloud account.
+- **Nextcloud app compatibility:** Stowcloud is compatible with Nextcloud desktop and mobile apps.[^nextcloud]
 - **Account security:** Use local accounts, OIDC sign-in, authenticator codes, app passwords, and recovery codes.
 - **Browser editor:** Edit small text and source files with syntax highlighting.
 - **Per-folder trash:** Enable recoverable deletion for the folders where you want it.
@@ -87,38 +87,44 @@ Point Stowcloud at a photo library, project archive, family folder, or media col
 
 Shares follow the directories already present on disk. The folder tree, file names, and hierarchy remain available to other software on the server.
 
-![The file browser with the folder tree open, showing the home root and a nested folder under Documents](docs/screenshots/tree-v0.14.0.png)
+![The file browser with the folder tree open, showing the home root and a nested folder under Documents](docs/screenshots/tree.png)
 
 ## Search across every accessible folder
 
 A single search covers all folders granted to the current account. Results can be narrowed to files, folders, common file groups, or specific extensions. On desktop, `Ctrl+K` or `Cmd+K` opens search from anywhere in the interface.
 
-![The search sheet over the file browser: a query for 2026, the Show buttons and the File type menu beside them, and results from two shares each carrying its folder, size and date](docs/screenshots/search-v0.14.0.png)
+![The search sheet over the file browser: a query for 2026, the Show buttons and the File type menu beside them, and results from two shares each carrying its folder, size and date](docs/screenshots/search.png)
 
 ## Share with people who do not have an account
 
 Create a public link for a folder and choose an expiration date, password, download limit, or upload-only mode. Copy the generated URL when it appears.
 
-![The share-link dialog just after creating a link: the one-time URL, a copy button, and the link's expiry](docs/screenshots/share-link-v0.14.0.png)
+![The share-link dialog just after creating a link: the one-time URL, a copy button, and the link's expiry](docs/screenshots/share-link.png)
 
 Recipients get a focused page for the shared folder. They do not need a Stowcloud account.
 
-![The public share page a recipient sees: a title, the files in the shared folder, and a download button](docs/screenshots/share-public-v0.14.0.png)
+![The public share page a recipient sees: a title, the files in the shared folder, and a download button](docs/screenshots/share-public.png)
 
 ## Give each person the right folders
 
 Accounts start without folder access. An administrator can grant a whole share or a selected subtree, then choose the allowed actions. Each account can arrange its own sidebar order.
 
-![The folder-permission dialog for an account, showing a root grant with read and download access and controls to inspect, edit, or remove it](docs/screenshots/folder-grants-v0.14.0.png)
+![The folder-permission dialog for an account, showing a root grant with read and download access and controls to inspect, edit, or remove it](docs/screenshots/folder-grants.png)
 
 ## Edit text in the browser
 
 Open small text and source files without downloading them first. The editor provides syntax highlighting, line numbers, unsaved-state feedback, and conflict handling when a file changes elsewhere.
 
-![A TypeScript file open in the built-in editor with a language badge, syntax highlighting, unsaved state, save control, line numbers, and a focused editing surface](docs/screenshots/editor-v0.15.0.png)
+![A TypeScript file open in the built-in editor with a language badge, syntax highlighting, unsaved state, save control, line numbers, and a focused editing surface](docs/screenshots/editor.png)
 
 ## Recover deleted files
 
 Trash can be enabled independently for each shared folder. Restore an item when it was removed by mistake, or purge it when it is no longer needed.
 
-![The trash listing deleted items with their sizes and deletion times, and restore and purge actions](docs/screenshots/trash-v0.14.0.png)
+![The trash listing deleted items with their sizes and deletion times, and restore and purge actions](docs/screenshots/trash.png)
+
+Stowcloud is open-source software.[^license]
+
+[^license]: Stowcloud is licensed under the GNU Affero General Public License v3.0 or later. See [`LICENSE`](LICENSE).
+
+[^nextcloud]: Nextcloud is a registered trademark of Nextcloud GmbH. Stowcloud is not affiliated with, endorsed by, or sponsored by Nextcloud GmbH. The name is used only to describe app compatibility.
