@@ -14,8 +14,8 @@
 있습니다.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/browse-dark-v0.14.0.png">
-  <img alt="Stowcloud 파일 브라우저가 Photos 폴더를 표로 보여 주는 화면. 왼쪽 내비게이션, 경로 표시줄, 정렬 컨트롤, 파일 크기와 수정 날짜가 보인다" src="docs/screenshots/browse-light-v0.14.0.png">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/browse-dark-v0.15.1.png">
+  <img alt="Stowcloud 파일 브라우저가 home 폴더를 표로 보여 주는 화면. 왼쪽 내비게이션, 경로 표시줄, 정렬 컨트롤, 파일 크기와 수정 날짜가 보인다" src="docs/screenshots/browse-light-v0.15.1.png">
 </picture>
 
 > 이 문서의 스크린샷은 모두 이 저장소의 최신 웹 인터페이스를 로컬 데모 데이터로
@@ -55,15 +55,14 @@ Stowcloud는 그렇게 하지 않습니다. 가져오기 단계 자체가 없습
 - 외부 감사를 거친 제품이어야 한다. 이 저장소 바깥의 누구도 아직 검토하지
   않았습니다.
 
-## 5분 만에 띄워 보기
+## 빠른 시작
 
 Docker가 설치된 리눅스 머신이 필요합니다.
 
-**1. compose 파일을 받습니다.**
+**1. Compose 파일을 받습니다.**
 
 ```sh
-git clone https://github.com/heavycaffeiner/stowcloud
-cd stowcloud
+wget https://raw.githubusercontent.com/heavycaffeiner/stowcloud/master/compose.yml
 ```
 
 **2. 실행합니다.**

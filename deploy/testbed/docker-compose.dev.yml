@@ -25,7 +25,7 @@ services:
     image: stowcloud:dev
     restart: unless-stopped
 
-    # The uid the server runs as; see docker-compose.yml.
+    # The uid the server runs as; see compose.yml.
     environment:
       PUID: 1000
       PGID: 1000

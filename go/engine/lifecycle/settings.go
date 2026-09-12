@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"net/netip"
 	"path/filepath"
+	"slices"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
@@ -48,6 +49,7 @@ func (e *Engine) loadSettings(ctx context.Context) {
 	}
 
 	e.settingsMu.Lock()
+	appHostsChanged := !slices.Equal(e.appHosts.App, values.AppHosts)
 	e.appHosts = middleware.Hosts{
 		App:     values.AppHosts,
 		Content: values.ContentHosts,
@@ -58,6 +60,15 @@ func (e *Engine) loadSettings(ctx context.Context) {
 	e.oidcClient = provider
 	e.oidcName = values.OIDCDisplayName
 	e.settingsMu.Unlock()
+
+	if appHostsChanged {
+		e.appHostChangeMu.Lock()
+		onAppHostChange := e.onAppHostChange
+		e.appHostChangeMu.Unlock()
+		if onAppHostChange != nil {
+			onAppHostChange()
+		}
+	}
 
 	// Search and archive bounds are adjusted through their own live setters.
 	// Lowering either bound leaves current work alone and makes new work
@@ -149,6 +160,25 @@ func (e *Engine) OnBindChange(current string, pinned bool, fn func(addr string))
 	e.boundAddr = current
 	e.bindPinned = pinned
 	e.onBind = fn
+}
+
+// ProbeHost returns the first application host for the process-local health
+// probe. Empty is valid before first-run setup.
+func (e *Engine) ProbeHost() string {
+	e.settingsMu.RLock()
+	defer e.settingsMu.RUnlock()
+	if len(e.appHosts.App) == 0 {
+		return ""
+	}
+	return e.appHosts.App[0]
+}
+
+// OnAppHostChange registers the process callback that refreshes its health
+// probe snapshot. The caller publishes the initial snapshot before registering.
+func (e *Engine) OnAppHostChange(fn func()) {
+	e.appHostChangeMu.Lock()
+	e.onAppHostChange = fn
+	e.appHostChangeMu.Unlock()
 }
 
 // BindPinned reports that the address this process listens on came from its

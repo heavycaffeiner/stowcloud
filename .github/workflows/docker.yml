@@ -6,7 +6,7 @@ name: docker
 #
 # Nothing is published that has not first been built and smoke-tested in this
 # same run: every `publish-*` job `needs:` the job that proved its image. A
-# pull request runs the proving half and stops there — a fork's token has no
+# pull request runs the proving half and stops there: a fork's token has no
 # write access to this registry, and an unreviewed branch has no business
 # moving a channel tag.
 #
@@ -80,7 +80,7 @@ env:
   # each carries its own channel tags and its own version history.
   SMB_IMAGE: ghcr.io/${{ github.repository }}-smb-daemon
   # `image.source` is what links a GHCR package back to its repository, and
-  # under AGPL-3.0 it is also the source offer travelling with the artifact —
+  # under AGPL-3.0 it is also the source offer travelling with the artifact.
   # `revision` pins which commit that offer refers to.
   LABELS: |
     org.opencontainers.image.source=https://github.com/${{ github.repository }}
@@ -314,19 +314,23 @@ jobs:
           code=$(curl -sSk -o /tmp/setup.out -w '%{http_code}' \
             -X POST https://127.0.0.1:8443/api/v1/system/setup \
             -H 'content-type: application/json' \
-            -d "{\"token\":\"${token}\",\"username\":\"ci\",\"password\":\"ci-smoke-password-1\",\"app_hosts\":[\"127.0.0.1\",\"localhost\"],\"trusted_proxies\":[],\"first_share\":{\"name\":\"files\",\"host\":\"/shares/files\"}}")
+            -d "{\"token\":\"${token}\",\"username\":\"ci\",\"password\":\"ci-smoke-password-1\",\"app_hosts\":[\"health.example.test\"],\"trusted_proxies\":[],\"first_share\":{\"name\":\"files\",\"host\":\"/shares/files\"}}")
           echo "setup: ${code}"
           cat /tmp/setup.out || true
           case "$code" in
             2*) ;;
             *) echo "the setup route refused"; docker logs sc-smoke; exit 1 ;;
           esac
+          # The configured host deliberately differs from the loopback dial
+          # address. This fails if the container probe loses the live host
+          # snapshot and sends 127.0.0.1 through the host boundary.
+          docker exec sc-smoke /entrypoint.sh healthcheck
           # Origin on every cookie-bearing mutation from here on. The setup
           # response set a session cookie, and a mutating request carrying one
           # is refused without an Origin naming an app host: that is the CSRF
           # rule, and curl is not a browser, so it sends what a browser would
           # have sent.
-          origin='https://127.0.0.1:8443'
+          origin='https://health.example.test:8443'
           # Each request reports its own status and body. Without that a
           # refusal anywhere in the sequence arrives as one curl exit code
           # with nothing saying which call produced it.
@@ -340,10 +344,12 @@ jobs:
           }
           code=$(curl -sSk -o /tmp/step.out -w '%{http_code}' -c /tmp/jar \
             -X POST https://127.0.0.1:8443/api/v1/auth/login \
+            -H 'Host: health.example.test:8443' \
             -H 'content-type: application/json' -H "origin: ${origin}" \
             -d '{"login":"ci","password":"ci-smoke-password-1"}')
           say login "$code"
           code=$(curl -sSk -o /tmp/step.out -w '%{http_code}' -b /tmp/jar \
+            -H 'Host: health.example.test:8443' \
             https://127.0.0.1:8443/api/v1/auth/session)
           say session "$code"
           csrf=$(grep -oE '"csrf":"[^"]+"' /tmp/step.out | head -1 | cut -d'"' -f4)
@@ -357,13 +363,14 @@ jobs:
           # survives one.
           docker restart sc-smoke >/dev/null
           for i in $(seq 1 30); do
-            if curl -fsSk https://127.0.0.1:8443/api/v1/system/health >/dev/null 2>&1; then
+            if curl -fsSk -H 'Host: health.example.test:8443' https://127.0.0.1:8443/api/v1/system/health >/dev/null 2>&1; then
               echo "back up after ${i}s"
               break
             fi
             sleep 1
           done
           code=$(curl -sSk -o /tmp/step.out -w '%{http_code}' -b /tmp/jar \
+            -H 'Host: health.example.test:8443' \
             'https://127.0.0.1:8443/api/v1/files/list?path=/files')
           say list "$code"
           grep -q '"dir_etag"' /tmp/step.out || { echo "the share does not list"; exit 1; }
@@ -440,7 +447,7 @@ jobs:
           echo "image architecture: ${got}"
           [ "$got" = "${{ matrix.arch }}" ] || { echo "expected ${{ matrix.arch }}"; exit 1; }
 
-      - name: Prepare a fixture /config/smb (only smb.conf — smbpasswd/passwd are optional, the agent guards both)
+      - name: Prepare a fixture /config/smb (only smb.conf; smbpasswd/passwd are optional, and the agent guards both)
         run: |
           mkdir -p /tmp/sc-smbcfg /tmp/sc-shares/files
           cat > /tmp/sc-smbcfg/smb.conf <<'EOF'
@@ -460,7 +467,7 @@ jobs:
           EOF
 
       - name: Run the container
-        # The same cap set docker-compose.yml ships. Running it here is what
+        # The same cap set compose.yml ships. Running it here is what
         # turns that list from a claim into something checked, and it is now
         # checked on both architectures rather than on amd64 alone. NET_ADMIN is
         # not in it, so this also covers the agent's no-ban path.
@@ -567,7 +574,7 @@ jobs:
         # bad write to the shared volume must not take the running config
         # down with it. Writes straight to the host side of the bind mount
         # (/tmp/sc-smbcfg), the same file the container sees at /config/smb
-        # — not `docker cp`, which some Docker versions refuse against a
+        # instead of `docker cp`, which some Docker versions refuse against a
         # container path mounted `:ro`.
         run: |
           docker exec sc-smb-smoke cat /etc/samba/smb.conf > /tmp/known-good.conf
@@ -575,7 +582,7 @@ jobs:
           sleep 3
           docker exec sc-smb-smoke cat /etc/samba/smb.conf > /tmp/after-broken.conf
           diff /tmp/known-good.conf /tmp/after-broken.conf
-          echo "active config unchanged after a broken candidate — rejection confirmed"
+          echo "active config unchanged after a broken candidate: rejection confirmed"
 
       - name: Container logs (always, for the record)
         if: always()

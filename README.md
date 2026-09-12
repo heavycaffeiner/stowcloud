@@ -14,8 +14,8 @@ exactly where they were, with the same names, readable by every other program
 on that machine.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/browse-dark-v0.14.0.png">
-  <img alt="The Stowcloud file browser listing the Photos folder in a table, with the navigation rail, breadcrumb, sorting controls, file sizes, and modified dates" src="docs/screenshots/browse-light-v0.14.0.png">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/browse-dark-v0.15.1.png">
+  <img alt="The Stowcloud file browser listing the home folder in a table, with the navigation rail, breadcrumb, sorting controls, file sizes, and modified dates" src="docs/screenshots/browse-light-v0.15.1.png">
 </picture>
 
 > Every screenshot on this page uses the current web interface from this
@@ -56,15 +56,14 @@ anything destructive to it.
 - need this audited. It has not been reviewed by anyone outside this
   repository.
 
-## Try it
+## Quick start
 
 You need a Linux machine with Docker, and about five minutes.
 
-**1. Get the compose file.**
+**1. Download the Compose file.**
 
 ```sh
-git clone https://github.com/heavycaffeiner/stowcloud
-cd stowcloud
+wget https://raw.githubusercontent.com/heavycaffeiner/stowcloud/master/compose.yml
 ```
 
 **2. Start it.**

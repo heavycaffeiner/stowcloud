@@ -653,6 +653,30 @@ func bindEngine(t *testing.T) (*lifecycle.Engine, string, *http.Cookie, string) 
 	return e, base, admin.sessionCookie(), admin.field("csrf")
 }
 
+// A live application host change tells the deployment to refresh the host its
+// process-local healthcheck sends through the host boundary.
+func TestAnAppHostChangeRefreshesTheDeploymentProbe(t *testing.T) {
+	t.Parallel()
+	e, base, cookie, csrf := bindEngine(t)
+
+	changed := make(chan string, 1)
+	e.OnAppHostChange(func() { changed <- e.ProbeHost() })
+
+	status, body := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/network",
+		cookie, csrf, map[string]any{"app_hosts": []any{"127.0.0.1", "health.example.test"}})
+	if status != http.StatusOK {
+		t.Fatalf("saving answered %d: %v", status, body)
+	}
+	select {
+	case host := <-changed:
+		if host != "127.0.0.1" {
+			t.Errorf("the probe host is %q", host)
+		}
+	case <-time.After(10 * time.Second):
+		t.Error("the app host change never reached the deployment")
+	}
+}
+
 // An address the process was started with survives a settings save.
 //
 // The stored value is the compiled default, every interface, and saving any

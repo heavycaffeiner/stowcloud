@@ -101,12 +101,7 @@ func runServeCmd(args []string) int {
 	return 0
 }
 
-// exit codes the healthcheck answers with, which is what an orchestrator's
-// restart policy reads.
-const (
-	healthExitOK       = 0
-	healthExitNoAnswer = 1
-)
+const healthExitNoAnswer = int(server.HealthExitUnhealthy)
 
 // runHealthcheck probes the TLS listener over 127.0.0.1 and verifies the
 // presented certificate against the pair in data/tls.
@@ -132,7 +127,7 @@ func runHealthcheck(args []string) int {
 	// Where to dial and what name to ask under. The settings live in a
 	// database the running server holds, so this reads the snapshot that
 	// server writes beside the certificate it is about to verify.
-	probe := server.ReadProbe(dataDir)
+	probe := server.ReadProbe(filepath.Join(dataDir, ".probe.json"))
 
 	// The data directory is the operator's own argument, never request input.
 	certPEM, err := os.ReadFile(filepath.Join(dataDir, "tls", "cert.pem")) //nolint:gosec // G703 reads the variable: the path is the operator's argument.
@@ -164,12 +159,12 @@ func runHealthcheck(args []string) int {
 		return healthExitNoAnswer
 	}
 	// The host guard answers a request for a name it does not serve with a
-	// refusal, and the loopback address is not one of the configured names.
-	// The probe therefore asks under the first configured host, which is the
-	// same name the certificate is checked against. Empty before setup has
-	// named one, which leaves the request carrying the dial host and the
-	// guard admitting it, because before setup there is no host list to
-	// refuse from.
+	// refusal. The loopback address is not necessarily one of the configured
+	// names, so the probe asks under the first name in the live snapshot. TLS
+	// remains checked as localhost because the probe dials the loopback listener
+	// and the generated certificate always covers that name. An empty host
+	// before setup leaves the request carrying the dial host, which the guard
+	// admits because there is no configured host list yet.
 	if probe.Host != "" {
 		req.Host = probe.Host
 	}
@@ -215,11 +210,11 @@ func runHealthcheck(args []string) int {
 	for _, r := range doc.Reasons {
 		errOut.Printf("degraded: %s %s\n", r.Kind, r.Detail)
 	}
-	if doc.Status != "ok" && doc.Status != "degraded" {
+	exit := server.HealthExitFor(doc.Status, nil)
+	if exit != server.HealthExitOK {
 		errOut.Printf("sc-engine healthcheck: unrecognised status %q\n", doc.Status)
-		return healthExitNoAnswer
 	}
-	return healthExitOK
+	return int(exit)
 }
 
 // healthBodyLimit bounds what the probe reads. The document is a status and a

@@ -235,6 +235,25 @@ func run(addr, dataDir string, plain bool) error {
 	if serr := srv.Swap(addr); serr != nil {
 		return fmt.Errorf("serving on %s: %w", addr, serr)
 	}
+
+	publishCurrentProbe := func() error {
+		current := srv.Current()
+		if current == nil {
+			return errors.New("publishing the health probe without a listener")
+		}
+		return publishProbe(abs, server.Probe{
+			Addr: current.Ln.Addr().String(),
+			Host: eng.ProbeHost(),
+		})
+	}
+	if perr := publishCurrentProbe(); perr != nil {
+		return fmt.Errorf("publishing the health probe: %w", perr)
+	}
+	eng.OnAppHostChange(func() {
+		if perr := publishCurrentProbe(); perr != nil {
+			logger.Error("the health probe snapshot could not be updated", "error", perr)
+		}
+	})
 	logger.Info("serving the engine",
 		"url", scheme+"://"+srv.Current().Ln.Addr().String(), "data", abs)
 
@@ -248,6 +267,9 @@ func run(addr, dataDir string, plain bool) error {
 			return
 		}
 		logger.Info("the listener moved", "url", scheme+"://"+next)
+		if perr := publishCurrentProbe(); perr != nil {
+			logger.Error("the health probe snapshot could not be updated", "error", perr)
+		}
 	})
 
 	// A restart replaces this process image rather than exiting: the engine is
@@ -563,6 +585,17 @@ func runPreviewWorker() int {
 		return 1
 	}
 	return 0
+}
+
+func publishProbe(dataDir string, probe server.Probe) error {
+	return server.WriteProbe(filepath.Join(dataDir, ".probe.json"), probe,
+		func(names []string, modes []uint32, write func(i int, f *os.File) error) error {
+			units := make([]fsatomic.Unit, len(names))
+			for i, name := range names {
+				units[i] = fsatomic.Unit{Path: name, Mode: modes[i]}
+			}
+			return fsatomic.ReplaceFilesDurable(units, write)
+		})
 }
 
 // devCertificate reuses the engine's own material so a browser that has

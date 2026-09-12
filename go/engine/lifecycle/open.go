@@ -250,6 +250,11 @@ type Engine struct {
 	boundAddr  string
 	bindPinned bool
 
+	// onAppHostChange publishes the name a process-local health probe must ask
+	// for after first-run setup or a live network settings change.
+	appHostChangeMu sync.Mutex
+	onAppHostChange func()
+
 	// onRestart replaces the process image. Same reason as onBind: the image
 	// belongs to the process, not to an engine mounted on it.
 	restartMu sync.Mutex
