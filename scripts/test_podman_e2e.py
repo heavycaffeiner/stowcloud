@@ -99,7 +99,7 @@ def main():
         web_login_req = urllib.request.Request(
             f"{base_url}/api/v1/auth/login",
             data=web_login_body,
-            headers={"Content-Type": "application/json"}
+            headers={"Content-Type": "application/json", "Origin": base_url}
         )
         with urllib.request.urlopen(web_login_req, context=ctx) as resp:
             user_cookie = resp.headers.get("Set-Cookie")
@@ -120,7 +120,7 @@ def main():
         )
         try:
             with urllib.request.urlopen(grant_req, context=ctx) as resp:
-                assert resp.status == 200
+                assert resp.status in (200, 204), f"Grant returned {resp.status}"
                 print("  Grant approved OK.")
         except urllib.error.HTTPError as e:
             print("Grant HTTPError:", e.code, e.read().decode("utf-8"))
@@ -518,7 +518,7 @@ def main():
         web_login = urllib.request.Request(
             f"{base_url}/api/v1/auth/login",
             data=login_body,
-            headers={"Content-Type": "application/json"}
+            headers={"Content-Type": "application/json", "Origin": base_url}
         )
         with urllib.request.urlopen(web_login, context=ctx) as resp:
             cookie = resp.headers.get("Set-Cookie")

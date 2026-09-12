@@ -330,6 +330,37 @@ func TestASearchFindsAFileByName(t *testing.T) {
 	}
 }
 
+// A content-type LIKE query names one MIME family at a time. An image filter
+// must not return a video merely because both are media, while the gallery's
+// explicit image-or-video query remains supported.
+func TestAMediaSearchHonorsTheRequestedFamily(t *testing.T) {
+	t.Parallel()
+	f := newNCFixture(t, []byte("hello"))
+	writeHostFile(t, f.host, "photo.png", []byte("png"))
+	writeHostFile(t, f.host, "movie.mp4", []byte("mp4"))
+	writeHostFile(t, f.host, "notes.txt", []byte("text"))
+
+	search := `<?xml version="1.0"?><d:searchrequest xmlns:d="DAV:" xmlns:oc="http://nextcloud.com/ns">` +
+		`<d:basicsearch><d:select><d:prop><d:getetag/></d:prop></d:select>` +
+		`<d:from><d:scope><d:href>/files/` + f.login + `</d:href><d:depth>infinity</d:depth></d:scope></d:from>` +
+		`<d:where><d:like><d:prop><d:getcontenttype/></d:prop><d:literal>image/%</d:literal></d:like></d:where>` +
+		`</d:basicsearch></d:searchrequest>`
+
+	resp, body := f.request(t, "SEARCH", f.base+"/remote.php/dav", strings.NewReader(search),
+		map[string]string{"Content-Type": "text/xml"})
+	if resp.StatusCode != 207 {
+		t.Fatalf("the image search answered %d, want 207\n%s", resp.StatusCode, body)
+	}
+	hrefs, _ := searchResponses(t, body)
+	joined := strings.Join(hrefs, "\n")
+	if !strings.Contains(joined, "photo.png") {
+		t.Errorf("the image search omitted the image: %v", hrefs)
+	}
+	if strings.Contains(joined, "movie.mp4") || strings.Contains(joined, "notes.txt") {
+		t.Errorf("the image search returned a non-image: %v", hrefs)
+	}
+}
+
 // One client asks for the starred set with a search rather than with the
 // filter report, and it binds the property to the vendor's other namespace
 // spelling. Both have to answer the same set, or its favourites screen is

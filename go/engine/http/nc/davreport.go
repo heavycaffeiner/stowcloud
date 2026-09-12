@@ -161,7 +161,8 @@ func (s *Server) davSearch(w http.ResponseWriter, r *http.Request, p Principal, 
 
 	case hasContentTypeLike(sq.Where):
 		lower, upper := searchWindow(sq.Where)
-		entries = s.searchByMedia(ctx, p, scopeVpath, lower, upper, limit, complete, sq.Descending)
+		wantImage, wantVideo := mediaFamilies(sq.Where)
+		entries = s.searchByMedia(ctx, p, scopeVpath, lower, upper, limit, complete, sq.Descending, wantImage, wantVideo)
 
 	case hasNameLike(sq.Where):
 		if lit, ok := findNameLike(sq.Where); ok {
@@ -407,7 +408,7 @@ func (s *Server) searchSourcesUnder(ctx context.Context, p Principal, scopeVpath
 // filtered by content type and the modification-time window, newest first
 // unless the client asked for the other order.
 func (s *Server) searchByMedia(
-	ctx context.Context, p Principal, scopeVpath string, lowerNs, upperNs int64, limit int, complete bool, descending bool,
+	ctx context.Context, p Principal, scopeVpath string, lowerNs, upperNs int64, limit int, complete bool, descending bool, wantImage, wantVideo bool,
 ) []searchHit {
 	roots := s.searchScopeRoots(ctx, p, scopeVpath)
 	hits := s.walkForSearch(ctx, roots, func(e core.Entry) bool {
@@ -416,7 +417,8 @@ func (s *Server) searchByMedia(
 			return false
 		}
 		ct := ContentTypeOf(false, e.Name)
-		return strings.HasPrefix(ct, "image/") || strings.HasPrefix(ct, "video/")
+		return (wantImage && strings.HasPrefix(ct, "image/")) ||
+			(wantVideo && strings.HasPrefix(ct, "video/"))
 	})
 	sortByMTime(hits, descending)
 	if !complete && len(hits) > limit {
@@ -711,6 +713,27 @@ func hasContentTypeLike(t SearchTerm) bool {
 		}
 	}
 	return false
+}
+
+// mediaFamilies returns the top-level MIME families named by a content-type
+// LIKE clause. A query that does not name one family keeps the gallery's
+// historical image-and-video behavior.
+func mediaFamilies(t SearchTerm) (image, video bool) {
+	if t.Op == "like" && t.Prop.Equal(PropContentType()) {
+		literal := strings.ToLower(strings.TrimSpace(t.Literal))
+		image = strings.Contains(literal, "image/")
+		video = strings.Contains(literal, "video/")
+		if !image && !video {
+			return true, true
+		}
+		return image, video
+	}
+	for _, child := range t.Terms {
+		childImage, childVideo := mediaFamilies(child)
+		image = image || childImage
+		video = video || childVideo
+	}
+	return image, video
 }
 
 // hasNameLike reports whether a where clause tests d:displayname anywhere.
