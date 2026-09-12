@@ -11,6 +11,17 @@ import './browse-ui.css'
 const DOUBLE_TAP_MS = 450
 const DOUBLE_TAP_DISTANCE_PX = 30
 const TAP_MOVE_PX = 12
+const FILENAME_SUFFIX_GRAPHEMES = 8
+const filenameSegmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+
+export function MiddleEllipsis({ name, className }: { name: string; className: string }) {
+  const graphemes = Array.from(filenameSegmenter.segment(name), ({ segment }) => segment)
+  const split = Math.max(0, graphemes.length - FILENAME_SUFFIX_GRAPHEMES)
+  return <span className={`${className} sc-middle-ellipsis`} title={name}>
+    <bdi className="sc-middle-ellipsis__start">{graphemes.slice(0, split).join('')}</bdi>
+    <bdi className="sc-middle-ellipsis__end">{graphemes.slice(split).join('')}</bdi>
+  </span>
+}
 
 type ActivationHandlers = Pick<HTMLAttributes<HTMLDivElement>, 'onClick' | 'onPointerDown' | 'onPointerMove' | 'onPointerUp' | 'onPointerCancel'>
 type Tap = { path: string; pointerType: string; time: number; x: number; y: number }
@@ -129,7 +140,7 @@ export function FileRow({
       </span>
       <span className="sc-row__cell sc-row__cell--name" role="gridcell">
         <Icon name={icon} />
-        <span className="sc-filename"><bdi>{entry.name}</bdi></span>
+        <MiddleEllipsis name={entry.name} className="sc-filename" />
         {entry.confusable ? (
           <span className="sc-row__badge" title={t('common.look_alike_characters')}>
             <Icon name="warning" />

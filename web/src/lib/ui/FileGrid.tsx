@@ -12,7 +12,7 @@ import { cellPos, sectionRows, verticalTarget } from '../virtual/grid-sections'
 import { indicesInRect, type Rect } from './marquee'
 import { isVideoFile } from './media-utils'
 import { Thumbnail } from './Thumbnail'
-import { useFileActivation } from './FileRow'
+import { MiddleEllipsis, useFileActivation } from './FileRow'
 import { Icon } from './Icon'
 import './browse-ui.css'
 
@@ -220,7 +220,7 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
           <>
             <span className="sc-file-grid__check sc-touch-target" onClick={(event) => { event.stopPropagation(); activation.cancel(); selection.toggle(entry.name, index) }} onPointerDown={cancelControlPointer} onPointerUp={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()}><mdui-checkbox checked={selected} tabIndex={-1}><span className="sc-sr-only">{t('common.select', { name: entry.name })}</span></mdui-checkbox></span>
             <span className="sc-file-grid__type"><Icon name="folder" /></span>
-            <span className="sc-file-grid__name"><bdi>{entry.name}</bdi></span>
+            <MiddleEllipsis name={entry.name} className="sc-file-grid__name" />
             {entry.confusable ? <span className="sc-file-grid__badge" title={t('common.look_alike_characters')}><Icon name="warning" /></span> : null}
             <button type="button" className="sc-file-grid__kebab" tabIndex={-1} aria-expanded={menuFor === entry.name} aria-label={t('grid.more_actions', { name: entry.name })} onClick={(event) => { event.stopPropagation(); activation.cancel(); onContextMenu(entry, event) }} onPointerDown={cancelControlPointer} onPointerUp={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()}><Icon name="more-vert" size={18} /></button>
           </>
@@ -228,7 +228,7 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
           <>
             <div className="sc-file-grid__head">
               <span className="sc-file-grid__check sc-touch-target" onClick={(event) => { event.stopPropagation(); activation.cancel(); selection.toggle(entry.name, index) }} onPointerDown={cancelControlPointer} onPointerUp={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()}><mdui-checkbox checked={selected} tabIndex={-1}><span className="sc-sr-only">{t('common.select', { name: entry.name })}</span></mdui-checkbox></span>
-              <span className="sc-file-grid__name"><bdi>{entry.name}</bdi></span>
+              <MiddleEllipsis name={entry.name} className="sc-file-grid__name" />
               {entry.confusable ? <span className="sc-file-grid__badge" title={t('common.look_alike_characters')}><Icon name="warning" /></span> : null}
               <button type="button" className="sc-file-grid__kebab" tabIndex={-1} aria-expanded={menuFor === entry.name} aria-label={t('grid.more_actions', { name: entry.name })} onClick={(event) => { event.stopPropagation(); activation.cancel(); onContextMenu(entry, event) }} onPointerDown={cancelControlPointer} onPointerUp={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()}><Icon name="more-vert" size={18} /></button>
             </div>

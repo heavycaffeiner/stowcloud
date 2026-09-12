@@ -88,14 +88,8 @@
 .sc-row__cell--name > svg { flex: 0 0 20px; color: var(--sc-content-secondary); }
 .sc-row__cell--name .sc-filename {
   flex: 1 1 auto;
-  min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  direction: rtl;
-  text-align: left;
 }
-.sc-row__cell--name .sc-filename > bdi { direction: ltr; }
 .sc-row--selected .sc-row__cell--name > svg { color: currentColor; }
 .sc-row__badge { display: inline-flex; flex: none; color: rgb(var(--mdui-color-error)); }
 
