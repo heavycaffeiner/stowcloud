@@ -62,3 +62,7 @@ __pycache__/
 # remediations, and engineering design notes. Only README-related documents
 # are committed under docs/.
 docs/internal/
+
+# Local agent and script workspaces.
+/.agents/
+/scripts/
