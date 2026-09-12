@@ -17,4 +17,16 @@ describe('CodeEditor', () => {
     expect(document.activeElement).toBe(content)
   })
 
+  it('loads syntax highlighting for the file type', async () => {
+    const onLanguageChange = vi.fn()
+    const { container } = render(
+      <CodeEditor value={'const answer = \"yes\"'} filename="example.ts" onChange={vi.fn()} onLanguageChange={onLanguageChange} />
+    )
+
+    await waitFor(() => expect(onLanguageChange).toHaveBeenCalledWith('TypeScript'), { timeout: 5000 })
+    const tokens = Array.from(container.querySelectorAll('.cm-line span'), (element) => element.textContent)
+    expect(tokens).toContain('const')
+    expect(tokens).toContain('\"yes\"')
+  })
+
 })

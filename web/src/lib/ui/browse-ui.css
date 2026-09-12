@@ -4,9 +4,6 @@
 @import './file-grid.css';
 @import './file-tree.css';
 @import './details-panel.css';
-.sc-middle-ellipsis { display: flex; min-width: 0; white-space: nowrap; }
-.sc-middle-ellipsis__start { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sc-middle-ellipsis__end { flex: none; white-space: nowrap; }
 
 .sc-browse-dialog {
   --mdui-color-surface: var(--mdui-color-surface-container-high);

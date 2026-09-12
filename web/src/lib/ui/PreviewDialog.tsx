@@ -17,13 +17,8 @@ import { Button } from './Button'
 import { IconButton } from './IconButton'
 import { UnlockShareDialog } from './UnlockShareDialog'
 import { Icon } from './Icon'
+import { isEditableFileName } from './editable-files'
 
-const TEXT_EXT: Record<string, true> = {
-  txt: true, md: true, markdown: true, log: true, csv: true, tsv: true, json: true, yaml: true, yml: true, toml: true, ini: true,
-  conf: true, cfg: true, xml: true, html: true, htm: true, css: true, scss: true, js: true, ts: true, jsx: true, tsx: true,
-  svelte: true, vue: true, rs: true, go: true, py: true, rb: true, php: true, java: true, kt: true, c: true, h: true, cpp: true, hpp: true, cs: true,
-  sh: true, bash: true, zsh: true, sql: true, env: true, gitignore: true, dockerfile: true, makefile: true
-}
 const TEXT_MAX_BYTES = 2 * 1024 * 1024
 const PREVIEW_DIM = 1600
 
@@ -110,7 +105,7 @@ export function PreviewDialog({ open, entry, path, hasPrev, hasNext, onClose, on
     if (ext in VIDEO_EXT) return { kind: 'video' }
     if (ext in IMAGE_EXT || entry.preview?.available) return { kind: 'image' }
     if (ext === 'zip') return { kind: 'archive' }
-    if (!(ext in TEXT_EXT)) return { kind: 'none' }
+    if (!isEditableFileName(entry.name)) return { kind: 'none' }
     return entry.size > TEXT_MAX_BYTES ? { kind: 'too-large-text' } : { kind: 'text' }
   }, [entry])
   const encryptionQuery = useQuery<ShareEncryption | null>({

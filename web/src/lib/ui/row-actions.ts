@@ -9,6 +9,7 @@
 import type { Entry } from '../api/client'
 import { icons } from '../icons'
 import { t } from '../i18n'
+import { isEditableFileName } from './editable-files'
 
 export interface RowAction {
   key: string
@@ -63,9 +64,10 @@ export function rowActions(targets: Entry[], h: RowActionHandlers, canCreateHere
   const canCopy = everyCan((e) => e.perms.read && e.perms.download)
   const canMove = everyCan((e) => e.perms.read && e.perms.move)
   return [
-    // The editor reads the source bytes and therefore needs Read, not merely
-    // a metadata permission.
-    { key: 'edit', label: t('browse.open_text_editor'), icon: icons['edit-document'], show: one && targets[0].kind !== 'dir' && targets[0].perms.read, run: h.openInEditor },
+    // The editor reads the source bytes and therefore needs Read. Restricting
+    // the action to known text formats also prevents a save from rewriting
+    // binary bytes that the browser decoded with replacement characters.
+    { key: 'edit', label: t('browse.open_text_editor'), icon: icons['edit-document'], show: one && targets[0].kind !== 'dir' && targets[0].perms.read && isEditableFileName(targets[0].name), run: h.openInEditor },
     // File and folder downloads both resolve Read and Download at the source.
     { key: 'download', label: t('common.download'), icon: icons.download, show: everyCan((e) => e.perms.read && e.perms.download), run: h.download },
     { key: 'share', label: t('browse.manage_share_links'), icon: icons.link, show: one && everyCan((e) => e.perms.share), run: h.share },

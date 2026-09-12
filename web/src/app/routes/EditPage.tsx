@@ -15,6 +15,7 @@ import { Snackbar } from '../../lib/ui/Snackbar'
 import { UnlockShareDialog } from '../../lib/ui/UnlockShareDialog'
 import { Icon } from '../../lib/ui/Icon'
 import { IconButton } from '../../lib/ui/IconButton'
+import { MiddleEllipsis } from '../../lib/ui/MiddleEllipsis'
 import { useDocumentTitle } from '../use-document-title'
 import './editor.css'
 
@@ -49,6 +50,7 @@ export function EditPage() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [snackbar, setSnackbar] = useState<string | null>(null)
   const [sessionRevision, setSessionRevision] = useState(0)
+  const [languageName, setLanguageName] = useState<string | null>(null)
   const content = draft ?? contentQuery.data?.content ?? ''
   const dirty = sealedDraft !== null || (draft !== null && draft !== (contentQuery.data?.content ?? ''))
   const blocker = useBlocker(dirty && loadedPath === path ? ({ currentLocation, nextLocation }) => currentLocation.pathname !== nextLocation.pathname : false)
@@ -62,6 +64,7 @@ export function EditPage() {
     setBaselineEtag(null)
     setAwaitingBaseline(true)
     setDraft(null)
+    setLanguageName(null)
     setSealedDraft((previous) => {
       previous?.bytes.fill(0)
       return null
@@ -237,11 +240,22 @@ export function EditPage() {
     <main className="sc-edit">
       <header className="sc-edit__toolbar">
         <IconButton label={t('editor.go_back')} onClick={() => void navigate(`/b${parentOf(path)}`)}><Icon name="chevron_left" /></IconButton>
-        <div className="sc-edit__title"><span className="sc-edit__filename"><bdi>{filename}</bdi></span>{dirty ? <span className="sc-edit__dirty" title={t('editor.unsaved_changes')}>*</span> : null}{entry ? <span className="sc-edit__meta">{formatBytes(entry.size)}</span> : null}{readOnly && entry ? <span className="sc-edit__badge">{t('common.read_only')}</span> : null}</div>
+        <span className="sc-edit__file-icon" aria-hidden="true"><Icon name="edit_document" /></span>
+        <div className="sc-edit__identity">
+          <div className="sc-edit__title">
+            <MiddleEllipsis name={filename} className="sc-edit__filename" />
+            {dirty ? <span className="sc-edit__badge sc-edit__badge--dirty" title={t('editor.unsaved_changes')}>{t('editor.unsaved_changes')}</span> : null}
+          </div>
+          <div className="sc-edit__details">
+            <span className="sc-edit__language">{languageName ?? t('editor.plain_text')}</span>
+            {entry ? <span className="sc-edit__meta">{formatBytes(entry.size)}</span> : null}
+            {readOnly && entry ? <span className="sc-edit__badge sc-edit__badge--readonly">{t('common.read_only')}</span> : null}
+          </div>
+        </div>
         <div className="sc-edit__actions"><Button loading={saveMutation.isPending} disabled={!canSave} onClick={() => void save()}>{t('editor.save_ctrl_s')}</Button></div>
       </header>
       <div className="sc-edit__body">
-        {locked ? <div className="sc-edit__locked" role="status"><p>{t('encryption.unlock_hint')}</p><Button onClick={() => setUnlockRequested(true)}>{t('encryption.unlock')}</Button></div> : loading ? <div className="sc-edit__loading"><mdui-circular-progress></mdui-circular-progress></div> : loadError ? <p className="sc-edit__error" role="alert">{loadError}</p> : <CodeEditor ref={editorRef} value={content} filename={filename} readOnly={readOnly} maxBytes={MAX_ENCRYPTABLE_BYTES} onChange={setDraft} onLimit={() => setSnackbar(t('editor.file_too_large_to_edit'))} onSave={() => void save()} />}
+        {locked ? <div className="sc-edit__locked" role="status"><p>{t('encryption.unlock_hint')}</p><Button onClick={() => setUnlockRequested(true)}>{t('encryption.unlock')}</Button></div> : loading ? <div className="sc-edit__loading"><mdui-circular-progress></mdui-circular-progress></div> : loadError ? <p className="sc-edit__error" role="alert">{loadError}</p> : <CodeEditor ref={editorRef} value={content} filename={filename} readOnly={readOnly} maxBytes={MAX_ENCRYPTABLE_BYTES} onChange={setDraft} onLimit={() => setSnackbar(t('editor.file_too_large_to_edit'))} onSave={() => void save()} onLanguageChange={setLanguageName} />}
       </div>
       {saveError ? <p className="sc-edit__error" role="alert">{saveError}</p> : null}
       <EditConflictDialog open={conflictOpen} name={filename} weak={conflictWeak} onClose={() => { setConflictOpen(false); focusEditor() }} onReload={() => void reloadAfterConflict()} onOverwrite={() => void overwriteAfterConflict()} />

@@ -259,7 +259,7 @@ Small text files open in a browser editor with syntax highlighting and save
 back through the same conflict check as everything else, so two people
 editing one file get a conflict screen rather than a lost edit.
 
-![A text file open in the built-in editor with its size, save control, and editing surface](docs/screenshots/editor-v0.14.0.png)
+![A TypeScript file open in the built-in editor with a language badge, syntax highlighting, unsaved state, save control, line numbers, and a focused editing surface](docs/screenshots/editor-v0.15.0.png)
 
 ### Nothing is deleted in a hurry
 

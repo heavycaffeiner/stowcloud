@@ -237,6 +237,7 @@
   "editor.folder_cannot_opened_editor": "A folder cannot be opened in the editor",
   "editor.go_back": "Go back",
   "editor.loading_editor": "Loading the editor…",
+  "editor.plain_text": "Plain text",
   "editor.overwritten": "Overwritten",
   "editor.reloaded_newer_version": "Reloaded the newer version",
   "editor.save_ctrl_s": "Save (Ctrl+S)",

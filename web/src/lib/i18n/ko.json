@@ -237,6 +237,7 @@
   "editor.folder_cannot_opened_editor": "폴더는 편집기로 열 수 없습니다",
   "editor.go_back": "뒤로 가기",
   "editor.loading_editor": "편집기를 불러오는 중…",
+  "editor.plain_text": "일반 텍스트",
   "editor.overwritten": "덮어썼습니다",
   "editor.reloaded_newer_version": "최신 내용을 다시 불러왔습니다",
   "editor.save_ctrl_s": "저장 (Ctrl+S)",

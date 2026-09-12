@@ -1,0 +1,3 @@
+.sc-middle-ellipsis { display: flex; min-width: 0; white-space: nowrap; }
+.sc-middle-ellipsis__start { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-middle-ellipsis__end { flex: none; white-space: nowrap; }
