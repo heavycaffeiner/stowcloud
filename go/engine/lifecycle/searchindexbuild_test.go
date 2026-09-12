@@ -210,14 +210,14 @@ func TestTheLegacyIndexDirectoryMovesToTheHiddenName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
-	if err := first.State.SetIndexNameEnabled(ctx, true); err != nil {
-		t.Fatalf("enabling the index: %v", err)
+	if setErr := first.State.SetIndexNameEnabled(ctx, true); setErr != nil {
+		t.Fatalf("enabling the index: %v", setErr)
 	}
-	if _, err := searchindex.Open(filepath.Join(dataDir, "index"), searchindex.DefaultConfig()); err != nil {
-		t.Fatalf("creating the legacy index: %v", err)
+	if _, openErr := searchindex.Open(filepath.Join(dataDir, "index"), searchindex.DefaultConfig()); openErr != nil {
+		t.Fatalf("creating the legacy index: %v", openErr)
 	}
-	if err := first.Close(); err != nil {
-		t.Fatalf("closing: %v", err)
+	if closeErr := first.Close(); closeErr != nil {
+		t.Fatalf("closing: %v", closeErr)
 	}
 
 	second, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dataDir, PasswordParams: fastPasswordParams()})
@@ -225,15 +225,15 @@ func TestTheLegacyIndexDirectoryMovesToTheHiddenName(t *testing.T) {
 		t.Fatalf("reopening: %v", err)
 	}
 	t.Cleanup(func() {
-		if err := second.Close(); err != nil {
-			t.Errorf("closing reopened engine: %v", err)
+		if closeErr := second.Close(); closeErr != nil {
+			t.Errorf("closing reopened engine: %v", closeErr)
 		}
 	})
-	if _, err := os.Stat(filepath.Join(dataDir, ".scindex")); err != nil {
-		t.Fatalf("the hidden index directory was not created: %v", err)
+	if _, statErr := os.Stat(filepath.Join(dataDir, ".scindex")); statErr != nil {
+		t.Fatalf("the hidden index directory was not created: %v", statErr)
 	}
-	if _, err := os.Stat(filepath.Join(dataDir, "index")); !os.IsNotExist(err) {
-		t.Fatalf("the legacy index directory survived: %v", err)
+	if _, statErr := os.Stat(filepath.Join(dataDir, "index")); !os.IsNotExist(statErr) {
+		t.Fatalf("the legacy index directory survived: %v", statErr)
 	}
 }
 
