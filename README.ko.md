@@ -14,13 +14,12 @@
 있습니다.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/browse-dark.png">
-  <img alt="Stowcloud 파일 브라우저가 Photos 폴더를 표로 보여 주는 화면. 왼쪽 내비게이션, 경로 표시줄, 정렬 컨트롤, 파일 크기와 수정 날짜가 보인다" src="docs/screenshots/browse-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/browse-dark.png?v=0.14.0">
+  <img alt="Stowcloud 파일 브라우저가 Photos 폴더를 표로 보여 주는 화면. 왼쪽 내비게이션, 경로 표시줄, 정렬 컨트롤, 파일 크기와 수정 날짜가 보인다" src="docs/screenshots/browse-light.png?v=0.14.0">
 </picture>
 
-> 이 문서의 스크린샷은 전부 이 저장소가 빌드하는 이미지를 `docker compose up`으로
-> 띄우고 호스트 디스크의 실제 파일을 열어 찍은 화면입니다. 목업도 아니고 디자인
-> 도구로 꾸민 것도 아닙니다.
+> 이 문서의 스크린샷은 모두 이 저장소의 최신 웹 인터페이스를 로컬 데모 데이터로
+> 촬영한 것입니다. 디자인 도구로 꾸민 화면은 없습니다.
 
 ## 어떤 문제를 푸는가
 
@@ -119,7 +118,7 @@ docker compose logs sc | grep 'setup token'
 기관이 보증해 줄 공인 도메인이 없어서 서버가 스스로 발급한 인증서를 씁니다.
 브라우저마다 한 번씩 허용해 주면 됩니다. 대신 쓸 `http://` 포트는 없습니다.
 
-![설정 토큰, 관리자 아이디, 비밀번호를 입력받는 최초 실행 화면](docs/screenshots/setup.png)
+![설정 토큰, 관리자 아이디, 비밀번호를 입력받는 최초 실행 화면](docs/screenshots/setup.png?v=0.14.0)
 
 이 토큰은 한 번만 쓸 수 있고, 15분이 지나면 만료되며, 관리자가 생기는 순간 영구히
 사라집니다. 로그가 이미 넘어갔다면 `data/setup-token` 파일에도 적혀 있습니다.
@@ -173,7 +172,7 @@ docker compose logs sc | grep 'setup token'
 폴더 창은 공유가 가리키는 바로 그 디렉터리를 따라갑니다. 가져오기를 한 적이
 없으니, 여기 보이는 것이 `ls`가 보는 것입니다.
 
-![폴더 트리를 펼친 파일 브라우저. home 루트와 Documents 아래의 중첩된 폴더가 보인다](docs/screenshots/tree.png)
+![폴더 트리를 펼친 파일 브라우저. home 루트와 Documents 아래의 중첩된 폴더가 보인다](docs/screenshots/tree.png?v=0.14.0)
 
 ### 검색은 폴더를 가로지릅니다
 
@@ -189,7 +188,7 @@ docker compose logs sc | grep 'setup token'
 있던 자리로 돌아옵니다. Ctrl+K, 맥에서는 Cmd+K로 어느 화면에서나 같은 시트를
 엽니다. 휴대폰에서는 검색 화면으로 이동합니다.
 
-![파일 브라우저 위에 열린 검색 시트. 2026 검색어, 검색어 옆의 대상 버튼과 파일 종류 메뉴, 두 공유에서 나온 결과가 각각 폴더와 크기, 날짜와 함께 보인다](docs/screenshots/search.png)
+![파일 브라우저 위에 열린 검색 시트. 2026 검색어, 검색어 옆의 대상 버튼과 파일 종류 메뉴, 두 공유에서 나온 결과가 각각 폴더와 크기, 날짜와 함께 보인다](docs/screenshots/search.png?v=0.14.0)
 
 ### 링크는 만들 때 한 번만 보여 줍니다
 
@@ -198,12 +197,12 @@ docker compose logs sc | grep 'setup token'
 비밀번호, 다운로드 횟수는 만들 때 정합니다. 폐기는 되돌릴 수 없고, 같은 링크는
 다시 만들어지지 않습니다.
 
-![링크를 막 만든 직후의 공유 대화 상자. 한 번만 보이는 URL, 복사 버튼, 만료일](docs/screenshots/share-link.png)
+![링크를 막 만든 직후의 공유 대화 상자. 한 번만 보이는 URL, 복사 버튼, 만료일](docs/screenshots/share-link.png?v=0.14.0)
 
 받은 사람에게는 이 화면만 보입니다. 계정도, 다른 폴더도, 서버에 뭐가 더 있는지에
 대한 단서도 없습니다.
 
-![받는 사람이 보는 공개 공유 페이지. 제목, 공유된 폴더의 파일 목록, 다운로드 버튼](docs/screenshots/share-public.png)
+![받는 사람이 보는 공개 공유 페이지. 제목, 공유된 폴더의 파일 목록, 다운로드 버튼](docs/screenshots/share-public.png?v=0.14.0)
 
 ### 누가 무엇을 볼지 직접 정합니다
 
@@ -212,7 +211,7 @@ docker compose logs sc | grep 'setup token'
 사실조차 알 수 없습니다. 권한이 하나도 없는 계정은 빈 화면을 봅니다. 고장이 아니라
 의도한 기본값입니다.
 
-![계정의 폴더 권한 대화 상자. 루트 범위의 읽기와 다운로드 권한, 상세 보기와 수정 및 제거 컨트롤이 보인다](docs/screenshots/folder-grants.png)
+![계정의 폴더 권한 대화 상자. 루트 범위의 읽기와 다운로드 권한, 상세 보기와 수정 및 제거 컨트롤이 보인다](docs/screenshots/folder-grants.png?v=0.14.0)
 
 서버 경로를 묻는 자리에는 어디에나, 첫 설정 마법사든 폴더 공유든 서버 설정이든,
 입력창 옆에 찾기 버튼이 있습니다. 서버가 실제로 열 수 있는 곳만 보여 주므로
@@ -227,14 +226,14 @@ docker compose logs sc | grep 'setup token'
 작업과 똑같은 충돌 검사를 거칩니다. 두 사람이 같은 파일을 고치면 수정이 사라지는
 대신 충돌 화면이 뜹니다.
 
-![파일 크기, 저장 컨트롤과 편집 영역이 보이는 내장 편집기에서 열린 텍스트 파일](docs/screenshots/editor.png)
+![파일 크기, 저장 컨트롤과 편집 영역이 보이는 내장 편집기에서 열린 텍스트 파일](docs/screenshots/editor.png?v=0.14.0)
 
 ### 삭제를 서두르지 않습니다
 
 휴지통은 폴더별로 켭니다. 켜기 전까지 삭제는 그냥 삭제이고, 설정 화면이 그렇게
 적어 둡니다. 짐작하게 두지 않습니다.
 
-![삭제된 항목의 크기와 삭제 시각, 복원과 영구 삭제 버튼이 있는 휴지통 화면](docs/screenshots/trash.png)
+![삭제된 항목의 크기와 삭제 시각, 복원과 영구 삭제 버튼이 있는 휴지통 화면](docs/screenshots/trash.png?v=0.14.0)
 
 ## 필요한 것
 
