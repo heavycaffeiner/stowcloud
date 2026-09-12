@@ -39,6 +39,32 @@ func TestReplaceFileDurableReplacesExistingContent(t *testing.T) {
 	assertNoStagingResidue(t, dir)
 }
 
+func TestRenameDurableMovesADirectory(t *testing.T) {
+	dir := t.TempDir()
+	oldPath := filepath.Join(dir, "index")
+	newPath := filepath.Join(dir, ".scindex")
+	if err := os.Mkdir(oldPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(oldPath, "segment"), []byte("indexed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RenameDurable(oldPath, newPath); err != nil {
+		t.Fatalf("renaming: %v", err)
+	}
+	if _, err := os.Stat(oldPath); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("the old directory survived: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(newPath, "segment"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "indexed" {
+		t.Fatalf("the moved directory holds %q", got)
+	}
+}
+
 func TestReplaceFileDurableFailingWriterLeavesOriginalUntouched(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "passdb")

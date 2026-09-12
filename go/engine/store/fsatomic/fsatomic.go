@@ -113,6 +113,31 @@ func replaceFileDurable(path string, mode uint32, write func(*os.File) error, op
 	return nil
 }
 
+// RenameDurable moves a server-owned file or directory within one control
+// directory and syncs that directory before returning.
+func RenameDurable(oldPath, newPath string) (err error) {
+	dirPath := filepath.Dir(oldPath)
+	if filepath.Dir(newPath) != dirPath {
+		return errors.New("a durable rename must stay within one directory")
+	}
+	d, err := openControlDir(dirPath)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if cerr := d.close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("closing directory %s: %w", dirPath, cerr))
+		}
+	}()
+	if perr := d.publish(filepath.Base(oldPath), filepath.Base(newPath)); perr != nil {
+		return perr
+	}
+	if serr := d.sync(); serr != nil {
+		return fmt.Errorf("syncing %s after renaming %s: %w", dirPath, filepath.Base(oldPath), serr)
+	}
+	return nil
+}
+
 // Unit is one destination written as part of a multi-file durable replace:
 // a full path and the mode its content takes.
 type Unit struct {

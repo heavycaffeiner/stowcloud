@@ -30,6 +30,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/search"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/search/index"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/search/svc"
+	"github.com/heavycaffeiner/stowcloud/go/engine/store/fsatomic"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 )
 
@@ -174,7 +175,7 @@ func migrateLegacyIndexDir(dataDir string) error {
 	} else if err != nil {
 		return fmt.Errorf("checking %s: %w", legacy, err)
 	}
-	if err := os.Rename(legacy, target); err != nil {
+	if err := fsatomic.RenameDurable(legacy, target); err != nil {
 		return fmt.Errorf("moving %s to %s: %w", legacy, target, err)
 	}
 	return nil
