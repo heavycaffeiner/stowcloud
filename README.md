@@ -15,7 +15,7 @@ on that machine.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/browse-dark.png">
-  <img alt="The Stowcloud file browser listing a folder of images: a navigation rail, the folder list, a breadcrumb marking the folder as shared with other services, and the file table" src="docs/screenshots/browse-light.png">
+  <img alt="The Stowcloud file browser listing the Photos folder in a table, with the navigation rail, breadcrumb, sorting controls, file sizes, and modified dates" src="docs/screenshots/browse-light.png">
 </picture>
 
 > Every screenshot on this page comes from the image this repository builds,
@@ -201,7 +201,7 @@ shipping.
 The folder pane walks the same directories your shares point at. Nothing was
 imported, so what you see here is what `ls` sees.
 
-![The file browser with the folder tree open, showing nested folders under two different shares](docs/screenshots/tree.png)
+![The file browser with the folder tree open, showing the home root and a nested folder under Documents](docs/screenshots/tree.png)
 
 ### Search reaches across folders
 
@@ -242,7 +242,7 @@ parent, or anything else in the share, exists. An account with no grant sees
 an empty screen, and that is the intended default rather than something
 broken.
 
-![The folder-permission dialog for an account, showing one grant scoped to a subpath with read and download allowed](docs/screenshots/folder-grants.png)
+![The folder-permission dialog for an account, showing a root grant with read and download access and controls to inspect, edit, or remove it](docs/screenshots/folder-grants.png)
 
 Every place a server path is asked for, the first-run wizard and the folder
 share and server settings screens alike, has a browse button beside the box.
@@ -260,7 +260,7 @@ Small text files open in a browser editor with syntax highlighting and save
 back through the same conflict check as everything else, so two people
 editing one file get a conflict screen rather than a lost edit.
 
-![A Markdown file open in the built-in editor with line numbers and syntax highlighting](docs/screenshots/editor.png)
+![A text file open in the built-in editor with its size, save control, and editing surface](docs/screenshots/editor.png)
 
 ### Nothing is deleted in a hurry
 

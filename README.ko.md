@@ -15,7 +15,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/browse-dark.png">
-  <img alt="Stowcloud 파일 브라우저가 이미지 폴더를 보여 주는 화면. 왼쪽 내비게이션, 폴더 목록, 다른 서비스와 공유 중임을 표시한 경로 표시줄, 파일 표" src="docs/screenshots/browse-light.png">
+  <img alt="Stowcloud 파일 브라우저가 Photos 폴더를 표로 보여 주는 화면. 왼쪽 내비게이션, 경로 표시줄, 정렬 컨트롤, 파일 크기와 수정 날짜가 보인다" src="docs/screenshots/browse-light.png">
 </picture>
 
 > 이 문서의 스크린샷은 전부 이 저장소가 빌드하는 이미지를 `docker compose up`으로
@@ -173,7 +173,7 @@ docker compose logs sc | grep 'setup token'
 폴더 창은 공유가 가리키는 바로 그 디렉터리를 따라갑니다. 가져오기를 한 적이
 없으니, 여기 보이는 것이 `ls`가 보는 것입니다.
 
-![폴더 트리를 펼친 파일 브라우저. 두 개의 공유 아래 중첩된 폴더들이 보인다](docs/screenshots/tree.png)
+![폴더 트리를 펼친 파일 브라우저. home 루트와 Documents 아래의 중첩된 폴더가 보인다](docs/screenshots/tree.png)
 
 ### 검색은 폴더를 가로지릅니다
 
@@ -212,7 +212,7 @@ docker compose logs sc | grep 'setup token'
 사실조차 알 수 없습니다. 권한이 하나도 없는 계정은 빈 화면을 봅니다. 고장이 아니라
 의도한 기본값입니다.
 
-![계정의 폴더 권한 대화 상자. 하위 경로로 범위를 좁히고 읽기와 다운로드만 허용한 권한 하나](docs/screenshots/folder-grants.png)
+![계정의 폴더 권한 대화 상자. 루트 범위의 읽기와 다운로드 권한, 상세 보기와 수정 및 제거 컨트롤이 보인다](docs/screenshots/folder-grants.png)
 
 서버 경로를 묻는 자리에는 어디에나, 첫 설정 마법사든 폴더 공유든 서버 설정이든,
 입력창 옆에 찾기 버튼이 있습니다. 서버가 실제로 열 수 있는 곳만 보여 주므로
@@ -227,7 +227,7 @@ docker compose logs sc | grep 'setup token'
 작업과 똑같은 충돌 검사를 거칩니다. 두 사람이 같은 파일을 고치면 수정이 사라지는
 대신 충돌 화면이 뜹니다.
 
-![줄 번호와 문법 강조가 적용된 내장 편집기에서 열린 마크다운 파일](docs/screenshots/editor.png)
+![파일 크기, 저장 컨트롤과 편집 영역이 보이는 내장 편집기에서 열린 텍스트 파일](docs/screenshots/editor.png)
 
 ### 삭제를 서두르지 않습니다
 
