@@ -1049,7 +1049,7 @@
   "storage.files_to_index": "Files to index",
   "storage.first_build_is_manual": "The first build has to be started by hand. After that the index keeps itself up to date.",
   "storage.free": "{free} free of {total}",
-  "storage.in_each_shared_folder": "folder inside each shared folder. That is safe to do at any time.",
+  "storage.in_each_shared_folder": "directory inside the Stowcloud data directory. It is safe to delete at any time.",
   "storage.index_empty": "The index is on and empty: no build has finished yet.",
   "storage.index_holding": "Holding {count} names.",
   "storage.index_incomplete": "The index covers less than the corpus, so search walks anyway. Build it again.",

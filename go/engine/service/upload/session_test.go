@@ -179,14 +179,18 @@ func TestFinalizeWithoutALengthRefuses(t *testing.T) {
 	}
 }
 
-// Abort takes the row, the handle and the bookkeeping lock. Leaving the lock
-// for the sweep meant an aborted session's mutex sat in the map for a day.
-func TestAbortForgetsTheRowLock(t *testing.T) {
+// Abort removes the session, part file and its in-memory bookkeeping once
+// every admitted writer has drained.
+func TestAbortRemovesThePartAndSession(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	f := newFixture(t)
 	s := f.create(t, "report.txt", 10, SessionSpec{})
 	f.patch(t, s.ID, 0, []byte("0123456789"))
+	part, err := vfs.RootPath().JoinControl(partName(s.ID))
+	if err != nil {
+		t.Fatalf("naming the part file: %v", err)
+	}
 
 	if f.engine.rowLockCount() == 0 {
 		t.Fatal("a session in flight holds no bookkeeping lock")
@@ -201,18 +205,11 @@ func TestAbortForgetsTheRowLock(t *testing.T) {
 		t.Fatalf("%d writer barriers survived the abort", n)
 	}
 
-	// The row survives until the sweep takes the part file with it, and it
-	// reads as aborted rather than as a session anything can still write to.
-	got, err := f.engine.Get(ctx, s.ID, testUser)
-	if err != nil {
-		t.Fatalf("Get on an aborted session returned %v", err)
+	if _, err := f.engine.Get(ctx, s.ID, testUser); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("the aborted session survived: %v", err)
 	}
-	if got.State != StateAborted {
-		t.Fatalf("an aborted session reads as state %d", got.State)
-	}
-	if _, err := f.engine.PatchAt(ctx, f.root(t), s.ID, testUser, 10,
-		bytes.NewReader([]byte("x")), nil); err == nil {
-		t.Fatal("a chunk against an aborted session was accepted")
+	if _, err := f.root(t).Stat(part); !errors.Is(err, vfs.ErrNotFound) {
+		t.Fatalf("the aborted upload part survived: %v", err)
 	}
 }
 

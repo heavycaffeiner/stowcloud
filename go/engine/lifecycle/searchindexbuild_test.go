@@ -13,6 +13,7 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/clock"
 	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
+	searchindex "github.com/heavycaffeiner/stowcloud/go/engine/service/search/index"
 )
 
 // indexEngine serves an engine whose name index is switched on, with an
@@ -170,7 +171,7 @@ func TestTheBuiltIndexSurvivesARestart(t *testing.T) {
 	awaitJob(t, base, cookie, stringField(body, "id"))
 
 	// Something was written where a restart will look for it.
-	entries, err := os.ReadDir(filepath.Join(dataDir, "index"))
+	entries, err := os.ReadDir(filepath.Join(dataDir, ".scindex"))
 	if err != nil {
 		t.Fatalf("the index directory was not written: %v", err)
 	}
@@ -195,6 +196,44 @@ func TestTheBuiltIndexSurvivesARestart(t *testing.T) {
 	})
 	if !second.Search.HasIndex() {
 		t.Error("the index was not reopened after a restart")
+	}
+}
+
+// A deployment built before the hidden index name keeps its persisted cache
+// when it upgrades.
+func TestTheLegacyIndexDirectoryMovesToTheHiddenName(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dataDir := t.TempDir()
+
+	first, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dataDir, PasswordParams: fastPasswordParams()})
+	if err != nil {
+		t.Fatalf("opening: %v", err)
+	}
+	if err := first.State.SetIndexNameEnabled(ctx, true); err != nil {
+		t.Fatalf("enabling the index: %v", err)
+	}
+	if _, err := searchindex.Open(filepath.Join(dataDir, "index"), searchindex.DefaultConfig()); err != nil {
+		t.Fatalf("creating the legacy index: %v", err)
+	}
+	if err := first.Close(); err != nil {
+		t.Fatalf("closing: %v", err)
+	}
+
+	second, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dataDir, PasswordParams: fastPasswordParams()})
+	if err != nil {
+		t.Fatalf("reopening: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := second.Close(); err != nil {
+			t.Errorf("closing reopened engine: %v", err)
+		}
+	})
+	if _, err := os.Stat(filepath.Join(dataDir, ".scindex")); err != nil {
+		t.Fatalf("the hidden index directory was not created: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dataDir, "index")); !os.IsNotExist(err) {
+		t.Fatalf("the legacy index directory survived: %v", err)
 	}
 }
 

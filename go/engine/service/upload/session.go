@@ -246,12 +246,11 @@ func (e *Engine) SetLength(ctx context.Context, id SessionID, user core.UserID, 
 	return e.save(ctx, r)
 }
 
-// Abort terminates a session.
+// Abort terminates a session and removes its private storage.
 //
-// The part file stays on disk for the sweep, which is what keeps a
-// termination from racing a write already in flight. What does not stay is
-// the bookkeeping lock: leaving it for the sweep meant an aborted session's
-// mutex sat in the map for a day.
+// Writer admission closes first and every admitted body drains before cleanup,
+// so the part can be unlinked here without racing a write. A failed unlink
+// leaves the aborted row for a later DELETE or periodic sweep to retry.
 func (e *Engine) Abort(ctx context.Context, id SessionID, user core.UserID) error {
 	barrier, generation, owner, werr := e.closeWriters(ctx, id)
 	if werr != nil {
@@ -291,20 +290,51 @@ func (e *Engine) Abort(ctx context.Context, id SessionID, user core.UserID) erro
 		return ErrNotFound
 	}
 	r.sess.State = int64(StateAborted)
-	// Eligible for the sweep at once, and the sweep is what claims the part
-	// file.
 	r.sess.ExpiresNs = e.clk.Nanos()
 	if serr := e.save(ctx, r); serr != nil {
 		unlock()
 		return serr
 	}
-	// The cache is released now rather than at the sweep. Its contents can
-	// never be completed, and the spool is the small volume, so retaining a
-	// cancelled upload's window there for a day is exactly what fills it.
-	e.releaseCache(r.sess.CacheDir)
-	e.closeHandle(id)
+	sess := r.sess
 	unlock()
-	e.forgetRow(id)
+
 	terminal = true
+	e.releaseCache(sess.CacheDir)
+	e.closeHandle(id)
+	defer e.forgetRow(id)
+	if err := e.removeAbortedSession(ctx, sess); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (e *Engine) removeAbortedSession(ctx context.Context, sess state.UploadSession) error {
+	share, ok := shareIDOf(sess.Share)
+	if !ok {
+		return errors.New("the aborted upload has an invalid share id")
+	}
+	root, ok := e.core.ShareRoot(share)
+	if !ok {
+		return errors.New("the aborted upload's share is unavailable")
+	}
+	dest, err := vfs.ParseSafePath(sess.Dest)
+	if err != nil {
+		return fmt.Errorf("parsing the aborted upload destination: %w", err)
+	}
+	part, err := partPath(dest, sess.PartName)
+	if err != nil {
+		return err
+	}
+	if err := root.Unlink(part); err != nil && !errors.Is(err, vfs.ErrNotFound) {
+		return mapVFSErr(err)
+	}
+	if sess.SpoolDir != "" {
+		if dir, err := dest.Parent().JoinControl(sess.SpoolDir); err == nil {
+			e.removeSpoolDir(root, dir)
+		}
+	}
+	if err := e.state.DeleteUploadSession(ctx, sess.ID); err != nil {
+		return err
+	}
 	return nil
 }

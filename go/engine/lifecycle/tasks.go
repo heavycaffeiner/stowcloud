@@ -12,6 +12,7 @@ package lifecycle
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/server"
@@ -96,6 +97,52 @@ func (e *Engine) tasks() []server.PeriodicTask {
 			// is no periodic collection to call.
 			Run: func(context.Context) error { return nil },
 		},
+	}
+}
+
+// startTasks starts each recurring task once for this engine. The first pass
+// runs immediately, so stale upload parts and unreachable shares do not wait
+// through a full interval after every restart.
+func (e *Engine) startTasks() {
+	e.maintenanceStart.Do(func() {
+		ctx, stop := context.WithCancel(context.Background())
+		e.maintenanceStop = stop
+		for _, periodic := range e.tasks() {
+			periodic := periodic
+			e.maintenance.Go(ctx, "periodic: "+periodic.Name, func() {
+				runPeriodic(ctx, periodic, e.logger)
+			})
+		}
+	})
+}
+
+func runPeriodic(ctx context.Context, periodic server.PeriodicTask, logger *slog.Logger) {
+	for {
+		if err := periodic.Run(ctx); err != nil && ctx.Err() == nil {
+			logger.Warn("a periodic task failed", "task", periodic.Name, "error", err)
+		}
+		timer := time.NewTimer(periodic.Every)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+	}
+}
+
+// stopTasks cancels recurring work and waits before any service or database it
+// may be using is closed.
+func (e *Engine) stopTasks() {
+	if e.maintenanceStop == nil {
+		return
+	}
+	e.maintenanceStop()
+	e.maintenanceStop = nil
+	ctx, cancel := context.WithTimeout(context.Background(), jobDrainTimeout)
+	defer cancel()
+	if err := e.maintenance.Wait(ctx); err != nil {
+		e.logger.Warn("periodic tasks did not stop before shutdown", "error", err)
 	}
 }
 

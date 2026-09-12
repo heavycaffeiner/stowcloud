@@ -14,7 +14,11 @@ package lifecycle
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"math"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -29,9 +33,12 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 )
 
-// indexDirName is where the index lives under the data directory. It is a
-// fixed name so a restart finds what the last build wrote.
-const indexDirName = "index"
+// indexDirName is where the index lives under the data directory. The hidden
+// name matches the administrative surface and keeps this control directory
+// distinct from operator data.
+const indexDirName = ".scindex"
+
+const legacyIndexDirName = "index"
 
 // openSearchIndex attaches or detaches the name index against what the
 // operator has currently asked for, and starts or stops the updater that
@@ -69,6 +76,12 @@ func (e *Engine) openSearchIndex(ctx context.Context) {
 		// the live index and its updater in place.
 		e.Search.SetIndex(nil)
 		e.stopSearchUpdater()
+		return
+	}
+
+	if err := migrateLegacyIndexDir(e.dataDir); err != nil {
+		e.logger.Warn("the legacy search index directory could not be migrated; search runs on the walk",
+			"error", err)
 		return
 	}
 
@@ -143,7 +156,29 @@ func (e *Engine) offerToSearchUpdater(share uint32, dir string, all bool) {
 }
 
 // indexDir is the one place the index's location is spelled.
-func indexDir(dataDir string) string { return dataDir + "/" + indexDirName }
+func indexDir(dataDir string) string { return filepath.Join(dataDir, indexDirName) }
+
+// migrateLegacyIndexDir moves the pre-v0.16 storage name once. Both names are
+// under the same data directory, so rename is atomic.
+func migrateLegacyIndexDir(dataDir string) error {
+	target := indexDir(dataDir)
+	if _, err := os.Stat(target); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("checking %s: %w", target, err)
+	}
+
+	legacy := filepath.Join(dataDir, legacyIndexDirName)
+	if _, err := os.Stat(legacy); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("checking %s: %w", legacy, err)
+	}
+	if err := os.Rename(legacy, target); err != nil {
+		return fmt.Errorf("moving %s to %s: %w", legacy, target, err)
+	}
+	return nil
+}
 
 // adminIndexBuild starts a build and answers with the job that runs it.
 //

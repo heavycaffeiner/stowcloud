@@ -195,8 +195,8 @@ func (e *Engine) uploadsStatus(c *fiber.Ctx) error {
 
 	// A session that has finished, been aborted or expired is not a session
 	// to resume. Reporting an offset for one tells a client to carry on
-	// sending into an upload that will never publish, and the row survives an
-	// abort by design so the sweep can claim the part file.
+	// sending into an upload that will never publish. An aborted row remains
+	// only when its immediate cleanup failed and a retry is still required.
 	if terminal, _ := handler.TerminalUploadState(sess.State.StateName()); terminal {
 		return notFound(c)
 	}

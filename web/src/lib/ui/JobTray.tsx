@@ -43,6 +43,12 @@ function rowFor(id: string, status: JobStatus | undefined, error: boolean): JobR
   return { id, kind, done: status.done, total: status.total, status: status.state, attempting: status.attempting, pending: status.pending }
 }
 
+function jobProgressValue(item: JobRow): number | undefined {
+  if (item.status !== 'running') return 1
+  if (item.total <= 0) return undefined
+  return Math.min(Math.max(item.done / item.total, 0), 1)
+}
+
 export function JobTray() {
   const { t, tp } = useI18n()
   const ids = useStore(jobTray, (state) => state.ids)
@@ -135,7 +141,7 @@ export function JobTray() {
               return (
                 <>
                   <div className="sc-job-tray__row"><span className="sc-job-tray__name"><Icon name={item.kind === 'delete' ? 'delete' : item.kind === 'copy' ? 'content_copy' : 'search'} />{label}</span><span className="sc-job-tray__meta">{item.done} / {item.total || '?'}</span></div>
-                  <mdui-linear-progress value={item.total > 0 ? Math.min(Math.max(item.done / item.total, 0), 1) : undefined} aria-label={t('job.job', { kind: label })}></mdui-linear-progress>
+                  <mdui-linear-progress value={jobProgressValue(item)} aria-label={t('job.job', { kind: label })}></mdui-linear-progress>
                   {item.status === 'error' && item.message ? <p className="sc-job-tray__message">{t(item.message, item.messageParams)}</p> : null}
                   {item.status === 'cancelled' ? <p className="sc-job-tray__message">{t('job.cancelled_completed', { count: item.done })}</p> : null}
                   {item.status === 'interrupted' ? <p className="sc-job-tray__message">{t('job.interrupted_by_server_restart_completed', { count: item.done })}</p> : null}

@@ -43,6 +43,10 @@ func (e *Engine) Mount() (*fiber.App, error) {
 		return nil, fmt.Errorf("the assembly is not servable: %w", err)
 	}
 
+	// Start only after the complete presentation and task table have passed
+	// preflight. A listener rebind mounts again, so startTasks is idempotent.
+	e.startTasks()
+
 	// The framework refuses a method it does not know before any route runs,
 	// so the WebDAV verbs join the list at construction: a sync client's
 	// PROPFIND is as ordinary as a browser's GET. COPY and MOVE are WebDAV's

@@ -503,7 +503,7 @@ async function jobStatus(id: string): Promise<JobStatus> {
       kind: 'index_build',
       state: finished ? 'done' : 'running',
       done,
-      total: MOCK_INDEX_BUILD_SHARES,
+      total: 0,
       current: finished ? null : 'home',
       errors: [],
       results: [],
@@ -1888,14 +1888,14 @@ async function adminBuildIndex(): Promise<JobStatus> {
     throw new ApiError(501, { code: 'not_implemented', message: 'not implemented yet' })
   }
   mockIndexBuildStartedAt = Date.now()
-  // The job itself, which is what the real route answers. Returning a
-  // `{ job }` wrapper here is what let the app read a field no server sends.
+  // The job itself, which is what the real route answers. Its total is zero
+  // because a complete traversal is what discovers how many names exist.
   return {
     id: MOCK_INDEX_BUILD_JOB,
     kind: 'index_build',
     state: 'running',
     done: 0,
-    total: MOCK_INDEX_BUILD_SHARES,
+    total: 0,
     current: null,
     errors: [],
     results: [],

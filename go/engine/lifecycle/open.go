@@ -237,6 +237,12 @@ type Engine struct {
 	jobsCtx  context.Context
 	jobsStop context.CancelFunc
 
+	// maintenance owns the recurring tasks declared by tasks(). They start
+	// once per engine rather than once per mounted listener generation.
+	maintenanceStart sync.Once
+	maintenance      task.Group
+	maintenanceStop  context.CancelFunc
+
 	// onBind is told when a settings save moved the listen address. The
 	// listener belongs to the process that started this engine, so the change
 	// is handed out rather than applied here.
@@ -710,9 +716,12 @@ func (e *Engine) Close() (err error) {
 		}
 	}()
 
-	// The search updater first, since it reads events off the watcher this
-	// closes next: stopping it after would leave a goroutine consuming a
-	// channel that is about to go away underneath it.
+	// Periodic tasks may use every service below, so they stop before any of
+	// those services are closed.
+	e.stopTasks()
+
+	// The search updater reads events off the watcher closed next. Stopping it
+	// first prevents a goroutine consuming a channel while it goes away.
 	e.stopSearchUpdater()
 
 	// The sockets and the watcher first. They hold no database file, but they
