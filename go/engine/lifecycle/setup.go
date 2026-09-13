@@ -232,14 +232,10 @@ const setupTokenFile = "setup-token"
 // issueSetupToken mints a first-run token and publishes it, when this
 // deployment still needs one.
 //
-// Published rather than only printed: a process started by a supervisor has no
-// terminal anybody reads, and the token is the only thing that opens the form.
-// It goes to the data directory, which is somewhere the operator can already
-// reach, at 0600 because anyone who reads it can create the administrator.
+// The token is logged to standard error so container logs expose it on first
+// run, and written to setup-token in the data directory at 0600.
 //
-// A failure here does not stop the boot. The server still serves, and the
-// operator's next move is to look at why the file could not be written rather
-// than to restart into the same state.
+// A failure to write the file does not stop the boot or suppress the log.
 func (e *Engine) issueSetupToken(ctx context.Context) {
 	if e.setup == nil {
 		return
@@ -259,17 +255,15 @@ func (e *Engine) issueSetupToken(ctx context.Context) {
 	}
 
 	path := filepath.Join(e.dataDir, setupTokenFile)
-	werr := fsatomic.ReplaceFileDurable(path, 0o600, func(f *os.File) error {
+	if werr := fsatomic.ReplaceFileDurable(path, 0o600, func(f *os.File) error {
 		_, w := f.WriteString(token + "\n")
 		return w
-	})
-	if werr != nil {
-		e.logger.Error("the first-run setup token could not be written",
+	}); werr != nil {
+		e.logger.Warn("the first-run setup token could not be written to data directory",
 			"path", path, "error", werr)
-		return
 	}
-	// The path and not the token. A log line carrying it would put the one
-	// credential that creates the administrator into whatever collects logs.
-	e.logger.Info("this deployment needs setting up; the token is in the data directory",
-		"path", path, "valid_for", server.SetupTokenLifetime.String())
+
+	e.logger.Info("this deployment needs setting up; initial setup token issued",
+		"setup_token", token,
+		"valid_for", server.SetupTokenLifetime.String())
 }

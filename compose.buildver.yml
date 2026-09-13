@@ -1,7 +1,7 @@
 # Stowcloud, built from this working tree instead of pulled.
 #
 #   docker compose -f compose.buildver.yml up -d --build
-#   docker compose -f compose.buildver.yml exec sc cat /var/lib/stowcloud/setup-token
+#   docker compose -f compose.buildver.yml logs sc
 #
 # Same layout and hardening as compose.yml, under its own project name
 # so it can run beside a released stack.

@@ -1,7 +1,7 @@
 # Stowcloud.
 #
 #   docker compose up -d
-#   docker compose exec sc cat /var/lib/stowcloud/setup-token
+#   docker compose logs sc
 #
 # Then open https://localhost:8443. The certificate is self-signed on first
 # run, so the browser warns once.

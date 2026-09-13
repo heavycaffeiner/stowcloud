@@ -46,10 +46,10 @@ docker compose up -d
 
 이제 `https://<서버 주소>:8443`에서 Stowcloud에 접속할 수 있습니다. 처음에는 서버가 자체 서명 인증서를 사용하므로 브라우저에 인증서 경고가 표시됩니다.
 
-한 번만 사용할 수 있는 설정 토큰을 확인합니다.
+서버 시작 로그에서 한 번만 사용할 수 있는 설정 토큰을 확인합니다:
 
 ```sh
-docker compose exec sc cat /var/lib/stowcloud/setup-token
+docker compose logs sc
 ```
 
 `https://<서버 주소>:8443/setup`을 열고 토큰을 입력한 뒤 관리자 아이디와 비밀번호를 정합니다.

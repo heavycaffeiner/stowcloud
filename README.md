@@ -46,10 +46,10 @@ docker compose up -d
 
 Stowcloud is now available at `https://<server-address>:8443`. The first connection shows a certificate warning because the server starts with a self-signed certificate.
 
-Read the one-time setup token:
+Read the one-time setup token from the startup log:
 
 ```sh
-docker compose exec sc cat /var/lib/stowcloud/setup-token
+docker compose logs sc
 ```
 
 Open `https://<server-address>:8443/setup`, enter the token, and choose an administrator username and password.
