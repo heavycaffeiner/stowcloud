@@ -91,6 +91,7 @@ jobs:
   build-core:
     name: build sc:core (${{ matrix.arch }}) + run + smoke test
     runs-on: ${{ matrix.runner }}
+    if: github.event_name != 'pull_request' || github.actor == github.repository_owner
     strategy:
       # Both legs run to completion. `fail-fast: true` would cancel the healthy
       # architecture the moment the other failed, which throws away the very
@@ -406,6 +407,7 @@ jobs:
   build-smb:
     name: build sc:smb (${{ matrix.arch }}) + run + smoke test
     runs-on: ${{ matrix.runner }}
+    if: github.event_name != 'pull_request' || github.actor == github.repository_owner
     strategy:
       fail-fast: false
       matrix:

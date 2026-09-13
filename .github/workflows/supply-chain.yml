@@ -42,6 +42,7 @@ jobs:
   audit:
     name: govulncheck + the dependency allow-list
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.actor == github.repository_owner
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -72,6 +73,7 @@ jobs:
   secrets:
     name: gitleaks
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.actor == github.repository_owner
     timeout-minutes: 15
     steps:
       # Full history: a secret is just as committed when it was removed in a
@@ -93,6 +95,7 @@ jobs:
   sbom:
     name: CycloneDX SBOM artifact
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.actor == github.repository_owner
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

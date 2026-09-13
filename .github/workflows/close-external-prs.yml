@@ -1,0 +1,29 @@
+name: close-external-prs
+
+# Automatically closes pull requests submitted by anyone other than the
+# repository owner. Stowcloud is developed as a personal project and does
+# not accept external pull requests. Bug reports and feature proposals are
+# tracked via GitHub Issues.
+
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  close:
+    name: Close external pull request
+    runs-on: ubuntu-latest
+    if: github.actor != github.repository_owner
+    steps:
+      - name: Close pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr close "$PR_NUMBER" \
+            --repo "${{ github.repository }}" \
+            --comment "Thank you for your interest in Stowcloud. This repository is maintained as a personal project and does not accept external pull requests. If you encountered a bug or would like to propose a change, please open an issue instead."
