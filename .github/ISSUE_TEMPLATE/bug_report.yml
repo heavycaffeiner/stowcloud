@@ -1,0 +1,64 @@
+name: Bug report
+description: Report an error or unexpected behavior.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please fill out this form with as much detail as possible.
+        Do not include passwords, session cookies, tokens, or private share URLs.
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug description
+      description: A clear description of what went wrong.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Step-by-step instructions to trigger the issue.
+      placeholder: |
+        1. Start Stowcloud with compose.yml
+        2. Mount folder X
+        3. Perform action Y
+        4. Observe error Z
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Details about your deployment and client environment.
+      placeholder: |
+        - Stowcloud image tag or commit:
+        - Host Linux distribution and kernel (`uname -a`):
+        - Docker version:
+        - Reverse proxy (Caddy, Nginx, Traefik, direct TLS, none):
+        - Client type and version (Firefox 128, Chrome 130, Nextcloud Desktop 3.14, etc.):
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and error output
+      description: Relevant output from `docker compose logs sc` or the browser developer console.
+      render: shell
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission checklist
+      options:
+        - label: I searched existing issues and confirmed this has not already been reported.
+          required: true
+        - label: I verified that no credentials, tokens, or private data appear in the pasted logs.
+          required: true

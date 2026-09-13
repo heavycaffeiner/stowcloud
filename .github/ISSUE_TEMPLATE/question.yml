@@ -1,0 +1,27 @@
+name: Question
+description: Ask a question about configuration, deployment, or usage.
+title: "[Question]: "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please consult README.md and existing documentation before asking a question.
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What would you like to clarify or ask?
+    validations:
+      required: true
+  - type: textarea
+    id: configuration
+    attributes:
+      label: Deployment configuration
+      description: Relevant sections of your compose.yml or environment setup.
+      render: yaml
+  - type: textarea
+    id: attempts
+    attributes:
+      label: Troubleshooting steps taken
+      description: Describe what you have attempted so far.
