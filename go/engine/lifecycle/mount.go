@@ -62,6 +62,7 @@ func (e *Engine) Mount() (*fiber.App, error) {
 		DisableStartupMessage: true,
 		RequestMethods:        methods,
 		BodyLimit:             limits.ServerBodyLimit,
+		StreamRequestBody:     true,
 		// The framework's own error page is HTML. Every failure this server
 		// produces is a JSON body a client can read, so the default is
 		// replaced rather than left to leak a page into an API response.

@@ -4,12 +4,16 @@ package lifecycle_test
 
 import (
 	"bytes"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/limits"
 )
 
 // Uploading, both ways the clients do it.
@@ -86,6 +90,52 @@ func TestAPlainUploadReportsIdentityAndEtag(t *testing.T) {
 	if string(onDisk) != "uploaded bytes" {
 		t.Errorf("the file holds %q", onDisk)
 	}
+}
+
+// A direct upload larger than the framework's buffered-body limit streams to
+// disk instead of being rejected before the Nextcloud handler can read it.
+func TestALargePlainUploadStreamsPastTheBufferedBodyLimit(t *testing.T) {
+	t.Parallel()
+	f := newNCFixture(t, []byte("seed"))
+	size := int64(limits.ServerBodyLimit) + 1
+	body := io.LimitReader(zeroReader{}, size)
+
+	req, err := http.NewRequest(http.MethodPut, f.filePath("large.bin"), body)
+	if err != nil {
+		t.Fatalf("building the upload: %v", err)
+	}
+	req.SetBasicAuth(f.login, f.token)
+	req.Header.Set("OCS-APIRequest", "true")
+	req.ContentLength = size
+
+	resp, err := ncClient().Do(req)
+	if err != nil {
+		t.Fatalf("uploading %d bytes: %v", size, err)
+	}
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			t.Errorf("closing the response: %v", cerr)
+		}
+	}()
+	if resp.StatusCode != http.StatusCreated {
+		answer, _ := io.ReadAll(resp.Body)
+		t.Fatalf("answered %d, want 201\n%s", resp.StatusCode, answer)
+	}
+
+	info, err := os.Stat(filepath.Join(f.host, "large.bin"))
+	if err != nil {
+		t.Fatalf("stat uploaded file: %v", err)
+	}
+	if info.Size() != size {
+		t.Fatalf("stored %d bytes, want %d", info.Size(), size)
+	}
+}
+
+type zeroReader struct{}
+
+func (zeroReader) Read(p []byte) (int, error) {
+	clear(p)
+	return len(p), nil
 }
 
 // The modification time a client sends is applied, and the acceptance is
