@@ -13,6 +13,7 @@ package middleware
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net/netip"
 	"strings"
 
@@ -336,6 +337,12 @@ func causeOf(c *fiber.Ctx, err error) error {
 	return nil
 }
 
+// drainCap bounds what a rejected body is read for so the 413 can reach the
+// peer. Comfortably above the JSON and XML class bounds, so an ordinary
+// overshoot is drained and answered, while a transfer declared far past any
+// bound is cut off rather than read to its end.
+const drainCap = 8 << 20
+
 // bodyLimitHandler refuses a body past its route's class before a handler can
 // read it.
 //
@@ -353,6 +360,18 @@ func bodyLimitHandler(c *fiber.Ctx) error {
 		return c.Next()
 	}
 	if declared := int64(c.Request().Header.ContentLength()); declared > bound {
+		// Streaming starts before middleware runs, so a body rejected here has
+		// unread bytes still in flight. Closing on those is a TCP reset, and
+		// the peer reports a broken connection instead of the 413. Draining
+		// lets the response land, but reading an attacker-declared length to
+		// its end would be the transfer this check exists to refuse: past the
+		// cap the connection is closed after the status is written.
+		if stream := c.Context().RequestBodyStream(); stream != nil {
+			drained, drainErr := io.Copy(io.Discard, io.LimitReader(stream, drainCap+1))
+			if drainErr != nil || drained > drainCap {
+				c.Context().SetConnectionClose()
+			}
+		}
 		return fiber.NewError(fiber.StatusRequestEntityTooLarge)
 	}
 	return c.Next()
