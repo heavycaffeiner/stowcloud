@@ -10,6 +10,7 @@ import { computeScaleMapping, computeWindow, documentScrollTop, effectiveViewpor
 import { indicesInRect, type Rect } from './marquee'
 import { FileRow, useFileActivation } from './FileRow'
 import { FileRowSkeleton } from './FileRowSkeleton'
+import { Icon } from './Icon'
 import './browse-ui.css'
 
 export interface FileViewHandle {
@@ -173,13 +174,26 @@ export const FileTable = forwardRef<FileViewHandle, FileTableProps>(function Fil
   return <div ref={viewport} className={`sc-file-table${compact ? ' sc-file-table--contained' : ''}${names.size ? ' sc-file-table--reserve-selection' : ''}`} style={{ touchAction: 'manipulation' }} data-density={density} role="grid" aria-multiselectable="true" aria-rowcount={total + 1} aria-label={t('table.file_list')} aria-activedescendant={active} aria-busy={loadingMore} tabIndex={0} onKeyDown={keyDown} onPointerDown={(event) => { if (!(event.target as HTMLElement).closest('[aria-selected]')) activation.cancel() }} onContextMenu={activation.cancel}>
     {total === 0 && !loading ? <p className="sc-file-table__empty">{t('common.folder_empty')}</p> : <>
       <div className="sc-file-table__header" role="row" aria-rowindex={1}>
-        <span className="sc-file-table__header-cell sc-file-table__header-cell--select" role="columnheader" aria-label={t('common.select', { name: t('table.file_list') })} />
+        <span
+          className="sc-file-table__header-cell sc-file-table__header-cell--select sc-touch-target"
+          role="columnheader"
+          aria-label={t('browse.select_all')}
+          onClick={() => {
+            if (names.size === entries.length && entries.length > 0) selection.clear()
+            else selection.all(loadedNames)
+          }}
+        >
+          <span className={`sc-custom-checkbox${names.size > 0 && names.size === entries.length ? ' sc-custom-checkbox--checked' : names.size > 0 ? ' sc-custom-checkbox--indeterminate' : ''}`} aria-hidden="true">
+            {names.size > 0 && names.size === entries.length ? <Icon name="check" size={13} /> : names.size > 0 ? <span className="sc-custom-checkbox__bar" /> : null}
+          </span>
+        </span>
         {(['name', 'size', 'mtime'] as const).map((key) => <span key={key} className={`sc-file-table__header-cell sc-file-table__header-cell--${key}`} role="columnheader" aria-sort={sortKey === key ? sortOrder === 'asc' ? 'ascending' : 'descending' : 'none'}>
           <button type="button" className={`sc-file-table__header-button${sortKey === key ? ' sc-file-table__header-button--active' : ''}`} onClick={() => chooseSort(key)} aria-label={`${sortLabel(key)}${sortKey === key ? `, ${sortOrder === 'asc' ? t('browse.sort_ascending') : t('browse.sort_descending')}` : ''}`}>
             <span>{sortLabel(key)}</span>
             {sortKey === key ? <span className="sc-file-table__header-sort" aria-hidden="true">{sortOrder === 'asc' ? '↑' : '↓'}</span> : null}
           </button>
         </span>)}
+        <span className="sc-file-table__header-cell sc-file-table__header-cell--actions" role="columnheader" />
       </div>
       <div className="sc-file-table__spacer" style={{ height: win.totalHeight }}><div className="sc-file-table__window" style={{ transform: `translate3d(0,${win.padTop}px,0)` }}>{rows.map(({ index, entry }) => entry ? <FileRow key={entry.path} entry={entry} rowIndex={index + 2} selected={names.has(entry.name)} focused={focusedName === entry.name} domId={domId(entry.name)} encrypted={encrypted} {...activation.handlers(entry, index)} onCancelActivation={activation.cancel} onContextMenu={(event) => { activation.cancel(); event.preventDefault(); event.stopPropagation(); onContextMenu(entry, event) }} onToggleCheck={() => selection.toggle(entry.name, index)} /> : <FileRowSkeleton key={`skeleton-${index}`} rowIndex={index + 2} />)}</div></div>
     </>}

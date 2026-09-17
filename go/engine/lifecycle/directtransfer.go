@@ -19,6 +19,7 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/objstore"
@@ -133,14 +134,20 @@ func (e *Engine) directUploadCreate(c *fiber.Ctx) error {
 	if err != nil {
 		return fail(c, err)
 	}
-	uploadID, err := provider.BeginMultipart(c.UserContext(), key, int64(size), checksum)
+	signedSize, nerr := num.Narrow[int64](size)
+	if nerr != nil {
+		return fail(c, nerr)
+	}
+	uploadID, err := provider.BeginMultipart(c.UserContext(), key, signedSize, checksum)
 	if err != nil {
 		return fail(c, err)
 	}
 	quota := state.NewQuota(e.State)
 	reserved, qerr := quota.Reserve(c.UserContext(), int64(owner), size)
 	if qerr != nil || !reserved {
-		_ = provider.AbortMultipart(c.UserContext(), key, uploadID)
+		if aerr := provider.AbortMultipart(c.UserContext(), key, uploadID); aerr != nil {
+			e.logger.Warn("aborting multipart upload failed", "error", aerr)
+		}
 		if qerr != nil {
 			return fail(c, qerr)
 		}
@@ -153,8 +160,12 @@ func (e *Engine) directUploadCreate(c *fiber.Ctx) error {
 		QuotaReservation: size, CreatedNs: now, UpdatedNs: now, ExpiresNs: now + int64(directTransferLifetime), State: state.DirectTransferPending,
 	}
 	if err := e.State.CreateDirectTransfer(c.UserContext(), row); err != nil {
-		_ = provider.AbortMultipart(c.UserContext(), key, uploadID)
-		_ = quota.Release(c.UserContext(), int64(owner), int64(size))
+		if aerr := provider.AbortMultipart(c.UserContext(), key, uploadID); aerr != nil {
+			e.logger.Warn("aborting multipart upload failed", "error", aerr)
+		}
+		if relErr := quota.Release(c.UserContext(), int64(owner), signedSize); relErr != nil {
+			e.logger.Warn("releasing quota failed", "error", relErr)
+		}
 		return fail(c, err)
 	}
 	return writeJSON(c, fiber.StatusCreated, directUploadViewOf(row, nil))
@@ -227,7 +238,11 @@ func (e *Engine) directUploadPart(c *fiber.Ctx) error {
 			return refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		}
 	}
-	url, headers, err := provider.PresignUploadPart(c.UserContext(), row.ObjectKey, row.UploadID, int(partNumber), int64(expected), checksum, 10*time.Minute)
+	expSize, nerr := num.Narrow[int64](expected)
+	if nerr != nil {
+		return refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+	}
+	url, headers, err := provider.PresignUploadPart(c.UserContext(), row.ObjectKey, row.UploadID, int(partNumber), expSize, checksum, 10*time.Minute)
 	if err != nil {
 		return fail(c, err)
 	}
@@ -255,7 +270,10 @@ func (e *Engine) directUploadComplete(c *fiber.Ctx) error {
 		return fail(c, err)
 	}
 	if row.State == state.DirectTransferComplete {
-		parts, _ := e.State.ListDirectTransferParts(c.UserContext(), id)
+		parts, perr := e.State.ListDirectTransferParts(c.UserContext(), id)
+		if perr != nil {
+			e.logger.Warn("listing direct transfer parts failed", "error", perr)
+		}
 		return writeJSON(c, fiber.StatusOK, directUploadViewOf(row, parts))
 	}
 	provider, ok, perr := e.directProviderForRow(c.UserContext(), row)
@@ -280,19 +298,19 @@ func (e *Engine) directUploadComplete(c *fiber.Ctx) error {
 	if err != nil {
 		return refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 	}
-	if err := validateDirectParts(row, clientParts, parts, listed); err != nil {
+	if verr := validateDirectParts(row, clientParts, parts, listed); verr != nil {
 		return refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "direct_transfer.parts_mismatch"})
 	}
 	for _, p := range clientParts {
-		if err := e.State.PutDirectTransferPartOf(c.UserContext(), int64(owner), p); err != nil {
-			return fail(c, err)
+		if perr := e.State.PutDirectTransferPartOf(c.UserContext(), int64(owner), p); perr != nil {
+			return fail(c, perr)
 		}
 	}
-	if err := e.revalidateDirectDestination(c.UserContext(), row); err != nil {
-		return fail(c, err)
+	if rerr := e.revalidateDirectDestination(c.UserContext(), row); rerr != nil {
+		return fail(c, rerr)
 	}
-	if err := provider.CompleteMultipart(c.UserContext(), row.ObjectKey, row.UploadID, directProviderParts(clientParts)); err != nil {
-		return fail(c, err)
+	if cerr := provider.CompleteMultipart(c.UserContext(), row.ObjectKey, row.UploadID, directProviderParts(clientParts)); cerr != nil {
+		return fail(c, cerr)
 	}
 	size, _, checksum, found, err := provider.ObjectMetadata(c.UserContext(), row.ObjectKey)
 	if err != nil {
@@ -308,7 +326,11 @@ func (e *Engine) directUploadComplete(c *fiber.Ctx) error {
 	if quota, qerr := e.State.ReleaseDirectTransferQuota(c.UserContext(), id); qerr != nil {
 		return fail(c, qerr)
 	} else if quota > row.PriorSize {
-		if qerr := state.NewQuota(e.State).Release(c.UserContext(), int64(owner), int64(quota-row.PriorSize)); qerr != nil {
+		relAmount, nerr := num.Narrow[int64](quota - row.PriorSize)
+		if nerr != nil {
+			return fail(c, nerr)
+		}
+		if qerr := state.NewQuota(e.State).Release(c.UserContext(), int64(owner), relAmount); qerr != nil {
 			return fail(c, qerr)
 		}
 	}
@@ -322,7 +344,11 @@ func (e *Engine) revalidateDirectDestination(ctx context.Context, row state.Dire
 	if err != nil {
 		return core.ErrNotFound
 	}
-	vpath, err := e.Core.VpathFor(coreUser(row.Owner), core.ShareID(row.Share), sharePath)
+	shareID, serr := num.Narrow[uint32](row.Share)
+	if serr != nil {
+		return core.ErrNotFound
+	}
+	vpath, err := e.Core.VpathFor(coreUser(row.Owner), core.ShareID(shareID), sharePath)
 	if err != nil {
 		return core.ErrNotFound
 	}
@@ -330,8 +356,8 @@ func (e *Engine) revalidateDirectDestination(ctx context.Context, row state.Dire
 	if err != nil {
 		return err
 	}
-	if err := e.guardDavLock(ctx, uint32(r.Share()), r.Path().String(), row.Owner); err != nil {
-		return err
+	if gerr := e.guardDavLock(ctx, uint32(r.Share()), r.Path().String(), row.Owner); gerr != nil {
+		return gerr
 	}
 	st, err := r.Root().Stat(r.Path())
 	if err == nil {
@@ -376,7 +402,11 @@ func (e *Engine) directUploadCancel(c *fiber.Ctx) error {
 		return fail(c, err)
 	}
 	if quota, qerr := e.State.ReleaseDirectTransferQuota(c.UserContext(), id); qerr == nil && quota > 0 {
-		_ = state.NewQuota(e.State).Release(c.UserContext(), int64(owner), int64(quota))
+		if relAmount, nerr := num.Narrow[int64](quota); nerr == nil {
+			if relErr := state.NewQuota(e.State).Release(c.UserContext(), int64(owner), relAmount); relErr != nil {
+				e.logger.Warn("releasing direct transfer quota failed", "error", relErr)
+			}
+		}
 	}
 	return c.SendStatus(fiber.StatusNoContent)
 }
@@ -391,7 +421,11 @@ func (e *Engine) directProviderForRow(ctx context.Context, row state.DirectTrans
 	if err != nil {
 		return nil, false, core.ErrNotFound
 	}
-	vpath, err := e.Core.VpathFor(coreUser(row.Owner), core.ShareID(row.Share), sharePath)
+	shareID, serr := num.Narrow[uint32](row.Share)
+	if serr != nil {
+		return nil, false, core.ErrNotFound
+	}
+	vpath, err := e.Core.VpathFor(coreUser(row.Owner), core.ShareID(shareID), sharePath)
 	if err != nil {
 		return nil, false, core.ErrNotFound
 	}
@@ -572,14 +606,21 @@ func validateDirectParts(row state.DirectTransferReservation, client, persisted 
 	}
 	var total uint64
 	for _, p := range listed {
+		if p.Size < 0 {
+			return errors.New("provider part has negative size")
+		}
+		pSize, nerr := num.Narrow[uint64](p.Size)
+		if nerr != nil {
+			return errors.New("provider part size does not fit")
+		}
 		cp, ok := byNum[int64(p.PartNumber)]
-		if !ok || stripETag(p.ETag) != stripETag(cp.ETag) || uint64(p.Size) != cp.Size {
+		if !ok || stripETag(p.ETag) != stripETag(cp.ETag) || pSize != cp.Size {
 			return errors.New("provider part mismatch")
 		}
 		if cp.Checksum != "" && !strings.EqualFold(p.Checksum, cp.Checksum) {
 			return errors.New("provider part checksum mismatch")
 		}
-		total += uint64(p.Size)
+		total += pSize
 	}
 	if total != row.ExpectedSize {
 		return errors.New("total size mismatch")
@@ -590,7 +631,11 @@ func validateDirectParts(row state.DirectTransferReservation, client, persisted 
 func directProviderParts(parts []state.DirectTransferPart) []objstore.MultipartPart {
 	out := make([]objstore.MultipartPart, 0, len(parts))
 	for _, p := range parts {
-		out = append(out, objstore.MultipartPart{PartNumber: int(p.PartNumber), ETag: stripETag(p.ETag), Size: int64(p.Size), Checksum: p.Checksum})
+		pSize, err := num.Narrow[int64](p.Size)
+		if err != nil {
+			pSize = 0
+		}
+		out = append(out, objstore.MultipartPart{PartNumber: int(p.PartNumber), ETag: stripETag(p.ETag), Size: pSize, Checksum: p.Checksum})
 	}
 	return out
 }

@@ -208,11 +208,11 @@ func (c *Core) executeCopyClaim(ctx context.Context, claim state.OpClaim, leaseL
 		return operationOutcome{state: state.OpFailed, message: "source changed before the operation ran", errorKey: "precondition", errorDetail: "source kind differs from the queued operation"}
 	}
 
-	if err := c.state.StartOpItem(ctx, claim.Op.ID, 0); err != nil && !errors.Is(err, context.Canceled) {
-		c.warn("marking a durable copy item as started failed", "operation", claim.Op.ID, "error", err)
+	if serr := c.state.StartOpItem(ctx, claim.Op.ID, 0); serr != nil && !errors.Is(serr, context.Canceled) {
+		c.warn("marking a durable copy item as started failed", "operation", claim.Op.ID, "error", serr)
 	}
-	if err := c.state.SetOpProgressLease(ctx, claim.Op.ID, claim.LeaseID, 0, "copying", c.clk.Nanos()); err != nil && !errors.Is(err, state.ErrOpLostLease) {
-		c.warn("recording durable copy progress failed", "operation", claim.Op.ID, "error", err)
+	if perr := c.state.SetOpProgressLease(ctx, claim.Op.ID, claim.LeaseID, 0, "copying", c.clk.Nanos()); perr != nil && !errors.Is(perr, state.ErrOpLostLease) {
+		c.warn("recording durable copy progress failed", "operation", claim.Op.ID, "error", perr)
 	}
 	err = c.copyTreeStaged(ctx, from, to, st, acl.Read|acl.Download, c.leaseCancelGate(ctx, claim.Op.ID, claim.LeaseID), payload.Overwriting)
 	if errors.Is(err, errOpCancelled) {

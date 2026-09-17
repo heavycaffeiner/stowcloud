@@ -7,6 +7,7 @@ export type ThemePref = 'system' | 'light' | 'dark'
 
 const THEMES: readonly ThemePref[] = ['system', 'light', 'dark']
 const DETAILS = ['open', 'closed'] as const
+const SIDEBAR = ['expanded', 'collapsed'] as const
 
 /** The existing compact breakpoint shared by navigation and file controls. */
 export const COMPACT_MAX_PX = 905
@@ -17,13 +18,15 @@ export interface UiState {
    * panel is off until asked for, at any width. */
   readonly details: boolean
   readonly compact: boolean
+  readonly sidebarCollapsed: boolean
 }
 
 export const ui = defineStore(
   {
     theme: readPref('sc.theme', THEMES, 'system'),
     details: readPref('sc.details', DETAILS, 'closed') === 'open',
-    compact: typeof window !== 'undefined' && window.innerWidth < COMPACT_MAX_PX
+    compact: typeof window !== 'undefined' && window.innerWidth < COMPACT_MAX_PX,
+    sidebarCollapsed: readPref('sc.sidebar', SIDEBAR, 'expanded') === 'collapsed'
   } as UiState,
   (set) => ({
     setTheme(theme: ThemePref): void {
@@ -36,6 +39,17 @@ export const ui = defineStore(
     },
     setCompact(compact: boolean): void {
       set({ compact })
+    },
+    setSidebarCollapsed(collapsed: boolean): void {
+      set({ sidebarCollapsed: collapsed })
+      writePref('sc.sidebar', collapsed ? 'collapsed' : 'expanded')
+    },
+    toggleSidebar(): void {
+      set((state) => {
+        const next = !state.sidebarCollapsed
+        writePref('sc.sidebar', next ? 'collapsed' : 'expanded')
+        return { sidebarCollapsed: next }
+      })
     }
   })
 )

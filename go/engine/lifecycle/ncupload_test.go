@@ -118,7 +118,10 @@ func TestALargePlainUploadStreamsPastTheBufferedBodyLimit(t *testing.T) {
 		}
 	}()
 	if resp.StatusCode != http.StatusCreated {
-		answer, _ := io.ReadAll(resp.Body)
+		answer, rerr := io.ReadAll(resp.Body)
+		if rerr != nil {
+			t.Fatalf("reading response: %v", rerr)
+		}
 		t.Fatalf("answered %d, want 201\n%s", resp.StatusCode, answer)
 	}
 
@@ -339,6 +342,60 @@ func TestTheChunkedUploadSequenceCompletes(t *testing.T) {
 		if got := info.ModTime().Unix(); got != 1650000000 {
 			t.Errorf("the assembled file's time is %d", got)
 		}
+	}
+}
+
+// Nextcloud mobile clients dynamically ramp up chunk sizes (e.g. 10MB -> 20MB)
+// based on network throughput. A deferred-length session must not reject these
+// as Request too Large (413).
+func TestNCChunkedUploadSupportsAdaptiveLargeChunks(t *testing.T) {
+	t.Parallel()
+	f := newNCFixture(t, []byte("seed"))
+
+	session := f.base + "/remote.php/dav/uploads/" + f.login + "/transfer-adaptive"
+	destination := f.filePath("adaptive.bin")
+
+	// Android client sends MKCOL without OC-Total-Length.
+	resp, body := f.request(t, "MKCOL", session, nil,
+		map[string]string{"Destination": destination})
+	if resp.StatusCode != 201 {
+		t.Fatalf("creating the session answered %d, want 201\n%s", resp.StatusCode, body)
+	}
+
+	// First chunk is standard 10 MB.
+	firstSize := 10 * 1024 * 1024
+	first := make([]byte, firstSize)
+	resp, body = f.request(t, "PUT", session+"/000001", bytes.NewReader(first),
+		map[string]string{"Destination": destination})
+	if resp.StatusCode != 201 && resp.StatusCode != 204 {
+		t.Fatalf("chunk 1 answered %d\n%s", resp.StatusCode, body)
+	}
+
+	// Second chunk is dynamically increased to 15 MB (> UploadChunkSizeDefault).
+	secondSize := 15 * 1024 * 1024
+	second := make([]byte, secondSize)
+	resp, body = f.request(t, "PUT", session+"/000002", bytes.NewReader(second),
+		map[string]string{"Destination": destination})
+	if resp.StatusCode != 201 && resp.StatusCode != 204 {
+		t.Fatalf("adaptive chunk 2 answered %d\n%s", resp.StatusCode, body)
+	}
+
+	total := strconv.Itoa(firstSize + secondSize)
+	resp, body = f.request(t, "MOVE", session+"/.file", nil, map[string]string{
+		"Destination":     destination,
+		"OC-Total-Length": total,
+		"Overwrite":       "T",
+	})
+	if resp.StatusCode != 201 {
+		t.Fatalf("the assembly answered %d, want 201\n%s", resp.StatusCode, body)
+	}
+
+	info, err := os.Stat(filepath.Join(f.host, "adaptive.bin"))
+	if err != nil {
+		t.Fatalf("stat assembled file: %v", err)
+	}
+	if info.Size() != int64(firstSize+secondSize) {
+		t.Fatalf("assembled file size = %d, want %d", info.Size(), firstSize+secondSize)
 	}
 }
 

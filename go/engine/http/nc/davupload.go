@@ -99,9 +99,11 @@ func (s *Server) uploadCreate(w http.ResponseWriter, r *http.Request, p Principa
 		return
 	}
 
+	zero := uint64(0)
 	sess, cerr := s.deps.Uploads.Create(ctx, res, upload.SessionSpec{
-		Mode:     upload.SpoolNameOrdered,
-		TotalLen: totalLenPtr(r.Header.Get("OC-Total-Length")),
+		Mode:      upload.SpoolNameOrdered,
+		TotalLen:  totalLenPtr(r.Header.Get("OC-Total-Length")),
+		ChunkSize: &zero,
 	})
 	if cerr != nil {
 		s.failDav(w, r, cerr, apierr.VisibilityHidden)

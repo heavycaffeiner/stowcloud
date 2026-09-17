@@ -120,7 +120,7 @@ func validateChecksum(checksum string) error {
 	}
 	for i := range checksum {
 		c := checksum[i]
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
 			return errors.New("objstore: checksum must be a SHA-256 hex digest")
 		}
 	}
@@ -190,7 +190,11 @@ func (r *Root) BeginMultipart(ctx context.Context, key string, size int64, check
 	if err != nil {
 		return "", fmt.Errorf("objstore: create multipart upload: %w", err)
 	}
-	defer res.Body.Close()
+	defer func() {
+		if cerr := res.Body.Close(); cerr != nil {
+			r.logger.Warn("closing direct response body failed", "error", cerr)
+		}
+	}()
 	body, err := readBounded(res.Body, maxMetadataBodyBytes, "create multipart response body")
 	if err != nil {
 		return "", err
@@ -230,7 +234,11 @@ func (r *Root) AbortMultipart(ctx context.Context, key, uploadID string) error {
 	if err != nil {
 		return fmt.Errorf("objstore: abort multipart upload: %w", err)
 	}
-	defer res.Body.Close()
+	defer func() {
+		if cerr := res.Body.Close(); cerr != nil {
+			r.logger.Warn("closing direct response body failed", "error", cerr)
+		}
+	}()
 	body, err := readBounded(res.Body, maxMetadataBodyBytes, "abort multipart response body")
 	if err != nil {
 		return err
@@ -373,7 +381,11 @@ func (r *Root) CompleteMultipart(ctx context.Context, key, uploadID string, part
 	if err != nil {
 		return fmt.Errorf("objstore: complete multipart upload: %w", err)
 	}
-	defer res.Body.Close()
+	defer func() {
+		if cerr := res.Body.Close(); cerr != nil {
+			r.logger.Warn("closing direct response body failed", "error", cerr)
+		}
+	}()
 	responseBody, err := readBounded(res.Body, maxMetadataBodyBytes, "complete multipart response body")
 	if err != nil {
 		return err
@@ -411,18 +423,18 @@ func (r *Root) PresignUploadPart(ctx context.Context, key, uploadID string, part
 	if err != nil {
 		return "", nil, err
 	}
-	if err := ctx.Err(); err != nil {
-		return "", nil, err
+	if cerr := ctx.Err(); cerr != nil {
+		return "", nil, cerr
 	}
 	headers := http.Header{}
 	signed := map[string]string{"host": ""}
 	if checksum != "" {
-		value, err := checksumHeaderValue(checksum)
-		if err != nil {
-			return "", nil, err
+		val, herr := checksumHeaderValue(checksum)
+		if herr != nil {
+			return "", nil, herr
 		}
-		headers.Set("x-amz-checksum-sha256", value)
-		signed["x-amz-checksum-sha256"] = value
+		headers.Set("x-amz-checksum-sha256", val)
+		signed["x-amz-checksum-sha256"] = val
 	}
 	url, err := r.presign(ctx, http.MethodPut, key, [][2]string{{"partNumber", strconv.Itoa(partNumber)}, {"uploadId", uploadID}}, seconds, signed, headers)
 	return url, headers, err
@@ -484,8 +496,8 @@ func (r *Root) presign(ctx context.Context, method, key string, extra [][2]strin
 // normalized ETag, and optional lowercase SHA-256 checksum. found is false
 // only for a normal S3 not-found response.
 func (r *Root) ObjectMetadata(ctx context.Context, key string) (size uint64, etag, checksum string, found bool, err error) {
-	if err := validateDirectObjectKey(r, key); err != nil {
-		return 0, "", "", false, err
+	if verr := validateDirectObjectKey(r, key); verr != nil {
+		return 0, "", "", false, verr
 	}
 	callCtx, cancel := context.WithTimeout(ctx, metadataRequestTimeout)
 	defer cancel()
@@ -497,7 +509,11 @@ func (r *Root) ObjectMetadata(ctx context.Context, key string) (size uint64, eta
 	if err != nil {
 		return 0, "", "", false, fmt.Errorf("objstore: head direct object: %w", err)
 	}
-	defer res.Body.Close()
+	defer func() {
+		if cerr := res.Body.Close(); cerr != nil {
+			r.logger.Warn("closing direct response body failed", "error", cerr)
+		}
+	}()
 	body, err := readBounded(res.Body, maxMetadataBodyBytes, "head direct object response body")
 	if err != nil {
 		return 0, "", "", false, err

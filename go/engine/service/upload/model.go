@@ -286,6 +286,10 @@ type SessionSpec struct {
 	// TotalLen is nil when the length is deferred, supplied by the client later
 	// and demanded by finalize.
 	TotalLen *uint64
+	// ChunkSize overrides the chunk size recorded at creation. Nil applies the
+	// server's configured chunk size for offset-addressed sessions and leaves
+	// named sessions unbounded.
+	ChunkSize *uint64
 	// RandomAccess lets chunks arrive at any offset. Without it a chunk has
 	// to land at the resumable offset.
 	RandomAccess bool

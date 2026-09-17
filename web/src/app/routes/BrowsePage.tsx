@@ -23,6 +23,7 @@ import { openSearch, searchTarget } from '../../lib/store/search.store'
 import { addEntries, addFiles } from '../../lib/upload/queue'
 import { filesFromWebkitDirectoryInput, pickedFilesFromDataTransfer, pickDirectory, supportsDirectoryPicker } from '../../lib/upload/directory-picker'
 import { rowActions } from '../../lib/ui/row-actions'
+import { isVideoFile } from '../../lib/ui/media-utils'
 import { FileTable, type FileViewHandle } from '../../lib/ui/FileTable'
 import { FileGrid, type FileGridHandle } from '../../lib/ui/FileGrid'
 import { FileTree } from '../../lib/ui/FileTree'
@@ -105,6 +106,14 @@ export function BrowsePage() {
   const [sortMenuOpen, setSortMenuOpen] = useState(false)
   const [sortMenuPosition, setSortMenuPosition] = useState({ x: 0, y: 0 })
   const [sortMenuTrigger, setSortMenuTrigger] = useState<HTMLElement | null>(null)
+  type FilterType = 'all' | 'folders' | 'documents' | 'images' | 'videos' | 'audio' | 'archives'
+  type FilterDate = 'any' | 'today' | '7days' | '30days' | 'this_year'
+  const [filterType, setFilterType] = useState<FilterType>('all')
+  const [filterDate, setFilterDate] = useState<FilterDate>('any')
+  const [typeMenuOpen, setTypeMenuOpen] = useState(false)
+  const [typeMenuPosition, setTypeMenuPosition] = useState({ x: 0, y: 0 })
+  const [dateMenuOpen, setDateMenuOpen] = useState(false)
+  const [dateMenuPosition, setDateMenuPosition] = useState({ x: 0, y: 0 })
   const [marqueeRect, setMarqueeRect] = useState<Rect | null>(null)
   const [marqueeScroll, setMarqueeScroll] = useState({ x: 0, y: 0 })
   const dragOrigin = useRef<{ x: number; y: number } | null>(null)
@@ -128,6 +137,85 @@ export function BrowsePage() {
   const densityLabel = density === 'compact' ? t('browse.compact') : density === 'spacious' ? t('browse.spacious') : t('browse.comfortable')
   const sortLabel = sortKey === 'name' ? t('browse.sort_by_name') : sortKey === 'size' ? t('browse.sort_by_size') : sortKey === 'mtime' ? t('browse.sort_by_modified') : t('browse.sort_by_kind')
 
+  const filterTypeLabel =
+    filterType === 'folders'
+      ? t('browse.filter_folders')
+      : filterType === 'documents'
+        ? t('search.preset_document')
+        : filterType === 'images'
+          ? t('search.preset_image')
+          : filterType === 'videos'
+            ? t('search.preset_video')
+            : filterType === 'audio'
+              ? t('search.preset_audio')
+              : filterType === 'archives'
+                ? t('search.preset_archive')
+                : t('browse.filter_type')
+
+  const filterDateLabel =
+    filterDate === 'today'
+      ? t('browse.date_today')
+      : filterDate === '7days'
+        ? t('browse.date_last_7_days')
+        : filterDate === '30days'
+          ? t('browse.date_last_30_days')
+          : filterDate === 'this_year'
+            ? t('browse.date_this_year')
+            : t('browse.filter_date')
+
+  const filteredEntries = useMemo(() => {
+    let list = entries
+    if (filterType !== 'all') {
+      if (filterType === 'folders') {
+        list = list.filter((e) => e.kind === 'dir')
+      } else {
+        list = list.filter((e) => {
+          if (e.kind === 'dir') return false
+          const dot = e.name.lastIndexOf('.')
+          const ext = dot > 0 ? e.name.slice(dot + 1).toLowerCase() : ''
+          if (filterType === 'documents') return ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'md', 'rtf', 'hwp', 'hwpx', 'csv'].includes(ext)
+          if (filterType === 'images') return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp', 'svg', 'avif'].includes(ext)
+          if (filterType === 'videos') return ['mp4', 'mkv', 'mov', 'avi', 'webm', 'wmv', 'm4v', 'mpg', 'mpeg'].includes(ext) || isVideoFile(e.name)
+          if (filterType === 'audio') return ['mp3', 'flac', 'wav', 'aac', 'ogg', 'm4a', 'opus', 'wma'].includes(ext)
+          if (filterType === 'archives') return ['zip', '7z', 'rar', 'tar', 'gz', 'tgz', 'bz2', 'xz', 'zst', 'iso'].includes(ext)
+          return false
+        })
+      }
+    }
+    if (filterDate !== 'any') {
+      const now = Date.now()
+      const oneDay = 86400000
+      list = list.filter((e) => {
+        const mtimeMs = Number(BigInt(e.mtime_ns || '0') / 1000000n)
+        if (mtimeMs <= 0) return true
+        const diff = now - mtimeMs
+        if (filterDate === 'today') return diff <= oneDay
+        if (filterDate === '7days') return diff <= 7 * oneDay
+        if (filterDate === '30days') return diff <= 30 * oneDay
+        if (filterDate === 'this_year') {
+          return new Date(mtimeMs).getFullYear() === new Date(now).getFullYear()
+        }
+        return true
+      })
+    }
+    return list
+  }, [entries, filterType, filterDate])
+
+  useEffect(() => {
+    setFilterType('all')
+    setFilterDate('any')
+  }, [path])
+
+  useEffect(() => {
+    const handleNew = () => {
+      if (canCreate) {
+        setNewMenuPosition({ x: 80, y: 120 })
+        setNewMenuOpen(true)
+      }
+    }
+    window.addEventListener('stowcloud:new', handleNew)
+    return () => window.removeEventListener('stowcloud:new', handleNew)
+  }, [canCreate])
   const controlSelector = 'button, input, a, [role="menuitem"], [role="menu"]'
   const contentSelector = `.sc-row, .sc-file-grid__card, ${controlSelector}`
 
@@ -551,29 +639,185 @@ export function BrowsePage() {
           {root?.broken_reason ? <span className="sc-browse__broken-badge"><Icon name="warning" size={14} />{t('browse.this_folder_is_unavailable')}</span> : null}
         </div>
         <div className="sc-browse__toolbar-actions">
-          {!compact ? <IconButton label={t('common.search')} onClick={startSearch}><Icon name="search" /></IconButton> : null}
-          {canCreate ? <Button variant="filled" square={compact} ariaLabel={t('browse.new')} onClick={openNewMenu} icon={<Icon name="add" />}>{compact ? undefined : t('browse.new')}</Button> : null}
-          {!compact ? <><IconButton label={t('common.refresh')} onClick={refresh}><Icon name="refresh" /></IconButton><IconButton label={treeOpen ? t('browse.hide_folder_tree') : t('browse.show_folder_tree')} selected={treeOpen} onClick={toggleTree}><Icon name="folder-tree" /></IconButton><IconButton label={mode === 'list' ? t('browse.grid_view') : t('browse.list_view')} onClick={toggleView}><Icon name={mode === 'list' ? 'grid' : 'list'} /></IconButton><IconButton label={details ? t('details.hide') : t('details.show')} expanded={details} onClick={() => ui.setDetails(!details)}><Icon name="info" /></IconButton></> : null}
-          <IconButton label={t('browse.sort_by', { key: sortLabel })} selected={sortMenuOpen} expanded={sortMenuOpen} onClick={openSort}><Icon name="sort" /></IconButton>
-          <IconButton label={t('browse.more')} selected={overflowOpen} expanded={overflowOpen} onClick={openOverflow}><Icon name="more-vert" /></IconButton>
+          {!compact ? (
+            <>
+              <button
+                type="button"
+                className={`sc-browse__filter-pill${filterType !== 'all' ? ' sc-browse__filter-pill--active' : ''}`}
+                aria-label={t('browse.filter_type')}
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  setTypeMenuPosition({ x: rect.left, y: rect.bottom + 4 })
+                  setTypeMenuOpen(true)
+                }}
+              >
+                <span>{filterTypeLabel}</span>
+                <Icon name="arrow-drop-down" size={16} />
+              </button>
+              <button
+                type="button"
+                className={`sc-browse__filter-pill${filterDate !== 'any' ? ' sc-browse__filter-pill--active' : ''}`}
+                aria-label={t('browse.filter_date')}
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  setDateMenuPosition({ x: rect.left, y: rect.bottom + 4 })
+                  setDateMenuOpen(true)
+                }}
+              >
+                <span>{filterDateLabel}</span>
+                <Icon name="arrow-drop-down" size={16} />
+              </button>
+              <button type="button" className="sc-browse__action-btn sc-icon-button" aria-label={t('common.refresh')} onClick={refresh}>
+                <Icon name="refresh" size={18} />
+              </button>
+              <button type="button" className="sc-browse__action-btn sc-icon-button" aria-label={mode === 'list' ? t('browse.grid_view') : t('browse.list_view')} onClick={toggleView}>
+                <Icon name={mode === 'list' ? 'grid' : 'list'} size={18} />
+              </button>
+              <button type="button" className={`sc-browse__action-btn sc-icon-button${details ? ' is-active' : ''}`} aria-label={details ? t('details.hide') : t('details.show')} onClick={() => ui.setDetails(!details)}>
+                <Icon name="info" size={18} />
+              </button>
+              <button type="button" className="sc-browse__action-btn sc-icon-button" aria-label={t('browse.sort_by', { key: sortLabel })} onClick={openSort}>
+                <Icon name="sort" size={18} />
+              </button>
+            </>
+          ) : (
+            <>
+              {canCreate ? (
+                <button type="button" className="sc-browse__fab-btn" aria-label={t('browse.new')} onClick={openNewMenu}>
+                  <Icon name="add" size={20} />
+                </button>
+              ) : null}
+              <button type="button" className="sc-browse__action-btn sc-icon-button" aria-label={t('browse.sort_by', { key: sortLabel })} onClick={openSort}>
+                <Icon name="sort" size={20} />
+              </button>
+              <button type="button" className="sc-browse__action-btn sc-icon-button" aria-label={t('browse.more')} onClick={openOverflow}>
+                <Icon name="more-vert" size={20} />
+              </button>
+            </>
+          )}
         </div>
       </header>
-      {selected.length ? <div className="sc-browse__selection-bar"><div className="sc-browse__selection-bar-inner"><IconButton label={t('browse.clear_selection')} onClick={() => selection.clear()}><Icon name="close" /></IconButton><span className="sc-browse__selection-count">{compact ? t('common.item_count', { count: selected.length }) : t('browse.selected', { count: selected.length, size: formatBytes(selectionBytes) })}</span><span className="sc-browse__selection-gap" /><IconButton label={t('browse.select_all')} onClick={() => selection.all(entries.map((entry) => entry.name))}><Icon name="check" /></IconButton>{actions.map((action) => <IconButton key={action.key} label={action.label} onClick={action.run}><Icon name={ACTION_ICON_NAMES[action.key] ?? 'more-vert'} /></IconButton>)}</div></div> : null}
+      {selected.length ? (
+        <div className="sc-browse__selection-bar">
+          <div className="sc-browse__selection-bar-inner">
+            <button type="button" className="sc-browse__selection-close-btn sc-icon-button" aria-label={t('browse.clear_selection')} onClick={() => selection.clear()}>
+              <Icon name="close" size={16} />
+            </button>
+            <span className="sc-browse__selection-count">
+              {compact ? t('common.item_count', { count: selected.length }) : t('browse.selected', { count: selected.length, size: formatBytes(selectionBytes) })}
+            </span>
+            <span className="sc-browse__selection-divider" aria-hidden="true" />
+            <div className="sc-browse__selection-actions">
+              {actions.map((action) => (
+                <button key={action.key} type="button" className="sc-browse__selection-action-btn sc-icon-button" aria-label={action.label} title={action.label} onClick={action.run}>
+                  <Icon name={ACTION_ICON_NAMES[action.key] ?? 'more-vert'} size={18} />
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
       {operation ? <section className="sc-browse__operation" role="status" aria-live="polite"><div className="sc-browse__operation-heading"><h2>{operation.kind === 'delete' ? t('common.delete') : operation.kind === 'move' ? t('common.move') : t('common.copy')}</h2><button type="button" className="sc-browse__operation-close" onClick={() => setOperation(null)}>{t('common.close')}</button></div><VirtualList items={operation.results} itemKey={(result) => result.path} estimateSize={48} itemProps={(result) => ({ className: !result.ok ? 'sc-browse__operation-error' : undefined })} renderItem={(result) => <><span>{result.destination ? `${result.path} to ${result.destination}` : result.path}</span><span>{result.ok ? result.skipped ? t('browse.items_skipped_name_taken', { count: 1 }) : t('common.done') : batchErrorKey(result.error)?.key ? t(batchErrorKey(result.error)!.key, batchErrorKey(result.error)!.params) : t('error.internal')}</span></>} />{operation.results.some((result) => result.skipped) ? <p>{t('browse.items_skipped_name_taken', { count: operation.results.filter((result) => result.skipped).length })}</p> : null}</section> : null}
       <div className="sc-browse__content">
         {treeOpen ? <FileTree currentPath={path} onNavigate={(next) => { setTreeOpen(false); void navigate(`/b${next}`) }} overlay={compact} onClose={() => setTreeOpen(false)} /> : null}
         <div className={`sc-browse__table-wrap${dragOver ? ' sc-browse__table-wrap--dragover' : ''}${marqueeRect ? ' sc-browse__table-wrap--marquee' : ''}`} onPointerDown={onMarqueePointerDown} onContextMenu={openBlankMenu} onClick={onEmptyAreaClick}>
-          {noShares ? <div className="sc-browse__nothing"><h2 className="sc-browse__nothing-title">{t('browse.nothing_here')}</h2><p className="sc-browse__nothing-hint">{session.data?.user.is_admin ? t('browse.press_this_button_to_set_up_your_first_folder') : t('browse.ask_an_administrator_for_a_folder')}</p>{session.data?.user.is_admin ? <Button onClick={() => void navigate('/admin#shares')}>{t('common.add_folder')}</Button> : null}</div> : listing.isPending ? <div className="sc-browse__loading"><mdui-circular-progress /></div> : listing.error ? <p className="sc-browse__error" role="alert">{describeApiError(listing.error, t('browse.this_folder_could_not_be_opened'))}</p> : <div className="sc-browse__view">{mode === 'grid' ? <FileGrid ref={gridRef} entries={entries} total={directory.total} dirs={directory.dirs} loading={listing.isPending} loadingMore={listing.isFetchingNextPage} requestMore={() => { if (listing.hasNextPage && !listing.isFetchingNextPage) void listing.fetchNextPage() }} perms={directory.perms} onOpen={onOpen} onContextMenu={(entry, event) => { if (!selectedNames.has(entry.name)) selection.only(entry.name, entries.indexOf(entry)); setContextEntry(entry); setMenuTrigger(event.currentTarget as HTMLElement); setContextMenu({ x: event.clientX, y: event.clientY }); setBlankMenu(null) }} onRename={() => { const entry = actionTarget(); if (entry) setRenameTarget(entry) }} onDelete={() => setDeleteOpen(true)} onSearchFocus={startSearch} encrypted={encrypted} /> : <FileTable ref={tableRef} entries={entries} total={directory.total} dirs={directory.dirs} loading={listing.isPending} loadingMore={listing.isFetchingNextPage} requestMore={() => { if (listing.hasNextPage && !listing.isFetchingNextPage) void listing.fetchNextPage() }} perms={directory.perms} onOpen={onOpen} onContextMenu={(entry, event) => { if (!selectedNames.has(entry.name)) selection.only(entry.name, entries.indexOf(entry)); setContextEntry(entry); setMenuTrigger(event.currentTarget as HTMLElement); setContextMenu({ x: event.clientX, y: event.clientY }); setBlankMenu(null) }} onRename={() => { const entry = actionTarget(); if (entry) setRenameTarget(entry) }} onDelete={() => setDeleteOpen(true)} onSearchFocus={startSearch} encrypted={encrypted} />}</div>}
+          {noShares ? <div className="sc-browse__nothing"><h2 className="sc-browse__nothing-title">{t('browse.nothing_here')}</h2><p className="sc-browse__nothing-hint">{session.data?.user.is_admin ? t('browse.press_this_button_to_set_up_your_first_folder') : t('browse.ask_an_administrator_for_a_folder')}</p>{session.data?.user.is_admin ? <Button onClick={() => void navigate('/admin#shares')}>{t('common.add_folder')}</Button> : null}</div> : listing.isPending ? <div className="sc-browse__loading"><mdui-circular-progress /></div> : listing.error ? <p className="sc-browse__error" role="alert">{describeApiError(listing.error, t('browse.this_folder_could_not_be_opened'))}</p> : <div className="sc-browse__view">{mode === 'grid' ? <FileGrid ref={gridRef} entries={filteredEntries} total={filterType === 'all' && filterDate === 'any' ? directory.total : filteredEntries.length} dirs={filterType === 'all' && filterDate === 'any' ? directory.dirs : filteredEntries.filter((e) => e.kind === 'dir').length} loading={listing.isPending} loadingMore={listing.isFetchingNextPage} requestMore={() => { if (listing.hasNextPage && !listing.isFetchingNextPage) void listing.fetchNextPage() }} perms={directory.perms} onOpen={onOpen} onContextMenu={(entry, event) => { if (!selectedNames.has(entry.name)) selection.only(entry.name, entries.indexOf(entry)); setContextEntry(entry); setMenuTrigger(event.currentTarget as HTMLElement); setContextMenu({ x: event.clientX, y: event.clientY }); setBlankMenu(null) }} onRename={() => { const entry = actionTarget(); if (entry) setRenameTarget(entry) }} onDelete={() => setDeleteOpen(true)} onSearchFocus={startSearch} encrypted={encrypted} /> : <FileTable ref={tableRef} entries={filteredEntries} total={filterType === 'all' && filterDate === 'any' ? directory.total : filteredEntries.length} dirs={filterType === 'all' && filterDate === 'any' ? directory.dirs : filteredEntries.filter((e) => e.kind === 'dir').length} loading={listing.isPending} loadingMore={listing.isFetchingNextPage} requestMore={() => { if (listing.hasNextPage && !listing.isFetchingNextPage) void listing.fetchNextPage() }} perms={directory.perms} onOpen={onOpen} onContextMenu={(entry, event) => { if (!selectedNames.has(entry.name)) selection.only(entry.name, entries.indexOf(entry)); setContextEntry(entry); setMenuTrigger(event.currentTarget as HTMLElement); setContextMenu({ x: event.clientX, y: event.clientY }); setBlankMenu(null) }} onRename={() => { const entry = actionTarget(); if (entry) setRenameTarget(entry) }} onDelete={() => setDeleteOpen(true)} onSearchFocus={startSearch} encrypted={encrypted} />}</div>}
           {dragOver ? <div className="sc-browse__drop-overlay">{t('browse.drop_here_upload')}</div> : null}
         </div>
         {marqueeRect ? <div className="sc-browse__marquee" aria-hidden="true" style={{ left: marqueeRect.left - marqueeScroll.x, top: marqueeRect.top - marqueeScroll.y, width: marqueeRect.right - marqueeRect.left, height: marqueeRect.bottom - marqueeRect.top }} /> : null}
-        {details ? <DetailsPanel path={path} selected={selected} total={directory.total} dirs={directory.dirs} encrypted={encrypted} onClose={() => ui.setDetails(false)} /> : null}
+        {details ? (
+          <DetailsPanel
+            path={path}
+            selected={selected}
+            total={directory.total}
+            dirs={directory.dirs}
+            encrypted={encrypted}
+            onClose={() => ui.setDetails(false)}
+            onDownload={downloadSelection}
+            onShare={() => {
+              const entry = actionTarget()
+              if (entry) setShareTarget(entry)
+            }}
+            onContextMenu={(event) => {
+              const entry = actionTarget()
+              if (entry) {
+                setContextEntry(entry)
+                setMenuTrigger(event.currentTarget as HTMLElement)
+                setContextMenu({ x: event.clientX, y: event.clientY })
+              }
+            }}
+          />
+        ) : null}
       </div>
       <Menu open={contextMenu !== null} onClose={() => { setContextMenu(null); menuTrigger?.focus(); setMenuTrigger(null) }} x={contextMenu?.x} y={contextMenu?.y}><div className="sc-browse-new-menu" role="menu">{actions.map((action) => <button key={action.key} type="button" role="menuitem" onClick={() => { setContextMenu(null); action.run() }}>{action.label}</button>)}</div></Menu>
       <Menu open={blankMenu !== null} onClose={() => { setBlankMenu(null); menuTrigger?.focus(); setMenuTrigger(null) }} x={blankMenu?.x} y={blankMenu?.y}><div className="sc-browse-new-menu" role="menu">{canCreate ? <><button type="button" role="menuitem" onClick={() => { setBlankMenu(null); setNewFolderOpen(true) }}>{t('common.new_folder')}</button><button type="button" role="menuitem" onClick={() => { setBlankMenu(null); fileInput?.click() }}>{t('common.upload')}</button><button type="button" role="menuitem" onClick={async () => { setBlankMenu(null); if (supportsDirectoryPicker()) { try { handleUploadEntries(await pickDirectory()) } catch { /* canceled */ } } else dirInput?.click() }}>{t('browse.upload_folder')}</button></> : null}</div></Menu>
       <Menu open={sortMenuOpen} onClose={closeSort} x={sortMenuPosition.x} y={sortMenuPosition.y} align="end"><div className="sc-browse-new-menu" role="menu">{(['name', 'size', 'mtime', 'kind'] as const).map((key) => <button type="button" role="menuitem" key={key} onClick={() => chooseSort(key)}>{sortKey === key ? t('browse.sort_selected', { label: key === 'name' ? t('browse.sort_by_name') : key === 'size' ? t('browse.sort_by_size') : key === 'mtime' ? t('browse.sort_by_modified') : t('browse.sort_by_kind'), direction: sortOrder === 'asc' ? t('browse.sort_ascending') : t('browse.sort_descending') }) : key === 'name' ? t('browse.sort_by_name') : key === 'size' ? t('browse.sort_by_size') : key === 'mtime' ? t('browse.sort_by_modified') : t('browse.sort_by_kind')}</button>)}</div></Menu>
       {canCreate ? <Menu open={newMenuOpen} onClose={closeNewMenu} x={newMenuPosition.x} y={newMenuPosition.y} align="end"><div className="sc-browse-new-menu" role="menu"><button type="button" role="menuitem" onClick={() => { closeNewMenu(); setNewFolderOpen(true) }}>{t('common.new_folder')}</button><button type="button" role="menuitem" onClick={() => { closeNewMenu(); fileInput?.click() }}>{t('common.upload')}</button><button type="button" role="menuitem" onClick={async () => { closeNewMenu(); if (supportsDirectoryPicker()) { try { handleUploadEntries(await pickDirectory()) } catch { /* canceled */ } } else dirInput?.click() }}>{t('browse.upload_folder')}</button></div></Menu> : null}
-      <Menu open={overflowOpen} onClose={closeOverflow} x={overflowPosition.x} y={overflowPosition.y} align="end"><div className="sc-browse-new-menu" role="menu">{compact ? <><button type="button" role="menuitem" onClick={() => { toggleView(); closeOverflow() }}>{mode === 'list' ? t('browse.grid_view') : t('browse.list_view')}</button><button type="button" role="menuitem" onClick={() => { ui.setDetails(!details); closeOverflow() }}>{details ? t('details.hide') : t('details.show')}</button><button type="button" role="menuitem" onClick={() => { closeOverflow(); const target = overflowTrigger; if (target) openSort({ stopPropagation: () => undefined, currentTarget: target } as unknown as ReactMouseEvent<HTMLElement>) }}>{t('browse.sort_by', { key: sortLabel })}</button><button type="button" role="menuitem" onClick={() => { refresh(); closeOverflow() }}>{t('common.refresh')}</button><button type="button" role="menuitem" onClick={() => { toggleTree(); closeOverflow() }}>{treeOpen ? t('browse.hide_folder_tree') : t('browse.show_folder_tree')}</button></> : null}<button type="button" role="menuitem" onClick={() => { cycleDensity(); closeOverflow() }}>{t('browse.density', { density: densityLabel })}</button><button type="button" role="menuitem" onClick={() => { closeOverflow(); void navigate('/trash') }}>{t('browse.open_trash')}</button></div></Menu>
+      <Menu open={overflowOpen} onClose={closeOverflow} x={overflowPosition.x} y={overflowPosition.y} align="end">
+        <div className="sc-browse-new-menu" role="menu">
+          {compact ? (
+            <>
+              <button type="button" role="menuitem" onClick={() => { toggleView(); closeOverflow() }}>
+                {mode === 'list' ? t('browse.grid_view') : t('browse.list_view')}
+              </button>
+              <button type="button" role="menuitem" onClick={() => { ui.setDetails(!details); closeOverflow() }}>
+                {details ? t('details.hide') : t('details.show')}
+              </button>
+              <button type="button" role="menuitem" onClick={() => { closeOverflow(); const target = overflowTrigger; if (target) openSort({ stopPropagation: () => undefined, currentTarget: target } as unknown as ReactMouseEvent<HTMLElement>) }}>
+                {t('browse.sort_by', { key: sortLabel })}
+              </button>
+              <button type="button" role="menuitem" onClick={() => { refresh(); closeOverflow() }}>
+                {t('common.refresh')}
+              </button>
+              <button type="button" role="menuitem" onClick={() => { toggleTree(); closeOverflow() }}>
+                {treeOpen ? t('browse.hide_folder_tree') : t('browse.show_folder_tree')}
+              </button>
+            </>
+          ) : (
+            <button type="button" role="menuitem" onClick={() => { toggleTree(); closeOverflow() }}>
+              {treeOpen ? t('browse.hide_folder_tree') : t('browse.show_folder_tree')}
+            </button>
+          )}
+          <button type="button" role="menuitem" onClick={() => { cycleDensity(); closeOverflow() }}>
+            {t('browse.density', { density: densityLabel })}
+          </button>
+          <button type="button" role="menuitem" onClick={() => { closeOverflow(); void navigate('/trash') }}>
+            {t('browse.open_trash')}
+          </button>
+        </div>
+      </Menu>
+      <Menu open={typeMenuOpen} onClose={() => setTypeMenuOpen(false)} x={typeMenuPosition.x} y={typeMenuPosition.y}>
+        <div className="sc-browse-new-menu" role="menu">
+          {([
+            ['all', /* i18n */ 'browse.filter_all'],
+            ['folders', /* i18n */ 'browse.filter_folders'],
+            ['documents', /* i18n */ 'search.preset_document'],
+            ['images', /* i18n */ 'search.preset_image'],
+            ['videos', /* i18n */ 'search.preset_video'],
+            ['audio', /* i18n */ 'search.preset_audio'],
+            ['archives', /* i18n */ 'search.preset_archive']
+          ] as const).map(([val, labelKey]) => (
+            <button key={val} type="button" role="menuitemradio" aria-checked={filterType === val} onClick={() => { setFilterType(val); setTypeMenuOpen(false) }}>
+              {filterType === val ? '✓ ' : ''}{t(labelKey)}
+            </button>
+          ))}
+        </div>
+      </Menu>
+      <Menu open={dateMenuOpen} onClose={() => setDateMenuOpen(false)} x={dateMenuPosition.x} y={dateMenuPosition.y}>
+        <div className="sc-browse-new-menu" role="menu">
+          {([
+            ['any', /* i18n */ 'browse.date_any'],
+            ['today', /* i18n */ 'browse.date_today'],
+            ['7days', /* i18n */ 'browse.date_last_7_days'],
+            ['30days', /* i18n */ 'browse.date_last_30_days'],
+            ['this_year', /* i18n */ 'browse.date_this_year']
+          ] as const).map(([val, labelKey]) => (
+            <button key={val} type="button" role="menuitemradio" aria-checked={filterDate === val} onClick={() => { setFilterDate(val); setDateMenuOpen(false) }}>
+              {filterDate === val ? '✓ ' : ''}{t(labelKey)}
+            </button>
+          ))}
+        </div>
+      </Menu>
       <input ref={setFileInput} type="file" hidden multiple aria-label={t('browse.choose_files_upload')} onChange={(event) => { if (event.currentTarget.files) uploadFiles(event.currentTarget.files); event.currentTarget.value = '' }} />
       <input ref={setDirInput} type="file" hidden aria-label={t('browse.choose_folder_upload')} {...{ webkitdirectory: '', directory: '' }} onChange={(event) => { handleUploadEntries(filesFromWebkitDirectoryInput(event.currentTarget)); event.currentTarget.value = '' }} />
       <NewFolderDialog open={newFolderOpen} onClose={() => setNewFolderOpen(false)} onCreate={createFolder} />

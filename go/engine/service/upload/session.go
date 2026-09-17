@@ -96,6 +96,15 @@ func (e *Engine) newRow(
 	if ferr != nil || serr != nil {
 		return state.UploadSession{}, fmt.Errorf("%w: a chunk setting does not fit", ErrBadRequest)
 	}
+	if spec.ChunkSize != nil {
+		customSize, cerr := num.Narrow[int64](*spec.ChunkSize)
+		if cerr != nil {
+			return state.UploadSession{}, fmt.Errorf("%w: a chunk size does not fit", ErrBadRequest)
+		}
+		size = customSize
+	} else if spec.Mode == SpoolNameOrdered {
+		size = 0
+	}
 
 	sess := state.UploadSession{
 		ID:       id.Bytes(),

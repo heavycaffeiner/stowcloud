@@ -218,16 +218,15 @@ func (d *DB) PutDirectTransferPartOf(ctx context.Context, owner int64, p DirectT
 }
 
 // ListDirectTransferParts retrieves all recorded parts in ascending part order.
-func (d *DB) ListDirectTransferParts(ctx context.Context, id string) ([]DirectTransferPart, error) {
-	if err := validateTransferID(id); err != nil {
+func (d *DB) ListDirectTransferParts(ctx context.Context, id string) (out []DirectTransferPart, err error) {
+	if verr := validateTransferID(id); verr != nil {
 		return nil, ErrNoSuchDirectTransfer
 	}
 	rows, err := d.f.SQL().QueryContext(ctx, sqlListDirectTransferParts, id)
 	if err != nil {
 		return nil, fmt.Errorf("listing direct transfer parts: %w", err)
 	}
-	defer rows.Close()
-	var out []DirectTransferPart
+	defer func() { err = errors.Join(err, rows.Close()) }()
 	for rows.Next() {
 		var p DirectTransferPart
 		var size int64
@@ -274,7 +273,7 @@ func (d *DB) CancelDirectTransfer(ctx context.Context, id string, owner int64, n
 }
 
 // ListExpiredDirectTransfers lists reservations requiring object-store abort.
-func (d *DB) ListExpiredDirectTransfers(ctx context.Context, nowNs int64, limit int) ([]DirectTransferReservation, error) {
+func (d *DB) ListExpiredDirectTransfers(ctx context.Context, nowNs int64, limit int) (out []DirectTransferReservation, err error) {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -282,8 +281,7 @@ func (d *DB) ListExpiredDirectTransfers(ctx context.Context, nowNs int64, limit 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []DirectTransferReservation
+	defer func() { err = errors.Join(err, rows.Close()) }()
 	for rows.Next() {
 		var r DirectTransferReservation
 		var expected, prior, quota int64

@@ -100,15 +100,12 @@ func (e *Engine) PutNamed(
 	}
 	declared := false
 	if _, declared = r.totalLen(); !declared {
-		// Deferred-length named sessions still need a per-member bound. The
-		// captured session chunk size is the protocol's advertised maximum,
-		// and the aggregate bound below caps a run of held members.
-		maxChunk, merr := num.Narrow[uint64](r.sess.ChunkSize)
-		if merr != nil || maxChunk == 0 {
-			maxChunk = limits.UploadChunkSizeDefault
-		}
-		if maxChunk < uint64(1<<63-1) {
-			body = io.LimitReader(body, int64(maxChunk)+1)
+		// Deferred-length named sessions still need a per-member bound when
+		// one was configured. Zero means the protocol accepts any chunk size.
+		if maxChunk, merr := num.Narrow[uint64](r.sess.ChunkSize); merr == nil && maxChunk > 0 {
+			if maxChunk < uint64(1<<63-1) {
+				body = io.LimitReader(body, int64(maxChunk)+1)
+			}
 		}
 	}
 	unlock()
@@ -126,13 +123,11 @@ func (e *Engine) PutNamed(
 	defer cleanup()
 
 	if !declared {
-		maxChunk, merr := num.Narrow[uint64](r.sess.ChunkSize)
-		if merr != nil || maxChunk == 0 {
-			maxChunk = limits.UploadChunkSizeDefault
-		}
-		if n > maxChunk {
-			return fmt.Errorf("%w: named chunk %d has %d bytes, maximum is %d",
-				ErrTooLarge, name, n, maxChunk)
+		if maxChunk, merr := num.Narrow[uint64](r.sess.ChunkSize); merr == nil && maxChunk > 0 {
+			if n > maxChunk {
+				return fmt.Errorf("%w: named chunk %d has %d bytes, maximum is %d",
+					ErrTooLarge, name, n, maxChunk)
+			}
 		}
 	}
 	if !lease.valid() {

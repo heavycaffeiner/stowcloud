@@ -52,7 +52,9 @@
   --sc-page-max: 72rem;
   --sc-section-gap: 24px;
   --sc-nav-bar-height: 4rem;
-  --sc-nav-drawer-width: 256px;
+  --sc-nav-drawer-width: 240px;
+  --sc-nav-drawer-collapsed-width: 68px;
+  --sc-shell-header-height: 56px;
   --sc-row-height: 48px;
   font-family: 'Google Sans Flex Variable', 'Pretendard Variable', 'Noto Sans KR', system-ui, sans-serif;
 }

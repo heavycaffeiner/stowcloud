@@ -5,13 +5,11 @@ import type { SearchDone, SearchHit, SearchProgress } from '../api/client'
 import { api } from '../api/client'
 import { parentOf } from '../api/path-utils'
 import { formatBytes } from '../format/bytes'
-import { formatDateNs, formatNumber } from '../i18n'
+import { formatDateNs } from '../i18n'
 import { useI18n } from '../i18n/use-i18n'
-import { EXTENSION_PRESETS, parseExtensions, resolveExtensions } from '../search/filters'
+import { EXTENSION_PRESETS, extensionOf, parseExtensions, resolveExtensions } from '../search/filters'
 import { search, type SearchSnapshot, type SearchSortKey } from '../store/search.store'
 import { computeWindow } from '../virtual/windowing'
-import { Button } from './Button'
-import { TextField } from './TextField'
 import { Icon } from './Icon'
 import './SearchPanel.css'
 
@@ -33,8 +31,22 @@ type Kind = 'any' | 'file' | 'dir'
 type SortKey = SearchSortKey
 type SearchFailure = string | null
 
+type CategoryId = 'all' | 'file' | 'dir' | 'document' | 'image' | 'video' | 'audio' | 'archive' | 'code'
+
+const CATEGORIES: readonly { id: CategoryId; labelKey: string; icon: string }[] = [
+  { id: 'all', labelKey: /* i18n */ 'search.kind_any', icon: 'search' },
+  { id: 'file', labelKey: /* i18n */ 'search.kind_file', icon: 'draft' },
+  { id: 'dir', labelKey: /* i18n */ 'search.kind_dir', icon: 'folder' },
+  { id: 'document', labelKey: /* i18n */ 'search.preset_document', icon: 'description' },
+  { id: 'image', labelKey: /* i18n */ 'search.preset_image', icon: 'image' },
+  { id: 'video', labelKey: /* i18n */ 'search.preset_video', icon: 'movie' },
+  { id: 'audio', labelKey: /* i18n */ 'search.preset_audio', icon: 'audio-file' },
+  { id: 'archive', labelKey: /* i18n */ 'search.preset_archive', icon: 'folder-zip' },
+  { id: 'code', labelKey: /* i18n */ 'search.preset_code', icon: 'code' }
+]
+
 const FLUSH_MS = 100
-const ROW_PX = 60
+const ROW_PX = 56
 const SORT_KEYS: readonly [SortKey, string][] = [
   ['relevance', /* i18n */ 'search.sort_relevance'],
   ['name', /* i18n */ 'search.sort_name'],
@@ -68,6 +80,33 @@ function sortHits(list: readonly SearchHit[], key: SortKey): readonly SearchHit[
   return result
 }
 
+function getHitIcon(hit: SearchHit): { name: string; color?: string } {
+  if (hit.entry.kind === 'dir') return { name: 'folder', color: '#5c93e8' }
+  const ext = extensionOf(hit.entry.name).toLowerCase()
+  if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'zst', 'iso'].includes(ext)) {
+    return { name: 'folder-zip', color: '#e8a85c' }
+  }
+  if (ext === 'apk') {
+    return { name: 'android', color: '#68d391' }
+  }
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'heic', 'avif'].includes(ext)) {
+    return { name: 'image', color: '#4ecdc4' }
+  }
+  if (['mp4', 'mkv', 'mov', 'avi', 'webm', 'wmv', 'm4v', 'mpg', 'mpeg', 'flv'].includes(ext)) {
+    return { name: 'movie', color: '#f87171' }
+  }
+  if (['mp3', 'flac', 'wav', 'aac', 'ogg', 'oga', 'm4a', 'opus', 'wma'].includes(ext)) {
+    return { name: 'audio-file', color: '#a78bfa' }
+  }
+  if (['js', 'ts', 'tsx', 'jsx', 'go', 'rs', 'py', 'java', 'c', 'cpp', 'h', 'cs', 'rb', 'php', 'sh', 'sql', 'json', 'yaml', 'yml', 'toml', 'xml', 'html', 'css'].includes(ext)) {
+    return { name: 'code', color: '#38bdf8' }
+  }
+  if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'md', 'rtf', 'odt', 'ods', 'odp', 'hwp', 'hwpx', 'csv'].includes(ext)) {
+    return { name: 'description', color: '#60a5fa' }
+  }
+  return { name: 'draft', color: '#94a3b8' }
+}
+
 export const SearchPanel = forwardRef<SearchPanelHandle, SearchPanelProps>(function SearchPanel({
   scope = '',
   autofocus = false,
@@ -90,11 +129,10 @@ export const SearchPanel = forwardRef<SearchPanelHandle, SearchPanelProps>(funct
   const [truncated, setTruncated] = useState(restored?.truncated ?? false)
   const [elapsedMs, setElapsedMs] = useState<number | null>(restored?.elapsedMs ?? null)
   const [scanned, setScanned] = useState<SearchProgress | null>(restored?.scanned ?? null)
-  const [filtersOpen, setFiltersOpen] = useState(false)
   const [sortOpen, setSortOpen] = useState(false)
   const [scrollTop, setScrollTop] = useState(restored?.scrollTop ?? 0)
 
-  const fieldContainer = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
   const resultsContainer = useRef<HTMLDivElement>(null)
   const cancelRef = useRef<(() => void) | null>(null)
   const arrivingRef = useRef<SearchHit[]>([])
@@ -139,8 +177,7 @@ export const SearchPanel = forwardRef<SearchPanelHandle, SearchPanelProps>(funct
 
   useImperativeHandle(ref, () => ({
     focus: () => {
-      const input = fieldContainer.current?.querySelector<HTMLElement>('input')
-      input?.focus()
+      inputRef.current?.focus()
     }
   }), [])
 
@@ -258,7 +295,7 @@ export const SearchPanel = forwardRef<SearchPanelHandle, SearchPanelProps>(funct
     setExtQuery('')
     restoredScrollTopRef.current = 0
     setScrollTop(0)
-    queueMicrotask(() => fieldContainer.current?.querySelector<HTMLElement>('input')?.focus())
+    queueMicrotask(() => inputRef.current?.focus())
   }
 
   useEffect(() => {
@@ -268,17 +305,32 @@ export const SearchPanel = forwardRef<SearchPanelHandle, SearchPanelProps>(funct
     if (previous !== next && ran) start()
   }, [kind, presets, extQuery, ran])
 
-
-  const chooseKind = (next: Kind): void => {
-    setKindState(next)
-    if (next === 'dir') {
+  const selectCategory = (id: CategoryId): void => {
+    if (id === 'all') {
+      setKindState('any')
       setPresets([])
-      setExtText('')
-      setExtQuery('')
+    } else if (id === 'dir') {
+      setKindState('dir')
+      setPresets([])
+    } else if (id === 'file') {
+      setKindState('file')
+      setPresets([])
+    } else {
+      setKindState('file')
+      setPresets([id])
     }
+    setExtText('')
+    setExtQuery('')
   }
 
-  const commitExtensions = (): void => setExtQuery(extText)
+  const activeCategory: CategoryId =
+    kind === 'dir'
+      ? 'dir'
+      : kind === 'file' && presets.length === 0
+        ? 'file'
+        : presets.length === 1 && CATEGORIES.some((c) => c.id === presets[0])
+          ? (presets[0] as CategoryId)
+          : 'all'
 
   const view = running ? hits : sortHits(hits, sortKey)
   const dirCount = view.filter((hit) => hit.entry.kind === 'dir').length
@@ -293,7 +345,7 @@ export const SearchPanel = forwardRef<SearchPanelHandle, SearchPanelProps>(funct
   const sortLabel = t(SORT_KEYS.find(([key]) => key === sortKey)?.[1] ?? 'search.sort_relevance')
 
   const statusText = running
-    ? `${t('search.searching', { count: hits.length })}${scanned ? `, ${t('search.scanning', { dirs: formatNumber(scanned.dirs) })}` : ''}`
+    ? `${t('search.searching', { count: hits.length })}${scanned ? `, ${t('search.scanning', { dirs: String(scanned.dirs) })}` : ''}`
     : !ran
       ? ''
       : truncated
@@ -388,7 +440,7 @@ export const SearchPanel = forwardRef<SearchPanelHandle, SearchPanelProps>(funct
     start()
   }
 
-  const onQueryKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
+  const onQueryKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
     if (event.key === 'Enter') {
       event.preventDefault()
       start()
@@ -403,88 +455,153 @@ export const SearchPanel = forwardRef<SearchPanelHandle, SearchPanelProps>(funct
 
   return (
     <div className="sc-search">
-      <form className="sc-search__query" onSubmit={onSubmit}>
-        <span className="sc-search__query-icon" aria-hidden="true"><Icon name="search" /></span>
-        <div className="sc-search__field" ref={fieldContainer}>
-          <TextField
-            value={query}
-            type="search"
-            label={t('search.placeholder')}
-            autoFocus={autofocus}
-            onValueChange={setQuery}
-            onKeyDown={onQueryKeyDown}
-          />
-        </div>
-        <Button type="submit" variant="filled">{t('search.run')}</Button>
-        {ran ? <Button variant="text" onClick={clear}>{t('search.clear')}</Button> : null}
+      <form className="sc-search__query-bar" onSubmit={onSubmit}>
+        <span className="sc-search__query-icon" aria-hidden="true"><Icon name="search" size={20} /></span>
+        <input
+          ref={inputRef}
+          className="sc-search__input"
+          type="search"
+          value={query}
+          placeholder={t('search.placeholder')}
+          autoFocus={autofocus}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={onQueryKeyDown}
+        />
+        {query.trim() ? (
+          <button
+            type="button"
+            className="sc-search__clear-btn sc-icon-button"
+            aria-label={t('search.clear')}
+            onClick={clear}
+          >
+            <Icon name="close" size={16} />
+          </button>
+        ) : null}
+        <button
+          type="submit"
+          className="sc-search__submit-btn"
+          aria-label={t('search.run')}
+        >
+          {t('search.run')}
+        </button>
         {trailing}
       </form>
 
-      <div className="sc-search__scope" aria-describedby="sc-search-scope-note">
-        <span className="sc-search__scope-label">{t('search.scope_all_accessible')}</span>
-        <span id="sc-search-scope-note">{scope ? t('search.scope_current_prioritized', { folder: scope }) : t('search.scope_explanation')}</span>
-      </div>
-
-      <div className="sc-search__filters">
-        <span className="sc-search__label" id="sc-search-kind">{t('search.kind_label')}</span>
-        <div className="sc-search__kind" role="group" aria-labelledby="sc-search-kind">
-          <button type="button" className={kind === 'any' ? 'sc-search__filter-button sc-search__filter-button--selected' : 'sc-search__filter-button'} aria-pressed={kind === 'any'} onClick={() => chooseKind('any')}>{t('search.kind_any')}</button>
-          <button type="button" className={kind === 'file' ? 'sc-search__filter-button sc-search__filter-button--selected' : 'sc-search__filter-button'} aria-pressed={kind === 'file'} onClick={() => chooseKind('file')}>{t('search.kind_file')}</button>
-          <button type="button" className={kind === 'dir' ? 'sc-search__filter-button sc-search__filter-button--selected' : 'sc-search__filter-button'} aria-pressed={kind === 'dir'} onClick={() => chooseKind('dir')}>{t('search.kind_dir')}</button>
+      <div className="sc-search__filter-bar">
+        <div className="sc-search__categories" role="tablist" aria-label={t('search.kind_label')}>
+          {CATEGORIES.map((cat) => {
+            const isSelected = activeCategory === cat.id
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                className={`sc-search__category-pill${isSelected ? ' sc-search__category-pill--active' : ''}`}
+                aria-pressed={isSelected}
+                onClick={() => selectCategory(cat.id)}
+              >
+                <Icon name={cat.icon} size={15} />
+                <span>{t(cat.labelKey)}</span>
+              </button>
+            )
+          })}
         </div>
-        {kind !== 'dir' ? (
-          <>
-            <button type="button" className="sc-search__filter-menu-trigger" aria-expanded={filtersOpen} onClick={() => setFiltersOpen((open) => !open)}>
-              <Icon name="filter_list" />{t('search.file_type')}
-            </button>
-            {presets.map((id) => {
-              const preset = EXTENSION_PRESETS.find((candidate) => candidate.id === id)
-              if (!preset) return null
-              return <button key={id} type="button" className="sc-search__chip" aria-label={t('search.remove_filter', { label: t(preset.labelKey) })} onClick={() => setPresets((current) => current.filter((value) => value !== id))}>{t(preset.labelKey)} <span aria-hidden="true">×</span></button>
-            })}
-            <div className="sc-search__exts" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) commitExtensions() }}>
-              <TextField value={extText} label={t('search.extensions')} placeholder={t('search.extensions')} onValueChange={setExtText} onKeyDown={(event) => { if (event.key === 'Enter') commitExtensions() }} />
+
+        <div
+          className="sc-search__scope-pill"
+          title={scope ? t('search.scope_current_prioritized', { folder: scope }) : t('search.scope_explanation')}
+        >
+          <Icon name={scope ? 'folder' : 'search'} size={14} />
+          <span>{scope ? (scope.split('/').filter(Boolean).at(-1) ?? scope) : t('search.scope_all_accessible')}</span>
+        </div>
+
+        <div className="sc-search__sort-wrap">
+          <button
+            type="button"
+            className="sc-search__sort-btn"
+            aria-expanded={sortOpen}
+            aria-label={t('search.sort_by', { key: sortLabel })}
+            onClick={() => setSortOpen((open) => !open)}
+          >
+            <Icon name="sort" size={15} />
+            <span>{sortLabel}</span>
+          </button>
+          {sortOpen ? (
+            <div className="sc-search__menu sc-search__menu--end" role="menu">
+              {SORT_KEYS.map(([key, labelKey]) => (
+                <button
+                  key={key}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={sortKey === key}
+                  onClick={() => {
+                    setSortKey(key)
+                    setSortOpen(false)
+                  }}
+                >
+                  {sortKey === key ? '✓ ' : ''}{t(labelKey)}
+                </button>
+              ))}
             </div>
-            {filtersOpen ? (
-              <div className="sc-search__menu" role="menu">
-                {EXTENSION_PRESETS.map((preset) => {
-                  const selected = presets.includes(preset.id)
-                  return <button key={preset.id} type="button" role="menuitemcheckbox" aria-checked={selected} aria-label={selected ? t('search.filter_selected', { label: t(preset.labelKey) }) : undefined} onClick={() => setPresets((current) => selected ? current.filter((id) => id !== preset.id) : [...current, preset.id])}>{selected ? '✓ ' : ''}{t(preset.labelKey)}</button>
-                })}
-              </div>
-            ) : null}
-          </>
-        ) : null}
+          ) : null}
+        </div>
       </div>
 
-      <div className="sc-search__status">
-        <span className="sc-search__count" aria-hidden={running}>{running ? <span className="sc-search__progress" role="img" aria-label={t('search.searching_label')}><mdui-circular-progress /></span> : null}{statusText}</span>
-        <span className="sc-search__spoken" role="status" aria-live="polite">{running ? '' : statusText}</span>
-        <span className="sc-search__status-actions">
-          {!running && fileCount > 0 && dirCount > 0 ? <span className="sc-search__breakdown">{t('search.summary', { files: fileCount, folders: dirCount })}</span> : null}
-          {running ? <Button variant="text" onClick={stop}>{t('search.stop')}</Button> : null}
-          {ran && view.length > 0 ? (
-            <span className="sc-search__sort-wrap">
-              <button type="button" className="sc-search__sort-trigger" aria-expanded={sortOpen} aria-label={t('search.sort_by', { key: sortLabel })} onClick={() => setSortOpen((open) => !open)}><Icon name="sort" />{sortLabel}</button>
-              {sortOpen ? <div className="sc-search__menu sc-search__menu--end" role="menu">{SORT_KEYS.map(([key, labelKey]) => <button key={key} type="button" role="menuitemradio" aria-checked={sortKey === key} onClick={() => { setSortKey(key); setSortOpen(false) }}>{sortKey === key ? '✓ ' : ''}{t(labelKey)}</button>)}</div> : null}
+      <div className="sc-search__status-bar">
+        <span className="sc-search__status-info" aria-hidden={running}>
+          {running ? (
+            <span className="sc-search__progress" role="img" aria-label={t('search.searching_label')}>
+              <mdui-circular-progress />
             </span>
+          ) : null}
+          <span>{statusText}</span>
+        </span>
+        <span className="sc-search__spoken" role="status" aria-live="polite">
+          {running ? '' : statusText}
+        </span>
+        <span className="sc-search__status-actions">
+          {!running && fileCount > 0 && dirCount > 0 ? (
+            <span className="sc-search__breakdown">{t('search.summary', { files: fileCount, folders: dirCount })}</span>
+          ) : null}
+          {running ? (
+            <button type="button" className="sc-search__stop-btn" onClick={stop}>
+              {t('search.stop')}
+            </button>
           ) : null}
         </span>
       </div>
 
       <div className="sc-search__results" ref={resultsContainer} onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)} tabIndex={-1}>
-        {!ran ? <p className="sc-search__note">{t('search.type_and_press_enter')}</p> : view.length === 0 && !running ? <p className="sc-search__note">{t('search.no_results')} {activeFilters ? <span className="sc-search__hint">{t('search.filtered_by', { filters: activeFilters })}</span> : null}</p> : (
+        {!ran ? (
+          <p className="sc-search__note">{t('search.type_and_press_enter')}</p>
+        ) : view.length === 0 && !running ? (
+          <p className="sc-search__note">
+            {t('search.no_results')} {activeFilters ? <span className="sc-search__hint">{t('search.filtered_by', { filters: activeFilters })}</span> : null}
+          </p>
+        ) : (
           <div className="sc-search__spacer" style={{ height: windowed.totalHeight }}>
             <ul className="sc-search__rows" style={{ transform: `translate3d(0, ${windowed.padTop}px, 0)` }}>
-              {rows.map((hit) => (
-                <li key={hit.path}>
-                  <button type="button" className="sc-search__row" onClick={() => openResult(hit)}>
-                    <Icon name={hit.entry.kind === 'dir' ? 'folder' : 'draft'} />
-                    <span className="sc-search__text"><span className="sc-search__name">{hit.entry.name}</span><span className="sc-search__folder">{folderOf(hit.path)}</span></span>
-                    <span className="sc-search__cell">{hit.entry.kind !== 'dir' ? <span className="sc-search__size">{formatBytes(hit.entry.size)}</span> : null}<span className="sc-search__date">{formatDateNs(hit.entry.mtime_ns)}</span></span>
-                  </button>
-                </li>
-              ))}
+              {rows.map((hit) => {
+                const hitIcon = getHitIcon(hit)
+                return (
+                  <li key={hit.path}>
+                    <button type="button" className="sc-search__row" onClick={() => openResult(hit)}>
+                      <span className="sc-search__row-icon" style={{ color: hitIcon.color }}>
+                        <Icon name={hitIcon.name} size={20} />
+                      </span>
+                      <span className="sc-search__text">
+                        <span className="sc-search__name">{hit.entry.name}</span>
+                        <span className="sc-search__folder">{folderOf(hit.path)}</span>
+                      </span>
+                      <span className="sc-search__cell">
+                        {hit.entry.kind !== 'dir' ? (
+                          <span className="sc-search__size">{formatBytes(hit.entry.size)}</span>
+                        ) : null}
+                        <span className="sc-search__date">{formatDateNs(hit.entry.mtime_ns)}</span>
+                      </span>
+                    </button>
+                  </li>
+                )
+              })}
             </ul>
           </div>
         )}

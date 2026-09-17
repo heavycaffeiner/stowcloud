@@ -109,24 +109,24 @@ ORDER BY next_run_ns, created_ns, id LIMIT 1`, int64(OpQueued), int64(OpRetrying
 	var claim OpClaim
 	err = d.Write(ctx, func(tx *sql.Tx) error {
 		until := nowNs + leaseNs
-		res, err := tx.ExecContext(ctx, `
+		res, xerr := tx.ExecContext(ctx, `
 UPDATE operation SET state = ?, attempt = attempt + 1, started_ns = ?, updated_ns = ?,
  lease_id = ?, lease_expires_ns = ?, pause_requested = 0
 WHERE id = ? AND state IN (?, ?) AND next_run_ns <= ?`, int64(OpRunning), nowNs, nowNs,
 			leaseID, until, id, int64(OpQueued), int64(OpRetrying), nowNs)
-		if err != nil {
-			return err
+		if xerr != nil {
+			return xerr
 		}
-		n, err := res.RowsAffected()
-		if err != nil {
-			return err
+		n, aerr := res.RowsAffected()
+		if aerr != nil {
+			return aerr
 		}
 		if n != 1 {
 			return ErrNoRunnableOp
 		}
 		var op Op
-		if err := scanOperation(tx.QueryRowContext(ctx, sqlReadOp, id), &op); err != nil {
-			return err
+		if serr := scanOperation(tx.QueryRowContext(ctx, sqlReadOp, id), &op); serr != nil {
+			return serr
 		}
 		claim = OpClaim{Op: op, Payload: append([]byte(nil), op.Payload...), LeaseID: leaseID, LeaseExpiresNs: until}
 		return nil

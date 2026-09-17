@@ -52,6 +52,15 @@ import iconHardDrive from '@ktibow/iconset-material-symbols/hard-drive-outline'
 import iconStorage from '@ktibow/iconset-material-symbols/storage'
 import iconSpeed from '@ktibow/iconset-material-symbols/speed-outline'
 import iconTune from '@ktibow/iconset-material-symbols/tune'
+import iconCloud from '@ktibow/iconset-material-symbols/cloud-outline'
+import iconFolderShared from '@ktibow/iconset-material-symbols/folder-shared-outline'
+import iconHelp from '@ktibow/iconset-material-symbols/help-outline'
+import iconFolderZip from '@ktibow/iconset-material-symbols/folder-zip-outline'
+import iconAndroid from '@ktibow/iconset-material-symbols/android'
+import iconDescription from '@ktibow/iconset-material-symbols/description-outline'
+import iconAudioFile from '@ktibow/iconset-material-symbols/audio-file-outline'
+import iconCode from '@ktibow/iconset-material-symbols/code'
+import iconArrowDropDown from '@ktibow/iconset-material-symbols/arrow-drop-down'
 
 export {
   iconAccountTree,
@@ -94,7 +103,16 @@ export {
   iconHardDrive,
   iconStorage,
   iconSpeed,
-  iconTune
+  iconTune,
+  iconCloud,
+  iconFolderShared,
+  iconHelp,
+  iconFolderZip,
+  iconAndroid,
+  iconDescription,
+  iconAudioFile,
+  iconCode,
+  iconArrowDropDown,
 }
 
 /** Runtime lookup. Keys are the names the old inline icon set used. */
@@ -163,7 +181,29 @@ export const icons = {
   'hard-drive': iconHardDrive,
   hard_drive: iconHardDrive,
   speed: iconSpeed,
-  tune: iconTune
+  tune: iconTune,
+  cloud: iconCloud,
+  'folder-shared': iconFolderShared,
+  folder_shared: iconFolderShared,
+  help: iconHelp,
+  help_outline: iconHelp,
+  'help-outline': iconHelp,
+  'folder-zip': iconFolderZip,
+  folder_zip: iconFolderZip,
+  archive: iconFolderZip,
+  zip: iconFolderZip,
+  android: iconAndroid,
+  apk: iconAndroid,
+  description: iconDescription,
+  doc: iconDescription,
+  document: iconDescription,
+  'audio-file': iconAudioFile,
+  audio_file: iconAudioFile,
+  audio: iconAudioFile,
+  music: iconAudioFile,
+  code: iconCode,
+  'arrow-drop-down': iconArrowDropDown,
+  arrow_drop_down: iconArrowDropDown
  } satisfies Record<string, IconifyIcon>
 
 export type IconName = keyof typeof icons

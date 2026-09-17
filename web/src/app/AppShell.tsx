@@ -35,6 +35,7 @@ export function AppShell() {
   const location = useLocation()
   const navigate = useNavigate()
   const compact = useStore(ui, (state) => state.compact)
+  const sidebarCollapsed = useStore(ui, (state) => state.sidebarCollapsed)
   const searchOpen = useStore(search, (state) => state.open)
   const searchScope = useStore(search, (state) => state.scope)
   const session = useQuery(sessionQuery())
@@ -47,9 +48,8 @@ export function AppShell() {
     setupRequired: setup.data === true
   })
   const [lastBrowsePath, setLastBrowsePath] = useState<string | null>(null)
-  const [moreOpen, setMoreOpen] = useState(false)
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false)
   const [folderSelectorOpen, setFolderSelectorOpen] = useState(false)
-  const moreDialogRef = useRef<HTMLDialogElement | null>(null)
   const trayStackRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -60,21 +60,9 @@ export function AppShell() {
   }, [])
 
   useEffect(() => {
-    setMoreOpen(false)
+    setMobileDrawerOpen(false)
     setFolderSelectorOpen(false)
   }, [compact, location.pathname, location.search, screen])
-
-  useEffect(() => {
-    const dialog = moreDialogRef.current
-    if (!compact || !moreOpen || screen !== 'browser' || !dialog) return
-    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    dialog.showModal()
-    dialog.querySelector<HTMLButtonElement>('button')?.focus()
-    return () => {
-      if (dialog.open) dialog.close()
-      if (trigger?.isConnected) trigger.focus()
-    }
-  }, [compact, moreOpen, screen])
 
   useEffect(() => {
     const browsePath = browsePathFromUrl(location.pathname)
@@ -86,37 +74,6 @@ export function AppShell() {
     const stop = startLiveInvalidation()
     void swReady()
     return stop
-  }, [screen])
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (screen !== 'browser' || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'k') return
-      event.preventDefault()
-      setMoreOpen(false)
-      setFolderSelectorOpen(false)
-      const scope = browsePathFromUrl(location.pathname)
-      const target = searchTarget(scope && scope !== '/' ? scope : '')
-      if (target) void navigate(target)
-      else openSearchStore(scope && scope !== '/' ? scope : '')
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [location.pathname, navigate, screen])
-
-  useEffect(() => {
-    const element = trayStackRef.current
-    if (!element) return
-    const publish = (): void => {
-      const top = element.offsetHeight > 0 ? `${window.innerHeight - element.getBoundingClientRect().top + 12}px` : '0px'
-      document.documentElement.style.setProperty('--sc-tray-stack-top', top)
-    }
-    const observer = new ResizeObserver(publish)
-    observer.observe(element)
-    publish()
-    return () => {
-      observer.disconnect()
-      document.documentElement.style.removeProperty('--sc-tray-stack-top')
-    }
   }, [screen])
 
   const roots = useMemo<RootItem[]>(() => (session.data?.roots ?? []).map((root) => ({ id: root.label, label: root.label, icon: 'folder', brokenReason: root.broken_reason })), [session.data?.roots])
@@ -134,19 +91,53 @@ export function AppShell() {
 
   const browseHref = (path: string): string => path === '/' ? '/b' : `/b${path}`
   const browseScope = browsePath && browsePath !== '/' ? browsePath : lastBrowsePath?.split('?')[0] && lastBrowsePath?.split('?')[0] !== '/' ? lastBrowsePath.split('?')[0] : ''
+
   const openSearch = (): void => {
-    setMoreOpen(false)
+    setMobileDrawerOpen(false)
     setFolderSelectorOpen(false)
     const target = searchTarget(browseScope)
     if (target) void navigate(target)
     else openSearchStore(browseScope)
   }
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (screen !== 'browser') return
+      const isInput = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || (event.target instanceof HTMLElement && event.target.isContentEditable)
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        openSearch()
+      } else if (!isInput && event.key === '/' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault()
+        openSearch()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [location.pathname, navigate, screen, browseScope])
+
+  useEffect(() => {
+    const element = trayStackRef.current
+    if (!element) return
+    const publish = (): void => {
+      const top = element.offsetHeight > 0 ? `${window.innerHeight - element.getBoundingClientRect().top + 12}px` : '0px'
+      document.documentElement.style.setProperty('--sc-tray-stack-top', top)
+    }
+    const observer = new ResizeObserver(publish)
+    observer.observe(element)
+    publish()
+    return () => {
+      observer.disconnect()
+      document.documentElement.style.removeProperty('--sc-tray-stack-top')
+    }
+  }, [screen])
+
   const navItems = useMemo<NavItem[]>(() => {
     const items: NavItem[] = [
-      { id: 'files', label: t('nav.files'), icon: 'home', href: browseHref(browseTarget()) },
+      { id: 'files', label: t('browse.home'), icon: 'home', href: browseHref(browseTarget()) },
+      { id: 'folders', label: t('nav.shared_folders'), icon: 'folder_shared', href: browseHref(browseTarget()) },
       { id: 'recent', label: t('nav.recent'), icon: 'history', href: '/recent' },
-      { id: 'trash', label: t('common.trash'), icon: 'delete_sweep', href: '/trash' },
+      { id: 'trash', label: t('common.trash'), icon: 'delete', href: '/trash' },
       { id: 'links', label: t('nav.links'), icon: 'link', href: '/links' },
       { id: 'settings', label: t('common.settings'), icon: 'settings', href: '/settings' }
     ]
@@ -155,34 +146,47 @@ export function AppShell() {
   }, [browseTarget, session.data?.user.is_admin, t, location.pathname, location.search, lastBrowsePath])
 
   const activeNav = location.pathname.startsWith('/settings') ? 'settings' : location.pathname.startsWith('/admin') ? 'admin' : location.pathname.startsWith('/recent') ? 'recent' : location.pathname.startsWith('/trash') ? 'trash' : location.pathname.startsWith('/links') ? 'links' : 'files'
+
   const compactItems = useMemo<NavigationBarItem[]>(() => [
-    navItems.find((item) => item.id === 'files')!,
-    navItems.find((item) => item.id === 'recent')!,
-    navItems.find((item) => item.id === 'trash')!,
-    navItems.find((item) => item.id === 'links')!,
-    { id: 'more', label: t('nav.more'), icon: 'menu', popup: 'dialog', expanded: moreOpen, controls: 'sc-shell-more' }
-  ], [moreOpen, navItems, t])
+    { id: 'files', label: t('nav.files'), icon: 'folder', href: browseHref(browseTarget()) },
+    { id: 'recent', label: t('nav.recent'), icon: 'history', href: '/recent' },
+    { id: 'links', label: t('nav.links'), icon: 'share', href: '/links' },
+    { id: 'more', label: t('nav.more'), icon: 'menu', popup: 'dialog', expanded: mobileDrawerOpen, controls: 'sc-shell-drawer' }
+  ], [mobileDrawerOpen, browseTarget, t, location.pathname, lastBrowsePath])
+
   const compactActive = ['settings', 'admin'].includes(activeNav) ? 'more' : activeNav
 
   const navigateTo = (id: string, href?: string): void => {
     if (id === 'files') {
-      setMoreOpen(false)
+      setMobileDrawerOpen(false)
+      setFolderSelectorOpen(false)
+      void navigate(browseHref(browseTarget()))
+      return
+    }
+    if (id === 'folders') {
+      setMobileDrawerOpen(false)
       setFolderSelectorOpen(false)
       void navigate(browseHref(browseTarget()))
       return
     }
     if (id === 'more') {
       setFolderSelectorOpen(false)
-      setMoreOpen((open) => !open)
+      setMobileDrawerOpen((open) => !open)
       return
     }
     const target = href ?? navItems.find((item) => item.id === id)?.href
     if (target) {
-      setMoreOpen(false)
+      setMobileDrawerOpen(false)
       setFolderSelectorOpen(false)
       void navigate(target)
     }
   }
+
+  const triggerNewAction = (): void => {
+    window.dispatchEvent(new CustomEvent('stowcloud:new'))
+  }
+
+  const userInitial = (session.data?.user.display_name || session.data?.user.name || 'S').slice(0, 1).toUpperCase()
 
   if (screen === 'login') return <Navigate to="/login" replace />
   if (screen === 'first-run') return <Navigate to="/setup" replace />
@@ -193,45 +197,148 @@ export function AppShell() {
   return (
     <>
       <div className={compact ? 'sc-app-shell sc-app-shell--compact' : 'sc-app-shell'}>
-        {!compact ? <NavigationDrawer navItems={navItems} activeNav={activeNav} items={rootItems} active={browsePath?.split('/').filter(Boolean)[0] ?? ''} onselect={(root) => void navigate(`/b/${encodeURIComponent(root.id)}`)} onnavselect={(item) => navigateTo(item.id, item.href)} onsearch={openSearch} /> : null}
-        <main className={compact ? 'sc-app-shell__main' : 'sc-app-shell__main sc-app-shell__main--drawer'}>
-          <header className="sc-app-shell__topbar">
-            <button className="sc-shell__search sc-focus-ring" type="button" onClick={openSearch}>
-              <Icon name="search" />
-              <span>{t('search.scope_all_accessible')}</span>
-              <kbd>Ctrl K</kbd>
+        <header className="sc-shell-header">
+          <div className="sc-shell-header__left">
+            <button
+              type="button"
+              className="sc-shell-header__menu-btn sc-icon-button"
+              aria-label={t('nav.toggle_sidebar')}
+              onClick={() => {
+                if (compact) setMobileDrawerOpen(true)
+                else ui.toggleSidebar()
+              }}
+            >
+              <Icon name="menu" size={22} />
             </button>
-          </header>
-          <Outlet />
-        </main>
-        {compact ? <NavigationBar items={compactItems} active={compactActive} onselect={(id) => navigateTo(id, compactItems.find((item) => item.id === id)?.href)} /> : null}
-        {compact && folderSelectorOpen ? <NavigationDrawer items={rootItems} active={browsePath?.split('/').filter(Boolean)[0] ?? ''} folderSelectorOnly overlay onclose={() => setFolderSelectorOpen(false)} onselect={(root) => { setFolderSelectorOpen(false); void navigate(`/b/${encodeURIComponent(root.id)}`) }} /> : null}
-        {compact && moreOpen ? (
-          <dialog
-            ref={moreDialogRef}
-            id="sc-shell-more"
-            className="sc-shell__more"
-            aria-label={t('nav.more')}
-            aria-modal="true"
-            onCancel={(event) => {
-              event.preventDefault()
-              setMoreOpen(false)
+            <button
+              type="button"
+              className="sc-shell-header__brand-btn"
+              onClick={() => navigateTo('files', browseHref(browseTarget()))}
+            >
+              <span className="sc-shell-header__brand">Stowcloud</span>
+            </button>
+          </div>
+
+          <div className="sc-shell-header__center">
+            <button
+              className="sc-shell-header__search sc-focus-ring"
+              type="button"
+              onClick={openSearch}
+              aria-label={t('common.search')}
+            >
+              <span className="sc-shell-header__search-icon"><Icon name="search" size={18} /></span>
+              <span className="sc-shell-header__search-placeholder">{t('common.search')}</span>
+              <span className="sc-shell-header__search-hints">
+                <kbd className="sc-shell-header__shortcut">/</kbd>
+                <span className="sc-shell-header__filter-icon" aria-hidden="true">
+                  <Icon name="tune" size={16} />
+                </span>
+              </span>
+            </button>
+          </div>
+
+          <div className="sc-shell-header__right">
+            {!compact ? (
+              <button
+                type="button"
+                className="sc-shell-header__icon-btn sc-icon-button"
+                aria-label={t('nav.help')}
+                onClick={() => window.open('https://github.com/heavycaffeiner/Stowcloud', '_blank', 'noopener,noreferrer')}
+              >
+                <Icon name="help" size={20} />
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="sc-shell-header__icon-btn sc-icon-button"
+              aria-label={t('common.settings')}
+              onClick={() => navigateTo('settings', '/settings')}
+            >
+              <Icon name="settings" size={20} />
+            </button>
+            <button
+              type="button"
+              className="sc-shell-header__avatar-btn"
+              aria-label={session.data?.user.display_name || session.data?.user.name || 'User'}
+              onClick={() => navigateTo('settings', '/settings')}
+            >
+              <span className="sc-shell-header__avatar">{userInitial}</span>
+            </button>
+          </div>
+        </header>
+
+        <div className="sc-shell-body">
+          {!compact ? (
+            <NavigationDrawer
+              collapsed={sidebarCollapsed}
+              navItems={navItems}
+              activeNav={activeNav}
+              items={rootItems}
+              active={browsePath?.split('/').filter(Boolean)[0] ?? ''}
+              onselect={(root) => void navigate(`/b/${encodeURIComponent(root.id)}`)}
+              onnavselect={(item) => navigateTo(item.id, item.href)}
+              onsearch={openSearch}
+              onNew={triggerNewAction}
+              userInitial={userInitial}
+            />
+          ) : null}
+
+          <main className={`sc-app-shell__main${!compact && sidebarCollapsed ? ' sc-app-shell__main--collapsed' : !compact ? ' sc-app-shell__main--drawer' : ''}`}>
+            <Outlet />
+          </main>
+        </div>
+
+        {compact ? (
+          <NavigationBar
+            items={compactItems}
+            active={compactActive}
+            onselect={(id) => {
+              if (id === 'more') setMobileDrawerOpen((open) => !open)
+              else navigateTo(id, compactItems.find((item) => item.id === id)?.href)
             }}
-            onClose={() => setMoreOpen(false)}
-            onClick={(event) => {
-              if (event.target !== event.currentTarget) return
-              const bounds = event.currentTarget.getBoundingClientRect()
-              if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) setMoreOpen(false)
+          />
+        ) : null}
+
+        {compact && folderSelectorOpen ? (
+          <NavigationDrawer
+            items={rootItems}
+            active={browsePath?.split('/').filter(Boolean)[0] ?? ''}
+            folderSelectorOnly
+            overlay
+            onclose={() => setFolderSelectorOpen(false)}
+            onselect={(root) => {
+              setFolderSelectorOpen(false)
+              void navigate(`/b/${encodeURIComponent(root.id)}`)
             }}
-          >
-              <button type="button" onClick={openSearch}><Icon name="search" />{t('common.search')}</button>
-              <button type="button" onClick={() => { setMoreOpen(false); setFolderSelectorOpen(true) }}><Icon name="folder" />{t('nav.browse_folders')}</button>
-              <button type="button" onClick={() => navigateTo('links', '/links')}><Icon name="link" />{t('nav.links')}</button>
-              <button type="button" onClick={() => navigateTo('settings', '/settings')}><Icon name="settings" />{t('common.settings')}</button>
-              {session.data?.user.is_admin ? <button type="button" onClick={() => navigateTo('admin', '/admin')}><Icon name="admin_panel_settings" />{t('nav.admin')}</button> : null}
-          </dialog>
+          />
+        ) : null}
+
+        {compact && mobileDrawerOpen ? (
+          <NavigationDrawer
+            overlay
+            navItems={navItems}
+            activeNav={activeNav}
+            items={rootItems}
+            active={browsePath?.split('/').filter(Boolean)[0] ?? ''}
+            userInitial={userInitial}
+            onclose={() => setMobileDrawerOpen(false)}
+            onselect={(root) => {
+              setMobileDrawerOpen(false)
+              void navigate(`/b/${encodeURIComponent(root.id)}`)
+            }}
+            onnavselect={(item) => {
+              setMobileDrawerOpen(false)
+              navigateTo(item.id, item.href)
+            }}
+            onsearch={openSearch}
+            onNew={() => {
+              setMobileDrawerOpen(false)
+              triggerNewAction()
+            }}
+          />
         ) : null}
       </div>
+
       <div ref={trayStackRef} className={compact ? 'sc-tray-stack sc-tray-stack--compact' : 'sc-tray-stack'}>
         <JobTray />
         <UploadTray />

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/server"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/objstore"
@@ -212,6 +213,7 @@ func (e *Engine) sweepUploads(ctx context.Context) error {
 	}
 	return nil
 }
+
 // sweepDirectTransfers aborts only the multipart upload recorded by each
 // expired reservation, then marks the reservation and releases its quota.
 func (e *Engine) sweepDirectTransfers(ctx context.Context) error {
@@ -232,7 +234,11 @@ func (e *Engine) sweepDirectTransfers(ctx context.Context) error {
 			continue
 		}
 		if quota, qerr := e.State.ReleaseDirectTransferQuota(ctx, row.ID); qerr == nil && quota > 0 {
-				_ = state.NewQuota(e.State).Release(ctx, row.Owner, int64(quota))
+			if relAmount, nerr := num.Narrow[int64](quota); nerr == nil {
+				if relErr := state.NewQuota(e.State).Release(ctx, row.Owner, relAmount); relErr != nil {
+					e.logger.Warn("releasing direct transfer quota failed", "error", relErr)
+				}
+			}
 		}
 	}
 	return nil
