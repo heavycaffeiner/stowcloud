@@ -78,17 +78,6 @@
   font-weight: 700;
   color: var(--sc-content-primary);
   letter-spacing: -0.02em;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.sc-shell-header__brand::before {
-  content: '';
-  width: 22px;
-  height: 22px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, rgb(var(--mdui-color-primary)), rgb(var(--mdui-color-secondary)));
 }
 
 .sc-shell-header__center {
@@ -424,10 +413,17 @@
 .sc-nav-drawer__sublist {
   list-style: none;
   margin: 0;
-  padding: 0 10px;
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+.sc-nav-drawer__list {
+  padding: 0 10px;
+}
+
+.sc-nav-drawer__sublist {
+  padding: 0;
 }
 
 .sc-nav-drawer__entry {
@@ -514,18 +510,18 @@
 /* Roots sublist */
 .sc-nav-drawer__subitem {
   width: 100%;
-  min-height: 36px;
-  padding: 0 12px;
+  min-height: 40px;
+  padding: 0 14px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 14px;
   border: 0;
   border-radius: 10px;
   background: transparent;
   color: var(--sc-content-secondary);
   cursor: pointer;
   font: inherit;
-  font-size: 13px;
+  font-size: 14px;
   line-height: var(--mdui-typescale-label-large-line-height, 1.25rem);
   text-align: left;
   transition: background-color 140ms ease, color 140ms ease;
@@ -660,6 +656,7 @@
   z-index: 40;
   inset: auto 0 0;
   height: calc(var(--sc-nav-bar-height) + env(safe-area-inset-bottom, 0px));
+  box-sizing: border-box;
   display: flex;
   align-items: stretch;
   justify-content: center;
@@ -675,13 +672,13 @@
   flex: 1 1 0;
   min-width: 0;
   max-width: 7rem;
-  min-height: 48px;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  padding-inline: 2px;
+  gap: 3px;
+  padding: 3px 2px 4px;
   border: 0;
   border-radius: 16px;
   background: transparent;
@@ -689,7 +686,7 @@
   cursor: pointer;
   font: inherit;
   font-size: 11px;
-  line-height: var(--mdui-typescale-label-small-line-height, 1rem);
+  line-height: 18px;
   font-weight: 500;
   outline: none;
   transition: background-color 150ms ease, color 150ms ease;
@@ -706,6 +703,7 @@
 .sc-nav-bar__label {
   width: 100%;
   min-width: 0;
+  min-height: 18px;
   overflow: hidden;
   text-align: center;
   text-overflow: ellipsis;
