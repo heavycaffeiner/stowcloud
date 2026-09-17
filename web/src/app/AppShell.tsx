@@ -17,10 +17,13 @@ import { Icon } from '../lib/ui/Icon'
 import { UploadTray } from '../lib/ui/UploadTray'
 import './shell.css'
 
-/** Where the create menu should open, in viewport coordinates. */
+/** Where the create menu should open, in viewport coordinates. `align` says
+ *  which edge `x` refers to: a left-hand trigger anchors its left edge, a
+ *  right-hand one its right. */
 export interface NewActionAnchor {
   readonly x: number
   readonly y: number
+  readonly align: 'start' | 'end'
 }
 
 function isBrowsePathname(pathname: string): boolean {
@@ -219,8 +222,11 @@ export function AppShell() {
   // from the control that summoned it.
   const triggerNewAction = (trigger?: HTMLElement): void => {
     const rect = trigger?.getBoundingClientRect()
+    // The sidebar sits on the left, so its menu anchors its left edge. Taking
+    // the right edge instead placed the menu off-screen once the rail was
+    // collapsed and that edge was only a few dozen pixels in.
     window.dispatchEvent(new CustomEvent<NewActionAnchor>('stowcloud:new', {
-      detail: rect ? { x: rect.right, y: rect.bottom + 4 } : undefined
+      detail: rect ? { x: rect.left, y: rect.bottom + 4, align: 'start' } : undefined
     }))
   }
 
@@ -335,7 +341,7 @@ export function AppShell() {
               onselect={(root) => void navigate(`/b/${encodeURIComponent(root.id)}`)}
               onnavselect={(item) => navigateTo(item.id, item.href)}
               onsearch={openSearch}
-              onNew={triggerNewAction}
+              onNew={activeNav === 'files' ? triggerNewAction : undefined}
               userInitial={userInitial}
             />
           ) : null}
@@ -388,10 +394,10 @@ export function AppShell() {
               navigateTo(item.id, item.href)
             }}
             onsearch={openSearch}
-            onNew={(trigger) => {
+            onNew={activeNav === 'files' ? (trigger) => {
               setMobileDrawerOpen(false)
               triggerNewAction(trigger)
-            }}
+            } : undefined}
           />
         ) : null}
       </div>

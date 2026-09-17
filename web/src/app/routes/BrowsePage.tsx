@@ -99,7 +99,7 @@ export function BrowsePage() {
   const [conflictRetry, setConflictRetry] = useState<((kind: OnConflict) => void) | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const [newMenuOpen, setNewMenuOpen] = useState(false)
-  const [newMenuPosition, setNewMenuPosition] = useState({ x: 0, y: 0 })
+  const [newMenuPosition, setNewMenuPosition] = useState<{ x: number; y: number; align: 'start' | 'end' }>({ x: 0, y: 0, align: 'end' })
   const [newMenuTrigger, setNewMenuTrigger] = useState<HTMLElement | null>(null)
   const [overflowOpen, setOverflowOpen] = useState(false)
   const [overflowPosition, setOverflowPosition] = useState({ x: 0, y: 0 })
@@ -209,15 +209,18 @@ export function BrowsePage() {
 
   useEffect(() => {
     const handleNew = (event: Event) => {
-      if (!canCreate) return
+      // The sidebar button is shown for the browse view as a whole, but a
+      // folder can still refuse creation. Saying so beats a button that
+      // silently does nothing.
+      if (!canCreate) { setSnackbar(t('error.acl_denied')); return }
       const anchor = (event as CustomEvent<NewActionAnchor | undefined>).detail
       setNewMenuTrigger(null)
-      setNewMenuPosition(anchor ?? { x: 80, y: 120 })
+      setNewMenuPosition(anchor ?? { x: 80, y: 120, align: 'start' })
       setNewMenuOpen(true)
     }
     window.addEventListener('stowcloud:new', handleNew)
     return () => window.removeEventListener('stowcloud:new', handleNew)
-  }, [canCreate])
+  }, [canCreate, t])
   const controlSelector = 'button, input, a, [role="menuitem"], [role="menu"]'
   const contentSelector = `.sc-row, .sc-file-grid__card, ${controlSelector}`
 
@@ -374,7 +377,7 @@ export function BrowsePage() {
     const trigger = event.currentTarget
     const rect = trigger.getBoundingClientRect()
     setNewMenuTrigger(trigger)
-    setNewMenuPosition({ x: rect.right, y: rect.bottom + 4 })
+    setNewMenuPosition({ x: rect.right, y: rect.bottom + 4, align: 'end' })
     setNewMenuOpen(true)
   }
   const closeOverflow = () => {
@@ -754,7 +757,7 @@ export function BrowsePage() {
       <Menu open={contextMenu !== null} onClose={() => { setContextMenu(null); menuTrigger?.focus(); setMenuTrigger(null) }} x={contextMenu?.x} y={contextMenu?.y}><div className="sc-browse-new-menu" role="menu">{actions.map((action) => <button key={action.key} type="button" role="menuitem" onClick={() => { setContextMenu(null); action.run() }}>{action.label}</button>)}</div></Menu>
       <Menu open={blankMenu !== null} onClose={() => { setBlankMenu(null); menuTrigger?.focus(); setMenuTrigger(null) }} x={blankMenu?.x} y={blankMenu?.y}><div className="sc-browse-new-menu" role="menu">{canCreate ? <><button type="button" role="menuitem" onClick={() => { setBlankMenu(null); setNewFolderOpen(true) }}>{t('common.new_folder')}</button><button type="button" role="menuitem" onClick={() => { setBlankMenu(null); fileInput?.click() }}>{t('common.upload')}</button><button type="button" role="menuitem" onClick={async () => { setBlankMenu(null); if (supportsDirectoryPicker()) { try { handleUploadEntries(await pickDirectory()) } catch { /* canceled */ } } else dirInput?.click() }}>{t('browse.upload_folder')}</button></> : null}</div></Menu>
       <Menu open={sortMenuOpen} onClose={closeSort} x={sortMenuPosition.x} y={sortMenuPosition.y} align="end"><div className="sc-browse-new-menu" role="menu">{(['name', 'size', 'mtime', 'kind'] as const).map((key) => <button type="button" role="menuitem" key={key} onClick={() => chooseSort(key)}>{sortKey === key ? t('browse.sort_selected', { label: key === 'name' ? t('browse.sort_by_name') : key === 'size' ? t('browse.sort_by_size') : key === 'mtime' ? t('browse.sort_by_modified') : t('browse.sort_by_kind'), direction: sortOrder === 'asc' ? t('browse.sort_ascending') : t('browse.sort_descending') }) : key === 'name' ? t('browse.sort_by_name') : key === 'size' ? t('browse.sort_by_size') : key === 'mtime' ? t('browse.sort_by_modified') : t('browse.sort_by_kind')}</button>)}</div></Menu>
-      {canCreate ? <Menu open={newMenuOpen} onClose={closeNewMenu} x={newMenuPosition.x} y={newMenuPosition.y} align="end"><div className="sc-browse-new-menu" role="menu"><button type="button" role="menuitem" onClick={() => { closeNewMenu(); setNewFolderOpen(true) }}>{t('common.new_folder')}</button><button type="button" role="menuitem" onClick={() => { closeNewMenu(); fileInput?.click() }}>{t('common.upload')}</button><button type="button" role="menuitem" onClick={async () => { closeNewMenu(); if (supportsDirectoryPicker()) { try { handleUploadEntries(await pickDirectory()) } catch { /* canceled */ } } else dirInput?.click() }}>{t('browse.upload_folder')}</button></div></Menu> : null}
+      {canCreate ? <Menu open={newMenuOpen} onClose={closeNewMenu} x={newMenuPosition.x} y={newMenuPosition.y} align={newMenuPosition.align}><div className="sc-browse-new-menu" role="menu"><button type="button" role="menuitem" onClick={() => { closeNewMenu(); setNewFolderOpen(true) }}>{t('common.new_folder')}</button><button type="button" role="menuitem" onClick={() => { closeNewMenu(); fileInput?.click() }}>{t('common.upload')}</button><button type="button" role="menuitem" onClick={async () => { closeNewMenu(); if (supportsDirectoryPicker()) { try { handleUploadEntries(await pickDirectory()) } catch { /* canceled */ } } else dirInput?.click() }}>{t('browse.upload_folder')}</button></div></Menu> : null}
       <Menu open={overflowOpen} onClose={closeOverflow} x={overflowPosition.x} y={overflowPosition.y} align="end">
         <div className="sc-browse-new-menu" role="menu">
           {compact ? (

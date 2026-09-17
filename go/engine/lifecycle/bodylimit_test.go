@@ -4,6 +4,7 @@ package lifecycle_test
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/clock"
 )
 
 // A body declared past its route's class is answered with a 413 the client can
@@ -25,8 +28,14 @@ func TestAnOversizedDeclaredBodyIsRefusedWithAReadableStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dialing: %v", err)
 	}
-	defer func() { _ = conn.Close() }()
-	if derr := conn.SetDeadline(time.Now().Add(20 * time.Second)); derr != nil {
+	defer func() {
+		// The server may have closed its side already, which is not a fault
+		// here: the status it wrote is what this test reads.
+		if cerr := conn.Close(); cerr != nil && !errors.Is(cerr, net.ErrClosed) {
+			t.Errorf("closing the connection: %v", cerr)
+		}
+	}()
+	if derr := conn.SetDeadline(clock.System().Now().Add(20 * time.Second)); derr != nil {
 		t.Fatalf("deadline: %v", derr)
 	}
 
@@ -52,8 +61,14 @@ func TestAnOversizedDeclaredBodyIsRefusedWithAReadableStatus(t *testing.T) {
 	if rerr != nil {
 		t.Fatalf("the client never received a status: %v", rerr)
 	}
-	defer func() { _ = resp.Body.Close() }()
-	_, _ = io.Copy(io.Discard, resp.Body)
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			t.Errorf("closing the body: %v", cerr)
+		}
+	}()
+	if _, derr := io.Copy(io.Discard, resp.Body); derr != nil {
+		t.Fatalf("reading the body: %v", derr)
+	}
 
 	if resp.StatusCode != http.StatusRequestEntityTooLarge {
 		t.Errorf("answered %d, want 413", resp.StatusCode)
