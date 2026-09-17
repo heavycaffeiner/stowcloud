@@ -81,6 +81,59 @@ async function withRetry<T>(attempt: () => Promise<T>, safe: boolean): Promise<T
   }
 }
 
+export class DirectUploadUnsupportedError extends Error {
+  readonly unsupported = true
+  constructor() {
+    super('direct multipart upload is not supported')
+    this.name = 'DirectUploadUnsupportedError'
+  }
+}
+
+export interface DirectCreateParams {
+  path: string
+  size: number
+  checksum?: string
+  ifMatch?: string
+}
+
+export interface DirectPart {
+  partNumber: number
+  size: number
+  etag: string
+  checksum?: string
+}
+
+export interface DirectReservation {
+  id: string
+  state: string
+  size: number
+  checksum?: string
+  partSize: number
+  expiresAt: string
+  parts: DirectPart[]
+}
+
+export interface DirectPartURL {
+  partNumber: number
+  url: string
+  headers: Record<string, string>
+  expiresAt?: string
+}
+
+export interface DirectTransport {
+  reserveDirect(p: DirectCreateParams): Promise<DirectReservation>
+  directStatus(id: string): Promise<DirectReservation>
+  directPart(id: string, partNumber: number, size: number, checksum: string): Promise<DirectPartURL>
+  uploadDirectPart(
+    part: DirectPartURL,
+    body: Blob,
+    signal?: AbortSignal,
+    onProgress?: (bytesSent: number) => void,
+  ): Promise<{ etag: string; checksum?: string }>
+  completeDirect(id: string, parts: DirectPart[]): Promise<DirectReservation>
+  cancelDirect(id: string): Promise<void>
+}
+
 
 export interface CreateSessionParams {
   filename: string
@@ -106,11 +159,20 @@ export interface Transport {
     onProgress?: (bytesSent: number) => void
   ): Promise<{ offset: number }>
   /** `chunkSize` is the session's server-fixed chunk size (`Sc-Chunk-Size`,
-   * ): undefined only if the backend predates the
-   *  header, in which case the caller falls back to its own remembered
-   *  value. */
+   * undefined only if the backend predates the header). */
   headSession(id: string): Promise<{ offset: number; totalSize: number; chunkSize?: number }>
   deleteSession(id: string): Promise<void>
+  reserveDirect?: (p: DirectCreateParams) => Promise<DirectReservation>
+  directStatus?: (id: string) => Promise<DirectReservation>
+  directPart?: (id: string, partNumber: number, size: number, checksum: string) => Promise<DirectPartURL>
+  uploadDirectPart?: (
+    part: DirectPartURL,
+    body: Blob,
+    signal?: AbortSignal,
+    onProgress?: (bytesSent: number) => void,
+  ) => Promise<{ etag: string; checksum?: string }>
+  completeDirect?: (id: string, parts: DirectPart[]) => Promise<DirectReservation>
+  cancelDirect?: (id: string) => Promise<void>
 }
 
 // ── Real transport ──
@@ -119,7 +181,134 @@ function b64(s: string): string {
   return btoa(unescape(encodeURIComponent(s)))
 }
 
+
 export class HttpTransport implements Transport {
+  async reserveDirect(p: DirectCreateParams): Promise<DirectReservation> {
+    return withRetry(async () => {
+      const res = await send(`${BASE}/direct-uploads`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'Sc-Csrf': csrfToken },
+        body: JSON.stringify({
+          path: p.path,
+          size: String(p.size),
+          ...(p.checksum !== undefined ? { checksum: p.checksum } : {}),
+          ...(p.ifMatch !== undefined ? { if_match: p.ifMatch } : {})
+        })
+      })
+      if (res.status === 501 || res.status === 422) throw new DirectUploadUnsupportedError()
+      if (!res.ok) throw new UploadHttpError(res.status, `direct upload reservation failed: ${res.status}`, retryAfterMs(res.headers.get('Retry-After')))
+      const body = (await res.json().catch(() => null)) as Record<string, unknown> | null
+      if (!body || body.capability !== true || typeof body.id !== 'string') throw new DirectUploadUnsupportedError()
+      const size = Number(body.size)
+      const partSize = Number(body.part_size)
+      if (!Number.isSafeInteger(size) || size < 0 || !Number.isSafeInteger(partSize) || partSize <= 0 || typeof body.state !== 'string' || typeof body.expires_at !== 'string') {
+        throw new UploadHttpError(502, 'direct upload reservation was malformed')
+      }
+      return {
+        id: body.id,
+        state: body.state,
+        size,
+        ...(typeof body.checksum === 'string' ? { checksum: body.checksum } : {}),
+        partSize,
+        expiresAt: body.expires_at,
+        parts: Array.isArray(body.parts) ? body.parts.flatMap((part) => {
+          if (!part || typeof part !== 'object') return []
+          const row = part as Record<string, unknown>
+          const partNumber = Number(row.part_number)
+          const rowSize = Number(row.size)
+          if (!Number.isSafeInteger(partNumber) || partNumber < 1 || !Number.isSafeInteger(rowSize) || rowSize < 0 || typeof row.etag !== 'string') return []
+          return [{ partNumber, size: rowSize, etag: row.etag, ...(typeof row.checksum === 'string' ? { checksum: row.checksum } : {}) }]
+        }) : []
+      }
+    }, false)
+  }
+
+  async directStatus(id: string): Promise<DirectReservation> {
+    const res = await send(`${BASE}/direct-uploads/${encodeURIComponent(id)}`, { credentials: 'include' })
+    if (!res.ok) throw new UploadHttpError(res.status, `direct upload status failed: ${res.status}`)
+    const body = (await res.json().catch(() => null)) as Record<string, unknown> | null
+    if (!body || typeof body.id !== 'string' || typeof body.state !== 'string') throw new UploadHttpError(502, 'direct upload status was malformed')
+    const size = Number(body.size)
+    const partSize = Number(body.part_size)
+    if (!Number.isSafeInteger(size) || size < 0 || !Number.isSafeInteger(partSize) || partSize <= 0 || typeof body.expires_at !== 'string') throw new UploadHttpError(502, 'direct upload status was malformed')
+    return {
+      id: body.id,
+      state: body.state,
+      size,
+      ...(typeof body.checksum === 'string' ? { checksum: body.checksum } : {}),
+      partSize,
+      expiresAt: body.expires_at,
+      parts: Array.isArray(body.parts) ? body.parts.flatMap((part) => {
+        if (!part || typeof part !== 'object') return []
+        const row = part as Record<string, unknown>
+        const partNumber = Number(row.part_number)
+        const rowSize = Number(row.size)
+        if (!Number.isSafeInteger(partNumber) || partNumber < 1 || !Number.isSafeInteger(rowSize) || rowSize < 0 || typeof row.etag !== 'string') return []
+        return [{ partNumber, size: rowSize, etag: row.etag, ...(typeof row.checksum === 'string' ? { checksum: row.checksum } : {}) }]
+      }) : []
+    }
+  }
+
+  async directPart(id: string, partNumber: number, size: number, checksum: string): Promise<DirectPartURL> {
+    const res = await send(`${BASE}/direct-uploads/${encodeURIComponent(id)}/parts`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', 'Sc-Csrf': csrfToken },
+      body: JSON.stringify({ part_number: String(partNumber), size: String(size), checksum })
+    })
+    if (!res.ok) throw new UploadHttpError(res.status, `direct upload part URL failed: ${res.status}`, retryAfterMs(res.headers.get('Retry-After')))
+    const body = (await res.json().catch(() => null)) as Record<string, unknown> | null
+    if (!body || typeof body.url !== 'string' || typeof body.headers !== 'object' || body.headers === null) throw new UploadHttpError(502, 'direct upload part URL was malformed')
+    const headers: Record<string, string> = {}
+    for (const [key, value] of Object.entries(body.headers as Record<string, unknown>)) if (typeof value === 'string') headers[key] = value
+    return {
+      partNumber: Number(body.part_number),
+      url: body.url,
+      headers,
+      ...(typeof body.expires_at === 'string' ? { expiresAt: body.expires_at } : {})
+    }
+  }
+
+  async uploadDirectPart(part: DirectPartURL, body: Blob, signal?: AbortSignal): Promise<{ etag: string; checksum?: string }> {
+    return withRetry(async () => {
+      const res = await send(part.url, { method: 'PUT', headers: part.headers, body, signal })
+      if (!res.ok) throw new UploadHttpError(res.status, `direct upload part failed: ${res.status}`, retryAfterMs(res.headers.get('Retry-After')))
+      const etag = res.headers.get('ETag') ?? res.headers.get('etag')
+      if (!etag) throw new UploadHttpError(502, 'direct upload part did not return an ETag')
+      const checksum = res.headers.get('x-amz-checksum-sha256') ?? res.headers.get('X-Checksum-Sha256') ?? undefined
+      return { etag, ...(checksum ? { checksum } : {}) }
+    }, true)
+  }
+
+  async completeDirect(id: string, parts: DirectPart[]): Promise<DirectReservation> {
+    const res = await send(`${BASE}/direct-uploads/${encodeURIComponent(id)}/complete`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', 'Sc-Csrf': csrfToken },
+      body: JSON.stringify({ parts: parts.map((part) => ({ part_number: String(part.partNumber), size: String(part.size), etag: part.etag, ...(part.checksum !== undefined ? { checksum: part.checksum } : {}) })) })
+    })
+    if (!res.ok) throw new UploadHttpError(res.status, `direct upload completion failed: ${res.status}`, retryAfterMs(res.headers.get('Retry-After')))
+    return this.directResponse(await res.json().catch(() => null))
+  }
+
+  async cancelDirect(id: string): Promise<void> {
+    const res = await send(`${BASE}/direct-uploads/${encodeURIComponent(id)}/cancel`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Sc-Csrf': csrfToken }
+    })
+    if (!res.ok && res.status !== 404 && res.status !== 410) throw new UploadHttpError(res.status, `direct upload cancellation failed: ${res.status}`, retryAfterMs(res.headers.get('Retry-After')))
+  }
+
+  private directResponse(raw: unknown): DirectReservation {
+    if (!raw || typeof raw !== 'object') throw new UploadHttpError(502, 'direct upload response was malformed')
+    const body = raw as Record<string, unknown>
+    const size = Number(body.size)
+    const partSize = Number(body.part_size)
+    if (typeof body.id !== 'string' || typeof body.state !== 'string' || !Number.isSafeInteger(size) || size < 0 || !Number.isSafeInteger(partSize) || partSize <= 0 || typeof body.expires_at !== 'string') throw new UploadHttpError(502, 'direct upload response was malformed')
+    return { id: body.id, state: body.state, size, ...(typeof body.checksum === 'string' ? { checksum: body.checksum } : {}), partSize, expiresAt: body.expires_at, parts: [] }
+  }
   async createSession(p: CreateSessionParams): Promise<{ id: string; offset: number }> {
     const metaParts = [
       `filename ${b64(p.filename)}`,

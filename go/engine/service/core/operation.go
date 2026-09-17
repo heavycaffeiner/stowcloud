@@ -4,7 +4,9 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
@@ -16,33 +18,20 @@ type OperationID int64
 
 // Operation is one long-running job as a client sees it.
 type Operation struct {
-	ID    OperationID
-	Kind  state.OpKind
-	State state.OpState
-
-	// Progress and Total form the item counter behind a progress bar. Total
-	// stays zero while the size remains unknown until the walk completes.
-	Progress int64
-	Total    int64
-
-	// Message is the failure line the runner recorded; empty while running
-	// or on success.
-	Message string
-
-	// Results is the bounded per-item outcome set, present once the
-	// operation is terminal. Nothing streams during the run.
-	Results []state.OpResult
-
-	// Attempting is what the runner had started and never recorded an
-	// outcome for, so it is only non-empty for an operation the process died
-	// during. Whether the item landed is genuinely unknown, which is why it
-	// is reported apart from the ones nothing touched.
-	Attempting []string
-
-	// Pending is what the operation was asked for and never reached.
-	// Untouched, so re-running exactly these is safe, which is what lets a
-	// client offer them as a to-do list rather than only a count.
-	Pending []string
+	ID           OperationID
+	Kind         state.OpKind
+	State        state.OpState
+	Progress     int64
+	Total        int64
+	ProgressUnit string
+	Attempt      int
+	MaxAttempts  int
+	NextRunNs    int64
+	ErrorKey     string
+	Message      string
+	Results      []state.OpResult
+	Attempting   []string
+	Pending      []string
 }
 
 // KindName is the wire name of an operation's kind, and StateName of its
@@ -70,8 +59,14 @@ func (o Operation) KindName() string {
 // StateName is the wire name of the operation's state.
 func (o Operation) StateName() string {
 	switch o.State {
+	case state.OpQueued:
+		return "queued"
 	case state.OpRunning:
 		return "running"
+	case state.OpPaused:
+		return "paused"
+	case state.OpRetrying:
+		return "retrying"
 	case state.OpDone:
 		return "done"
 	case state.OpFailed:
@@ -94,12 +89,9 @@ func (o Operation) Terminal() bool {
 	switch o.State {
 	case state.OpDone, state.OpFailed, state.OpCancelled, state.OpInterrupted:
 		return true
-	case state.OpRunning:
+	case state.OpQueued, state.OpRunning, state.OpPaused, state.OpRetrying:
 		return false
 	default:
-		// An unrecognised state counts as finished. A client polling forever
-		// on a state this build does not know is worse than one that stops and
-		// shows what it has.
 		return true
 	}
 }
@@ -111,16 +103,12 @@ func (o Operation) Terminal() bool {
 // how one of them drifts. That tier checks its own answer against this.
 func OperationStateNames() map[string]bool {
 	return map[string]bool{
-		"running":     false,
-		"done":        true,
-		"failed":      true,
-		"cancelled":   true,
-		"interrupted": true,
+		"queued": false, "running": false, "paused": false, "retrying": false,
+		"done": true, "failed": true, "cancelled": true, "interrupted": true,
 	}
 }
 
-// OperationItem is one item's outcome, with the persistence tier's reason
-// already named.
+// OperationItem is one item's outcome.
 type OperationItem struct {
 	Index int64
 	Path  string
@@ -189,8 +177,6 @@ func (c *Core) Operation(ctx context.Context, owner UserID, id OperationID) (Ope
 	}
 
 	op := operationOf(row, results)
-	// A running operation has outstanding items by definition, so the split
-	// is only interesting once it has stopped.
 	if row.State != state.OpRunning {
 		attempting, pending, uerr := c.state.UnfinishedOpItems(ctx, row.ID)
 		if uerr != nil {
@@ -235,7 +221,7 @@ func (c *Core) ListOperations(ctx context.Context, owner UserID, limit int) ([]O
 	out := make([]Operation, 0, len(rows))
 	for _, row := range rows {
 		op := operationOf(row, nil)
-		if row.State == state.OpInterrupted {
+		if row.State != state.OpRunning {
 			attempting, pending, uerr := c.state.UnfinishedOpItems(ctx, row.ID)
 			if uerr != nil {
 				return nil, uerr
@@ -247,20 +233,15 @@ func (c *Core) ListOperations(ctx context.Context, owner UserID, limit int) ([]O
 	return out, nil
 }
 
-// operationOf projects a stored row into the domain value.
 func operationOf(row state.Op, results []state.OpResult) Operation {
 	return Operation{
-		ID:       OperationID(row.ID),
-		Kind:     row.Kind,
-		State:    row.State,
-		Progress: row.Progress,
-		Total:    row.Total,
-		Message:  row.Message,
-		Results:  results,
+		ID: OperationID(row.ID), Kind: row.Kind, State: row.State,
+		Progress: row.Progress, Total: row.Total, ProgressUnit: row.ProgressUnit,
+		Attempt: row.Attempt, MaxAttempts: row.MaxAttempts, NextRunNs: row.NextRunNs,
+		ErrorKey: row.ErrorKey, Message: row.Message, Results: results,
 	}
 }
 
-// CopyStart is what a caller polls a started copy with.
 type CopyStart struct {
 	ID OperationID
 
@@ -311,26 +292,30 @@ func (c *Core) StartCopy(
 	); err != nil {
 		return CopyStart{}, err
 	}
-
-	// A single named item, so a copy interrupted partway can report what it was
-	// processing instead of merely that it stopped.
-	id, err := c.state.CreateOp(ctx, int64(owner), state.OpCopy, 1,
-		c.clk.Nanos(), []string{dest.path.String()})
+	payload, err := json.Marshal(copyJobPayload{
+		Owner: int64(owner), FromShare: uint32(from.Share()), FromPath: from.Path().String(),
+		ToShare: uint32(dest.Share()), ToPath: dest.Path().String(),
+		SourceKind: uint8(st.Kind), Overwriting: overwriting,
+	})
 	if err != nil {
 		return CopyStart{}, err
 	}
-
-	// The request's context ends when the response is written and this work
-	// outlives it by design. Cancelling on client disconnect is exactly the
-	// bug this detachment avoids; the caller polls the row for the result.
-	//
-	// Counted in the job group, because outliving the request is not the same
-	// as outliving the process: a shutdown waits for this rather than closing
-	// the database it is about to write its outcome into.
-	runCtx := context.WithoutCancel(ctx)
-	c.jobs.Go(runCtx, "core: long copy", func() {
-		c.runCopyPolicy(runCtx, id, from, dest, st, overwriting)
+	created := c.clk.Nanos()
+	id, err := c.state.CreateQueuedOp(ctx, state.QueuedOp{
+		User: int64(owner), Kind: state.OpCopy, Total: 1, CreatedNs: created,
+		Payload: payload, ProgressUnit: "items", MaxAttempts: 4,
+		NextRunNs: created, Paths: []string{dest.path.String()},
 	})
+	if err != nil {
+		return CopyStart{}, err
+	}
+	if c.jobsStopped() {
+		if err := c.state.InterruptOp(ctx, id, c.clk.Nanos()); err != nil {
+			return CopyStart{}, err
+		}
+		return CopyStart{ID: OperationID(id), Dest: dest, Started: true}, nil
+	}
+	c.StartJobs()
 	return CopyStart{ID: OperationID(id), Dest: dest, Started: true}, nil
 }
 
@@ -353,20 +338,25 @@ func (c *Core) jobsStopped() bool {
 }
 
 // DrainJobs waits for the work a request started and left running.
-//
-// Called by a shutdown after StopJobs and before the databases close. A copy
-// still running when they closed reported "recording a copy's outcome failed"
-// and left an operation row that reads as never finished, and in a test it
-// wrote into a directory the harness had already removed.
-//
-// ctx bounds the wait: its error says the work is still running, which is
-// something to report rather than something to hang on.
 func (c *Core) DrainJobs(ctx context.Context) error {
+	for {
+		runnable, err := c.state.HasRunnableOp(ctx, c.clk.Nanos())
+		if err != nil {
+			return err
+		}
+		if !runnable && len(c.jobSlots) == 0 {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	c.StopJobs()
 	return c.jobs.Wait(ctx)
 }
 
-// runCopy is the detached half of StartCopy.
-//
 // Every terminal path writes the item's result row, because an item with no
 // result row is read as one the runner never got to: a finished copy that
 // recorded nothing would report itself done and list its own file as never

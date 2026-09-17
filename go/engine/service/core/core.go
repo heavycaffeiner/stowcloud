@@ -101,20 +101,15 @@ type Core struct {
 	sharesMu sync.RWMutex
 	shares   map[ShareID]*shareEntry
 
-	// homeOnce serializes the once-per-user home creation. Only the slow
-	// path takes it; the steady state reads the grant marker and returns.
+	// homeOnce serializes the once-per-user home creation.
 	homeOnce sync.Mutex
 
-	// jobs holds the work a request started and left running: a recursive
-	// copy, today. Tracked so a shutdown can wait for it rather than closing
-	// the databases it is still writing its outcome into.
-	jobs task.Group
-
-	// jobsCtx ends when a shutdown asks that work to stop. The gate a copy
-	// polls at item boundaries reads it, so a copy of a large tree stops at
-	// its next item instead of running past the wait on a clock.
-	jobsCtx  context.Context
-	jobsStop context.CancelFunc
+	// jobs tracks request-detached work and the durable dispatcher.
+	jobs         task.Group
+	jobsCtx      context.Context
+	jobsStop     context.CancelFunc
+	jobStartOnce sync.Once
+	jobSlots     chan struct{}
 }
 
 // New wires a Core over the store and loads the grant table into the

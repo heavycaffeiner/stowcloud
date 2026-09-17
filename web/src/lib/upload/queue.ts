@@ -113,6 +113,7 @@ function syncWorkerPreferences(): void {
       chunkDefault: session.limits.chunk_size
     } satisfies Cmd)
   }
+  worker.postMessage({ t: 'direct-capability', supported: session?.features.direct_uploads === true } satisfies Cmd)
   worker.postMessage({ t: 'chunk-size', size: loadStoredChunkSize(currentChunkMin()) } satisfies Cmd)
   worker.postMessage({ t: 'concurrency', maxInflight: loadStoredConcurrency() } satisfies Cmd)
 }

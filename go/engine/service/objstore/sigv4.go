@@ -125,18 +125,24 @@ func awsURIEncode(s string, encodeSlash bool) string {
 // and "=" always present even for a valueless key. It is used both to sign
 // and, by the caller assigning its result straight to a request's RawQuery,
 // to send, so the two can never disagree about what was signed.
+// canonicalQuery renders params in SigV4's canonical query-string form.
+// Sorting is performed after URI encoding, as required by SigV4: encoded
+// bytes, not the caller's unescaped spelling, determine key/value order.
 func canonicalQuery(params [][2]string) string {
-	sorted := make([][2]string, len(params))
-	copy(sorted, params)
+	type encodedPair struct{ key, value string }
+	sorted := make([]encodedPair, len(params))
+	for i, kv := range params {
+		sorted[i] = encodedPair{key: awsURIEncode(kv[0], true), value: awsURIEncode(kv[1], true)}
+	}
 	sort.Slice(sorted, func(i, j int) bool {
-		if sorted[i][0] != sorted[j][0] {
-			return sorted[i][0] < sorted[j][0]
+		if sorted[i].key != sorted[j].key {
+			return sorted[i].key < sorted[j].key
 		}
-		return sorted[i][1] < sorted[j][1]
+		return sorted[i].value < sorted[j].value
 	})
 	parts := make([]string, len(sorted))
 	for i, kv := range sorted {
-		parts[i] = awsURIEncode(kv[0], true) + "=" + awsURIEncode(kv[1], true)
+		parts[i] = kv.key + "=" + kv.value
 	}
 	return strings.Join(parts, "&")
 }

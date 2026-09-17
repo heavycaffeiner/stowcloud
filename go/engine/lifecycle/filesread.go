@@ -10,7 +10,6 @@ package lifecycle
 
 import (
 	"errors"
-	"github.com/gofiber/fiber/v2"
 	"io"
 	"log/slog"
 	"mime"
@@ -18,6 +17,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/gofiber/fiber/v2"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/archive"
@@ -27,6 +29,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/objstore"
 )
 
 // filesRead streams one file inline, for the surfaces that render bytes: the
@@ -200,10 +203,24 @@ func (e *Engine) filesDownloadFetch(c *fiber.Ctx) error {
 	if len(t.Paths) != 1 {
 		return refuse(c, apierr.Classified{Class: apierr.NotFound})
 	}
-
 	r, err := e.resolve(owner, t.Paths[0], acl.Read|acl.Download)
 	if err != nil {
 		return fail(c, err)
+	}
+
+	if c.Get(fiber.HeaderRange) == "" {
+		if provider, ok := r.Root().(objstore.DirectTransferProvider); ok && provider.DirectTransfer() {
+			keyer, keyOK := r.Root().(interface{ ObjectKey(vfs.SafePath) string })
+			if keyOK {
+				key := keyer.ObjectKey(r.Path())
+				if signed, serr := provider.PresignGet(c.UserContext(), key, 5*time.Minute); serr == nil {
+					c.Set(fiber.HeaderContentDisposition, httpheader.Attachment(t.Name))
+					return c.Redirect(signed, fiber.StatusFound)
+				} else if !errors.Is(serr, objstore.ErrDirectTransferUnsupported) {
+					return fail(c, serr)
+				}
+			}
+		}
 	}
 	return e.streamFile(c, r, t.Name)
 }

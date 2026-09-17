@@ -4,7 +4,7 @@ import type { JobKindWire, JobState, JobStatus } from '../api/client'
 import { batchErrorKey } from '../api/error-text'
 import { useI18n } from '../i18n/use-i18n'
 import { queryClient } from '../query/client'
-import { jobCancelMutation, jobListQuery, jobQuery } from '../query/jobs'
+import { jobCancelMutation, jobListQuery, jobPauseMutation, jobQuery, jobResumeMutation, jobRetryMutation } from '../query/jobs'
 import { jobTray } from '../store/jobs.store'
 import { useStore } from '../store/use-store'
 import { Icon } from './Icon'
@@ -21,6 +21,9 @@ interface JobRow {
   messageParams?: Record<string, string>
   attempting: string[]
   pending: string[]
+  attempt: number
+  maxAttempts: number
+  nextRunNs: string
 }
 
 function frontendKind(kind: JobKindWire): JobRow['kind'] {
@@ -33,18 +36,18 @@ function kindLabel(kind: JobRow['kind'], t: (key: string, params?: Record<string
 
 function rowFor(id: string, status: JobStatus | undefined, error: boolean): JobRow {
   if (!status || error) {
-    return { id, kind: 'copy', done: 0, total: 0, status: error ? 'error' : 'running', message: error ? /* i18n */ 'job.could_not_check_job_status' : undefined, attempting: [], pending: [] }
+    return { id, kind: 'copy', done: 0, total: 0, status: error ? 'error' : 'running', message: error ? /* i18n */ 'job.could_not_check_job_status' : undefined, attempting: [], pending: [], attempt: 0, maxAttempts: 0, nextRunNs: '0' }
   }
   const kind = frontendKind(status.kind)
   if (status.state === 'error') {
     const first = batchErrorKey(status.results.find((result) => !result.ok)?.error)
-    return { id, kind, done: status.done, total: status.total, status: 'error', message: first?.key, messageParams: first?.params, attempting: status.attempting, pending: status.pending }
+    return { id, kind, done: status.done, total: status.total, status: 'error', message: first?.key, messageParams: first?.params, attempting: status.attempting, pending: status.pending, attempt: status.attempt, maxAttempts: status.max_attempts, nextRunNs: status.next_run_ns }
   }
-  return { id, kind, done: status.done, total: status.total, status: status.state, attempting: status.attempting, pending: status.pending }
+  return { id, kind, done: status.done, total: status.total, status: status.state, attempting: status.attempting, pending: status.pending, attempt: status.attempt, maxAttempts: status.max_attempts, nextRunNs: status.next_run_ns }
 }
 
 function jobProgressValue(item: JobRow): number | undefined {
-  if (item.status !== 'running') return 1
+  if (item.status !== 'running') return item.status === 'done' ? 1 : undefined
   if (item.total <= 0) return undefined
   return Math.min(Math.max(item.done / item.total, 0), 1)
 }
@@ -54,13 +57,16 @@ export function JobTray() {
   const ids = useStore(jobTray, (state) => state.ids)
   const open = useStore(jobTray, (state) => state.open)
   const [expandedJobs, setExpandedJobs] = useState<ReadonlySet<string>>(() => new Set())
+  const cancel = useMutation(jobCancelMutation())
+  const retry = useMutation(jobRetryMutation())
+  const pause = useMutation(jobPauseMutation())
+  const resume = useMutation(jobResumeMutation())
   const list = useQuery(jobListQuery())
   const statuses = useQueries({ queries: ids.map((id) => jobQuery(id)) })
-  const cancel = useMutation(jobCancelMutation())
+  const rows = useMemo(() => ids.map((id, index) => rowFor(id, statuses[index]?.data, statuses[index]?.isError === true)), [ids, statuses])
   const previous = useRef(new Map<string, JobState>())
   const politeRef = useRef<HTMLDivElement | null>(null)
   const assertiveRef = useRef<HTMLDivElement | null>(null)
-  const rows = useMemo(() => ids.map((id, index) => rowFor(id, statuses[index]?.data, statuses[index]?.isError === true)), [ids, statuses])
 
   useEffect(() => {
     jobTray.track(...(list.data?.jobs ?? []).map((job) => job.id))
@@ -107,8 +113,8 @@ export function JobTray() {
     return <><div ref={politeRef} className="sc-job-tray__sr-only" role="status" aria-live="polite" aria-atomic="true"></div><div ref={assertiveRef} className="sc-job-tray__sr-only" role="alert" aria-live="assertive" aria-atomic="true"></div></>
   }
 
-  const activeCount = rows.filter((row) => row.status === 'running').length
-  const clearFinished = (): void => jobTray.forget(...rows.filter((row) => row.status !== 'running').map((row) => row.id))
+  const activeCount = rows.filter((row) => ['queued', 'running', 'paused', 'retrying'].includes(row.status)).length
+  const clearFinished = (): void => jobTray.forget(...rows.filter((row) => !['queued', 'running', 'paused', 'retrying'].includes(row.status)).map((row) => row.id))
 
   return (
     <>
@@ -142,6 +148,9 @@ export function JobTray() {
                 <>
                   <div className="sc-job-tray__row"><span className="sc-job-tray__name"><Icon name={item.kind === 'delete' ? 'delete' : item.kind === 'copy' ? 'content_copy' : 'search'} />{label}</span><span className="sc-job-tray__meta">{item.done} / {item.total || '?'}</span></div>
                   <mdui-linear-progress value={jobProgressValue(item)} aria-label={t('job.job', { kind: label })}></mdui-linear-progress>
+                  {item.status === 'queued' ? <p className="sc-job-tray__message">{t('job.queued')}</p> : null}
+                  {item.status === 'paused' ? <p className="sc-job-tray__message">{t('job.paused')}</p> : null}
+                  {item.status === 'retrying' ? <p className="sc-job-tray__message">{t('job.retrying', { attempt: item.attempt, max: item.maxAttempts || '?' })}</p> : null}
                   {item.status === 'error' && item.message ? <p className="sc-job-tray__message">{t(item.message, item.messageParams)}</p> : null}
                   {item.status === 'cancelled' ? <p className="sc-job-tray__message">{t('job.cancelled_completed', { count: item.done })}</p> : null}
                   {item.status === 'interrupted' ? <p className="sc-job-tray__message">{t('job.interrupted_by_server_restart_completed', { count: item.done })}</p> : null}
@@ -183,7 +192,7 @@ export function JobTray() {
                     </details>
                   ) : null}
                   <div className="sc-job-tray__controls">
-                    {item.status === 'running' ? <IconButton label={t('job.cancel_job')} onClick={() => cancel.mutate(item.id)}><Icon name="close" /></IconButton> : <IconButton label={t('common.clear')} onClick={() => jobTray.forget(item.id)}><Icon name="close" /></IconButton>}
+                    {item.status === 'running' ? <><IconButton label={t('job.pause_job')} onClick={() => pause.mutate(item.id)}><Icon name="pause" /></IconButton><IconButton label={t('job.cancel_job')} onClick={() => cancel.mutate(item.id)}><Icon name="close" /></IconButton></> : item.status === 'queued' || item.status === 'retrying' ? <IconButton label={t('job.cancel_job')} onClick={() => cancel.mutate(item.id)}><Icon name="close" /></IconButton> : item.status === 'paused' ? <><IconButton label={t('job.resume_job')} onClick={() => resume.mutate(item.id)}><Icon name="play_arrow" /></IconButton><IconButton label={t('job.cancel_job')} onClick={() => cancel.mutate(item.id)}><Icon name="close" /></IconButton></> : item.status === 'error' || item.status === 'interrupted' ? <IconButton label={t('job.retry_job')} onClick={() => retry.mutate(item.id)}><Icon name="refresh" /></IconButton> : <IconButton label={t('common.clear')} onClick={() => jobTray.forget(item.id)}><Icon name="close" /></IconButton>}
                   </div>
                 </>
               )

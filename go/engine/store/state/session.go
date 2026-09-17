@@ -61,6 +61,7 @@ func (d *DB) SessionByHash(ctx context.Context, hash []byte) (Session, error) {
 	return s, nil
 }
 
+
 // SessionsOf lists one account's live rows, most recently used first.
 func (d *DB) SessionsOf(ctx context.Context, user int64) (out []Session, err error) {
 	rows, err := d.f.SQL().QueryContext(ctx, sqlListSessions, user)

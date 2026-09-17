@@ -148,6 +148,22 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.jobsGet
 		case "jobs.cancel":
 			out[r.Name] = e.jobsCancel
+		case "jobs.retry":
+			out[r.Name] = e.jobsRetry
+		case "jobs.pause":
+			out[r.Name] = e.jobsPause
+		case "jobs.resume":
+			out[r.Name] = e.jobsResume
+		case "direct-uploads.create":
+			out[r.Name] = e.directUploadCreate
+		case "direct-uploads.status":
+			out[r.Name] = e.directUploadStatus
+		case "direct-uploads.part":
+			out[r.Name] = e.directUploadPart
+		case "direct-uploads.complete":
+			out[r.Name] = e.directUploadComplete
+		case "direct-uploads.cancel":
+			out[r.Name] = e.directUploadCancel
 		case "account.sessions.list":
 			out[r.Name] = e.accountSessions
 		case "account.app-passwords.list":

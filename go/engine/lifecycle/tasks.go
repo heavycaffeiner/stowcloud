@@ -11,11 +11,16 @@ package lifecycle
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/server"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/objstore"
+	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 )
 
 // How often each task runs. Written together so the intervals can be compared
@@ -65,6 +70,11 @@ func (e *Engine) tasks() []server.PeriodicTask {
 			Name:  "upload.sweep",
 			Every: sweepInterval,
 			Run:   e.sweepUploads,
+		},
+		{
+			Name:  "direct-transfer.sweep",
+			Every: sweepInterval,
+			Run:   e.sweepDirectTransfers,
 		},
 
 		// The four below are required by the startup check and have nothing
@@ -199,6 +209,31 @@ func (e *Engine) sweepUploads(ctx context.Context) error {
 	if report.ExpiredSessions > 0 || report.OrphanParts > 0 {
 		e.logger.Info("collected abandoned uploads",
 			"sessions", report.ExpiredSessions, "parts", report.OrphanParts)
+	}
+	return nil
+}
+// sweepDirectTransfers aborts only the multipart upload recorded by each
+// expired reservation, then marks the reservation and releases its quota.
+func (e *Engine) sweepDirectTransfers(ctx context.Context) error {
+	rows, err := e.State.ListExpiredDirectTransfers(ctx, e.now(), 100)
+	if err != nil {
+		return fmt.Errorf("listing expired direct transfers: %w", err)
+	}
+	for _, row := range rows {
+		if r, rerr := e.resolve(core.UserID(row.Owner), row.Path, acl.Write|acl.Create); rerr == nil {
+			if provider, ok := directProvider(r.Root()); ok && provider.DirectTransfer() {
+				if aerr := provider.AbortMultipart(ctx, row.ObjectKey, row.UploadID); aerr != nil && !errors.Is(aerr, objstore.ErrDirectTransferUnsupported) {
+					e.logger.Warn("aborting expired direct transfer failed", "error", aerr)
+					continue
+				}
+			}
+		}
+		if xerr := e.State.ExpireDirectTransfer(ctx, row.ID, e.now()); xerr != nil {
+			continue
+		}
+		if quota, qerr := e.State.ReleaseDirectTransferQuota(ctx, row.ID); qerr == nil && quota > 0 {
+				_ = state.NewQuota(e.State).Release(ctx, row.Owner, int64(quota))
+		}
 	}
 	return nil
 }

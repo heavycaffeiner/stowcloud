@@ -692,6 +692,70 @@ CREATE TABLE root_order (
 ) WITHOUT ROWID;
 `
 
+// Step 18 extends operations with durable dispatcher state. Existing rows
+// receive explicit neutral defaults and remain readable without a backfill.
+const schemaV18 = `
+ALTER TABLE operation ADD COLUMN payload BLOB NOT NULL DEFAULT X'';
+ALTER TABLE operation ADD COLUMN progress_unit TEXT NOT NULL DEFAULT 'items';
+ALTER TABLE operation ADD COLUMN attempt INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE operation ADD COLUMN max_attempts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE operation ADD COLUMN next_run_ns INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE operation ADD COLUMN updated_ns INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE operation ADD COLUMN started_ns INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE operation ADD COLUMN error_key TEXT;
+ALTER TABLE operation ADD COLUMN error_detail TEXT;
+ALTER TABLE operation ADD COLUMN lease_id TEXT;
+ALTER TABLE operation ADD COLUMN lease_expires_ns INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE operation ADD COLUMN pause_requested INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX operation_runnable ON operation(state, next_run_ns, created_ns);
+`
+
+// Step 19 stores object-store multipart reservations independently from the
+// existing upload-session protocol.
+const schemaV19 = `
+CREATE TABLE direct_transfer (
+  id                 TEXT PRIMARY KEY,
+  owner              INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+  share              INTEGER NOT NULL,
+  path               TEXT NOT NULL,
+  object_key         TEXT NOT NULL,
+  upload_id          TEXT NOT NULL,
+  expected_size      INTEGER NOT NULL,
+  expected_checksum  TEXT,
+  if_match           TEXT,
+  prior_size         INTEGER NOT NULL DEFAULT 0,
+  prior_etag         TEXT,
+  conflict_policy    TEXT NOT NULL DEFAULT '',
+  quota_reservation  INTEGER NOT NULL DEFAULT 0,
+  quota_released     INTEGER NOT NULL DEFAULT 0,
+  created_ns         INTEGER NOT NULL,
+  updated_ns         INTEGER NOT NULL,
+  expires_ns         INTEGER NOT NULL,
+  state              INTEGER NOT NULL,
+  error_key          TEXT,
+  error_detail       TEXT,
+  completed_ns       INTEGER,
+  lease_id           TEXT,
+  lease_expires_ns   INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX direct_transfer_owner ON direct_transfer(owner, created_ns);
+CREATE INDEX direct_transfer_expiry ON direct_transfer(state, expires_ns);
+
+CREATE TABLE direct_transfer_part (
+  transfer           TEXT NOT NULL REFERENCES direct_transfer(id) ON DELETE CASCADE,
+  part_number        INTEGER NOT NULL,
+  etag               TEXT NOT NULL,
+  size               INTEGER NOT NULL,
+  checksum           TEXT,
+  uploaded_ns        INTEGER NOT NULL,
+  state              INTEGER NOT NULL DEFAULT 0,
+  lease_id           TEXT,
+  lease_expires_ns   INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (transfer, part_number)
+) WITHOUT ROWID;
+CREATE INDEX direct_transfer_part_state ON direct_transfer_part(transfer, state);
+`
+
 // migrations is a function instead of a package-level slice so nothing can
 // reassign the list. Position determines version, so a released step is never
 // modified, renumbered or moved.
@@ -722,5 +786,7 @@ func migrations() []dbfile.Migration {
 		{Name: "15: client-held share encryption", SQL: schemaV15},
 		{Name: "16: a single-sign-on flow may have no account yet", SQL: schemaV16},
 		{Name: "17: an account's own root order", SQL: schemaV17},
+		{Name: "18: durable operation dispatch state", SQL: schemaV18},
+		{Name: "19: direct object-store transfer reservations", SQL: schemaV19},
 	}
 }

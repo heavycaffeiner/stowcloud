@@ -504,6 +504,11 @@ async function jobStatus(id: string): Promise<JobStatus> {
       state: finished ? 'done' : 'running',
       done,
       total: 0,
+      progress_unit: 'items',
+      attempt: 1,
+      max_attempts: 4,
+      next_run_ns: '0',
+      error_key: '',
       current: finished ? null : 'home',
       errors: [],
       results: [],
@@ -519,6 +524,11 @@ async function jobStatus(id: string): Promise<JobStatus> {
       state: job.state,
       done: job.done,
       total: job.total,
+      progress_unit: 'items',
+      attempt: 1,
+      max_attempts: 4,
+      next_run_ns: '0',
+      error_key: '',
       current: null,
       errors: job.results.filter((r) => !r.ok).map((r) => r.error?.message ?? 'internal error'),
       results: job.results,
@@ -535,6 +545,7 @@ async function jobCancel(id: string): Promise<void> {
   // `makeMockJob`): there is never anything still running to cancel.
   throw new ApiError(404, { code: 'fs.not_found', message: 'not found', detail: { id } })
 }
+
 
 // ── trash (mirrors `go/internal/core/trash` closely enough to drive the
 // UI in dev mode: an id is opaque, restoring back to an occupied name
@@ -995,6 +1006,7 @@ async function session(): Promise<SessionInfo> {
       preview: true,
       trash: true,
       shares: true,
+      direct_uploads: false,
       search: 'name'
     },
     oidc: mockAuthState.oidcLinked
@@ -1896,6 +1908,11 @@ async function adminBuildIndex(): Promise<JobStatus> {
     state: 'running',
     done: 0,
     total: 0,
+    progress_unit: 'items',
+    attempt: 1,
+    max_attempts: 4,
+    next_run_ns: '0',
+    error_key: '',
     current: null,
     errors: [],
     results: [],
@@ -3157,18 +3174,18 @@ export const mockApi = {
   adminSetIndexSettings,
   adminBuildIndex,
   adminSetUploadSettings,
-  adminGetServerSettings,
-  adminSetSmbSettings,
-  adminSetSearchSettings,
-  adminSetArchiveSettings,
-  adminSetRateSettings,
-  adminSetNetworkSettings,
   adminSetDbSettings,
   adminSetHomesSettings,
   adminSetWatchSettings,
   adminSetOidcSettings,
   adminSystemRestart,
   systemHealth,
+  adminGetServerSettings,
+  adminSetSmbSettings,
+  adminSetSearchSettings,
+  adminSetArchiveSettings,
+  adminSetRateSettings,
+  adminSetNetworkSettings,
   adminListUsers,
   adminCreateUser,
   adminSetUserDisabled,
@@ -3203,6 +3220,9 @@ export const mockApi = {
   browseSetupPath,
   adminIndexStatus,
   setRootOrder,
+  jobRetry: async (id: string): Promise<void> => { await delay(10); throw new ApiError(404, { code: 'fs.not_found', message: 'not found', detail: { id } }) },
+  jobPause: async (id: string): Promise<void> => { await delay(10); throw new ApiError(404, { code: 'fs.not_found', message: 'not found', detail: { id } }) },
+  jobResume: async (id: string): Promise<void> => { await delay(10); throw new ApiError(404, { code: 'fs.not_found', message: 'not found', detail: { id } }) },
   /** Called by the upload worker (via the browse UI) once a mock upload finalizes. */
   registerUploadedEntry(destDir: string, entry: Entry): void {
     addOverlayEntry(destDir, entry)

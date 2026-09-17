@@ -26,6 +26,14 @@ import {
   type AuditPage,
   type AuditQuery,
   type DownloadTicket,
+  type DirectUploadCompletedPart,
+  type DirectUploadCompleteReq,
+  type DirectUploadCompleteResult,
+  type DirectUploadCreateReq,
+  type DirectUploadPartURL,
+  type DirectUploadReservation,
+  type DirectUploadStatus,
+  type DirectUploadState,
   type BatchResult,
   type CreateGrantReq,
   type CreateGroupReq,
@@ -175,12 +183,112 @@ function classifiedOf(body: unknown, fallbackMessage: string): ApiErrorBody['err
   if (raw === null || typeof raw !== 'object') return { code: 'internal', message: fallbackMessage }
 
   const code = 'code' in raw && typeof raw.code === 'string' ? raw.code : 'internal'
+
   const message = 'message' in raw && typeof raw.message === 'string' ? raw.message : fallbackMessage
   const detail =
     'detail' in raw && raw.detail !== null && typeof raw.detail === 'object'
       ? Object.fromEntries(Object.entries(raw.detail))
       : undefined
   return { code, message, detail }
+}
+function decimalWire(raw: unknown, field: string): number {
+  if (typeof raw === 'number' && Number.isSafeInteger(raw) && raw >= 0) return raw
+  if (typeof raw !== 'string' || !/^(?:0|[1-9]\d*)$/.test(raw)) {
+    throw new ApiError(502, { code: 'server.malformed_response', message: `The server returned an invalid ${field}` })
+  }
+  const value = Number(raw)
+  if (!Number.isSafeInteger(value)) {
+    throw new ApiError(502, { code: 'server.malformed_response', message: `The server returned an unsafe ${field}` })
+  }
+  return value
+}
+
+function directPartFromWire(raw: unknown): DirectUploadCompletedPart {
+  if (raw === null || typeof raw !== 'object') throw new ApiError(502, { code: 'server.malformed_response', message: 'The server returned an invalid upload part' })
+  const w = raw as Record<string, unknown>
+  if (typeof w.etag !== 'string' || w.etag.length === 0) throw new ApiError(502, { code: 'server.malformed_response', message: 'The server returned an invalid upload part' })
+  return {
+    part_number: decimalWire(w.part_number, 'part number'),
+    size: decimalWire(w.size, 'part size'),
+    etag: w.etag,
+    ...(typeof w.checksum === 'string' ? { checksum: w.checksum } : {}),
+    ...(typeof w.state === 'string' ? { state: w.state } : {})
+  }
+}
+
+function directReservationFromWire(raw: unknown): DirectUploadReservation {
+  if (raw === null || typeof raw !== 'object') throw new ApiError(502, { code: 'server.malformed_response', message: 'The server returned an invalid upload reservation' })
+  const w = raw as Record<string, unknown>
+  if (typeof w.id !== 'string' || typeof w.state !== 'string' || typeof w.expires_at !== 'string') {
+    throw new ApiError(502, { code: 'server.malformed_response', message: 'The server returned an invalid upload reservation' })
+  }
+  return {
+    id: w.id,
+    state: w.state as DirectUploadReservation['state'],
+    size: decimalWire(w.size, 'upload size'),
+    ...(typeof w.checksum === 'string' ? { checksum: w.checksum } : {}),
+    part_size: decimalWire(w.part_size, 'part size'),
+    expires_at: w.expires_at,
+    parts: Array.isArray(w.parts) ? w.parts.map(directPartFromWire) : [],
+    capability: w.supported === true || w.capability === true
+  }
+}
+
+function directUnsupported(error: ApiError): boolean {
+  return error.status === 501 || (error.status === 422 && (error.code === 'unsupported' || error.code === 'direct_uploads.unsupported' || error.code === 'request_failed'))
+}
+
+async function directUploadCreate(req: DirectUploadCreateReq): Promise<DirectUploadReservation> {
+  try {
+    const value = directReservationFromWire(await request<unknown>('/direct-uploads', {
+      method: 'POST',
+      body: JSON.stringify({
+        path: req.path,
+        size: req.size,
+        ...(req.checksum !== undefined ? { checksum: req.checksum } : {}),
+        ...(req.if_match !== undefined ? { if_match: req.if_match } : {}),
+        ...(req.conflict !== undefined ? { conflict: req.conflict } : {})
+      })
+    }))
+    if (!value.capability) throw new ApiError(501, { code: 'direct_uploads.unsupported', message: 'direct upload is not supported' })
+    return value
+  } catch (error) {
+    if (error instanceof ApiError && directUnsupported(error)) {
+      throw new ApiError(501, { code: 'direct_uploads.unsupported', message: 'direct upload is not supported' })
+    }
+    throw error
+  }
+}
+
+async function directUploadStatus(id: string): Promise<DirectUploadStatus> {
+  return directReservationFromWire(await request<unknown>(`/direct-uploads/${encodeURIComponent(id)}`))
+}
+
+async function directUploadPart(id: string, partNumber: string): Promise<DirectUploadPartURL> {
+  const w = await request<Record<string, unknown>>(`/direct-uploads/${encodeURIComponent(id)}/parts`, {
+    method: 'POST',
+    body: JSON.stringify({ part_number: partNumber })
+  })
+  if (typeof w.url !== 'string' || typeof w.headers !== 'object' || w.headers === null) throw new ApiError(502, { code: 'server.malformed_response', message: 'The server returned an invalid upload URL' })
+  const headers: Record<string, string> = {}
+  for (const [key, value] of Object.entries(w.headers as Record<string, unknown>)) if (typeof value === 'string') headers[key] = value
+  return {
+    part_number: decimalWire(w.part_number, 'part number'),
+    url: w.url,
+    headers,
+    ...(typeof w.expires_at === 'string' ? { expires_at: w.expires_at } : {})
+  }
+}
+
+async function directUploadComplete(id: string, req: DirectUploadCompleteReq): Promise<DirectUploadCompleteResult> {
+  return directReservationFromWire(await request<unknown>(`/direct-uploads/${encodeURIComponent(id)}/complete`, {
+    method: 'POST',
+    body: JSON.stringify(req)
+  }))
+}
+
+async function directUploadCancel(id: string): Promise<void> {
+  await requestNoContent(`/direct-uploads/${encodeURIComponent(id)}/cancel`, { method: 'POST' })
 }
 
 /**
@@ -746,16 +854,18 @@ async function recentList(opts: RecentQuery = {}): Promise<{ hits: RecentHit[] }
 interface WireJob {
   id: string
   kind: JobStatus['kind']
-  /** `failed` is the server's own spelling for a job that broke. The app
-   *  calls that state `error`, and a state nothing in the app recognises is
-   *  a job the tray polls for ever, so it is folded here at the boundary
-   *  rather than left for every reader to remember. */
   state: JobStatus['state'] | 'failed'
   progress: string
   total: string
+  progress_unit?: string
+  attempt?: string
+  max_attempts?: string
+  next_run_ns?: string
+  error_key?: string
   message?: string
   results?: BatchItemResult[]
   attempting?: string[]
+  pending?: string[]
 }
 
 function jobFromWire(w: WireJob): JobStatus {
@@ -765,14 +875,16 @@ function jobFromWire(w: WireJob): JobStatus {
     state: w.state === 'failed' ? 'error' : w.state,
     done: Number(w.progress ?? 0),
     total: Number(w.total ?? 0),
-    // The wire carries one message rather than a running item name, and an
-    // empty one is "nothing to say" rather than an item called "".
+    progress_unit: w.progress_unit ?? 'items',
+    attempt: Number(w.attempt ?? 0),
+    max_attempts: Number(w.max_attempts ?? 0),
+    next_run_ns: w.next_run_ns ?? '0',
+    error_key: w.error_key ?? '',
     current: w.message ? w.message : null,
-    // Per-item failures live in results; there is no separate error list.
     errors: (w.results ?? []).filter((r) => !r.ok).map((r) => r.error?.message ?? ''),
     results: w.results ?? [],
     attempting: w.attempting ?? [],
-    pending: []
+    pending: w.pending ?? []
   }
 }
 
@@ -2061,8 +2173,7 @@ function searchStream(
         found: typeof raw.found === 'number' ? raw.found : count
       })
     } catch {
-      // A counter frame nobody can parse is dropped: it says nothing the
-      // search needs, and the next one arrives in under a second.
+      // Ignore malformed progress frames; the terminal frame remains authoritative.
     }
   })
   es.addEventListener('done', (ev: MessageEvent) => {
@@ -2166,6 +2277,14 @@ export const httpApi = {
   delete: del,
   archive,
   download,
+  directUploadCreate,
+  directUploadStatus,
+  jobRetry: (id: string) => requestNoContent(`/jobs/${encodeURIComponent(id)}/retry`, { method: 'POST' }),
+  jobPause: (id: string) => requestNoContent(`/jobs/${encodeURIComponent(id)}/pause`, { method: 'POST' }),
+  jobResume: (id: string) => requestNoContent(`/jobs/${encodeURIComponent(id)}/resume`, { method: 'POST' }),
+  directUploadPart,
+  directUploadComplete,
+  directUploadCancel,
   jobList,
   jobStatus,
   jobCancel,

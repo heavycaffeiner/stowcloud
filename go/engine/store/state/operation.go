@@ -35,11 +35,41 @@ const (
 	// and that nothing resumes. A refreshed client gets an honest terminal
 	// state with its progress and results preserved.
 	OpInterrupted
+	// OpQueued is durable work waiting for a dispatcher lease.
+	OpQueued
+	// OpPaused is durable work held until its owner resumes it.
+	OpPaused
+	// OpRetrying is durable work waiting for its next retry time.
+	OpRetrying
 
 	// opStateSentinel is one past the last state and is never stored. It
 	// exists so a walk over the states has a bound that moves with them.
 	opStateSentinel
 )
+
+// String returns the stable state name used by API layers and diagnostics.
+func (s OpState) String() string {
+	switch s {
+	case OpRunning:
+		return "running"
+	case OpDone:
+		return "done"
+	case OpFailed:
+		return "failed"
+	case OpCancelled:
+		return "cancelled"
+	case OpInterrupted:
+		return "interrupted"
+	case OpQueued:
+		return "queued"
+	case OpPaused:
+		return "paused"
+	case OpRetrying:
+		return "retrying"
+	default:
+		return "unknown"
+	}
+}
 
 // OpStateCount is how many states exist.
 //
@@ -89,9 +119,42 @@ type Op struct {
 	Message  string
 	// Cancellation is a client-requested stop the running task honors
 	// through its own context.
-	Cancellation bool
+	Cancellation   bool
+	CreatedNs      int64
+	FinishedNs     int64
+	Payload        []byte
+	ProgressUnit   string
+	Attempt        int
+	MaxAttempts    int
+	NextRunNs      int64
+	UpdatedNs      int64
+	StartedNs      int64
+	ErrorKey       string
+	ErrorDetail    string
+	LeaseID        string
+	LeaseExpiresNs int64
+	PauseRequested bool
+}
+
+// QueuedOp describes a newly-created operation for durable dispatch.
+type QueuedOp struct {
+	User         int64
+	Kind         OpKind
+	Total        int64
 	CreatedNs    int64
-	FinishedNs   int64
+	Payload      []byte
+	ProgressUnit string
+	MaxAttempts  int
+	NextRunNs    int64
+	Paths        []string
+}
+
+// OpClaim is the lease handed to a worker after an atomic claim.
+type OpClaim struct {
+	Op             Op
+	Payload        []byte
+	LeaseID        string
+	LeaseExpiresNs int64
 }
 
 // OpResult records how a single item fared within a batch operation.
@@ -104,8 +167,16 @@ type OpResult struct {
 	Text      string
 }
 
-// ErrNoSuchOp reports an operation id backed by no row.
-var ErrNoSuchOp = errors.New("no such operation")
+var (
+	// ErrNoSuchOp reports an operation id backed by no row.
+	ErrNoSuchOp = errors.New("no such operation")
+	// ErrOpLostLease means a conditional mutation no longer owns its operation.
+	ErrOpLostLease = errors.New("operation lease is no longer held")
+	// ErrNoRunnableOp means no queued or retryable operation is ready.
+	ErrNoRunnableOp = errors.New("no runnable operation")
+	// ErrOpInvalidTransition means the current state cannot perform the request.
+	ErrOpInvalidTransition = errors.New("invalid operation state transition")
+)
 
 // CreateOp begins a new operation. The returned id is what a client reattaches
 // with, and createdNs is the durable timestamp supplied by the caller's clock.
@@ -124,7 +195,7 @@ func (d *DB) CreateOp(
 	var id int64
 	err := d.Write(ctx, func(tx *sql.Tx) error {
 		res, ierr := tx.ExecContext(ctx, sqlInsertOp,
-			user, int64(kind), int64(OpRunning), total, nil, createdNs)
+			user, int64(kind), int64(OpRunning), total, nil, createdNs, createdNs, createdNs)
 		if ierr != nil {
 			return ierr
 		}
@@ -194,12 +265,17 @@ func (d *DB) UnfinishedOpItems(
 // GetOp retrieves an operation together with its results.
 func (d *DB) GetOp(ctx context.Context, id int64) (op Op, results []OpResult, err error) {
 	var (
-		msg      sql.NullString
-		finished sql.NullInt64
+		msg, progressUnit, errorKey, errorDetail, leaseID sql.NullString
+		finished, nextRun, updated, started, leaseExpires sql.NullInt64
+		payload                                           []byte
+		attempt, maxAttempts                              int
+		pauseRequested                                    bool
 	)
 	err = d.f.SQL().QueryRowContext(ctx, sqlReadOp, id).Scan(
 		&op.ID, &op.User, &op.Kind, &op.State, &op.Progress, &op.Total,
-		&msg, &op.Cancellation, &op.CreatedNs, &finished)
+		&msg, &op.Cancellation, &op.CreatedNs, &finished, &payload, &progressUnit,
+		&attempt, &maxAttempts, &nextRun, &updated, &started, &errorKey,
+		&errorDetail, &leaseID, &leaseExpires, &pauseRequested)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Op{}, nil, ErrNoSuchOp
 	}
@@ -208,6 +284,12 @@ func (d *DB) GetOp(ctx context.Context, id int64) (op Op, results []OpResult, er
 	}
 	op.Message = msg.String
 	op.FinishedNs = finished.Int64
+	op.Payload = append([]byte(nil), payload...)
+	op.ProgressUnit = progressUnit.String
+	op.Attempt, op.MaxAttempts = attempt, maxAttempts
+	op.NextRunNs, op.UpdatedNs, op.StartedNs = nextRun.Int64, updated.Int64, started.Int64
+	op.ErrorKey, op.ErrorDetail, op.LeaseID = errorKey.String, errorDetail.String, leaseID.String
+	op.LeaseExpiresNs, op.PauseRequested = leaseExpires.Int64, pauseRequested
 
 	rows, err := d.f.SQL().QueryContext(ctx, sqlReadOpResults, id)
 	if err != nil {
@@ -313,23 +395,17 @@ func (d *DB) ListOps(ctx context.Context, user int64, limit int) (out []Op, err 
 		limit = defaultOpListing
 	}
 	rows, err := d.f.SQL().QueryContext(ctx, sqlListOps,
-		user, int64(OpRunning), int64(OpInterrupted), limit)
+		user, int64(OpRunning), int64(OpInterrupted), int64(OpQueued), int64(OpRetrying), limit)
 	if err != nil {
 		return nil, fmt.Errorf("listing operations: %w", err)
 	}
 	defer func() { err = errors.Join(err, rows.Close()) }()
 
 	for rows.Next() {
-		var (
-			op       Op
-			msg      sql.NullString
-			finished sql.NullInt64
-		)
-		if serr := rows.Scan(&op.ID, &op.User, &op.Kind, &op.State,
-			&op.Progress, &op.Total, &msg, &op.CreatedNs, &finished); serr != nil {
+		var op Op
+		if serr := scanOperation(rows, &op); serr != nil {
 			return nil, fmt.Errorf("reading an operation: %w", serr)
 		}
-		op.Message, op.FinishedNs = msg.String, finished.Int64
 		out = append(out, op)
 	}
 	if err := rows.Err(); err != nil {

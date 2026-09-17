@@ -43,10 +43,11 @@ func defaultAccess() map[string]route.Requirement {
 
 		// The file surfaces are permission-scoped and reachable with an app
 		// password carrying the bits, which is what makes a sync client possible.
-		"files":   {Access: route.AccessPerms, Perms: acl.Read},
-		"trash":   {Access: route.AccessPerms, Perms: acl.Read},
-		"uploads": {Access: route.AccessPerms, Perms: acl.Write | acl.Create},
-		"search":  {Access: route.AccessPerms, Perms: acl.Read},
+		"files":          {Access: route.AccessPerms, Perms: acl.Read},
+		"trash":          {Access: route.AccessPerms, Perms: acl.Read},
+		"uploads":        {Access: route.AccessPerms, Perms: acl.Write | acl.Create},
+		"direct-uploads": {Access: route.AccessPerms, Perms: acl.Write | acl.Create},
+		"search":         {Access: route.AccessPerms, Perms: acl.Read},
 
 		// Minting a link for a stranger is sharing, so the whole category demands
 		// the sharing bit. The old tree had one half of this family requiring only
@@ -278,6 +279,11 @@ func Table() []route.Route {
 	add("GET", "/files/archive/list", "files.archive.list", route.BodyNone)
 	add("POST", "/files/download", "files.download", route.BodyJSON)
 	add("GET", "/files/download/fetch", "files.download.fetch", route.BodyNone)
+	add("POST", "/direct-uploads", "direct-uploads.create", route.BodyJSON)
+	add("GET", "/direct-uploads/{id}", "direct-uploads.status", route.BodyNone)
+	add("POST", "/direct-uploads/{id}/parts", "direct-uploads.part", route.BodyJSON)
+	add("POST", "/direct-uploads/{id}/complete", "direct-uploads.complete", route.BodyJSON)
+	add("POST", "/direct-uploads/{id}/cancel", "direct-uploads.cancel", route.BodyJSON)
 	add("GET", "/files/recent", "files.recent", route.BodyNone)
 
 	// links: the caller's public share links.
@@ -294,7 +300,10 @@ func Table() []route.Route {
 	// jobs: long operations.
 	add("GET", "/jobs", "jobs.list", route.BodyNone)
 	add("GET", "/jobs/{id}", "jobs.get", route.BodyNone)
-	add("POST", "/jobs/{id}/cancel", "jobs.cancel", route.BodyNone)
+	add("POST", "/jobs/{id}/cancel", "jobs.cancel", route.BodyJSON)
+	add("POST", "/jobs/{id}/retry", "jobs.retry", route.BodyJSON)
+	add("POST", "/jobs/{id}/pause", "jobs.pause", route.BodyJSON)
+	add("POST", "/jobs/{id}/resume", "jobs.resume", route.BodyJSON)
 
 	// uploads: the resumable protocol.
 	add("OPTIONS", "/uploads", "uploads.discover", route.BodyNone)

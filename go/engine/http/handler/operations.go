@@ -29,30 +29,20 @@ type OperationsAPI interface {
 // and a JavaScript number loses exactness past 2^53, so a job id that a client
 // round-trips would come back as a different id.
 type OperationView struct {
-	ID       string `json:"id"`
-	Kind     string `json:"kind"`
-	State    string `json:"state"`
-	Progress string `json:"progress"`
-	Total    string `json:"total"`
-
-	// Message is the failure line, absent while running or on success.
-	Message string `json:"message,omitempty"`
-
-	// Results is present once the job is terminal. Nothing streams during a
-	// run, so a client polls and reads this when the state says to.
-	Results []OperationItemView `json:"results,omitempty"`
-
-	// Attempting lists items the runner began and never finished recording.
-	// Only a job whose process died has any. Nobody knows whether those items
-	// took effect, which is why a client is shown them separately from the
-	// ones that were never touched: re-running the two is not the same
-	// decision.
-	Attempting []string `json:"attempting,omitempty"`
-
-	// Pending is what the job never reached. Untouched, so re-running exactly
-	// these is safe, which is what lets a client offer them rather than only
-	// counting them.
-	Pending []string `json:"pending,omitempty"`
+	ID           string              `json:"id"`
+	Kind         string              `json:"kind"`
+	State        string              `json:"state"`
+	Progress     string              `json:"progress"`
+	Total        string              `json:"total"`
+	ProgressUnit string              `json:"progress_unit,omitempty"`
+	Attempt      string              `json:"attempt,omitempty"`
+	MaxAttempts  string              `json:"max_attempts,omitempty"`
+	NextRunNs    string              `json:"next_run_ns,omitempty"`
+	ErrorKey     string              `json:"error_key,omitempty"`
+	Message      string              `json:"message,omitempty"`
+	Results      []OperationItemView `json:"results,omitempty"`
+	Attempting   []string            `json:"attempting,omitempty"`
+	Pending      []string            `json:"pending,omitempty"`
 }
 
 // OperationItemView is one item's outcome.
@@ -75,15 +65,9 @@ func TerminalStateName(state string) (terminal, known bool) {
 	switch state {
 	case "done", "failed", "cancelled", "interrupted":
 		return true, true
-	case "running":
+	case "queued", "running", "paused", "retrying":
 		return false, true
 	default:
-		// An unrecognised state counts as finished, because a client polling
-		// forever on a state this build does not know is worse than one that
-		// stops and shows what it has. It is reported as unknown as well: a
-		// fallback that is indistinguishable from a listed answer makes the
-		// list itself untestable, since dropping an entry would change
-		// nothing observable.
 		return true, false
 	}
 }
@@ -103,12 +87,17 @@ func OperationsOf(ops []core.Operation) []OperationView {
 // OperationOf projects one job.
 func OperationOf(op core.Operation) OperationView {
 	v := OperationView{
-		ID:       strconv.FormatInt(int64(op.ID), 10),
-		Kind:     op.KindName(),
-		State:    op.StateName(),
-		Progress: strconv.FormatInt(op.Progress, 10),
-		Total:    strconv.FormatInt(op.Total, 10),
-		Message:  op.Message,
+		ID:           strconv.FormatInt(int64(op.ID), 10),
+		Kind:         op.KindName(),
+		State:        op.StateName(),
+		Progress:     strconv.FormatInt(op.Progress, 10),
+		Total:        strconv.FormatInt(op.Total, 10),
+		ProgressUnit: op.ProgressUnit,
+		Attempt:      strconv.Itoa(op.Attempt),
+		MaxAttempts:  strconv.Itoa(op.MaxAttempts),
+		NextRunNs:    strconv.FormatInt(op.NextRunNs, 10),
+		ErrorKey:     op.ErrorKey,
+		Message:      op.Message,
 	}
 	if items := op.Items(); len(items) > 0 {
 		v.Results = make([]OperationItemView, 0, len(items))

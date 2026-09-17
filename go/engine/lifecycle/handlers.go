@@ -10,15 +10,17 @@ package lifecycle
 import (
 	"bytes"
 	"errors"
-	"github.com/gofiber/fiber/v2"
 	"io"
 	"strconv"
+
+	"github.com/gofiber/fiber/v2"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/handler"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/upload"
+	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 )
 
 // jobsList answers the caller's own operations.
@@ -79,6 +81,56 @@ func (e *Engine) jobsCancel(c *fiber.Ctx) error {
 	if err := e.Core.CancelOperation(c.UserContext(), owner, id); err != nil {
 		return fail(c, err)
 	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func (e *Engine) jobsRetry(c *fiber.Ctx) error {
+	owner, ok := ownerOf(c)
+	if !ok {
+		return refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+	}
+	id, ok := operationID(c)
+	if !ok {
+		return notFound(c)
+	}
+	op, err := e.Core.Operation(c.UserContext(), owner, id)
+	if err != nil {
+		return fail(c, err)
+	}
+	if op.State != state.OpFailed && op.State != state.OpInterrupted {
+		return refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+	}
+	if err := e.State.ResumeOp(c.UserContext(), int64(id), e.clk().Nanos()); err != nil {
+		return fail(c, err)
+	}
+	e.Core.StartJobs()
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func (e *Engine) jobsPause(c *fiber.Ctx) error  { return e.jobPauseResume(c, true) }
+func (e *Engine) jobsResume(c *fiber.Ctx) error { return e.jobPauseResume(c, false) }
+func (e *Engine) jobPauseResume(c *fiber.Ctx, pause bool) error {
+	owner, ok := ownerOf(c)
+	if !ok {
+		return refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+	}
+	id, ok := operationID(c)
+	if !ok {
+		return notFound(c)
+	}
+	if _, err := e.Core.Operation(c.UserContext(), owner, id); err != nil {
+		return fail(c, err)
+	}
+	var err error
+	if pause {
+		err = e.State.PauseOp(c.UserContext(), int64(id))
+	} else {
+		err = e.State.ResumeOp(c.UserContext(), int64(id), e.clk().Nanos())
+	}
+	if err != nil {
+		return fail(c, err)
+	}
+	e.Core.StartJobs()
 	return c.SendStatus(fiber.StatusNoContent)
 }
 

@@ -545,6 +545,7 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 		logger.Error("a registered share is not servable",
 			"share", r.Name, "reason", r.Kind, "error", r.Err)
 	}
+	coreSvc.StartJobs()
 
 	// Search needs nothing but a clock and the shares it is handed per query,
 	// so it is built unconditionally. Its bounds come from the settings below.
@@ -676,8 +677,8 @@ func (e *Engine) drainJobs() {
 	if e.jobsStop != nil {
 		e.jobsStop()
 	}
-	if e.Core != nil {
-		e.Core.StopJobs()
+	if e.Core == nil {
+		return
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), jobDrainTimeout)
@@ -686,9 +687,6 @@ func (e *Engine) drainJobs() {
 	if derr := e.jobs.Wait(ctx); derr != nil {
 		e.logger.Warn("an index build was still running when the engine closed; its outcome may not be recorded",
 			"error", derr)
-	}
-	if e.Core == nil {
-		return
 	}
 	if derr := e.Core.DrainJobs(ctx); derr != nil {
 		e.logger.Warn("a job was still running when the engine closed; its outcome may not be recorded",

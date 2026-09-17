@@ -25,7 +25,7 @@ import {
   type ResumeKeyContext,
   type ResumeRecord
 } from './idb'
-import { setCsrfToken, UploadHttpError, transport, type CreatedSession } from './transport'
+import { setCsrfToken, UploadHttpError, DirectUploadUnsupportedError, transport, type CreatedSession, type DirectPart, type DirectReservation } from './transport'
 import { classifyFailure } from './retry'
 
 const PROGRESS_HZ_MS = 100 // at most 10 Hz
@@ -75,6 +75,8 @@ export type Cmd =
   | { t: 'limits'; chunkMin: number; chunkDefault: number }
   | { t: 'chunk-size'; size: number | null }
   | { t: 'concurrency'; maxInflight: number }
+  /** Capability comes from the authenticated session response. */
+  | { t: 'direct-capability'; supported: boolean }
 export type Evt =
   | { t: 'progress'; id: string; sent: number; total: number; rate: number; etaSec: number }
   | { t: 'done'; id: string; dest: string; name: string; size: number; mtimeNs: string }
@@ -115,6 +117,8 @@ interface FileState {
   /** Prevent duplicate zero-byte publication requests. */
   publicationInFlight?: Promise<boolean>
   /** A failed DELETE leaves this state available for a later cleanup retry. */
+  directReservation?: DirectReservation
+  directParts: Map<number, DirectPart>
   cleanupInFlight?: Promise<boolean>
   preparedReleased: boolean
 }
@@ -145,6 +149,7 @@ let cleanupRecoveryPromise: Promise<void> | null = null
 // this file's own constants so a file added before the first `limits`
 // message (or against an older server that doesn't send one) still works.
 let serverChunkMin = CHUNK_SIZE_MIN
+let directCapability = false
 let serverChunkDefault = CHUNK_SIZE_DEFAULT
 let chunkSizeOverride: number | null = null
 
@@ -376,6 +381,54 @@ function recordFor(item: AddItem, key: string, sessionId: string, chunkSize: num
   }
 }
 
+async function sha256Hex(blob: Blob): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer())
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+async function tryDirectUpload(item: AddItem, id: string): Promise<boolean> {
+  if (!directCapability || !transport.reserveDirect || !transport.directPart || !transport.uploadDirectPart || !transport.completeDirect) return false
+  const path = `${item.dest}/${item.relativePath ?? item.file.name}`.replace(/\/{2,}/g, '/').replace(/^\/+/, '')
+  let reservation: DirectReservation
+  try {
+    reservation = await transport.reserveDirect({ path, size: item.file.size, ...(item.ciphertextIdentity ? { checksum: item.ciphertextIdentity } : {}) })
+  } catch (error) {
+    if (error instanceof DirectUploadUnsupportedError) return false
+    throw error
+  }
+  if (reservation.size !== item.file.size || reservation.partSize <= 0) throw new UploadHttpError(502, 'direct upload reservation was inconsistent')
+  const existing = new Map(reservation.parts.map((part) => [part.partNumber, part]))
+  const completed: DirectPart[] = []
+  const count = Math.ceil(item.file.size / reservation.partSize)
+  for (let index = 0; index < count; index++) {
+    const partNumber = index + 1
+    const offset = index * reservation.partSize
+    const size = Math.min(reservation.partSize, item.file.size - offset)
+    const saved = existing.get(partNumber)
+    if (saved && saved.size === size && saved.etag) {
+      completed.push({ partNumber, size, etag: saved.etag, ...(saved.checksum ? { checksum: saved.checksum } : {}) })
+    } else {
+      const current = pendingControls.get(id)
+      if (current === 'canceled') {
+        pendingControls.delete(id)
+        if (transport.cancelDirect) await transport.cancelDirect(reservation.id).catch(() => {})
+        post({ t: 'canceled', id })
+        return true
+      }
+      const body = item.file.slice(offset, offset + size)
+      const checksum = await sha256Hex(body)
+      const url = await transport.directPart(reservation.id, partNumber, size, checksum)
+      const uploaded = await transport.uploadDirectPart(url, body)
+      completed.push({ partNumber, size, etag: uploaded.etag, checksum })
+    }
+    post({ t: 'progress', id, sent: Math.min(item.file.size, offset + size), total: item.file.size, rate: 0, etaSec: 0 })
+  }
+  const final = await transport.completeDirect(reservation.id, completed)
+  if (final.state !== 'complete' && final.state !== 'completed') throw new UploadHttpError(502, 'direct upload did not complete')
+  post({ t: 'done', id, dest: item.dest, name: item.relativePath ? item.relativePath.split('/').pop()! : item.file.name, size: item.file.size, mtimeNs: String(BigInt(item.file.lastModified) * 1_000_000n) })
+  return true
+}
+
 async function addFile(item: AddItem): Promise<void> {
   const id = item.id || `f-${Math.random().toString(36).slice(2, 10)}`
   // Posted before any await so a setup failure has a tray row to attach to.
@@ -383,6 +436,13 @@ async function addFile(item: AddItem): Promise<void> {
   let handedOff = false
 
   try {
+    if (directCapability && transport.reserveDirect) {
+      const direct = await tryDirectUpload(item, id)
+      if (direct) {
+        handedOff = true
+        return
+      }
+    }
     if (pendingControls.get(id) === 'canceled') {
       pendingControls.delete(id)
       post({ t: 'canceled', id })
@@ -552,6 +612,7 @@ async function addFile(item: AddItem): Promise<void> {
       lastPostBytes: resumeOffset,
       rate: 0,
       publicationConfirmed: false,
+      directParts: new Map(),
       preparedReleased: false
     }
     files.set(id, f)
@@ -814,6 +875,9 @@ self.addEventListener('message', (ev: MessageEvent<Cmd>) => {
       break
     case 'chunk-size':
       chunkSizeOverride = cmd.size !== null && validChunkSizeOverride(cmd.size, serverChunkMin) ? cmd.size : null
+      break
+    case 'direct-capability':
+      directCapability = cmd.supported
       break
     case 'add':
       void ensureCleanupRecovery().then(() => {

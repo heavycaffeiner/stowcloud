@@ -26,6 +26,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/objstore"
 )
 
 // defaultUploadParallel is how many chunks a client is told to send at once.
@@ -311,24 +312,22 @@ func chunkBytes(v uint64) int64 {
 	return int64(v)
 }
 
-// featuresView says which screens lead somewhere on this deployment.
 func (e *Engine) featuresView() handler.FeaturesView {
+	directUploads := false
+	for _, share := range e.Core.Shares() {
+		if share.BrokenReason != "" || share.Backend != core.BackendS3 {
+			continue
+		}
+		if root, ok := e.Core.ShareRoot(share.ID); ok {
+			if provider, ok := root.(objstore.DirectTransferProvider); ok && provider.DirectTransfer() {
+				directUploads = true
+				break
+			}
+		}
+	}
 	return handler.FeaturesView{
-		// mountDav claims /dav unconditionally, so the surface is always
-		// there to point a client at. SMB is conditional because it needs a
-		// publisher.
-		WebDAV: true,
-		SMB:    e.smbPublisherOf() != nil,
-
-		Preview: e.thumbnailEnabled(),
-		Trash:   true,
-		Shares:  true,
-
-		// The name tier when an index is open, the walk otherwise. Content
-		// search is not a tier this engine serves, so it is never reported:
-		// naming it would put a search mode in the interface that answers
-		// filename matches.
-		Search: searchTierName(e.Search.HasIndex()),
+		WebDAV: true, SMB: e.smbPublisherOf() != nil, Preview: e.thumbnailEnabled(),
+		Trash: true, Shares: true, Search: searchTierName(e.Search.HasIndex()), DirectUploads: directUploads,
 	}
 }
 

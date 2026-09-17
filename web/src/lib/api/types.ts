@@ -851,12 +851,13 @@ export interface ClientLimits {
 }
 
 export interface Features {
-  webdav: boolean
-  smb: boolean
-  preview: boolean
-  trash: boolean
-  shares: boolean
-  search: 'walk' | 'name' | 'name+content'
+	webdav: boolean
+	smb: boolean
+	preview: boolean
+	trash: boolean
+	shares: boolean
+	direct_uploads: boolean
+	search: 'walk' | 'name' | 'name+content'
 }
 
 /** The caller's own OIDC link, from `GET /api/auth/session`'s `oidc` object
@@ -1205,10 +1206,20 @@ export interface MovePreflight {
 
 // ── long-running jobs ──
 
-export type JobState = 'running' | 'done' | 'error' | 'cancelled' | 'interrupted'
+export type JobState = 'queued' | 'running' | 'paused' | 'retrying' | 'done' | 'error' | 'cancelled' | 'interrupted'
 
 /** Wire values of `go/internal/httpapi/handler/admin_ops.go`. */
 export type JobKindWire = 'copy' | 'move' | 'delete' | 'archive' | 'index_build'
+
+export type DirectUploadState = 'pending' | 'completing' | 'complete' | 'completed' | 'cancelled' | 'expired'
+export interface DirectUploadCompletedPart { part_number: number; size: number; etag: string; checksum?: string; state?: string }
+export interface DirectUploadCreateReq { path: string; size: string; checksum?: string; if_match?: string; conflict?: string }
+export interface DirectUploadCompleteReq { parts: DirectUploadCompletedPart[] }
+export interface DirectUploadReservation { id: string; state: DirectUploadState; size: number; checksum?: string; part_size: number; expires_at: string; parts: DirectUploadCompletedPart[]; capability: boolean }
+export type DirectUploadStatus = DirectUploadReservation
+export interface DirectUploadPartURL { part_number: number; url: string; headers: Record<string, string>; expires_at?: string }
+export type DirectUploadCompleteResult = DirectUploadReservation
+export type JobAction = 'retry' | 'pause' | 'resume'
 
 /** `GET /api/v1/jobs/{id}`.
  *
@@ -1226,6 +1237,11 @@ export interface JobStatus {
   total: number
   current: string | null
   errors: string[]
+  progress_unit: string
+  attempt: number
+  max_attempts: number
+  next_run_ns: string
+  error_key: string
   /** Same per-item shape the synchronous copy/move/delete endpoints used to
    *  return inline: populated once `state` is terminal. */
   results: BatchItemResult[]

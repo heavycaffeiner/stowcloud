@@ -38,14 +38,15 @@ type PeriodicTask struct {
 // the table would always contain exactly what the table contains.
 func RequiredTasks() map[string]string {
 	return map[string]string{
-		"share.probe":        "rechecks share roots so a vanished mount shows as broken rather than as an empty directory",
-		"dav.locks.sweep":    "expires WebDAV locks whose holder never came back",
-		"login.flow.sweep":   "expires single-sign-on flows that were started and never finished",
-		"upload.sweep":       "collects abandoned upload sessions and their part files",
-		"auth.maintenance":   "expires sessions and trims the audit log",
-		"search.maintenance": "keeps the index in step with the corpus",
-		"cache.maintenance":  "trims the rebuildable cache",
-		"watch.maintenance":  "releases watches whose subscribers are gone",
+		"share.probe":           "rechecks share roots so a vanished mount shows as broken rather than as an empty directory",
+		"dav.locks.sweep":       "expires WebDAV locks whose holder never came back",
+		"login.flow.sweep":      "expires single-sign-on flows that were started and never finished",
+		"upload.sweep":          "collects abandoned upload sessions and their part files",
+		"direct-transfer.sweep": "collects expired S3 multipart reservations and releases their quota",
+		"auth.maintenance":      "expires sessions and trims the audit log",
+		"search.maintenance":    "keeps the index in step with the corpus",
+		"cache.maintenance":     "trims the rebuildable cache",
+		"watch.maintenance":     "releases watches whose subscribers are gone",
 	}
 }
 

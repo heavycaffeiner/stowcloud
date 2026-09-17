@@ -26,7 +26,7 @@ func waitForOp(t *testing.T, c *Core, owner UserID, id OperationID) Operation {
 		if err != nil {
 			t.Fatalf("reading operation %d: %v", id, err)
 		}
-		if op.State != state.OpRunning {
+		if op.Terminal() {
 			return op
 		}
 		time.Sleep(5 * time.Millisecond)

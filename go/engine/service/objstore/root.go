@@ -78,6 +78,7 @@ type Root struct {
 	endpointScheme string
 	endpointHost   string
 	dev            uint64
+	direct         bool
 
 	scratch *vfs.ShareRoot
 
@@ -128,6 +129,7 @@ func Open(ctx context.Context, opt Options) (*Root, error) {
 		endpointScheme: endpoint.Scheme,
 		endpointHost:   endpoint.Host,
 		dev:            syntheticDevice(opt.Share),
+		direct:         opt.Config.AccessKey != "" && len(opt.Secret.Reveal()) > 0,
 		scratch:        scratch,
 		parts:          make(map[string]partHandle),
 		signer: &signer{
@@ -145,6 +147,11 @@ func Open(ctx context.Context, opt Options) (*Root, error) {
 	}
 	return r, nil
 }
+
+// ObjectKey maps a validated share-relative path to its exact S3 object key.
+// It performs no network operation and never exposes the bucket credential.
+// Callers at an HTTP trust boundary must validate the path before calling it.
+func (r *Root) ObjectKey(p vfs.SafePath) string { return r.objectKey(p) }
 
 // objectKey maps a share-relative path onto the S3 key that stores it. The
 // share root itself has no key of its own; every other path is the

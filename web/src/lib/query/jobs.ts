@@ -14,7 +14,7 @@ const POLL_MS = 1000
 const TERMINAL: readonly JobState[] = ['done', 'error', 'cancelled', 'interrupted']
 
 function isTerminal(status: JobStatus | undefined): boolean {
-  return status !== undefined && TERMINAL.includes(status.state)
+	return status !== undefined && TERMINAL.includes(status.state)
 }
 
 /** Every non-terminal job this account owns. Polled while any of them is
@@ -50,6 +50,27 @@ export function jobCancelMutation() {
     mutationFn: (id: string) => api.jobCancel(id),
     // Cancellation lands at the next item boundary, so the resulting state
     // arrives through the poll rather than from this call.
+    onSuccess: (_void, id) => queryClient.invalidateQueries({ queryKey: keys.job(id) })
+  })
+}
+
+export function jobRetryMutation() {
+  return mutationOptions({
+    mutationFn: (id: string) => api.jobRetry(id),
+    onSuccess: (_void, id) => queryClient.invalidateQueries({ queryKey: keys.job(id) })
+  })
+}
+
+export function jobPauseMutation() {
+  return mutationOptions({
+    mutationFn: (id: string) => api.jobPause(id),
+    onSuccess: (_void, id) => queryClient.invalidateQueries({ queryKey: keys.job(id) })
+  })
+}
+
+export function jobResumeMutation() {
+  return mutationOptions({
+    mutationFn: (id: string) => api.jobResume(id),
     onSuccess: (_void, id) => queryClient.invalidateQueries({ queryKey: keys.job(id) })
   })
 }

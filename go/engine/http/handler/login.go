@@ -84,15 +84,13 @@ type LogoutView struct {
 // FeaturesView says which surfaces this deployment actually serves, so the
 // interface draws the screens that lead somewhere.
 type FeaturesView struct {
-	WebDAV  bool `json:"webdav"`
-	SMB     bool `json:"smb"`
-	Preview bool `json:"preview"`
-	Trash   bool `json:"trash"`
-	Shares  bool `json:"shares"`
-
-	// Search names the tier in use: "walk" reads directories on demand, the
-	// others answer from an index.
-	Search string `json:"search"`
+	WebDAV        bool   `json:"webdav"`
+	SMB           bool   `json:"smb"`
+	Preview       bool   `json:"preview"`
+	Trash         bool   `json:"trash"`
+	Shares        bool   `json:"shares"`
+	Search        string `json:"search"`
+	DirectUploads bool   `json:"direct_uploads"`
 }
 
 // WhoAmIView is what `GET /auth/session` answers.

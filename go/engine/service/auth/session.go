@@ -114,8 +114,6 @@ func (s *Service) LookupSession(ctx context.Context, token secret.Secret) (Princ
 	}
 
 	if terr := s.store.TouchSession(ctx, hash[:], now); terr != nil {
-		// The session still validates; only its stamp is cold, and the next
-		// request refreshes it.
 		s.warn("a session's last-used stamp could not be updated", terr)
 	}
 	return principalOf(acct), nil
