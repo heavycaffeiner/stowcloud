@@ -813,3 +813,18 @@
   display: grid;
   place-items: center;
 }
+
+/* Refined interaction states for keyboard and touch users. */
+.sc-shell-header button:focus-visible,
+.sc-nav-drawer button:focus-visible,
+.sc-nav-bar button:focus-visible,
+.sc-search-sheet button:focus-visible {
+  outline: 2px solid rgb(var(--mdui-color-primary));
+  outline-offset: 2px;
+}
+
+.sc-shell-header__search:active,
+.sc-nav-drawer__item:active,
+.sc-nav-drawer__subitem:active {
+  transform: scale(0.99);
+}
