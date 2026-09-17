@@ -57,8 +57,13 @@
   --sc-nav-drawer-collapsed-width: 68px;
   --sc-shell-header-height: 56px;
   --sc-row-height: 48px;
+  --sc-content-pad: 24px;
+  --sc-radius-card: 14px;
+  --sc-radius-control: 10px;
+  --sc-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.06);
   font-family: 'Google Sans Flex Variable', 'Pretendard Variable', 'Noto Sans KR', system-ui, sans-serif;
 }
+@media (max-width: 599.98px) { :root { --sc-content-pad: 16px; } }
 @media (min-width: 600px) { :root { --sc-page-pad: 24px; } }
 @media (min-width: 905px) { :root { --sc-page-pad: 32px; } }
 
@@ -103,9 +108,7 @@ html, body, #root { min-height: 100%; margin: 0; }
 html { height: 100%; }
 body {
   min-width: 320px;
-  background:
-    radial-gradient(circle at 75% -15%, rgba(var(--mdui-color-primary), 0.12), transparent 30rem),
-    var(--sc-page-surface);
+  background: var(--sc-page-surface);
   color: var(--sc-content-primary);
   font-family: inherit;
   font-feature-settings: 'tnum' 1;
@@ -137,17 +140,17 @@ h4, h5, h6, .sc-title-small { font-size: var(--mdui-typescale-title-small-size);
 .sc-page__section, .sc-section { margin-block: var(--sc-section-gap); }
 .sc-page__card, .sc-card {
   padding: 24px;
-  border: none;
-  border-radius: var(--mdui-shape-corner-large, 16px);
-  background: rgb(var(--mdui-color-surface-container));
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
+  border: 1px solid var(--sc-outline-variant);
+  border-radius: var(--sc-radius-card);
+  background: var(--sc-container-surface);
+  box-shadow: var(--sc-shadow-card);
   transition: transform 180ms cubic-bezier(0.2, 0, 0, 1),
               box-shadow 180ms cubic-bezier(0.2, 0, 0, 1),
               background-color 180ms cubic-bezier(0.2, 0, 0, 1);
 }
 .sc-page__card:hover, .sc-card:hover {
-  background: rgb(var(--mdui-color-surface-container-high));
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+  background: var(--sc-raised-surface);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
 }
 .sc-page__heading, .sc-section__heading { margin-block-end: 8px; }
 .sc-page__hint, .sc-hint { color: var(--sc-content-secondary); }
@@ -187,10 +190,7 @@ mdui-button:active,
   display: grid;
   place-items: center;
   padding: var(--sc-page-pad);
-  background:
-    radial-gradient(circle at 20% 15%, rgba(var(--mdui-color-primary), 0.17), transparent 24rem),
-    radial-gradient(circle at 85% 80%, rgba(var(--mdui-color-secondary), 0.12), transparent 28rem),
-    var(--sc-page-surface);
+  background: var(--sc-page-surface);
 }
 .sc-error-page__card {
   width: min(100%, 34rem);

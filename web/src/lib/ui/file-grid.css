@@ -14,7 +14,7 @@
 .sc-file-grid--reserve-selection { --sc-reserve-selection: 80px; }
 .sc-file-grid__group {
   margin: 0;
-  padding: 16px 16px 8px;
+  padding: 16px var(--sc-content-pad, 24px) 8px;
   color: var(--sc-content-secondary, rgb(var(--mdui-color-on-surface-variant)));
   font-size: var(--mdui-typescale-title-small-size, 0.875rem);
   font-weight: var(--mdui-typescale-title-small-weight, 500);
@@ -22,21 +22,21 @@
   letter-spacing: var(--mdui-typescale-title-small-tracking, 0.007rem);
 }
 .sc-file-grid__section { position: relative; }
-.sc-file-grid__window { will-change: transform; padding-inline: 16px; }
+.sc-file-grid__window { will-change: transform; padding-inline: var(--sc-content-pad, 24px); }
 .sc-file-grid__row { display: flex; align-items: flex-start; }
 .sc-file-grid__card {
   position: relative;
   box-sizing: border-box;
   height: 100%;
   border: none;
-  border-radius: var(--mdui-shape-corner-medium, 12px);
-  background: rgb(var(--mdui-color-surface-container));
+  border-radius: var(--sc-radius-card, 14px);
+  background: var(--sc-container-surface, rgb(var(--mdui-color-surface-container)));
   color: var(--sc-content-primary, rgb(var(--mdui-color-on-surface)));
   cursor: pointer;
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--sc-shadow-card, 0 1px 2px rgba(0, 0, 0, 0.06));
   transition: transform 160ms cubic-bezier(0.2, 0, 0, 1),
               background-color 150ms ease,
               box-shadow 160ms cubic-bezier(0.2, 0, 0, 1);
@@ -44,9 +44,9 @@
 .sc-file-grid__card--folder { display: flex; align-items: center; gap: 8px; padding-inline: 8px; }
 .sc-file-grid__card--file { display: flex; flex-direction: column; }
 .sc-file-grid__card:hover {
-  transform: translateY(-2px);
-  background: rgb(var(--mdui-color-surface-container-high));
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
+  transform: translateY(-1px);
+  background: var(--sc-raised-surface, rgb(var(--mdui-color-surface-container-high)));
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.10);
 }
 .sc-file-grid__card:active {
   transform: scale(0.98);
