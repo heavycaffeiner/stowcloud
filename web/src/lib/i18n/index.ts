@@ -67,6 +67,18 @@ export function formatDateNs(mtimeNs: string): string {
   return new Intl.DateTimeFormat(localeTag(), { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(ms))
 }
 
+/** File modification times use local time with a fixed day-before-month order. */
+export function formatModifiedDateNs(mtimeNs: string): string {
+  const date = new Date(Number(BigInt(mtimeNs) / 1_000_000n))
+  if (Number.isNaN(date.getTime())) throw new RangeError('Invalid modification time')
+  const year = String(date.getFullYear()).padStart(4, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const hour = String(date.getHours()).padStart(2, '0')
+  const minute = String(date.getMinutes()).padStart(2, '0')
+  return `${year}-${day}-${month} ${hour}:${minute}`
+}
+
 const RELATIVE_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
   ['year', 31_536_000],
   ['month', 2_592_000],

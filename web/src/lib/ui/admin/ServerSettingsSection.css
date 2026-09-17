@@ -17,7 +17,7 @@
 .sc-server-settings__nav { position: sticky; top: 0; z-index: 2; margin: 0 0 20px; padding: 8px 0; background: color-mix(in srgb, var(--sc-page-surface) 95%, transparent); backdrop-filter: blur(12px); }
 .sc-server-settings__nav-items { display: flex; gap: 8px; overflow-x: auto; padding: 2px; scrollbar-width: none; }
 .sc-server-settings__nav-items::-webkit-scrollbar { display: none; }
-.sc-server-settings__nav button { flex: none; min-block-size: 40px; padding: 0 16px; border: none; border-radius: var(--mdui-shape-corner-full); color: rgb(var(--mdui-color-on-surface)); background: rgb(var(--mdui-color-surface-container-high)); cursor: pointer; white-space: nowrap; font-size: var(--mdui-typescale-label-large-size); font-weight: 500; transition: background-color 120ms ease, color 120ms ease; }
+.sc-server-settings__nav button { display: inline-flex; align-items: center; justify-content: center; flex: none; min-block-size: 40px; padding: 0 16px; border: none; border-radius: var(--mdui-shape-corner-full); color: rgb(var(--mdui-color-on-surface)); background: rgb(var(--mdui-color-surface-container-high)); cursor: pointer; white-space: nowrap; font-size: var(--mdui-typescale-label-large-size); line-height: var(--mdui-typescale-label-large-line-height, 1.25rem); font-weight: 500; transition: background-color 120ms ease, color 120ms ease; }
 .sc-server-settings__nav button:hover { background: rgb(var(--mdui-color-surface-container-highest)); color: rgb(var(--mdui-color-primary)); }
 .sc-server-settings__nav button:focus-visible { outline: 2px solid rgb(var(--mdui-color-primary)); outline-offset: 2px; }
 .sc-server-settings__form { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; width: 100%; max-width: 32rem; min-width: 0; }

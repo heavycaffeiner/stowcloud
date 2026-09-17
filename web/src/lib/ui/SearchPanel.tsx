@@ -5,7 +5,7 @@ import type { SearchDone, SearchHit, SearchProgress } from '../api/client'
 import { api } from '../api/client'
 import { parentOf } from '../api/path-utils'
 import { formatBytes } from '../format/bytes'
-import { formatDateNs } from '../i18n'
+import { formatModifiedDateNs } from '../i18n'
 import { useI18n } from '../i18n/use-i18n'
 import { EXTENSION_PRESETS, extensionOf, parseExtensions, resolveExtensions } from '../search/filters'
 import { search, type SearchSnapshot, type SearchSortKey } from '../store/search.store'
@@ -81,30 +81,30 @@ function sortHits(list: readonly SearchHit[], key: SortKey): readonly SearchHit[
 }
 
 function getHitIcon(hit: SearchHit): { name: string; color?: string } {
-  if (hit.entry.kind === 'dir') return { name: 'folder', color: '#5c93e8' }
+  if (hit.entry.kind === 'dir') return { name: 'folder', color: 'var(--sc-icon-color)' }
   const ext = extensionOf(hit.entry.name).toLowerCase()
   if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'zst', 'iso'].includes(ext)) {
-    return { name: 'folder-zip', color: '#e8a85c' }
+    return { name: 'folder-zip', color: 'var(--sc-icon-color)' }
   }
   if (ext === 'apk') {
-    return { name: 'android', color: '#68d391' }
+    return { name: 'android', color: 'var(--sc-icon-color)' }
   }
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'heic', 'avif'].includes(ext)) {
-    return { name: 'image', color: '#4ecdc4' }
+    return { name: 'image', color: 'var(--sc-icon-color)' }
   }
   if (['mp4', 'mkv', 'mov', 'avi', 'webm', 'wmv', 'm4v', 'mpg', 'mpeg', 'flv'].includes(ext)) {
-    return { name: 'movie', color: '#f87171' }
+    return { name: 'movie', color: 'var(--sc-icon-color)' }
   }
   if (['mp3', 'flac', 'wav', 'aac', 'ogg', 'oga', 'm4a', 'opus', 'wma'].includes(ext)) {
-    return { name: 'audio-file', color: '#a78bfa' }
+    return { name: 'audio-file', color: 'var(--sc-icon-color)' }
   }
   if (['js', 'ts', 'tsx', 'jsx', 'go', 'rs', 'py', 'java', 'c', 'cpp', 'h', 'cs', 'rb', 'php', 'sh', 'sql', 'json', 'yaml', 'yml', 'toml', 'xml', 'html', 'css'].includes(ext)) {
-    return { name: 'code', color: '#38bdf8' }
+    return { name: 'code', color: 'var(--sc-icon-color)' }
   }
   if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'md', 'rtf', 'odt', 'ods', 'odp', 'hwp', 'hwpx', 'csv'].includes(ext)) {
-    return { name: 'description', color: '#60a5fa' }
+    return { name: 'description', color: 'var(--sc-icon-color)' }
   }
-  return { name: 'draft', color: '#94a3b8' }
+  return { name: 'draft', color: 'var(--sc-icon-color)' }
 }
 
 export const SearchPanel = forwardRef<SearchPanelHandle, SearchPanelProps>(function SearchPanel({
@@ -619,7 +619,7 @@ export const SearchPanel = forwardRef<SearchPanelHandle, SearchPanelProps>(funct
                         {hit.entry.kind !== 'dir' ? (
                           <span className="sc-search__size">{formatBytes(hit.entry.size)}</span>
                         ) : null}
-                        <span className="sc-search__date">{formatDateNs(hit.entry.mtime_ns)}</span>
+                        <span className="sc-search__date">{formatModifiedDateNs(hit.entry.mtime_ns)}</span>
                       </span>
                     </button>
                   </li>

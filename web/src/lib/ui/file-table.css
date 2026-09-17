@@ -1,4 +1,5 @@
 .sc-file-table {
+  --sc-modified-column-width: 11rem;
   position: relative;
   flex: 1;
   min-width: 0;
@@ -36,8 +37,8 @@
   .sc-file-table__header-cell--select { flex: 0 0 36px; }
   .sc-file-table__header-cell--name { flex: 1 1 auto; }
   .sc-file-table__header-cell--size { flex: 0 0 112px; justify-content: flex-end; }
-  .sc-file-table__header-cell--mtime { flex: 0 0 176px; justify-content: flex-end; }
-  .sc-file-table__header-cell--actions { flex: 0 0 36px; }
+  .sc-file-table__header-cell--mtime { flex: 0 0 var(--sc-modified-column-width); justify-content: flex-end; white-space: nowrap; }
+  .sc-file-table__header-cell--actions { flex: 0 0 40px; }
 .sc-file-table__header-button {
   display: inline-flex;
   align-items: center;
@@ -84,8 +85,8 @@
 .sc-row__cell--select { flex: 0 0 36px; overflow: visible; }
 .sc-row__cell--name { flex: 1 1 auto; min-width: 0; }
 .sc-row__cell--size { flex: 0 0 112px; justify-content: flex-end; color: var(--sc-content-secondary); font-size: var(--mdui-typescale-body-medium-size, .875rem); line-height: var(--mdui-typescale-body-medium-line-height, 1.25rem); }
-.sc-row__cell--mtime { flex: 0 0 176px; justify-content: flex-end; color: var(--sc-content-secondary); font-size: var(--mdui-typescale-body-medium-size, .875rem); line-height: var(--mdui-typescale-body-medium-line-height, 1.25rem); }
-.sc-row__cell--actions { flex: 0 0 36px; justify-content: center; overflow: visible; }
+.sc-row__cell--mtime { flex: 0 0 var(--sc-modified-column-width); justify-content: flex-end; color: var(--sc-content-secondary); font-size: var(--mdui-typescale-body-medium-size, .875rem); line-height: var(--mdui-typescale-body-medium-line-height, 1.25rem); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sc-row__cell--actions { flex: 0 0 40px; justify-content: center; overflow: visible; }
 .sc-row__icon-badge { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 22px; }
 .sc-row__cell--name .sc-filename {
   flex: 1 1 auto;
@@ -161,10 +162,10 @@
 
 .sc-row-skeleton { display: flex; align-items: center; height: var(--sc-row-height, 48px); padding-inline: 16px; border-bottom: none; }
 .sc-row-skeleton__cell { display: flex; align-items: center; gap: 8px; overflow: hidden; }
-.sc-row-skeleton__cell--select { flex: 0 0 32px; }
+.sc-row-skeleton__cell--select { flex: 0 0 36px; }
 .sc-row-skeleton__cell--name { flex: 1 1 auto; min-width: 0; }
 .sc-row-skeleton__cell--size { flex: 0 0 112px; justify-content: flex-end; }
-.sc-row-skeleton__cell--mtime { flex: 0 0 176px; justify-content: flex-end; }
+.sc-row-skeleton__cell--mtime { flex: 0 0 var(--sc-modified-column-width); justify-content: flex-end; }
 .sc-row-skeleton__bar { display: block; height: 16px; border-radius: var(--mdui-shape-corner-extra-small, 4px); background: rgb(var(--mdui-color-surface-container-highest)); animation: sc-row-skeleton-pulse 1.2s ease-in-out infinite; }
 .sc-row-skeleton__bar--icon { flex: 0 0 20px; height: 20px; border-radius: var(--mdui-shape-corner-small, 8px); }
 .sc-row-skeleton__bar--name { width: 60%; }

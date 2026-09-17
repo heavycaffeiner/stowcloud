@@ -2,7 +2,7 @@ import { useRef } from 'react'
 import type { HTMLAttributes, MouseEvent } from 'react'
 import type { Entry } from '../api/types'
 import { formatEntrySize } from '../format/entry-size'
-import { formatDateNs } from '../i18n'
+import { formatModifiedDateNs } from '../i18n'
 import { useI18n } from '../i18n/use-i18n'
 import { isVideoFile } from './media-utils'
 import { Icon } from './Icon'
@@ -18,31 +18,31 @@ type Tap = { path: string; pointerType: string; time: number; x: number; y: numb
 type Gesture = Tap & { pointerId: number; valid: boolean; released: boolean }
 
 export function getEntryIcon(entry: Entry): { name: string; color?: string } {
-  if (entry.kind === 'dir') return { name: 'folder', color: '#5c93e8' }
+  if (entry.kind === 'dir') return { name: 'folder', color: 'var(--sc-icon-color)' }
   const dot = entry.name.lastIndexOf('.')
   const ext = dot > 0 ? entry.name.slice(dot + 1).toLowerCase() : ''
   if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'zst', 'iso'].includes(ext)) {
-    return { name: 'folder-zip', color: '#76a9fa' }
+    return { name: 'folder-zip', color: 'var(--sc-icon-color)' }
   }
   if (ext === 'apk') {
-    return { name: 'android', color: '#68d391' }
+    return { name: 'android', color: 'var(--sc-icon-color)' }
   }
   if (['mp4', 'mkv', 'mov', 'avi', 'webm', 'wmv', 'm4v'].includes(ext) || isVideoFile(entry.name)) {
-    return { name: 'movie', color: '#f87171' }
+    return { name: 'movie', color: 'var(--sc-icon-color)' }
   }
   if (['mp3', 'flac', 'wav', 'aac', 'ogg', 'm4a', 'opus', 'wma'].includes(ext)) {
-    return { name: 'audio-file', color: '#a78bfa' }
+    return { name: 'audio-file', color: 'var(--sc-icon-color)' }
   }
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'heic', 'avif'].includes(ext) || entry.preview?.available) {
-    return { name: 'image', color: '#4ecdc4' }
+    return { name: 'image', color: 'var(--sc-icon-color)' }
   }
   if (['js', 'ts', 'tsx', 'jsx', 'go', 'rs', 'py', 'java', 'c', 'cpp', 'h', 'cs', 'rb', 'php', 'sh', 'sql', 'json', 'yaml', 'yml', 'toml', 'xml', 'html', 'css'].includes(ext)) {
-    return { name: 'code', color: '#38bdf8' }
+    return { name: 'code', color: 'var(--sc-icon-color)' }
   }
   if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'md', 'rtf', 'odt', 'ods', 'odp', 'hwp', 'hwpx', 'csv'].includes(ext)) {
-    return { name: 'description', color: '#60a5fa' }
+    return { name: 'description', color: 'var(--sc-icon-color)' }
   }
-  return { name: 'draft', color: '#94a3b8' }
+  return { name: 'draft', color: 'var(--sc-icon-color)' }
 }
 
 // Both file views select and activate from click, after the touch gesture has ended.
@@ -174,7 +174,7 @@ export function FileRow({
         {entry.kind === 'dir' ? '-' : formatEntrySize(entry.size, encrypted)}
       </span>
       <span className="sc-row__cell sc-row__cell--mtime" role="gridcell">
-        {formatDateNs(entry.mtime_ns)}
+        {formatModifiedDateNs(entry.mtime_ns)}
       </span>
       <span className="sc-row__cell sc-row__cell--actions" role="gridcell">
         <button

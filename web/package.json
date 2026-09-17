@@ -16,6 +16,7 @@
     "preview": "vite preview",
     "check": "tsc --noEmit",
     "test": "vitest run",
+    "test:alignment": "node e2e/alignment.spec.mjs",
     "test:watch": "vitest",
     "lint:i18n": "node tools/i18n-check.mjs",
     "check:bundle-size": "node tools/check-bundle-size.mjs"

@@ -123,6 +123,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 14px;
+  line-height: var(--mdui-typescale-label-large-line-height, 1.25rem);
   color: var(--sc-content-secondary);
 }
 
@@ -247,6 +248,7 @@
   color: var(--sc-content-primary);
   font: inherit;
   font-size: 14px;
+  line-height: var(--mdui-typescale-label-large-line-height, 1.25rem);
   text-align: left;
   cursor: pointer;
   transition: background-color 120ms ease;
@@ -358,12 +360,14 @@
   color: var(--sc-content-primary);
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 14px;
   padding: 0 13px;
   cursor: pointer;
   font-size: 14px;
+  line-height: var(--mdui-typescale-label-large-line-height, 1.25rem);
   font-weight: 500;
-  text-align: start;
+  text-align: center;
   transition: background-color 150ms ease, transform 100ms ease;
 }
 
@@ -435,6 +439,7 @@
   cursor: pointer;
   font: inherit;
   font-size: 14px;
+  line-height: var(--mdui-typescale-label-large-line-height, 1.25rem);
   font-weight: 500;
   text-align: left;
   transition: background-color 140ms ease, color 140ms ease;
@@ -512,6 +517,7 @@
   cursor: pointer;
   font: inherit;
   font-size: 13px;
+  line-height: var(--mdui-typescale-label-large-line-height, 1.25rem);
   text-align: left;
   transition: background-color 140ms ease, color 140ms ease;
 }
@@ -674,6 +680,7 @@
   cursor: pointer;
   font: inherit;
   font-size: 11px;
+  line-height: var(--mdui-typescale-label-small-line-height, 1rem);
   font-weight: 500;
   outline: none;
   transition: background-color 150ms ease, color 150ms ease;
@@ -744,11 +751,11 @@
 .sc-upload-tray__header,
 .sc-job-tray__header { min-height: 48px; display: flex; align-items: center; justify-content: space-between; padding-inline: 16px; }
 .sc-upload-tray__title,
-.sc-job-tray__title { display: inline-flex; align-items: center; gap: 8px; border: 0; background: transparent; color: inherit; cursor: pointer; font: inherit; font-size: 14px; font-weight: 500; }
+.sc-job-tray__title { display: inline-flex; align-items: center; gap: 8px; border: 0; background: transparent; color: inherit; cursor: pointer; font: inherit; font-size: 14px; font-weight: 500; line-height: var(--mdui-typescale-label-large-line-height, 1.25rem); }
 .sc-upload-tray__actions,
 .sc-job-tray__actions,
 .sc-upload-tray__controls,
-.sc-job-tray__controls { display: flex; gap: 4px; }
+.sc-job-tray__controls { display: flex; align-items: center; gap: 4px; }
 .sc-upload-tray__list,
 .sc-job-tray__list { list-style: none; margin: 0; padding: 8px 16px; }
 .sc-upload-tray__scroll,
@@ -758,7 +765,7 @@
 .sc-upload-tray__row,
 .sc-job-tray__row { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
 .sc-upload-tray__name,
-.sc-job-tray__name { min-width: 0; display: inline-flex; align-items: center; gap: 4px; overflow-wrap: anywhere; font-size: 13px; }
+.sc-job-tray__name { min-width: 0; display: inline-flex; align-items: center; gap: 4px; overflow-wrap: anywhere; font-size: 13px; line-height: var(--mdui-typescale-body-medium-line-height, 1.25rem); }
 .sc-upload-tray__meta,
 .sc-job-tray__meta { flex-shrink: 0; color: var(--sc-content-secondary); font-size: 12px; }
 

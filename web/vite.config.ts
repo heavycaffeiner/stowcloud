@@ -4,7 +4,8 @@ import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vitest/config'
 
 const require = createRequire(import.meta.url)
-const reactRouterDevelopment = require.resolve('react-router')
+const reactRouterRequire = createRequire(require.resolve('react-router-dom'))
+const reactRouterDevelopment = reactRouterRequire.resolve('react-router')
 const reactRouterProduction = reactRouterDevelopment.replace(/[\\/]dist[\\/]development[\\/]/, (match) => match.replace('development', 'production'))
 const reactRouterDomProduction = reactRouterProduction.replace(/[\\/]index\.mjs$/, '/dom-export.mjs')
 

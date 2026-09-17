@@ -25,6 +25,7 @@
   color: var(--sc-content-secondary);
   font-family: inherit;
   font-size: 13px;
+  line-height: var(--mdui-typescale-label-large-line-height, 1.25rem);
   font-weight: 500;
   display: inline-flex;
   align-items: center;
@@ -100,7 +101,7 @@
 .sc-browse__external-badge { background: var(--sc-state-warning, var(--mdui-color-tertiary-container, var(--m3c-tertiary-container))); color: var(--sc-state-warning-content, var(--mdui-color-on-tertiary-container, var(--m3c-on-tertiary-container))); }
 .sc-browse__broken-badge { background: var(--sc-state-error, var(--mdui-color-error-container, var(--m3c-error-container))); color: var(--sc-state-error-content, var(--mdui-color-on-error-container, var(--m3c-on-error-container))); }
 .sc-browse__encrypted-badge { background: var(--mdui-color-surface-container-highest, var(--m3c-surface-container-highest)); color: var(--sc-content-secondary, var(--mdui-color-on-surface-variant, var(--m3c-on-surface-variant))); }
-.sc-browse__encrypted-badge--locked { border: none; cursor: pointer; background: var(--mdui-color-secondary-container, var(--m3c-secondary-container)); color: var(--mdui-color-on-secondary-container, var(--m3c-on-secondary-container)); font: inherit; }
+.sc-browse__encrypted-badge--locked { border: none; cursor: pointer; background: var(--mdui-color-secondary-container, var(--m3c-secondary-container)); color: var(--mdui-color-on-secondary-container, var(--m3c-on-secondary-container)); }
 .sc-browse__encrypted-badge--locked:active { transform: scale(0.95); }
 .sc-browse__encrypted-badge--locked:focus-visible { outline: 2px solid var(--sc-state-focus, var(--mdui-color-primary, var(--m3c-primary))); outline-offset: 2px; }
 .sc-browse__table-wrap--marquee { user-select: none; cursor: crosshair; }

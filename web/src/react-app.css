@@ -11,6 +11,7 @@
   --sc-overlay-surface: rgb(var(--mdui-color-surface-container-high));
   --sc-content-primary: rgb(var(--mdui-color-on-surface));
   --sc-content-secondary: rgb(var(--mdui-color-on-surface-variant));
+  --sc-icon-color: #475569;
   --sc-outline: rgb(var(--mdui-color-outline));
   --sc-outline-variant: rgb(var(--mdui-color-outline-variant));
   --sc-state-selection: rgb(var(--mdui-color-secondary-container));
@@ -60,6 +61,11 @@
 }
 @media (min-width: 600px) { :root { --sc-page-pad: 24px; } }
 @media (min-width: 905px) { :root { --sc-page-pad: 32px; } }
+
+.mdui-theme-dark { --sc-icon-color: #cbd5e1; }
+@media (prefers-color-scheme: dark) {
+  :root:not(.mdui-theme-light) { --sc-icon-color: #cbd5e1; }
+}
 
 /* Global animation keyframes */
 @keyframes sc-fade-in-up {

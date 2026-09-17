@@ -114,6 +114,10 @@ jobs:
           cd web
           pnpm exec playwright install --with-deps chromium
 
+      - name: Check browser alignment
+        working-directory: web
+        run: pnpm test:alignment
+
       # Enforces the frontend byte budgets. Deliberately
       # no Lighthouse pass (see check-bundle-size.mjs's header): a shared
       # runner's CPU/IO variance would make a frame-timing gate flaky, and

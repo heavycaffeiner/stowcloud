@@ -6,7 +6,7 @@ import { joinPath } from '../api/path-utils'
 import { folderSizeQuery } from '../query/files'
 import { formatBytes } from '../format/bytes'
 import { formatEntrySize } from '../format/entry-size'
-import { formatDateNs } from '../i18n'
+import { formatModifiedDateNs } from '../i18n'
 import { useI18n } from '../i18n/use-i18n'
 import { useStore } from '../store/use-store'
 import { ui } from '../store/ui.store'
@@ -118,7 +118,7 @@ export function DetailsPanel({
       return [
         { label: t('details.type'), value: one.kind === 'dir' ? t('details.folder') : kindDescription(one) },
         ...(one.kind !== 'dir' ? [{ label: t('details.size'), value: `${formatEntrySize(one.size, encrypted)} (${one.size.toLocaleString()} 바이트)` }] : []),
-        { label: t('details.modified'), value: formatDateNs(one.mtime_ns) },
+        { label: t('details.modified'), value: formatModifiedDateNs(one.mtime_ns) },
         { label: t('details.location'), value: joinPath(location, one.name) },
         ...(one.link ? [{ label: t('details.symlink_target'), value: one.link.target }] : []),
         { label: t('details.permissions'), value: permissionSummary(one) }
@@ -128,7 +128,7 @@ export function DetailsPanel({
   }, [many, one, selected.length, location, encrypted, dirs, total, t])
 
   const title = many ? t('details.multiple_selected', { count: selected.length }) : one?.name ?? (path.split('/').filter(Boolean).at(-1) ?? t('browse.home'))
-  const heroIcon = one ? getEntryIcon(one) : many ? { name: 'check', color: '#76a9fa' } : { name: 'folder', color: '#5c93e8' }
+  const heroIcon = one ? getEntryIcon(one) : many ? { name: 'check', color: 'var(--sc-icon-color)' } : { name: 'folder', color: 'var(--sc-icon-color)' }
   const heroDesc = one ? kindDescription(one) : many ? formatBytes(bytes) : t('details.folder')
 
   return (

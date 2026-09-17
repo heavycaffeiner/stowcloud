@@ -18,7 +18,7 @@ vi.mock('./ko.json', () => ({
   },
 }))
 
-import { tp, setLocale } from './index'
+import { formatModifiedDateNs, tp, setLocale } from './index'
 
 beforeEach(() => {
   setLocale('en')
@@ -59,5 +59,25 @@ describe('tp', () => {
     expect(tp('test.job_finished', 1, { kind: '복사' })).toBe(
       '복사 작업 완료. 1개 항목 처리됨.',
     )
+  })
+})
+
+describe('formatModifiedDateNs', () => {
+  const nanoseconds = (date: Date) => (BigInt(date.getTime()) * 1_000_000n).toString()
+
+  it('keeps day before month and 24-hour time in both languages', () => {
+    const stamp = nanoseconds(new Date(2026, 8, 17, 18, 4, 59))
+    expect(formatModifiedDateNs(stamp)).toBe('2026-17-09 18:04')
+    setLocale('ko')
+    expect(formatModifiedDateNs(stamp)).toBe('2026-17-09 18:04')
+  })
+
+  it('pads single digits and renders midnight without a day-period label', () => {
+    expect(formatModifiedDateNs(nanoseconds(new Date(2026, 0, 2, 0, 5)))).toBe('2026-02-01 00:05')
+  })
+
+  it('rejects malformed or out-of-range timestamps', () => {
+    expect(() => formatModifiedDateNs('not-a-time')).toThrow()
+    expect(() => formatModifiedDateNs('999999999999999999999999999999')).toThrow(RangeError)
   })
 })

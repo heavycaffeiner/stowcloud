@@ -116,6 +116,7 @@
   color: rgb(var(--mdui-color-on-primary));
   font-family: inherit;
   font-size: 14px;
+  line-height: var(--mdui-typescale-label-large-line-height, 1.25rem);
   font-weight: 600;
   display: inline-flex;
   align-items: center;

@@ -86,6 +86,7 @@
   color: rgb(var(--mdui-color-on-primary));
   font-family: inherit;
   font-size: 13px;
+  line-height: var(--mdui-typescale-label-large-line-height, 1.25rem);
   font-weight: 500;
   cursor: pointer;
   display: inline-flex;
@@ -138,6 +139,7 @@
   color: var(--sc-content-secondary);
   font-family: inherit;
   font-size: 13px;
+  line-height: var(--mdui-typescale-label-large-line-height, 1.25rem);
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
@@ -173,6 +175,7 @@
   border: 1px solid color-mix(in srgb, var(--sc-state-selection-content) 25%, transparent);
   color: var(--sc-state-selection-content);
   font-size: 12px;
+  line-height: var(--mdui-typescale-label-medium-line-height, 1rem);
   font-weight: 500;
   white-space: nowrap;
   flex: none;
@@ -195,6 +198,7 @@
   color: var(--sc-content-secondary);
   font-family: inherit;
   font-size: 12px;
+  line-height: var(--mdui-typescale-label-medium-line-height, 1rem);
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;

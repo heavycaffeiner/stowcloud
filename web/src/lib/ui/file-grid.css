@@ -59,7 +59,7 @@
 }
 .sc-file-grid:focus .sc-file-grid__card--focused { outline: 3px solid var(--sc-state-focus, rgb(var(--mdui-color-secondary))); outline-offset: -3px; }
 .sc-file-grid__head { display: flex; align-items: center; gap: 8px; padding: 4px 8px; min-height: 40px; }
-.sc-file-grid__type { display: inline-flex; flex: none; align-items: center; justify-content: center; color: rgb(var(--mdui-color-primary)); }
+.sc-file-grid__type { display: inline-flex; flex: none; align-items: center; justify-content: center; color: var(--sc-icon-color); }
 .sc-file-grid__name {
   flex: 1;
   overflow: hidden;
