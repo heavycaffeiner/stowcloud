@@ -78,6 +78,17 @@
   font-weight: 700;
   color: var(--sc-content-primary);
   letter-spacing: -0.02em;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sc-shell-header__brand::before {
+  content: '';
+  width: 22px;
+  height: 22px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgb(var(--mdui-color-primary)), rgb(var(--mdui-color-secondary)));
 }
 
 .sc-shell-header__center {
