@@ -33,7 +33,7 @@ export interface NavigationDrawerProps {
   readonly onclose?: () => void
   readonly folderSelectorOnly?: boolean
   readonly collapsed?: boolean
-  readonly onNew?: () => void
+  readonly onNew?: (trigger: HTMLElement) => void
   readonly userInitial?: string
 }
 
@@ -83,7 +83,6 @@ export function NavigationDrawer({
   const destinations = useMemo(() => {
     const fallback: NavItem[] = [
       { id: 'files', label: t('browse.home'), icon: 'home', href: '/b' },
-      { id: 'folders', label: t('nav.shared_folders'), icon: 'folder_shared', href: '/b' },
       { id: 'recent', label: t('nav.recent'), icon: 'history', href: '/recent' },
       { id: 'trash', label: t('common.trash'), icon: 'delete', href: '/trash' },
       { id: 'links', label: t('nav.links'), icon: 'link', href: '/links' },
@@ -116,7 +115,7 @@ export function NavigationDrawer({
     })
   }
 
-  const fileNavItems = destinations.filter((item) => ['files', 'folders', 'recent', 'trash', 'links'].includes(item.id))
+  const fileNavItems = destinations.filter((item) => ['files', 'recent', 'trash', 'links'].includes(item.id))
   const settingNavItems = destinations.filter((item) => ['settings', 'admin'].includes(item.id))
 
   const drawerClass = overlay
@@ -150,8 +149,8 @@ export function NavigationDrawer({
               className={collapsed ? 'sc-nav-drawer__new-btn sc-nav-drawer__new-btn--collapsed' : 'sc-nav-drawer__new-btn'}
               aria-label={t('browse.new')}
               title={t('browse.new')}
-              onClick={() => {
-                onNew()
+              onClick={(event) => {
+                onNew(event.currentTarget)
                 closeOverlay()
               }}
             >
@@ -278,35 +277,6 @@ export function NavigationDrawer({
               })}
             </ul>
           </>
-        ) : null}
-
-        {!folderSelectorOnly ? (
-          <div className="sc-nav-drawer__storage-wrap">
-            {collapsed ? (
-              <div className="sc-nav-drawer__storage-collapsed" title={`${t('nav.storage')}: 68% (102.4 GB / 150 GB)`}>
-                <span className="sc-nav-drawer__storage-collapsed-icon">
-                  <Icon name="cloud" size={22} />
-                </span>
-                <span className="sc-nav-drawer__storage-pct-collapsed">68%</span>
-              </div>
-            ) : (
-              <div className="sc-nav-drawer__storage-card">
-                <div className="sc-nav-drawer__storage-header">
-                  <span className="sc-nav-drawer__storage-title">
-                    <Icon name="cloud" size={18} />
-                    <span>{t('nav.storage')}</span>
-                  </span>
-                  <span className="sc-nav-drawer__storage-pct">68%</span>
-                </div>
-                <div className="sc-nav-drawer__storage-bar">
-                  <div className="sc-nav-drawer__storage-progress" style={{ width: '68%' }} />
-                </div>
-                <div className="sc-nav-drawer__storage-desc">
-                  {t('nav.storage_used_desc', { used: '102.4 GB', total: '150 GB' })}
-                </div>
-              </div>
-            )}
-          </div>
         ) : null}
       </div>
     </>

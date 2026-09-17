@@ -1,10 +1,10 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { swReady } from '../lib/crypto/download-sw'
 import { useI18n } from '../lib/i18n/use-i18n'
 import { startLiveInvalidation } from '../lib/query/live'
-import { isUnauthenticated, screenOf, sessionQuery, setupRequiredQuery } from '../lib/query/session'
+import { isUnauthenticated, logoutMutation, screenOf, sessionQuery, setupRequiredQuery } from '../lib/query/session'
 import { openSearch as openSearchStore, search, searchTarget } from '../lib/store/search.store'
 import { COMPACT_MAX_PX, ui } from '../lib/store/ui.store'
 import { useStore } from '../lib/store/use-store'
@@ -16,6 +16,12 @@ import { Snackbar } from '../lib/ui/Snackbar'
 import { Icon } from '../lib/ui/Icon'
 import { UploadTray } from '../lib/ui/UploadTray'
 import './shell.css'
+
+/** Where the create menu should open, in viewport coordinates. */
+export interface NewActionAnchor {
+  readonly x: number
+  readonly y: number
+}
 
 function isBrowsePathname(pathname: string): boolean {
   return pathname === '/b' || pathname.startsWith('/b/')
@@ -50,7 +56,40 @@ export function AppShell() {
   const [lastBrowsePath, setLastBrowsePath] = useState<string | null>(null)
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false)
   const [folderSelectorOpen, setFolderSelectorOpen] = useState(false)
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const trayStackRef = useRef<HTMLDivElement | null>(null)
+  const accountMenuRef = useRef<HTMLDivElement | null>(null)
+  const logout = useMutation(logoutMutation())
+
+  // A menu that outlives the click that opened it traps the pointer, so a
+  // press anywhere else closes it.
+  useEffect(() => {
+    if (!accountMenuOpen) return
+    const onPointerDown = (event: PointerEvent): void => {
+      if (!accountMenuRef.current?.contains(event.target as Node)) setAccountMenuOpen(false)
+    }
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setAccountMenuOpen(false)
+    }
+    window.addEventListener('pointerdown', onPointerDown, true)
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown, true)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [accountMenuOpen])
+
+  const signOut = (): void => {
+    setAccountMenuOpen(false)
+    logout.mutate(undefined, {
+      onSettled: (result) => {
+        // Single sign-on ends the provider's session through its own URL; a
+        // local session just returns to the sign-in screen.
+        if (result?.end_session_url) window.location.assign(result.end_session_url)
+        else void navigate('/login', { replace: true })
+      }
+    })
+  }
 
   useEffect(() => {
     const resize = (): void => ui.setCompact(window.innerWidth < COMPACT_MAX_PX)
@@ -135,7 +174,6 @@ export function AppShell() {
   const navItems = useMemo<NavItem[]>(() => {
     const items: NavItem[] = [
       { id: 'files', label: t('browse.home'), icon: 'home', href: browseHref(browseTarget()) },
-      { id: 'folders', label: t('nav.shared_folders'), icon: 'folder_shared', href: browseHref(browseTarget()) },
       { id: 'recent', label: t('nav.recent'), icon: 'history', href: '/recent' },
       { id: 'trash', label: t('common.trash'), icon: 'delete', href: '/trash' },
       { id: 'links', label: t('nav.links'), icon: 'link', href: '/links' },
@@ -150,7 +188,7 @@ export function AppShell() {
   const compactItems = useMemo<NavigationBarItem[]>(() => [
     { id: 'files', label: t('nav.files'), icon: 'folder', href: browseHref(browseTarget()) },
     { id: 'recent', label: t('nav.recent'), icon: 'history', href: '/recent' },
-    { id: 'links', label: t('nav.links'), icon: 'share', href: '/links' },
+    { id: 'links', label: t('nav.links'), icon: 'link', href: '/links' },
     { id: 'more', label: t('nav.more'), icon: 'menu', popup: 'dialog', expanded: mobileDrawerOpen, controls: 'sc-shell-drawer' }
   ], [mobileDrawerOpen, browseTarget, t, location.pathname, lastBrowsePath])
 
@@ -158,12 +196,6 @@ export function AppShell() {
 
   const navigateTo = (id: string, href?: string): void => {
     if (id === 'files') {
-      setMobileDrawerOpen(false)
-      setFolderSelectorOpen(false)
-      void navigate(browseHref(browseTarget()))
-      return
-    }
-    if (id === 'folders') {
       setMobileDrawerOpen(false)
       setFolderSelectorOpen(false)
       void navigate(browseHref(browseTarget()))
@@ -182,8 +214,14 @@ export function AppShell() {
     }
   }
 
-  const triggerNewAction = (): void => {
-    window.dispatchEvent(new CustomEvent('stowcloud:new'))
+  // The browse page owns the create menu, so the sidebar hands over where its
+  // button sits. Without a rect the menu opened at a fixed corner, detached
+  // from the control that summoned it.
+  const triggerNewAction = (trigger?: HTMLElement): void => {
+    const rect = trigger?.getBoundingClientRect()
+    window.dispatchEvent(new CustomEvent<NewActionAnchor>('stowcloud:new', {
+      detail: rect ? { x: rect.right, y: rect.bottom + 4 } : undefined
+    }))
   }
 
   const userInitial = (session.data?.user.display_name || session.data?.user.name || 'S').slice(0, 1).toUpperCase()
@@ -256,14 +294,33 @@ export function AppShell() {
             >
               <Icon name="settings" size={20} />
             </button>
-            <button
-              type="button"
-              className="sc-shell-header__avatar-btn"
-              aria-label={session.data?.user.display_name || session.data?.user.name || 'User'}
-              onClick={() => navigateTo('settings', '/settings')}
-            >
-              <span className="sc-shell-header__avatar">{userInitial}</span>
-            </button>
+            <div className="sc-shell-header__account-wrap" ref={accountMenuRef}>
+              <button
+                type="button"
+                className="sc-shell-header__avatar-btn"
+                aria-label={session.data?.user.display_name || session.data?.user.name || 'User'}
+                aria-haspopup="menu"
+                aria-expanded={accountMenuOpen}
+                onClick={() => setAccountMenuOpen((open) => !open)}
+              >
+                <span className="sc-shell-header__avatar">{userInitial}</span>
+              </button>
+              {accountMenuOpen ? (
+                <div className="sc-shell-header__account-menu" role="menu">
+                  <div className="sc-shell-header__account-name">
+                    {session.data?.user.display_name || session.data?.user.name}
+                  </div>
+                  <button type="button" role="menuitem" onClick={() => { setAccountMenuOpen(false); navigateTo('settings', '/settings') }}>
+                    <Icon name="settings" size={18} />
+                    {t('common.settings')}
+                  </button>
+                  <button type="button" role="menuitem" onClick={signOut}>
+                    <Icon name="close" size={18} />
+                    {t('common.sign_out')}
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </div>
         </header>
 
@@ -331,9 +388,9 @@ export function AppShell() {
               navigateTo(item.id, item.href)
             }}
             onsearch={openSearch}
-            onNew={() => {
+            onNew={(trigger) => {
               setMobileDrawerOpen(false)
-              triggerNewAction()
+              triggerNewAction(trigger)
             }}
           />
         ) : null}

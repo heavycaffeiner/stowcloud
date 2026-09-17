@@ -45,6 +45,7 @@ import { Menu } from '../../lib/ui/Menu'
 import { Breadcrumb } from '../../lib/ui/Breadcrumb'
 import { autoScrollStep, movedFar, rectBetween, type Rect } from '../../lib/ui/marquee'
 import { useDocumentTitle } from '../use-document-title'
+import type { NewActionAnchor } from '../AppShell'
 import './browse.css'
 import '../../lib/ui/browse-ui.css'
 
@@ -207,11 +208,12 @@ export function BrowsePage() {
   }, [path])
 
   useEffect(() => {
-    const handleNew = () => {
-      if (canCreate) {
-        setNewMenuPosition({ x: 80, y: 120 })
-        setNewMenuOpen(true)
-      }
+    const handleNew = (event: Event) => {
+      if (!canCreate) return
+      const anchor = (event as CustomEvent<NewActionAnchor | undefined>).detail
+      setNewMenuTrigger(null)
+      setNewMenuPosition(anchor ?? { x: 80, y: 120 })
+      setNewMenuOpen(true)
     }
     window.addEventListener('stowcloud:new', handleNew)
     return () => window.removeEventListener('stowcloud:new', handleNew)

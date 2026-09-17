@@ -134,6 +134,7 @@ export const SearchPanel = forwardRef<SearchPanelHandle, SearchPanelProps>(funct
 
   const inputRef = useRef<HTMLInputElement>(null)
   const resultsContainer = useRef<HTMLDivElement>(null)
+  const categoriesRef = useRef<HTMLDivElement>(null)
   const cancelRef = useRef<(() => void) | null>(null)
   const arrivingRef = useRef<SearchHit[]>([])
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -180,6 +181,23 @@ export const SearchPanel = forwardRef<SearchPanelHandle, SearchPanelProps>(funct
       inputRef.current?.focus()
     }
   }), [])
+
+  // A pointer device only emits vertical deltas, so the pill strip never moved
+  // on a desktop. The row takes that delta as horizontal movement, and only
+  // while it actually overflows, so a trackpad's own sideways gesture and the
+  // page's vertical scroll are both left alone.
+  useEffect(() => {
+    const strip = categoriesRef.current
+    if (!strip) return
+    const onWheel = (event: WheelEvent): void => {
+      if (event.deltaX !== 0) return
+      if (strip.scrollWidth <= strip.clientWidth) return
+      event.preventDefault()
+      strip.scrollLeft += event.deltaY
+    }
+    strip.addEventListener('wheel', onWheel, { passive: false })
+    return () => strip.removeEventListener('wheel', onWheel)
+  }, [])
 
   const flush = (): void => {
     if (flushTimerRef.current !== null) {
@@ -488,7 +506,12 @@ export const SearchPanel = forwardRef<SearchPanelHandle, SearchPanelProps>(funct
       </form>
 
       <div className="sc-search__filter-bar">
-        <div className="sc-search__categories" role="tablist" aria-label={t('search.kind_label')}>
+        <div
+          className="sc-search__categories"
+          role="tablist"
+          aria-label={t('search.kind_label')}
+          ref={categoriesRef}
+        >
           {CATEGORIES.map((cat) => {
             const isSelected = activeCategory === cat.id
             return (

@@ -76,9 +76,9 @@
   -webkit-user-select: none;
   transition: background-color 120ms ease, color 120ms ease;
 }
-.sc-row:hover { background: rgba(255, 255, 255, 0.035); }
-.sc-row--selected { background: rgba(43, 84, 158, 0.22); color: #f0f2f7; }
-.sc-row--selected:hover { background: rgba(43, 84, 158, 0.32); }
+.sc-row:hover { background: color-mix(in srgb, var(--sc-content-primary) 4%, transparent); }
+.sc-row--selected { background: var(--sc-state-selection); color: var(--sc-state-selection-content); }
+.sc-row--selected:hover { background: color-mix(in srgb, var(--sc-state-selection) 85%, var(--sc-content-primary)); }
 .sc-row--focused { outline: 2px solid var(--sc-state-focus); outline-offset: -2px; }
 .sc-row__cell { display: flex; align-items: center; gap: 8px; overflow: hidden; }
 .sc-row__cell--select { flex: 0 0 36px; overflow: visible; }
@@ -99,7 +99,7 @@
   border-radius: 50%;
   border: none;
   background: transparent;
-  color: #8b909d;
+  color: var(--sc-content-secondary);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -116,8 +116,8 @@
 }
 
 .sc-row__more-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #ffffff;
+  background: color-mix(in srgb, var(--sc-content-primary) 10%, transparent);
+  color: var(--sc-content-primary);
 }
 
 /* Custom Checkbox */
@@ -125,32 +125,32 @@
   width: 18px;
   height: 18px;
   border-radius: 4px;
-  border: 1.5px solid rgba(255, 255, 255, 0.28);
+  border: 1.5px solid var(--sc-outline);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   background: transparent;
-  color: #ffffff;
+  color: rgb(var(--mdui-color-on-primary));
   box-sizing: border-box;
   cursor: pointer;
   transition: background-color 120ms ease, border-color 120ms ease;
 }
 
 .sc-custom-checkbox--checked {
-  background: #3b82f6;
-  border-color: #3b82f6;
+  background: rgb(var(--mdui-color-primary));
+  border-color: rgb(var(--mdui-color-primary));
 }
 
 .sc-custom-checkbox--indeterminate {
-  background: #3b82f6;
-  border-color: #3b82f6;
+  background: rgb(var(--mdui-color-primary));
+  border-color: rgb(var(--mdui-color-primary));
 }
 
 .sc-custom-checkbox__bar {
   width: 10px;
   height: 2px;
   border-radius: 1px;
-  background: #ffffff;
+  background: rgb(var(--mdui-color-on-primary));
 }
 @container sc-file-table (max-width: 599.98px) {
   .sc-file-table__header-cell--mtime, .sc-row__cell--mtime { display: none; }
