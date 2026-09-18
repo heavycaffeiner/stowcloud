@@ -133,6 +133,7 @@ export function AppShell() {
 
   const browseHref = (path: string): string => path === '/' ? '/b' : `/b${path}`
   const browseScope = browsePath && browsePath !== '/' ? browsePath : lastBrowsePath?.split('?')[0] && lastBrowsePath?.split('?')[0] !== '/' ? lastBrowsePath.split('?')[0] : ''
+  const activeRoot = browseScope.split('/').filter(Boolean)[0] ?? ''
 
   const openSearch = (): void => {
     setMobileDrawerOpen(false)
@@ -338,7 +339,7 @@ export function AppShell() {
               navItems={navItems}
               activeNav={activeNav}
               items={rootItems}
-              active={browsePath?.split('/').filter(Boolean)[0] ?? ''}
+              active={activeRoot}
               onselect={(root) => void navigate(`/b/${encodeURIComponent(root.id)}`)}
               onnavselect={(item) => navigateTo(item.id, item.href)}
               onsearch={openSearch}
@@ -366,7 +367,7 @@ export function AppShell() {
         {compact && folderSelectorOpen ? (
           <NavigationDrawer
             items={rootItems}
-            active={browsePath?.split('/').filter(Boolean)[0] ?? ''}
+            active={activeRoot}
             folderSelectorOnly
             overlay
             onclose={() => setFolderSelectorOpen(false)}
@@ -383,7 +384,7 @@ export function AppShell() {
             navItems={navItems}
             activeNav={activeNav}
             items={rootItems}
-            active={browsePath?.split('/').filter(Boolean)[0] ?? ''}
+            active={activeRoot}
             userInitial={userInitial}
             onclose={() => setMobileDrawerOpen(false)}
             onselect={(root) => {
