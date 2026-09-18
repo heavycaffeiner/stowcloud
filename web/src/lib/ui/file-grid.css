@@ -46,8 +46,10 @@
 .sc-file-grid__card--file { display: flex; flex-direction: column; }
 .sc-file-grid__card:hover {
   transform: translateY(-1px);
-  background: var(--sc-raised-surface, rgb(var(--mdui-color-surface-container-high)));
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.10);
+}
+.sc-file-grid__card:not(.sc-file-grid__card--selected):hover {
+  background: var(--sc-raised-surface, rgb(var(--mdui-color-surface-container-high)));
 }
 .sc-file-grid__card:active {
   transform: scale(0.98);

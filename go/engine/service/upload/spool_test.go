@@ -383,12 +383,12 @@ func TestDeferredNamedUploadIgnoresALegacyChunkSize(t *testing.T) {
 	}
 
 	body := []byte("a chunk larger than the old limit")
-	if err := f.engine.PutNamed(ctx, f.root(t), s.ID, testUser, 1, bytes.NewReader(body), nil); err != nil {
-		t.Fatalf("an adaptive named chunk was refused: %v", err)
+	if perr := f.engine.PutNamed(ctx, f.root(t), s.ID, testUser, 1, bytes.NewReader(body), nil); perr != nil {
+		t.Fatalf("an adaptive named chunk was refused: %v", perr)
 	}
-	entry, err := f.engine.Assemble(ctx, f.resolve(t, "adaptive.bin"), s.ID, uint64(len(body)), nil)
-	if err != nil {
-		t.Fatalf("Assemble: %v", err)
+	entry, aerr := f.engine.Assemble(ctx, f.resolve(t, "adaptive.bin"), s.ID, uint64(len(body)), nil)
+	if aerr != nil {
+		t.Fatalf("Assemble: %v", aerr)
 	}
 	if entry.Size != uint64(len(body)) {
 		t.Fatalf("the published file is %d bytes, want %d", entry.Size, len(body))

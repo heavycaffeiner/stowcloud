@@ -121,6 +121,7 @@ export function BrowsePage() {
   const dragPointer = useRef({ x: 0, y: 0 })
   const dragBase = useRef<string[]>([])
   const dragFrame = useRef<number | null>(null)
+  const marqueeActive = useRef(false)
   const [unlockTarget, setUnlockTarget] = useState<UnlockTarget | null>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewIndex, setPreviewIndex] = useState(-1)
@@ -254,7 +255,8 @@ export function BrowsePage() {
   }
 
   const endMarquee = () => {
-    const wasDragging = marqueeRect !== null
+    const wasDragging = marqueeActive.current
+    marqueeActive.current = false
     dragOrigin.current = null
     setMarqueeRect(null)
     if (dragFrame.current !== null) cancelAnimationFrame(dragFrame.current)
@@ -262,7 +264,10 @@ export function BrowsePage() {
     window.removeEventListener('pointermove', onMarqueePointerMove)
     window.removeEventListener('pointerup', endMarquee)
     window.removeEventListener('keydown', onMarqueeKeyDown)
-    if (wasDragging) window.addEventListener('click', swallowMarqueeClick, { capture: true, once: true })
+    if (wasDragging) {
+      window.addEventListener('click', swallowMarqueeClick, { capture: true, once: true })
+      setTimeout(() => window.removeEventListener('click', swallowMarqueeClick, true), 100)
+    }
   }
 
   const onMarqueeKeyDown = (event: KeyboardEvent) => {
@@ -276,8 +281,9 @@ export function BrowsePage() {
     const origin = dragOrigin.current
     if (!origin) return
     dragPointer.current = { x: event.clientX, y: event.clientY }
-    if (marqueeRect === null && !movedFar(origin.x - window.scrollX, origin.y - window.scrollY, event.clientX, event.clientY)) return
-    if (marqueeRect === null) {
+    if (!marqueeActive.current && !movedFar(origin.x - window.scrollX, origin.y - window.scrollY, event.clientX, event.clientY)) return
+    if (!marqueeActive.current) {
+      marqueeActive.current = true
       window.getSelection()?.removeAllRanges()
       dragFrame.current = requestAnimationFrame(autoScrollTick)
     }
@@ -287,6 +293,7 @@ export function BrowsePage() {
   const onMarqueePointerDown = (event: React.PointerEvent) => {
     if (event.pointerType !== 'mouse' || event.button !== 0) return
     if ((event.target as HTMLElement).closest(controlSelector)) return
+    marqueeActive.current = false
     dragOrigin.current = { x: event.clientX + window.scrollX, y: event.clientY + window.scrollY }
     dragPointer.current = { x: event.clientX, y: event.clientY }
     dragBase.current = event.shiftKey || event.ctrlKey || event.metaKey ? [...selectedNames] : []

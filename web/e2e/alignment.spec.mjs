@@ -102,6 +102,40 @@ async function checkDateColumn(page) {
   return geometry.header.width
 }
 
+async function dragBetween(page, selector) {
+  const items = page.locator(selector)
+  assert.ok(await items.count() >= 2, `${selector}: drag selection needs two items`)
+  const [first, second] = await Promise.all([items.nth(0).boundingBox(), items.nth(1).boundingBox()])
+  assert.ok(first && second, `${selector}: drag selection items must be visible`)
+  await page.mouse.move(first.x + first.width / 2, first.y + first.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(second.x + second.width / 2, second.y + second.height / 2, { steps: 5 })
+  await page.mouse.up()
+  await settle(page)
+  const selected = await items.evaluateAll(elements => elements.filter(element => element.getAttribute('aria-selected') === 'true').length)
+  assert.ok(selected >= 2, `${selector}: drag selection must persist after pointerup`)
+  checks += 1
+}
+
+async function checkDragSelection(page) {
+  await dragBetween(page, '.sc-row')
+  await page.locator('.sc-browse__selection-close-btn').click()
+  await page.locator('.sc-browse__selection-bar').waitFor({ state: 'hidden' })
+
+  const viewToggle = page.locator('.sc-browse__toolbar-actions > .sc-browse__action-btn').nth(1)
+  await viewToggle.click()
+  await page.locator('.sc-file-grid__card').first().waitFor()
+  await dragBetween(page, '.sc-file-grid__card')
+  const backgrounds = await page.locator('.sc-file-grid__card[aria-selected="true"]').evaluateAll(cards => cards.map(card => getComputedStyle(card).backgroundColor))
+  assert.ok(backgrounds.length >= 2, 'Grid drag selection must include multiple cards')
+  assert.equal(new Set(backgrounds).size, 1, 'Hovered selected grid card must retain its selected background')
+  checks += 1
+  await page.locator('.sc-browse__selection-close-btn').click()
+  await page.locator('.sc-browse__selection-bar').waitFor({ state: 'hidden' })
+  await viewToggle.click()
+  await page.locator('.sc-row__cell--mtime').first().waitFor()
+}
+
 try {
   await server.listen()
   const base = server.resolvedUrls.local[0]
@@ -121,6 +155,7 @@ try {
     await checkGroup(page, '.sc-browse__toolbar-actions', 'y')
     await checkGroup(page, '.sc-nav-drawer__list', 'x', 'start')
     widths.push(await checkDateColumn(page))
+    await checkDragSelection(page)
 
     await page.locator('.sc-nav-drawer__new-btn').focus()
     await page.keyboard.press('Enter')

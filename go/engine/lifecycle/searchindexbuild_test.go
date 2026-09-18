@@ -204,8 +204,9 @@ func TestTheBuiltIndexSurvivesARestart(t *testing.T) {
 	// Mount starts the recovery task immediately. It traverses the current
 	// shares and clears the fallback state without an administrator rebuilding.
 	_ = serve(t, second)
-	deadline := time.Now().Add(5 * time.Second)
-	for second.Search.IndexStateOf().Incomplete && time.Now().Before(deadline) {
+	clk := clock.System()
+	deadline := clk.Now().Add(5 * time.Second)
+	for second.Search.IndexStateOf().Incomplete && clk.Now().Before(deadline) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	state := second.Search.IndexStateOf()
