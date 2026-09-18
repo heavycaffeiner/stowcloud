@@ -409,6 +409,11 @@
 .sc-nav-drawer__new-wrap {
   padding: 16px 12px 12px;
   flex: none;
+  order: -2;
+}
+
+.sc-nav-drawer__roots-section {
+  order: -1;
 }
 
 .sc-nav-drawer__new-btn {

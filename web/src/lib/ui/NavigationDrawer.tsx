@@ -115,7 +115,7 @@ export function NavigationDrawer({
     })
   }
 
-  const fileNavItems = destinations.filter((item) => ['files', 'recent', 'trash', 'links'].includes(item.id))
+  const fileNavItems = destinations.filter((item) => ['recent', 'trash', 'links'].includes(item.id))
   const settingNavItems = destinations.filter((item) => ['settings', 'admin'].includes(item.id))
 
   const drawerClass = overlay
@@ -162,7 +162,7 @@ export function NavigationDrawer({
 
         {!folderSelectorOnly ? (
           <>
-            {!collapsed ? <div className="sc-nav-drawer__section-title">{t('nav.files')}</div> : null}
+            {!collapsed && fileNavItems.length > 0 ? <div className="sc-nav-drawer__section-title">{t('nav.files')}</div> : null}
             <ul className="sc-nav-drawer__list">
               {fileNavItems.map((item) => {
                 const isActive = activeNav === item.id
