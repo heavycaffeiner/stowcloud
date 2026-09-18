@@ -175,7 +175,8 @@ export const FileTable = forwardRef<FileViewHandle, FileTableProps>(function Fil
   return <div ref={viewport} className={`sc-file-table${compact ? ' sc-file-table--contained' : ''}${mobileRows ? ' sc-file-table--mobile-rows' : ''}${names.size ? ' sc-file-table--reserve-selection' : ''}`} style={{ touchAction: 'manipulation' }} data-density={density} role="grid" aria-multiselectable="true" aria-rowcount={total + 1} aria-label={t('table.file_list')} aria-activedescendant={active} aria-busy={loadingMore} tabIndex={0} onKeyDown={keyDown} onPointerDown={(event) => { if (!(event.target as HTMLElement).closest('[aria-selected]')) activation.cancel() }} onContextMenu={activation.cancel}>
     {total === 0 && !loading ? <p className="sc-file-table__empty">{t('common.folder_empty')}</p> : <>
       <div className="sc-file-table__header" role="row" aria-rowindex={1}>
-        <span
+        <button
+          type="button"
           className="sc-file-table__header-cell sc-file-table__header-cell--select sc-touch-target"
           role="columnheader"
           aria-label={t('browse.select_all')}
@@ -187,7 +188,7 @@ export const FileTable = forwardRef<FileViewHandle, FileTableProps>(function Fil
           <span className={`sc-custom-checkbox${names.size > 0 && names.size === entries.length ? ' sc-custom-checkbox--checked' : names.size > 0 ? ' sc-custom-checkbox--indeterminate' : ''}`} aria-hidden="true">
             {names.size > 0 && names.size === entries.length ? <Icon name="check" size={13} /> : names.size > 0 ? <span className="sc-custom-checkbox__bar" /> : null}
           </span>
-        </span>
+        </button>
         {(['name', 'size', 'mtime'] as const).map((key) => <span key={key} className={`sc-file-table__header-cell sc-file-table__header-cell--${key}`} role="columnheader" aria-sort={sortKey === key ? sortOrder === 'asc' ? 'ascending' : 'descending' : 'none'}>
           <button type="button" className={`sc-file-table__header-button${sortKey === key ? ' sc-file-table__header-button--active' : ''}`} onClick={() => chooseSort(key)} aria-label={`${sortLabel(key)}${sortKey === key ? `, ${sortOrder === 'asc' ? t('browse.sort_ascending') : t('browse.sort_descending')}` : ''}`}>
             <span>{sortLabel(key)}</span>

@@ -33,7 +33,7 @@
   letter-spacing: var(--mdui-typescale-label-large-tracking, .006rem);
 }
 .sc-file-table__header-cell { display: flex; align-items: center; min-width: 0; gap: 4px; overflow: hidden; }
-  .sc-file-table__header-cell--select { flex: 0 0 40px; justify-content: center; }
+  .sc-file-table__header-cell--select { flex: 0 0 40px; justify-content: center; border: 0; background: transparent; padding: 0; color: inherit; cursor: pointer; }
   .sc-file-table__header-cell--name { flex: 1 1 auto; }
   .sc-file-table__header-cell--size { flex: 0 0 112px; justify-content: flex-end; }
   .sc-file-table__header-cell--mtime { flex: 0 0 var(--sc-modified-column-width); justify-content: flex-end; white-space: nowrap; }

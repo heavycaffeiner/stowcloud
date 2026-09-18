@@ -455,6 +455,11 @@ mdui-chip::part(label) {
   box-shadow: var(--sc-elevation-3);
 }
 
+.sc-menu-shell {
+  border-radius: var(--sc-radius-medium);
+  overflow: hidden;
+}
+
 mdui-menu::part(panel),
 mdui-dropdown::part(panel),
 mdui-select::part(menu) {

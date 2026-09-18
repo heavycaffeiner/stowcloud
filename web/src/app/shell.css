@@ -555,7 +555,11 @@
 
 /* Collapsed item */
 .sc-nav-drawer--collapsed .sc-nav-drawer__list {
-  padding: 0;
+  padding: 8px 0;
+}
+
+.sc-nav-drawer--collapsed .sc-nav-drawer__body {
+  padding-top: 12px;
 }
 
 .sc-nav-drawer--collapsed .sc-nav-drawer__item {
