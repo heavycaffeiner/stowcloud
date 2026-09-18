@@ -23,7 +23,7 @@
 }
 .sc-file-grid__section { position: relative; }
 .sc-file-grid__window { will-change: transform; padding-inline: var(--sc-content-pad, 24px); }
-.sc-file-grid__row { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); align-items: stretch; gap: 16px; }
+.sc-file-grid__row { display: flex; align-items: stretch; gap: 16px; }
 .sc-file-grid__card {
   min-width: 0;
   position: relative;
