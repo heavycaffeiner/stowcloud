@@ -27,6 +27,8 @@
 }
 
 .sc-auth-card--login {
+  width: min(100%, 36rem);
+  margin-inline: auto;
   border-radius: var(--sc-radius-large);
   box-shadow: none;
 }
@@ -93,6 +95,7 @@
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 8px;
+  width: 100%;
 }
 
 .sc-auth-card__divider {
