@@ -35,7 +35,50 @@
 
 .sc-app-shell--compact .sc-shell-header {
   padding-top: env(safe-area-inset-top, 0px);
+  padding-right: max(8px, env(safe-area-inset-right, 0px));
+  padding-left: max(8px, env(safe-area-inset-left, 0px));
+  gap: 8px;
   height: calc(var(--sc-shell-header-height, 56px) + env(safe-area-inset-top, 0px));
+}
+
+.sc-app-shell--compact .sc-shell-header__left {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.sc-app-shell--compact .sc-shell-header__brand-btn {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.sc-app-shell--compact .sc-shell-header__brand {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sc-app-shell--compact .sc-shell-header__center {
+  flex: none;
+  width: 40px;
+  margin: 0;
+}
+
+.sc-app-shell--compact .sc-shell-header__search {
+  width: 40px;
+  padding: 0;
+  box-sizing: border-box;
+  justify-content: center;
+}
+
+.sc-app-shell--compact .sc-shell-header__search-placeholder,
+.sc-app-shell--compact .sc-shell-header__search-hints {
+  display: none;
+}
+
+.sc-app-shell--compact .sc-shell-header__right {
+  gap: 2px;
 }
 
 .sc-shell-header__left {
