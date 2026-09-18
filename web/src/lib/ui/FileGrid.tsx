@@ -49,14 +49,14 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
   const viewport = useRef<HTMLDivElement>(null)
   const folderEl = useRef<HTMLDivElement>(null)
   const fileEl = useRef<HTMLDivElement>(null)
-  const [metrics, setMetrics] = useState({ width: 0, scroll: 0, height: 0, foldersTop: 0, filesTop: 0 })
+  const [metrics, setMetrics] = useState({ width: 0, scroll: 0, height: 0, foldersTop: 0, filesTop: 0, inlinePad: 24 })
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
   const card = density === 'compact'
     ? { w: 192, folderH: 44, fileH: 176, columnGap: 8, rowGap: 12 }
     : density === 'spacious'
       ? { w: 256, folderH: 60, fileH: 244, columnGap: 16, rowGap: 20 }
       : { w: 224, folderH: 52, fileH: 208, columnGap: 12, rowGap: 16 }
-  const availableW = Math.max(card.w, metrics.width - 32)
+  const availableW = Math.max(card.w, metrics.width - metrics.inlinePad * 2)
   const columns = Math.max(1, Math.floor((availableW + card.columnGap) / (card.w + card.columnGap)))
   const cardW = Math.max(120, Math.floor((availableW - (columns - 1) * card.columnGap) / columns))
   const folderCount = Math.min(dirs, total)
@@ -69,15 +69,18 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
   const fileWin = computeWindow({ scrollTop: Math.max(0, metrics.scroll - metrics.filesTop), viewportHeight: metrics.height, rowHeight: fileRowH, itemCount: fileRows, overscan: 3 })
 
   const update = () => {
-    if (!viewport.current) return
-    const scroll = compact ? viewport.current.scrollTop : window.scrollY
-    const viewportTop = compact ? viewport.current.getBoundingClientRect().top : 0
+    const element = viewport.current
+    if (!element) return
+    const scroll = compact ? element.scrollTop : window.scrollY
+    const viewportTop = compact ? element.getBoundingClientRect().top : 0
+    const inlinePad = Number.parseFloat(getComputedStyle(element).getPropertyValue('--sc-content-pad')) || 24
     setMetrics({
-      width: viewport.current.clientWidth,
+      width: element.clientWidth,
       scroll,
-      height: compact ? viewport.current.clientHeight : window.visualViewport?.height ?? window.innerHeight,
+      height: compact ? element.clientHeight : window.visualViewport?.height ?? window.innerHeight,
       foldersTop: folderEl.current ? folderEl.current.getBoundingClientRect().top - viewportTop + scroll : 0,
-      filesTop: fileEl.current ? fileEl.current.getBoundingClientRect().top - viewportTop + scroll : 0
+      filesTop: fileEl.current ? fileEl.current.getBoundingClientRect().top - viewportTop + scroll : 0,
+      inlinePad
     })
   }
   useEffect(() => {
@@ -151,7 +154,7 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
       return true
     },
     entriesInRect(rect) {
-      const left = (viewport.current?.getBoundingClientRect().left ?? 0) + window.scrollX + 16
+      const left = (viewport.current?.getBoundingClientRect().left ?? 0) + window.scrollX + metrics.inlinePad
       const common = { left, columnPitch: cardW + card.columnGap, cellWidth: cardW, columns }
       const hits = [
         ...indicesInRect(rect, { ...common, top: (folderEl.current?.getBoundingClientRect().top ?? 0) + window.scrollY, rowHeight: folderRowH, cellHeight: card.folderH, startIndex: 0, count: folderCount }),

@@ -162,7 +162,7 @@ export function NavigationDrawer({
 
         {!folderSelectorOnly ? (
           <>
-            {!collapsed && fileNavItems.length > 0 ? <div className="sc-nav-drawer__section-title">{t('nav.files')}</div> : null}
+            {!collapsed && fileNavItems.length > 0 ? <div className="sc-nav-drawer__divider" role="separator" /> : null}
             <ul className="sc-nav-drawer__list">
               {fileNavItems.map((item) => {
                 const isActive = activeNav === item.id

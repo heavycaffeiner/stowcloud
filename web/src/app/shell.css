@@ -604,6 +604,21 @@
   color: var(--sc-content-primary);
 }
 
+.sc-nav-drawer__subitem--active {
+  background: var(--sc-state-selection);
+  color: var(--sc-state-selection-content);
+  font-weight: 600;
+}
+
+.sc-nav-drawer__subitem--active:hover {
+  background: color-mix(in srgb, var(--sc-state-selection) 88%, var(--sc-content-primary));
+  color: var(--sc-state-selection-content);
+}
+
+.sc-nav-drawer__subitem--active .sc-nav-drawer__item-icon {
+  color: var(--sc-state-selection-content);
+}
+
 .sc-nav-drawer__subitem-label {
   min-width: 0;
   flex: 1;
@@ -886,7 +901,18 @@
   flex-direction: column;
   padding: 16px;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow: visible;
+}
+
+@media (max-height: 400px) {
+  .sc-search-sheet {
+    inset: 8px 0 auto;
+    max-height: calc(100dvh - 16px);
+  }
+
+  .sc-search-sheet__body {
+    max-height: calc(100dvh - 16px);
+  }
 }
 
 .sc-app-shell__boot {

@@ -133,7 +133,7 @@ export function AppShell() {
 
   const browseHref = (path: string): string => path === '/' ? '/b' : `/b${path}`
   const browseScope = browsePath && browsePath !== '/' ? browsePath : lastBrowsePath?.split('?')[0] && lastBrowsePath?.split('?')[0] !== '/' ? lastBrowsePath.split('?')[0] : ''
-  const activeRoot = browseScope.split('/').filter(Boolean)[0] ?? ''
+  const activeRoot = browsePath?.split('/').filter(Boolean)[0] ?? ''
 
   const openSearch = (): void => {
     setMobileDrawerOpen(false)
