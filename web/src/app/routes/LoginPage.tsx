@@ -87,7 +87,7 @@ export function LoginPage() {
 
   return (
     <main className="sc-auth-page">
-      <form className="sc-auth-card" onSubmit={step === 'credentials' ? submitCredentials : submitTotp}>
+      <form className="sc-auth-card sc-auth-card--login" onSubmit={step === 'credentials' ? submitCredentials : submitTotp}>
         <h1 className="sc-auth-card__title">Stowcloud</h1>
         <p className="sc-auth-card__subtitle">
           {returnTo ? t('login.sign_first_authorise_app') : t('login.sign_your_account')}

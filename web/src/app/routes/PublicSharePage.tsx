@@ -15,6 +15,7 @@ import {
 import { formatBytes } from '../../lib/format/bytes'
 import { useI18n } from '../../lib/i18n/use-i18n'
 import { Button } from '../../lib/ui/Button'
+import { Icon } from '../../lib/ui/Icon'
 import { TextField } from '../../lib/ui/TextField'
 import { VirtualList } from '../../lib/ui/VirtualList'
 import { useDocumentTitle } from '../use-document-title'
@@ -246,6 +247,7 @@ export function PublicSharePage() {
                 itemProps={() => ({ className: 'sc-public-share__row' })}
                 renderItem={(entry) => (
                   <>
+                    <span className="sc-public-share__icon" aria-hidden="true"><Icon name={entry.kind === 'dir' ? 'folder' : 'draft'} size={20} /></span>
                     {entry.kind === 'dir' ? <button type="button" className="sc-filename sc-public-share__name sc-public-share__folder sc-focus-ring" aria-label={t('public_share.open_folder', { name: entry.name })} onClick={() => openFolder(childPath(entry.name))}>{entry.name}</button> : <span className="sc-filename sc-public-share__name">{entry.name}</span>}
                     <span className="sc-public-share__size">{entry.kind === 'dir' ? '-' : formatBytes(entry.size)}</span>
                     {entry.kind === 'file' && info.canDownload ? <Button variant="text" onClick={() => download(childPath(entry.name))}>{t('common.download')}</Button> : null}
