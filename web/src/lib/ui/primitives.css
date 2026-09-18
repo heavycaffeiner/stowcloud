@@ -53,7 +53,7 @@
   background: rgb(var(--mdui-color-secondary-container));
   color: rgb(var(--mdui-color-on-secondary-container));
 }
-.sc-settings-page__tab:focus-visible { outline: 2px solid rgb(var(--mdui-color-primary)); outline-offset: -3px; }
+.sc-settings-page__tab:focus-visible { outline: var(--sc-focus-ring-width) solid var(--sc-state-focus); outline-offset: var(--sc-focus-ring-offset); }
 .sc-settings-card,
 .sc-admin-card {
   display: flex;
@@ -135,8 +135,9 @@
 }
 
 mdui-button.sc-button--square {
-  inline-size: 40px;
-  min-inline-size: 40px;
+  inline-size: var(--sc-control-min);
+  min-inline-size: var(--sc-control-min);
+  min-block-size: var(--sc-control-min);
   padding-inline: 0;
 }
 
@@ -233,16 +234,22 @@ mdui-button-icon > svg {
   vertical-align: middle;
   position: relative;
   flex: none;
-  min-inline-size: 40px;
-  min-block-size: 40px;
+  min-inline-size: var(--sc-control-min);
+  min-block-size: var(--sc-control-min);
 }
 
 .sc-icon-button mdui-button-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  inline-size: 40px;
-  block-size: 40px;
+  inline-size: var(--sc-control-min);
+  block-size: var(--sc-control-min);
+}
+
+mdui-button::part(button):focus-visible,
+mdui-button-icon::part(button):focus-visible {
+  outline: var(--sc-focus-ring-width) solid var(--sc-state-focus);
+  outline-offset: var(--sc-focus-ring-offset);
 }
 
 .sc-icon-button__tip {
@@ -340,8 +347,8 @@ mdui-dialog [slot="action"] {
 
 .sc-select select:hover { background-color: rgb(var(--mdui-color-surface-container-high)); }
 .sc-select select:focus-visible {
-  outline: 2px solid rgb(var(--mdui-color-primary));
-  outline-offset: 2px;
+  outline: var(--sc-focus-ring-width) solid var(--sc-state-focus);
+  outline-offset: var(--sc-focus-ring-offset);
 }
 .sc-select select:disabled { opacity: 0.38; cursor: not-allowed; }
 
@@ -371,8 +378,8 @@ mdui-chip::part(label) {
   color: rgb(var(--mdui-color-on-secondary-container));
 }
 .sc-list-item:has(:focus-visible) {
-  outline: 3px solid rgb(var(--mdui-color-secondary));
-  outline-offset: -3px;
+  outline: var(--sc-focus-ring-width) solid var(--sc-state-focus);
+  outline-offset: var(--sc-focus-ring-inset-offset);
 }
 .sc-list-item__leading {
   display: inline-flex;
@@ -572,8 +579,8 @@ mdui-chip::part(label) {
 .sc-breadcrumb__link:active { background: rgb(var(--mdui-color-primary) / 0.14); }
 .sc-breadcrumb__link:focus-visible,
 .sc-breadcrumb__ellipsis-btn:focus-visible {
-  outline: 2px solid var(--sc-state-focus, rgb(var(--mdui-color-primary)));
-  outline-offset: -2px;
+  outline: var(--sc-focus-ring-width) solid var(--sc-state-focus);
+  outline-offset: var(--sc-focus-ring-offset);
 }
 
 .sc-breadcrumb__current {

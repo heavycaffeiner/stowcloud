@@ -33,7 +33,7 @@
   user-select: all;
   white-space: pre-wrap;
 }
-.sc-share__url:focus-visible { outline: 2px solid rgb(var(--mdui-color-primary)); outline-offset: 2px; }
+.sc-share__url:focus-visible { outline: var(--sc-focus-ring-width) solid var(--sc-state-focus); outline-offset: var(--sc-focus-ring-offset); }
 .sc-share__copy-feedback { margin: 8px 0 0; font-size: var(--mdui-typescale-body-small-size, .875rem); }
 .sc-share__copy-feedback--error,
 .sc-share__error { color: var(--mdui-color-error, var(--m3c-error)); overflow-wrap: anywhere; }

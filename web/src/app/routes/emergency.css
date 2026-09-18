@@ -73,8 +73,8 @@
 
 .sc-emergency__select:focus-visible,
 .sc-emergency__doc:focus-visible {
-  outline: 3px solid var(--sc-state-focus);
-  outline-offset: 2px;
+  outline: var(--sc-focus-ring-width) solid var(--sc-state-focus);
+  outline-offset: var(--sc-focus-ring-offset);
 }
 
 .sc-emergency__doc {

@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import type { Entry, OwnedShareLinkInfo, Perms, ShareLinkInfo } from '../../lib/api/client'
 import { describeApiError } from '../../lib/api/error-text'
 import { baseName, normalizePath } from '../../lib/api/path-utils'
@@ -40,7 +39,6 @@ function isExhausted(link: ShareLinkInfo): boolean {
 
 export function LinksPage() {
   const { t } = useI18n()
-  const navigate = useNavigate()
   const session = useQuery(sessionQuery())
   const isAdmin = session.data?.user.is_admin === true
   const own = useQuery({ ...shareLinksQuery(undefined), enabled: session.data !== undefined && !isAdmin })
@@ -117,7 +115,6 @@ export function LinksPage() {
     <section className="sc-links sc-secondary-page">
       <div className="sc-secondary-page__inner">
         <header className="sc-secondary-page__header">
-          <button type="button" className="sc-route-back" aria-label={t('trash.go_back')} onClick={() => void navigate('/b')}><Icon name="chevron_left" /></button>
           <h1>{t('nav.links')}</h1>
           <button type="button" className="sc-route-icon-button" aria-label={t('common.refresh')} onClick={() => void activeQuery.refetch()}><Icon name="refresh" /></button>
         </header>

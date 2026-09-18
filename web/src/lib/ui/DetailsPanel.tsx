@@ -127,7 +127,7 @@ export function DetailsPanel({
     return [{ label: t('details.type'), value: t('details.folder') }, { label: t('grid.folders'), value: String(dirs) }, { label: t('grid.files'), value: String(Math.max(0, total - dirs)) }, { label: t('details.location'), value: location }]
   }, [many, one, selected.length, location, encrypted, dirs, total, t])
 
-  const title = many ? t('details.multiple_selected', { count: selected.length }) : one?.name ?? (path.split('/').filter(Boolean).at(-1) ?? t('browse.home'))
+  const title = many ? t('details.multiple_selected', { count: selected.length }) : one?.name ?? (path.split('/').filter(Boolean).at(-1) ?? t('nav.files'))
   const heroIcon = one ? getEntryIcon(one) : many ? { name: 'check', color: 'var(--sc-icon-color)' } : { name: 'folder', color: 'var(--sc-icon-color)' }
   const heroDesc = one ? kindDescription(one) : many ? formatBytes(bytes) : t('details.folder')
 

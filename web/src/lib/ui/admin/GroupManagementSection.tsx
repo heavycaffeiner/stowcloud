@@ -239,7 +239,7 @@ export function GroupManagementSection() {
                 className="sc-admin-chips"
                 items={membersTarget.members}
                 itemKey={(id) => id}
-                estimateSize={40}
+                estimateSize={44}
                 pinnedKeys={memberBusyId === null ? [] : [memberBusyId]}
                 renderItem={(id) => (
                     <span className="sc-admin-chip">

@@ -45,9 +45,6 @@ export function RecentPage() {
     <section className="sc-recent sc-secondary-page">
       <div className="sc-secondary-page__inner">
         <header className="sc-secondary-page__header">
-          <button type="button" className="sc-route-back" aria-label={t('trash.go_back')} onClick={() => void navigate('/b')}>
-            <Icon name="chevron_left" />
-          </button>
           <h1>{t('nav.recent')}</h1>
           <button type="button" className="sc-route-icon-button" aria-label={t('common.refresh')} onClick={() => void recent.refetch()}>
             <Icon name="refresh" />

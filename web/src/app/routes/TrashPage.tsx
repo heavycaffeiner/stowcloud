@@ -1,6 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { formatBytes } from '../../lib/format/bytes'
 import { batchErrorKey, describeApiError } from '../../lib/api/error-text'
 import type { BatchItemResult, TrashEntry } from '../../lib/api/types'
@@ -22,7 +21,6 @@ function resultError(result: BatchItemResult, t: (key: string, params?: Record<s
 
 export function TrashPage() {
   const { t } = useI18n()
-  const navigate = useNavigate()
   const trash = useQuery(trashQuery())
   const restore = useMutation(trashRestoreMutation())
   const purge = useMutation(trashPurgeMutation())
@@ -104,7 +102,6 @@ export function TrashPage() {
     <section className="sc-trash sc-secondary-page">
       <div className="sc-secondary-page__inner">
         <header className="sc-secondary-page__header">
-          <button type="button" className="sc-route-back" aria-label={t('trash.go_back')} onClick={() => void navigate('/b')}><Icon name="chevron_left" /></button>
           <h1>{t('common.trash')}</h1>
           <button type="button" className="sc-route-icon-button" aria-label={t('common.refresh')} onClick={() => void trash.refetch()}><Icon name="refresh" /></button>
         </header>

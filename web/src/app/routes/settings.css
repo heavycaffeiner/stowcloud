@@ -242,8 +242,8 @@
 .sc-token-row input:focus-visible,
 .sc-totp__code:focus-visible,
 .sc-totp__secret:focus-visible {
-  outline: 2px solid rgb(var(--mdui-color-primary));
-  outline-offset: 2px;
+  outline: var(--sc-focus-ring-width) solid var(--sc-state-focus);
+  outline-offset: var(--sc-focus-ring-offset);
 }
 
 .sc-settings-row mdui-segmented-button-group {

@@ -131,10 +131,11 @@ function visibleTree(roots: readonly TreeRoot[], expanded: ReadonlySet<string>, 
   return { rows, branches }
 }
 
-export function FileTreeList({ roots, currentPath, onNavigate, 'aria-label': ariaLabel }: {
+export function FileTreeList({ roots, currentPath, onNavigate, rowSize = 40, 'aria-label': ariaLabel }: {
   roots: readonly TreeRoot[]
   currentPath: string
   onNavigate: (path: string) => void
+  rowSize?: number
   'aria-label'?: string
 }) {
   const { t } = useI18n()
@@ -250,7 +251,7 @@ export function FileTreeList({ roots, currentPath, onNavigate, 'aria-label': ari
         tabIndex={focusedKey ? -1 : 0}
         items={model.rows}
         itemKey={(row) => row.key}
-        estimateSize={40}
+        estimateSize={rowSize}
         pinnedKeys={pinnedKeys}
         onKeyDown={keyDown}
         onFocus={(event) => {
@@ -354,7 +355,7 @@ export function FileTree({ currentPath, onNavigate, overlay = false, onClose }: 
     }
   }, [overlay])
 
-  const tree = <FileTreeList roots={roots} currentPath={currentPath} onNavigate={onNavigate} />
+  const tree = <FileTreeList roots={roots} currentPath={currentPath} onNavigate={onNavigate} rowSize={overlay ? 44 : 40} />
   if (!overlay) return <nav className="sc-file-tree" aria-label={t('tree.folder_tree')}>{tree}</nav>
   return (
     <dialog ref={dialog} className="sc-file-tree sc-file-tree--overlay" aria-label={t('tree.folder_tree')} onClick={(event) => { if (event.target === event.currentTarget) onClose?.() }} onCancel={(event) => { event.preventDefault(); onClose?.() }} onClose={(event) => { if (!event.currentTarget.open && wasOpen.current) onClose?.() }}>

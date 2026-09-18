@@ -9,20 +9,20 @@
 .sc-logs__filters { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; margin-bottom: 24px; }
 .sc-logs__sources { display: flex; flex-direction: column; gap: 8px; }
 .sc-logs__group-label, .sc-logs__levels legend { color: rgb(var(--mdui-color-on-surface-variant)); font-size: var(--mdui-typescale-body-small-size); }
-.sc-logs__source-button { min-block-size: 40px; padding-inline: 12px; border: none; border-radius: var(--mdui-shape-corner-full); background: rgb(var(--mdui-color-surface-container-high)); color: inherit; cursor: pointer; transition: background-color 120ms ease, color 120ms ease; }
+.sc-logs__source-button { min-block-size: var(--sc-control-min); padding-inline: 12px; border: none; border-radius: var(--mdui-shape-corner-full); background: rgb(var(--mdui-color-surface-container-high)); color: inherit; cursor: pointer; transition: background-color 120ms ease, color 120ms ease; }
 .sc-logs__source-button:hover { background: rgb(var(--mdui-color-surface-container-highest)); }
 .sc-logs__source-button--active { background: rgb(var(--mdui-color-primary-container)); color: rgb(var(--mdui-color-on-primary-container)); }
 .sc-logs__source-button:focus-visible,
 .sc-logs__bar:focus-visible,
 .sc-logs__row--button:focus-visible,
 .sc-logs__table-wrap summary:focus-visible {
-  outline: 2px solid rgb(var(--mdui-color-primary));
-  outline-offset: 2px;
+  outline: var(--sc-focus-ring-width) solid var(--sc-state-focus);
+  outline-offset: var(--sc-focus-ring-offset);
 }
 .sc-logs__levels { margin: 0; padding: 0; border: 0; }
 .sc-logs__levels legend { padding: 0; margin-bottom: 8px; }
 .sc-logs__level-boxes { display: flex; flex-wrap: wrap; gap: 16px; }
-.sc-logs__check { display: inline-flex; align-items: center; gap: 6px; min-block-size: 40px; }
+.sc-logs__check { display: inline-flex; align-items: center; gap: 6px; min-block-size: var(--sc-control-min); }
 .sc-logs__fields { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; width: 100%; }
 .sc-logs__fields > .sc-field { flex: 1 1 180px; max-width: 280px; }
 .sc-logs__auto-note, .sc-logs__scope, .sc-logs__warn { margin: 0; color: rgb(var(--mdui-color-on-surface-variant)); font-size: var(--mdui-typescale-body-small-size); }
@@ -51,7 +51,7 @@
 .sc-logs__axis { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; color: rgb(var(--mdui-color-on-surface-variant)); font-size: var(--mdui-typescale-body-small-size); }
 .sc-logs__readout { margin: 8px 0 0; color: rgb(var(--mdui-color-on-surface)); font-size: var(--mdui-typescale-body-small-size); }
 .sc-logs__table-wrap { min-width: 0; margin-top: 12px; }
-.sc-logs__table-wrap summary { display: flex; align-items: center; width: fit-content; min-block-size: 40px; padding: 4px 0; color: rgb(var(--mdui-color-primary)); cursor: pointer; font-size: var(--mdui-typescale-body-small-size); }
+.sc-logs__table-wrap summary { display: flex; align-items: center; width: fit-content; min-block-size: var(--sc-control-min); padding: 4px 0; color: rgb(var(--mdui-color-primary)); cursor: pointer; font-size: var(--mdui-typescale-body-small-size); }
 .sc-logs__table-scroll { max-width: 100%; max-height: 320px; overflow: auto; margin-top: 8px; border: none; background: rgb(var(--mdui-color-surface-container-low)); border-radius: var(--mdui-shape-corner-extra-small); }
 .sc-logs__table { width: 100%; min-width: 28rem; border-collapse: collapse; font-size: var(--mdui-typescale-body-small-size); }
 .sc-logs__table caption { padding: 8px; text-align: start; color: rgb(var(--mdui-color-on-surface-variant)); }

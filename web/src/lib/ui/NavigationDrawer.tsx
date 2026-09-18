@@ -82,7 +82,7 @@ export function NavigationDrawer({
 
   const destinations = useMemo(() => {
     const fallback: NavItem[] = [
-      { id: 'files', label: t('browse.home'), icon: 'home', href: '/b' },
+      { id: 'files', label: t('nav.files'), icon: 'folder', href: '/b' },
       { id: 'recent', label: t('nav.recent'), icon: 'history', href: '/recent' },
       { id: 'trash', label: t('common.trash'), icon: 'delete', href: '/trash' },
       { id: 'links', label: t('nav.links'), icon: 'link', href: '/links' },
@@ -172,6 +172,7 @@ export function NavigationDrawer({
                       className={isActive ? 'sc-nav-drawer__item sc-nav-drawer__item--active' : 'sc-nav-drawer__item'}
                       type="button"
                       aria-current={isActive ? 'page' : undefined}
+                      aria-label={item.label}
                       title={collapsed ? item.label : undefined}
                       onClick={() => selectDestination(item)}
                     >
@@ -206,7 +207,7 @@ export function NavigationDrawer({
                   className={overlay ? 'sc-nav-drawer__sublist sc-nav-drawer__sublist--overlay' : 'sc-nav-drawer__sublist'}
                   items={displayRoots}
                   itemKey={(root) => root.id}
-                  estimateSize={overlay ? 48 : 40}
+                  estimateSize={reordering ? 48 : overlay ? 48 : 40}
                   renderItem={(root, index) => reordering ? (
                     <div className="sc-nav-drawer__subitem sc-nav-drawer__subitem--reorder">
                       <span className="sc-nav-drawer__item-icon"><Icon name={root.icon ?? 'folder'} size={18} /></span>
@@ -236,7 +237,7 @@ export function NavigationDrawer({
                     <button
                       type="button"
                       className={active === root.id ? 'sc-nav-drawer__subitem sc-nav-drawer__subitem--active' : 'sc-nav-drawer__subitem'}
-                      aria-current={active === root.id ? 'page' : undefined}
+                      aria-current={active === root.id ? 'location' : undefined}
                       onClick={() => {
                         onselect?.(root)
                         closeOverlay()
@@ -266,6 +267,7 @@ export function NavigationDrawer({
                       type="button"
                       className={isActive ? 'sc-nav-drawer__item sc-nav-drawer__item--active' : 'sc-nav-drawer__item'}
                       aria-current={isActive ? 'page' : undefined}
+                      aria-label={item.label}
                       title={collapsed ? item.label : undefined}
                       onClick={() => selectDestination(item)}
                     >
@@ -288,6 +290,7 @@ export function NavigationDrawer({
 
   return (
     <dialog
+      id={folderSelectorOnly ? 'sc-folder-selector' : 'sc-shell-drawer'}
       ref={dialogRef}
       className={drawerClass}
       aria-label={folderSelectorOnly ? t('nav.folder_selector') : t('common.main_menu')}

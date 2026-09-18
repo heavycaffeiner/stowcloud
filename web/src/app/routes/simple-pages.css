@@ -36,7 +36,8 @@
 
 .sc-page__row-meta {
   color: var(--sc-content-secondary);
-  font-size: 0.75rem;
+  font-size: var(--mdui-typescale-body-small-size);
+  line-height: var(--mdui-typescale-body-small-line-height);
 }
 
 .sc-page__actions {
@@ -72,10 +73,10 @@
 
 .sc-search-page__header h1 {
   margin: 0;
-  font-size: var(--mdui-typescale-title-large-size);
-  font-weight: var(--mdui-typescale-title-large-weight);
-  line-height: var(--mdui-typescale-title-large-line-height);
-  letter-spacing: var(--mdui-typescale-title-large-tracking);
+  font-size: var(--mdui-typescale-headline-small-size);
+  font-weight: var(--mdui-typescale-headline-small-weight);
+  line-height: var(--mdui-typescale-headline-small-line-height);
+  letter-spacing: var(--mdui-typescale-headline-small-tracking);
 }
 
 .sc-secondary-page {
@@ -164,8 +165,8 @@
 .sc-search__sort-trigger:focus-visible,
 .sc-trash__notice button:focus-visible,
 .sc-trash__operation-heading button:focus-visible {
-  outline: 3px solid var(--sc-state-focus);
-  outline-offset: 2px;
+  outline: var(--sc-focus-ring-width) solid var(--sc-state-focus);
+  outline-offset: var(--sc-focus-ring-offset);
 }
 
 .sc-secondary-page__icon {

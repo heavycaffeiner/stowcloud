@@ -97,6 +97,9 @@
   overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
 }
+.sc-user-mgmt > .sc-admin-list > li > .sc-admin-row > button.sc-admin-chip {
+  min-height: var(--sc-control-min);
+}
 .sc-admin-state {
   display: flex;
   align-items: center;
@@ -118,37 +121,41 @@
   font-weight: var(--mdui-typescale-label-small-weight);
   line-height: var(--mdui-typescale-label-small-line-height);
   white-space: nowrap;
-  transition: background-color 140ms ease, color 140ms ease, transform 120ms ease;
 }
 button.sc-admin-chip {
-  border: 0;
+  min-height: var(--sc-control-min);
+  border: 1px solid var(--sc-outline-variant);
   font: inherit;
   cursor: pointer;
-  height: 28px;
   padding-inline: 12px;
-  transition: background-color 140ms ease, opacity 140ms ease, transform 120ms ease;
+  transition: background-color 140ms ease, border-color 140ms ease, opacity 140ms ease, transform 120ms ease;
 }
 button.sc-admin-chip:hover {
+  border-color: var(--sc-outline);
   filter: brightness(0.92);
 }
 button.sc-admin-chip:active {
   transform: scale(0.95);
 }
 button.sc-admin-chip:focus-visible {
-  outline: 2px solid rgb(var(--mdui-color-primary));
-  outline-offset: 2px;
+  outline: var(--sc-focus-ring-width) solid var(--sc-state-focus);
+  outline-offset: var(--sc-focus-ring-offset);
+}
+.sc-admin-chip:has(.sc-button-wrap) {
+  min-height: 44px;
+  gap: 4px;
+  padding: 0 0 0 12px;
 }
 .sc-admin-chip .sc-button-wrap {
-  margin-inline-start: 4px;
-  margin-inline-end: -4px;
+  margin: 0;
   display: inline-flex;
   align-items: center;
 }
 .sc-admin-chip mdui-button.sc-button--square {
-  inline-size: 20px;
-  min-inline-size: 20px;
-  block-size: 20px;
-  min-block-size: 20px;
+  inline-size: 44px;
+  min-inline-size: 44px;
+  block-size: 44px;
+  min-block-size: 44px;
   border-radius: var(--mdui-shape-corner-full);
 }
 .sc-admin-chip mdui-button.sc-button--square svg {

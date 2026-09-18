@@ -311,7 +311,7 @@ export function BrowsePage() {
 
   const crumbs = useMemo(() => {
     const parts = path.split('/').filter(Boolean)
-    const result = [{ label: t('browse.home'), path: '/' }]
+    const result = [{ label: t('nav.files'), path: '/' }]
     let current = ''
     for (const part of parts) {
       current += `/${part}`
@@ -637,7 +637,7 @@ export function BrowsePage() {
     <div className="sc-browse" role="region" aria-label={t('browse.file_browser')} onDragOver={(event) => { event.preventDefault(); setDragOver(canCreate) }} onDragLeave={() => setDragOver(false)} onDrop={onDrop}>
       <header className={`sc-browse__toolbar${compact ? ' sc-browse__toolbar--compact' : ''}`}>
         <div className="sc-browse__folder-heading">
-          <h1 className="sc-sr-only">{crumbs.at(-1)?.label ?? t('browse.home')}</h1>
+          <h1 className="sc-sr-only">{crumbs.at(-1)?.label ?? t('nav.files')}</h1>
           <Breadcrumb crumbs={crumbs} onNavigate={(next) => void navigate(`/b${next}`)} />
           {root?.shared_externally ? <span className="sc-browse__external-badge"><Icon name="warning" size={14} />{t('common.shared_with_other_services')}</span> : null}
           {encrypted ? unlocked ? <span className="sc-browse__encrypted-badge"><Icon name="lock" size={14} />{t('browse.encrypted_badge')}</span> : <button type="button" className="sc-browse__encrypted-badge sc-browse__encrypted-badge--locked" onClick={() => { if (encryption.data) openUnlockFor(encryption.data, () => {}) }}><Icon name="lock" size={14} />{t('browse.encrypted_locked_badge')}</button> : null}

@@ -47,14 +47,14 @@ afterEach(async () => {
 })
 
 describe.each([
-  ['list', FileTable, '.sc-row', '.sc-row__cell--select'],
-  ['grid', FileGrid, '.sc-file-grid__card', '.sc-file-grid__check']
-] as const)('%s file activation', (_name, View, entrySelector, checkSelector) => {
+  ['list', FileTable, '.sc-row', '.sc-row__cell--select', '.sc-row__more-btn'],
+  ['grid', FileGrid, '.sc-file-grid__card', '.sc-file-grid__check', '.sc-file-grid__kebab']
+] as const)('%s file activation', (_name, View, entrySelector, checkSelector, menuSelector) => {
   function renderView(initialEntries: Entry[] = [documents, pictures]) {
     const opened: { path: string; selected: string[] }[] = []
     const onOpen = vi.fn((entry: Entry) => {
       opened.push({ path: entry.path, selected: [...selection.getState().names] })
-      // Navigation clears selection. No delayed click may restore the old entry.
+      // Navigation clears selection. No later pointer event may restore the old entry.
       selection.clear()
     })
     const onContextMenu = vi.fn()
@@ -75,9 +75,10 @@ describe.each([
     }
   }
 
-  it('selects on mouse click and opens only on the second native click, not again on dblclick', () => {
+  it('keeps mouse single-click selection and double-click open', () => {
     const view = renderView()
     const [row] = view.entries()
+
     tap(row, { pointerType: 'mouse', detail: 1 })
     expect(row.getAttribute('aria-selected')).toBe('true')
     expect(view.opened).toEqual([])
@@ -89,121 +90,89 @@ describe.each([
     expect([...selection.getState().names]).toEqual([])
   })
 
-  it('opens on the second touch click only after selection, without relying on dblclick', () => {
+  it('opens on the first completed touch tap without selecting the row or card', () => {
     const view = renderView()
     const [row] = view.entries()
-    tap(row)
-    expect(row.getAttribute('aria-selected')).toBe('true')
-    expect(view.opened).toEqual([])
 
-    vi.advanceTimersByTime(200)
-    pointer(row, 'pointerdown', { pointerId: 2 })
-    pointer(row, 'pointerup', { pointerId: 2 })
-    expect(view.opened).toEqual([])
-    pointer(row, 'click', { pointerId: 2, detail: 2 })
-    expect(view.opened).toEqual([{ path: documents.path, selected: [documents.name] }])
-    expect([...selection.getState().names]).toEqual([])
-    fireEvent.doubleClick(row)
+    tap(row, { pointerType: 'touch' })
+
+    expect(view.opened).toEqual([{ path: documents.path, selected: [] }])
     expect(view.onOpen).toHaveBeenCalledTimes(1)
+    expect(row.getAttribute('aria-selected')).toBe('false')
+    expect([...selection.getState().names]).toEqual([])
   })
 
-  it.each(['mouse', 'touch'])('selects a different folder instead of carrying over the previous %s click', (pointerType) => {
-    const view = renderView()
-    const [a, b] = view.entries()
-    tap(a, { pointerType, detail: 1 })
-    tap(b, { pointerType, detail: 2 })
-    fireEvent.doubleClick(b)
-    expect(view.opened).toEqual([])
-    expect(a.getAttribute('aria-selected')).toBe('false')
-    expect(b.getAttribute('aria-selected')).toBe('true')
-
-    tap(a, { pointerType, detail: 1 })
-    expect(view.opened).toEqual([])
-    expect(a.getAttribute('aria-selected')).toBe('true')
-    expect(b.getAttribute('aria-selected')).toBe('false')
-
-    tap(a, { pointerType, detail: 2 })
-    tap(b, { pointerType, detail: 1 })
-    tap(b, { pointerType, detail: 2 })
-    expect(view.opened.map((entry) => entry.path)).toEqual([documents.path, pictures.path])
-  })
-
-  it('does not carry taps across same-name paths or impose a navigation cooldown', async () => {
+  it('opens each touched path independently, including repeated names after navigation', async () => {
     const view = renderView([documents])
-    tap(view.entries()[0])
+
+    tap(view.entries()[0], { pointerType: 'touch' })
+    expect(view.opened.map((entry) => entry.path)).toEqual([documents.path])
+
     const nested = { ...documents, path: '/home/Documents/Documents' }
     await view.replaceEntries([nested])
-    tap(view.entries()[0])
-    expect(view.opened).toEqual([])
-    tap(view.entries()[0])
-    expect(view.opened.map((entry) => entry.path)).toEqual([nested.path])
+    tap(view.entries()[0], { pointerType: 'touch', pointerId: 2 })
+    expect(view.opened.map((entry) => entry.path)).toEqual([documents.path, nested.path])
 
     const deeper = { ...documents, path: `${nested.path}/Documents` }
     await view.replaceEntries([deeper])
-    tap(view.entries()[0])
-    tap(view.entries()[0])
-    expect(view.opened.map((entry) => entry.path)).toEqual([nested.path, deeper.path])
+    tap(view.entries()[0], { pointerType: 'touch', pointerId: 3 })
+    expect(view.opened.map((entry) => entry.path)).toEqual([documents.path, nested.path, deeper.path])
   })
 
-  it.each(['cancelled', 'moved', 'held'] as const)('breaks a touch sequence after a %s gesture', (gesture) => {
+  it.each(['cancelled', 'moved', 'held'] as const)('does not open after a %s touch gesture, then accepts the next tap', (gesture) => {
     const view = renderView()
     const [row] = view.entries()
-    tap(row)
-    pointer(row, 'pointerdown')
-    if (gesture === 'cancelled') pointer(row, 'pointercancel')
-    if (gesture === 'moved') {
-      pointer(row, 'pointermove', { clientX: 60 })
-      pointer(row, 'pointermove', { clientX: 20 })
-    }
+
+    pointer(row, 'pointerdown', { pointerType: 'touch' })
+    if (gesture === 'cancelled') pointer(row, 'pointercancel', { pointerType: 'touch' })
+    if (gesture === 'moved') pointer(row, 'pointermove', { pointerType: 'touch', clientX: 60 })
     if (gesture === 'held') vi.advanceTimersByTime(500)
-    pointer(row, 'pointerup')
-    pointer(row, 'click', { detail: 2 })
-    tap(row)
+    pointer(row, 'pointerup', { pointerType: 'touch' })
+    pointer(row, 'click', { pointerType: 'touch', detail: 1 })
     expect(view.opened).toEqual([])
-    tap(row)
+
+    tap(row, { pointerType: 'touch', pointerId: 2 })
     expect(view.opened.map((entry) => entry.path)).toEqual([documents.path])
   })
 
-  it('keeps checkbox selection and menu interaction out of activation sequences', () => {
+  it('keeps selection and more-actions independent from touch activation', () => {
     const view = renderView()
-    const [a, b] = view.entries()
-    const checkbox = b.querySelector<HTMLElement>(checkSelector)!
-    tap(a)
-    tap(checkbox)
-    expect(a.getAttribute('aria-selected')).toBe('true')
-    expect(b.getAttribute('aria-selected')).toBe('true')
-    tap(checkbox)
-    fireEvent.doubleClick(checkbox)
-    expect(b.getAttribute('aria-selected')).toBe('false')
-    tap(a)
+    const [row] = view.entries()
+    const check = row.querySelector<HTMLElement>(checkSelector)!
+    const menu = row.querySelector<HTMLElement>(menuSelector)!
+
+    tap(check, { pointerType: 'touch' })
+    expect(row.getAttribute('aria-selected')).toBe('true')
     expect(view.opened).toEqual([])
 
-    const menu = a.querySelector<HTMLElement>('.sc-file-grid__kebab')
-    if (menu) tap(menu)
-    else fireEvent.contextMenu(a)
+    tap(menu, { pointerType: 'touch', pointerId: 2 })
     expect(view.onContextMenu).toHaveBeenCalledTimes(1)
-    tap(a)
     expect(view.opened).toEqual([])
-    tap(a)
-    expect(view.opened.map((entry) => entry.path)).toEqual([documents.path])
+    expect(row.getAttribute('aria-selected')).toBe('true')
+
+    tap(row, { pointerType: 'touch', pointerId: 3 })
+    expect(view.opened).toEqual([{ path: documents.path, selected: [documents.name] }])
   })
 
-  it('preserves modifier selection without turning mixed-modifier clicks or taps into opens', () => {
+  it('preserves desktop modifier selection without opening', () => {
     const view = renderView()
     const [a, b] = view.entries()
+
     tap(a, { pointerType: 'mouse', detail: 1 })
     tap(b, { pointerType: 'mouse', detail: 2, ctrlKey: true })
     fireEvent.doubleClick(b, { ctrlKey: true })
+
     expect([...selection.getState().names]).toEqual([documents.name, pictures.name])
     expect(view.opened).toEqual([])
+  })
 
-    tap(b, { pointerType: 'mouse', detail: 2 })
+  it('does not treat a touch with keyboard modifiers as activation', () => {
+    const view = renderView()
+    const [row] = view.entries()
+
+    tap(row, { pointerType: 'touch', ctrlKey: true })
+
     expect(view.opened).toEqual([])
-    act(() => selection.clear())
-    tap(a, { shiftKey: true })
-    tap(a)
-    expect(view.opened).toEqual([])
-    tap(a)
-    expect(view.opened.map((entry) => entry.path)).toEqual([documents.path])
+    expect(row.getAttribute('aria-selected')).toBe('false')
   })
 })

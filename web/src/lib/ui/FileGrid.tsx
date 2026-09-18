@@ -51,16 +51,20 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
   const fileEl = useRef<HTMLDivElement>(null)
   const [metrics, setMetrics] = useState({ width: 0, scroll: 0, height: 0, foldersTop: 0, filesTop: 0 })
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
-  const card = density === 'compact' ? { w: 192, folderH: 44, fileH: 176, gap: 8 } : density === 'spacious' ? { w: 256, folderH: 60, fileH: 244, gap: 16 } : { w: 224, folderH: 52, fileH: 208, gap: 12 }
+  const card = density === 'compact'
+    ? { w: 192, folderH: 44, fileH: 176, columnGap: 8, rowGap: 12 }
+    : density === 'spacious'
+      ? { w: 256, folderH: 60, fileH: 244, columnGap: 16, rowGap: 20 }
+      : { w: 224, folderH: 52, fileH: 208, columnGap: 12, rowGap: 16 }
   const availableW = Math.max(card.w, metrics.width - 32)
-  const columns = Math.max(1, Math.floor((availableW + card.gap) / (card.w + card.gap)))
-  const cardW = Math.max(120, Math.floor((availableW - (columns - 1) * card.gap) / columns))
+  const columns = Math.max(1, Math.floor((availableW + card.columnGap) / (card.w + card.columnGap)))
+  const cardW = Math.max(120, Math.floor((availableW - (columns - 1) * card.columnGap) / columns))
   const folderCount = Math.min(dirs, total)
   const fileCount = Math.max(0, total - folderCount)
   const folderRows = sectionRows(folderCount, columns)
   const fileRows = sectionRows(fileCount, columns)
-  const folderRowH = card.folderH + card.gap
-  const fileRowH = card.fileH + card.gap
+  const folderRowH = card.folderH + card.rowGap
+  const fileRowH = card.fileH + card.rowGap
   const folderWin = computeWindow({ scrollTop: Math.max(0, metrics.scroll - metrics.foldersTop), viewportHeight: metrics.height, rowHeight: folderRowH, itemCount: folderRows, overscan: 3 })
   const fileWin = computeWindow({ scrollTop: Math.max(0, metrics.scroll - metrics.filesTop), viewportHeight: metrics.height, rowHeight: fileRowH, itemCount: fileRows, overscan: 3 })
 
@@ -148,7 +152,7 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
     },
     entriesInRect(rect) {
       const left = (viewport.current?.getBoundingClientRect().left ?? 0) + window.scrollX + 16
-      const common = { left, columnPitch: cardW + card.gap, cellWidth: cardW, columns }
+      const common = { left, columnPitch: cardW + card.columnGap, cellWidth: cardW, columns }
       const hits = [
         ...indicesInRect(rect, { ...common, top: (folderEl.current?.getBoundingClientRect().top ?? 0) + window.scrollY, rowHeight: folderRowH, cellHeight: card.folderH, startIndex: 0, count: folderCount }),
         ...indicesInRect(rect, { ...common, top: (fileEl.current?.getBoundingClientRect().top ?? 0) + window.scrollY, rowHeight: fileRowH, cellHeight: card.fileH, startIndex: folderCount, count: fileCount })
@@ -248,7 +252,7 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
     const offset = isFolder ? 0 : folderCount
     return Array.from({ length: Math.max(0, end - start) }, (_, r) => {
       const row = start + r
-      return <div key={`${isFolder ? 'd' : 'f'}-${row}`} className="sc-file-grid__row" role="row" aria-rowindex={(isFolder ? row : folderRows + row) + 1} style={{ height: isFolder ? card.folderH : card.fileH, gap: card.gap, paddingBottom: card.gap }}>{Array.from({ length: columns }, (_, col) => { const index = offset + row * columns + col; return index < offset + count ? cardElement(entries[index], index, isFolder, col) : null })}</div>
+      return <div key={`${isFolder ? 'd' : 'f'}-${row}`} className="sc-file-grid__row" role="row" aria-rowindex={(isFolder ? row : folderRows + row) + 1} style={{ height: isFolder ? folderRowH : fileRowH, columnGap: card.columnGap }}>{Array.from({ length: columns }, (_, col) => { const index = offset + row * columns + col; return index < offset + count ? cardElement(entries[index], index, isFolder, col) : null })}</div>
     })
   }
 

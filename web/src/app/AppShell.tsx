@@ -176,7 +176,7 @@ export function AppShell() {
 
   const navItems = useMemo<NavItem[]>(() => {
     const items: NavItem[] = [
-      { id: 'files', label: t('browse.home'), icon: 'home', href: browseHref(browseTarget()) },
+      { id: 'files', label: t('nav.files'), icon: 'folder', href: browseHref(browseTarget()) },
       { id: 'recent', label: t('nav.recent'), icon: 'history', href: '/recent' },
       { id: 'trash', label: t('common.trash'), icon: 'delete', href: '/trash' },
       { id: 'links', label: t('nav.links'), icon: 'link', href: '/links' },
@@ -195,7 +195,7 @@ export function AppShell() {
     { id: 'more', label: t('nav.more'), icon: 'menu', popup: 'dialog', expanded: mobileDrawerOpen, controls: 'sc-shell-drawer' }
   ], [mobileDrawerOpen, browseTarget, t, location.pathname, lastBrowsePath])
 
-  const compactActive = ['settings', 'admin'].includes(activeNav) ? 'more' : activeNav
+  const compactActive = ['trash', 'settings', 'admin'].includes(activeNav) ? 'more' : activeNav
 
   const navigateTo = (id: string, href?: string): void => {
     if (id === 'files') {
@@ -243,17 +243,16 @@ export function AppShell() {
       <div className={compact ? 'sc-app-shell sc-app-shell--compact' : 'sc-app-shell'}>
         <header className="sc-shell-header">
           <div className="sc-shell-header__left">
-            <button
-              type="button"
-              className="sc-shell-header__menu-btn sc-icon-button"
-              aria-label={t('nav.toggle_sidebar')}
-              onClick={() => {
-                if (compact) setMobileDrawerOpen(true)
-                else ui.toggleSidebar()
-              }}
-            >
-              <Icon name="menu" size={22} />
-            </button>
+            {!compact ? (
+              <button
+                type="button"
+                className="sc-shell-header__menu-btn sc-icon-button"
+                aria-label={t('nav.toggle_sidebar')}
+                onClick={() => ui.toggleSidebar()}
+              >
+                <Icon name="menu" size={22} />
+              </button>
+            ) : null}
             <button
               type="button"
               className="sc-shell-header__brand-btn"
@@ -292,14 +291,16 @@ export function AppShell() {
                 <Icon name="help" size={20} />
               </button>
             ) : null}
-            <button
-              type="button"
-              className="sc-shell-header__icon-btn sc-icon-button"
-              aria-label={t('common.settings')}
-              onClick={() => navigateTo('settings', '/settings')}
-            >
-              <Icon name="settings" size={20} />
-            </button>
+            {!compact ? (
+              <button
+                type="button"
+                className="sc-shell-header__icon-btn sc-icon-button"
+                aria-label={t('common.settings')}
+                onClick={() => navigateTo('settings', '/settings')}
+              >
+                <Icon name="settings" size={20} />
+              </button>
+            ) : null}
             <div className="sc-shell-header__account-wrap" ref={accountMenuRef}>
               <button
                 type="button"
