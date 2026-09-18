@@ -58,9 +58,7 @@
   justify-content: center;
 }
 
-.sc-details__head button:focus-visible,
-.sc-details__primary-btn:focus-visible,
-.sc-details__circle-btn:focus-visible {
+.sc-details__head button:focus-visible {
   outline: var(--sc-focus-ring-width) solid var(--sc-state-focus);
   outline-offset: var(--sc-focus-ring-offset);
 }
@@ -69,44 +67,30 @@
   background: color-mix(in srgb, var(--sc-content-primary) 8%, transparent);
 }
 
-/* ── Hero Preview Card ── */
-.sc-details__hero {
-  background: var(--sc-raised-surface);
-  border: 1px solid var(--sc-outline-variant);
-  border-radius: var(--sc-radius-medium);
-  padding: 24px 16px 20px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  margin-bottom: 14px;
-  box-sizing: border-box;
-}
-
-.sc-details__hero-badge {
-  width: 56px;
-  height: 56px;
-  border-radius: var(--sc-radius-large);
-  background: var(--sc-overlay-surface);
+.sc-details__summary {
   display: flex;
   align-items: center;
-  justify-content: center;
-  margin-bottom: 12px;
+  gap: 12px;
+  min-width: 0;
+  padding: 8px 0 16px;
 }
 
-.sc-details__hero-title {
+.sc-details__summary-icon {
+  display: inline-flex;
+  flex: none;
+}
+
+.sc-details__summary-title {
   font-size: var(--mdui-typescale-title-small-size);
   line-height: var(--mdui-typescale-title-small-line-height);
   font-weight: 600;
-  color: var(--sc-content-primary);
-  margin-bottom: 4px;
   overflow-wrap: anywhere;
 }
 
-.sc-details__hero-desc {
+.sc-details__summary-desc {
+  color: var(--sc-content-secondary);
   font-size: var(--mdui-typescale-body-small-size);
   line-height: var(--mdui-typescale-body-small-line-height);
-  color: var(--sc-content-secondary);
 }
 
 /* ── Action Buttons ── */
@@ -115,6 +99,10 @@
   align-items: center;
   gap: 8px;
   margin-bottom: 18px;
+}
+
+.sc-details__actions .sc-button-wrap {
+  flex: 1;
 }
 
 .sc-details__primary-btn {

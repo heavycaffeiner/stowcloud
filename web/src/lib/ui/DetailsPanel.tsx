@@ -143,43 +143,26 @@ export function DetailsPanel({
         </IconButton>
       </header>
 
-      {/* Hero Preview Card */}
-      <div className="sc-details__hero">
-        <div className="sc-details__hero-badge" style={{ color: heroIcon.color }}>
-          <Icon name={heroIcon.name} size={32} />
+      <div className="sc-details__summary">
+        <span className="sc-details__summary-icon" aria-hidden="true" style={{ color: heroIcon.color }}>
+          <Icon name={heroIcon.name} size={24} />
+        </span>
+        <div>
+          <div className="sc-details__summary-title"><bdi>{title}</bdi></div>
+          <div className="sc-details__summary-desc">{heroDesc}</div>
         </div>
-        <div className="sc-details__hero-title">{title}</div>
-        <div className="sc-details__hero-desc">{heroDesc}</div>
       </div>
 
-      {/* Primary Action Buttons */}
       {(one || many) ? (
         <div className="sc-details__actions">
           {onDownload ? (
-            <button type="button" className="sc-details__primary-btn" onClick={onDownload}>
-              <Icon name="download" size={18} />
-              <span>{t('common.download')}</span>
-            </button>
+            <Button icon={<Icon name="download" size={18} />} onClick={onDownload}>{t('common.download')}</Button>
           ) : null}
           {onShare && one ? (
-            <button
-              type="button"
-              className="sc-details__circle-btn sc-icon-button"
-              aria-label={t('details.perm_share')}
-              onClick={onShare}
-            >
-              <Icon name="link" size={18} />
-            </button>
+            <IconButton label={t('details.perm_share')} onClick={onShare}><Icon name="link" /></IconButton>
           ) : null}
           {onContextMenu && one ? (
-            <button
-              type="button"
-              className="sc-details__circle-btn sc-icon-button"
-              aria-label={t('browse.more')}
-              onClick={onContextMenu}
-            >
-              <Icon name="more-vert" size={18} />
-            </button>
+            <IconButton label={t('browse.more')} onClick={onContextMenu}><Icon name="more-vert" /></IconButton>
           ) : null}
         </div>
       ) : null}
