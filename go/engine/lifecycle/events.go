@@ -41,19 +41,13 @@ func (e *Engine) startEvents(ctx context.Context, cfg watchSettings) {
 	events := make(chan watch.InvalEvent, eventQueue)
 
 	watcher, err := watch.Start(ctx, watch.Config{
-		Backend:       cfg.Backend,
-		HotSetMax:     cfg.HotSetMax,
-		FullThreshold: cfg.FullThreshold,
-		OnCoverageLost: func() {
-			if e.Search != nil {
-				e.Search.SetIndexIncomplete(true)
-			}
-		},
+		Backend:        cfg.Backend,
+		HotSetMax:      cfg.HotSetMax,
+		FullThreshold:  cfg.FullThreshold,
+		OnCoverageLost: e.markSearchIndexIncomplete,
 	}, e.clock, events)
 	if err != nil {
-		if e.Search != nil {
-			e.Search.SetIndexIncomplete(true)
-		}
+		e.markSearchIndexIncomplete()
 		e.logger.Warn("change notifications are unavailable; clients fall back to polling",
 			"error", err)
 		return
@@ -86,9 +80,8 @@ func (e *Engine) startEvents(ctx context.Context, cfg watchSettings) {
 //
 // Safe to call with no watcher, which is a deployment whose kernel refused an
 func (e *Engine) watchShare(def core.ShareDef) {
-	if e.Search != nil {
-		e.Search.SetIndexIncomplete(true)
-	}
+	// Registering the existing shares at startup does not itself create a
+	// coverage gap. openSearchIndex already scheduled the restart rebuild.
 	if e.watcher == nil || def.BrokenReason != "" || def.Host == "" {
 		return
 	}

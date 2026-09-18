@@ -69,9 +69,10 @@ const mergeInterval = 5 * time.Minute
 
 // Updater maintains the index using the watcher's events.
 type Updater struct {
-	svc     *Service
-	sources func() []search.Source
-	log     *slog.Logger
+	svc          *Service
+	sources      func() []search.Source
+	log          *slog.Logger
+	onIncomplete func()
 
 	queue chan Change
 	// saidFull prevents the ceiling being logged for every event. Only Run's own
@@ -97,11 +98,20 @@ func NewUpdater(svc *Service, sources func() []search.Source, log *slog.Logger) 
 	}
 }
 
+// SetIncompleteCallback installs the signal used to schedule a coverage
+// rebuild. It must be set before Run starts.
+func (u *Updater) SetIncompleteCallback(callback func()) {
+	u.onIncomplete = callback
+}
+
 // markIncomplete is deliberately cheap and idempotent. Every lost event or
 // unavailable directory is a coverage gap, and the index must decline until a
 // new build proves the gap closed.
 func (u *Updater) markIncomplete() {
 	u.svc.SetIndexIncomplete(true)
+	if u.onIncomplete != nil {
+		u.onIncomplete()
+	}
 }
 
 // Offer passes one event to the updater without blocking.

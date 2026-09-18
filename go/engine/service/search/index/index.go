@@ -165,8 +165,10 @@ type NameIndex struct {
 	// incomplete flags an index covering less than its corpus. Every query then
 	// declines rather than answering from a portion of the tree, because the
 	// index cannot distinguish a name that does not exist from one beyond where
-	// it stopped.
-	incomplete bool
+	// it stopped. coverageGeneration changes on every loss signal so a rebuild
+	// cannot clear one that arrived after its traversal began.
+	incomplete         bool
+	coverageGeneration uint64
 }
 
 // Open loads an index directory.
@@ -572,15 +574,40 @@ func (ix *NameIndex) Entries() uint64 {
 	return ix.entryCount()
 }
 
-// SetIncomplete records that the index holds less than the tree it covers, which
-// is what hitting the entry ceiling amounts to.
+// SetIncomplete records whether the index holds less than the tree it covers.
 //
-// The flag belongs to the index rather than the caller's bookkeeping, because
-// every query must observe it and only the index sits on that path.
+// Every true write advances the generation, including an idempotent one. The
+// caller is reporting a new coverage loss, and a rebuild already in flight must
+// not erase that newer signal when it finishes.
 func (ix *NameIndex) SetIncomplete(v bool) {
 	ix.mu.Lock()
 	ix.incomplete = v
+	if v {
+		ix.coverageGeneration++
+	}
 	ix.mu.Unlock()
+}
+
+// BeginRebuild marks the index incomplete and returns the coverage generation
+// this rebuild may clear if no newer loss arrives.
+func (ix *NameIndex) BeginRebuild() uint64 {
+	ix.mu.Lock()
+	defer ix.mu.Unlock()
+	ix.incomplete = true
+	ix.coverageGeneration++
+	return ix.coverageGeneration
+}
+
+// CompleteRebuild clears the incomplete state only when no coverage loss was
+// reported after BeginRebuild. False asks the caller to retain partial status.
+func (ix *NameIndex) CompleteRebuild(generation uint64) bool {
+	ix.mu.Lock()
+	defer ix.mu.Unlock()
+	if ix.coverageGeneration != generation {
+		return false
+	}
+	ix.incomplete = false
+	return true
 }
 
 // NeedsMerge reports whether the overlay has exceeded its allowance against the

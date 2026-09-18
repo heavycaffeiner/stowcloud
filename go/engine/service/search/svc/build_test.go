@@ -127,6 +127,33 @@ func TestBuildClearsTheIncompleteFlag(t *testing.T) {
 	}
 }
 
+// A coverage loss reported after the traversal must survive its completion.
+// Otherwise an overflow that races the final merge clears the warning while
+// leaving changes that arrived behind the walk absent from the index.
+func TestBuildDoesNotClearANewerCoverageLoss(t *testing.T) {
+	ix := newIndex(t)
+	svc := New(Options{Index: ix})
+	src, _ := corpus(t, 1, "a.txt")
+	gateCalls := 0
+
+	progress, err := svc.Build(t.Context(), []search.Source{src}, func() bool {
+		gateCalls++
+		if gateCalls == 2 {
+			ix.SetIncomplete(true)
+		}
+		return true
+	}, nil)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if !progress.Partial {
+		t.Error("the build did not report the newer coverage loss")
+	}
+	if !ix.Incomplete() {
+		t.Error("the build cleared a coverage loss reported after its traversal")
+	}
+}
+
 // Reaching the ceiling marks the index short of its corpus, so every query
 // declines rather than returning a result missing the rest with a success
 // status.
@@ -293,6 +320,8 @@ func TestAFullQueueDropsWithoutBlocking(t *testing.T) {
 	svc := New(Options{Index: ix})
 	src, _ := corpus(t, 1, "dropped.txt")
 	u := NewUpdater(svc, func() []search.Source { return []search.Source{src} }, quietLogger())
+	recoverySignals := 0
+	u.SetIncompleteCallback(func() { recoverySignals++ })
 
 	// Fill the queue, then offer well past it. Offer must return either way.
 	for i := range updateQueue + 16 {
@@ -300,6 +329,9 @@ func TestAFullQueueDropsWithoutBlocking(t *testing.T) {
 	}
 	if len(u.queue) != updateQueue {
 		t.Errorf("the queue holds %d, want it capped at %d", len(u.queue), updateQueue)
+	}
+	if recoverySignals == 0 {
+		t.Error("dropping an update did not schedule index recovery")
 	}
 }
 

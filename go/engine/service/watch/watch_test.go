@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -237,7 +238,10 @@ func TestARefusedRegistrationCountsAsDegraded(t *testing.T) {
 // A directory the kernel discards takes its bookkeeping with it, which is what
 // a deleted directory produces.
 func TestAnIgnoredWatchIsForgotten(t *testing.T) {
-	w, _, root := start(t, Config{})
+	var coverageLosses atomic.Int32
+	w, _, root := start(t, Config{OnCoverageLost: func() {
+		coverageLosses.Add(1)
+	}})
 
 	sub := filepath.Join(root, "gone")
 	if err := os.Mkdir(sub, 0o755); err != nil {
@@ -257,6 +261,9 @@ func TestAnIgnoredWatchIsForgotten(t *testing.T) {
 
 	if got := w.Stats().Registered; got != before-1 {
 		t.Errorf("registered is %d, want %d after the watch was discarded", got, before-1)
+	}
+	if got := coverageLosses.Load(); got != 0 {
+		t.Errorf("an ordinary ignored watch reported %d coverage losses", got)
 	}
 }
 

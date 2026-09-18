@@ -77,6 +77,7 @@ func (e *Engine) openSearchIndex(ctx context.Context) {
 		// the live index and its updater in place.
 		e.Search.SetIndex(nil)
 		e.stopSearchUpdater()
+		e.indexRecovery.Store(false)
 		return
 	}
 
@@ -97,12 +98,60 @@ func (e *Engine) openSearchIndex(ctx context.Context) {
 	// persisted index is useful as a cache, but it cannot claim current
 	// coverage until a new traversal proves there was no restart gap.
 	ix.SetIncomplete(true)
+	e.indexRecovery.Store(true)
 	if opened == svc.OpenAbsent {
 		e.logger.Info("the search index is enabled and empty; build it to use it",
 			"dir", indexDir(e.dataDir))
 	}
 	e.Search.SetIndex(ix)
 	e.startSearchUpdater(ctx)
+}
+
+// markSearchIndexIncomplete records a lost coverage signal and schedules one
+// bounded rebuild. The index remains disabled when no index is attached.
+func (e *Engine) markSearchIndexIncomplete() {
+	if e.Search == nil || !e.Search.IndexStateOf().Attached {
+		return
+	}
+	e.Search.SetIndexIncomplete(true)
+	e.indexRecovery.Store(true)
+}
+
+// recoverSearchIndex closes a restart or watcher gap without requiring an
+// administrator to notice the fallback warning and start the same traversal.
+func (e *Engine) recoverSearchIndex(ctx context.Context) error {
+	if !e.indexRecovery.Swap(false) {
+		return nil
+	}
+	if e.Search == nil || e.Core == nil || e.watcher == nil {
+		return nil
+	}
+	state := e.Search.IndexStateOf()
+	if !state.Attached || !state.Incomplete {
+		return nil
+	}
+	if !e.indexBuilding.CompareAndSwap(false, true) {
+		e.indexRecovery.Store(true)
+		return nil
+	}
+	defer e.indexBuilding.Store(false)
+
+	progress, err := e.Search.Build(ctx, indexSourcesOf(e.Core.ScanSources()), func() bool {
+		return ctx.Err() == nil
+	}, nil)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if e.Search.IndexStateOf().Attached {
+			e.indexRecovery.Store(true)
+		}
+		return fmt.Errorf("recovering the search index: %w", err)
+	}
+	if !progress.Partial {
+		e.logger.Info("the search index recovered current coverage", "files", progress.Files)
+	}
+	return nil
 }
 
 // startSearchUpdater starts the goroutine that keeps the attached index
@@ -120,6 +169,9 @@ func (e *Engine) startSearchUpdater(ctx context.Context) {
 	u := svc.NewUpdater(e.Search, func() []search.Source {
 		return indexSourcesOf(e.Core.ScanSources())
 	}, e.logger)
+	u.SetIncompleteCallback(func() {
+		e.indexRecovery.Store(true)
+	})
 
 	e.searchUpdaterMu.Lock()
 	e.searchUpdater = u

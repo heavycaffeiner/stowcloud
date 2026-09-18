@@ -127,6 +127,7 @@ func (e *Engine) adminSharesCreate(c *fiber.Ctx) error {
 	// Without this a share registered while the server is running is one no
 	// change is ever reported under, and the symptom is a folder that updates
 	// for everybody except the person who just created it.
+	e.markSearchIndexIncomplete()
 	e.watchShare(share)
 
 	// The administrator who registered it can reach it. Access is granted

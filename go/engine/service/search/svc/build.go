@@ -88,9 +88,9 @@ func (s *Service) Build(
 
 	// A rebuild never makes a partial index look complete. It becomes eligible
 	// only after every source was traversed and the resulting segment published.
-	// Keeping the flag set through all early exits also covers caller
-	// cancellation, a refused gate, unreadable subtrees, and a failed merge.
-	ix.SetIncomplete(true)
+	// The generation prevents a newer watcher loss from being cleared by a
+	// traversal that began before that loss.
+	generation := ix.BeginRebuild()
 
 	b := &builder{
 		ix:      ix,
@@ -130,8 +130,8 @@ func (s *Service) Build(
 		b.progress.Partial = true
 		return b.progress, nil
 	}
-	if !b.progress.Partial {
-		ix.SetIncomplete(false)
+	if !b.progress.Partial && !ix.CompleteRebuild(generation) {
+		b.progress.Partial = true
 	}
 	return b.progress, nil
 }

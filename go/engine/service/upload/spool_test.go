@@ -366,6 +366,35 @@ func TestNamedChunksAssembleInNameOrder(t *testing.T) {
 	}
 }
 
+// Name-ordered clients choose their chunk boundaries and may increase them
+// during a transfer. Persisted sessions from before that distinction still
+// carry the offset protocol's chunk size, which must remain advisory here.
+func TestDeferredNamedUploadIgnoresALegacyChunkSize(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newFixture(t)
+	legacyChunkSize := uint64(8)
+	s, err := f.engine.Create(ctx, f.resolve(t, "adaptive.bin"), SessionSpec{
+		Mode:      SpoolNameOrdered,
+		ChunkSize: &legacyChunkSize,
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	body := []byte("a chunk larger than the old limit")
+	if err := f.engine.PutNamed(ctx, f.root(t), s.ID, testUser, 1, bytes.NewReader(body), nil); err != nil {
+		t.Fatalf("an adaptive named chunk was refused: %v", err)
+	}
+	entry, err := f.engine.Assemble(ctx, f.resolve(t, "adaptive.bin"), s.ID, uint64(len(body)), nil)
+	if err != nil {
+		t.Fatalf("Assemble: %v", err)
+	}
+	if entry.Size != uint64(len(body)) {
+		t.Fatalf("the published file is %d bytes, want %d", entry.Size, len(body))
+	}
+}
+
 // A gap at assembly is a refusal naming what is missing, because there is
 // nothing left to wait for.
 func TestAssemblyRefusesAGapAndNamesIt(t *testing.T) {

@@ -199,6 +199,7 @@ type Engine struct {
 	linkLimiter     *linkLimiter
 	totpLimiter     *linkLimiter
 	indexBuilding   atomic.Bool
+	indexRecovery   atomic.Bool
 	davLocks        *DavLocks
 	// The provider client, rebuilt when the settings change. Nil is off, and
 	// off is the ordinary state: a deployment without single sign-on is one

@@ -78,7 +78,13 @@ func (e *Engine) tasks() []server.PeriodicTask {
 			Run:   e.sweepDirectTransfers,
 		},
 
-		// The four below are required by the startup check and have nothing
+		{
+			Name:  "search.maintenance",
+			Every: probeInterval,
+			Run:   e.recoverSearchIndex,
+		},
+
+		// The three below are required by the startup check and have nothing
 		// to call in this build. Each names what is missing rather than
 		// pretending, so a reader can tell an unwired task from a done one.
 		{
@@ -92,13 +98,6 @@ func (e *Engine) tasks() []server.PeriodicTask {
 			Every: maintenanceInterval,
 			// The cache trims itself as directories are re-walked; there is
 			// no separate collection pass to call.
-			Run: func(context.Context) error { return nil },
-		},
-		{
-			Name:  "search.maintenance",
-			Every: maintenanceInterval,
-			// The index is maintained by the indexer, which this assembly
-			// does not construct yet.
 			Run: func(context.Context) error { return nil },
 		},
 		{
@@ -186,9 +185,14 @@ func (e *Engine) sweepLoginFlows(ctx context.Context) error {
 func (e *Engine) probeShares(ctx context.Context) error {
 	broke, healed := e.Core.ProbeShares(ctx)
 	if len(broke) > 0 {
+		e.markSearchIndexIncomplete()
 		e.logger.Warn("share roots became unreachable", "count", len(broke))
 	}
 	if len(healed) > 0 {
+		for _, def := range healed {
+			e.watchShare(def)
+		}
+		e.markSearchIndexIncomplete()
 		e.logger.Info("share roots came back", "count", len(healed))
 	}
 	return nil

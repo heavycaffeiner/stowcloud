@@ -98,16 +98,6 @@ func (e *Engine) PutNamed(
 			return mapVFSErr(merr)
 		}
 	}
-	declared := false
-	if _, declared = r.totalLen(); !declared {
-		// Deferred-length named sessions still need a per-member bound when
-		// one was configured. Zero means the protocol accepts any chunk size.
-		if maxChunk, merr := num.Narrow[uint64](r.sess.ChunkSize); merr == nil && maxChunk > 0 {
-			if maxChunk < uint64(1<<63-1) {
-				body = io.LimitReader(body, int64(maxChunk)+1)
-			}
-		}
-	}
 	unlock()
 	defer lease.release()
 
@@ -122,14 +112,9 @@ func (e *Engine) PutNamed(
 	}
 	defer cleanup()
 
-	if !declared {
-		if maxChunk, merr := num.Narrow[uint64](r.sess.ChunkSize); merr == nil && maxChunk > 0 {
-			if n > maxChunk {
-				return fmt.Errorf("%w: named chunk %d has %d bytes, maximum is %d",
-					ErrTooLarge, name, n, maxChunk)
-			}
-		}
-	}
+	// Name-ordered sessions accept the chunk boundaries chosen by the client.
+	// ChunkSize belongs to offset-addressed sessions; old persisted rows may
+	// still carry that value, and enforcing it here breaks adaptive clients.
 	if !lease.valid() {
 		return ErrSessionState
 	}

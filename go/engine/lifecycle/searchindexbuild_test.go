@@ -197,6 +197,24 @@ func TestTheBuiltIndexSurvivesARestart(t *testing.T) {
 	if !second.Search.HasIndex() {
 		t.Error("the index was not reopened after a restart")
 	}
+	if state := second.Search.IndexStateOf(); !state.Incomplete {
+		t.Fatal("the reopened index did not record the restart coverage gap")
+	}
+
+	// Mount starts the recovery task immediately. It traverses the current
+	// shares and clears the fallback state without an administrator rebuilding.
+	_ = serve(t, second)
+	deadline := time.Now().Add(5 * time.Second)
+	for second.Search.IndexStateOf().Incomplete && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	state := second.Search.IndexStateOf()
+	if state.Incomplete {
+		t.Fatal("the reopened index stayed incomplete after automatic recovery")
+	}
+	if state.Entries == 0 {
+		t.Fatal("automatic recovery cleared the gap without indexing the share")
+	}
 }
 
 // A deployment built before the hidden index name keeps its persisted cache

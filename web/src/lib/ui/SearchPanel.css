@@ -109,7 +109,7 @@
   justify-content: space-between;
   gap: 8px;
   padding: 2px 0 4px;
-  overflow-x: auto;
+  overflow: visible;
   scrollbar-width: none;
 }
 

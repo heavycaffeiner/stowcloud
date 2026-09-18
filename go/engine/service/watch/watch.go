@@ -430,7 +430,13 @@ func (w *Watcher) consume(buf []byte) {
 			// directory can be marked and full invalidation is the response.
 			w.loseCoverage()
 			w.overflow.Store(true)
-		case mask&(unix.IN_IGNORED|unix.IN_UNMOUNT) != 0:
+		case mask&unix.IN_UNMOUNT != 0:
+			w.forget(wd)
+			w.loseCoverage()
+		case mask&unix.IN_IGNORED != 0:
+			// The parent watch also reports ordinary directory removal. The
+			// ignored record only retires this descriptor and does not mean
+			// that the change stream lost coverage.
 			w.forget(wd)
 		default:
 			w.markDirty(wd)
@@ -461,7 +467,7 @@ func (w *Watcher) markDirty(wd int) {
 	}
 }
 
-// forget clears the bookkeeping for a watch the kernel has already released,
+// forget clears the bookkeeping for a watch the kernel has already released.
 func (w *Watcher) forget(wd int) {
 	w.mu.Lock()
 	k, ok := w.wdToKey[wd]
@@ -473,7 +479,6 @@ func (w *Watcher) forget(wd int) {
 	delete(w.keyToWd, k)
 	w.hot.markUnregistered(k)
 	w.mu.Unlock()
-	w.loseCoverage()
 }
 
 // flushLoop emits directories that have remained dirty across the debounce
