@@ -527,7 +527,7 @@ export function ShareManagementSection() {
                             </span>
                             {share.broken_reason ? <Button variant="tonal" loading={retryingId === share.id} onClick={() => void retry(share)}>{t('folder_share.retry')}</Button> : null}
                             <IconButton label={t('common.edit', { name: share.name })} icon="rename" onClick={() => openEdit(share)} />
-                            <IconButton label={t('common.remove', { name: share.name })} icon="delete" onClick={() => openDelete(share)} />
+                            <span className="sc-danger"><IconButton label={t('common.remove', { name: share.name })} icon="delete" onClick={() => openDelete(share)} /></span>
                           </>
                         )}
                       />

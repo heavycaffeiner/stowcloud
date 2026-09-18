@@ -229,7 +229,7 @@ export function SettingsPage() {
                 <p className="sc-settings-card__hint">{t('settings.choosing_system_follows_your_device')}</p>
               </div>
             </div>
-            <div className="sc-settings-row">
+            <div className="sc-settings-row sc-settings-row--segmented">
               <mdui-segmented-button-group selects="single" aria-label={t('settings.theme')} value={theme} onChange={(event) => {
                 const group = event.currentTarget as HTMLElement & { value: string | string[] }
                 const value = group.value
@@ -250,7 +250,7 @@ export function SettingsPage() {
                 <p className="sc-settings-card__hint">{t('settings.language_choice_stays_this_browser')}</p>
               </div>
             </div>
-            <div className="sc-settings-row">
+            <div className="sc-settings-row sc-settings-row--segmented">
               <mdui-segmented-button-group selects="single" aria-label={t('settings.language')} value={locale} onChange={(event) => {
                 const group = event.currentTarget as HTMLElement & { value: string | string[] }
                 const value = group.value
@@ -270,7 +270,7 @@ export function SettingsPage() {
                 <p className="sc-settings-card__hint">{t('settings.upload_concurrency_hint')}</p>
               </div>
             </div>
-            <div className="sc-settings-row">
+            <div className="sc-settings-row sc-settings-row--segmented">
               <mdui-segmented-button-group selects="single" aria-label={t('settings.upload_concurrency')} value={String(concurrency)} onChange={(event) => {
                 const group = event.currentTarget as HTMLElement & { value: string | string[] }
                 const value = group.value

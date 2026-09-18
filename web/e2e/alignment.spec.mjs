@@ -163,7 +163,7 @@ try {
       await page.locator('.sc-app-shell--compact').waitFor()
       await checkButtons(page)
       await checkGroup(page, '.sc-nav-bar', 'y')
-      await page.locator('.sc-shell-header__menu-btn').click()
+      await page.locator('.sc-nav-bar__item[aria-haspopup="dialog"]').click()
       await page.locator('.sc-nav-drawer--overlay').waitFor()
       await checkNewCenter(page)
       await checkButtons(page, '.sc-nav-drawer--overlay')

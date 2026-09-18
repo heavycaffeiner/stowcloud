@@ -60,12 +60,12 @@
 .sc-logs__table td { text-align: end; }
 .sc-logs__error { margin: 8px 0 0; color: rgb(var(--mdui-color-error)); font-size: var(--mdui-typescale-body-small-size); }
 .sc-logs__note { margin: 16px 0 0; text-align: center; color: rgb(var(--mdui-color-on-surface-variant)); font-size: var(--mdui-typescale-body-small-size); }
-.sc-logs__empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 32px 16px; color: rgb(var(--mdui-color-on-surface-variant)); text-align: center; border: none; border-radius: var(--mdui-shape-corner-medium); background: rgb(var(--mdui-color-surface-container-low)); }
+.sc-logs__empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 32px 16px; color: rgb(var(--mdui-color-on-surface-variant)); text-align: center; border: 1px dashed var(--sc-outline-variant); border-radius: var(--sc-radius-medium); background: transparent; }
 .sc-logs__empty p { margin: 0; }
 .sc-logs__empty-hint { font-size: var(--mdui-typescale-body-small-size); }
-.sc-logs__list { list-style: none; margin: 0; padding: 4px; border: none; border-radius: var(--mdui-shape-corner-medium); background: rgb(var(--mdui-color-surface-container-low)); display: flex; flex-direction: column; gap: 4px; overflow: hidden; }
-.sc-logs__item { background: rgb(var(--mdui-color-surface-container)); border-radius: 8px; overflow: hidden; }
-.sc-logs__item + .sc-logs__item { border-top: none; }
+.sc-logs__list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--sc-outline-variant); border-radius: var(--sc-radius-medium); background: transparent; display: flex; flex-direction: column; gap: 0; overflow: hidden; }
+.sc-logs__item { background: transparent; border-radius: 0; overflow: hidden; }
+.sc-logs__item + .sc-logs__item { border-top: 1px solid var(--sc-outline-variant); }
 .sc-logs__row { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; width: 100%; min-width: 0; min-height: var(--sc-row-height); box-sizing: border-box; padding: 8px 16px; color: rgb(var(--mdui-color-on-surface)); text-align: start; }
 .sc-logs__row--button { background: none; border: 0; font: inherit; cursor: pointer; }
 .sc-logs__level { display: inline-flex; align-items: center; flex-shrink: 0; gap: 4px; min-width: 88px; padding: 4px 8px; border-radius: var(--mdui-shape-corner-extra-small); background: rgb(var(--mdui-color-surface-container-highest)); color: rgb(var(--mdui-color-on-surface-variant)); font-size: var(--mdui-typescale-label-medium-size); }

@@ -261,9 +261,11 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
                             <IconButton label={t('common.edit', { name: grantName })} onClick={() => openEdit(grant)}>
                               <Icon name="settings" size={18} />
                             </IconButton>
-                            <IconButton label={t('common.remove', { name: grantName })} onClick={() => askDelete(grant)}>
-                              <Icon name="delete" size={18} />
-                            </IconButton>
+                            <span className="sc-danger">
+                              <IconButton label={t('common.remove', { name: grantName })} onClick={() => askDelete(grant)}>
+                                <Icon name="delete" size={18} />
+                              </IconButton>
+                            </span>
                           </span>
                         }
                       />

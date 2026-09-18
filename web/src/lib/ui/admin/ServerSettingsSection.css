@@ -35,7 +35,7 @@
 .sc-server-settings__reason, .sc-server-settings__empty-note { color: rgb(var(--mdui-color-on-surface-variant)); font-size: var(--mdui-typescale-body-small-size); overflow-wrap: anywhere; }
 .sc-server-settings__empty-note { margin: 0; }
 .sc-server-settings__findings { display: grid; gap: 4px; margin: 8px 0 0; padding: 0; list-style: none; }
-.sc-server-settings__finding { margin: 0; padding: 8px 12px; border-inline-start: 4px solid rgb(var(--mdui-color-outline)); border-radius: var(--mdui-shape-corner-extra-small); background: rgb(var(--mdui-color-surface-container)); color: rgb(var(--mdui-color-on-surface)); font-size: var(--mdui-typescale-body-small-size); overflow-wrap: anywhere; }
+.sc-server-settings__finding { margin: 0; padding: 8px 12px; border-inline-start: 4px solid rgb(var(--mdui-color-outline)); border-radius: 0; background: transparent; color: rgb(var(--mdui-color-on-surface)); font-size: var(--mdui-typescale-body-small-size); overflow-wrap: anywhere; }
 .sc-server-settings__finding--block { border-inline-start-color: rgb(var(--mdui-color-error)); }
 .sc-server-settings__finding--ok { border-inline-start-color: rgb(var(--mdui-color-primary)); }
 .sc-server-settings__finding strong, .sc-server-settings__finding code { margin-inline-end: 4px; }

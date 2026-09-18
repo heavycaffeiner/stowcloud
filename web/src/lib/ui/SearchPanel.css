@@ -449,4 +449,70 @@
     height: 56px;
     padding-block: 5px;
   }
+
+  .sc-search__filter-bar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+    overflow: visible;
+  }
+
+  .sc-search__categories {
+    width: 100%;
+    flex: none;
+    padding-bottom: 2px;
+    overscroll-behavior-inline: contain;
+    scroll-snap-type: x proximity;
+  }
+
+  .sc-search__category-pill {
+    min-height: 44px;
+    scroll-snap-align: start;
+  }
+
+  .sc-search__scope-pill {
+    align-self: flex-start;
+    min-height: 32px;
+  }
+
+  .sc-search__sort-wrap,
+  .sc-search__sort-btn {
+    width: 100%;
+  }
+
+  .sc-search__sort-btn {
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  .sc-search__status-bar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .sc-search__status-actions {
+    justify-content: flex-end;
+  }
+
+  .sc-search__stop-btn {
+    min-height: 44px;
+    padding-inline: 14px;
+  }
+
+  .sc-search__results {
+    max-height: none;
+    min-height: 240px;
+  }
+
+  .sc-search__row {
+    height: auto;
+    min-height: 64px;
+    padding: 10px 12px;
+    gap: 10px;
+  }
+
+  .sc-search__cell {
+    display: none;
+  }
 }

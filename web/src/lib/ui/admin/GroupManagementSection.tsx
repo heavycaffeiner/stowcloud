@@ -188,7 +188,7 @@ export function GroupManagementSection() {
                   <Button variant="text" square ariaLabel={t('group.rename', { name: group.name })} onClick={() => openRename(group)}>
                     <Icon name="rename" />
                   </Button>
-                  <Button variant="text" square ariaLabel={t('common.delete_2', { name: group.name })} onClick={() => askDelete(group)}>
+                  <Button variant="text" danger square ariaLabel={t('common.delete_2', { name: group.name })} onClick={() => askDelete(group)}>
                     <Icon name="delete" />
                   </Button>
                 </div>

@@ -41,7 +41,7 @@
 .sc-admin-form { display: flex; flex-direction: column; gap: 16px; width: min(36rem, 100%); min-width: 0; }
 .sc-path-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .sc-path-row > .sc-field { flex: 1 1 auto; min-width: 0; }
-.sc-shares__empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 32px 16px; text-align: center; border: none; border-radius: var(--mdui-shape-corner-medium); background: rgb(var(--mdui-color-surface-container-low)); color: rgb(var(--mdui-color-on-surface-variant)); }
+.sc-shares__empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 32px 16px; text-align: center; border: 1px dashed var(--sc-outline-variant); border-radius: var(--sc-radius-medium); background: transparent; color: rgb(var(--mdui-color-on-surface-variant)); }
 .sc-shares__empty p { margin: 0; }
 
 .sc-shares__list, .sc-storage-list {
@@ -111,8 +111,8 @@
   font-weight: 500;
 }
 .sc-storage__status-badge--on {
-  background: rgb(var(--mdui-color-primary-container));
-  color: rgb(var(--mdui-color-on-primary-container));
+  background: rgb(var(--mdui-color-surface-container-highest));
+  color: rgb(var(--mdui-color-primary));
 }
 .sc-storage__toggle-row {
   display: flex;
@@ -165,7 +165,7 @@
   padding: 2px 6px;
   border-radius: var(--mdui-shape-corner-extra-small);
 }
-.sc-share-backend { max-width: 100%; margin-inline-start: 8px; padding-inline: 8px; border-radius: var(--mdui-shape-corner-extra-small); background: rgb(var(--mdui-color-secondary-container)); color: rgb(var(--mdui-color-on-secondary-container)); font-size: var(--mdui-typescale-label-small-size); overflow-wrap: anywhere; }
+.sc-share-backend { max-width: 100%; margin-inline-start: 8px; padding-inline: 8px; border-radius: var(--mdui-shape-corner-extra-small); background: rgb(var(--mdui-color-surface-container-highest)); color: rgb(var(--mdui-color-on-surface-variant)); font-size: var(--mdui-typescale-label-small-size); overflow-wrap: anywhere; }
 .sc-share-actions { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 
 .sc-index-cost, .sc-admin-section__cost {
@@ -210,7 +210,7 @@
   max-width: 36rem;
 }
 .sc-upload-form .sc-field, .sc-admin-section__upload-form .sc-field { flex: 1 1 180px; }
-.sc-upload-actions, .sc-admin-section__upload-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.sc-upload-actions, .sc-admin-section__upload-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; flex-shrink: 0; }
 
 .sc-picker { display: flex; flex-direction: column; gap: 8px; width: min(36rem, 100%); min-width: 0; }
 .sc-picker__nav { display: flex; align-items: center; gap: 8px; min-width: 0; }

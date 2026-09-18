@@ -55,10 +55,14 @@
   letter-spacing: var(--mdui-typescale-body-small-tracking);
   line-height: var(--mdui-typescale-body-small-line-height);
 }
-.sc-settings-card__buttons, .sc-smb__actions, .sc-password-form__actions {
+.sc-settings-card__buttons,
+.sc-smb__actions,
+.sc-password-form__actions,
+.sc-app-passwords__actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-start;
   gap: 8px;
 }
 .sc-settings-card input[type='number'] {
@@ -72,6 +76,18 @@
   color: rgb(var(--mdui-color-on-surface));
 }
 .sc-settings-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; min-width: 0; }
+.sc-settings-row--segmented {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  padding-block: 2px;
+  scrollbar-width: none;
+}
+.sc-settings-row--segmented::-webkit-scrollbar { display: none; }
+.sc-settings-row--segmented mdui-segmented-button-group {
+  width: max-content;
+  min-width: max-content;
+}
 .sc-settings-list,
 .sc-sessions__list,
 .sc-app-passwords__list {
@@ -127,8 +143,8 @@
   margin-inline-start: 8px;
   padding-inline: 8px;
   border-radius: var(--mdui-shape-corner-full);
-  background: rgb(var(--mdui-color-secondary-container));
-  color: rgb(var(--mdui-color-on-secondary-container));
+  background: rgb(var(--mdui-color-surface-container-highest));
+  color: rgb(var(--mdui-color-on-surface-variant));
   font-size: var(--mdui-typescale-label-small-size);
   font-weight: var(--mdui-typescale-label-small-weight);
   line-height: var(--mdui-typescale-label-small-line-height);
@@ -142,10 +158,11 @@
 .sc-settings-badge--on { background: rgb(var(--mdui-color-primary-container)); color: rgb(var(--mdui-color-on-primary-container)); }
 .sc-settings-state, .sc-smb__state {
   margin: 0;
-  padding: 12px;
-  border-radius: var(--mdui-shape-corner-extra-small);
-  background: rgb(var(--mdui-color-surface-container-highest));
-  color: rgb(var(--mdui-color-on-surface));
+  padding: 0;
+  background: transparent;
+  color: rgb(var(--mdui-color-on-surface-variant));
+  font-size: var(--mdui-typescale-body-medium-size);
+  line-height: var(--mdui-typescale-body-medium-line-height);
   overflow-wrap: anywhere;
 }
 .sc-settings-error, .sc-password-form__error, .sc-app-passwords__error,
@@ -182,10 +199,11 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 16px;
-  border-radius: var(--sc-radius-medium);
+  padding: 16px 0 0;
+  border: 0;
+  border-top: 1px solid var(--sc-outline-variant);
+  border-radius: 0;
   background: transparent;
-  border: 1px solid var(--sc-outline-variant);
   box-shadow: none;
 }
 .sc-webdav section h3 { margin: 0; font-size: var(--mdui-typescale-title-medium-size); line-height: var(--mdui-typescale-title-medium-line-height); color: rgb(var(--mdui-color-primary)); font-weight: 600; }
@@ -200,11 +218,11 @@
 .sc-settings-switch { display: flex; align-items: center; gap: 8px; min-block-size: 48px; }
 .sc-totp__status, .sc-oidc__status, .sc-totp__recovery { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; }
 .sc-totp__badge, .sc-oidc__badge {
-  display: inline-flex; align-items: center; min-block-size: 32px; padding-inline: 12px;
+  display: inline-flex; align-items: center; min-block-size: 24px; padding-inline: 8px;
   border-radius: var(--mdui-shape-corner-full);
   background: rgb(var(--mdui-color-surface-container-highest));
   color: rgb(var(--mdui-color-on-surface-variant));
-  font-size: var(--mdui-typescale-label-large-size); line-height: var(--mdui-typescale-label-large-line-height);
+  font-size: var(--mdui-typescale-label-small-size); line-height: var(--mdui-typescale-label-small-line-height);
 }
 .sc-totp__badge--on, .sc-oidc__badge--on { background: rgb(var(--mdui-color-primary-container)); color: rgb(var(--mdui-color-on-primary-container)); }
 .sc-totp__recovery-count { margin: 0; color: rgb(var(--mdui-color-on-surface-variant)); }
@@ -254,8 +272,8 @@
   .sc-settings-card__head > .sc-settings-badge { margin-inline-start: 0; }
   .sc-settings-list li, .sc-sessions__list li, .sc-app-passwords__list li { align-items: stretch; flex-direction: column; padding: 12px; }
   .sc-settings-list li > div:last-child, .sc-sessions__list li > button, .sc-app-passwords__list li > div:last-child { align-self: stretch; }
-  .sc-settings-card__buttons, .sc-smb__actions, .sc-password-form__actions { align-items: stretch; }
+  .sc-settings-card__buttons, .sc-smb__actions, .sc-password-form__actions, .sc-app-passwords__actions { align-items: stretch; }
   .sc-token-row, .sc-webdav__token-row, .sc-totp__secret-row { align-items: stretch; }
   .sc-settings-codes, .sc-totp__codes { grid-template-columns: 1fr; }
-  .sc-settings-row mdui-segmented-button-group { overflow-x: auto; }
+  .sc-settings-row--segmented { max-width: calc(100vw - (2 * var(--sc-content-pad))); }
 }

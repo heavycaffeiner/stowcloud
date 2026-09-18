@@ -1,4 +1,4 @@
-.sc-admin__inner { display: grid; gap: 16px; min-width: 0; }
+.sc-admin__inner { display: grid; gap: 0; min-width: 0; }
 .sc-admin__section { min-width: 0; }
 .sc-admin__section h2 {
   margin: 0 0 8px;
