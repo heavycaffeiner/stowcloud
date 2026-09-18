@@ -37,7 +37,7 @@
   min-block-size: 64px;
   padding: 10px 12px;
   border: none;
-  border-radius: 10px;
+  border-radius: var(--sc-radius-small);
   background: transparent;
   color: rgb(var(--mdui-color-on-surface-variant));
   font-size: var(--mdui-typescale-label-large-size);
@@ -59,15 +59,17 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding: 24px;
+  padding: 24px 0;
   min-width: 0;
-  border: none;
-  border: 1px solid var(--sc-outline-variant);
-  border-radius: var(--sc-radius-card, 14px);
-  background: var(--sc-container-surface);
+  border: 0;
+  border-bottom: 1px solid var(--sc-outline-variant);
+  border-radius: 0;
+  background: transparent;
   color: var(--sc-content-primary);
-  box-shadow: var(--sc-shadow-card, 0 1px 2px rgba(0, 0, 0, 0.06));
+  box-shadow: none;
 }
+.sc-settings-card:last-child,
+.sc-admin-card:last-child { border-bottom: 0; }
 .sc-settings-card__head,
 .sc-admin-card-head {
   display: flex;
@@ -88,7 +90,7 @@
 @media (max-width: 599.98px) {
   .sc-settings-page__tabs { margin-block-end: 16px; }
   .sc-settings-page__tab { padding-inline: 8px; }
-  .sc-settings-card, .sc-admin-card { padding: 16px; gap: 12px; }
+  .sc-settings-card, .sc-admin-card { padding: 16px 0; gap: 12px; }
   .sc-settings-card__head, .sc-admin-card-head { gap: 12px; }
 }
 
@@ -187,7 +189,7 @@ mdui-segmented-button {
 mdui-segmented-button[selected] {
   background-color: rgb(var(--mdui-color-secondary-container)) !important;
   color: rgb(var(--mdui-color-on-secondary-container)) !important;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.16);
+  box-shadow: var(--sc-elevation-1);
 }
 
 mdui-segmented-button:not([selected]):hover {
@@ -294,6 +296,16 @@ mdui-button-icon::part(button):focus-visible {
 
 mdui-dialog mdui-text-field {
   --mdui-color-surface: var(--mdui-color-surface-container-high);
+}
+
+mdui-dialog::part(panel) {
+  border-radius: var(--sc-radius-large);
+  box-shadow: var(--sc-elevation-4);
+}
+
+mdui-dialog[fullscreen]:not([fullscreen="false" i])::part(panel) {
+  border-radius: 0;
+  box-shadow: none;
 }
 
 mdui-dialog::part(action) {
@@ -432,6 +444,8 @@ mdui-chip::part(label) {
 .sc-menu-shell mdui-menu {
   min-inline-size: 200px;
   max-inline-size: min(360px, calc(100vw - 16px));
+  border-radius: var(--sc-radius-small);
+  box-shadow: var(--sc-elevation-3);
 }
 
 .sc-sheet-scrim {
@@ -455,10 +469,10 @@ mdui-chip::part(label) {
   padding: 0;
   overflow: hidden;
   border: 0;
-  border-radius: var(--mdui-shape-corner-large) var(--mdui-shape-corner-large) 0 0;
+  border-radius: var(--sc-radius-large) var(--sc-radius-large) 0 0;
   background: rgb(var(--mdui-color-surface-container-low));
   color: rgb(var(--mdui-color-on-surface));
-  box-shadow: var(--mdui-elevation-level3);
+  box-shadow: var(--sc-elevation-3);
   translate: 0 100%;
 }
 .sc-sheet[open] {
@@ -482,7 +496,7 @@ mdui-chip::part(label) {
 .sc-sheet-handle {
   inline-size: 32px;
   block-size: 4px;
-  border-radius: 999px;
+  border-radius: var(--sc-radius-full);
   background: rgb(var(--mdui-color-outline-variant));
 }
 .sc-sheet-content {

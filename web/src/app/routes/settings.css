@@ -1,4 +1,4 @@
-.sc-settings-page__grid { display: grid; gap: 16px; min-width: 0; }
+.sc-settings-page__grid { display: grid; gap: 0; min-width: 0; }
 .sc-settings__card-icon {
   flex: none;
   display: flex;
@@ -76,14 +76,15 @@
 .sc-sessions__list,
 .sc-app-passwords__list {
   list-style: none;
-  padding: 4px;
+  padding: 0;
   margin: 0;
-  border: none;
-  border-radius: var(--mdui-shape-corner-medium);
-  background: rgb(var(--mdui-color-surface-container-low));
+  overflow: hidden;
+  border: 1px solid var(--sc-outline-variant);
+  border-radius: var(--sc-radius-medium);
+  background: transparent;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 0;
 }
 .sc-settings-list li,
 .sc-sessions__list li,
@@ -94,8 +95,8 @@
   gap: 16px;
   min-block-size: 56px;
   padding: 12px 16px;
-  border-radius: var(--mdui-shape-corner-small, 8px);
-  background: rgb(var(--mdui-color-surface-container));
+  border-radius: 0;
+  background: transparent;
   transition: background-color 140ms ease;
 }
 .sc-settings-list li > :first-child,
@@ -106,11 +107,11 @@
 .sc-settings-list li:hover,
 .sc-sessions__list li:hover,
 .sc-app-passwords__list li:hover {
-  background: rgb(var(--mdui-color-surface-container-high));
+  background: rgb(var(--mdui-color-surface-container-low));
 }
 .sc-settings-list li + li,
 .sc-sessions__list li + li,
-.sc-app-passwords__list li + li { border-top: none; }
+.sc-app-passwords__list li + li { border-top: 1px solid var(--sc-outline-variant); }
 .sc-settings-list p,
 .sc-sessions__list p,
 .sc-app-passwords__list p {
@@ -182,10 +183,10 @@
   flex-direction: column;
   gap: 12px;
   padding: 16px;
-  border-radius: var(--mdui-shape-corner-medium);
-  background: rgb(var(--mdui-color-surface-container-high));
-  border: none;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-radius: var(--sc-radius-medium);
+  background: transparent;
+  border: 1px solid var(--sc-outline-variant);
+  box-shadow: none;
 }
 .sc-webdav section h3 { margin: 0; font-size: var(--mdui-typescale-title-medium-size); line-height: var(--mdui-typescale-title-medium-line-height); color: rgb(var(--mdui-color-primary)); font-weight: 600; }
 .sc-webdav section h4 { margin: 12px 0 4px; font-size: var(--mdui-typescale-title-small-size); line-height: var(--mdui-typescale-title-small-line-height); }

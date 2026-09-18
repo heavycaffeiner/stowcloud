@@ -64,9 +64,18 @@
   --sc-shell-header-height: 56px;
   --sc-row-height: 48px;
   --sc-content-pad: 24px;
-  --sc-radius-card: 14px;
-  --sc-radius-control: 10px;
-  --sc-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --sc-radius-small: 8px;
+  --sc-radius-medium: 12px;
+  --sc-radius-large: 16px;
+  --sc-radius-auth: 20px;
+  --sc-radius-full: 999px;
+  --sc-radius-card: var(--sc-radius-medium);
+  --sc-radius-control: var(--sc-radius-small);
+  --sc-elevation-1: 0 1px 2px rgb(0 0 0 / 0.06);
+  --sc-elevation-2: 0 4px 12px rgb(0 0 0 / 0.10);
+  --sc-elevation-3: 0 8px 24px rgb(0 0 0 / 0.18);
+  --sc-elevation-4: 0 16px 40px rgb(0 0 0 / 0.22);
+  --sc-shadow-card: var(--sc-elevation-1);
   --sc-control-min-desktop: 40px;
   --sc-control-min-compact: 44px;
   --sc-control-min: var(--sc-control-min-desktop);
@@ -169,7 +178,7 @@ h4, h5, h6, .sc-title-small { font-size: var(--mdui-typescale-title-small-size);
 }
 .sc-page__card:hover, .sc-card:hover {
   background: var(--sc-raised-surface);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--sc-elevation-1);
 }
 .sc-page__heading, .sc-section__heading { margin-block-end: 8px; }
 .sc-page__hint, .sc-hint { color: var(--sc-content-secondary); }
@@ -214,10 +223,10 @@ mdui-button:active,
 .sc-error-page__card {
   width: min(100%, 34rem);
   padding: 24px;
-  border-radius: var(--mdui-shape-corner-large);
-  background: rgb(var(--mdui-color-surface-container));
-  border: none;
-  box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, 0.2);
+  border-radius: var(--sc-radius-auth);
+  background: var(--sc-raised-surface);
+  border: 1px solid var(--sc-outline-variant);
+  box-shadow: var(--sc-elevation-1);
   animation: sc-scale-up 220ms cubic-bezier(0.2, 0, 0, 1);
 }
 

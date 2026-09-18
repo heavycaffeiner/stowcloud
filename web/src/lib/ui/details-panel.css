@@ -73,7 +73,7 @@
 .sc-details__hero {
   background: var(--sc-raised-surface);
   border: 1px solid var(--sc-outline-variant);
-  border-radius: 14px;
+  border-radius: var(--sc-radius-medium);
   padding: 24px 16px 20px;
   display: flex;
   flex-direction: column;
@@ -86,7 +86,7 @@
 .sc-details__hero-badge {
   width: 56px;
   height: 56px;
-  border-radius: 16px;
+  border-radius: var(--sc-radius-large);
   background: var(--sc-overlay-surface);
   display: flex;
   align-items: center;
@@ -120,7 +120,7 @@
 .sc-details__primary-btn {
   flex: 1;
   min-height: var(--sc-control-min);
-  border-radius: 20px;
+  border-radius: var(--sc-radius-full);
   border: none;
   background: rgb(var(--mdui-color-primary));
   color: rgb(var(--mdui-color-on-primary));
@@ -179,7 +179,7 @@
   gap: 8px;
   margin: 0 0 12px;
   padding: 8px 12px;
-  border-radius: 8px;
+  border-radius: var(--sc-radius-small);
   background: var(--sc-state-error);
   color: var(--sc-state-error-content);
   font-size: var(--mdui-typescale-body-small-size);

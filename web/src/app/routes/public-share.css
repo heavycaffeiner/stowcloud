@@ -50,7 +50,7 @@
 
 .sc-public-share__state--error {
   padding: 16px;
-  border-radius: 12px;
+  border-radius: var(--sc-radius-medium);
   background: var(--sc-state-error);
   color: var(--sc-state-error-content);
 }
@@ -85,14 +85,14 @@
 .sc-public-share__list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 0;
   min-width: 0;
   margin: 0 0 24px;
-  padding: 4px;
+  padding: 0;
   overflow: hidden;
-  border: none;
-  border-radius: 12px;
-  background: rgb(var(--mdui-color-surface-container-low));
+  border: 1px solid var(--sc-outline-variant);
+  border-radius: var(--sc-radius-medium);
+  background: transparent;
   list-style: none;
 }
 
@@ -104,14 +104,14 @@
   min-width: 0;
   min-height: 56px;
   padding: 8px 12px;
-  border-radius: 8px;
-  background: rgb(var(--mdui-color-surface-container));
-  border-bottom: none;
+  border-radius: 0;
+  background: transparent;
+  border-bottom: 1px solid var(--sc-outline-variant);
   transition: background-color 140ms ease;
 }
 
 .sc-public-share__row:hover {
-  background: rgb(var(--mdui-color-surface-container-high));
+  background: rgb(var(--mdui-color-surface-container-low));
 }
 
 .sc-public-share__row:last-child {
@@ -183,7 +183,7 @@
   padding: 4px 8px;
   overflow: hidden;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--sc-radius-small);
   background: none;
   color: rgb(var(--mdui-color-primary));
   font: inherit;
