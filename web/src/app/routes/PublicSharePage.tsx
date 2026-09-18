@@ -250,7 +250,9 @@ export function PublicSharePage() {
                     <span className="sc-public-share__icon" aria-hidden="true"><Icon name={entry.kind === 'dir' ? 'folder' : 'draft'} size={20} /></span>
                     {entry.kind === 'dir' ? <button type="button" className="sc-filename sc-public-share__name sc-public-share__folder sc-focus-ring" aria-label={t('public_share.open_folder', { name: entry.name })} onClick={() => openFolder(childPath(entry.name))}>{entry.name}</button> : <span className="sc-filename sc-public-share__name">{entry.name}</span>}
                     <span className="sc-public-share__size">{entry.kind === 'dir' ? '-' : formatBytes(entry.size)}</span>
-                    {entry.kind === 'file' && info.canDownload ? <Button variant="text" onClick={() => download(childPath(entry.name))}>{t('common.download')}</Button> : null}
+                    <span className="sc-public-share__action">
+                      {entry.kind === 'file' && info.canDownload ? <Button variant="text" onClick={() => download(childPath(entry.name))}>{t('common.download')}</Button> : null}
+                    </span>
                   </>
                 )}
               /> : <ul className="sc-public-share__list"><li className="sc-public-share__row sc-public-share__row--empty">{t('public_share.empty')}</li></ul>}

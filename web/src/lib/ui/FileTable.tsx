@@ -50,7 +50,7 @@ export const FileTable = forwardRef<FileViewHandle, FileTableProps>(function Fil
   const HEADER_HEIGHT = 40
   const mobileRows = compact && measure.width > 0 && measure.width < 600
   const rowHeight = mobileRows ? 64 : density === 'compact' ? 40 : density === 'spacious' ? 56 : 48
-  const localScrollTop = compact ? measure.scroll : Math.max(0, documentScrollTop(measure.scroll, measure.top) - HEADER_HEIGHT)
+  const localScrollTop = measure.scroll
   const win = computeWindow({ scrollTop: localScrollTop, viewportHeight: Math.max(0, measure.height - HEADER_HEIGHT), rowHeight, itemCount: total, overscan: 8 })
   const loadedNames = useMemo(() => entries.map((entry) => entry.name), [entries])
   const focusedName = focused === null ? null : entries[focused]?.name ?? null
@@ -59,27 +59,23 @@ export const FileTable = forwardRef<FileViewHandle, FileTableProps>(function Fil
   const chooseSort = (key: SortKey) => view.setSort(key, sortKey === key && sortOrder === 'asc' ? 'desc' : 'asc')
 
   const update = () => {
-    if (!viewport.current) return
-    setMeasure(compact
-      ? { top: 0, scroll: viewport.current.scrollTop, height: viewport.current.clientHeight, width: viewport.current.clientWidth }
-      : { top: viewport.current.getBoundingClientRect().top + window.scrollY, scroll: window.scrollY, height: effectiveViewportHeight(window.visualViewport?.height, window.innerHeight), width: viewport.current.clientWidth })
+    const el = viewport.current
+    if (!el) return
+    setMeasure({ top: 0, scroll: el.scrollTop, height: el.clientHeight, width: el.clientWidth })
   }
   useEffect(() => {
     update()
-    const scrollTarget = compact ? viewport.current : window
-    scrollTarget?.addEventListener('scroll', update, { passive: true })
-    window.addEventListener('resize', update)
-    window.visualViewport?.addEventListener('resize', update)
     const element = viewport.current
+    element?.addEventListener('scroll', update, { passive: true })
+    window.addEventListener('resize', update)
     if (element && typeof ResizeObserver !== 'undefined') {
       const observer = new ResizeObserver(update)
       resizeObserverRef.current = observer
       observer.observe(element)
     }
     return () => {
-      scrollTarget?.removeEventListener('scroll', update)
+      element?.removeEventListener('scroll', update)
       window.removeEventListener('resize', update)
-      window.visualViewport?.removeEventListener('resize', update)
       resizeObserverRef.current?.disconnect()
       resizeObserverRef.current = null
     }
@@ -105,10 +101,8 @@ export const FileTable = forwardRef<FileViewHandle, FileTableProps>(function Fil
     const bottom = rowIndexToScrollTop(index + 1, mapping, rowHeight)
     const current = localScrollTop
     const viewportHeight = Math.max(0, measure.height - HEADER_HEIGHT)
-    const scrollTarget = compact ? viewport.current : window
-    const offset = compact ? 0 : measure.top + HEADER_HEIGHT
-    if (top < current) scrollTarget?.scrollTo({ top: offset + top })
-    else if (bottom > current + viewportHeight) scrollTarget?.scrollTo({ top: offset + bottom - viewportHeight })
+    if (top < current) viewport.current?.scrollTo({ top })
+    else if (bottom > current + viewportHeight) viewport.current?.scrollTo({ top: bottom - viewportHeight })
   }
   const openMenuForFocused = () => {
     if (focused === null) return
@@ -130,18 +124,17 @@ export const FileTable = forwardRef<FileViewHandle, FileTableProps>(function Fil
     entriesInRect(rect) {
       const box = viewport.current?.getBoundingClientRect()
       if (!box) return []
-      return indicesInRect(rect, { top: box.top + window.scrollY + HEADER_HEIGHT - (compact ? viewport.current?.scrollTop ?? 0 : 0), left: box.left + window.scrollX, rowHeight, cellHeight: rowHeight, columnPitch: 0, cellWidth: box.width, columns: 1, startIndex: 0, count: total }).map((index) => entries[index]).filter((entry): entry is Entry => Boolean(entry))
+      return indicesInRect(rect, { top: box.top + window.scrollY + HEADER_HEIGHT - (viewport.current?.scrollTop ?? 0), left: box.left + window.scrollX, rowHeight, cellHeight: rowHeight, columnPitch: 0, cellWidth: box.width, columns: 1, startIndex: 0, count: total }).map((index) => entries[index]).filter((entry): entry is Entry => Boolean(entry))
     },
     scrollBounds() {
-      if (!compact || !viewport.current) return { top: 0, height: window.visualViewport?.height ?? window.innerHeight }
+      if (!viewport.current) return { top: 0, height: window.innerHeight }
       const box = viewport.current.getBoundingClientRect()
       return { top: box.top, height: box.height }
     },
     scrollBy(delta) {
-      if (compact && viewport.current) viewport.current.scrollTop += delta
-      else window.scrollBy(0, delta)
+      if (viewport.current) viewport.current.scrollTop += delta
     }
-  }), [entries, total, rowHeight, measure, compact])
+  }), [entries, total, rowHeight, measure])
 
   const moveFocus = (delta: number, extend: boolean) => {
     const next = focused === null ? (delta < 0 ? total - 1 : 0) : Math.min(Math.max(focused + delta, 0), total - 1)
@@ -172,7 +165,7 @@ export const FileTable = forwardRef<FileViewHandle, FileTableProps>(function Fil
   const rows = Array.from({ length: Math.max(0, win.end - win.start) }, (_, offset) => { const index = win.start + offset; return { index, entry: entries[index] } })
   const active = focusedName && rows.some((row) => row.entry?.name === focusedName) ? domId(focusedName) : undefined
 
-  return <div ref={viewport} className={`sc-file-table${compact ? ' sc-file-table--contained' : ''}${mobileRows ? ' sc-file-table--mobile-rows' : ''}${names.size ? ' sc-file-table--reserve-selection' : ''}`} style={{ touchAction: 'manipulation' }} data-density={density} role="grid" aria-multiselectable="true" aria-rowcount={total + 1} aria-label={t('table.file_list')} aria-activedescendant={active} aria-busy={loadingMore} tabIndex={0} onKeyDown={keyDown} onPointerDown={(event) => { if (!(event.target as HTMLElement).closest('[aria-selected]')) activation.cancel() }} onContextMenu={activation.cancel}>
+  return <div ref={viewport} className={`sc-file-table sc-file-table--contained${mobileRows ? ' sc-file-table--mobile-rows' : ''}${names.size ? ' sc-file-table--reserve-selection' : ''}`} style={{ touchAction: 'manipulation' }} data-density={density} role="grid" aria-multiselectable="true" aria-rowcount={total + 1} aria-label={t('table.file_list')} aria-activedescendant={active} aria-busy={loadingMore} tabIndex={0} onKeyDown={keyDown} onPointerDown={(event) => { if (!(event.target as HTMLElement).closest('[aria-selected]')) activation.cancel() }} onContextMenu={activation.cancel}>
     {total === 0 && !loading ? <p className="sc-file-table__empty">{t('common.folder_empty')}</p> : <>
       <div className="sc-file-table__header" role="row" aria-rowindex={1}>
         <button

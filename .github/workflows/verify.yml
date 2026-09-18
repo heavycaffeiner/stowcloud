@@ -118,6 +118,14 @@ jobs:
         working-directory: web
         run: pnpm test:alignment
 
+      # The file views render a window of rows and move it as the viewport
+      # scrolls. Reading that offset off the wrong element freezes the window
+      # at its first screenful, which no unit test sees: the maths is right and
+      # the input is wrong. This drives a real wheel over a real layout.
+      - name: Check deep scrolling in the file views
+        working-directory: web
+        run: pnpm test:virtual-scroll
+
       # Enforces the frontend byte budgets. Deliberately
       # no Lighthouse pass (see check-bundle-size.mjs's header): a shared
       # runner's CPU/IO variance would make a frame-timing gate flaky, and

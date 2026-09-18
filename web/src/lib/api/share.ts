@@ -81,7 +81,7 @@ const MOCK_TREE: Record<string, ShareEntry[]> = {
   '': [
     { name: '2026-07', kind: 'dir', size: 0 },
     { name: '휴가-2026-07-01.jpg', kind: 'file', size: 4_213_665 },
-    { name: '가족사진.png', kind: 'file', size: 2_112_004 }
+    { name: '여행사진.png', kind: 'file', size: 2_112_004 }
   ],
   '2026-07': [
     { name: 'beach', kind: 'dir', size: 0 },

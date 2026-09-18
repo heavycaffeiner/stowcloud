@@ -54,7 +54,10 @@ docker compose logs sc
 
 Open `https://<server-address>:8443/setup`, enter the token, and choose an administrator username and password.
 
-![The first-run screen asking for the setup token, an administrator username, and a password](docs/screenshots/setup.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/setup-dark.png">
+  <img alt="The first-run screen asking for the setup token, an administrator username, and a password" src="docs/screenshots/setup-light.png">
+</picture>
 
 After signing in, add mounted folders from the administration screen. For access from the public internet, place Stowcloud behind a reverse proxy with a trusted certificate.
 
@@ -85,43 +88,64 @@ Point Stowcloud at a photo library, project archive, family folder, or media col
 
 ## Browse without changing your storage
 
-Shares follow the directories already present on disk. The folder tree, file names, and hierarchy remain available to other software on the server.
+Shares follow the directories already present on disk. Folder names and their nesting stay exactly as they are, so other software on the server keeps reading and writing the same paths.
 
-![The file browser with the folder tree open, showing the home root and a nested folder under Documents](docs/screenshots/tree.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/tree-dark.png">
+  <img alt="The file browser inside a subfolder, with the breadcrumb showing the path back to the share root" src="docs/screenshots/tree-light.png">
+</picture>
 
 ## Search across every accessible folder
 
 A single search covers all folders granted to the current account. Results can be narrowed to files, folders, common file groups, or specific extensions. On desktop, `Ctrl+K` or `Cmd+K` opens search from anywhere in the interface.
 
-![The search sheet over the file browser: a query for 2026, the Show buttons and the File type menu beside them, and results from two shares each carrying its folder, size and date](docs/screenshots/search.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/search-dark.png">
+  <img alt="The search sheet over the file browser: a query for 2026, the category and file-type filters beside it, and results carrying each folder, size and date" src="docs/screenshots/search-light.png">
+</picture>
 
 ## Share with people who do not have an account
 
 Create a public link for a folder and choose an expiration date, password, download limit, or upload-only mode. Copy the generated URL when it appears.
 
-![The share-link dialog just after creating a link: the one-time URL, a copy button, and the link's expiry](docs/screenshots/share-link.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/share-link-dark.png">
+  <img alt="The share-link dialog just after creating a link: the one-time URL, a copy button, and the link's expiry" src="docs/screenshots/share-link-light.png">
+</picture>
 
 Recipients get a focused page for the shared folder. They do not need a Stowcloud account.
 
-![The public share page a recipient sees: a title, the files in the shared folder, and a download button](docs/screenshots/share-public.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/share-public-dark.png">
+  <img alt="The public share page a recipient sees: a title, the files in the shared folder, and a download button" src="docs/screenshots/share-public-light.png">
+</picture>
 
 ## Give each person the right folders
 
 Accounts start without folder access. An administrator can grant a whole share or a selected subtree, then choose the allowed actions. Each account can arrange its own sidebar order.
 
-![The folder-permission dialog for an account, showing a root grant with read and download access and controls to inspect, edit, or remove it](docs/screenshots/folder-grants.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/folder-grants-dark.png">
+  <img alt="The folder-permission dialog for an account, showing a root grant with read and download access and controls to inspect, edit, or remove it" src="docs/screenshots/folder-grants-light.png">
+</picture>
 
 ## Edit text in the browser
 
 Open small text and source files without downloading them first. The editor provides syntax highlighting, line numbers, unsaved-state feedback, and conflict handling when a file changes elsewhere.
 
-![A TypeScript file open in the built-in editor with a language badge, syntax highlighting, unsaved state, save control, line numbers, and a focused editing surface](docs/screenshots/editor.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/editor-dark.png">
+  <img alt="A TypeScript file open in the built-in editor with a language badge, syntax highlighting, unsaved state, save control, line numbers, and a focused editing surface" src="docs/screenshots/editor-light.png">
+</picture>
 
 ## Recover deleted files
 
 Trash can be enabled independently for each shared folder. Restore an item when it was removed by mistake, or purge it when it is no longer needed.
 
-![The trash listing deleted items with their sizes and deletion times, and restore and purge actions](docs/screenshots/trash.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/trash-dark.png">
+  <img alt="The trash listing deleted items with their sizes and deletion times, and restore and purge actions" src="docs/screenshots/trash-light.png">
+</picture>
 
 Stowcloud is open-source software.[^license]
 

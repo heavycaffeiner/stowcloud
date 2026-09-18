@@ -161,7 +161,7 @@ export const STATIC_SEED: SeedDir[] = [
     entries: [
       fileEntry('휴가-2026-07-01.jpg', 4_213_665, 26, { preview: { available: true } }),
       fileEntry('휴가-2026-07-02.jpg', 3_982_211, 26, { preview: { available: true } }),
-      fileEntry('가족사진.png', 2_112_004, 100, { preview: { available: true } })
+      fileEntry('여행사진.png', 2_112_004, 100, { preview: { available: true } })
     ]
   },
   {

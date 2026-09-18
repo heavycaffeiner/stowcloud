@@ -12,6 +12,7 @@ import {
 import { describeApiError } from '../../lib/api/error-text'
 import { useI18n } from '../../lib/i18n/use-i18n'
 import { Button } from '../../lib/ui/Button'
+import { Select } from '../../lib/ui/Select'
 import { TextField } from '../../lib/ui/TextField'
 import { useDocumentTitle } from '../use-document-title'
 import './emergency.css'
@@ -295,10 +296,14 @@ export function EmergencyPage() {
               <dt>{t('server.app_hosts_comma_separated')}</dt><dd><code>{appHosts.join(', ') || t('emergency.none')}</code></dd>
             </dl>
             <form className="sc-emergency__form" onSubmit={(event) => { event.preventDefault(); void saveCurrentSection() }}>
-              <label className="sc-emergency__label" htmlFor="sc-emergency-section">{t('emergency.section')}</label>
-              <select id="sc-emergency-section" className="sc-emergency__select" value={selectedSection} aria-busy={sectionLoading} onChange={(event) => chooseSection(event.target.value)}>
-                {sections.map((name) => <option value={name} key={name}>{name}</option>)}
-              </select>
+              <Select
+                id="sc-emergency-section"
+                label={t('emergency.section')}
+                value={selectedSection}
+                options={sections.map((name) => ({ value: name, text: name }))}
+                disabled={sectionLoading || busy}
+                onValueChange={chooseSection}
+              />
               {sectionLoading ? <p className="sc-emergency__hint" role="status">{t('emergency.loading_section', { section: selectedSection })}</p> : null}
               <label className="sc-emergency__label" htmlFor="sc-emergency-doc">{t('emergency.stored_document')}</label>
               <textarea id="sc-emergency-doc" className="sc-emergency__doc" rows={14} spellCheck={false} disabled={sectionLoading || busy} value={documentText} onChange={(event) => setDocumentText(event.target.value)} />

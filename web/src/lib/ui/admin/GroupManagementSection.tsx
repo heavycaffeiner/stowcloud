@@ -9,6 +9,7 @@ import { Button } from '../Button'
 import { Dialog } from '../Dialog'
 import { Icon } from '../Icon'
 import { ProgressCircular } from '../ProgressCircular'
+import { Select } from '../Select'
 import { TextField } from '../TextField'
 import { VirtualList } from '../VirtualList'
 import { GrantManagementSection } from './GrantManagementSection'
@@ -252,10 +253,12 @@ export function GroupManagementSection() {
 
             {availableUsers.length ? (
               <div className="sc-admin-form__row">
-                <select className="sc-admin-select" value={addMemberId} aria-label={t('group.add_member')} onChange={(event) => setAddMemberId(event.currentTarget.value)}>
-                  <option value="">{t('group.add_member')}</option>
-                  {availableUsers.map((user) => <option key={user.id} value={user.id}>{user.display_name || user.name}</option>)}
-                </select>
+                <Select
+                  ariaLabel={t('group.add_member')}
+                  value={addMemberId}
+                  options={[{ value: '', text: t('group.add_member') }, ...availableUsers.map((user) => ({ value: String(user.id), text: user.display_name || user.name }))]}
+                  onValueChange={setAddMemberId}
+                />
                 <Button variant="tonal" disabled={!addMemberId} loading={addMember.isPending} onClick={submitAddMember}>{t('common.add')}</Button>
               </div>
             ) : null}

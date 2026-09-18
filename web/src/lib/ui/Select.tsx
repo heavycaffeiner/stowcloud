@@ -1,4 +1,4 @@
-import type { ChangeEvent } from 'react'
+import { useEffect, useRef } from 'react'
 
 export interface SelectOption {
   value: string
@@ -9,16 +9,22 @@ export interface SelectOption {
 
 export interface SelectProps {
   value?: string
-  label: string
+  label?: string
   options: SelectOption[]
   testid?: string
   id?: string
   name?: string
   disabled?: boolean
   required?: boolean
+  ariaLabel?: string
   ariaDescribedby?: string
   onValueChange?: (value: string) => void
   onChange?: (value: string) => void
+}
+
+interface SelectElement extends HTMLElement {
+  value: string
+  updateComplete?: Promise<unknown>
 }
 
 export function Select({
@@ -30,33 +36,54 @@ export function Select({
   name,
   disabled = false,
   required = false,
+  ariaLabel,
   ariaDescribedby,
   onValueChange,
   onChange
 }: SelectProps) {
-  const handleChange = (event: ChangeEvent<HTMLSelectElement>) => {
-    onValueChange?.(event.currentTarget.value)
-    onChange?.(event.currentTarget.value)
-  }
+  const ref = useRef<SelectElement | null>(null)
+
+  useEffect(() => {
+    const element = ref.current
+    if (element && element.value !== value) {
+      element.value = value
+    }
+  }, [value])
+
+  useEffect(() => {
+    const element = ref.current
+    if (!element) return
+    const handleChange = () => {
+      const next = element.value
+      onValueChange?.(next)
+      onChange?.(next)
+    }
+    element.addEventListener('change', handleChange)
+    return () => element.removeEventListener('change', handleChange)
+  }, [onValueChange, onChange])
+
   return (
-    <label className="sc-select">
-      <span className="sc-select__label">{label}</span>
-      <select
+    <div className="sc-select">
+      <mdui-select
+        ref={ref}
+        variant="outlined"
         value={value}
+        label={label}
         id={id}
         name={name}
         disabled={disabled}
         required={required}
         data-testid={testid}
+        aria-label={ariaLabel ?? label}
         aria-describedby={ariaDescribedby}
-        onChange={handleChange}
+        style={{ width: '100%' }}
       >
         {options.map((option) => (
-          <option key={option.value} value={option.value} disabled={option.disabled}>
+          <mdui-menu-item key={option.value} value={option.value} disabled={option.disabled}>
             {option.text ?? option.label ?? option.value}
-          </option>
+          </mdui-menu-item>
         ))}
-      </select>
-    </label>
+      </mdui-select>
+    </div>
   )
 }

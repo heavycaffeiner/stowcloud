@@ -476,7 +476,7 @@ describe('mockApi download (archive)', () => {
   it('archive answers a ticket pointing at the fetch route', async () => {
     // The real server names the selection and builds nothing until the
     // navigation collects it, so there is no size to report.
-    const ticket = await mockApi.archive(['/home/Photos/휴가-2026-07-01.jpg', '/home/Photos/가족사진.png'])
+    const ticket = await mockApi.archive(['/home/Photos/휴가-2026-07-01.jpg', '/home/Photos/여행사진.png'])
     expect(ticket.token.length).toBeGreaterThan(0)
     expect(ticket.url).toContain('/files/archive/fetch')
     expect(ticket.url).toContain(encodeURIComponent(ticket.token))
@@ -504,14 +504,14 @@ describe('mockApi share links', () => {
   })
 
   it('lists links scoped to a path', async () => {
-    const a = await mockApi.shareCreate({ path: '/home/Photos/가족사진.png', label: 'a' })
+    const a = await mockApi.shareCreate({ path: '/home/Photos/여행사진.png', label: 'a' })
     await mockApi.shareCreate({ path: '/home/Photos/휴가-2026-07-02.jpg', label: 'b' })
-    const scoped = await mockApi.sharesList('/home/Photos/가족사진.png')
+    const scoped = await mockApi.sharesList('/home/Photos/여행사진.png')
     expect(scoped.every((l) => l.id === a.id)).toBe(true)
   })
 
   it('patch leaves omitted fields alone and clears explicit nulls', async () => {
-    const created = await mockApi.shareCreate({ path: '/home/Photos/가족사진.png', label: '원본 라벨', max_downloads: 5 })
+    const created = await mockApi.shareCreate({ path: '/home/Photos/여행사진.png', label: '원본 라벨', max_downloads: 5 })
     const patched = await mockApi.shareUpdate(created.id, { label: null })
     expect(patched.label).toBeNull()
     expect(patched.max_downloads).toBe(5) // untouched: key was never sent
