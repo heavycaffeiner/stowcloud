@@ -444,8 +444,16 @@ mdui-chip::part(label) {
 .sc-menu-shell mdui-menu {
   min-inline-size: 200px;
   max-inline-size: min(360px, calc(100vw - 16px));
-  border-radius: var(--sc-radius-small);
+  border-radius: var(--sc-radius-medium);
+  overflow: hidden;
   box-shadow: var(--sc-elevation-3);
+}
+
+mdui-menu::part(panel),
+mdui-dropdown::part(panel),
+mdui-select::part(menu) {
+  border-radius: var(--sc-radius-medium);
+  overflow: hidden;
 }
 
 .sc-sheet-scrim {
