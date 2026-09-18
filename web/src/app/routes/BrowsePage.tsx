@@ -713,6 +713,9 @@ export function BrowsePage() {
             </span>
             <span className="sc-browse__selection-divider" aria-hidden="true" />
             <div className="sc-browse__selection-actions">
+              <button type="button" className="sc-browse__selection-action-btn sc-icon-button" aria-label={details ? t('details.hide') : t('details.show')} title={details ? t('details.hide') : t('details.show')} onClick={() => ui.setDetails(!details)}>
+                <Icon name="info" size={18} />
+              </button>
               {actions.map((action) => (
                 <button key={action.key} type="button" className="sc-browse__selection-action-btn sc-icon-button" aria-label={action.label} title={action.label} onClick={action.run}>
                   <Icon name={ACTION_ICON_NAMES[action.key] ?? 'more-vert'} size={18} />

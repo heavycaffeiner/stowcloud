@@ -278,6 +278,12 @@ mdui-button-icon::part(button):focus-visible {
 
 .sc-icon-button__tip--placed { opacity: 1; }
 
+@media (hover: none), (pointer: coarse) {
+  .sc-icon-button__tip {
+    display: none;
+  }
+}
+
 /* Reading measure prevents forms and dialogs from becoming overly wide. */
 .sc-field,
 .sc-select {
@@ -591,6 +597,9 @@ mdui-select::part(menu) {
 }
 
 .sc-breadcrumb__link {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
   border: 0;
   background: transparent;
   color: rgb(var(--mdui-color-primary));
