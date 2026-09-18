@@ -44,6 +44,7 @@ export function SetupPage() {
   const [warnings, setWarnings] = useState<SetupFinding[]>([])
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pickerAuthenticated, setPickerAuthenticated] = useState(false)
+  const [step, setStep] = useState(1)
 
   const setup = useMutation({ mutationFn: createInitialAdmin })
   const login = useMutation(loginMutation())
@@ -58,6 +59,8 @@ export function SetupPage() {
     password.length >= MIN_PASSWORD_LENGTH && passwordConfirm === password &&
     toList(appHosts).length > 0 && ((shareName.trim() === '') === (sharePath.trim() === ''))
   const canRetryShare = !login.isPending && !retryShare.isPending && shareName.trim().length > 0 && sharePath.trim().length > 0
+  const nextStep = (): void => setStep((current) => Math.min(current + 1, 3))
+  const previousStep = (): void => setStep((current) => Math.max(current - 1, 1))
 
   useDocumentTitle(t('setup.create_administrator_account'))
 
@@ -176,28 +179,43 @@ export function SetupPage() {
           </>
         ) : (
           <>
-            <TextField value={token} label={t('setup.setup_token')} autoFocus autoComplete="off" onValueChange={setToken} />
-            <TextField value={username} label={t('setup.administrator_username')} autoComplete="username" onValueChange={setUsername} />
-            <TextField value={password} label={t('common.password')} type="password" error={passwordError} autoComplete="new-password" onValueChange={setPassword} />
-            {password ? (
-              <div className="sc-auth-card__strength">
-                <mdui-linear-progress value={strength.ratio} max={1} aria-label={t('common.password_strength', { level: strength.label })}></mdui-linear-progress>
-                <span className="sc-auth-card__strength-label">{strength.label}</span>
-              </div>
+            <nav className="sc-auth-card__steps" aria-label={t('setup.create_administrator_account')}>
+              <span className={step === 1 ? 'is-active' : ''}>1. {t('setup.create_administrator_account')}</span>
+              <span className={step === 2 ? 'is-active' : ''}>2. {t('setup.how_this_server_is_reached')}</span>
+              <span className={step === 3 ? 'is-active' : ''}>3. {t('setup.first_shared_folder')}</span>
+            </nav>
+            {step === 1 ? (
+              <>
+                <TextField value={token} label={t('setup.setup_token')} autoFocus autoComplete="off" onValueChange={setToken} />
+                <TextField value={username} label={t('setup.administrator_username')} autoComplete="username" onValueChange={setUsername} />
+                <TextField value={password} label={t('common.password')} type="password" error={passwordError} autoComplete="new-password" onValueChange={setPassword} />
+                {password ? (
+                  <div className="sc-auth-card__strength">
+                    <mdui-linear-progress value={strength.ratio} max={1} aria-label={t('common.password_strength', { level: strength.label })}></mdui-linear-progress>
+                    <span className="sc-auth-card__strength-label">{strength.label}</span>
+                  </div>
+                ) : null}
+                <TextField value={passwordConfirm} label={t('setup.confirm_password')} type="password" error={confirmError} autoComplete="new-password" onValueChange={setPasswordConfirm} />
+              </>
             ) : null}
-            <TextField value={passwordConfirm} label={t('setup.confirm_password')} type="password" error={confirmError} autoComplete="new-password" onValueChange={setPasswordConfirm} />
-            <h2 className="sc-auth-card__section">{t('setup.how_this_server_is_reached')}</h2>
-            <TextField value={appHosts} label={t('server.app_hosts_comma_separated')} autoComplete="off" onValueChange={setAppHosts} />
-            <p className="sc-auth-card__hint">{t('setup.app_hosts_hint')}</p>
-            <TextField value={trustedProxies} label={t('server.trusted_proxies_comma_separated')} autoComplete="off" onValueChange={setTrustedProxies} />
-            <p className="sc-auth-card__hint">{t('setup.trusted_proxies_hint')}</p>
-            <h2 className="sc-auth-card__section">{t('setup.first_shared_folder')}</h2>
-            <p className="sc-auth-card__hint">{t('setup.first_share_hint')}</p>
-            <TextField value={shareName} label={t('common.name')} autoComplete="off" onValueChange={setShareName} />
-            <div className="sc-auth-card__path-row">
-              <TextField value={sharePath} label={t('folder_share.server_path')} autoComplete="off" onValueChange={setSharePath} />
-              <Button variant="outlined" onClick={() => setPickerOpen(true)}>{t('picker.browse_folder')}</Button>
-            </div>
+            {step === 2 ? (
+              <>
+                <TextField value={appHosts} label={t('server.app_hosts_comma_separated')} autoComplete="off" onValueChange={setAppHosts} />
+                <p className="sc-auth-card__hint">{t('setup.app_hosts_hint')}</p>
+                <TextField value={trustedProxies} label={t('server.trusted_proxies_comma_separated')} autoComplete="off" onValueChange={setTrustedProxies} />
+                <p className="sc-auth-card__hint">{t('setup.trusted_proxies_hint')}</p>
+              </>
+            ) : null}
+            {step === 3 ? (
+              <>
+                <p className="sc-auth-card__hint">{t('setup.first_share_hint')}</p>
+                <TextField value={shareName} label={t('common.name')} autoComplete="off" onValueChange={setShareName} />
+                <div className="sc-auth-card__path-row">
+                  <TextField value={sharePath} label={t('folder_share.server_path')} autoComplete="off" onValueChange={setSharePath} />
+                  <Button variant="outlined" onClick={() => setPickerOpen(true)}>{t('picker.browse_folder')}</Button>
+                </div>
+              </>
+            ) : null}
             {warnings.length > 0 ? (
               <div className="sc-auth-card__warning" role="alert">
                 {warnings.map((warning, index) => <p key={`${warning.reason}-${index}`}>{warningText(t, warning)}</p>)}
@@ -205,7 +223,8 @@ export function SetupPage() {
             ) : null}
             {errorMessage ? <p className="sc-auth-card__error" role="alert">{errorMessage}</p> : null}
             <div className="sc-auth-card__actions">
-              <Button type="submit" disabled={!canSubmit} loading={setup.isPending || login.isPending}>{t('setup.create_administrator_account')}</Button>
+              {step > 1 ? <Button variant="outlined" type="button" onClick={previousStep}>{t('common.back')}</Button> : null}
+              {step < 3 ? <Button type="button" onClick={nextStep}>{t('common.continue')}</Button> : <Button type="submit" disabled={!canSubmit} loading={setup.isPending || login.isPending}>{t('setup.create_administrator_account')}</Button>}
             </div>
             <Link className="sc-auth-card__setup-link sc-focus-ring" to="/login">{t('setup.already_have_account_sign')}</Link>
           </>

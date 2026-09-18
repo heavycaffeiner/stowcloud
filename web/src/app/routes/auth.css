@@ -13,7 +13,7 @@
 }
 
 .sc-auth-card {
-  width: min(100%, 28rem);
+  width: min(100%, 42rem);
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -121,6 +121,25 @@
 }
 
 .sc-auth-card__licence a { color: rgb(var(--mdui-color-primary)); }
+
+.sc-auth-card__steps {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 0;
+  color: var(--sc-content-secondary);
+}
+
+.sc-auth-card__steps span {
+  padding: 8px 12px;
+  border-radius: var(--sc-radius-small);
+  border: 1px solid var(--sc-outline-variant);
+}
+
+.sc-auth-card__steps .is-active {
+  color: rgb(var(--mdui-color-primary));
+  border-color: rgb(var(--mdui-color-primary));
+}
 
 .sc-auth-card__section {
   margin: 8px 0 0;
