@@ -217,3 +217,24 @@ jobs:
         if: always()
         shell: bash
         run: df -h . && du -sh go/.tools web/node_modules 2>/dev/null || true
+
+  agentic-smoke:
+    name: agentic-smoke (ubuntu-latest)
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.actor == github.repository_owner
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c # v5.0.0
+        with:
+          python-version: "3.11"
+      - name: Run agentic smoke suite
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: bash scripts/e2e-agentic.sh pr
+      - name: Upload agentic artifacts
+        if: always()
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        with:
+          name: agentic-smoke-artifacts
+          path: test-results/agentic

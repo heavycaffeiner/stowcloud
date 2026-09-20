@@ -138,4 +138,7 @@ else
   fi
 fi
 
+echo "==> deterministic playwright test runner"
+(cd web && SC_TEST_BIN="$BIN" pnpm exec playwright test --project=chromium)
+
 echo "PASS: the shipped interface signs in and reaches every surface it calls"

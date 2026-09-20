@@ -1,6 +1,8 @@
 /.ref
 /.vm
 node_modules
+.venv/
+venv/
 # The frontend builds into the embedding Go package: //go:embed cannot name a
 # path outside its own package directory, and refuses a symlink out of one.
 # Contents are ignored but the directory itself is kept (a .gitkeep), because
@@ -13,6 +15,10 @@ web/build
 *.log
 .env
 /.demo
+test-results/
+playwright-report/
+web/test-results/
+web/playwright-report/
 # The development server's scratch tree: its data directory holding a master
 # key and a TLS private key, its shares, the binary it builds and its log.
 # scripts/dev.sh makes one at the repository root and `go run` makes another
@@ -65,4 +71,5 @@ docs/internal/
 
 # Local agent and script workspaces.
 /.agents/
-/scripts/
+/scripts/*
+!/scripts/*.sh

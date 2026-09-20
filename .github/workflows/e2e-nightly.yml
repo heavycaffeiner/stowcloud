@@ -1,0 +1,90 @@
+name: e2e-nightly
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # Daily at 02:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "24"
+  GO_VERSION: "1.26"
+
+jobs:
+  deterministic-matrix:
+    name: deterministic-matrix (${{ matrix.project }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [chromium, firefox, webkit]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: go/go.sum
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Enable pnpm
+        run: corepack enable
+
+      - name: Build frontend and install browser
+        run: |
+          cd web
+          pnpm install --frozen-lockfile
+          pnpm build
+          pnpm exec playwright install --with-deps ${{ matrix.project }}
+
+      - name: Build sc-engine
+        run: |
+          cd go
+          CGO_ENABLED=0 go build -tags embed_ui -o /tmp/sc-engine-e2e ./cmd/sc-engine
+
+      - name: Run Playwright deterministic E2E (${{ matrix.project }})
+        env:
+          SC_TEST_BIN: /tmp/sc-engine-e2e
+        run: |
+          cd web
+          pnpm exec playwright test --project=${{ matrix.project }}
+
+      - name: Upload Playwright artifacts
+        if: always()
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        with:
+          name: playwright-artifacts-${{ matrix.project }}
+          path: web/test-results
+
+  agentic-exploration-nightly:
+    name: agentic-exploration (nightly lane)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: go/go.sum
+      - uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c # v5.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Run Jev agentic nightly exploration
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: bash scripts/e2e-agentic.sh nightly
+
+      - name: Upload agentic coverage and traces
+        if: always()
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        with:
+          name: agentic-nightly-artifacts
+          path: test-results/agentic

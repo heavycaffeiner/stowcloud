@@ -18,13 +18,16 @@
     "test": "vitest run",
     "test:alignment": "node e2e/alignment.spec.mjs",
     "test:virtual-scroll": "node e2e/virtual-scroll.spec.mjs",
+    "test:e2e": "playwright test",
     "test:watch": "vitest",
     "lint:i18n": "node tools/i18n-check.mjs",
     "check:bundle-size": "node tools/check-bundle-size.mjs"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@fontsource-variable/google-sans-flex": "^5.3.1",
     "@iconify/types": "^2.0.0",
+    "@playwright/test": "1.62.1",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^24.10.0",
     "@types/react": "^19.3.0",
