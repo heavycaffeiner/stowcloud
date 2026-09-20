@@ -2,7 +2,6 @@
 name = "stowcloud-jev-e2e"
 version = "0.1.0"
 description = "Jev-Ultrafast agentic exploration runtime for Stowcloud"
-readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.7.0",
@@ -18,3 +17,6 @@ dev = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["stowcloud_agent"]

@@ -9,6 +9,7 @@ from .oracles import (
     FileNotExistsOnDiskOracle,
     AnyFileExistsOnDiskOracle,
     UrlMatchesOracle,
+    SearchCompletedOracle,
     ApiStatusOracle,
     CompoundOracle,
 )
@@ -132,7 +133,7 @@ def build_search_exploration_goal(query: str) -> GoalContract:
         description=f"Open search interface: click the '검색' (Search) button to open search for '{query}'.",
         starting_route="/b/docs",
         parameters={"search_term": query},
-        oracle=UrlMatchesOracle("/search"),
+        oracle=SearchCompletedOracle(query),
         allowed_actions={ActionKind.CLICK, ActionKind.TYPE_TEXT, ActionKind.PRESS_KEY, ActionKind.WAIT, ActionKind.DONE},
         max_actions=6,
     )

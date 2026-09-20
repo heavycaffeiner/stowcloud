@@ -135,15 +135,28 @@ class JevRunner:
         else:
             endpoint = "https://openrouter.ai/api/alpha/decisions"
 
-        # Build candidate choices filtered by goal's allowed actions
         criteria: dict[str, str] = {}
-        for el in state.elements:
+        search_inputs = [
+            element
+            for element in state.elements
+            if element.tag == "input" and any(label in element.name.lower() for label in ("search", "검색"))
+        ]
+        if goal.name == "search_exploration":
+            candidate_elements = search_inputs or [
+                element
+                for element in state.elements
+                if any(label == element.name.lower() for label in ("search", "검색"))
+            ]
+        else:
+            candidate_elements = state.elements
+
+        for el in candidate_elements:
             if not el.enabled:
                 continue
             if el.role == "file":
                 if ActionKind.SET_FILES in goal.allowed_actions:
                     criteria[str(el.id)] = f"Upload fixture using [{el.id}] '{el.name}'"
-            elif el.role in ("textbox", "searchbox"):
+            elif el.role in ("textbox", "searchbox") or el.tag in ("input", "textarea", "mdui-text-field"):
                 if ActionKind.TYPE_TEXT in goal.allowed_actions:
                     criteria[str(el.id)] = f"Enter text into [{el.id}] '{el.name}'"
             elif ActionKind.CLICK in goal.allowed_actions:
@@ -159,7 +172,9 @@ class JevRunner:
         el_names_lower = [e.name.lower() for e in state.elements if e.enabled]
         target_file = (goal.parameters.get("old_name") or goal.parameters.get("file_name") or "sample-1k.txt").lower()
 
-        if any(any(k in n for k in ("새 폴더", "new folder", "폴더 생성", "폴더 추가")) for n in el_names_lower):
+        if goal.name == "search_exploration" and search_inputs:
+            instructions += f"The search interface is open. Enter the query '{goal.parameters.get('search_term', '')}'."
+        elif any(any(k in n for k in ("새 폴더", "new folder", "폴더 생성", "폴더 추가")) for n in el_names_lower):
             instructions += "The create menu is open. Choose the control to create a new folder."
         elif any(n in ("만들기", "create", "생성") for n in el_names_lower):
             instructions += f"The folder dialog is open. Confirm creation or enter the folder name '{goal.parameters.get('folder_name', 'jev-folder')}'."
@@ -269,6 +284,8 @@ class JevRunner:
         oracle_data: dict[str, Any] = {}
 
         base_url = context.get("base_url", "https://localhost:18900")
+        context["visible_elements"] = []
+        context["typed_texts"] = []
 
         if self.cdp:
             target_url = f"{base_url.rstrip('/')}{goal.starting_route}"
@@ -287,7 +304,10 @@ class JevRunner:
                 if self.cdp:
                     state = self.cdp.extract_live_browser_state()
                     context["current_url"] = state.url
-                    print(f"DEBUG {goal.name} elements: {[f'[{e.id}] {e.name}' for e in state.elements]}")
+                    context["visible_elements"] = [
+                        {"tag": element.tag, "role": element.role, "name": element.name}
+                        for element in state.elements
+                    ]
                 else:
                     base_elements = [
                         InteractiveElement(id=1, tag="button", role="button", name="새로 만들기 (New)"),
@@ -332,6 +352,8 @@ class JevRunner:
                 action = self.recover_low_confidence(state, action)
                 validate_action(action, state)
                 action_count += 1
+                if action.kind == ActionKind.TYPE_TEXT and action.text:
+                    context.setdefault("typed_texts", []).append(action.text)
 
                 # Execute action over CDP if live
                 if self.cdp and action.kind == ActionKind.SET_FILES:
@@ -357,10 +379,11 @@ class JevRunner:
                 elif action.kind == ActionKind.WAIT:
                     time.sleep(0.5)
 
+                target = state.get_element_by_id(action.element_id) if action.element_id else None
                 trace.add_step(
                     url=state.url,
                     action=action.kind.value,
-                    target=str(action.element_id) if action.element_id else None,
+                    target=f"[{target.id}] {target.name}" if target else None,
                     text=action.text,
                     confidence=action.confidence,
                     duration_ms=45,

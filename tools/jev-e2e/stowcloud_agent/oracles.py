@@ -46,6 +46,37 @@ class UrlMatchesOracle(DeterministicOracle):
         )
 
 
+class SearchCompletedOracle(DeterministicOracle):
+    def __init__(self, query: str) -> None:
+        self.query = query
+
+    def evaluate(self, context: dict[str, Any]) -> OracleResult:
+        current_url = context.get("current_url", "")
+        elements = context.get("visible_elements", [])
+        typed_texts = context.get("typed_texts", [])
+        search_surface_visible = "/search" in current_url or any(
+            element.get("tag") == "input"
+            and any(label in element.get("name", "").lower() for label in ("search", "검색"))
+            for element in elements
+        )
+        query_entered = self.query in typed_texts
+        if search_surface_visible and query_entered:
+            return OracleResult(
+                passed=True,
+                reason=f"Search surface accepted query '{self.query}'",
+                details={"url": current_url, "query": self.query},
+            )
+        return OracleResult(
+            passed=False,
+            reason=f"Search surface did not accept query '{self.query}'",
+            details={
+                "url": current_url,
+                "query_entered": query_entered,
+                "search_surface_visible": search_surface_visible,
+            },
+        )
+
+
 class ApiStatusOracle(DeterministicOracle):
     def __init__(self, endpoint_path: str, expected_status: int = 200) -> None:
         self.endpoint_path = endpoint_path

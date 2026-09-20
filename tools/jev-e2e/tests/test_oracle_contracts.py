@@ -10,6 +10,7 @@ from stowcloud_agent.oracles import (
     CompoundOracle,
     FileExistsOnDiskOracle,
     FileNotExistsOnDiskOracle,
+    SearchCompletedOracle,
 )
 from stowcloud_agent.runner import JevRunner
 
@@ -71,6 +72,24 @@ class TestOracleContracts(unittest.TestCase):
 
             res_fail = oracle.evaluate({"share_dir": tmpdir})
             self.assertFalse(res_fail.passed)
+
+    def test_search_oracle_accepts_desktop_sheet_and_query(self):
+        oracle = SearchCompletedOracle("a.txt")
+        result = oracle.evaluate({
+            "current_url": "https://localhost/b/docs",
+            "visible_elements": [{"tag": "input", "role": "input", "name": "검색"}],
+            "typed_texts": ["a.txt"],
+        })
+        self.assertTrue(result.passed)
+
+    def test_search_oracle_rejects_unentered_query(self):
+        oracle = SearchCompletedOracle("a.txt")
+        result = oracle.evaluate({
+            "current_url": "https://localhost/search",
+            "visible_elements": [],
+            "typed_texts": [],
+        })
+        self.assertFalse(result.passed)
 
 
 if __name__ == "__main__":
