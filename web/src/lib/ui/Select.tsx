@@ -58,8 +58,15 @@ export function Select({
       onValueChange?.(next)
       onChange?.(next)
     }
+    const handleClose = (event: Event) => {
+      event.stopPropagation()
+    }
     element.addEventListener('change', handleChange)
-    return () => element.removeEventListener('change', handleChange)
+    element.addEventListener('close', handleClose)
+    return () => {
+      element.removeEventListener('change', handleChange)
+      element.removeEventListener('close', handleClose)
+    }
   }, [onValueChange, onChange])
 
   return (

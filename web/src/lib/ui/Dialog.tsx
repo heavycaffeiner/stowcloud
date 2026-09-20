@@ -40,7 +40,9 @@ export function Dialog({
   useEffect(() => {
     const element = ref.current
     if (!element) return
-    const onNativeClose = () => {
+    const onNativeClose = (event: Event) => {
+      if (event.target !== element) return
+      event.stopPropagation()
       closeHandler?.()
       queueMicrotask(() => {
         const target = opener.current
