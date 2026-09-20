@@ -5,6 +5,7 @@ package lifecycle_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -56,21 +57,17 @@ func serve(t *testing.T, e *lifecycle.Engine) string {
 	task.Go(context.Background(), "test listener", func() { served <- app.Listener(ln) })
 
 	t.Cleanup(func() {
-		// Bounded, because Shutdown waits for every open connection and the
-		// test client keeps one alive: measured, an unbounded wait hangs the
-		// package for the client's full 90-second idle timeout on roughly one
-		// run in fifteen.
-		//
-		// The budget is generous rather than tight. One package run starts
-		// over a hundred of these, and under a full-tree run with race
-		// instrumentation and eight packages in parallel a two-second budget
-		// expired on its own: the failure was a shutdown timeout, not a test
-		// finding anything. A shutdown that genuinely hangs still fails,
-		// because this is far below the client's idle timeout.
 		if serr := app.ShutdownWithTimeout(shutdownBudget); serr != nil {
 			t.Errorf("shutting down: %v", serr)
 		}
-		<-served
+		if lerr := ln.Close(); lerr != nil && !errors.Is(lerr, net.ErrClosed) {
+			t.Errorf("closing the listener: %v", lerr)
+		}
+		select {
+		case <-served:
+		case <-time.After(shutdownBudget):
+			t.Error("the test listener did not stop after shutdown")
+		}
 	})
 
 	return "http://" + ln.Addr().String()
