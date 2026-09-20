@@ -129,9 +129,27 @@ echo "==> Launching isolated Chrome on CDP port $CHROME_PORT"
   --no-first-run \
   --no-default-browser-check \
   --ignore-certificate-errors \
-  "about:blank" >/dev/null 2>&1 &
+  "about:blank" >"$DIR/chrome.log" 2>&1 &
 CHROME_PID=$!
-sleep 1.0
+
+CHROME_DEADLINE=$(( SECONDS + 15 ))
+CHROME_READY=0
+while [ "$SECONDS" -lt "$CHROME_DEADLINE" ]; do
+  if curl -fs "http://127.0.0.1:$CHROME_PORT/json/version" >/dev/null; then
+    CHROME_READY=1
+    break
+  fi
+  if ! kill -0 "$CHROME_PID" 2>/dev/null; then
+    break
+  fi
+  sleep 0.2
+done
+
+if [ "$CHROME_READY" -ne 1 ]; then
+  echo "FATAL: Chrome failed to expose CDP on port $CHROME_PORT" >&2
+  cat "$DIR/chrome.log" >&2
+  exit 1
+fi
 
 # 6. Run Jev agent runner
 echo "==> Executing Jev autonomous agent runner"
