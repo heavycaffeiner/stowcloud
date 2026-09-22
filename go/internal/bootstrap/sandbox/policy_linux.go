@@ -111,8 +111,8 @@ func outboundGrants() []securitylinux.Grant {
 		{Path: "/etc/resolv.conf", Access: securitylinux.RightReadFile},
 		{Path: "/etc/hosts", Access: securitylinux.RightReadFile},
 		{Path: "/etc/nsswitch.conf", Access: securitylinux.RightReadFile},
-		{Path: "/etc/ssl/certs", Access: securitylinux.RightReadFile | securitylinux.RightReadDirectory | securitylinux.RightExecute},
-		{Path: "/etc/pki/tls/certs", Access: securitylinux.RightReadFile | securitylinux.RightReadDirectory | securitylinux.RightExecute},
+		{Path: "/etc/ssl/certs", Access: securitylinux.RightReadFile | securitylinux.RightReadDirectory},
+		{Path: "/etc/pki/tls/certs", Access: securitylinux.RightReadFile | securitylinux.RightReadDirectory},
 	}
 	out := make([]securitylinux.Grant, 0, len(candidates))
 	for _, grant := range candidates {
