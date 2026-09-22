@@ -11,8 +11,8 @@ require (
 	github.com/gin-gonic/gin v1.12.0
 	github.com/gogs/chardet v0.0.0-20211120154057-b7413eaefb8f
 	github.com/gorilla/websocket v1.5.3
-	github.com/heavycaffeiner/hanami v0.0.0
-	github.com/heavycaffeiner/hanami/gin v0.0.0-20260921061028-36b2899fd353
+	github.com/heavycaffeiner/hanami v0.1.0
+	github.com/heavycaffeiner/hanami/gin v0.1.0
 	github.com/stowcloud/durablefs v0.1.0
 	github.com/stowcloud/namesearch v0.1.0
 	go.uber.org/fx v1.24.0
@@ -23,8 +23,6 @@ require (
 	lukechampine.com/blake3 v1.4.1
 	modernc.org/sqlite v1.58.0
 )
-
-replace github.com/heavycaffeiner/hanami v0.0.0 => github.com/heavycaffeiner/hanami v0.0.0-20260921061028-36b2899fd353
 
 require (
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.20 // indirect
