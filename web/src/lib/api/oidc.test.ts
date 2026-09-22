@@ -15,7 +15,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { oidcErrorMessage, startOidcLogin } from './oidc'
 
 /** Every code the callback can actually put in `?oidc_error=`, taken from the
- *  handlers that emit one (`go/engine/lifecycle/oidc.go`). An
+ *  handlers that emit one (`go/internal/app/oidc.go`). An
  *  expired flow and an unknown state are both `oidc.bad_state` there, so
  *  neither `oidc.expired` nor `oidc.already_linked` is in this list. The
  *  defect-15 discovery-time refusals (HS256-only, no usable client

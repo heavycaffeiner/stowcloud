@@ -40,6 +40,10 @@ for (const scope of ['@codemirror', '@lezer']) {
 
 const LICENSE_FILE = /^(licen[sc]e|copying|notice|unlicense)/i
 
+const LICENSE_FALLBACKS = new Map([
+  ['@ktibow/iconset-material-symbols', 'web/licenses/material-design-icons-Apache-2.0.txt'],
+])
+
 /** All licence-ish files in a directory, as {name, text}. */
 function licenseTexts(dir) {
   if (!existsSync(dir)) return []
@@ -112,6 +116,10 @@ for (const name of JS_RUNTIME.sort()) {
   if (!existsSync(pj)) throw new Error(`${name}: not installed, run pnpm install in web/ first`)
   const j = JSON.parse(readFileSync(pj, 'utf8'))
   const files = licenseTexts(dir)
+  const fallback = LICENSE_FALLBACKS.get(name)
+  if (!files.length && fallback) {
+    files.push({ name: fallback, text: readFileSync(fallback, 'utf8').replace(/\r\n/g, '\n').trim() })
+  }
   const repo = typeof j.repository === 'string' ? j.repository : j.repository?.url || ''
   rows.push({
     eco: 'npm',

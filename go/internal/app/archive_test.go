@@ -1,0 +1,780 @@
+//go:build linux
+
+package app_test
+
+import (
+	"archive/zip"
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"testing"
+
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
+)
+
+// An archive of a subtree reads back through the standard library.
+//
+// Verified with archive/zip rather than with the writer that produced it: a
+// zip that only its own author can open is not a zip, and the thing a person
+// does with this response is hand it to their operating system.
+func TestAnArchiveOfASubtree(t *testing.T) {
+	t.Parallel()
+	base, sess, share := contentShare(t, everyPerm(), []byte("root file"))
+
+	// Something to put in it, including a nested directory so the entry
+	// names have to carry a path.
+	if status, body := upload(t, base, sess, "/"+share+"/sub/one.txt", []byte("first")); status != http.StatusOK {
+		t.Fatalf("writing one.txt answered %d: %s", status, body)
+	}
+	if status, body := upload(t, base, sess, "/"+share+"/sub/two.txt", []byte("second")); status != http.StatusOK {
+		t.Fatalf("writing two.txt answered %d: %s", status, body)
+	}
+
+	status, header, body := fetchArchive(t, base, sess,
+		map[string]any{"paths": []string{"/" + share + "/sub"}, "name": "bundle.zip"})
+	if status != http.StatusOK {
+		t.Fatalf("archiving answered %d: %s", status, body)
+	}
+	if ct := header.Get("Content-Type"); ct != "application/zip" {
+		t.Errorf("the archive is typed %q", ct)
+	}
+	if cd := header.Get("Content-Disposition"); !strings.Contains(cd, "bundle.zip") {
+		t.Errorf("the disposition is %q, which does not name the file", cd)
+	}
+
+	zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		t.Fatalf("the standard library cannot read the archive: %v", err)
+	}
+
+	got := map[string]string{}
+	for _, f := range zr.File {
+		if strings.HasSuffix(f.Name, "/") {
+			continue
+		}
+		rc, oerr := f.Open()
+		if oerr != nil {
+			t.Fatalf("opening %s: %v", f.Name, oerr)
+		}
+		var buf bytes.Buffer
+		if _, cerr := buf.ReadFrom(rc); cerr != nil {
+			t.Fatalf("reading %s: %v", f.Name, cerr)
+		}
+		if cerr := rc.Close(); cerr != nil {
+			t.Errorf("closing %s: %v", f.Name, cerr)
+		}
+		got[f.Name] = buf.String()
+	}
+
+	if len(got) != 2 {
+		t.Fatalf("the archive holds %d files: %v", len(got), keysOf(got))
+	}
+	for name, want := range map[string]string{"sub/one.txt": "first", "sub/two.txt": "second"} {
+		if got[name] != want {
+			t.Errorf("%s holds %q, want %q", name, got[name], want)
+		}
+	}
+}
+
+// keysOf lists a map's keys, sorted, for a failure message.
+func keysOf(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// postRaw sends JSON and returns the whole response, body included, so a
+// binary answer survives.
+func postRaw(t *testing.T, url string, sess session, body any) (int, http.Header, []byte) {
+	t.Helper()
+
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("encoding: %v", err)
+	}
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(encoded))
+	if err != nil {
+		t.Fatalf("building: %v", err)
+	}
+	sess.attach(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := testClient().Do(req)
+	if err != nil {
+		t.Fatalf("requesting: %v", err)
+	}
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	}()
+	return resp.StatusCode, resp.Header, readAll(t, resp)
+}
+
+// fetchArchive asks for an archive and follows the ticket to its bytes.
+//
+// Two steps, because that is the surface: the post names the selection and
+// the get streams it. A test asserting on the archive itself does not care
+// which request produced the bytes, so it goes through here.
+func fetchArchive(t *testing.T, base string, sess session, body any) (int, http.Header, []byte) {
+	t.Helper()
+
+	status, header, raw := postRaw(t, base+"/api/v1/files/archive", sess, body)
+	if status != http.StatusOK {
+		return status, header, raw
+	}
+
+	var ticket struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal(raw, &ticket); err != nil {
+		t.Fatalf("the ticket does not decode: %s", raw)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, base+ticket.URL, nil)
+	if err != nil {
+		t.Fatalf("building the fetch: %v", err)
+	}
+	sess.attach(req)
+	res, err := testClient().Do(req)
+	if err != nil {
+		t.Fatalf("fetching the archive: %v", err)
+	}
+	defer func() {
+		if cerr := res.Body.Close(); cerr != nil {
+			t.Errorf("closing the fetch: %v", cerr)
+		}
+	}()
+	got, rerr := io.ReadAll(res.Body)
+	if rerr != nil {
+		t.Fatalf("reading the archive: %v", rerr)
+	}
+	return res.StatusCode, res.Header, got
+}
+
+// The archive arrives as a stream rather than as a length the client waits
+// for.
+//
+// Streaming is what lets a folder of any size download at all: the response
+// starts before the walk finishes, so a large selection costs the server
+// nothing to hold and the browser saves bytes as they arrive. The cost is a
+// download with no declared length, which is the trade this surface takes.
+func TestAnArchiveIsStreamed(t *testing.T) {
+	t.Parallel()
+	base, sess, share := contentShare(t, everyPerm(), []byte("root file"))
+
+	if status, _ := upload(t, base, sess, "/"+share+"/sub/one.txt", []byte("first")); status != http.StatusOK {
+		t.Fatal("writing the file failed")
+	}
+
+	status, header, body := fetchArchive(t, base, sess,
+		map[string]any{"paths": []string{"/" + share + "/sub"}, "name": "bundle.zip"})
+	if status != http.StatusOK {
+		t.Fatalf("archiving answered %d: %s", status, body)
+	}
+	if ct := header.Get("Content-Type"); ct != "application/zip" {
+		t.Errorf("the archive is typed %q", ct)
+	}
+	if got := header.Get("Content-Length"); got != "" {
+		t.Errorf("the response declares a length of %q, which a stream cannot know", got)
+	}
+	if _, err := zip.NewReader(bytes.NewReader(body), int64(len(body))); err != nil {
+		t.Fatalf("the stream is not a readable archive: %v", err)
+	}
+}
+
+// A ticket is not a link anybody can follow.
+//
+// It is a capability, and it lands in a browser's history and download list.
+// Without a credential on the fetch, sharing that history would share the
+// files.
+func TestAnArchiveTicketNeedsACredential(t *testing.T) {
+	t.Parallel()
+	base, sess, share := contentShare(t, everyPerm(), []byte("private"))
+
+	status, _, raw := postRaw(t, base+"/api/v1/files/archive", sess,
+		map[string]any{"paths": []string{"/" + share}, "name": "mine.zip"})
+	if status != http.StatusOK {
+		t.Fatalf("archiving answered %d: %s", status, raw)
+	}
+	var ticket struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal(raw, &ticket); err != nil {
+		t.Fatalf("the ticket does not decode: %s", raw)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, base+ticket.URL, nil)
+	if err != nil {
+		t.Fatalf("building the fetch: %v", err)
+	}
+	res, err := testClient().Do(req)
+	if err != nil {
+		t.Fatalf("fetching the archive: %v", err)
+	}
+	defer func() {
+		if cerr := res.Body.Close(); cerr != nil {
+			t.Errorf("closing the fetch: %v", cerr)
+		}
+	}()
+	if res.StatusCode == http.StatusOK {
+		t.Error("an archive was fetched with no credential")
+	}
+}
+
+// A ticket does not outlive the grant it was minted under.
+//
+// The mint checks permission and the fetch happens later, so without a second
+// check a revocation between them would be a window in which a token still
+// reads files the account may no longer reach. The fetch re-resolves for
+// exactly this.
+func TestARevokedGrantRefusesTheFetch(t *testing.T) {
+	t.Parallel()
+	base, sess, share, _, e, grant := contentShareGrant(t, everyPerm(), []byte("private"))
+
+	status, _, raw := postRaw(t, base+"/api/v1/files/archive", sess,
+		map[string]any{"paths": []string{"/" + share}, "name": "mine.zip"})
+	if status != http.StatusOK {
+		t.Fatalf("archiving answered %d: %s", status, raw)
+	}
+	var ticket struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal(raw, &ticket); err != nil {
+		t.Fatalf("the ticket does not decode: %s", raw)
+	}
+
+	if err := e.Core.DeleteGrant(context.Background(), grant); err != nil {
+		t.Fatalf("revoking the grant: %v", err)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, base+ticket.URL, nil)
+	if err != nil {
+		t.Fatalf("building the fetch: %v", err)
+	}
+	sess.attach(req)
+	res, err := testClient().Do(req)
+	if err != nil {
+		t.Fatalf("fetching the archive: %v", err)
+	}
+	defer func() {
+		if cerr := res.Body.Close(); cerr != nil {
+			t.Errorf("closing the fetch: %v", cerr)
+		}
+	}()
+	if res.StatusCode == http.StatusOK {
+		t.Error("a revoked account still fetched the archive")
+	}
+}
+
+// An archive of several roots holds all of them.
+func TestAnArchiveOfSeveralPaths(t *testing.T) {
+	t.Parallel()
+	base, sess, share := contentShare(t, everyPerm(), []byte("the root file"))
+
+	if status, _ := upload(t, base, sess, "/"+share+"/sub/nested.txt", []byte("nested")); status != http.StatusOK {
+		t.Fatal("writing the nested file failed")
+	}
+
+	status, _, body := fetchArchive(t, base, sess, map[string]any{
+		"paths": []string{"/" + share + "/doc.bin", "/" + share + "/sub"},
+	})
+	if status != http.StatusOK {
+		t.Fatalf("archiving answered %d: %s", status, body)
+	}
+
+	zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		t.Fatalf("the archive does not read: %v", err)
+	}
+
+	var names []string
+	for _, f := range zr.File {
+		names = append(names, f.Name)
+	}
+	sort.Strings(names)
+
+	var sawRoot, sawNested bool
+	for _, n := range names {
+		if n == "doc.bin" {
+			sawRoot = true
+		}
+		if n == "sub/nested.txt" {
+			sawNested = true
+		}
+	}
+	if !sawRoot || !sawNested {
+		t.Errorf("the archive holds %v, missing one of the two roots", names)
+	}
+}
+
+// A selection holding one path the caller cannot read is refused whole.
+//
+// A partial archive is worse than none: the person saves it, sees files, and
+// has no way to know which ones are missing.
+func TestAnArchiveWithAnUnreadablePathIsRefused(t *testing.T) {
+	t.Parallel()
+	base, sess, share := contentShare(t, everyPerm(), []byte("readable"))
+
+	status, _, body := postRaw(t, base+"/api/v1/files/archive", sess, map[string]any{
+		"paths": []string{"/" + share + "/doc.bin", "/nosuchshare/secret.txt"},
+	})
+	if status == http.StatusOK {
+		t.Fatalf("an archive was built over an unreadable path: %d bytes", len(body))
+	}
+}
+
+// An empty selection is refused rather than producing an empty zip.
+func TestAnEmptyArchiveSelectionIsRefused(t *testing.T) {
+	t.Parallel()
+	base, sess, _ := contentShare(t, everyPerm(), []byte("x"))
+
+	status, _, _ := postRaw(t, base+"/api/v1/files/archive", sess,
+		map[string]any{"paths": []string{}})
+	if status == http.StatusOK {
+		t.Error("an empty selection produced an archive")
+	}
+}
+
+// A filename that could inject a header field is refused.
+//
+// The name reaches Content-Disposition. A quote or a newline in it could end
+// the field and start another, which is a header the client never asked for.
+func TestAnArchiveNameCannotInjectAHeader(t *testing.T) {
+	t.Parallel()
+	base, sess, share := contentShare(t, everyPerm(), []byte("x"))
+
+	for _, name := range []string{
+		`evil".zip`,
+		"line\r\nX-Injected: yes",
+		"line\nX-Injected: yes",
+		"back\\slash.zip",
+		"a/b.zip",
+		strings.Repeat("a", 300),
+	} {
+		status, header, _ := postRaw(t, base+"/api/v1/files/archive", sess,
+			map[string]any{"paths": []string{"/" + share + "/doc.bin"}, "name": name})
+		if status == http.StatusOK {
+			t.Errorf("the name %q was accepted", name)
+		}
+		if header.Get("X-Injected") != "" {
+			t.Fatalf("the name %q injected a header field", name)
+		}
+	}
+}
+
+// An absent name still produces something a person can open.
+func TestAnArchiveWithoutANameGetsADefault(t *testing.T) {
+	t.Parallel()
+	base, sess, share := contentShare(t, everyPerm(), []byte("x"))
+
+	status, header, _ := fetchArchive(t, base, sess,
+		map[string]any{"paths": []string{"/" + share + "/doc.bin"}})
+	if status != http.StatusOK {
+		t.Fatalf("answered %d", status)
+	}
+	cd := header.Get("Content-Disposition")
+	if !strings.Contains(cd, ".zip") {
+		t.Errorf("the disposition %q names no zip, so a browser saves an extensionless file", cd)
+	}
+}
+
+// A non-ASCII archive name uses the shared validated attachment builder for
+// both its ASCII fallback and its UTF-8 form.
+func TestAnArchiveUsesSharedContentDisposition(t *testing.T) {
+	t.Parallel()
+	base, sess, share := contentShare(t, everyPerm(), []byte("x"))
+
+	status, header, _ := fetchArchive(t, base, sess,
+		map[string]any{"paths": []string{"/" + share + "/doc.bin"}, "name": "café"})
+	if status != http.StatusOK {
+		t.Fatalf("answered %d", status)
+	}
+	const want = `attachment; filename="caf_.zip"; filename*=UTF-8''caf%C3%A9.zip`
+	if got := header.Get("Content-Disposition"); got != want {
+		t.Errorf("the disposition is %q, want %q", got, want)
+	}
+}
+
+// The listing reads an existing zip's own directory.
+func TestListingInsideAnArchive(t *testing.T) {
+	t.Parallel()
+	base, sess, share := contentShare(t, everyPerm(), []byte("unused"))
+
+	// Built with the standard library, so the listing is proven against a zip
+	// this tree did not write.
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for name, body := range map[string]string{
+		"readme.txt":     "hello",
+		"docs/guide.txt": "a longer body for a different size",
+	} {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, werr := w.Write([]byte(body)); werr != nil {
+			t.Fatal(werr)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if status, body := upload(t, base, sess, "/"+share+"/bundle.zip", buf.Bytes()); status != http.StatusOK {
+		t.Fatalf("uploading the zip answered %d: %s", status, body)
+	}
+
+	status, body := authed(t, http.MethodGet,
+		base+"/api/v1/files/archive/list?path="+urlEscape("/"+share+"/bundle.zip"), sess)
+	if status != http.StatusOK {
+		t.Fatalf("listing answered %d: %s", status, body)
+	}
+
+	var listing map[string]any
+	if err := json.Unmarshal(body, &listing); err != nil {
+		t.Fatalf("decoding %s: %v", body, err)
+	}
+	entries, ok := listing["entries"].([]any)
+	if !ok {
+		t.Fatalf("no entries in %s", body)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("the listing holds %d entries, want 2: %s", len(entries), body)
+	}
+
+	// Sizes are decimal strings, since an archive can hold a member past
+	// 2^53 and a JavaScript number would round it.
+	for _, raw := range entries {
+		entry, isMap := raw.(map[string]any)
+		if !isMap {
+			t.Fatalf("an entry is not an object: %v", raw)
+		}
+		if _, isString := entry["size"].(string); !isString {
+			t.Errorf("the size is %T, not a decimal string", entry["size"])
+		}
+	}
+	if _, isString := listing["total_uncompressed"].(string); !isString {
+		t.Errorf("the total is %T, not a decimal string", listing["total_uncompressed"])
+	}
+}
+
+// A file that is not an archive answers exactly as an absent one does.
+//
+// Whether a file this account cannot see happens to be a zip is not something
+// the answer should disclose.
+func TestListingANonArchiveIsIndistinguishableFromAbsence(t *testing.T) {
+	t.Parallel()
+	base, sess, share := contentShare(t, everyPerm(), []byte("not a zip at all"))
+
+	notZip, notZipBody := authed(t, http.MethodGet,
+		base+"/api/v1/files/archive/list?path="+urlEscape("/"+share+"/doc.bin"), sess)
+	absent, absentBody := authed(t, http.MethodGet,
+		base+"/api/v1/files/archive/list?path="+urlEscape("/"+share+"/nothing.zip"), sess)
+
+	if notZip != absent {
+		t.Errorf("a non-archive answers %d and an absent file answers %d", notZip, absent)
+	}
+	if string(notZipBody) != string(absentBody) {
+		t.Errorf("the two answers differ:\n %s\n %s", notZipBody, absentBody)
+	}
+}
+
+// An archive entry whose name would escape is not written.
+//
+// The names come from the tree, so this is defence in depth rather than the
+// only guard, but an archive carrying ../ is one that overwrites files
+// outside the directory a person extracted it into.
+func TestArchiveEntryNamesDoNotEscape(t *testing.T) {
+	t.Parallel()
+	base, sess, share := contentShare(t, everyPerm(), []byte("root"))
+
+	if status, _ := upload(t, base, sess, "/"+share+"/sub/inner.txt", []byte("inner")); status != http.StatusOK {
+		t.Fatal("writing failed")
+	}
+
+	status, _, body := fetchArchive(t, base, sess,
+		map[string]any{"paths": []string{"/" + share}})
+	if status != http.StatusOK {
+		t.Fatalf("answered %d", status)
+	}
+
+	zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		t.Fatalf("the archive does not read: %v", err)
+	}
+	for _, f := range zr.File {
+		if strings.HasPrefix(f.Name, "/") || strings.Contains(f.Name, "..") {
+			t.Errorf("the archive holds an escaping name %q", f.Name)
+		}
+		if filepath.IsAbs(f.Name) {
+			t.Errorf("the archive holds an absolute name %q", f.Name)
+		}
+	}
+}
+
+// An empty directory survives the round trip.
+//
+// A zip has no directory concept beyond a zero-length member ending in a
+// slash. Without one the directory vanishes on extraction, and a person who
+// archived a tree gets back a different tree.
+func TestAnEmptyDirectorySurvivesTheArchive(t *testing.T) {
+	t.Parallel()
+	base, sess, share := contentShare(t, everyPerm(), []byte("root"))
+
+	status, body := post(t, base+"/api/v1/files/mkdir", sess,
+		map[string]string{"path": "/" + share + "/empty"})
+	if status != http.StatusCreated {
+		t.Fatalf("mkdir answered %d: %s", status, body)
+	}
+
+	code, _, archived := fetchArchive(t, base, sess,
+		map[string]any{"paths": []string{"/" + share + "/empty"}})
+	if code != http.StatusOK {
+		t.Fatalf("archiving answered %d", code)
+	}
+
+	zr, err := zip.NewReader(bytes.NewReader(archived), int64(len(archived)))
+	if err != nil {
+		t.Fatalf("the archive does not read: %v", err)
+	}
+	var sawDir bool
+	for _, f := range zr.File {
+		if strings.HasSuffix(f.Name, "/") {
+			sawDir = true
+		}
+	}
+	if !sawDir {
+		t.Error("the empty directory is not in the archive, so extracting loses it")
+	}
+}
+
+// One unreadable file does not lose the rest of the archive.
+//
+// A person selecting a folder gets what they can read. Failing the whole
+// archive over one entry means a single stray permission bit makes a folder
+// undownloadable, with nothing saying which file caused it.
+func TestAnUnreadableEntryDoesNotLoseTheArchive(t *testing.T) {
+	t.Parallel()
+	base, sess, share, host := contentShareAt(t, everyPerm(), []byte("root"))
+
+	for name, body := range map[string]string{
+		"sub/readable-one.txt": "first",
+		"sub/readable-two.txt": "second",
+		"sub/locked.txt":       "hidden",
+	} {
+		if status, out := upload(t, base, sess, "/"+share+"/"+name, []byte(body)); status != http.StatusOK {
+			t.Fatalf("writing %s answered %d: %s", name, status, out)
+		}
+	}
+
+	// Unreadable on disk, which is what a stray permission bit looks like.
+	// The server runs as this user, so removing every mode bit is what makes
+	// the open fail.
+	locked := filepath.Join(host, "sub", "locked.txt")
+	if err := os.Chmod(locked, 0o000); err != nil {
+		t.Fatalf("locking the file: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := os.Chmod(locked, 0o600); cerr != nil {
+			t.Errorf("unlocking: %v", cerr)
+		}
+	})
+
+	status, _, body := fetchArchive(t, base, sess,
+		map[string]any{"paths": []string{"/" + share + "/sub"}})
+	if status != http.StatusOK {
+		t.Fatalf("archiving answered %d: %s", status, body)
+	}
+
+	zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		t.Fatalf("one unreadable entry produced an unreadable archive: %v", err)
+	}
+
+	var readable int
+	var incomplete bool
+	for _, f := range zr.File {
+		if strings.HasSuffix(f.Name, "readable-one.txt") || strings.HasSuffix(f.Name, "readable-two.txt") {
+			readable++
+		}
+		if strings.HasSuffix(f.Name, "locked.txt") {
+			t.Errorf("the archive holds %q, which could not be read", f.Name)
+		}
+		if f.Name == "__stowcloud_incomplete__.txt" {
+			incomplete = true
+		}
+	}
+	if readable != 2 {
+		t.Errorf("the archive holds %d of the 2 readable files", readable)
+	}
+	if !incomplete {
+		t.Error("the omitted entry left no incomplete marker")
+	}
+}
+
+// A public folder archive carries the same incomplete marker when an entry
+// becomes unreadable after the link was minted.
+func TestAPublicArchiveMarksAnUnreadableEntryIncomplete(t *testing.T) {
+	t.Parallel()
+	base, token, host := linkEngineOverFolderAt(t, acl.Read|acl.Download)
+
+	locked := filepath.Join(host, "locked.txt")
+	if err := os.WriteFile(locked, []byte("hidden"), 0o600); err != nil {
+		t.Fatalf("writing the locked file: %v", err)
+	}
+	if err := os.Chmod(locked, 0o000); err != nil {
+		t.Fatalf("locking the file: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chmod(locked, 0o600); err != nil {
+			t.Errorf("unlocking the file: %v", err)
+		}
+	})
+
+	status, _, body := anonymous(t, http.MethodGet, base+"/s/"+token+"/zip", nil)
+	if status != http.StatusOK {
+		t.Fatalf("the public archive answered %d: %s", status, body)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		t.Fatalf("the public archive is unreadable: %v", err)
+	}
+
+	var sawReadable, sawIncomplete bool
+	for _, f := range zr.File {
+		switch f.Name {
+		case "inside.txt":
+			sawReadable = true
+		case "locked.txt":
+			t.Error("the public archive included an unreadable file")
+		case "__stowcloud_incomplete__.txt":
+			sawIncomplete = true
+		}
+	}
+	if !sawReadable {
+		t.Error("the public archive omitted its readable file")
+	}
+	if !sawIncomplete {
+		t.Error("the public archive omitted an unreadable file without an incomplete marker")
+	}
+}
+
+func TestIncompleteMarkerDoesNotCollideWithASelectedFile(t *testing.T) {
+	t.Parallel()
+	const markerName = "__stowcloud_incomplete__.txt"
+	base, sess, share, host := contentShareAt(t, everyPerm(), []byte("root"))
+	const userBody = "user-owned marker name"
+	if status, out := upload(t, base, sess, "/"+share+"/__stowcloud_incomplete__.txt", []byte(userBody)); status != http.StatusOK {
+		t.Fatalf("writing the selected file answered %d: %s", status, out)
+	}
+	if status, out := upload(t, base, sess, "/"+share+"/sub/locked.txt", []byte("hidden")); status != http.StatusOK {
+		t.Fatalf("writing the unreadable file answered %d: %s", status, out)
+	}
+	locked := filepath.Join(host, "sub", "locked.txt")
+	if err := os.Chmod(locked, 0o000); err != nil {
+		t.Fatalf("locking the file: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chmod(locked, 0o600); err != nil {
+			t.Errorf("unlocking the file: %v", err)
+		}
+	})
+
+	status, _, body := fetchArchive(t, base, sess, map[string]any{
+		"paths": []string{
+			"/" + share + "/__stowcloud_incomplete__.txt",
+			"/" + share + "/sub",
+		},
+	})
+	if status != http.StatusOK {
+		t.Fatalf("archiving answered %d: %s", status, body)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		t.Fatalf("the response is not a zip: %v", err)
+	}
+	got := make(map[string]string)
+	for _, member := range zr.File {
+		reader, err := member.Open()
+		if err != nil {
+			t.Fatalf("opening %q: %v", member.Name, err)
+		}
+		content, readErr := io.ReadAll(reader)
+		closeErr := reader.Close()
+		if readErr != nil || closeErr != nil {
+			t.Fatalf("reading %q: %v", member.Name, errors.Join(readErr, closeErr))
+		}
+		got[member.Name] = string(content)
+	}
+	if got[markerName] != userBody {
+		t.Fatalf("the selected marker-named file holds %q", got[markerName])
+	}
+	marker, exists := got["__stowcloud_incomplete__2.txt"]
+	if !exists || !strings.Contains(marker, "archive is incomplete") {
+		t.Fatal("the archive has no distinct incomplete marker")
+	}
+}
+
+// A server-built zip has to read every file's bytes to pack them, and an
+// encrypted share holds only ciphertext this server has no key for. The
+// mint step refuses before any token exists, so the fetch below never runs.
+func TestAServerBuiltArchiveOfAnEncryptedShareIsRefused(t *testing.T) {
+	t.Parallel()
+	base, sess, share, _, _ := encryptedShare(t, everyPerm(), "")
+
+	if status, body := upload(t, base, sess, "/"+share+"/doc.txt", []byte("hello")); status != http.StatusOK {
+		t.Fatalf("uploading answered %d: %s", status, body)
+	}
+
+	status, _, body := fetchArchive(t, base, sess,
+		map[string]any{"paths": []string{"/" + share + "/doc.txt"}, "name": "bundle.zip"})
+	if status != http.StatusUnprocessableEntity {
+		t.Fatalf("archiving an encrypted share answered %d, want 422: %s", status, body)
+	}
+}
+
+// Listing reads a zip's own central directory, which for an encrypted share
+// is ciphertext too: parsing it would only fail differently than the
+// "not an archive" case, and only after opening the file. The guard answers
+// before that open happens.
+func TestListingInsideAnEncryptedArchiveIsRefused(t *testing.T) {
+	t.Parallel()
+	base, sess, share, _, _ := encryptedShare(t, everyPerm(), "")
+
+	// A real zip, built with the standard library. What this test is about
+	// is that the request never reaches the parser, not whether the parser
+	// would have accepted it.
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	w, err := zw.Create("readme.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, werr := w.Write([]byte("hello")); werr != nil {
+		t.Fatal(werr)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if status, body := upload(t, base, sess, "/"+share+"/bundle.zip", buf.Bytes()); status != http.StatusOK {
+		t.Fatalf("uploading the zip answered %d: %s", status, body)
+	}
+
+	status, body := authed(t, http.MethodGet,
+		base+"/api/v1/files/archive/list?path="+urlEscape("/"+share+"/bundle.zip"), sess)
+	if status != http.StatusUnprocessableEntity {
+		t.Fatalf("listing an encrypted archive answered %d, want 422: %s", status, body)
+	}
+}

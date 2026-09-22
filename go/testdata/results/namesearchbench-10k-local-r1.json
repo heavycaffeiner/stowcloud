@@ -1,0 +1,179 @@
+{
+  "claim": "This is a local exploratory measurement, not a release performance claim.",
+  "config": {
+    "seed": 1,
+    "shape": {
+      "count": 10000,
+      "depth": 3,
+      "fanout": 32,
+      "namespaces": 2
+    },
+    "sample_limit": 8,
+    "concurrency": 1,
+    "cache": "cold-unspecified",
+    "filesystem": "xfs",
+    "hardware": "13th Gen Intel(R) Core(TM) i5-13500H"
+  },
+  "metadata": {
+    "toolchain": "gc",
+    "go_version": "go1.27.1-X:nodwarf5",
+    "goos": "linux",
+    "goarch": "amd64",
+    "cpus": 16,
+    "gomaxprocs": 16,
+    "source": "github.com/heavycaffeiner/stowcloud/go/tools/namesearchbench",
+    "hardware": "13th Gen Intel(R) Core(TM) i5-13500H",
+    "filesystem": "xfs",
+    "cache": "cold-unspecified",
+    "concurrency": 1
+  },
+  "corpus_count": 10000,
+  "content_hash": "6ed9b2c674804f654740579b418a9f3559212a432ceb7eb473b1bd7bd7050ec4",
+  "measurements": [
+    {
+      "operation": "generate",
+      "duration_ns": 19480708,
+      "count": 10000
+    },
+    {
+      "operation": "build",
+      "duration_ns": 6121455,
+      "count": 10000
+    },
+    {
+      "operation": "merge",
+      "duration_ns": 31976798,
+      "count": 10000
+    },
+    {
+      "operation": "open",
+      "duration_ns": 89087,
+      "count": 10000
+    },
+    {
+      "operation": "query",
+      "query": "東京-00000000.txt",
+      "kind": "exact",
+      "duration_ns": 160054,
+      "count": 1,
+      "fallback": "-"
+    },
+    {
+      "operation": "query",
+      "query": "report-prefix",
+      "kind": "prefix",
+      "duration_ns": 2570,
+      "count": 0,
+      "fallback": "AllTrigramsPruned"
+    },
+    {
+      "operation": "query",
+      "query": "annual-substring",
+      "kind": "substring",
+      "duration_ns": 3738,
+      "count": 0,
+      "fallback": "AllTrigramsPruned"
+    },
+    {
+      "operation": "query",
+      "query": "common",
+      "kind": "common",
+      "duration_ns": 882,
+      "count": 0,
+      "fallback": "AllTrigramsPruned"
+    },
+    {
+      "operation": "query",
+      "query": "no-such-name-9f4e",
+      "kind": "no-hit",
+      "duration_ns": 1209,
+      "count": 0,
+      "fallback": "-"
+    },
+    {
+      "operation": "query",
+      "query": "東京",
+      "kind": "unicode",
+      "duration_ns": 265522,
+      "count": 11,
+      "fallback": "-"
+    },
+    {
+      "operation": "query",
+      "query": "file-",
+      "kind": "path",
+      "duration_ns": 1355,
+      "count": 0,
+      "fallback": "AllTrigramsPruned"
+    },
+    {
+      "operation": "query",
+      "query": "ab",
+      "kind": "short",
+      "duration_ns": 94,
+      "count": 0,
+      "fallback": "QueryTooShort"
+    },
+    {
+      "operation": "update",
+      "duration_ns": 725061,
+      "count": 100
+    },
+    {
+      "operation": "merge",
+      "query": "post-update",
+      "duration_ns": 27762916,
+      "count": 100
+    }
+  ],
+  "checks": [
+    {
+      "name": "query/exact",
+      "ok": true,
+      "detail": "got=1 want=1"
+    },
+    {
+      "name": "query/prefix",
+      "ok": true,
+      "detail": "accepted index fallback: AllTrigramsPruned"
+    },
+    {
+      "name": "query/substring",
+      "ok": true,
+      "detail": "accepted index fallback: AllTrigramsPruned"
+    },
+    {
+      "name": "query/common",
+      "ok": true,
+      "detail": "accepted index fallback: AllTrigramsPruned"
+    },
+    {
+      "name": "query/no-hit",
+      "ok": true,
+      "detail": "got=0 want=0"
+    },
+    {
+      "name": "query/unicode",
+      "ok": true,
+      "detail": "got=11 want=11"
+    },
+    {
+      "name": "query/path",
+      "ok": true,
+      "detail": "accepted index fallback: AllTrigramsPruned"
+    },
+    {
+      "name": "query/short",
+      "ok": true,
+      "detail": "QueryTooShort"
+    },
+    {
+      "name": "content hash is non-empty",
+      "ok": true
+    },
+    {
+      "name": "all correctness checks pass",
+      "ok": true
+    }
+  ]
+}

@@ -3,7 +3,7 @@
 //
 // A healthy poll is not proof by itself. The server answers the confirm
 // request and keeps serving under its old image for a grace window before it
-// tears down (`restartGrace` in `go/engine/lifecycle/systemrestart.go`), and
+// tears down (`restartGrace` in `go/internal/app/systemrestart.go`), and
 // the dialog's own first poll fires immediately after that response, well
 // inside that window on any ordinary connection. Accepting that poll as
 // proof reports the restart finished before the process has even started

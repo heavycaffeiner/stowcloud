@@ -15,12 +15,12 @@ import { ciphertextSpanForRange, decryptPlaintextRange, plaintextSizeFromCiphert
 // it purely as a caching granularity).
 const BLOCK_SIZE = 65536
 
-// Matches limits.ArchiveEntriesListed (go/engine/kit/limits/limits.go): the
+// Matches limits.ArchiveEntriesListed in go/internal/kit/limits/limits.go.
 // same cap the plain-share listing enforces, so an encrypted archive is not
 // disclosed to a different degree than a plain one.
 const MAX_ENTRIES = 10_000
 
-// Matches maxArchiveNameBytes in go/engine/service/preview/archive.go.
+// Matches maxArchiveNameBytes in go/internal/feature/preview/archive.go.
 const MAX_NAME_BYTES = 4096
 
 // Matches maxArchiveNameSampleBytes in the same file: caps what the charset
@@ -91,7 +91,7 @@ function detectCjkCharset(sample: Uint8Array): CjkLabel | null {
   return best && best.score > 0 ? best.label : null
 }
 
-/** Mirrors go/engine/service/preview/archive.go's safeArchiveName: filters a
+/** Mirrors go/internal/feature/preview/archive.go's safeArchiveName: filters a
  *  decoded name for display safety. Not a path-traversal guard (nothing
  *  here ever opens the name), but a control character or an absolute path
  *  inside a name that a client might render or forward to its own

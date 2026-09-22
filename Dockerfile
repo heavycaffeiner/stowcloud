@@ -40,7 +40,7 @@
 # is the dependency floor and the two move independently, but the image and CI
 # building with different compilers means the binary an image ships is not the
 # one the gate ran against.
-ARG GO_IMAGE=golang:1.26-bookworm
+ARG GO_IMAGE=golang:1.27.1-bookworm
 
 # node 24, not 22, for the npm major it bundles. The lockfile in web/ was
 # written by npm 11, and npm 10 reads the same file as out of sync and fails on
@@ -98,8 +98,8 @@ COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
 RUN corepack enable && pnpm install --frozen-lockfile
 COPY web/ ./
 RUN pnpm build \
-    && test -f ../go/engine/http/spa/build/index.html \
-    && test -d ../go/engine/http/spa/build/app
+    && test -f ../go/internal/transport/http/spa/build/index.html \
+    && test -d ../go/internal/transport/http/spa/build/app
 
 # ----------------------------------------------------------------------------
 # Stage: builder
@@ -108,15 +108,13 @@ FROM ${GO_IMAGE} AS builder
 ARG TARGETARCH
 WORKDIR /src/go
 
-# The module graph is downloaded before the source is copied, so a source-only
-# change does not refetch it.
+# The module graph is copied before application source so dependency downloads
+# stay cached across source-only changes.
 COPY go/go.mod go/go.sum ./
 RUN go mod download
 
 COPY go/ ./
-# The frontend lands in the package that embeds it, which is the only
-# arrangement where the dependency edge exists.
-COPY --from=frontend /src/go/engine/http/spa/build ./engine/http/spa/build
+COPY --from=frontend /src/go/internal/transport/http/spa/build ./internal/transport/http/spa/build
 
 # The tag is what turns the embed on. A build without it links a server that
 # serves no frontend, which is the correct behaviour for a build that has no

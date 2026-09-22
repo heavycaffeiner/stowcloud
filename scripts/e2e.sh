@@ -43,7 +43,7 @@ fi
 # once for this run and the embed check together.
 if [ "${SC_BUNDLE_FRESH:-0}" = 1 ]; then
   echo "==> the frontend was built already"
-  if [ ! -f go/engine/http/spa/build/index.html ]; then
+  if [ ! -f go/internal/transport/http/spa/build/index.html ]; then
     echo "FAIL: SC_BUNDLE_FRESH is set, but the bundle is not there" >&2
     exit 1
   fi

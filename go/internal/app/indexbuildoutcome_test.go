@@ -1,0 +1,178 @@
+//go:build linux
+
+package app
+
+import (
+	"context"
+	"database/sql"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"testing"
+
+	core "github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/search/stowcloud"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/search/svc"
+	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/dbfile"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
+	search "github.com/stowcloud/namesearch"
+	"github.com/stowcloud/namesearch/index"
+)
+
+// buildEngine is the smallest engine runIndexBuild reads: a state database,
+// an index for the walk to append to, and one account to own the row.
+//
+// Driven directly rather than through the admin route, because the state a
+// stopped build records is decided after the walk returns, so a corpus and a
+// race to interrupt one are both beside the point. Only the test that asserts
+// a file count registers a share.
+func buildEngine(t *testing.T) *Engine {
+	t.Helper()
+	ctx := context.Background()
+	root := t.TempDir()
+
+	stf, err := dbfile.Open(ctx, state.Spec(filepath.Join(root, "state.db")))
+	if err != nil {
+		t.Fatalf("opening the state database: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := stf.Close(); cerr != nil {
+			t.Errorf("closing the state database: %v", cerr)
+		}
+	})
+	st := state.New(stf)
+
+	// The operation row references an account, so one has to exist before a
+	// build can be recorded against it.
+	if werr := st.Write(ctx, func(tx *sql.Tx) error {
+		_, ierr := tx.ExecContext(ctx,
+			`INSERT INTO user(id, name, pw_hash, created_ns) VALUES (1, 'alice', '', 0)`)
+		return ierr
+	}); werr != nil {
+		t.Fatalf("seeding the account: %v", werr)
+	}
+
+	ix, opened := svc.OpenIndex(filepath.Join(root, "index"), index.DefaultConfig(), slog.Default())
+	if ix == nil {
+		t.Fatalf("opening the index answered %v", opened)
+	}
+	svcSearch := svc.New(svc.Options{Clock: clock.System()})
+	svcSearch.SetIndex(ix)
+
+	jobsCtx, jobsStop := context.WithCancel(context.Background())
+	t.Cleanup(jobsStop)
+	return &Engine{
+		State:    st,
+		Search:   svcSearch,
+		clock:    clock.System(),
+		logger:   slog.Default(),
+		jobsCtx:  jobsCtx,
+		jobsStop: jobsStop,
+	}
+}
+
+// corpusSource registers a share of two files for the walk to find.
+func corpusSource(t *testing.T) []search.Source {
+	t.Helper()
+	corpus := t.TempDir()
+	for _, name := range []string{"a.txt", "b.txt"} {
+		if werr := os.WriteFile(filepath.Join(corpus, name), []byte("x"), 0o600); werr != nil {
+			t.Fatal(werr)
+		}
+	}
+	shareRoot, _, rerr := vfs.RegisterShareRoot(vfs.ShareID(1), corpus, vfs.DefaultSharePolicy())
+	if rerr != nil {
+		t.Skipf("this host's temp directory is on a filesystem this build refuses: %v", rerr)
+	}
+	t.Cleanup(func() {
+		if cerr := shareRoot.Close(); cerr != nil {
+			t.Errorf("closing the share root: %v", cerr)
+		}
+	})
+	return []search.Source{stowcloud.SourceOf(core.ScanSource{Share: 1, Root: shareRoot, Base: vfs.RootPath()})}
+}
+
+// A build a shutdown stopped reads as interrupted, not as a finished one.
+//
+// Every non-error exit used to record done, so a build the server walked away
+// from halfway reported a complete index over a partial one and an operator
+// had no reason to run it again.
+func TestAnIndexBuildStoppedByAShutdownReadsInterrupted(t *testing.T) {
+	t.Parallel()
+	e := buildEngine(t)
+	ctx := context.Background()
+
+	id, err := e.State.CreateOp(ctx, 1, state.OpIndexBuild, 0, 0, nil)
+	if err != nil {
+		t.Fatalf("creating the operation: %v", err)
+	}
+
+	e.jobsStop()
+	// No sources: the branch under test runs after the walk returns, so an
+	// empty one reaches it without a corpus or a race to interrupt.
+	e.runIndexBuild(ctx, id, nil)
+
+	op, _, err := e.State.GetOp(ctx, id)
+	if err != nil {
+		t.Fatalf("reading the operation: %v", err)
+	}
+	if op.State != state.OpInterrupted {
+		t.Errorf("a build the shutdown stopped reads %v, want interrupted", op.State)
+	}
+}
+
+// A build the operator cancelled reads as cancelled.
+func TestACancelledIndexBuildReadsCancelled(t *testing.T) {
+	t.Parallel()
+	e := buildEngine(t)
+	ctx := context.Background()
+
+	id, err := e.State.CreateOp(ctx, 1, state.OpIndexBuild, 0, 0, nil)
+	if err != nil {
+		t.Fatalf("creating the operation: %v", err)
+	}
+	if cerr := e.State.RequestOpCancel(ctx, id); cerr != nil {
+		t.Fatalf("requesting the cancellation: %v", cerr)
+	}
+
+	e.runIndexBuild(ctx, id, nil)
+
+	op, _, err := e.State.GetOp(ctx, id)
+	if err != nil {
+		t.Fatalf("reading the operation: %v", err)
+	}
+	if op.State != state.OpCancelled {
+		t.Errorf("a cancelled build reads %v, want cancelled", op.State)
+	}
+}
+
+// A build nobody stopped reads as done, with the count it indexed.
+//
+// This one walks a real share: the count is what the other two branches
+// preserve rather than reset, so a figure of zero here would prove nothing.
+func TestAnUninterruptedIndexBuildReadsDone(t *testing.T) {
+	t.Parallel()
+	e := buildEngine(t)
+	sources := corpusSource(t)
+	ctx := context.Background()
+
+	id, err := e.State.CreateOp(ctx, 1, state.OpIndexBuild, 0, 0, nil)
+	if err != nil {
+		t.Fatalf("creating the operation: %v", err)
+	}
+
+	e.runIndexBuild(ctx, id, sources)
+
+	op, _, err := e.State.GetOp(ctx, id)
+	if err != nil {
+		t.Fatalf("reading the operation: %v", err)
+	}
+	if op.State != state.OpDone {
+		t.Errorf("a finished build reads %v, want done", op.State)
+	}
+	if op.Progress != 2 {
+		t.Errorf("a build of two files recorded progress %d", op.Progress)
+	}
+}

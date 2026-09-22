@@ -93,7 +93,7 @@ const SERVER_KEYS = new Set<string>([
 /** A wire `code` → catalogue key, and a `reason_key` → catalogue key for the
  *  refusals whose reason is narrower than their code.
  *
- *  Both are spelled exactly as `go/engine/http/apierr` sends them
+ *  Both are spelled exactly as `go/internal/transport/http/apierr` sends them
  *  (`restTable` for the codes, `sentinels` for the reason keys). They drifted
  *  once already: this map still named `fs.precondition`, `quota.exceeded` and
  *  `share.broken`, none of which the server has ever sent, so a refused save

@@ -130,7 +130,7 @@ func TestEveryAllowedKeyCarriesAReason(t *testing.T) {
 func TestNoAllowedKeyIsOneTheLoaderActuallyReads(t *testing.T) {
 	// The real loader, so this fails when a key gains a reader and the entry
 	// stays behind.
-	src, err := readFileForTest("../../internal/runtimecfg/runtimecfg.go")
+	src, err := readFileForTest("../../../internal/feature/admin/settings/runtimecfg/load.go")
 	if err != nil {
 		t.Skipf("the loader is not where this test expects: %v", err)
 	}

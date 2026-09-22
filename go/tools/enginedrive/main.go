@@ -1,9 +1,6 @@
 //go:build linux
 
-// A real boot of the rebuilt engine, for driving its HTTP surface by hand.
-//
-// The shipped command still serves the old tree, so this is how the engine's
-// routes are exercised as a running server rather than only from tests.
+// A direct engine boot for driving its native Gin HTTP surface by hand.
 package main
 
 import (
@@ -11,13 +8,15 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"os"
 
-	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
-	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
-	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
-	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
-	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
+	"github.com/gin-gonic/gin"
+	"github.com/heavycaffeiner/stowcloud/go/internal/app"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/auth"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/go/internal/kit/secret"
 )
 
 func main() {
@@ -30,13 +29,18 @@ func main() {
 	// The decoder binary, from the environment when one is named. This harness
 	// is not the shipped command, so it answers no preview-worker subcommand
 	// and the pool's default would exec something that cannot decode.
-	e, err := lifecycle.Open(ctx, lifecycle.Options{
+	e, err := app.Open(ctx, app.Options{
 		DataDir:       dataDir,
 		PreviewWorker: os.Getenv("STOWCLOUD_PREVIEW_WORKER"),
 	})
 	if err != nil {
 		log.Fatalf("opening: %v", err)
 	}
+	defer func() {
+		if closeErr := e.Close(); closeErr != nil {
+			log.Printf("closing: %v", closeErr)
+		}
+	}()
 
 	// Seeded only on a first boot. Reopening the same directory is how a
 	// restart is driven by hand, and re-creating the accounts would collide
@@ -80,9 +84,9 @@ func main() {
 		log.Fatalf("minting an app password: %v", err)
 	}
 
-	app, err := e.Mount()
-	if err != nil {
-		log.Fatalf("mounting: %v", err)
+	router := gin.New()
+	if mountErr := e.Mount(router); mountErr != nil {
+		log.Fatalf("mounting: %v", mountErr)
 	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -94,7 +98,7 @@ func main() {
 	if _, perr := fmt.Printf("BASE http://%s\nAPPPW %s\n", ln.Addr(), token); perr != nil {
 		log.Fatalf("reporting the address: %v", perr)
 	}
-	if serr := app.Listener(ln); serr != nil {
-		log.Fatalf("serving: %v", serr)
+	if serveErr := http.Serve(ln, router); serveErr != nil {
+		log.Fatalf("serving: %v", serveErr)
 	}
 }

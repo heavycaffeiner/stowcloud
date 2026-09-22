@@ -20,21 +20,22 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/heavycaffeiner/stowcloud/go/engine/store/dbfile"
-	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
+	"github.com/heavycaffeiner/stowcloud/go/internal/bootstrap/args"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/dbfile"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
 )
 
 // runSettings dispatches the settings verbs. `set` replaces one section from
 // a JSON document on standard input; `get` prints the whole stored document.
-func runSettings(args []string) int {
-	if len(args) == 0 {
+func runSettings(argv []string) int {
+	if len(argv) == 0 {
 		return settingsUsage()
 	}
-	switch args[0] {
+	switch argv[0] {
 	case "set":
-		return runSettingsSet(args[1:])
+		return runSettingsSet(argv[1:])
 	case "get":
-		return runSettingsGet(args[1:])
+		return runSettingsGet(argv[1:])
 	}
 	return settingsUsage()
 }
@@ -58,11 +59,9 @@ func settingsUsage() int {
 // runSettingsSet replaces one section from a JSON document on standard input.
 //
 // The arguments are the section name and the data directory, in either
-// order: an operator repairing a stored setting is typing this by hand, and
-// insisting on an order only makes the repair slower.
-func runSettingsSet(args []string) int {
+func runSettingsSet(argv []string) int {
 	out := log.New(os.Stderr, "", 0)
-	section, dataDir := settingsArgs(args)
+	section, dataDir := args.ParseSettingsArgs(argv)
 	if section == "" {
 		return settingsUsage()
 	}
@@ -97,11 +96,9 @@ func runSettingsSet(args []string) int {
 	return 0
 }
 
-// runSettingsGet prints the whole stored document, which is what an operator
-// needs before they can decide what to change.
-func runSettingsGet(args []string) int {
+func runSettingsGet(argv []string) int {
 	out := log.New(os.Stderr, "", 0)
-	dataDir := dataDirArg(args)
+	dataDir := args.DataDir(argv)
 
 	stateFile, err := dbfile.Open(context.Background(), state.Spec(filepath.Join(dataDir, "state.db")))
 	if err != nil {
@@ -126,38 +123,4 @@ func runSettingsGet(args []string) int {
 	}
 	out.Println(string(body))
 	return 0
-}
-
-// settingsArgs splits the arguments into the section name and the data
-// directory, in either order. The section is the first argument that is not
-// the -data flag or its value.
-func settingsArgs(args []string) (section, dataDir string) {
-	dataDir = deployDataDir
-	for i := 0; i < len(args); i++ {
-		if args[i] == "-data" || args[i] == "--data-dir" {
-			if i+1 < len(args) {
-				dataDir = args[i+1]
-				i++
-			}
-			continue
-		}
-		if section == "" {
-			section = args[i]
-		}
-	}
-	return section, dataDir
-}
-
-// dataDirArg extracts the data directory from a flat argument list.
-//
-// Both spellings, because every other subcommand takes both and an operator
-// who typed --data-dir at `settings set` should not be told the directory is
-// missing when they type the same thing at `settings get`.
-func dataDirArg(args []string) string {
-	for i, arg := range args {
-		if (arg == "-data" || arg == "--data-dir") && i+1 < len(args) {
-			return args[i+1]
-		}
-	}
-	return deployDataDir
 }

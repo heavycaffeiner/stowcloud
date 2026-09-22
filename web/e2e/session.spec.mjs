@@ -145,7 +145,7 @@ try {
   // answers a credential-less request that way, so a stranger with a word
   // list cannot tell a real route from one that was never mounted.
   check('no credential is refused as a path that is not there',
-    noSession.status === 404 && noSession.body?.error === 'request_failed',
+    noSession.status === 404 && noSession.body?.error === 'not_found',
     JSON.stringify(noSession.body))
 
   // The wrong password first, while there is no session. Once one exists this

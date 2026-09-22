@@ -1,0 +1,11 @@
+operation,query,kind,duration_ns,count,fallback
+generate,,,19310696,10000,
+build,,,8231303,10000,
+merge,,,41857550,10000,
+open,,,108921,10000,
+query,東京-00000000.txt,exact,183319,1,-
+query,report-prefix,prefix,2806,0,AllTrigramsPruned
+query,annual-substring,substring,3667,0,AllTrigramsPruned
+query,common,common,1268,0,AllTrigramsPruned
+update,,,776393,100,
+merge,post-update,,35698828,100,

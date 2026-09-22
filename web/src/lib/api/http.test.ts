@@ -333,12 +333,19 @@ describe('the listing cursor', () => {
 })
 
 // The server hides a route the caller may not reach: a refused API request
-// answers 404 with the chain's unexplained `request_failed`, exactly as an
-// address that does not exist would. Every path this client calls does exist,
-// so that answer means the session is gone. The transport reports it and
-// `isSessionDead` classifies it; the query client is what acts on it.
-describe('a refusal the server disguised as a missing address', () => {
-  it('is classified as a dead session', async () => {
+// answers 404 with `not_found`, exactly as an address that does not exist
+// would. Every path this client calls does exist, so that answer means the
+// session is gone. Older deployments used `request_failed`; the client keeps
+// accepting that legacy envelope while the current contract is `not_found`.
+describe('a refusal disguised as a missing address', () => {
+  it('classifies the current not_found envelope as a dead session', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(jsonResponse(404, { error: 'not_found' })))
+
+    const err = await httpApi.list('/Files', {}).catch((e: unknown) => e)
+    expect(isSessionDead(err)).toBe(true)
+  })
+
+  it('keeps accepting the legacy request_failed envelope', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(jsonResponse(404, { error: 'request_failed' })))
 
     const err = await httpApi.list('/Files', {}).catch((e: unknown) => e)

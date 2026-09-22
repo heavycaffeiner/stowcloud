@@ -14,7 +14,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-BUNDLE_DIR=go/engine/http/spa/build
+BUNDLE_DIR=go/internal/transport/http/spa/build
 
 # The binary below is built for the shipping target and then run, so this only
 # works where the host is that target. Elsewhere it built a Linux binary and
