@@ -20,6 +20,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
 	"github.com/heavycaffeiner/stowcloud/go/internal/kit/secret"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
+	"github.com/stowcloud/veracrypt"
 )
 
 // Config is a veracrypt share's configuration, persisted verbatim alongside
@@ -130,7 +131,7 @@ type Options struct {
 type Root struct {
 	id           vfs.ShareID
 	container    string
-	dev          *volumeDevice
+	dev          *veracrypt.Container
 	fs           filesystem
 	scratch      *vfs.ShareRoot
 	policy       vfs.SharePolicy
@@ -167,43 +168,25 @@ func Open(ctx context.Context, opt Options) (*Root, error) {
 	missing := errors.Is(statErr, os.ErrNotExist)
 	switch {
 	case statErr == nil:
-		// Already there; openContainer below opens it as is.
 	case missing && opt.Create:
 		sizeMiB := opt.Config.CreateSizeMiB
-		if sizeMiB == 0 {
-			sizeMiB = minContainerDataMiB
-		}
-		if err := createContainer(opt.Config.Container, sizeMiB, opt.Password); err != nil {
-			return nil, err
-		}
+		if sizeMiB == 0 { sizeMiB = minContainerDataMiB }
+		if err := createPublicContainer(opt.Config.Container, sizeMiB, opt.Password); err != nil { return nil, err }
 	case missing:
 		return nil, fmt.Errorf("vault: container %q: %w", opt.Config.Container, vfs.ErrNotFound)
 	default:
 		return nil, fmt.Errorf("vault: stat container %q: %w", opt.Config.Container, statErr)
 	}
 
-	dev, dataSize, err := openContainer(opt.Config.Container, opt.Password, opt.Config.PIM, opt.Config.Hash)
-	if err != nil {
-		return nil, err
-	}
+	dev, dataSize, err := openPublicContainer(opt.Config.Container, opt.Password, opt.Config.PIM, opt.Config.Hash)
+	if err != nil { return nil, err }
 	closeDev := true
-	defer func() {
-		if closeDev {
-			if cerr := dev.f.Close(); cerr != nil {
-				logger.Warn("vault: closing container after a failed open", "error", cerr)
-			}
-		}
-	}()
-
+	defer func(){ if closeDev { _ = dev.Close() } }()
 	if missing && opt.Create {
-		if ferr := Format(dev, dataSize); ferr != nil {
-			return nil, fmt.Errorf("vault: format new container: %w", ferr)
-		}
+		if ferr := veracrypt.FormatFAT(dev, dataSize); ferr != nil { return nil, fmt.Errorf("vault: format new container: %w", ferr) }
 	}
-	fsys, err := mountFilesystem(dev, dataSize, clk)
-	if err != nil {
-		return nil, err
-	}
+	fsys, err := openPublicFilesystem(dev, dataSize, clk)
+	if err != nil { return nil, err }
 	scratch, err := vfs.OpenScratchRoot(opt.ScratchDir, opt.Policy)
 	if err != nil {
 		return nil, err
@@ -507,7 +490,7 @@ func (r *Root) Alive() error { return r.fs.Alive() }
 func (r *Root) Close() error {
 	syncErr := r.fs.Sync()
 	devErr := r.dev.Sync()
-	closeErr := r.dev.f.Close()
+	closeErr := r.dev.Close()
 	scratchErr := r.scratch.Close()
 	return errors.Join(syncErr, devErr, closeErr, scratchErr)
 }
