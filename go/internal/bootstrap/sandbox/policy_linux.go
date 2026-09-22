@@ -108,6 +108,7 @@ func policyMode(policy interface{ String() string }) securitylinux.PolicyMode {
 func outboundGrants() []securitylinux.Grant {
 	candidates := []securitylinux.Grant{
 		{Path: "/stowcloud", Access: securitylinux.RightReadFile},
+		{Path: "/proc/self/fd", Access: securitylinux.RightReadFile | securitylinux.RightReadDirectory},
 		{Path: "/etc/resolv.conf", Access: securitylinux.RightReadFile},
 		{Path: "/etc/hosts", Access: securitylinux.RightReadFile},
 		{Path: "/etc/nsswitch.conf", Access: securitylinux.RightReadFile},
