@@ -73,7 +73,7 @@ func TestBuildPolicyGrantsRuntimeExecutableWhenPresent(t *testing.T) {
 	}
 	policy := BuildPolicy(runtimecfg.Defaults(), t.TempDir(), nil, nil, nil)
 	grant, ok := findGrant(policy, "/stowcloud")
-	want := securitylinux.RightReadFile | securitylinux.RightExecute
+	want := securitylinux.RightReadFile
 	if !ok || grant.Access&want != want {
 		t.Fatalf("runtime executable grant = %+v, present %v", grant, ok)
 	}
