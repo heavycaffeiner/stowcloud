@@ -52,8 +52,8 @@ Stowcloud itself is AGPL-3.0-or-later; see [`LICENSE`](LICENSE).
 | [github.com/gogs/chardet](https://pkg.go.dev/github.com/gogs/chardet) | v0.0.0-20211120154057-b7413eaefb8f | see text | [#14](#licence-text-14) |
 | [github.com/google/uuid](https://pkg.go.dev/github.com/google/uuid) | v1.6.0 | see text | [#15](#licence-text-15) |
 | [github.com/gorilla/websocket](https://pkg.go.dev/github.com/gorilla/websocket) | v1.5.3 | see text | [#16](#licence-text-16) |
-| [github.com/heavycaffeiner/hanami](https://pkg.go.dev/github.com/heavycaffeiner/hanami) | v0.0.0 | see text | [#17](#licence-text-17) |
-| [github.com/heavycaffeiner/hanami/gin](https://pkg.go.dev/github.com/heavycaffeiner/hanami/gin) | v0.0.0-20260921061028-36b2899fd353 | see text | [#17](#licence-text-17) |
+| [github.com/heavycaffeiner/hanami](https://pkg.go.dev/github.com/heavycaffeiner/hanami) | v0.2.0 | see text | [#17](#licence-text-17) |
+| [github.com/heavycaffeiner/hanami/gin](https://pkg.go.dev/github.com/heavycaffeiner/hanami/gin) | v0.2.0 | see text | [#17](#licence-text-17) |
 | [github.com/klauspost/compress](https://pkg.go.dev/github.com/klauspost/compress) | v1.20.0 | see text | [#18](#licence-text-18) |
 | [github.com/klauspost/cpuid/v2](https://pkg.go.dev/github.com/klauspost/cpuid/v2) | v2.4.0 | see text | [#19](#licence-text-19) |
 | [github.com/leodido/go-urn](https://pkg.go.dev/github.com/leodido/go-urn) | v1.5.0 | see text | [#20](#licence-text-20) |
@@ -1099,7 +1099,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### Licence text 17
 
-Applies to: `github.com/heavycaffeiner/hanami v0.0.0`, `github.com/heavycaffeiner/hanami/gin v0.0.0-20260921061028-36b2899fd353`
+Applies to: `github.com/heavycaffeiner/hanami v0.2.0`, `github.com/heavycaffeiner/hanami/gin v0.2.0`
 
 ```
 MIT License
