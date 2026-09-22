@@ -82,16 +82,19 @@ func runVersion() int {
 
 func run(addr, dataDir string, plain bool) error {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	handoff := os.Getenv(securitylinux.HandoffEnvironment) != ""
 	config, err := preflight.Load(context.Background(), preflight.Options{
 		Addr: addr, DataDir: dataDir, Plain: plain, Logger: logger,
-		SkipRootDiscovery: os.Getenv(securitylinux.HandoffEnvironment) != "",
+		SkipRootDiscovery: false,
 	})
 	if err != nil {
 		return err
 	}
 	policy := sandbox.BuildPolicy(config.Values, config.DataDir, config.Roots, config.ShareHosts, config.ExactPaths)
-	if err := securitylinux.MaybeReexec(policy); err != nil {
-		return fmt.Errorf("applying process security: %w", err)
+	if !handoff {
+		if err := securitylinux.MaybeReexec(policy); err != nil {
+			return fmt.Errorf("applying process security: %w", err)
+		}
 	}
 	spec := hanami.Spec[preflight.Config]{
 		Name: "sc-engine",
