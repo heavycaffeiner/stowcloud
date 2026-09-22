@@ -92,8 +92,8 @@ func run(addr, dataDir string, plain bool) error {
 	}
 	policy := sandbox.BuildPolicy(config.Values, config.DataDir, config.Roots, config.ShareHosts, config.ExactPaths)
 	if !handoff {
-		if err := securitylinux.MaybeReexec(policy); err != nil {
-			return fmt.Errorf("applying process security: %w", err)
+		if securityErr := securitylinux.MaybeReexec(policy); securityErr != nil {
+			return fmt.Errorf("applying process security: %w", securityErr)
 		}
 	}
 	spec := hanami.Spec[preflight.Config]{
@@ -122,6 +122,6 @@ func run(addr, dataDir string, plain bool) error {
 		}),
 		hanami.WithLogger[preflight.Config](logger),
 	}
-	hanami.Main(spec, options...)
-	return nil
+	_, err = hanami.Run(context.Background(), spec, options...)
+	return err
 }
