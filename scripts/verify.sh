@@ -629,7 +629,11 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
             "${VERIFY_REQUIRE_GOTOOLS:-0}"
   fi
 
-  run "go test ($HOST)" ingo_host go test -count=1 ./...
+  if [ "$HOST" = linux ]; then
+    run "go test ($HOST)" ingo_host go test -count=1 ./...
+  else
+    skipped "go test ($HOST)" "the durable runtime is Linux-only; off-Linux test binaries are compiled above" 0
+  fi
 
   # The compat layer's own tests, which the untagged run above cannot see:
   # with no tag those files are not compiled at all, so a build that only
@@ -665,10 +669,9 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # step whose environment differs from the shipping build's. The binary it
   # produces is a test binary and is never shipped.
   #
-  # The condition is "is there a compiler", not "is this Linux". Those looked
-  # like the same question while this box had no compiler on it, and they are
-  # not: a race the detector can find is a race in portable code, and the host
-  # that runs the tests every day is worth finding it on.
+  # The detector runs on the shipping Linux target. Off Linux, durablefs
+  # deliberately refuses publication, so runtime tests cannot claim portable
+  # behavior; the compile gate above owns non-Linux coverage.
   #
   # One pass, tagged. The tag adds files and removes only a no-op mount stub,
   # so the tagged build runs every test the untagged one does; the two passes
@@ -684,12 +687,14 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # runner used to make that a coin flip: the panic names whichever tests
   # happened to be in flight, which reads as a hang rather than as the
   # package running out of budget.
-  if have_cc; then
+  if [ "$HOST" = linux ] && have_cc; then
     run "go test -race -tags compat_nc ($HOST)" \
         ingo_cgo go test -race -tags compat_nc -count=1 -timeout 30m ./...
-  else
+  elif [ "$HOST" = linux ]; then
     skipped "go test -race" "no C compiler on PATH, and the detector needs cgo" \
             "${VERIFY_REQUIRE_RACE:-0}"
+  else
+    skipped "go test -race" "the durable runtime is Linux-only" 0
   fi
 
   # The seed corpus needs no step of its own: `go test` runs every fuzz
