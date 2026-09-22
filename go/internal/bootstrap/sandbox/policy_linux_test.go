@@ -67,6 +67,18 @@ func TestBuildPolicyPreservesProcessHardeningLayers(t *testing.T) {
 	}
 }
 
+func TestBuildPolicyGrantsRuntimeExecutableWhenPresent(t *testing.T) {
+	if _, err := os.Stat("/stowcloud"); err != nil {
+		t.Skip("runtime executable is not present outside the container image")
+	}
+	policy := BuildPolicy(runtimecfg.Defaults(), t.TempDir(), nil, nil, nil)
+	grant, ok := findGrant(policy, "/stowcloud")
+	want := securitylinux.RightReadFile | securitylinux.RightExecute
+	if !ok || grant.Access&want != want {
+		t.Fatalf("runtime executable grant = %+v, present %v", grant, ok)
+	}
+}
+
 func TestBuildPolicyGrantsConfiguredDirectories(t *testing.T) {
 	values := runtimecfg.Defaults()
 	values.SMB.Enabled = true
