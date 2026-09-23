@@ -92,7 +92,7 @@ func ParseConfig(b []byte) (Config, error) {
 	if c.PIM > maxPIM {
 		return Config{}, fmt.Errorf("vault: PIM %d exceeds %d", c.PIM, maxPIM)
 	}
-	if _, err := headerKDFsFor(c.Hash); err != nil {
+	if err := validateHashToken(c.Hash); err != nil {
 		return Config{}, err
 	}
 	return c, nil
@@ -170,8 +170,12 @@ func Open(ctx context.Context, opt Options) (*Root, error) {
 	case statErr == nil:
 	case missing && opt.Create:
 		sizeMiB := opt.Config.CreateSizeMiB
-		if sizeMiB == 0 { sizeMiB = minContainerDataMiB }
-		if err := createPublicContainer(opt.Config.Container, sizeMiB, opt.Password); err != nil { return nil, err }
+		if sizeMiB == 0 {
+			sizeMiB = minContainerDataMiB
+		}
+		if err := createPublicContainer(opt.Config.Container, sizeMiB, opt.Password); err != nil {
+			return nil, err
+		}
 	case missing:
 		return nil, fmt.Errorf("vault: container %q: %w", opt.Config.Container, vfs.ErrNotFound)
 	default:
@@ -179,14 +183,26 @@ func Open(ctx context.Context, opt Options) (*Root, error) {
 	}
 
 	dev, dataSize, err := openPublicContainer(opt.Config.Container, opt.Password, opt.Config.PIM, opt.Config.Hash)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	closeDev := true
-	defer func(){ if closeDev { _ = dev.Close() } }()
+	defer func() {
+		if closeDev {
+			if closeErr := dev.Close(); closeErr != nil {
+				logger.Warn("vault: closing a container after failed open", "error", closeErr)
+			}
+		}
+	}()
 	if missing && opt.Create {
-		if ferr := veracrypt.FormatFAT(dev, dataSize); ferr != nil { return nil, fmt.Errorf("vault: format new container: %w", ferr) }
+		if ferr := veracrypt.FormatFAT(dev, dataSize); ferr != nil {
+			return nil, fmt.Errorf("vault: format new container: %w", ferr)
+		}
 	}
 	fsys, err := openPublicFilesystem(dev, dataSize, clk)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	scratch, err := vfs.OpenScratchRoot(opt.ScratchDir, opt.Policy)
 	if err != nil {
 		return nil, err
@@ -216,7 +232,7 @@ func Open(ctx context.Context, opt Options) (*Root, error) {
 func syntheticDevFor(container string) uint64 {
 	h := fnv.New64a()
 	if _, err := h.Write([]byte(container)); err != nil {
-		panicInfallibleWrite(err)
+		panic("vault: hashing container path: " + err.Error())
 	}
 	return h.Sum64() | (1 << 63)
 }

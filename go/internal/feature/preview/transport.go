@@ -6,12 +6,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/platform/system/sandboxworker"
+	"github.com/stowcloud/sandbox-worker"
 )
 
-// Preview keeps this adapter for the pool and worker until their product wire
-// code is moved independently. The transport itself is neutral and lives in
-// platform/system/sandboxworker.
+// Preview keeps this narrow adapter for product callsites. Neutral descriptor
+// transport is implemented and released by github.com/stowcloud/sandbox-worker.
 
 // SocketPair creates the connected control socket pair used by the preview
 // worker.

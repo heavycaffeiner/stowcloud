@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/platform/transfer"
+	"github.com/stowcloud/transfer"
 )
 
 // The engine's refusals. None of them chooses a wire status: that mapping

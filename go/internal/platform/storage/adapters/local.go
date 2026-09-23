@@ -12,8 +12,8 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/capability"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
+	storage "github.com/stowcloud/storage"
 )
 
 // Local adapts an existing vfs.Root without changing the root's product-facing
@@ -38,13 +38,13 @@ func NewLocal(root vfs.Root) (*Local, error) {
 	return &Local{root: root}, nil
 }
 
-var _ capability.ReadHierarchy = (*Local)(nil)
-var _ capability.HealthChecker = (*Local)(nil)
-var _ capability.SpaceReporter = (*Local)(nil)
-var _ capability.Materializer = (*Local)(nil)
-var _ capability.Renamer = (*Local)(nil)
+var _ storage.ReadHierarchy = (*Local)(nil)
+var _ storage.HealthChecker = (*Local)(nil)
+var _ storage.SpaceReporter = (*Local)(nil)
+var _ storage.Materializer = (*Local)(nil)
+var _ storage.Renamer = (*Local)(nil)
 
-func (l *Local) safePath(p capability.Path) (vfs.SafePath, error) {
+func (l *Local) safePath(p storage.Path) (vfs.SafePath, error) {
 	return vfs.ParseSafePath(p.String())
 }
 
@@ -55,24 +55,24 @@ func checkContext(ctx context.Context) error {
 	return ctx.Err()
 }
 
-func neutralKind(k vfs.Kind) capability.Kind {
+func neutralKind(k vfs.Kind) storage.Kind {
 	switch k {
 	case vfs.KindFile:
-		return capability.KindFile
+		return storage.KindFile
 	case vfs.KindDir:
-		return capability.KindDirectory
+		return storage.KindDirectory
 	default:
 		// Inode, device, mode and symlink details are intentionally not part
 		// of the neutral Entry contract.
-		return capability.KindOther
+		return storage.KindOther
 	}
 }
 
-func entryFromStat(path capability.Path, st vfs.Stat) (capability.Entry, error) {
+func entryFromStat(path storage.Path, st vfs.Stat) (storage.Entry, error) {
 	if st.Size > math.MaxInt64 {
-		return capability.Entry{}, fmt.Errorf("storage adapters: entry size %d exceeds capability range", st.Size)
+		return storage.Entry{}, fmt.Errorf("storage adapters: entry size %d exceeds capability range", st.Size)
 	}
-	return capability.Entry{
+	return storage.Entry{
 		Path:    path,
 		Kind:    neutralKind(st.Kind),
 		Size:    int64(st.Size),
@@ -80,22 +80,22 @@ func entryFromStat(path capability.Path, st vfs.Stat) (capability.Entry, error) 
 	}, nil
 }
 
-func (l *Local) Stat(ctx context.Context, path capability.Path) (capability.Entry, error) {
+func (l *Local) Stat(ctx context.Context, path storage.Path) (storage.Entry, error) {
 	if err := checkContext(ctx); err != nil {
-		return capability.Entry{}, err
+		return storage.Entry{}, err
 	}
 	p, err := l.safePath(path)
 	if err != nil {
-		return capability.Entry{}, err
+		return storage.Entry{}, err
 	}
 	st, err := l.root.Stat(p)
 	if err != nil {
-		return capability.Entry{}, err
+		return storage.Entry{}, err
 	}
 	return entryFromStat(path, st)
 }
 
-func (l *Local) ReadDir(ctx context.Context, path capability.Path) ([]capability.Entry, error) {
+func (l *Local) ReadDir(ctx context.Context, path storage.Path) ([]storage.Entry, error) {
 	if err := checkContext(ctx); err != nil {
 		return nil, err
 	}
@@ -107,7 +107,7 @@ func (l *Local) ReadDir(ctx context.Context, path capability.Path) ([]capability
 	if err != nil {
 		return nil, err
 	}
-	out := make([]capability.Entry, 0, len(entries))
+	out := make([]storage.Entry, 0, len(entries))
 	for _, dirEntry := range entries {
 		child, err := path.Join(dirEntry.Name)
 		if err != nil {
@@ -116,7 +116,7 @@ func (l *Local) ReadDir(ctx context.Context, path capability.Path) ([]capability
 		// ReadDir's DirEntry intentionally omits size and timestamps. Stat
 		// each ordinary entry so the neutral snapshot carries those facts.
 		if dirEntry.Kind != vfs.KindFile && dirEntry.Kind != vfs.KindDir {
-			out = append(out, capability.Entry{Path: child, Kind: neutralKind(dirEntry.Kind)})
+			out = append(out, storage.Entry{Path: child, Kind: neutralKind(dirEntry.Kind)})
 			continue
 		}
 		childSafe, err := l.safePath(child)
@@ -136,7 +136,7 @@ func (l *Local) ReadDir(ctx context.Context, path capability.Path) ([]capability
 	return out, nil
 }
 
-func (l *Local) OpenRead(ctx context.Context, path capability.Path) (io.ReadCloser, error) {
+func (l *Local) OpenRead(ctx context.Context, path storage.Path) (io.ReadCloser, error) {
 	if err := checkContext(ctx); err != nil {
 		return nil, err
 	}
@@ -154,7 +154,7 @@ func (l *Local) OpenRead(ctx context.Context, path capability.Path) (io.ReadClos
 // Rename exposes the local root's rename operation. The neutral contract does
 // not promise atomicity, while this backend provides a stronger in-filesystem
 // rename; cross-device failures are returned rather than silently emulated.
-func (l *Local) Rename(ctx context.Context, from, to capability.Path) error {
+func (l *Local) Rename(ctx context.Context, from, to storage.Path) error {
 	if err := checkContext(ctx); err != nil {
 		return err
 	}
@@ -169,32 +169,32 @@ func (l *Local) Rename(ctx context.Context, from, to capability.Path) error {
 	return l.root.Rename(fromPath, toPath, false)
 }
 
-func (l *Local) Space(ctx context.Context, path capability.Path) (capability.Space, error) {
+func (l *Local) Space(ctx context.Context, path storage.Path) (storage.Space, error) {
 	if err := checkContext(ctx); err != nil {
-		return capability.Space{}, err
+		return storage.Space{}, err
 	}
 	p, err := l.safePath(path)
 	if err != nil {
-		return capability.Space{}, err
+		return storage.Space{}, err
 	}
 	space, err := l.root.Space(p)
 	if err != nil {
-		return capability.Space{}, err
+		return storage.Space{}, err
 	}
-	return capability.Space{Total: space.Total, Free: space.Available}, nil
+	return storage.Space{Total: space.Total, Free: space.Available}, nil
 }
 
-func (l *Local) Health(ctx context.Context) capability.Health {
+func (l *Local) Health(ctx context.Context) storage.Health {
 	if err := checkContext(ctx); err != nil {
-		return capability.Health{Status: capability.HealthFailing, Err: err}
+		return storage.Health{Status: storage.HealthFailing, Err: err}
 	}
 	if err := l.root.Alive(); err != nil {
-		return capability.Health{Status: capability.HealthFailing, Err: err}
+		return storage.Health{Status: storage.HealthFailing, Err: err}
 	}
-	return capability.Health{Status: capability.HealthOK}
+	return storage.Health{Status: storage.HealthOK}
 }
 
-func (l *Local) Materialize(ctx context.Context, path capability.Path) (*capability.Materialized, error) {
+func (l *Local) Materialize(ctx context.Context, path storage.Path) (*storage.Materialized, error) {
 	if err := checkContext(ctx); err != nil {
 		return nil, err
 	}
@@ -216,5 +216,5 @@ func (l *Local) Materialize(ctx context.Context, path capability.Path) (*capabil
 		}
 		return nil, fmt.Errorf("storage adapters: entry size %d exceeds capability range", st.Size)
 	}
-	return capability.NewMaterialized(f.OSFile(), int64(st.Size), f.Close), nil
+	return storage.NewMaterialized(f.OSFile(), int64(st.Size), f.Close), nil
 }

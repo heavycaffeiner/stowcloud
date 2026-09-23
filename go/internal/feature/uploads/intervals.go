@@ -4,7 +4,7 @@ package upload
 
 import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
-	"github.com/heavycaffeiner/stowcloud/go/internal/platform/transfer"
+	"github.com/stowcloud/transfer"
 )
 
 // Range and IntervalSet remain named by the upload package for current callers

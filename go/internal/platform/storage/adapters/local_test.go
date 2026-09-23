@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/capability"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
+	storage "github.com/stowcloud/storage"
 )
 
 func TestLocalConformsToNeutralHierarchy(t *testing.T) {
@@ -35,11 +35,11 @@ func TestLocalConformsToNeutralHierarchy(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var hierarchy capability.ReadHierarchy = adapter
-	var health capability.HealthChecker = adapter
-	var space capability.SpaceReporter = adapter
-	var materializer capability.Materializer = adapter
-	var renamer capability.Renamer = adapter
+	var hierarchy storage.ReadHierarchy = adapter
+	var health storage.HealthChecker = adapter
+	var space storage.SpaceReporter = adapter
+	var materializer storage.Materializer = adapter
+	var renamer storage.Renamer = adapter
 	_ = hierarchy
 	_ = health
 	_ = space
@@ -47,7 +47,7 @@ func TestLocalConformsToNeutralHierarchy(t *testing.T) {
 	_ = renamer
 
 	ctx := context.Background()
-	filePath, err := capability.ParsePath("hello.txt")
+	filePath, err := storage.ParsePath("hello.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestLocalConformsToNeutralHierarchy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if entry.Kind != capability.KindFile || entry.Size != 5 || entry.Path != filePath {
+	if entry.Kind != storage.KindFile || entry.Size != 5 || entry.Path != filePath {
 		t.Fatalf("entry = %+v", entry)
 	}
 	f, err := adapter.OpenRead(ctx, filePath)
@@ -72,7 +72,7 @@ func TestLocalConformsToNeutralHierarchy(t *testing.T) {
 		t.Fatalf("read %q", got)
 	}
 
-	rootPath := capability.RootPath()
+	rootPath := storage.RootPath()
 	entries, err := adapter.ReadDir(ctx, rootPath)
 	if err != nil {
 		t.Fatal(err)
@@ -80,7 +80,7 @@ func TestLocalConformsToNeutralHierarchy(t *testing.T) {
 	if len(entries) != 2 {
 		t.Fatalf("ReadDir returned %d entries, want 2: %+v", len(entries), entries)
 	}
-	if got := adapter.Health(ctx); got.Status != capability.HealthOK || got.Err != nil {
+	if got := adapter.Health(ctx); got.Status != storage.HealthOK || got.Err != nil {
 		t.Fatalf("health = %+v", got)
 	}
 	available, err := adapter.Space(ctx, rootPath)
@@ -128,11 +128,11 @@ func TestLocalRenameUsesRootConfinement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	from, err := capability.ParsePath("from")
+	from, err := storage.ParsePath("from")
 	if err != nil {
 		t.Fatal(err)
 	}
-	to, err := capability.ParsePath("to")
+	to, err := storage.ParsePath("to")
 	if err != nil {
 		t.Fatal(err)
 	}

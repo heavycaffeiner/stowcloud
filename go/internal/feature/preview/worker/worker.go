@@ -14,6 +14,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/preview"
 	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/system/jail"
+	"github.com/stowcloud/sandbox-worker"
 )
 
 // No path is ever given to the worker. The seccomp allow list omits openat and
@@ -173,20 +174,19 @@ func serveLoop(control *os.File, mode string) error {
 		case preview.ModeDie:
 			// How a seccomp kill, an OOM and a segfault all appear from the
 			// parent: the process has simply vanished mid-job.
-			preview.CloseFiles([]*os.File{in, out})
+			sandboxworker.CloseFiles([]*os.File{in, out})
 			os.Exit(1)
 		case preview.ModeHang:
 			// Never replies, leaving the parent's deadline to end it. A sleep
 			// instead of a bare select, since the runtime converts the latter
 			// into a deadlock panic when it is the sole goroutine.
-			preview.CloseFiles([]*os.File{in, out})
+			sandboxworker.CloseFiles([]*os.File{in, out})
 			time.Sleep(time.Hour)
 		}
 
 		resp := handle(req, in, out)
-		preview.CloseFiles([]*os.File{in, out})
-
-		if werr := preview.SendMessage(control, resp.Encode()); werr != nil {
+		sandboxworker.CloseFiles([]*os.File{in, out})
+		if werr := sandboxworker.SendMessage(control, resp.Encode()); werr != nil {
 			return werr
 		}
 	}
@@ -342,16 +342,16 @@ func recvJob(control *os.File) (preview.Request, *os.File, *os.File, error) {
 	buf := make([]byte, limits.WorkerWireMessage)
 	// Asking for a bound larger than the protocol allows would let a peer hand
 	// over more descriptors than a job has.
-	n, files, err := preview.RecvMessage(control, buf, jobDescriptors)
+	n, files, err := sandboxworker.RecvMessage(control, buf, jobDescriptors)
 	if err != nil {
 		return preview.Request{}, nil, nil, fmt.Errorf("receiving a job: %w", err)
 	}
 	if n == 0 {
-		preview.CloseFiles(files)
+		sandboxworker.CloseFiles(files)
 		return preview.Request{}, nil, nil, io.EOF
 	}
 	if len(files) != jobDescriptors {
-		preview.CloseFiles(files)
+		sandboxworker.CloseFiles(files)
 		return preview.Request{}, nil, nil, fmt.Errorf(
 			"%w: a job arrived with %d descriptors, want %d",
 			preview.ErrProtocol, len(files), jobDescriptors)
@@ -359,7 +359,7 @@ func recvJob(control *os.File) (preview.Request, *os.File, *os.File, error) {
 
 	req, derr := preview.DecodeRequest(buf[:n])
 	if derr != nil {
-		preview.CloseFiles(files)
+		sandboxworker.CloseFiles(files)
 		return preview.Request{}, nil, nil, derr
 	}
 	return req, files[0], files[1], nil

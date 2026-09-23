@@ -9,12 +9,12 @@ import (
 	"io"
 	"net"
 	"os"
-	"os/exec"
 	"sync"
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
 	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
+	"github.com/stowcloud/sandbox-worker"
 )
 
 // The parent half.
@@ -102,11 +102,12 @@ type Pool struct {
 // slot holds one worker's position in the pool. The process within it is
 // replaced over time while the slot itself endures.
 type slot struct {
-	mu   sync.Mutex
+	mu    sync.Mutex
+	child *sandboxworker.Child
+	// These aliases preserve the preview pool's focused diagnostics and test
+	// visibility while ownership of child startup and reap lives in the neutral
+	// sandbox-worker module.
 	proc *os.Process
-	// sock is the raw descriptor that sendmsg requires in order to attach the
-	// job's two descriptors to a message. conn is that same socket wrapped for
-	// the runtime poller, which is what a read deadline requires.
 	sock *os.File
 	conn *net.UnixConn
 }
@@ -205,52 +206,17 @@ func (p *Pool) Generate(ctx context.Context, req Request, in Source, out *os.Fil
 // Every failure path releases whatever it opened. A leak here means a descriptor
 // the parent retains for the life of the process plus a child nobody reaps.
 func (p *Pool) start(s *slot) error {
-	// SOCK_SEQPACKET keeps message boundaries intact. A stream would let a short
-	// read pass as a valid short message, precisely the ambiguity the
-	// fixed-layout codec exists to eliminate.
-	parent, child, err := SocketPair()
+	child, err := sandboxworker.StartChild(sandboxworker.ChildConfig{
+		Exe:    p.opt.Exe,
+		Args:   p.opt.Args,
+		Env:    p.opt.Env,
+		Stderr: p.opt.Stderr,
+	})
 	if err != nil {
-		return err
+		return fmt.Errorf("preview: %w", err)
 	}
-	defer func() {
-		//nolint:errcheck // the child holds its own copy after exec.
-		_ = child.Close()
-	}()
-
-	//nolint:gosec // G204: the executable is this process's own path, never a caller's.
-	cmd := exec.Command(p.opt.Exe, p.opt.Args...)
-	cmd.Env = p.opt.Env
-	// The child's descriptor 3, where the worker expects to find it. The value is
-	// fixed rather than supplied as an argument because the worker parses none:
-	// an argv would be somewhere to put a path.
-	cmd.ExtraFiles = []*os.File{child}
-	cmd.Stdout = nil
-	cmd.Stderr = os.Stderr
-	if p.opt.Stderr != nil {
-		cmd.Stderr = p.opt.Stderr
-	}
-
-	if serr := cmd.Start(); serr != nil {
-		closeFile(parent)
-		return fmt.Errorf("preview: starting a worker: %w", serr)
-	}
-
-	conn, cerr := net.FileConn(parent)
-	if cerr != nil {
-		closeFile(parent)
-		killProcess(cmd.Process)
-		return fmt.Errorf("preview: wrapping the control socket: %w", cerr)
-	}
-	unixConn, ok := conn.(*net.UnixConn)
-	if !ok {
-		//nolint:errcheck // the wrap already failed and the socket is being abandoned.
-		_ = conn.Close()
-		closeFile(parent)
-		killProcess(cmd.Process)
-		return fmt.Errorf("preview: the control socket is a %T, not a unix socket", conn)
-	}
-
-	s.proc, s.sock, s.conn = cmd.Process, parent, unixConn
+	s.child = child
+	s.proc, s.sock, s.conn = child.Process, child.Socket, child.Conn
 	return nil
 }
 
@@ -272,7 +238,7 @@ func (p *Pool) exchange(
 	// Both descriptors go over as an SCM_RIGHTS message, and neither leaves its
 	// owner as a bare number: the transport holds each file alive across the
 	// syscall.
-	if err := SendMessage(s.sock, req.Encode(), in.File(), out); err != nil {
+	if err := sandboxworker.SendMessage(s.sock, req.Encode(), in.File(), out); err != nil {
 		return Response{}, fmt.Errorf("%w: sending the job: %w", ErrWorkerDied, err)
 	}
 
@@ -316,29 +282,12 @@ func (p *Pool) exchange(
 // worker killed by SIGSYS after seccomp refused a syscall and one that exited
 // cleanly would both appear as a worker dying with EOF, naming no cause.
 func reap(s *slot) string {
-	cause := ""
-	if s.proc != nil {
-		killProcess(s.proc)
-		// Waited on so the child does not linger as a zombie.
-		st, werr := s.proc.Wait()
-		switch {
-		case werr != nil:
-			cause = "wait: " + werr.Error()
-		case st != nil:
-			cause = st.String()
-		}
-		s.proc = nil
+	if s.child == nil {
+		return ""
 	}
-	if s.conn != nil {
-		//nolint:errcheck // the socket is what just failed.
-		_ = s.conn.Close()
-		s.conn = nil
-	}
-	if s.sock != nil {
-		//nolint:errcheck // as above.
-		_ = s.sock.Close()
-		s.sock = nil
-	}
+	cause := s.child.Reap()
+	s.child = nil
+	s.proc, s.sock, s.conn = nil, nil, nil
 	return cause
 }
 
@@ -354,26 +303,8 @@ func (p *Pool) Close() error {
 
 	for _, s := range p.slots {
 		s.mu.Lock()
-		// The cause is discarded here, since Close kills every worker
-		// deliberately and how one ended conveys nothing.
 		reap(s)
 		s.mu.Unlock()
 	}
 	return nil
-}
-
-func closeFile(f *os.File) {
-	if f == nil {
-		return
-	}
-	//nolint:errcheck // a descriptor being abandoned on a path that already failed.
-	_ = f.Close()
-}
-
-func killProcess(proc *os.Process) {
-	if proc == nil {
-		return
-	}
-	//nolint:errcheck // the process may already be gone, which is the case being handled.
-	_ = proc.Kill()
 }

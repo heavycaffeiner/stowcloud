@@ -60,3 +60,10 @@ github.com/stowcloud/durablefs
 
 # Standalone storage-neutral name search and SCNB v1 index.
 github.com/stowcloud/namesearch
+
+# Storage capability contracts, transfer intervals, worker IPC, and VeraCrypt
+# container formats are maintained as independent public modules.
+github.com/stowcloud/storage
+github.com/stowcloud/transfer
+github.com/stowcloud/sandbox-worker
+github.com/stowcloud/veracrypt

@@ -123,6 +123,14 @@ github.com/stowcloud/durablefs v0.1.0 h1:+CtrP4pigmKXKnhR0oWcjs09JP+HtzSzNF+X8fw
 github.com/stowcloud/durablefs v0.1.0/go.mod h1:w2z3GrAiFnLD7XUlm0QhykNYBN6PW77vVO8+Z/a5YSU=
 github.com/stowcloud/namesearch v0.1.0 h1:lVcH30afHGVe4hLwslO8QLkbhF3I+qVA3f8e1HVw09s=
 github.com/stowcloud/namesearch v0.1.0/go.mod h1:e5Hb+4oN86h9PG6/aG+3GYUOEvZJlVId/R2db9eDRLE=
+github.com/stowcloud/sandbox-worker v0.1.0 h1:+zc9CbUrgKEqi9OKOECcYSbKwzQn/j0Cp28bLykSPeY=
+github.com/stowcloud/sandbox-worker v0.1.0/go.mod h1:LSkVLn2YPjQRqye5/KzgsyfMAQS5ct6fdyAIQak68sA=
+github.com/stowcloud/storage v0.1.0 h1:EJdwM0b9B2CeDnnwCnVohRLOfFh4RmmSRXrL+eFV5f8=
+github.com/stowcloud/storage v0.1.0/go.mod h1:4BXrUZ4ttJ53eaIv47BTmUJfSWNsV2+Hk0ZkZ/Rm6Ww=
+github.com/stowcloud/transfer v0.1.1 h1:7MOgEN49DAbXZNIoJXjTevp+x5b9FtYsPZhbzJVwRQk=
+github.com/stowcloud/transfer v0.1.1/go.mod h1:uCW3gsxw7IRNiCa51wdndwxNALU7DLZ5L8VVAhy5TnI=
+github.com/stowcloud/veracrypt v0.1.1 h1:H+YdYdmYv+c23ImNaaCofLLZxY/kflEOD1MghGc+mos=
+github.com/stowcloud/veracrypt v0.1.1/go.mod h1:dfDTudQNvVXL0Hl+h+gqsYLWurhJWQNsrmwHzhHO31Y=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/objx v0.4.0/go.mod h1:YvHI0jy2hoMjB+UWwv71VJQ9isScKT/TqJzVSSt89Yw=
 github.com/stretchr/objx v0.5.0/go.mod h1:Yh+to48EsGEfYuaHDzXPcE3xhTkx73EhmCGUpEOglKo=

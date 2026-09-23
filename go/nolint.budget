@@ -533,4 +533,4 @@
 # engine's own gate, and the parser and listing bounds are compiled-in
 # constants again, so there is no global left for the exception to cover.
 22
-105
+98
