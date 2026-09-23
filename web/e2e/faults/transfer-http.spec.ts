@@ -1,3 +1,4 @@
+import type { Route } from '@playwright/test';
 import { test, expect } from '../fixtures';
 import { createTempFixtureFile } from '../helpers/files';
 
@@ -88,27 +89,28 @@ test.describe('HTTP Transfer Fault Injection', () => {
     const fileName = `${namespace('fault-403')}.txt`;
     const fixture = createTempFixtureFile(fileName, 2048);
 
+    const { promise: injected, resolve: injectedResponse } = Promise.withResolvers<void>();
+    const intercept = async (route: Route) => {
+      const request = route.request();
+      if (request.method() !== 'PATCH') {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: { code: 'permission_denied', message: 'Permission denied' } }) });
+      injectedResponse();
+    };
+    await page.context().route('**/api/v1/uploads/**', intercept);
     try {
-      await faults.failRequests('**/api/v1/uploads/**', 403, {
-        body: { error: { code: 'permission_denied', message: 'Permission denied' } },
-      });
-
-      const failingUpload = page.waitForResponse((response) => {
-        const request = response.request();
-        return request.method() === 'PATCH' && response.url().includes('/api/v1/uploads/') && response.status() === 403;
-      });
       const fileInput = page.locator('input[type="file"][multiple]');
       await fileInput.setInputFiles(fixture.filePath);
-
-      const response = await failingUpload;
-      expect(response.status()).toBe(403);
-
+      await injected;
       const item = page.locator('.sc-upload-tray__item').filter({
         has: page.locator('.sc-upload-tray__name', { hasText: fileName }),
       });
       await expect(item).toBeVisible();
       await expect(item.locator('.sc-upload-tray__message')).toBeVisible();
     } finally {
+      await page.context().unroute('**/api/v1/uploads/**', intercept);
       fixture.cleanup();
     }
   });
@@ -125,27 +127,28 @@ test.describe('HTTP Transfer Fault Injection', () => {
     const fileName = `${namespace('fault-507')}.txt`;
     const fixture = createTempFixtureFile(fileName, 2048);
 
+    const { promise: injected, resolve: injectedResponse } = Promise.withResolvers<void>();
+    const intercept = async (route: Route) => {
+      const request = route.request();
+      if (request.method() !== 'PATCH') {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({ status: 507, contentType: 'application/json', body: JSON.stringify({ error: { code: 'insufficient_storage', message: 'Quota exceeded' } }) });
+      injectedResponse();
+    };
+    await page.context().route('**/api/v1/uploads/**', intercept);
     try {
-      await faults.failRequests('**/api/v1/uploads/**', 507, {
-        body: { error: { code: 'insufficient_storage', message: 'Quota exceeded' } },
-      });
-
-      const failingUpload = page.waitForResponse((response) => {
-        const request = response.request();
-        return request.method() === 'PATCH' && response.url().includes('/api/v1/uploads/') && response.status() === 507;
-      });
       const fileInput = page.locator('input[type="file"][multiple]');
       await fileInput.setInputFiles(fixture.filePath);
-
-      const response = await failingUpload;
-      expect(response.status()).toBe(507);
-
+      await injected;
       const item = page.locator('.sc-upload-tray__item').filter({
         has: page.locator('.sc-upload-tray__name', { hasText: fileName }),
       });
       await expect(item).toBeVisible();
       await expect(item.locator('.sc-upload-tray__message')).toBeVisible();
     } finally {
+      await page.context().unroute('**/api/v1/uploads/**', intercept);
       fixture.cleanup();
     }
   });
