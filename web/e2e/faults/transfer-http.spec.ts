@@ -3,6 +3,7 @@ import { test, expect } from '../fixtures';
 import { createTempFixtureFile } from '../helpers/files';
 
 test.describe('HTTP Transfer Fault Injection', () => {
+  test.use({ serviceWorkers: 'block' });
   test.beforeEach(async ({ filesystem, workerApp, grants }) => {
     const shares = await filesystem.listShares();
     let docsShare = shares.find((s) => s.name === 'docs');
