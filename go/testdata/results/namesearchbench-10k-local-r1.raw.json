@@ -1,0 +1,82 @@
+[
+  {
+    "count": 10000,
+    "duration_ns": 19480708,
+    "fallback": "",
+    "kind": "",
+    "operation": "generate",
+    "query": ""
+  },
+  {
+    "count": 10000,
+    "duration_ns": 6121455,
+    "fallback": "",
+    "kind": "",
+    "operation": "build",
+    "query": ""
+  },
+  {
+    "count": 10000,
+    "duration_ns": 31976798,
+    "fallback": "",
+    "kind": "",
+    "operation": "merge",
+    "query": ""
+  },
+  {
+    "count": 10000,
+    "duration_ns": 89087,
+    "fallback": "",
+    "kind": "",
+    "operation": "open",
+    "query": ""
+  },
+  {
+    "count": 1,
+    "duration_ns": 160054,
+    "fallback": "-",
+    "kind": "exact",
+    "operation": "query",
+    "query": "東京-00000000.txt"
+  },
+  {
+    "count": 0,
+    "duration_ns": 2570,
+    "fallback": "AllTrigramsPruned",
+    "kind": "prefix",
+    "operation": "query",
+    "query": "report-prefix"
+  },
+  {
+    "count": 0,
+    "duration_ns": 3738,
+    "fallback": "AllTrigramsPruned",
+    "kind": "substring",
+    "operation": "query",
+    "query": "annual-substring"
+  },
+  {
+    "count": 0,
+    "duration_ns": 882,
+    "fallback": "AllTrigramsPruned",
+    "kind": "common",
+    "operation": "query",
+    "query": "common"
+  },
+  {
+    "count": 100,
+    "duration_ns": 725061,
+    "fallback": "",
+    "kind": "",
+    "operation": "update",
+    "query": ""
+  },
+  {
+    "count": 100,
+    "duration_ns": 27762916,
+    "fallback": "",
+    "kind": "",
+    "operation": "merge",
+    "query": "post-update"
+  }
+]

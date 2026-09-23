@@ -140,13 +140,14 @@ func main() {
 		say(os.Stderr, "contractcheck: reading the handlers: %v\n", err)
 		os.Exit(2)
 	}
-	// The request structs live with the handlers that decode them rather than
-	// with the views, so they are read from their own directory.
-	reqSrc, err := readGo(os.Args[3])
+	// Request decoders may live in either transport or application while route
+	// families move. Read both roots so every client request remains checked.
+	appSrc, err := readGo(os.Args[3])
 	if err != nil {
-		say(os.Stderr, "contractcheck: reading the request decoders: %v\n", err)
+		say(os.Stderr, "contractcheck: reading application decoders: %v\n", err)
 		os.Exit(2)
 	}
+	reqSrc := goSrc + "\n" + appSrc
 
 	bad := 0
 	for _, p := range pairs() {

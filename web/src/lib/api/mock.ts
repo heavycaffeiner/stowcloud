@@ -1097,7 +1097,7 @@ async function adminUnlinkUserOidc(id: number): Promise<void> {
 /** `GET /api/v1/admin/oidc/endpoints` (addition A/B): one line per
  *  configured app host, exactly what the server would send. Built the same
  *  way `oidcRedirectURI` builds one per request
- *  (`go/engine/lifecycle/oidc.go`): `https://{host}/api/v1/auth/oidc/callback`
+ *  (`go/internal/app/oidc.go`): `https://{host}/api/v1/auth/oidc/callback`
  *  for the redirect URI, `https://{host}/login` for the post-logout landing. */
 async function oidcEndpoints(): Promise<OidcEndpoints> {
   await delay(20)
@@ -2768,7 +2768,7 @@ async function shareDelete(id: number): Promise<void> {
 
 
 // ── share links, administrator overview: mirrors `GET /api/v1/admin/links`
-// (`go/engine/http/handler/links.go`'s `OwnedLinkView`), every link on the
+// (`go/internal/transport/http/handler/links.go`'s `OwnedLinkView`), every link on the
 // deployment, whoever owns it. Fixed rows attributed to four of the seeded
 // accounts (`mockUsers` above) so the owner column has something to show
 // beyond "me": one plain link, one already expired, one that has used up its
@@ -2954,7 +2954,7 @@ function searchStream(
   }
 }
 
-// The host filesystem a path picker browses: go/engine/lifecycle/adminfs.go.
+// The host filesystem a path picker browses: go/internal/app/adminfs.go.
 //
 // A fixed tree rather than anything derived from the mock shares, because
 // what the picker is for is choosing a folder no share covers yet.
@@ -3029,7 +3029,7 @@ async function setRootOrder(order: string[]): Promise<void> {
   mockRootOrder = [...order]
 }
 
-// share encryption (opt-in, zero-knowledge, per-share content encryption in rclone's own crypt format): go/engine/lifecycle/shareenc.go
+// share encryption, opt-in rclone-compatible content encryption: go/internal/app/shareenc.go
 //
 // The real backend also refuses enabling or disabling over a non-empty
 // share; this mock has no filesystem to check that against, the same

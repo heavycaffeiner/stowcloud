@@ -640,6 +640,13 @@ jobs:
           tags: stowcloud-smb-daemon:dev
           cache-from: type=gha,scope=smb-amd64
 
+
+      - name: Seed the portable compose security policy
+        run: |
+          docker volume create stowcloud-build_sc-data >/dev/null
+          echo '{"hardening":"preferred"}' | docker run --rm -i \
+            -v stowcloud-build_sc-data:/var/lib/stowcloud \
+            stowcloud:dev settings set security >/dev/null
       - name: docker compose up -d
         run: |
           docker compose -f compose.buildver.yml up -d --no-build

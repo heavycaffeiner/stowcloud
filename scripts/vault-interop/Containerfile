@@ -1,12 +1,10 @@
 # Builds the rootfs for a throwaway VM (not a running container: this sandbox
 # has no loop-device access inside podman itself, only inside a nested VM
 # booted from this image's exported filesystem) that generates the VeraCrypt
-# interop fixtures under go/engine/infra/vault/testdata/interop.
-#
-# Nothing in this image runs at `go test` time: it is only used by
-# scripts/gen-vault-interop-fixtures.sh, by hand, to produce fixtures that
-# are regenerated on demand rather than committed (see that script's own
-# comments for why).
+# interop fixtures under go/internal/platform/storage/vault/testdata/interop.
+# The generator includes a real exFAT fixture; the VM loads the exfat module
+# before generation. Nothing in this image runs at `go test` time: it is only
+# used by scripts/gen-vault-interop-fixtures.sh.
 FROM docker.io/library/debian:12-slim
 
 ARG VERACRYPT_VERSION=1.26.29

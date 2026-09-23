@@ -38,6 +38,9 @@ importers:
       '@noble/hashes':
         specifier: ^2.4.0
         version: 2.4.0
+      '@stowcloud/rclone-crypt':
+        specifier: github:Stowcloud/rclone-crypt#v0.1.0
+        version: https://codeload.github.com/Stowcloud/rclone-crypt/tar.gz/eb48c44602f568a783b5b7aa34c02ee7ea55b09d
       '@tanstack/react-query':
         specifier: ^5.102.8
         version: 5.102.8(react@19.3.0)
@@ -775,6 +778,11 @@ packages:
 
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
+
+  '@stowcloud/rclone-crypt@https://codeload.github.com/Stowcloud/rclone-crypt/tar.gz/eb48c44602f568a783b5b7aa34c02ee7ea55b09d':
+    resolution: {gitHosted: true, tarball: https://codeload.github.com/Stowcloud/rclone-crypt/tar.gz/eb48c44602f568a783b5b7aa34c02ee7ea55b09d}
+    version: 0.1.0
+    engines: {node: '>=22'}
 
   '@tanstack/query-core@5.102.8':
     resolution: {integrity: sha512-ZNjkJ33CqvPNec/6lZBnHqLc3EVGPZ9ySLhYahU9TcuRFdmwXewuj0c4hwSWcGHqEUwcSrKeZ+oGcvPBqXcQcg==}
@@ -2144,6 +2152,11 @@ snapshots:
     optional: true
 
   '@standard-schema/spec@1.1.0': {}
+
+  '@stowcloud/rclone-crypt@https://codeload.github.com/Stowcloud/rclone-crypt/tar.gz/eb48c44602f568a783b5b7aa34c02ee7ea55b09d':
+    dependencies:
+      '@noble/ciphers': 2.4.0
+      '@noble/hashes': 2.4.0
 
   '@tanstack/query-core@5.102.8': {}
 

@@ -222,12 +222,14 @@ export class ApiError extends Error {
  * settings screen), and bouncing the whole app to the login screen over that
  * would be a silent failure of its own. The 404 case is the server hiding a
  * route this credential may not reach: every path this app calls exists, so an
- * unexplained absence means the session no longer reaches it.
+ * unexplained absence means the session no longer reaches it. The current
+ * server envelope uses `not_found`; `request_failed` remains accepted for
+ * older deployments that used the earlier refusal envelope.
  */
 export function isSessionDead(error: unknown): boolean {
   if (!(error instanceof ApiError)) return false
   if (error.status === 401) return error.code === 'auth.required'
-  return error.status === 404 && error.code === 'request_failed'
+  return error.status === 404 && (error.code === 'not_found' || error.code === 'request_failed')
 }
 
 export interface UserInfo {
@@ -898,7 +900,7 @@ export interface OidcConfig {
  *  register at the identity provider, exactly as the server will send and
  *  accept them, one entry per configured app host. Built from
  *  `network.app_hosts` the same way `oidcRedirectURI` builds one per request
- *  (`go/engine/lifecycle/oidc.go`), so what this shows is never a guess. */
+ *  (`go/internal/app/oidc.go`), so what this shows is never a guess. */
 export interface OidcEndpoints {
   redirect_uris: string[]
   post_logout_redirect_uris: string[]
@@ -1142,7 +1144,7 @@ export interface ShareLinkInfo {
 }
 
 /** `GET /api/v1/admin/links`: one link as an administrator reads it
- *  (`go/engine/http/handler/links.go`'s `OwnedLinkView`). Everything
+ *  (`go/internal/transport/http/handler/links.go`'s `OwnedLinkView`). Everything
  *  `ShareLinkInfo` carries, plus which account it belongs to: `owner` is the
  *  account id and `owner_name` its display name at read time, empty when the
  *  account has since been deleted. Never carries a token, the same as

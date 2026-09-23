@@ -1,0 +1,15 @@
+# Local exploratory evidence only; not a release performance claim.
+# All runs use seed=1, depth=3, fanout=32, namespaces=2, concurrency=1,
+# cache=cold-unspecified, filesystem=xfs, and explicit hardware label:
+# 13th Gen Intel(R) Core(TM) i5-13500H. Each run writes aggregate JSON,
+# raw JSON/CSV samples, and captured stdout separately.
+
+go run ./tools/namesearchbench -seed 1 -count 10000 -depth 3 -fanout 32 -namespaces 2 -cache cold-unspecified -filesystem xfs -hardware '13th Gen Intel(R) Core(TM) i5-13500H' -concurrency 1 -out testdata/results/namesearchbench-10k-local-r1.json -raw-json testdata/results/namesearchbench-10k-local-r1.raw.json -raw-csv testdata/results/namesearchbench-10k-local-r1.raw.csv > testdata/results/namesearchbench-10k-local-r1.stdout.json
+go run ./tools/namesearchbench -seed 1 -count 10000 -depth 3 -fanout 32 -namespaces 2 -cache cold-unspecified -filesystem xfs -hardware '13th Gen Intel(R) Core(TM) i5-13500H' -concurrency 1 -out testdata/results/namesearchbench-10k-local-r2.json -raw-json testdata/results/namesearchbench-10k-local-r2.raw.json -raw-csv testdata/results/namesearchbench-10k-local-r2.raw.csv > testdata/results/namesearchbench-10k-local-r2.stdout.json
+go run ./tools/namesearchbench -seed 1 -count 10000 -depth 3 -fanout 32 -namespaces 2 -cache cold-unspecified -filesystem xfs -hardware '13th Gen Intel(R) Core(TM) i5-13500H' -concurrency 1 -out testdata/results/namesearchbench-10k-local-r3.json -raw-json testdata/results/namesearchbench-10k-local-r3.raw.json -raw-csv testdata/results/namesearchbench-10k-local-r3.raw.csv > testdata/results/namesearchbench-10k-local-r3.stdout.json
+
+go run ./tools/namesearchbench -seed 1 -count 100000 -depth 3 -fanout 32 -namespaces 2 -cache cold-unspecified -filesystem xfs -hardware '13th Gen Intel(R) Core(TM) i5-13500H' -concurrency 1 -out testdata/results/namesearchbench-100k-local-r1.json -raw-json testdata/results/namesearchbench-100k-local-r1.raw.json -raw-csv testdata/results/namesearchbench-100k-local-r1.raw.csv > testdata/results/namesearchbench-100k-local-r1.stdout.json
+go run ./tools/namesearchbench -seed 1 -count 100000 -depth 3 -fanout 32 -namespaces 2 -cache cold-unspecified -filesystem xfs -hardware '13th Gen Intel(R) Core(TM) i5-13500H' -concurrency 1 -out testdata/results/namesearchbench-100k-local-r2.json -raw-json testdata/results/namesearchbench-100k-local-r2.raw.json -raw-csv testdata/results/namesearchbench-100k-local-r2.raw.csv > testdata/results/namesearchbench-100k-local-r2.stdout.json
+go run ./tools/namesearchbench -seed 1 -count 100000 -depth 3 -fanout 32 -namespaces 2 -cache cold-unspecified -filesystem xfs -hardware '13th Gen Intel(R) Core(TM) i5-13500H' -concurrency 1 -out testdata/results/namesearchbench-100k-local-r3.json -raw-json testdata/results/namesearchbench-100k-local-r3.raw.json -raw-csv testdata/results/namesearchbench-100k-local-r3.raw.csv > testdata/results/namesearchbench-100k-local-r3.stdout.json
+
+The 1M shape was not run in this local exploratory set because its runtime and temporary index resource use were outside this evidence budget. Do not infer 1M performance from these runs.

@@ -14,7 +14,7 @@ concurrency:
 
 env:
   NODE_VERSION: "24"
-  GO_VERSION: "1.26"
+  GO_VERSION: "1.27.1"
 
 jobs:
   deterministic-matrix:

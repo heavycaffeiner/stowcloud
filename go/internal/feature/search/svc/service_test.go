@@ -1,0 +1,454 @@
+//go:build linux
+
+package svc
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+
+	core "github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/search/stowcloud"
+	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
+	search "github.com/stowcloud/namesearch"
+	"github.com/stowcloud/namesearch/index"
+)
+
+// corpus builds a share root holding the named files, and reports the host
+// directory beside it so a test can change the tree underneath the index the
+// way another program would.
+func corpus(t *testing.T, share uint32, names ...string) (search.Source, string) {
+	t.Helper()
+	dir := t.TempDir()
+	for _, n := range names {
+		full := filepath.Join(dir, filepath.FromSlash(n))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatalf("mkdir for %s: %v", n, err)
+		}
+		if err := os.WriteFile(full, []byte("x"), 0o644); err != nil {
+			t.Fatalf("write %s: %v", n, err)
+		}
+	}
+
+	root, _, err := vfs.RegisterShareRoot(vfs.ShareID(share), dir, vfs.DefaultSharePolicy())
+	if err != nil {
+		t.Skipf("this host's temp directory is on a filesystem this build refuses: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := root.Close(); cerr != nil {
+			t.Errorf("close: %v", cerr)
+		}
+	})
+	return stowcloud.SourceOf(core.ScanSource{Share: core.ShareID(share), Root: root, Base: vfs.RootPath()}), dir
+}
+
+func newIndex(t *testing.T) *index.NameIndex {
+	t.Helper()
+	ix, err := index.Open(t.TempDir(), index.DefaultConfig())
+	if err != nil {
+		t.Fatalf("index.Open: %v", err)
+	}
+	generation := ix.BeginCoverage()
+	if !ix.CompleteCoverage(generation) {
+		t.Fatal("CompleteCoverage rejected current generation")
+	}
+	return ix
+}
+
+func hitPaths(hits []search.Hit) []string {
+	out := make([]string, 0, len(hits))
+	for _, h := range hits {
+		out = append(out, h.Path)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// With no index attached, the walk answers and says so.
+func TestQueryWalksWhenThereIsNoIndex(t *testing.T) {
+	svc := New(Options{})
+	src, _ := corpus(t, 1, "report.pdf", "other.txt")
+
+	res, err := svc.Query(t.Context(), []search.Source{src}, QueryOptions{Query: "report"})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if res.Tier != TierWalk {
+		t.Errorf("tier is %v, want walk", res.Tier)
+	}
+	if want := []string{"report.pdf"}; !slices.Equal(hitPaths(res.Hits), want) {
+		t.Errorf("got %v, want %v", hitPaths(res.Hits), want)
+	}
+	if svc.HasIndex() {
+		t.Error("HasIndex is true with no index attached")
+	}
+}
+
+// A trigram query with an index behind it is answered from the index, and the
+// tier reports truthfully so a caller can surface which one ran.
+func TestQueryAnswersFromTheIndexWhenItCan(t *testing.T) {
+	ix := newIndex(t)
+	svc := New(Options{Index: ix})
+	src, _ := corpus(t, 1, "report.pdf", "other.txt")
+
+	if err := ix.Append([]index.Entry{{Namespace: 1, Path: "report.pdf"}}); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+
+	res, err := svc.Query(t.Context(), []search.Source{src}, QueryOptions{Query: "report"})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if res.Tier != TierIndex {
+		t.Errorf("tier is %v, want index", res.Tier)
+	}
+	if want := []string{"report.pdf"}; !slices.Equal(hitPaths(res.Hits), want) {
+		t.Errorf("got %v, want %v", hitPaths(res.Hits), want)
+	}
+}
+
+// A query the index declines routes to the walk, and the reason is carried so
+// it is not mistaken for an empty result.
+func TestAShortQueryFallsBackToTheWalkAndReportsWhy(t *testing.T) {
+	ix := newIndex(t)
+	svc := New(Options{Index: ix})
+	src, _ := corpus(t, 1, "ab.txt")
+	if err := ix.Append([]index.Entry{{Namespace: 1, Path: "ab.txt"}}); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+
+	res, err := svc.Query(t.Context(), []search.Source{src}, QueryOptions{Query: "ab"})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if res.Tier != TierWalk {
+		t.Errorf("tier is %v, want walk", res.Tier)
+	}
+	if res.Fallback != index.FallbackQueryTooShort {
+		t.Errorf("fallback is %v, want QueryTooShort", res.Fallback)
+	}
+	if want := []string{"ab.txt"}; !slices.Equal(hitPaths(res.Hits), want) {
+		t.Errorf("the walk did not find the file: %v", hitPaths(res.Hits))
+	}
+}
+
+// An incomplete index declines, the walk answers, and the walk is always
+// current: this is the compensating chain's second link.
+func TestAnIncompleteIndexFallsBackAndTheWalkStillFinds(t *testing.T) {
+	ix := newIndex(t)
+	svc := New(Options{Index: ix})
+	src, _ := corpus(t, 1, "report.pdf")
+	ix.SetIncomplete(true)
+
+	res, err := svc.Query(t.Context(), []search.Source{src}, QueryOptions{Query: "report"})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if res.Fallback != index.FallbackIncomplete || res.Tier != TierWalk {
+		t.Errorf("fallback %v on tier %v, want Incomplete on walk", res.Fallback, res.Tier)
+	}
+	if want := []string{"report.pdf"}; !slices.Equal(hitPaths(res.Hits), want) {
+		t.Errorf("the walk did not find a file the index never held: %v", hitPaths(res.Hits))
+	}
+}
+
+// The gate refuses before any work starts. The source below has no root at all,
+// so anything that tried to read a directory would fail rather than answer.
+func TestTheGateRefusesWithoutTouchingADirectory(t *testing.T) {
+	svc := New(Options{})
+	for range limits.ConcurrentSearches {
+		if !svc.acquireSearchSlot() {
+			t.Fatal("the gate refused before reaching its configured limit")
+		}
+		defer svc.releaseSearchSlot()
+	}
+
+	missing := search.Source{Namespace: 1}
+	_, err := svc.Query(t.Context(), []search.Source{missing}, QueryOptions{Query: "report"})
+	if !errors.Is(err, ErrBusy) {
+		t.Errorf("a saturated service returned %v, want ErrBusy", err)
+	}
+}
+
+// A slot is released when a query finishes, or the service would answer ErrBusy
+// forever after its first burst.
+func TestTheGateReleasesItsSlot(t *testing.T) {
+	svc := New(Options{})
+	src, _ := corpus(t, 1, "report.pdf")
+	for range limits.ConcurrentSearches + 2 {
+		if _, err := svc.Query(t.Context(), []search.Source{src}, QueryOptions{Query: "report"}); err != nil {
+			t.Fatalf("query: %v", err)
+		}
+	}
+}
+
+// The query length is a trust boundary: it is bounded before it is folded and
+// split into trigrams.
+func TestQueryLengthIsBounded(t *testing.T) {
+	svc := New(Options{})
+	long := strings.Repeat("a", limits.SearchQueryBytes+1)
+
+	if _, err := svc.Query(t.Context(), nil, QueryOptions{Query: long}); err == nil {
+		t.Error("an oversized query was accepted")
+	}
+}
+
+// The limit is clamped rather than refused: a caller asking for more than the
+// ceiling gets the ceiling.
+func TestTheResultLimitIsClamped(t *testing.T) {
+	svc := New(Options{})
+	names := make([]string, 0, 12)
+	for i := range 12 {
+		names = append(names, "report-"+string(rune('a'+i))+".txt")
+	}
+	src, _ := corpus(t, 1, names...)
+
+	res, err := svc.Query(t.Context(), []search.Source{src},
+		QueryOptions{Query: "report", Limit: 3})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if len(res.Hits) != 3 || !res.Truncated {
+		t.Errorf("got %d hits, truncated %v; want 3 and true", len(res.Hits), res.Truncated)
+	}
+
+	res, err = svc.Query(t.Context(), []search.Source{src},
+		QueryOptions{Query: "report", Limit: limits.SearchResults * 10})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if len(res.Hits) != 12 {
+		t.Errorf("got %d hits, want all 12", len(res.Hits))
+	}
+}
+
+// An index hit for a file that no longer exists is dropped by the stat: index
+// rows are yesterday's filesystem and today's decides.
+func TestAStaleIndexHitIsDroppedByTheStat(t *testing.T) {
+	ix := newIndex(t)
+	svc := New(Options{Index: ix})
+	src, _ := corpus(t, 1, "present.txt")
+
+	if err := ix.Append([]index.Entry{
+		{Namespace: 1, Path: "present.txt"},
+		{Namespace: 1, Path: "deleted.txt"},
+	}); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+
+	res, err := svc.Query(t.Context(), []search.Source{src}, QueryOptions{Query: ".txt"})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if res.Tier != TierIndex {
+		t.Fatalf("tier is %v, want index", res.Tier)
+	}
+	if want := []string{"present.txt"}; !slices.Equal(hitPaths(res.Hits), want) {
+		t.Errorf("got %v, want only the file that exists", hitPaths(res.Hits))
+	}
+}
+
+// A hit outside the caller's Allow closure never surfaces, and neither does one
+// for a share the caller cannot see.
+func TestAnIndexHitOutsideAllowNeverSurfaces(t *testing.T) {
+	ix := newIndex(t)
+	svc := New(Options{Index: ix})
+	src, _ := corpus(t, 1, "public/a.txt", "private/b.txt")
+	src.Allow = func(path string, _ bool) bool {
+		return !strings.HasPrefix(path, "private")
+	}
+
+	if err := ix.Append([]index.Entry{
+		{Namespace: 1, Path: "public/a.txt"},
+		{Namespace: 1, Path: "private/b.txt"},
+		{Namespace: 9, Path: "elsewhere.txt"},
+	}); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+
+	res, err := svc.Query(t.Context(), []search.Source{src}, QueryOptions{Query: ".txt"})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if want := []string{"public/a.txt"}; !slices.Equal(hitPaths(res.Hits), want) {
+		t.Errorf("got %v, want only the permitted path", hitPaths(res.Hits))
+	}
+}
+
+// pathUnder is the revalidation itself: a stored path is rebuilt component by
+// component under the source's base rather than trusted.
+func TestPathUnderRefusesAnEscapingStoredPath(t *testing.T) {
+	src, _ := corpus(t, 1, "a/b.txt")
+
+	if _, err := pathUnder(src, "a/b.txt"); err != nil {
+		t.Errorf("a legal stored path was refused: %v", err)
+	}
+	// A traversal component is refused outright: resolving it is the bypass.
+	for _, stored := range []string{"../escape", "a/../../escape", "./a", "a/\x00b"} {
+		if _, err := pathUnder(src, stored); err == nil {
+			t.Errorf("pathUnder accepted %q", stored)
+		}
+	}
+	// A leading separator produces empty components, which are skipped, so an
+	// absolute-looking path is rebuilt as a relative one under the base rather
+	// than reaching the host root.
+	got, err := pathUnder(src, "/etc/passwd")
+	if err != nil {
+		t.Fatalf("an absolute-looking path was refused rather than contained: %v", err)
+	}
+	if got != "etc/passwd" {
+		t.Errorf("got %q, want it contained as etc/passwd", got)
+	}
+}
+
+// A path that no longer joins under the base is dropped from the result.
+func TestAnIndexHitThatNoLongerJoinsIsDropped(t *testing.T) {
+	ix := newIndex(t)
+	svc := New(Options{Index: ix})
+	src, _ := corpus(t, 1, "good.txt")
+
+	if err := ix.Append([]index.Entry{
+		{Namespace: 1, Path: "good.txt"},
+		{Namespace: 1, Path: "../escaped.txt"},
+	}); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+
+	res, err := svc.Query(t.Context(), []search.Source{src}, QueryOptions{Query: ".txt"})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if want := []string{"good.txt"}; !slices.Equal(hitPaths(res.Hits), want) {
+		t.Errorf("got %v, want only the path that still joins", hitPaths(res.Hits))
+	}
+}
+
+// Metadata on the index path is resolved only for the survivors, and only when
+// the caller asked.
+func TestIndexHitsResolveMetadataOnlyOnRequest(t *testing.T) {
+	ix := newIndex(t)
+	svc := New(Options{Index: ix})
+	src, _ := corpus(t, 1, "report.pdf")
+	if err := ix.Append([]index.Entry{{Namespace: 1, Path: "report.pdf"}}); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+
+	bare, err := svc.Query(t.Context(), []search.Source{src}, QueryOptions{Query: "report"})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if bare.Hits[0].Size != nil || bare.Hits[0].MTimeNs != nil {
+		t.Error("a name-only query resolved metadata")
+	}
+
+	full, err := svc.Query(t.Context(), []search.Source{src},
+		QueryOptions{Query: "report", WithMetadata: true})
+	if err != nil {
+		t.Fatalf("Query with metadata: %v", err)
+	}
+	if full.Hits[0].Size == nil || full.Hits[0].MTimeNs == nil {
+		t.Error("metadata was requested and not resolved")
+	}
+}
+
+// The bounds an administrator sets are the ones the next query uses: a setting
+// that is stored and not read is a screen reporting a change that happened
+// nowhere.
+func TestSetBoundsIsReadBackAndMovesTheDeadline(t *testing.T) {
+	svc := New(Options{})
+	if got := svc.walkDeadline(); got != limits.SearchWalkDeadline {
+		t.Errorf("default deadline is %v, want %v", got, limits.SearchWalkDeadline)
+	}
+
+	svc.SetBounds(3, 250*time.Millisecond)
+	c, d := svc.Bounds()
+	if c != 3 || d != 250*time.Millisecond {
+		t.Errorf("read back %d and %v", c, d)
+	}
+	if got := svc.walkDeadline(); got != 250*time.Millisecond {
+		t.Errorf("the deadline did not move: %v", got)
+	}
+
+	// Zero returns the field to the compiled-in default.
+	svc.SetBounds(0, 0)
+	if got := svc.walkDeadline(); got != limits.SearchWalkDeadline {
+		t.Errorf("zero did not restore the default: %v", got)
+	}
+}
+
+func TestSetBoundsKeepsInflightQueriesInTheConcurrencyGate(t *testing.T) {
+	svc := New(Options{})
+	svc.SetBounds(2, 0)
+	first := svc.acquireSearchSlot()
+	second := svc.acquireSearchSlot()
+	if !first || !second {
+		t.Fatal("the initial limit did not admit two searches")
+	}
+	defer svc.releaseSearchSlot()
+	defer svc.releaseSearchSlot()
+
+	svc.SetBounds(1, 0)
+	missing := search.Source{Namespace: 1}
+	_, err := svc.Query(t.Context(), []search.Source{missing}, QueryOptions{Query: "report"})
+	if !errors.Is(err, ErrBusy) {
+		t.Fatalf("expected ErrBusy after lowering the live limit, got %v", err)
+	}
+}
+
+// The administrator's switch attaches and detaches the index at runtime.
+func TestSetIndexAttachesAndDetaches(t *testing.T) {
+	svc := New(Options{})
+	if svc.HasIndex() {
+		t.Error("a fresh service reports an index")
+	}
+	ix := newIndex(t)
+	svc.SetIndex(ix)
+	if !svc.HasIndex() {
+		t.Error("SetIndex did not attach")
+	}
+	svc.SetIndex(nil)
+	if svc.HasIndex() {
+		t.Error("SetIndex(nil) did not detach")
+	}
+}
+
+// A streamed query walks even with an index attached.
+//
+// The index trails the filesystem and holds no folders at all, so answering a
+// search that promises every match out of it would quietly drop both the file
+// created a minute ago and every folder that ever matched.
+func TestAStreamedQueryWalksPastTheIndex(t *testing.T) {
+	ix := newIndex(t)
+	svc := New(Options{Index: ix})
+	src, _ := corpus(t, 1, "reports/", "report.pdf", "report-new.pdf")
+
+	// The index knows one of the two files and neither folder, which is what
+	// an index that has not caught up looks like.
+	if err := ix.Append([]index.Entry{{Namespace: 1, Path: "report.pdf"}}); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+
+	var streamed []string
+	res, err := svc.Query(t.Context(), []search.Source{src}, QueryOptions{
+		Query:  "report",
+		Stream: func(hits []search.Hit) { streamed = append(streamed, hitPaths(hits)...) },
+	})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if res.Tier != TierWalk {
+		t.Errorf("a streamed query was answered by the %v tier", res.Tier)
+	}
+	if len(res.Hits) != 0 {
+		t.Errorf("a streamed query also returned %d hits", len(res.Hits))
+	}
+	slices.Sort(streamed)
+	if want := []string{"report-new.pdf", "report.pdf", "reports"}; !slices.Equal(streamed, want) {
+		t.Errorf("the stream carried %v, want %v", streamed, want)
+	}
+}

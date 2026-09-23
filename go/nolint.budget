@@ -3,11 +3,9 @@
 # line nobody sees. Raise it deliberately, with the reason on the line the
 # directive sits on.
 #
-# Two numbers while the rebuilt engine and the old tree coexist: the first line
-# of digits is the old tree (everything outside go/engine/), the second is the
-# engine. The old tree's is frozen and may only go down. The engine's starts at
-# zero and stays there; an exception under go/engine/ is an argument to be made
-# in that phase's document first.
+# The first line is the command and tooling surface outside go/internal. The
+# second is the feature-oriented internal tree. Both are fixed budgets and may
+# only go down; a new exception needs a documented reason.
 #
 # The old tree's count is 276 rather than 249 as of this line. The gap arrived
 # with fba2b83 ("feat!: move every setting into the database and make failures
@@ -534,5 +532,5 @@
 # atomic. The live archive setting now bounds concurrent streams through the
 # engine's own gate, and the parser and listing bounds are compiled-in
 # constants again, so there is no global left for the exception to cover.
-24
-116
+22
+98

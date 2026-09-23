@@ -1,9 +1,0 @@
-package state
-
-const (
-	sqlInsertDirectTransfer       = `INSERT INTO direct_transfer(id,owner,share,path,object_key,upload_id,expected_size,expected_checksum,if_match,prior_size,prior_etag,conflict_policy,quota_reservation,created_ns,updated_ns,expires_ns,state,error_key,error_detail,completed_ns,lease_id,lease_expires_ns,quota_released) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
-	sqlReadDirectTransfer         = `SELECT id,owner,share,path,object_key,upload_id,expected_size,expected_checksum,if_match,prior_size,prior_etag,conflict_policy,quota_reservation,created_ns,updated_ns,expires_ns,state,error_key,error_detail,completed_ns,lease_id,lease_expires_ns,quota_released FROM direct_transfer WHERE id = ? AND (? = 0 OR owner = ?)`
-	sqlUpsertDirectTransferPart   = `INSERT INTO direct_transfer_part(transfer,part_number,etag,size,checksum,uploaded_ns,state,lease_id,lease_expires_ns) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(transfer,part_number) DO UPDATE SET etag=excluded.etag,size=excluded.size,checksum=excluded.checksum,uploaded_ns=excluded.uploaded_ns,state=excluded.state,lease_id=excluded.lease_id,lease_expires_ns=excluded.lease_expires_ns`
-	sqlListDirectTransferParts    = `SELECT transfer,part_number,etag,size,checksum,uploaded_ns,state,lease_id,lease_expires_ns FROM direct_transfer_part WHERE transfer = ? ORDER BY part_number`
-	sqlListExpiredDirectTransfers = `SELECT id,owner,share,path,object_key,upload_id,expected_size,expected_checksum,if_match,prior_size,prior_etag,conflict_policy,quota_reservation,created_ns,updated_ns,expires_ns,state,error_key,error_detail,completed_ns,lease_id,lease_expires_ns,quota_released FROM direct_transfer WHERE state IN (?,?) AND expires_ns <= ? ORDER BY expires_ns,created_ns LIMIT ?`
-)

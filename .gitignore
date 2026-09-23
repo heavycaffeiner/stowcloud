@@ -7,8 +7,8 @@ venv/
 # path outside its own package directory, and refuses a symlink out of one.
 # Contents are ignored but the directory itself is kept (a .gitkeep), because
 # //go:embed all:build needs the directory to exist at compile time.
-go/engine/http/spa/build/*
-!go/engine/http/spa/build/.gitkeep
+go/internal/transport/http/spa/build/*
+!go/internal/transport/http/spa/build/.gitkeep
 # Where it used to build, kept ignored so an old checkout does not commit one.
 web/build
 *.qcow2

@@ -56,6 +56,7 @@ create_container() {
 		--non-interactive
 }
 
+
 # write_marker mounts container $1 with $2/$3 (password/pim), writes a
 # MARKER.TXT with $4 as content through a real vfat kernel mount of the
 # FUSE-exposed plaintext, and unmounts. The plaintext is copied to a tmpfs
@@ -63,21 +64,21 @@ create_container() {
 # loop device on top of a FUSE-backed one; /dev/loop3 is dedicated to this
 # helper so it never collides with veracrypt's own /dev/loop0.
 write_marker() {
-	local path=$1 password=$2 pim=$3 content=$4
-	veracrypt -t --mount "$path" --password="$password" --pim="$pim" \
-		--filesystem=none -m nokernelcrypto --protect-hidden=no --non-interactive -k '' >/dev/null 2>&1
-	local auxvol
-	auxvol=$(grep veracrypt /proc/mounts | awk '{print $2}')/volume
-	cp "$auxvol" /tmp/plain.img
-	losetup /dev/loop3 /tmp/plain.img
-	mount /dev/loop3 /mnt/w
-	printf '%s\n' "$content" >/mnt/w/MARKER.TXT
-	sync
-	umount /mnt/w
-	losetup -d /dev/loop3
-	dd if=/tmp/plain.img of="$auxvol" conv=notrunc,nocreat bs=1M status=none
-	sync
-	veracrypt --text --unmount "$path" --non-interactive >/dev/null 2>&1
+  local path=$1 password=$2 pim=$3 content=$4
+  veracrypt -t --mount "$path" --password="$password" --pim="$pim" \
+    --filesystem=none -m nokernelcrypto --protect-hidden=no --non-interactive -k '' >/dev/null 2>&1
+  local auxvol
+  auxvol=$(grep veracrypt /proc/mounts | awk '{print $2}')/volume
+  cp "$auxvol" /tmp/plain.img
+  losetup /dev/loop3 /tmp/plain.img
+  mount -t auto /dev/loop3 /mnt/w
+  printf '%s\n' "$content" >/mnt/w/MARKER.TXT
+  sync
+  umount /mnt/w
+  losetup -d /dev/loop3
+  dd if=/tmp/plain.img of="$auxvol" conv=notrunc,nocreat bs=1M status=none
+  sync
+  veracrypt --text --unmount "$path" --non-interactive >/dev/null 2>&1
 }
 
 echo "=== hash matrix (cipher AES) ==="
@@ -107,6 +108,12 @@ for cipher in \
 	write_marker "$WORK/$name.hc" "$PASSWORD" 0 "interop fixture $name $cipher sha-512"
 	dump_blob "$name" "$WORK/$name.hc"
 done
+
+# BLOCKER: VeraCrypt 1.26.29's console cannot create a valid exFAT fixture
+# through this VM's `--filesystem=exFAT` path: the resulting image has no
+# exFAT boot signature and the library correctly rejects it. Keep exFAT out of
+# the generated manifest until a pinned console workflow produces a valid
+# external image; TestExternalVeraCryptExFAT remains an explicit blocker.
 
 echo "=== PIM ==="
 create_container pim "$STANDARD_SIZE" AES sha-512 "$PIM_VALUE"

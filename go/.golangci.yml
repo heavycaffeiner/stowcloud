@@ -123,7 +123,7 @@ linters:
       # way. The JSON key is a stored contract and cannot be renamed to dodge
       # a pattern match. Scoped to the one file, so G117 still applies
       # everywhere else.
-      - path: engine/service/objstore/config\.go
+      - path: internal/platform/storage/objstore/config\.go
         linters:
           - gosec
         text: "G117"
@@ -138,7 +138,7 @@ linters:
       # lines of key schedule and MDS matrix with nothing to gain, and
       # `AGENTS.md` says cryptography is where a dependency is taken rather
       # than reimplemented. Scoped to the one file that imports it.
-      - path: engine/infra/vault/algorithm\.go
+      - path: internal/platform/storage/vault/algorithm\.go
         linters:
           - staticcheck
         text: "SA1019"

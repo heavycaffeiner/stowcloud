@@ -1624,7 +1624,7 @@ async function adminSetThumbnailSettings(req: ThumbnailSettingsReq): Promise<App
 // in types.ts), so both are reported read-only rather than offered as
 // editors that would store a value nothing ever applies.
 
-// ── admin: self-restart (`go/engine/http/server`'s `syscall.Exec` swap) ──
+// admin self-restart, implemented by internal/app/systemrestart.go
 
 /** `POST /api/v1/admin/system/restart`. Answers `202` before the process
  *  goes down: the exec that replaces the process image happens after this
@@ -2210,7 +2210,7 @@ function searchStream(
   return () => es.close()
 }
 
-// share encryption (opt-in, zero-knowledge, per-share content encryption): go/engine/lifecycle/shareenc.go
+// share encryption, opt-in zero-knowledge content encryption: go/internal/app/shareenc.go
 
 /** `GET /api/v1/encryption`'s wire shape, before `created_ns` is widened
  *  into the app's `createdNs`. Every other field is already the shape the

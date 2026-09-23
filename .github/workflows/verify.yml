@@ -43,17 +43,14 @@ env:
   # 24, not 22: jsdom 30 declares 24.15.0 as a floor, and corepack ships the
   # pnpm this lockfile was written by.
   NODE_VERSION: "24"
-  # The toolchain CI compiles with, which is not the same statement go/go.mod
-  # makes. That directive is the dependency floor, currently 1.25, which is the
-  # highest any dependency declares: x/sys, x/crypto, x/text, x/image and
-  # modernc's sqlite and libc all sit there. This is a current stable release
-  # pinned so a runner does not change compilers underneath a green run. They
-  # move independently, and only the floor is a compatibility promise.
+  # The toolchain CI compiles with and the module floor are both 1.27.1.
+  # Hanami core establishes that floor for the shared bootstrap and Linux
+  # security contracts, so local, CI, and Docker builds use the same release.
   #
   # The Dockerfiles track this value rather than the floor. An image building
   # with a different compiler from the one the gate ran means the binary that
   # ships is not the binary that was verified.
-  GO_VERSION: "1.26"
+  GO_VERSION: "1.27.1"
 
 jobs:
   linux:
@@ -135,6 +132,16 @@ jobs:
           cd web
           pnpm check:bundle-size
 
+
+      # This is a real external-container check, not a package-generated
+      # round-trip. The fixture is checked in with provenance under the vault
+      # package, so this gate cannot silently skip on a fresh checkout.
+      - name: Check external VeraCrypt golden fixture
+        working-directory: go
+        env:
+          VAULT_INTEROP_FIXTURE: ${{ github.workspace }}/go/internal/platform/storage/vault/testdata/interop/hash_sha512.hc
+        run: go test -count=1 ./internal/platform/storage/vault -run '^TestOpenExternalVeraCryptFixture$' -v
+
       - name: bash scripts/verify.sh
         env:
           # This job installs the frontend, so a SKIP there would mean the
@@ -154,7 +161,6 @@ jobs:
       - name: Disk
         if: always()
         run: df -h / && du -sh go/.tools web/node_modules 2>/dev/null || true
-
   windows:
     name: verify (windows-latest)
     runs-on: windows-latest

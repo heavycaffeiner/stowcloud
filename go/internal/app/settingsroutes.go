@@ -1,0 +1,294 @@
+//go:build linux
+
+// The settings resource: one sectioned document an administrator reads whole
+// and writes a section at a time.
+//
+// Save-time findings come from the checker rather than from probes repeated
+// here. A blocking finding refuses the write; an advisory one saves and comes
+// back with the answer, because an observation worth surfacing is not
+// automatically an objection.
+package app
+
+import (
+	"github.com/gin-gonic/gin"
+	"net"
+	"net/http"
+	"net/netip"
+
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/admin/settings/catalogue"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/admin/settings/check"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/admin/settings/runtimecfg"
+	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/apierr"
+	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/handler"
+	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/middleware"
+)
+
+// adminSettingsGet describes every settable field.
+//
+// The described form rather than the stored document, because the document
+// alone cannot be rendered: it holds only what somebody saved, so a screen
+// reading it shows nothing on a fresh deployment and has no way to know what a
+// field accepts or whether changing it needs a restart.
+//
+// The values are the ones in force rather than the ones on disk. A stored
+// value outside its bound is clamped when it loads, and showing the raw stored
+// number would tell an operator the server is running on something it is not.
+//
+// The response also reports the hop this very request arrived over. Behind a
+// published container port every request arrives from the bridge gateway, so
+// an operator who has not trusted that address sees one address for every
+// visitor and no way to find out why. It is an observation about the request
+// rather than a settable field, so it sits beside the catalogue.
+func (e *Engine) adminSettingsGet(c *gin.Context) {
+	if _, ok := e.admin(c); !ok {
+		return
+	}
+
+	stored, err := e.State.Settings(c.Request.Context())
+	if err != nil {
+		failKnown(c, err)
+		return
+	}
+	if stored == nil {
+		// A deployment that has saved nothing has an empty document, not a
+		// null one: the lookup below would otherwise have to test it first.
+		stored = map[string]any{}
+	}
+
+	values := runtimecfg.Load(c.Request.Context(), e.State, runtimecfg.Defaults(), e.logger)
+	// A process argument rather than a stored setting, so the loader cannot
+	// know it: the engine is the only thing that does.
+	values.DataDir = e.dataDir
+	writeJSON(c, http.StatusOK, handler.SettingsOf(
+		catalogue.Of(values, stored), e.hopOf(c), e.smbAgentView()))
+}
+
+// hopOf describes how this request reached the server.
+//
+// The peer is the address the transport reports, which is what the trust
+// decision is made against. The client is what the chain concluded. When a
+// forwarding header arrived and the two are the same, the header was ignored
+// because the peer is not trusted, and that is the case an operator cannot
+// otherwise see: with no list configured a private peer is trusted, so this
+// only happens to a configured list that leaves the real proxy out.
+func (e *Engine) hopOf(c *gin.Context) handler.HopView {
+	peer, perr := peerAddress(c.Request.RemoteAddr)
+	client := middleware.ClientOf(c)
+
+	hop := handler.HopView{
+		Client:        client.String(),
+		ForwardedSeen: c.GetHeader("CF-Connecting-IP") != "" || c.GetHeader("X-Forwarded-For") != "",
+	}
+	if perr != nil {
+		return hop
+	}
+	hop.Peer = peer.String()
+	hop.PeerTrusted = middleware.PeerTrusted(peer, e.trustedProxies())
+	return hop
+}
+
+func peerAddress(raw string) (netip.Addr, error) {
+	host, _, err := net.SplitHostPort(raw)
+	if err == nil {
+		return netip.ParseAddr(host)
+	}
+	return netip.ParseAddr(raw)
+}
+
+// adminSettingsPatch replaces one section.
+//
+// One section at a time because a save is a decision about one thing. A whole
+// document write would make an administrator changing a port resubmit every
+// value another administrator had changed since the screen was opened.
+func (e *Engine) adminSettingsPatch(c *gin.Context) {
+	if _, ok := e.admin(c); !ok {
+		return
+	}
+
+	section := c.Param("section")
+
+	// The chunk bounds and the spool switch live in the upload engine's own
+	// tables rather than in the settings document, so they are applied
+	// through it rather than merged and reloaded. Without this the section
+	// was simply unknown, and every save from the upload screen answered 422.
+	if section == "upload" {
+		e.uploadSettingsPatch(c)
+		return
+	}
+
+	if !check.Known(section) {
+		// Named rather than silently ignored: a client writing to a section
+		// this build does not have has to learn that, or it reports a change
+		// that never happened.
+		refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		return
+	}
+
+	var body map[string]any
+	if err := decodeBody(c, &body); err != nil {
+		refuse(c, apierr.Classified{Class: apierr.Malformed})
+		return
+	}
+
+	// A credential in the body never reaches the document. It is sealed under
+	// the master key and stored in its own row, because the document is read
+	// by anybody who may read the settings and a value that authenticates
+	// this server to a provider is not something to hand them.
+	if !e.extractSecrets(c, section, body) {
+		return
+	}
+
+	findings := check.Section(check.Input{
+		Section: section,
+		Body:    body,
+
+		// The host this request arrived on, so the lockout probe tests the
+		// proposed list against how the administrator is actually reaching
+		// the server.
+		SelfHost: check.HostOnly(string(c.Request.Host)),
+		DataDir:  e.dataDir,
+
+		// Whether a client secret is already sealed and stored, read fresh
+		// rather than from the patch body: extractSecrets above already
+		// consumed and removed client_secret from body, sealing it if it was
+		// present, so this is the one place left that can answer "does this
+		// configuration hold one" for checkOIDC.
+		HasSecret: section == "oidc" && e.HasConfigSecret(c.Request.Context(), secretOIDCClient),
+
+		// Blocking, because the guard this section configures is already
+		// live: a change that locked the administrator out would take hold
+		// before any correction could be submitted, and the correction is
+		// what would then be rejected.
+		Lockout: check.LockoutBlocks,
+	})
+
+	if handler.Blocking(findings) {
+		// Nothing stored and nothing applied, which the projection enforces
+		// whatever is passed here.
+		writeJSON(c, http.StatusUnprocessableEntity,
+			handler.ApplyOutcomeOf(false, false, false, findings))
+		return
+	}
+
+	if err := e.State.MergeSettings(c.Request.Context(), section, body); err != nil {
+		failKnown(c, err)
+		return
+	}
+
+	// Re-read rather than applied from the patch: the stored document is what
+	// a restart would load, so reloading from it is what makes the running
+	// server and the next start agree.
+	//
+	// Judged by the fields this patch actually names. By section, an operator
+	// changing the sign-on provider or the protocol's second-factor policy
+	// was told to restart and the reload never ran, so the change sat stored
+	// and inert until the container went down.
+	restart := catalogue.RestartRequiredFor(section, body)
+	if !restart {
+		e.loadSettings(c.Request.Context())
+	}
+
+	// The file-sharing settings reach the sidecar here rather than through the
+	// reload above, which also runs at startup where the boot publish already
+	// covers it. The agent acts on the switch: on renders the shares and
+	// starts the daemon, off tears it down and prunes the credentials.
+	if section == "smb" {
+		e.publishSMBSettings(c.Request.Context())
+	}
+
+	// A stored bind address does not move a socket this process was told to
+	// bind on its command line, and a restart of this image re-reads the same
+	// argument, so it will not apply then either. Stored, then, but not
+	// applied, and the finding says why: answering "applied" would move the
+	// lie the pin removed from the socket onto the screen.
+	applied := !restart
+	if pin := e.pinnedBindFinding(section, body); pin != nil {
+		applied = false
+		findings = append(findings, *pin)
+	}
+
+	out := handler.ApplyOutcomeOf(true, applied, restart, findings)
+	if restart {
+		// What a restart would interrupt, so the operator decides rather than
+		// the server deciding for them. An in-flight upload loses whichever
+		// part was still arriving and a running job halts where it stands;
+		// both recover, but neither should happen to somebody unannounced.
+		uploads, jobs := e.activeWork(c)
+		out = out.WithActiveWork(uploads, jobs)
+	}
+	writeJSON(c, http.StatusOK, out)
+}
+
+// pinnedBindFinding reports a stored bind address that will not take effect.
+//
+// Nil unless this save names one and the process was started with an address
+// of its own. The finding is not blocking: the value is worth storing, since
+// a start without the flag will use it. What it must not do is read as
+// applied while the socket is somewhere else.
+func (e *Engine) pinnedBindFinding(section string, body map[string]any) *check.Finding {
+	if section != "network" || !e.BindPinned() {
+		return nil
+	}
+	stored, named := body["bind"].(string)
+	if !named || stored == "" {
+		return nil
+	}
+	return &check.Finding{
+		Section:   section,
+		Field:     "bind",
+		ReasonKey: "settings.bind_pinned_by_flag",
+		Args:      []string{"stored", stored},
+	}
+}
+
+// activeWork counts what a restart would interrupt.
+//
+// A count that cannot be read reports one upload rather than none. Unknown
+// has to read as busy: the warning is what an administrator can override,
+// and guessing idle would take a restart through somebody's transfer without
+// asking.
+//
+// No test covers that branch, and the mutation flipping it to zero is
+// absorbed: producing it needs the count query to fail, which happens when
+// the database does, and by then the save above it has already failed. It
+// stays because the direction is the whole point, and a later caller that
+// reaches this with a live database and a broken query would get the safe
+// answer rather than a confident wrong one.
+func (e *Engine) activeWork(c *gin.Context) (uploads, jobs int) {
+	w, err := e.State.CountActiveWork(c.Request.Context())
+	if err != nil {
+		e.logger.Warn("could not count the work a restart would interrupt", "error", err)
+		return 1, 0
+	}
+	return w.Uploads, w.Jobs
+}
+
+// extractSecrets removes credential fields from a section's body and stores
+// them sealed.
+//
+// Removed rather than copied: leaving the value in the map would store the
+// plaintext in the settings document alongside the sealed copy, which is the
+// whole failure this exists to prevent.
+// The bool says whether the caller may proceed and the error is the written
+// response, the same shape every other gate in this package uses.
+func (e *Engine) extractSecrets(c *gin.Context, section string, body map[string]any) bool {
+	if section != "oidc" {
+		return true
+	}
+	raw, present := body["client_secret"]
+	if !present {
+		return true
+	}
+	delete(body, "client_secret")
+
+	plain, isString := raw.(string)
+	if !isString {
+		refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		return false
+	}
+	if err := e.StoreConfigSecret(c.Request.Context(), secretOIDCClient, plain); err != nil {
+		failKnown(c, err)
+		return false
+	}
+	return true
+}

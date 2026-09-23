@@ -1,0 +1,438 @@
+//go:build linux
+
+// Building the name index, and holding one open across a restart.
+//
+// The index is an escalation rather than the default. Search answers by
+// walking, and an index is what an operator adds once measurement shows the
+// walk is too slow for their corpus: the estimate route sizes it, this one
+// spends the traversal.
+//
+// Nothing here can fail a query. The index is a cache, so every failure below
+// ends at the same place, a nil index and search on the walk, because a broken
+// cache costs speed and never answers.
+package app
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"math"
+	"net/http"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/gin-gonic/gin"
+
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/search/svc"
+	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
+	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/apierr"
+	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/handler"
+	fsatomic "github.com/stowcloud/durablefs"
+	search "github.com/stowcloud/namesearch"
+	"github.com/stowcloud/namesearch/index"
+)
+
+// indexDirName is where the index lives under the data directory. The hidden
+// name matches the administrative surface and keeps this control directory
+// distinct from operator data.
+const indexDirName = ".scindex"
+
+const legacyIndexDirName = "index"
+
+// openSearchIndex attaches or detaches the name index against what the
+// operator has currently asked for, and starts or stops the updater that
+// keeps an attached index current from watcher events.
+//
+// The setting is what decides, not the directory's existence: an index left on
+// disk after being switched off must not come back at the next restart, and an
+// operator who switched it on before building expects the next build to have
+// somewhere to go.
+//
+// Called at boot and again from loadSettings on every save, so a switch flips
+// live: on opens the index and starts its updater, off drops the reference and
+// stops the updater. A query already holding the old index finishes against
+// it regardless, since Query takes its own local reference.
+func (e *Engine) openSearchIndex(ctx context.Context) {
+	on, err := e.State.IndexNameEnabled(ctx)
+	if err != nil {
+		// Unreadable is off. The walk answers either way, and guessing on
+		// would open a directory the operator may have meant to leave alone.
+		//
+		// No test covers this branch and the mutation that opens the index
+		// anyway is absorbed: reaching it needs the settings read to fail,
+		// which happens when the database does, and by then Open has already
+		// refused for a louder reason. It stays because the direction is the
+		// point, and a later caller reaching this with a live database and a
+		// broken read gets the quiet answer rather than a confident wrong one.
+		e.logger.Warn("the search index setting could not be read; search runs on the walk",
+			"error", err)
+		return
+	}
+	if !on {
+		// Detach rather than leave whatever was attached running. A caller
+		// re-invoking this at save time is what makes disabling the setting
+		// take hold immediately instead of being a silent no-op that leaves
+		// the live index and its updater in place.
+		e.Search.SetIndex(nil)
+		e.stopSearchUpdater()
+		e.indexRecovery.Store(false)
+		return
+	}
+
+	if err := migrateLegacyIndexDir(e.dataDir); err != nil {
+		attrs := []any{"error", err}
+		var migrationErr *legacyIndexMigrationError
+		if errors.As(err, &migrationErr) {
+			attrs = append(attrs, "outcome", migrationErr.outcome.String())
+		}
+		e.logger.Warn("the legacy search index directory could not be migrated; search runs on the walk",
+			attrs...)
+		return
+	}
+
+	ix, opened := svc.OpenIndex(indexDir(e.dataDir), index.DefaultConfig(), e.logger)
+	if ix == nil {
+		// OpenIndex has already said which of the three failures this was, and
+		// the distinction is the point: a corrupt index wants a rebuild and an
+		// unreadable one does not.
+		return
+	}
+	// Disk state may predate changes made while this process was down. A
+	// persisted index is useful as a cache, but it cannot claim current
+	// coverage until a new traversal proves there was no restart gap.
+	ix.SetIncomplete(true)
+	e.indexRecovery.Store(true)
+	if opened == svc.OpenAbsent {
+		e.logger.Info("the search index is enabled and empty; build it to use it",
+			"dir", indexDir(e.dataDir))
+	}
+	e.Search.SetIndex(ix)
+	e.startSearchUpdater(ctx)
+}
+
+// markSearchIndexIncomplete records a lost coverage signal and schedules one
+// bounded rebuild. The index remains disabled when no index is attached.
+func (e *Engine) markSearchIndexIncomplete() {
+	if e.Search == nil || !e.Search.IndexStateOf().Attached {
+		return
+	}
+	e.Search.SetIndexIncomplete(true)
+	e.indexRecovery.Store(true)
+}
+
+// recoverSearchIndex closes a restart or watcher gap without requiring an
+// administrator to notice the fallback warning and start the same traversal.
+func (e *Engine) recoverSearchIndex(ctx context.Context) error {
+	if !e.indexRecovery.Swap(false) {
+		return nil
+	}
+	if e.Search == nil || e.Core == nil || e.watcher == nil {
+		return nil
+	}
+	state := e.Search.IndexStateOf()
+	if !state.Attached || !state.Incomplete {
+		return nil
+	}
+	if !e.indexBuilding.CompareAndSwap(false, true) {
+		e.indexRecovery.Store(true)
+		return nil
+	}
+	defer e.indexBuilding.Store(false)
+
+	progress, err := e.Search.Build(ctx, indexSourcesOf(e.Core.ScanSources()), func() bool {
+		return ctx.Err() == nil
+	}, nil)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if e.Search.IndexStateOf().Attached {
+			e.indexRecovery.Store(true)
+		}
+		return fmt.Errorf("recovering the search index: %w", err)
+	}
+	if !progress.Partial {
+		e.logger.Info("the search index recovered current coverage", "files", progress.Files)
+	}
+	return nil
+}
+
+// startSearchUpdater starts the goroutine that keeps the attached index
+// current from watcher events, stopping and replacing any updater already
+// running: one updater runs against the currently attached index, never two
+// and never one left over from before a toggle.
+//
+// sources is a closure over the engine's shares rather than a snapshot taken
+// here, so a share created after the index was attached is covered by the
+// next event without restarting the updater.
+func (e *Engine) startSearchUpdater(ctx context.Context) {
+	e.stopSearchUpdater()
+
+	loop, stop := context.WithCancel(context.WithoutCancel(ctx))
+	u := svc.NewUpdater(e.Search, func() []search.Source {
+		return indexSourcesOf(e.Core.ScanSources())
+	}, e.logger)
+	u.SetIncompleteCallback(func() {
+		e.indexRecovery.Store(true)
+	})
+
+	e.searchUpdaterMu.Lock()
+	e.searchUpdater = u
+	e.searchUpdaterStop = stop
+	e.searchUpdaterMu.Unlock()
+
+	task.Go(loop, "search index updater", func() { u.Run(loop) })
+}
+
+// stopSearchUpdater halts the running updater, if any. Called before the
+// index it feeds is dropped or replaced, and at shutdown, so an updater never
+// keeps running against an index the search service no longer holds.
+func (e *Engine) stopSearchUpdater() {
+	e.searchUpdaterMu.Lock()
+	stop := e.searchUpdaterStop
+	e.searchUpdater = nil
+	e.searchUpdaterStop = nil
+	e.searchUpdaterMu.Unlock()
+	if stop != nil {
+		stop()
+	}
+}
+
+// offerToSearchUpdater relays one watcher event to the running updater, if
+// any. Safe with no index attached: the updater is nil and this is a no-op,
+// which is the ordinary state for a deployment that never turned the index on.
+func (e *Engine) offerToSearchUpdater(share uint32, dir string, all bool) {
+	e.searchUpdaterMu.Lock()
+	u := e.searchUpdater
+	e.searchUpdaterMu.Unlock()
+	if u == nil {
+		return
+	}
+	u.Offer(svc.Change{Share: share, Dir: dir, All: all})
+}
+
+// indexDir is the one place the index's location is spelled.
+func indexDir(dataDir string) string { return filepath.Join(dataDir, indexDirName) }
+
+// legacyIndexMigrationError keeps the durable rename outcome visible to the
+// cache owner. In particular, an error after the rename must not be presented
+// as proof that the legacy name remains authoritative.
+type legacyIndexMigrationError struct {
+	outcome fsatomic.Outcome
+	err     error
+}
+
+func (e *legacyIndexMigrationError) Error() string { return e.err.Error() }
+func (e *legacyIndexMigrationError) Unwrap() error { return e.err }
+
+// migrateLegacyIndexDir moves the pre-v0.16 storage name once. Both names are
+// under the same data directory, so rename is atomic. A publication-uncertain
+// result is reconciled from the names on disk before the cache falls back to
+// walking.
+func migrateLegacyIndexDir(dataDir string) error {
+	target := indexDir(dataDir)
+	if _, err := os.Stat(target); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("checking %s: %w", target, err)
+	}
+
+	legacy := filepath.Join(dataDir, legacyIndexDirName)
+	if _, err := os.Stat(legacy); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("checking %s: %w", legacy, err)
+	}
+	res, err := fsatomic.RenameDurable(legacy, target)
+	if err != nil {
+		if res.Outcome == fsatomic.PublicationUncertain {
+			// The rename may already have changed the namespace. Prefer the
+			// destination when it is visible; otherwise retain the error and let
+			// the caller use the walk rather than asserting either name won.
+			if _, statErr := os.Stat(target); statErr == nil {
+				return nil
+			} else if !errors.Is(statErr, os.ErrNotExist) {
+				err = errors.Join(err, fmt.Errorf("checking reconciled destination %s: %w", target, statErr))
+			}
+		}
+		return &legacyIndexMigrationError{
+			outcome: res.Outcome,
+			err:     fmt.Errorf("moving %s to %s: %w", legacy, target, err),
+		}
+	}
+	return nil
+}
+
+// adminIndexBuild starts a build and answers with the job that runs it.
+//
+// The build outlives the request by design. It traverses every share, which is
+// minutes on a real corpus, so the client is told a job id and comes back for
+// the result rather than holding a connection open across the walk.
+func (e *Engine) adminIndexBuild(c *gin.Context) {
+	owner, ok := e.admin(c)
+	if !ok {
+		return
+	}
+	if !e.Search.HasIndex() {
+		refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable, Key: "search.index_disabled"})
+		return
+	}
+	if !e.indexBuilding.CompareAndSwap(false, true) {
+		refuse(c, apierr.Classified{Class: apierr.Conflict, Key: "search.index_building"})
+		return
+	}
+	e.startIndexBuild(c, int64(owner))
+}
+
+// startIndexBuild records the job and runs the walk behind it.
+func (e *Engine) startIndexBuild(c *gin.Context, owner int64) {
+	id, err := e.State.CreateOp(c.Request.Context(), owner, state.OpIndexBuild, 0, e.clock.Nanos(), nil)
+	if err != nil {
+		e.indexBuilding.Store(false)
+		failKnown(c, err)
+		return
+	}
+
+	// Detached, because the request's context ends when the response is
+	// written and the build has barely started by then.
+	ctx := context.WithoutCancel(c.Request.Context())
+	sources := indexSourcesOf(e.Core.ScanSources())
+
+	e.jobs.Go(ctx, "index build", func() { e.runIndexBuild(ctx, id, sources) })
+
+	// The job as the jobs surface reports it, so a client polls the same shape
+	// it was handed rather than one this route spells only here.
+	op, rerr := e.Core.Operation(c.Request.Context(), core.UserID(owner), core.OperationID(id))
+	if rerr != nil {
+		e.indexBuilding.Store(false)
+		failKnown(c, rerr)
+		return
+	}
+	writeJSON(c, http.StatusAccepted, handler.OperationOf(op))
+}
+
+// runIndexBuild is the walk, and the bookkeeping around it.
+func (e *Engine) runIndexBuild(ctx context.Context, id int64, sources []search.Source) {
+	defer e.indexBuilding.Store(false)
+	// The gate reads the operation row rather than a flag captured here, so a
+	// cancel reaches a build that is already running rather than only stopping
+	// one that has not started.
+	gate := func() bool {
+		// A close asks the build to stop, which it does at the next share
+		// boundary. What it wrote stays and a query beyond it walks.
+		if e.jobsStopped() {
+			return false
+		}
+		op, _, err := e.State.GetOp(ctx, id)
+		if err != nil {
+			// A row that cannot be read is not a reason to keep walking every
+			// share. The build stops and what it wrote stays, which a query
+			// falls back around.
+			return false
+		}
+		return !op.Cancellation
+	}
+
+	started := e.clock.Now()
+	progress, err := e.Search.Build(ctx, sources, gate, func(p svc.BuildProgress) {
+		if perr := e.State.SetOpProgress(ctx, id, indexedCount(p.Files), ""); perr != nil {
+			e.logger.Warn("the index build's progress could not be recorded", "error", perr)
+		}
+	})
+
+	now := e.clock.Nanos()
+	if err != nil {
+		// Recorded as failed rather than done. A failed build leaves the index
+		// incomplete, so a later query cannot mistake its prefix for coverage.
+		e.logger.Warn("the index build failed", "error", err, "files", progress.Files)
+		if ferr := e.State.FinishOp(ctx, id, state.OpFailed,
+			indexedCount(progress.Files), err.Error(), now, nil); ferr != nil {
+			e.logger.Warn("the index build's failure could not be recorded", "error", ferr)
+		}
+		return
+	}
+
+	// Without live watch coverage, changes after this traversal have no
+	// freshness signal. Keep the index available for diagnostics, but force
+	// queries to use the authoritative walk until coverage is restored.
+	if e.watcher == nil {
+		e.Search.SetIndexIncomplete(true)
+		progress.Partial = true
+	}
+
+	// What this build actually measured replaces the compiled-in guess for
+	// every estimate after this one, on this deployment's own disk and
+	// corpus. Skipped for too short an interval: a build that finished in
+	// under a second produces a rate the clock's own resolution cannot
+	// support.
+	if elapsed := e.clock.Now().Sub(started); progress.Files > 0 && elapsed >= time.Second {
+		rate := uint64(float64(progress.Files) / elapsed.Seconds())
+		if rerr := e.State.SetIndexBuildRate(ctx, rate); rerr != nil {
+			e.logger.Warn("the measured build rate could not be recorded", "error", rerr)
+		}
+	}
+
+	// Why it stopped decides the state, because every non-error exit used to
+	// read "done": a build a shutdown or an operator stopped halfway then
+	// reported a complete index over a partial one. The count it reached is
+	// recorded whichever way it ended.
+	indexed := indexedCount(progress.Files)
+	switch {
+	case e.jobsStopped():
+		// Interrupted keeps the progress row and reads as work the server
+		// walked away from, which is what a client offers to re-run.
+		if ferr := e.State.InterruptOp(ctx, id, now); ferr != nil {
+			e.logger.Warn("the index build's interruption could not be recorded", "error", ferr)
+		}
+	case e.buildCancelled(ctx, id):
+		if ferr := e.State.FinishOp(ctx, id, state.OpCancelled, indexed,
+			"cancelled; the index holds what the walk reached", now, nil); ferr != nil {
+			e.logger.Warn("the index build's cancellation could not be recorded", "error", ferr)
+		}
+	default:
+		// A build that stopped at its bound is finished, and says which. A
+		// query for what it did not reach falls back to a walk, so an index
+		// short of its corpus is a slower answer rather than a wrong one.
+		message := ""
+		if progress.Partial {
+			message = "the corpus is larger than one build covers; a query beyond it falls back to a walk"
+		}
+		if ferr := e.State.FinishOp(ctx, id, state.OpDone, indexed, message, now, nil); ferr != nil {
+			e.logger.Warn("the index build's completion could not be recorded", "error", ferr)
+		}
+	}
+}
+
+// jobsStopped reports whether a close asked the detached work to stop.
+func (e *Engine) jobsStopped() bool {
+	return e.jobsCtx != nil && e.jobsCtx.Err() != nil
+}
+
+// buildCancelled reports whether the operator cancelled this build.
+//
+// A row that cannot be read answers false: the build stopped for some reason
+// and "done" over what it wrote is the same answer a bound gives, while
+// claiming a cancellation nobody asked for is not.
+func (e *Engine) buildCancelled(ctx context.Context, id int64) bool {
+	op, _, err := e.State.GetOp(ctx, id)
+	if err != nil {
+		return false
+	}
+	return op.Cancellation
+}
+
+// indexedCount narrows a file count into what an operation row records.
+//
+// A build is bounded well below the signed range, so this cannot lose a real
+// count. It saturates rather than wrapping because the value is only ever
+// reported: a progress figure that came back negative would read as a build
+// that went backwards.
+func indexedCount(files uint64) int64 {
+	if files > math.MaxInt64 {
+		return math.MaxInt64
+	}
+	return int64(files)
+}

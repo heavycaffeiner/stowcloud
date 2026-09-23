@@ -9,7 +9,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -17,80 +16,17 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/go/engine/http/server"
+	"github.com/heavycaffeiner/stowcloud/go/internal/bootstrap/args"
+	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/server"
 )
-
-// deployDataDir is where the subcommands read and write when nothing names a
-// directory.
-//
-// The image runs `serve`, `settings` and `healthcheck` with no --data-dir and
-// a working directory of /, so a relative default resolves against the root
-// of a read-only filesystem: the seed cannot write it and the server cannot
-// create it. One value here means the three subcommands cannot disagree about
-// where a deployment's state lives. The local development directory stays the
-// flag default in main, where a checkout is the working directory.
-const deployDataDir = "/var/lib/stowcloud"
-
-// serveArgs is the deploy command line, parsed.
-type serveArgs struct {
-	// Addr is empty rather than an address: run resolves the stored bind
-	// when nothing is passed, and a default here would silently outrank it.
-	Addr    string
-	DataDir string
-	Plain   bool
-}
-
-// parseServeArgs reads the flags a deployment's entrypoint spells out
-// longhand.
-//
-// A flag taking a value advances past both itself and the value. Advancing by
-// one left the value to be read as the next flag, so every deployment passing
-// --data-dir was told its own directory was an unknown argument.
-func parseServeArgs(args []string) (serveArgs, error) {
-	out := serveArgs{DataDir: deployDataDir}
-
-	i := 0
-	for i < len(args) {
-		flag := args[i]
-		value := func() (string, bool) {
-			if i+1 >= len(args) {
-				return "", false
-			}
-			return args[i+1], true
-		}
-		switch flag {
-		case "--data-dir", "-data":
-			v, ok := value()
-			if !ok {
-				return serveArgs{}, fmt.Errorf("%s needs a directory", flag)
-			}
-			out.DataDir = v
-			i += 2
-		case "--addr", "-addr":
-			v, ok := value()
-			if !ok {
-				return serveArgs{}, fmt.Errorf("%s needs an address", flag)
-			}
-			out.Addr = v
-			i += 2
-		case "--plain":
-			out.Plain = true
-			i++
-		default:
-			return serveArgs{}, fmt.Errorf("unknown argument %q", flag)
-		}
-	}
-
-	return out, nil
-}
 
 // runServeCmd is the `serve` spelling of the default behaviour: it accepts
 // the flags a deployment's entrypoint spells out longhand, so the container
 // command line reads the same way it always has.
 //
 //	serve --data-dir DIR [--addr HOST:PORT] [--plain]
-func runServeCmd(args []string) int {
-	parsed, err := parseServeArgs(args)
+func runServeCmd(argv []string) int {
+	parsed, err := args.ParseServeArgs(argv)
 	if err != nil {
 		log.New(os.Stderr, "", 0).Printf("sc-engine serve: %v\n", err)
 		return 2
@@ -109,20 +45,9 @@ const healthExitNoAnswer = int(server.HealthExitUnhealthy)
 // Verifying properly rather than skipping verification is the point: a cert
 // that no longer matches what the server holds is a server answering with
 // material a healthcheck cannot account for.
-func runHealthcheck(args []string) int {
+func runHealthcheck(argv []string) int {
 	errOut := log.New(os.Stderr, "", 0)
-	dataDir := deployDataDir
-	i := 0
-	for i < len(args) {
-		if args[i] == "-data" || args[i] == "--data-dir" {
-			if i+1 < len(args) {
-				dataDir = args[i+1]
-				i++
-			}
-			continue
-		}
-		i++
-	}
+	dataDir := args.DataDir(argv)
 
 	// Where to dial and what name to ask under. The settings live in a
 	// database the running server holds, so this reads the snapshot that

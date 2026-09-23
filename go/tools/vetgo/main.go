@@ -4,8 +4,7 @@
 // the process down and every request in flight with it. task.Go is the one
 // spawn that installs one, so it is the one spawn there is.
 //
-// Two packages are named while the rebuilt engine and the old tree coexist.
-// The old one goes when the phase that deletes it lands.
+// The task package is the one approved spawning boundary in the internal layout.
 //
 // It parses rather than type-checks, because a go statement is syntax and
 // needs nothing else. Give it directories; it walks them.
@@ -24,9 +23,9 @@ import (
 )
 
 // spawnPackages are the directories allowed to hold a go statement. Matched on
-// the path so that a fixture under testdata exercises the same rule the tree
-// is held to.
-var spawnPackages = []string{"internal/task", "engine/kit/task"}
+// the path so that a fixture under testdata exercises the same rule the tree is
+// held to.
+var spawnPackages = []string{"internal/kit/task"}
 
 // spawnNames is the allowed set as it reads in a diagnostic.
 func spawnNames() string { return strings.Join(spawnPackages, " and ") }

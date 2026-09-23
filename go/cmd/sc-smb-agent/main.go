@@ -20,8 +20,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/go/engine/kit/clock"
-	smbagent "github.com/heavycaffeiner/stowcloud/go/engine/service/smb/agent"
+	smbagent "github.com/heavycaffeiner/stowcloud/go/internal/feature/smb/agent"
+	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
 )
 
 // pollInterval is long enough not to spin, short enough that a scope change
