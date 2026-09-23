@@ -25,36 +25,40 @@ test.describe('Network Transport Fault Invariants', () => {
     authedPage: page,
     workerApp,
     namespace,
+    browserName,
   }) => {
+    test.skip(browserName !== 'chromium', 'Network.emulateNetworkConditions requires Chromium CDP');
     await page.goto(`${workerApp.baseURL}/b/docs`, { waitUntil: 'domcontentloaded' });
     await expect(page.locator('.sc-shell-header')).toBeVisible();
 
     const fileName = `${namespace('throttled')}.bin`;
     const fixture = createTempFixtureFile(fileName, 64 * 1024);
 
+    const client = await page.context().newCDPSession(page);
+
     try {
-      // Emulate bandwidth limit using CDP session
-      const client = await page.context().newCDPSession(page);
+      // Emulate a real upload bandwidth limit using Chromium's CDP network conditions.
       await client.send('Network.emulateNetworkConditions', {
         offline: false,
         latency: 20,
         downloadThroughput: (500 * 1024) / 8,
-        uploadThroughput: (200 * 1024) / 8, // 200 KB/s
+        uploadThroughput: (200 * 1024) / 8, // 25 KiB/s (CDP expects bytes/s)
       });
 
       const fileInput = page.locator('input[type="file"][multiple]');
+      const uploadStartedAt = Date.now();
       await fileInput.setInputFiles(fixture.filePath);
 
-      // Verify file eventually completes even under bandwidth constraint
       const uploaded = page.locator('.sc-browse__content .sc-filename, .sc-file-grid__name').filter({ hasText: fileName }).first();
       await expect(uploaded).toBeVisible({ timeout: 20000 });
+      expect(Date.now() - uploadStartedAt).toBeGreaterThan(1000);
+    } finally {
       await client.send('Network.emulateNetworkConditions', {
         offline: false,
         latency: 0,
         downloadThroughput: -1,
         uploadThroughput: -1,
       });
-    } finally {
       fixture.cleanup();
     }
   });

@@ -93,12 +93,21 @@ test.describe('HTTP Transfer Fault Injection', () => {
         body: { error: { code: 'permission_denied', message: 'Permission denied' } },
       });
 
+      const failingUpload = page.waitForResponse((response) => {
+        const request = response.request();
+        return request.method() === 'PATCH' && response.url().includes('/api/v1/uploads/') && response.status() === 403;
+      });
       const fileInput = page.locator('input[type="file"][multiple]');
       await fileInput.setInputFiles(fixture.filePath);
 
-      const tray = page.locator('.sc-upload-tray');
-      await expect(tray).toBeVisible({ timeout: 10000 });
-      await expect(page.locator('.sc-upload-tray').filter({ hasText: /실패|Failed|거부|denied/i }).first()).toBeVisible({ timeout: 5000 });
+      const response = await failingUpload;
+      expect(response.status()).toBe(403);
+
+      const item = page.locator('.sc-upload-tray__item').filter({
+        has: page.locator('.sc-upload-tray__name', { hasText: fileName }),
+      });
+      await expect(item).toBeVisible();
+      await expect(item.locator('.sc-upload-tray__message')).toBeVisible();
     } finally {
       fixture.cleanup();
     }
@@ -121,12 +130,21 @@ test.describe('HTTP Transfer Fault Injection', () => {
         body: { error: { code: 'insufficient_storage', message: 'Quota exceeded' } },
       });
 
+      const failingUpload = page.waitForResponse((response) => {
+        const request = response.request();
+        return request.method() === 'PATCH' && response.url().includes('/api/v1/uploads/') && response.status() === 507;
+      });
       const fileInput = page.locator('input[type="file"][multiple]');
       await fileInput.setInputFiles(fixture.filePath);
 
-      const tray = page.locator('.sc-upload-tray');
-      await expect(tray).toBeVisible({ timeout: 10000 });
-      await expect(page.locator('.sc-upload-tray').filter({ hasText: /실패|Failed|용량|quota|storage/i }).first()).toBeVisible({ timeout: 5000 });
+      const response = await failingUpload;
+      expect(response.status()).toBe(507);
+
+      const item = page.locator('.sc-upload-tray__item').filter({
+        has: page.locator('.sc-upload-tray__name', { hasText: fileName }),
+      });
+      await expect(item).toBeVisible();
+      await expect(item.locator('.sc-upload-tray__message')).toBeVisible();
     } finally {
       fixture.cleanup();
     }
