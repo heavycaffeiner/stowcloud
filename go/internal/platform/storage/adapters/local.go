@@ -6,6 +6,7 @@ package adapters
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -111,10 +112,10 @@ func (l *Local) ReadDir(ctx context.Context, path storage.Path) ([]storage.Entry
 	for _, dirEntry := range entries {
 		child, err := path.Join(dirEntry.Name)
 		if err != nil {
-			return nil, err
+			// A POSIX directory may contain names that a portable path cannot
+			// represent. The product VFS still lists them by escaped wire name.
+			continue
 		}
-		// ReadDir's DirEntry intentionally omits size and timestamps. Stat
-		// each ordinary entry so the neutral snapshot carries those facts.
 		if dirEntry.Kind != vfs.KindFile && dirEntry.Kind != vfs.KindDir {
 			out = append(out, storage.Entry{Path: child, Kind: neutralKind(dirEntry.Kind)})
 			continue
@@ -195,26 +196,39 @@ func (l *Local) Health(ctx context.Context) storage.Health {
 }
 
 func (l *Local) Materialize(ctx context.Context, path storage.Path) (*storage.Materialized, error) {
+	lease, _, err := l.materializeWithStat(ctx, path)
+	return lease, err
+}
+
+// MaterializeWithStat opens once and returns metadata from that same handle.
+// Callers serving bytes and validators must not re-stat the path: a rename
+// between two path resolutions can otherwise pair one file's bytes with
+// another file's identity.
+func (l *Local) MaterializeWithStat(ctx context.Context, path storage.Path) (*storage.Materialized, vfs.Stat, error) {
+	return l.materializeWithStat(ctx, path)
+}
+
+func (l *Local) materializeWithStat(ctx context.Context, path storage.Path) (*storage.Materialized, vfs.Stat, error) {
 	if err := checkContext(ctx); err != nil {
-		return nil, err
+		return nil, vfs.Stat{}, err
 	}
 	p, err := l.safePath(path)
 	if err != nil {
-		return nil, err
-	}
-	st, err := l.root.Stat(p)
-	if err != nil {
-		return nil, err
+		return nil, vfs.Stat{}, err
 	}
 	f, err := l.root.OpenRead(p, vfs.IntentRead)
 	if err != nil {
-		return nil, err
+		return nil, vfs.Stat{}, err
+	}
+	st, err := f.Stat()
+	if err != nil {
+		return nil, vfs.Stat{}, errors.Join(err, f.Close())
 	}
 	if st.Size > math.MaxInt64 {
 		if closeErr := f.Close(); closeErr != nil {
-			return nil, fmt.Errorf("storage adapters: entry size %d exceeds capability range; closing file: %w", st.Size, closeErr)
+			return nil, vfs.Stat{}, fmt.Errorf("storage adapters: entry size %d exceeds capability range; closing file: %w", st.Size, closeErr)
 		}
-		return nil, fmt.Errorf("storage adapters: entry size %d exceeds capability range", st.Size)
+		return nil, vfs.Stat{}, fmt.Errorf("storage adapters: entry size %d exceeds capability range", st.Size)
 	}
-	return storage.NewMaterialized(f.OSFile(), int64(st.Size), f.Close), nil
+	return storage.NewMaterialized(f.OSFile(), int64(st.Size), f.Close), st, nil
 }

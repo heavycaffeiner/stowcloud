@@ -214,8 +214,12 @@ func TestMultipartLifecyclePaginationCompleteAndAbort(t *testing.T) {
 	if len(parts) != 2 || parts[0].ETag != "a" || parts[1].ETag != "b" {
 		t.Fatalf("parts=%+v", parts)
 	}
-	if err := r.CompleteMultipart(context.Background(), key, id, parts); err != nil {
+	receipt, err := r.CompleteMultipart(context.Background(), key, id, parts)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if receipt.ETag != "final" {
+		t.Fatalf("receipt=%+v", receipt)
 	}
 	if err := r.AbortMultipart(context.Background(), key, id); err != nil {
 		t.Fatal(err)
@@ -236,7 +240,7 @@ func TestSuccessStatusEmbeddedErrorBodyIsNotAcceptedByMultipartCalls(t *testing.
 	if _, err := r.BeginMultipart(context.Background(), "team/photo.jpg", 1, ""); err == nil {
 		t.Fatal("begin accepted embedded error")
 	}
-	if err := r.CompleteMultipart(context.Background(), "team/photo.jpg", "upload-1", []MultipartPart{{PartNumber: 1, ETag: "a", Size: 1}}); err == nil {
+	if _, err := r.CompleteMultipart(context.Background(), "team/photo.jpg", "upload-1", []MultipartPart{{PartNumber: 1, ETag: "a", Size: 1}}); err == nil {
 		t.Fatal("complete accepted embedded error")
 	}
 }

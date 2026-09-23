@@ -13,9 +13,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
+	core "github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
@@ -197,8 +198,9 @@ func (e *Engine) sweepUploads(ctx context.Context) error {
 	return nil
 }
 
-// sweepDirectTransfers aborts only the multipart upload recorded by each
-// expired reservation, then marks the reservation and releases its quota.
+// sweepDirectTransfers aborts only expired pending multipart uploads. A row in
+// completing state represents an ambiguous provider commit and is reconciled by
+// the completion endpoint rather than aborted by cleanup.
 func (e *Engine) sweepDirectTransfers(ctx context.Context) error {
 	rows, err := e.State.ListExpiredDirectTransfers(ctx, e.now(), 100)
 	if err != nil {
@@ -220,6 +222,42 @@ func (e *Engine) sweepDirectTransfers(ctx context.Context) error {
 			if relAmount, nerr := num.Narrow[int64](quota); nerr == nil {
 				if relErr := state.NewQuota(e.State).Release(ctx, row.Owner, relAmount); relErr != nil {
 					e.logger.Warn("releasing direct transfer quota failed", "error", relErr)
+				}
+			}
+		}
+	}
+	if err := e.reconcileDirectTransfers(ctx); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// reconcileDirectTransfers finalizes publication intents after a restart.
+// Provider metadata is the only success evidence; absent or mismatched objects
+// remain completing and are never silently reported as complete.
+func (e *Engine) reconcileDirectTransfers(ctx context.Context) error {
+	rows, err := e.State.ListCompletingDirectTransfers(ctx, 100)
+	if err != nil {
+		return fmt.Errorf("listing completing direct transfers: %w", err)
+	}
+	for _, row := range rows {
+		provider, ok, perr := e.directProviderForRow(ctx, row)
+		if perr != nil || !ok || !provider.DirectTransfer() {
+			continue
+		}
+		size, etag, checksum, found, merr := provider.ObjectMetadata(ctx, row.ObjectKey)
+		if merr != nil || !found || size != row.ExpectedSize || (row.ExpectedChecksum != "" && (checksum == "" || !strings.EqualFold(checksum, row.ExpectedChecksum))) {
+			continue
+		}
+		if perr := e.State.PublishDirectTransfer(ctx, row.ID, row.Owner, size, etag, checksum, e.now()); perr != nil {
+			e.logger.Warn("recording reconciled direct transfer failed", "error", perr)
+			continue
+		}
+		if quota, qerr := e.State.ReleaseDirectTransferQuota(ctx, row.ID); qerr == nil && quota > row.PriorSize {
+			if relAmount, nerr := num.Narrow[int64](quota - row.PriorSize); nerr == nil {
+				if relErr := state.NewQuota(e.State).Release(ctx, row.Owner, relAmount); relErr != nil {
+					e.logger.Warn("releasing reconciled direct transfer quota failed", "error", relErr)
 				}
 			}
 		}

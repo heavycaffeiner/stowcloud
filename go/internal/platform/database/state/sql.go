@@ -756,6 +756,16 @@ CREATE TABLE direct_transfer_part (
 CREATE INDEX direct_transfer_part_state ON direct_transfer_part(transfer, state);
 `
 
+// Step 20 records the publication intent and the provider receipt for direct
+// transfers. A completion may have reached the provider while the request was
+// timing out, so the reservation must survive that window without being swept.
+const schemaV20 = `
+ALTER TABLE direct_transfer ADD COLUMN receipt_recorded INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE direct_transfer ADD COLUMN receipt_size INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE direct_transfer ADD COLUMN receipt_etag TEXT;
+ALTER TABLE direct_transfer ADD COLUMN receipt_checksum TEXT;
+`
+
 // migrations is a function instead of a package-level slice so nothing can
 // reassign the list. Position determines version, so a released step is never
 // modified, renumbered or moved.
@@ -788,5 +798,6 @@ func migrations() []dbfile.Migration {
 		{Name: "17: an account's own root order", SQL: schemaV17},
 		{Name: "18: durable operation dispatch state", SQL: schemaV18},
 		{Name: "19: direct object-store transfer reservations", SQL: schemaV19},
+		{Name: "20: direct transfer publication receipts", SQL: schemaV20},
 	}
 }

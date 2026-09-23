@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -225,5 +226,49 @@ func TestOpenWrongPasswordRefused(t *testing.T) {
 	})
 	if !errors.Is(err, ErrWrongPassword) {
 		t.Fatalf("Open with wrong password = %v, want ErrWrongPassword", err)
+	}
+}
+
+func TestOpenExternalVeraCryptFixture(t *testing.T) {
+	t.Parallel()
+	fixture := os.Getenv("VAULT_INTEROP_FIXTURE")
+	if fixture == "" {
+		t.Skip("external VeraCrypt fixture adapter gate is run by CI with VAULT_INTEROP_FIXTURE")
+	}
+	root, err := Open(context.Background(), Options{
+		Share:      vfs.ShareID(1),
+		Config:     Config{Container: fixture, Hash: "sha512"},
+		Password:   secret.New([]byte("veracrypt interop fixture password")),
+		ScratchDir: t.TempDir(),
+		Policy:     vfs.DefaultSharePolicy(),
+	})
+	if err != nil {
+		t.Fatalf("Open(external VeraCrypt fixture): %v", err)
+	}
+	defer func() {
+		if closeErr := root.Close(); closeErr != nil {
+			t.Errorf("Close external fixture: %v", closeErr)
+		}
+	}()
+	marker, err := vfs.RootPath().Join("MARKER.TXT")
+	if err != nil {
+		t.Fatalf("Join MARKER.TXT: %v", err)
+	}
+	h, err := root.OpenRead(marker, vfs.IntentRead)
+	if err != nil {
+		t.Fatalf("OpenRead external MARKER.TXT: %v", err)
+	}
+	defer func() {
+		if closeErr := h.Close(); closeErr != nil {
+			t.Errorf("Close external marker: %v", closeErr)
+		}
+	}()
+	got, err := io.ReadAll(h.OSFile())
+	if err != nil {
+		t.Fatalf("Read external MARKER.TXT: %v", err)
+	}
+	want := []byte("interop fixture hash_sha512 AES sha-512\n")
+	if !bytes.Equal(got, want) {
+		t.Fatalf("external MARKER.TXT = %q, want %q", got, want)
 	}
 }

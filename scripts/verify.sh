@@ -631,6 +631,8 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
 
   if [ "$HOST" = linux ]; then
     run "go test ($HOST)" ingo_host go test -count=1 ./...
+    run "VeraCrypt external golden" \
+        ingo_host bash -c 'VAULT_INTEROP_FIXTURE="$PWD/internal/platform/storage/vault/testdata/interop/hash_sha512.hc" go test -count=1 ./internal/platform/storage/vault -run "^TestOpenExternalVeraCryptFixture$" -v'
   else
     skipped "go test ($HOST)" "the durable runtime is Linux-only; off-Linux test binaries are compiled above" 0
   fi

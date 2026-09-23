@@ -12,11 +12,30 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
+	storage "github.com/stowcloud/storage"
 )
 
 // streamChunk bounds one read syscall whatever buffer the caller brought, so
 // the memory a download costs does not scale with the file.
 const streamChunk = 256 << 10
+
+// readAtCloser is the minimal descriptor capability needed by ranged and
+// random reads. Local vfs files and public storage materializations both
+// satisfy it, so the production read path can use the public contract without
+// giving up pread semantics.
+type readAtCloser interface {
+	ReadAt([]byte, int64) (int, error)
+	Close() error
+}
+
+type materializedWithStat interface {
+	MaterializeWithStat(context.Context, storage.Path) (*storage.Materialized, vfs.Stat, error)
+}
+
+type materializedFile struct{ lease *storage.Materialized }
+
+func (f materializedFile) ReadAt(p []byte, off int64) (int, error) { return f.lease.ReadAt(p, off) }
+func (f materializedFile) Close() error                            { return f.lease.Release() }
 
 // Stream is a bounded reader over one already-open file, restricted to
 // [pos, end).
@@ -26,7 +45,7 @@ const streamChunk = 256 << 10
 // bytes of two different files into one response body when another process
 // replaces the file by rename.
 type Stream struct {
-	f   *vfs.File
+	f   readAtCloser
 	pos uint64
 	end uint64
 }
@@ -79,9 +98,8 @@ func (s *Stream) Read(p []byte) (int, error) {
 func (s *Stream) Close() error { return s.f.Close() }
 
 // FidEntry is what a protocol needs to build download headers for the file a
-// stream is reading. It comes from the open descriptor rather than a second
-// stat by path, so the headers cannot describe a different file than the one
-// whose bytes follow them.
+// stream is reading. It comes from the read operation's metadata rather than
+// a second protocol-level stat.
 type FidEntry struct {
 	Name     string
 	Size     uint64
@@ -90,15 +108,36 @@ type FidEntry struct {
 	ETagWeak bool
 }
 
-// OpenStream opens the resolved file and bounds a stream over it. range_ is
-// an inclusive byte pair; nil reads the whole file.
-//
-// A start past the size, or a start past the end, produces an empty stream
-// rather than an error. Whether an unsatisfiable range is a wire error is
-// the protocol layer's decision from FidEntry.Size; the core only clamps.
 func (c *Core) OpenStream(ctx context.Context, r Resolved, range_ *[2]uint64) (FidEntry, *Stream, error) {
-	// Download alone, not Read: a drop-style grant that hands out bytes
-	// without letting the holder inspect the tree is a real configuration.
+	// Local shares expose the public storage contract over the same confined
+	// root. Use it for the ordinary stream path; vfs remains the identity and
+	// mutation surface, and the fallback keeps non-local backends unchanged.
+	if backend, path, ok := c.publicRead(r); ok {
+		if err := r.Require(acl.Download); err != nil {
+			return FidEntry{}, nil, err
+		}
+		materializer, ok := backend.(materializedWithStat)
+		if !ok {
+			return FidEntry{}, nil, errf(ErrDenied, "storage cannot provide stable materialized metadata")
+		}
+		lease, st, err := materializer.MaterializeWithStat(ctx, path)
+		if err != nil {
+			return FidEntry{}, nil, mapVFSErr(err)
+		}
+		if st.Kind.IsDir() {
+			if closeErr := lease.Release(); closeErr != nil {
+				return FidEntry{}, nil, errors.Join(errf(ErrDenied, "stream a directory"), closeErr)
+			}
+			return FidEntry{}, nil, errf(ErrDenied, "stream a directory")
+		}
+		start, end := uint64(0), st.Size
+		if range_ != nil {
+			start = min(range_[0], st.Size)
+			end = max(min(satAdd(range_[1]), st.Size), start)
+		}
+		etag, weak := FileETag(st)
+		return FidEntry{Name: path.Name(), Size: st.Size, MTime: st.MtimeNs, ETag: etag, ETagWeak: weak}, &Stream{f: materializedFile{lease: lease}, pos: start, end: end}, nil
+	}
 	if err := r.Require(acl.Download); err != nil {
 		return FidEntry{}, nil, err
 	}

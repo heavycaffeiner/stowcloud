@@ -4,6 +4,7 @@ package adapters
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -144,5 +145,40 @@ func TestLocalRenameUsesRootConfinement(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(host, "from")); !os.IsNotExist(err) {
 		t.Fatalf("source stat = %v", err)
+	}
+}
+
+func TestLocalRejectsInvalidAndEscapingPaths(t *testing.T) {
+	host := t.TempDir()
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "secret"), []byte("outside"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "secret"), filepath.Join(host, "link")); err != nil {
+		t.Fatal(err)
+	}
+	root, err := vfs.OpenShareRoot(1, host, vfs.DefaultSharePolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if closeErr := root.Close(); closeErr != nil {
+			t.Errorf("closing root: %v", closeErr)
+		}
+	})
+	adapter, err := NewLocal(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, parseErr := storage.ParsePath("../secret"); parseErr == nil {
+		t.Fatal("public path parser accepted traversal")
+	}
+	link, err := storage.ParsePath("link")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := adapter.OpenRead(context.Background(), link); !errors.Is(err, vfs.ErrSymlinkDenied) {
+		t.Fatalf("OpenRead through escaping symlink = %v, want ErrSymlinkDenied", err)
 	}
 }

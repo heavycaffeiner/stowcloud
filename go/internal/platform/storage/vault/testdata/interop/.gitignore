@@ -1,5 +1,10 @@
-# The interop fixtures themselves are real VeraCrypt containers made by
-# scripts/gen-vault-interop-fixtures.sh, not by this package. The full
-# matrix is about 466 MiB, far past what is worth committing: run that
-# script locally before `go test ./internal/platform/storage/vault/ -run Interop`.
+# Full generated matrix fixtures are not committed; CI provisions that matrix
+# from the pinned VeraCrypt console. The small hash_sha512.hc golden fixture is
+# checked in and is used by the adapter integration test.
 *.hc
+!hash_sha512.hc
+
+# hash_sha512.hc was created by VeraCrypt console 1.26.29 (Debian 12 amd64),
+# package SHA-256 62405d1a0c958995ace30267b0007537e3b0b8efee32b424262a752127d5218c,
+# using AES/SHA-512/PIM 0/FAT and password "veracrypt interop fixture password".
+# Its MARKER.TXT is "interop fixture hash_sha512 AES sha-512" plus newline.

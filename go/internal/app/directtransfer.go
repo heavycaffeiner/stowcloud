@@ -261,6 +261,7 @@ func (e *Engine) directUploadComplete(c *gin.Context) {
 	owner, ok := ownerOf(c)
 	if !ok {
 		refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		return
 	}
 	id := strings.TrimSpace(c.Param("id"))
 	if !validDirectID(id) {
@@ -270,6 +271,7 @@ func (e *Engine) directUploadComplete(c *gin.Context) {
 	var req directCompleteRequest
 	if err := decodeBody(c, &req); err != nil || len(req.Parts) == 0 {
 		refuse(c, apierr.Classified{Class: apierr.Malformed})
+		return
 	}
 	row, err := e.State.GetDirectTransferOf(c.Request.Context(), int64(owner), id)
 	if errors.Is(err, state.ErrNoSuchDirectTransfer) {
@@ -278,6 +280,7 @@ func (e *Engine) directUploadComplete(c *gin.Context) {
 	}
 	if err != nil {
 		fail(c, err)
+		return
 	}
 	if row.State == state.DirectTransferComplete {
 		parts, perr := e.State.ListDirectTransferParts(c.Request.Context(), id)
@@ -285,63 +288,129 @@ func (e *Engine) directUploadComplete(c *gin.Context) {
 			e.logger.Warn("listing direct transfer parts failed", "error", perr)
 		}
 		writeJSON(c, http.StatusOK, directUploadViewOf(row, parts))
+		return
 	}
 	provider, ok, perr := e.directProviderForRow(c.Request.Context(), row)
 	if perr != nil {
 		fail(c, perr)
+		return
 	}
 	if !ok || !provider.DirectTransfer() {
 		refuse(c, apierr.Classified{Class: apierr.NotImplemented, Key: "direct_transfer.unsupported"})
+		return
 	}
-	if row.State != state.DirectTransferPending || e.now() >= row.ExpiresNs {
+	if row.State != state.DirectTransferPending && row.State != state.DirectTransferCompleting {
 		refuse(c, apierr.Classified{Class: apierr.Gone, Key: "direct_transfer.expired"})
+		return
 	}
 	parts, err := e.State.ListDirectTransferParts(c.Request.Context(), id)
 	if err != nil {
 		fail(c, err)
-	}
-	listed, err := provider.ListParts(c.Request.Context(), row.ObjectKey, row.UploadID)
-	if err != nil {
-		fail(c, err)
+		return
 	}
 	clientParts, err := directPartsFromRequest(id, req.Parts, row.ExpectedSize)
 	if err != nil {
 		refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		return
+	}
+	if row.State == state.DirectTransferCompleting {
+		// The provider commit may already have succeeded. Reconcile metadata;
+		// never issue CompleteMultipart a second time for the same upload.
+		size, etag, checksum, found, merr := provider.ObjectMetadata(c.Request.Context(), row.ObjectKey)
+		if merr != nil {
+			fail(c, merr)
+			return
+		}
+		if !found || size != row.ExpectedSize || (row.ExpectedChecksum != "" && (checksum == "" || !strings.EqualFold(checksum, row.ExpectedChecksum))) {
+			fail(c, fmt.Errorf("direct transfer publication is unresolved"))
+			return
+		}
+		now := e.now()
+		if err := e.State.PublishDirectTransfer(c.Request.Context(), id, int64(owner), size, etag, checksum, now); err != nil {
+			fail(c, err)
+			return
+		}
+		if quota, qerr := e.State.ReleaseDirectTransferQuota(c.Request.Context(), id); qerr != nil {
+			fail(c, qerr)
+			return
+		} else if quota > row.PriorSize {
+			relAmount, nerr := num.Narrow[int64](quota - row.PriorSize)
+			if nerr != nil {
+				fail(c, nerr)
+				return
+			}
+			if qerr := state.NewQuota(e.State).Release(c.Request.Context(), int64(owner), relAmount); qerr != nil {
+				fail(c, qerr)
+				return
+			}
+		}
+		row.State, row.CompletedNs = state.DirectTransferComplete, &now
+		writeJSON(c, http.StatusOK, directUploadViewOf(row, parts))
+		return
+	}
+	listed, lerr := provider.ListParts(c.Request.Context(), row.ObjectKey, row.UploadID)
+	if lerr != nil {
+		fail(c, lerr)
+		return
 	}
 	if verr := validateDirectParts(row, clientParts, parts, listed); verr != nil {
 		refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "direct_transfer.parts_mismatch"})
+		return
 	}
 	for _, p := range clientParts {
 		if perr := e.State.PutDirectTransferPartOf(c.Request.Context(), int64(owner), p); perr != nil {
 			fail(c, perr)
+			return
 		}
 	}
 	if rerr := e.revalidateDirectDestination(c.Request.Context(), row); rerr != nil {
 		fail(c, rerr)
+		return
 	}
-	if cerr := provider.CompleteMultipart(c.Request.Context(), row.ObjectKey, row.UploadID, directProviderParts(clientParts)); cerr != nil {
-		fail(c, cerr)
+	if ierr := e.State.BeginDirectTransferCompletion(c.Request.Context(), id, int64(owner), e.now()); ierr != nil {
+		fail(c, ierr)
+		return
 	}
-	size, _, checksum, found, err := provider.ObjectMetadata(c.Request.Context(), row.ObjectKey)
-	if err != nil {
-		fail(c, err)
+	row.State = state.DirectTransferCompleting
+	receipt, cerr := provider.CompleteMultipart(c.Request.Context(), row.ObjectKey, row.UploadID, directProviderParts(clientParts))
+	if cerr != nil {
+		// A timeout is ambiguous: inspect the object before reporting failure.
+		size, etag, checksum, found, merr := provider.ObjectMetadata(c.Request.Context(), row.ObjectKey)
+		if merr != nil || !found || size != row.ExpectedSize || (row.ExpectedChecksum != "" && (checksum == "" || !strings.EqualFold(checksum, row.ExpectedChecksum))) {
+			fail(c, cerr)
+			return
+		}
+		receipt = objstore.TransferReceipt{Size: size, ETag: etag, Checksum: checksum}
 	}
-	if !found || size != row.ExpectedSize || (row.ExpectedChecksum != "" && checksum != "" && !strings.EqualFold(checksum, row.ExpectedChecksum)) {
+	size, etag, checksum, found, merr := provider.ObjectMetadata(c.Request.Context(), row.ObjectKey)
+	if merr != nil {
+		fail(c, merr)
+		return
+	}
+	if !found || size != row.ExpectedSize || (row.ExpectedChecksum != "" && (checksum == "" || !strings.EqualFold(checksum, row.ExpectedChecksum))) {
 		fail(c, fmt.Errorf("direct transfer completed with unexpected object metadata"))
+		return
+	}
+	if receipt.Size == 0 {
+		receipt = objstore.TransferReceipt{Size: size, ETag: etag, Checksum: checksum}
 	}
 	now := e.now()
-	if err := e.State.CompleteDirectTransfer(c.Request.Context(), id, int64(owner), state.DirectTransferComplete, "", "", now); err != nil {
+	if err := e.State.PublishDirectTransfer(c.Request.Context(), id, int64(owner), receipt.Size, receipt.ETag, receipt.Checksum, now); err != nil {
 		fail(c, err)
+		return
 	}
 	if quota, qerr := e.State.ReleaseDirectTransferQuota(c.Request.Context(), id); qerr != nil {
 		fail(c, qerr)
+		return
 	} else if quota > row.PriorSize {
 		relAmount, nerr := num.Narrow[int64](quota - row.PriorSize)
 		if nerr != nil {
 			fail(c, nerr)
+			return
 		}
 		if qerr := state.NewQuota(e.State).Release(c.Request.Context(), int64(owner), relAmount); qerr != nil {
 			fail(c, qerr)
+			return
 		}
 	}
 	row.State = state.DirectTransferComplete
@@ -390,6 +459,7 @@ func (e *Engine) directUploadCancel(c *gin.Context) {
 	owner, ok := ownerOf(c)
 	if !ok {
 		refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		return
 	}
 	id := strings.TrimSpace(c.Param("id"))
 	if !validDirectID(id) {
@@ -401,17 +471,24 @@ func (e *Engine) directUploadCancel(c *gin.Context) {
 		notFound(c)
 		return
 	}
+	if row.State != state.DirectTransferPending {
+		refuse(c, apierr.Classified{Class: apierr.Gone, Key: "direct_transfer.expired"})
+		return
+	}
 	provider, ok, perr := e.directProviderForRow(c.Request.Context(), row)
 	if perr != nil {
 		fail(c, perr)
+		return
 	}
 	if ok && provider.DirectTransfer() {
 		if err := provider.AbortMultipart(c.Request.Context(), row.ObjectKey, row.UploadID); err != nil && !errors.Is(err, objstore.ErrDirectTransferUnsupported) {
 			fail(c, err)
+			return
 		}
 	}
 	if err := e.State.CancelDirectTransfer(c.Request.Context(), id, int64(owner), e.now()); err != nil {
 		fail(c, err)
+		return
 	}
 	if quota, qerr := e.State.ReleaseDirectTransferQuota(c.Request.Context(), id); qerr == nil && quota > 0 {
 		if relAmount, nerr := num.Narrow[int64](quota); nerr == nil {

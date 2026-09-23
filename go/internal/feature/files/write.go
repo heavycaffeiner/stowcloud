@@ -366,6 +366,11 @@ func (c *Core) Stat(ctx context.Context, r Resolved) (Entry, error) {
 	if err := r.Require(acl.Read); err != nil {
 		return Entry{}, err
 	}
+	if backend, path, ok := c.publicRead(r); ok {
+		if _, err := backend.Stat(ctx, path); err != nil {
+			return Entry{}, mapVFSErr(err)
+		}
+	}
 	if _, err := r.root.Stat(r.path); err != nil {
 		return Entry{}, mapVFSErr(err)
 	}

@@ -132,6 +132,16 @@ jobs:
           cd web
           pnpm check:bundle-size
 
+
+      # This is a real external-container check, not a package-generated
+      # round-trip. The fixture is checked in with provenance under the vault
+      # package, so this gate cannot silently skip on a fresh checkout.
+      - name: Check external VeraCrypt golden fixture
+        working-directory: go
+        env:
+          VAULT_INTEROP_FIXTURE: ${{ github.workspace }}/go/internal/platform/storage/vault/testdata/interop/hash_sha512.hc
+        run: go test -count=1 ./internal/platform/storage/vault -run '^TestOpenExternalVeraCryptFixture$' -v
+
       - name: bash scripts/verify.sh
         env:
           # This job installs the frontend, so a SKIP there would mean the
@@ -151,7 +161,6 @@ jobs:
       - name: Disk
         if: always()
         run: df -h / && du -sh go/.tools web/node_modules 2>/dev/null || true
-
   windows:
     name: verify (windows-latest)
     runs-on: windows-latest

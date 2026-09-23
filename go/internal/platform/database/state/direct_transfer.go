@@ -72,6 +72,10 @@ type DirectTransferReservation struct {
 	LeaseID          string
 	LeaseExpiresNs   int64
 	QuotaReleased    bool
+	ReceiptRecorded  bool
+	ReceiptSize      uint64
+	ReceiptETag      string
+	ReceiptChecksum  string
 }
 
 // DirectTransferPart is one recorded multipart part. Owner is optional for
@@ -139,7 +143,7 @@ func (d *DB) CreateDirectTransfer(ctx context.Context, r DirectTransferReservati
 		_, err := tx.ExecContext(ctx, sqlInsertDirectTransfer, r.ID, r.Owner, r.Share, r.Path, r.ObjectKey, r.UploadID,
 			size, textArg(r.ExpectedChecksum), textArg(r.IfMatch), prior, textArg(r.PriorETag), r.ConflictPolicy, quota,
 			r.CreatedNs, r.UpdatedNs, r.ExpiresNs, int64(r.State), textArg(r.ErrorKey), textArg(r.ErrorDetail), r.CompletedNs,
-			textArg(r.LeaseID), r.LeaseExpiresNs, r.QuotaReleased)
+			textArg(r.LeaseID), r.LeaseExpiresNs, r.QuotaReleased, r.ReceiptRecorded, r.ReceiptSize, textArg(r.ReceiptETag), textArg(r.ReceiptChecksum))
 		return err
 	})
 }
@@ -161,22 +165,22 @@ func (d *DB) getDirectTransfer(ctx context.Context, id string, owner int64) (Dir
 	}
 	row := d.f.SQL().QueryRowContext(ctx, sqlReadDirectTransfer, id, owner, owner)
 	var r DirectTransferReservation
-	var expected, prior, quota int64
-	var checksum, ifMatch, priorETag, policy, errorKey, errorDetail, leaseID sql.NullString
+	var expected, prior, quota, receiptSize int64
+	var checksum, ifMatch, priorETag, policy, errorKey, errorDetail, leaseID, receiptETag, receiptChecksum sql.NullString
 	var completed sql.NullInt64
 	if err := row.Scan(&r.ID, &r.Owner, &r.Share, &r.Path, &r.ObjectKey, &r.UploadID, &expected, &checksum, &ifMatch,
 		&prior, &priorETag, &policy, &quota, &r.CreatedNs, &r.UpdatedNs, &r.ExpiresNs, &r.State, &errorKey, &errorDetail,
-		&completed, &leaseID, &r.LeaseExpiresNs, &r.QuotaReleased); errors.Is(err, sql.ErrNoRows) {
+		&completed, &leaseID, &r.LeaseExpiresNs, &r.QuotaReleased, &r.ReceiptRecorded, &receiptSize, &receiptETag, &receiptChecksum); errors.Is(err, sql.ErrNoRows) {
 		return DirectTransferReservation{}, ErrNoSuchDirectTransfer
 	} else if err != nil {
 		return DirectTransferReservation{}, fmt.Errorf("reading direct transfer: %w", err)
 	}
-	if expected < 0 || prior < 0 || quota < 0 {
+	if expected < 0 || prior < 0 || quota < 0 || receiptSize < 0 {
 		return DirectTransferReservation{}, fmt.Errorf("direct transfer has a negative persisted size")
 	}
-	r.ExpectedSize, r.PriorSize, r.QuotaReservation = uint64(expected), uint64(prior), uint64(quota)
+	r.ExpectedSize, r.PriorSize, r.QuotaReservation, r.ReceiptSize = uint64(expected), uint64(prior), uint64(quota), uint64(receiptSize)
 	r.ExpectedChecksum, r.IfMatch, r.PriorETag, r.ConflictPolicy = checksum.String, ifMatch.String, priorETag.String, policy.String
-	r.ErrorKey, r.ErrorDetail, r.LeaseID, r.CompletedNs = errorKey.String, errorDetail.String, leaseID.String, nil
+	r.ErrorKey, r.ErrorDetail, r.LeaseID, r.ReceiptETag, r.ReceiptChecksum, r.CompletedNs = errorKey.String, errorDetail.String, leaseID.String, receiptETag.String, receiptChecksum.String, nil
 	if completed.Valid {
 		v := completed.Int64
 		r.CompletedNs = &v
@@ -198,7 +202,7 @@ func (d *DB) PutDirectTransferPart(ctx context.Context, p DirectTransferPart) er
 	}
 	return d.Write(ctx, func(tx *sql.Tx) error {
 		var owner int64
-		if err := tx.QueryRowContext(ctx, `SELECT owner FROM direct_transfer WHERE id = ? AND (? = 0 OR owner = ?) AND state IN (?, ?) AND expires_ns > updated_ns`, p.TransferID, p.Owner, p.Owner, int64(DirectTransferPending), int64(DirectTransferCompleting)).Scan(&owner); errors.Is(err, sql.ErrNoRows) {
+		if err := tx.QueryRowContext(ctx, `SELECT owner FROM direct_transfer WHERE id = ? AND (? = 0 OR owner = ?) AND state = ? AND expires_ns > updated_ns`, p.TransferID, p.Owner, p.Owner, int64(DirectTransferPending)).Scan(&owner); errors.Is(err, sql.ErrNoRows) {
 			return ErrNoSuchDirectTransfer
 		} else if err != nil {
 			return err
@@ -246,13 +250,56 @@ func (d *DB) ListDirectTransferParts(ctx context.Context, id string) (out []Dire
 	return out, nil
 }
 
-// CompleteDirectTransfer conditionally publishes the reservation state.
+// BeginDirectTransferCompletion durably records that provider publication is
+// about to start. Completing rows are never eligible for expiry cleanup.
+func (d *DB) BeginDirectTransferCompletion(ctx context.Context, id string, owner int64, nowNs int64) error {
+	return d.Write(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `UPDATE direct_transfer SET state=?,updated_ns=?,expires_ns=CASE WHEN expires_ns > ? THEN expires_ns ELSE ? END WHERE id=? AND owner=? AND state=?`, int64(DirectTransferCompleting), nowNs, nowNs, nowNs, id, owner, int64(DirectTransferPending))
+		if err != nil {
+			return err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n == 1 {
+			return nil
+		}
+		return directTransferMutationFailure(ctx, tx, id, owner)
+	})
+}
+
+// PublishDirectTransfer records the provider receipt and publishes the row in
+// one transaction. It is valid after a successful or ambiguous provider call;
+// callers must pass metadata read from the provider, never client claims.
+func (d *DB) PublishDirectTransfer(ctx context.Context, id string, owner int64, receiptSize uint64, receiptETag, receiptChecksum string, completedNs int64) error {
+	size, err := narrowTransferSize(receiptSize)
+	if err != nil {
+		return err
+	}
+	return d.Write(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `UPDATE direct_transfer SET state=?,updated_ns=?,completed_ns=?,receipt_recorded=1,receipt_size=?,receipt_etag=?,receipt_checksum=?,error_key=NULL,error_detail=NULL,lease_id=NULL,lease_expires_ns=0 WHERE id=? AND owner=? AND state=?`, int64(DirectTransferComplete), completedNs, completedNs, size, textArg(receiptETag), textArg(receiptChecksum), id, owner, int64(DirectTransferCompleting))
+		if err != nil {
+			return err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n == 1 {
+			return nil
+		}
+		return directTransferMutationFailure(ctx, tx, id, owner)
+	})
+}
+
+// CompleteDirectTransfer conditionally terminates a pending reservation.
 func (d *DB) CompleteDirectTransfer(ctx context.Context, id string, owner int64, state DirectTransferState, errorKey, errorDetail string, completedNs int64) error {
-	if state != DirectTransferComplete && state != DirectTransferCancelled && state != DirectTransferExpired {
+	if state != DirectTransferCancelled && state != DirectTransferExpired {
 		return ErrDirectTransferConflict
 	}
 	return d.Write(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, `UPDATE direct_transfer SET state = ?, updated_ns = ?, error_key = ?, error_detail = ?, completed_ns = ?, lease_id = NULL, lease_expires_ns = 0 WHERE id = ? AND owner = ? AND state IN (?, ?) AND expires_ns > ?`, int64(state), completedNs, textArg(errorKey), textArg(errorDetail), completedNs, id, owner, int64(DirectTransferPending), int64(DirectTransferCompleting), completedNs)
+		res, err := tx.ExecContext(ctx, `UPDATE direct_transfer SET state = ?, updated_ns = ?, error_key = ?, error_detail = ?, completed_ns = ?, lease_id = NULL, lease_expires_ns = 0 WHERE id = ? AND owner = ? AND state = ? AND expires_ns > ?`, int64(state), completedNs, textArg(errorKey), textArg(errorDetail), completedNs, id, owner, int64(DirectTransferPending), completedNs)
 		if err != nil {
 			return err
 		}
@@ -277,25 +324,62 @@ func (d *DB) ListExpiredDirectTransfers(ctx context.Context, nowNs int64, limit 
 	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := d.f.SQL().QueryContext(ctx, sqlListExpiredDirectTransfers, int64(DirectTransferPending), int64(DirectTransferCompleting), nowNs, limit)
+	rows, err := d.f.SQL().QueryContext(ctx, sqlListExpiredDirectTransfers, int64(DirectTransferPending), nowNs, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { err = errors.Join(err, rows.Close()) }()
 	for rows.Next() {
 		var r DirectTransferReservation
-		var expected, prior, quota int64
-		var checksum, ifMatch, priorETag, policy, errorKey, errorDetail, lease sql.NullString
+		var expected, prior, quota, receiptSize int64
+		var checksum, ifMatch, priorETag, policy, errorKey, errorDetail, lease, receiptETag, receiptChecksum sql.NullString
 		var completed sql.NullInt64
-		if err := rows.Scan(&r.ID, &r.Owner, &r.Share, &r.Path, &r.ObjectKey, &r.UploadID, &expected, &checksum, &ifMatch, &prior, &priorETag, &policy, &quota, &r.CreatedNs, &r.UpdatedNs, &r.ExpiresNs, &r.State, &errorKey, &errorDetail, &completed, &lease, &r.LeaseExpiresNs, &r.QuotaReleased); err != nil {
+		if err := rows.Scan(&r.ID, &r.Owner, &r.Share, &r.Path, &r.ObjectKey, &r.UploadID, &expected, &checksum, &ifMatch, &prior, &priorETag, &policy, &quota, &r.CreatedNs, &r.UpdatedNs, &r.ExpiresNs, &r.State, &errorKey, &errorDetail, &completed, &lease, &r.LeaseExpiresNs, &r.QuotaReleased, &r.ReceiptRecorded, &receiptSize, &receiptETag, &receiptChecksum); err != nil {
 			return nil, err
 		}
-		if expected < 0 || prior < 0 || quota < 0 {
+		if expected < 0 || prior < 0 || quota < 0 || receiptSize < 0 {
 			return nil, fmt.Errorf("direct transfer has a negative persisted size")
 		}
-		r.ExpectedSize, r.PriorSize, r.QuotaReservation = uint64(expected), uint64(prior), uint64(quota)
+		r.ExpectedSize, r.PriorSize, r.QuotaReservation, r.ReceiptSize = uint64(expected), uint64(prior), uint64(quota), uint64(receiptSize)
 		r.ExpectedChecksum, r.IfMatch, r.PriorETag, r.ConflictPolicy = checksum.String, ifMatch.String, priorETag.String, policy.String
-		r.ErrorKey, r.ErrorDetail, r.LeaseID = errorKey.String, errorDetail.String, lease.String
+		r.ErrorKey, r.ErrorDetail, r.LeaseID, r.ReceiptETag, r.ReceiptChecksum = errorKey.String, errorDetail.String, lease.String, receiptETag.String, receiptChecksum.String
+		if completed.Valid {
+			v := completed.Int64
+			r.CompletedNs = &v
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ListCompletingDirectTransfers returns rows whose provider publication may
+// have committed while the process was unavailable.
+func (d *DB) ListCompletingDirectTransfers(ctx context.Context, limit int) (out []DirectTransferReservation, err error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := d.f.SQL().QueryContext(ctx, sqlListCompletingDirectTransfers, int64(DirectTransferCompleting), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { err = errors.Join(err, rows.Close()) }()
+	for rows.Next() {
+		var r DirectTransferReservation
+		var expected, prior, quota, receiptSize int64
+		var checksum, ifMatch, priorETag, policy, errorKey, errorDetail, lease, receiptETag, receiptChecksum sql.NullString
+		var completed sql.NullInt64
+		if err := rows.Scan(&r.ID, &r.Owner, &r.Share, &r.Path, &r.ObjectKey, &r.UploadID, &expected, &checksum, &ifMatch, &prior, &priorETag, &policy, &quota, &r.CreatedNs, &r.UpdatedNs, &r.ExpiresNs, &r.State, &errorKey, &errorDetail, &completed, &lease, &r.LeaseExpiresNs, &r.QuotaReleased, &r.ReceiptRecorded, &receiptSize, &receiptETag, &receiptChecksum); err != nil {
+			return nil, err
+		}
+		if expected < 0 || prior < 0 || quota < 0 || receiptSize < 0 {
+			return nil, fmt.Errorf("direct transfer has a negative persisted size")
+		}
+		r.ExpectedSize, r.PriorSize, r.QuotaReservation, r.ReceiptSize = uint64(expected), uint64(prior), uint64(quota), uint64(receiptSize)
+		r.ExpectedChecksum, r.IfMatch, r.PriorETag, r.ConflictPolicy = checksum.String, ifMatch.String, priorETag.String, policy.String
+		r.ErrorKey, r.ErrorDetail, r.LeaseID, r.ReceiptETag, r.ReceiptChecksum = errorKey.String, errorDetail.String, lease.String, receiptETag.String, receiptChecksum.String
 		if completed.Valid {
 			v := completed.Int64
 			r.CompletedNs = &v
@@ -311,7 +395,7 @@ func (d *DB) ListExpiredDirectTransfers(ctx context.Context, nowNs int64, limit 
 // ExpireDirectTransfer marks one expired reservation and clears its lease.
 func (d *DB) ExpireDirectTransfer(ctx context.Context, id string, nowNs int64) error {
 	return d.Write(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, `UPDATE direct_transfer SET state=?,updated_ns=?,error_key='expired',error_detail='reservation expired',lease_id=NULL,lease_expires_ns=0 WHERE id=? AND state IN (?,?) AND expires_ns <= ?`, int64(DirectTransferExpired), nowNs, id, int64(DirectTransferPending), int64(DirectTransferCompleting), nowNs)
+		res, err := tx.ExecContext(ctx, `UPDATE direct_transfer SET state=?,updated_ns=?,error_key='expired',error_detail='reservation expired',lease_id=NULL,lease_expires_ns=0 WHERE id=? AND state=? AND expires_ns <= ?`, int64(DirectTransferExpired), nowNs, id, int64(DirectTransferPending), nowNs)
 		if err != nil {
 			return err
 		}

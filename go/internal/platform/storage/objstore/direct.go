@@ -33,13 +33,23 @@ type MultipartPart struct {
 	Size       int64
 	Checksum   string
 }
+
+// TransferReceipt is the provider's durable publication observation. It is
+// intentionally neutral: callers use it to reconcile an ambiguous commit,
+// not to claim equivalence with the source bytes.
+type TransferReceipt struct {
+	Size     uint64
+	ETag     string
+	Checksum string
+}
+
 type DirectTransferProvider interface {
 	DirectTransfer() bool
 	ObjectKey(vfs.SafePath) string
 	BeginMultipart(context.Context, string, int64, string) (string, error)
 	AbortMultipart(context.Context, string, string) error
 	ListParts(context.Context, string, string) ([]MultipartPart, error)
-	CompleteMultipart(context.Context, string, string, []MultipartPart) error
+	CompleteMultipart(context.Context, string, string, []MultipartPart) (TransferReceipt, error)
 	PresignUploadPart(context.Context, string, string, int, int64, string, time.Duration) (string, http.Header, error)
 	PresignGet(context.Context, string, time.Duration) (string, error)
 	ObjectMetadata(context.Context, string) (uint64, string, string, bool, error)
@@ -160,34 +170,37 @@ func (r *Root) ListParts(ctx context.Context, key, id string) ([]MultipartPart, 
 	}
 	return out, nil
 }
-func (r *Root) CompleteMultipart(ctx context.Context, key, id string, parts []MultipartPart) error {
+func (r *Root) CompleteMultipart(ctx context.Context, key, id string, parts []MultipartPart) (TransferReceipt, error) {
 	if e := validateDirectObjectKey(r, key); e != nil {
-		return e
+		return TransferReceipt{}, e
 	}
 	if e := validateUploadID(id); e != nil {
-		return e
+		return TransferReceipt{}, e
 	}
 	if len(parts) == 0 || len(parts) > maxMultipartParts {
-		return errors.New("objstore: invalid multipart part list")
+		return TransferReceipt{}, errors.New("objstore: invalid multipart part list")
 	}
 	if e := r.ensureSDK(); e != nil {
-		return e
+		return TransferReceipt{}, e
 	}
 	in := &s3.CompleteMultipartUploadInput{Bucket: aws.String(r.cfg.Bucket), Key: aws.String(key), UploadId: aws.String(id), MultipartUpload: &types.CompletedMultipartUpload{Parts: make([]types.CompletedPart, 0, len(parts))}}
 	last := 0
 	for _, p := range parts {
 		if p.PartNumber <= last || p.PartNumber > maxMultipartParts || normalizeETag(p.ETag) == "" {
-			return errors.New("objstore: invalid multipart part list")
+			return TransferReceipt{}, errors.New("objstore: invalid multipart part list")
 		}
 		last = p.PartNumber
 		partNumber, narrowErr := num.Narrow[int32](p.PartNumber)
 		if narrowErr != nil {
-			return narrowErr
+			return TransferReceipt{}, narrowErr
 		}
 		in.MultipartUpload.Parts = append(in.MultipartUpload.Parts, types.CompletedPart{PartNumber: aws.Int32(partNumber), ETag: aws.String(`"` + normalizeETag(p.ETag) + `"`)})
 	}
-	_, e := r.s3.CompleteMultipartUpload(ctx, in)
-	return sdkError("complete multipart upload", e)
+	o, e := r.s3.CompleteMultipartUpload(ctx, in)
+	if e != nil {
+		return TransferReceipt{}, sdkError("complete multipart upload", e)
+	}
+	return TransferReceipt{ETag: normalizeETag(aws.ToString(o.ETag))}, nil
 }
 func (r *Root) PresignUploadPart(ctx context.Context, key, id string, n int, size int64, checksum string, expiry time.Duration) (string, http.Header, error) {
 	if e := validateDirectObjectKey(r, key); e != nil {

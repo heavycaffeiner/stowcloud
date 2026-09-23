@@ -12,7 +12,9 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/internal/kit/secret"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/adapters"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
+	storage "github.com/stowcloud/storage"
 )
 
 // Share is one configured share as the admin-facing API returns it.
@@ -167,7 +169,10 @@ func (localOpener) Open(_ context.Context, def ShareDef) (vfs.Root, vfs.Admissio
 
 func (localOpener) Describe(def ShareDef) string { return def.Host }
 
-// shareEntry pairs a registered share's definition with its live root.
+// shareEntry pairs a registered share's definition with its live root and the
+// public read capability over that same confined root. Keeping both is
+// intentional: the vfs root remains the product's security/identity surface,
+// while storage.ReadHierarchy is the backend-neutral read surface.
 //
 // root is nil for a broken share, and the entry remains in the map regardless.
 // Removing it is what made a disk that never returned indistinguishable from a
@@ -176,6 +181,7 @@ func (localOpener) Describe(def ShareDef) string { return def.Host }
 type shareEntry struct {
 	def       ShareDef
 	root      vfs.Root
+	storage   storage.ReadHierarchy
 	brokenErr error
 }
 
@@ -192,12 +198,16 @@ func (c *Core) RegisterShare(ctx context.Context, def ShareDef) error {
 	if err != nil {
 		return err
 	}
+	read, err := adapters.NewLocal(root)
+	if err != nil {
+		return errors.Join(fmt.Errorf("wrapping share storage: %w", err), root.Close())
+	}
 	if adm.Warn != "" {
 		c.warn("share admitted with a caveat",
 			slog.String("share", def.Name), slog.String("warning", adm.Warn))
 	}
 	def.BrokenReason = ""
-	c.replaceEntry(&shareEntry{def: def, root: root})
+	c.replaceEntry(&shareEntry{def: def, root: root, storage: read})
 	return nil
 }
 
@@ -322,6 +332,31 @@ func (c *Core) ShareRoot(id ShareID) (vfs.Root, bool) {
 		return nil, false
 	}
 	return e.root, true
+}
+
+// ShareStorage returns the public read capability for a live share. It is the
+// backend-neutral production seam; callers needing inode identity or writes
+// continue to use ShareRoot.
+func (c *Core) ShareStorage(id ShareID) (storage.ReadHierarchy, bool) {
+	c.sharesMu.RLock()
+	defer c.sharesMu.RUnlock()
+	e, ok := c.shares[id]
+	if !ok || e.root == nil || e.storage == nil {
+		return nil, false
+	}
+	return e.storage, true
+}
+
+func (c *Core) publicRead(r Resolved) (storage.ReadHierarchy, storage.Path, bool) {
+	e, ok := c.shareEntry(r.share)
+	if !ok || e.storage == nil {
+		return nil, storage.Path{}, false
+	}
+	p, err := storage.ParsePath(r.path.String())
+	if err != nil {
+		return nil, storage.Path{}, false
+	}
+	return e.storage, p, true
 }
 
 // shareEntry is the package-internal lookup Resolve uses, handing back the
