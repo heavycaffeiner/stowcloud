@@ -10,6 +10,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
+	"github.com/stowcloud/transfer"
 )
 
 // The transfer-id alias is what lets a named chunk collection resume after a
@@ -76,7 +77,7 @@ func (e *Engine) LookupAlias(ctx context.Context, tid string, user core.UserID) 
 	if err != nil {
 		return Alias{}, err
 	}
-	id, ierr := sessionIDFromBytes(a.Session)
+	id, ierr := transfer.SessionIDFromBytes(a.Session)
 	if ierr != nil {
 		return Alias{}, ErrNotFound
 	}

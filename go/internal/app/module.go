@@ -46,6 +46,9 @@ func Module(config ModuleConfig) fx.Option {
 			lifecycle.Append(fx.Hook{OnStop: func(context.Context) error { return engine.Close() }})
 		}),
 		fx.Provide(func(engine *Engine, router *gin.Engine, admission *hanamibootstrap.Admission, controller *hanamiprocess.Controller) (*listener.Runtime, error) {
+			if err := engine.Mount(router); err != nil {
+				return nil, err
+			}
 			return listener.New(listener.Config{
 				DataDir: config.DataDir,
 				Address: config.Address,

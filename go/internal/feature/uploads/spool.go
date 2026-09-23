@@ -11,6 +11,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
+	"github.com/stowcloud/transfer"
 )
 
 // The offset-addressed write path.
@@ -268,8 +269,8 @@ func (e *Engine) writeBodyAt(
 ) (uint64, []byte, error) {
 	var hasher *streamHasher
 	if sum != nil {
-		if err := checkDigestLen(sum.Algo, len(sum.Digest)); err != nil {
-			return 0, nil, err
+		if err := transfer.ValidateDigest(sum.Algo, len(sum.Digest)); err != nil {
+			return 0, nil, fmt.Errorf("%w: %v", ErrBadRequest, err)
 		}
 		hasher = newStreamHasher(sum.Algo)
 	}

@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
+	"github.com/stowcloud/transfer"
 )
 
 // The administrative surface over the cache: whether there is one, whether it
@@ -57,7 +58,7 @@ func (e *Engine) SetCacheEnabled(ctx context.Context, on bool) error {
 // and both a read-only mount and a directory owned by someone else satisfy
 // it.
 func (c *cacheSpool) probe() error {
-	name, err := NewSessionID()
+	name, err := transfer.NewSessionID()
 	if err != nil {
 		return err
 	}

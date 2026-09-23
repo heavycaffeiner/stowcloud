@@ -11,6 +11,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
+	"github.com/stowcloud/transfer"
 )
 
 // Finalize verifies the upload and publishes it.
@@ -91,15 +92,24 @@ func (e *Engine) finalize(
 	// finalizing session alone: a long assembly must not be collected halfway
 	// through its own publish. Any pre-publication error restores receiving so
 	// PATCH can repair it and the normal expiry path can reclaim it.
-	rw.sess.State = int64(StateFinalizing)
+	if next, terr := transfer.Transition(SessionState(rw.sess.State), transfer.StateFinalizing); terr != nil {
+		return core.Entry{}, fmt.Errorf("%w: %v", ErrSessionState, terr)
+	} else {
+		rw.sess.State = int64(next)
+	}
 	if serr := e.save(ctx, rw); serr != nil {
 		return core.Entry{}, serr
 	}
 	defer func() {
-		if retErr == nil || rw.sess.State != int64(StateFinalizing) {
+		if SessionState(rw.sess.State) != StateFinalizing {
 			return
 		}
-		rw.sess.State = int64(StateReceiving)
+		next, terr := transfer.Transition(SessionState(rw.sess.State), transfer.StateReceiving)
+		if terr != nil {
+			retErr = errors.Join(retErr, terr)
+			return
+		}
+		rw.sess.State = int64(next)
 		rw.sess.ExpiresNs = e.expiry()
 		if serr := e.save(ctx, rw); serr != nil {
 			retErr = errors.Join(retErr, serr)
@@ -130,7 +140,11 @@ func (e *Engine) finalize(
 	// Mark the row terminal before cleanup. If deletion itself fails, the
 	// sweeper can reclaim a completed row instead of treating it as a live
 	// finalization forever.
-	rw.sess.State = int64(StateDone)
+	if next, terr := transfer.Transition(SessionState(rw.sess.State), transfer.StateDone); terr == nil {
+		rw.sess.State = int64(next)
+	} else {
+		e.log.Warn("an upload reached publication with an invalid lifecycle transition", "session", id.String(), "error", terr)
+	}
 	if serr := e.save(ctx, rw); serr != nil {
 		e.log.Warn("an upload was published but its terminal state could not be saved",
 			"session", id.String(), "error", serr)

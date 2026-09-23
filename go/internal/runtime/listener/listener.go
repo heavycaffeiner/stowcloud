@@ -38,7 +38,6 @@ type Config struct {
 // Application is the product surface the listener needs. It deliberately
 // carries no Hanami or Fx types: those remain at the process assembly edge.
 type Application interface {
-	Mount(*gin.Engine) error
 	ProbeHost() string
 	OnAppHostChange(func())
 	OnBindChange(current string, pinned bool, fn func(string))
@@ -54,7 +53,7 @@ type Runtime struct {
 	mu      sync.Mutex
 }
 
-// New mounts the product application and prepares its managed HTTP endpoint.
+// New prepares the managed HTTP endpoint for an already mounted router.
 func New(config Config, app Application, router *gin.Engine, admission *hanamibootstrap.Admission, controller *hanamiprocess.Controller) (*Runtime, error) {
 	if config.DataDir == "" {
 		return nil, errors.New("listener data directory is empty")
@@ -67,9 +66,6 @@ func New(config Config, app Application, router *gin.Engine, admission *hanamibo
 	}
 	if router == nil {
 		return nil, errors.New("listener Gin engine is nil")
-	}
-	if err := app.Mount(router); err != nil {
-		return nil, fmt.Errorf("mounting application: %w", err)
 	}
 	logger := config.Logger
 	if logger == nil {

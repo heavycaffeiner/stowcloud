@@ -17,7 +17,7 @@ require (
 	github.com/stowcloud/namesearch v0.1.0
 	github.com/stowcloud/sandbox-worker v0.1.0
 	github.com/stowcloud/storage v0.1.0
-	github.com/stowcloud/transfer v0.1.1
+	github.com/stowcloud/transfer v0.2.0
 	github.com/stowcloud/veracrypt v0.1.2
 	go.uber.org/fx v1.24.0
 	golang.org/x/crypto v0.56.0

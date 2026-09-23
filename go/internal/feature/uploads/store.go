@@ -11,6 +11,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
+	"github.com/stowcloud/transfer"
 )
 
 // The translation between the engine's types and the durable half's rows. It
@@ -24,7 +25,7 @@ type row struct {
 	set  *IntervalSet
 }
 
-func (r *row) id() (SessionID, error) { return sessionIDFromBytes(r.sess.ID) }
+func (r *row) id() (SessionID, error) { return transfer.SessionIDFromBytes(r.sess.ID) }
 
 func (r *row) dest() (vfs.SafePath, error) { return vfs.ParseSafePath(r.sess.Dest) }
 

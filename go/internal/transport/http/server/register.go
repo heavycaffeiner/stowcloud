@@ -88,3 +88,58 @@ func GinPath(path string) string {
 	}
 	return strings.Join(segments, "/")
 }
+
+// Binding is the product-specific input to native HTTP assembly.
+//
+// The transport owns validation and framework binding; the application supplies
+// the handlers and service-backed middleware dependencies without making the
+// transport import the application package.
+type Binding struct {
+	Routes   []route.Route
+	Roots    []string
+	Chain    []middleware.Step
+	Tasks    []PeriodicTask
+	Handlers Handlers
+	Deps     middleware.Deps
+
+	// StartTasks runs after preflight succeeds and before any route is bound.
+	StartTasks func()
+	// BeforeAnnounce installs product routes that must precede route metadata.
+	BeforeAnnounce func(*gin.Engine)
+	// AfterAnnounce installs product metadata that must precede the chain.
+	AfterAnnounce func(*gin.Engine)
+}
+
+// Bind validates and mounts a native HTTP assembly.
+//
+// Preflight is deliberately before StartTasks: a malformed assembly must not
+// start background work, and no listener generation should expose a partially
+// bound router.
+func Bind(app *gin.Engine, b Binding) error {
+	if app == nil {
+		return fmt.Errorf("mounting routes: Gin engine is nil")
+	}
+	if err := Check(Preflight{
+		Routes: b.Routes, Roots: b.Roots, Chain: b.Chain,
+		Tasks: b.Tasks, Handlers: b.Handlers,
+	}); err != nil {
+		return fmt.Errorf("the assembly is not servable: %w", err)
+	}
+	if b.StartTasks != nil {
+		b.StartTasks()
+	}
+	if b.BeforeAnnounce != nil {
+		b.BeforeAnnounce(app)
+	}
+	Announce(app, b.Routes)
+	if b.AfterAnnounce != nil {
+		b.AfterAnnounce(app)
+	}
+	if err := middleware.Mount(app, b.Chain, b.Deps, nil); err != nil {
+		return fmt.Errorf("mounting the chain: %w", err)
+	}
+	if err := Register(app, b.Routes, b.Handlers); err != nil {
+		return fmt.Errorf("registering routes: %w", err)
+	}
+	return nil
+}

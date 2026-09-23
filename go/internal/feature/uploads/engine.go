@@ -16,6 +16,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
+	"github.com/stowcloud/transfer"
 )
 
 // writeBufBytes is the buffer a body streams through. Nothing accumulates a
@@ -722,7 +723,7 @@ func shareIDOf(v int64) (core.ShareID, bool) {
 // by construction. A row whose id will not parse names no merger, and the zero
 // id matches none.
 func sessionIDOrZero(b []byte) SessionID {
-	id, err := sessionIDFromBytes(b)
+	id, err := transfer.SessionIDFromBytes(b)
 	if err != nil {
 		return SessionID{}
 	}

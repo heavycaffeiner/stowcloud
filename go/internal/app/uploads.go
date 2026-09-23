@@ -23,6 +23,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/handler"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/server"
+	"github.com/stowcloud/transfer"
 )
 
 // uploadsDiscover answers what this server supports, before any credential.
@@ -65,7 +66,7 @@ const tusChecksumAlgorithm = "Tus-Checksum-Algorithm"
 // checksumAlgorithms renders what the upload engine actually implements, so
 // the advertisement cannot drift from the parser.
 func checksumAlgorithms() string {
-	algos := upload.Algorithms()
+	algos := transfer.Algorithms()
 	names := make([]string, 0, len(algos))
 	for _, a := range algos {
 		names = append(names, a.String())
@@ -407,7 +408,7 @@ func (e *Engine) uploadSettingsPatch(c *gin.Context) {
 
 // sessionIDOf reads the path's session id.
 func sessionIDOf(c *gin.Context) (upload.SessionID, bool) {
-	id, err := upload.ParseSessionID(c.Param("id"))
+	id, err := transfer.ParseSessionID(c.Param("id"))
 	if err != nil {
 		return upload.SessionID{}, false
 	}

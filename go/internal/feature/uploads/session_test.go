@@ -13,17 +13,18 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
+	"github.com/stowcloud/transfer"
 )
 
 // The id is the whole of an upload URL, so a wrong length is refused rather
 // than padded, and the refusal is the one an unknown session gets.
 func TestSessionIDRoundTripsAndRefusesEveryOtherShape(t *testing.T) {
 	t.Parallel()
-	id, err := NewSessionID()
+	id, err := transfer.NewSessionID()
 	if err != nil {
 		t.Fatalf("NewSessionID: %v", err)
 	}
-	back, err := ParseSessionID(id.String())
+	back, err := transfer.ParseSessionID(id.String())
 	if err != nil || back != id {
 		t.Fatalf("the id round-tripped as %v, %v", back, err)
 	}
@@ -36,7 +37,7 @@ func TestSessionIDRoundTripsAndRefusesEveryOtherShape(t *testing.T) {
 		"not base64": "................",
 		"a path":     "../" + id.String(),
 	} {
-		if _, perr := ParseSessionID(wire); !errors.Is(perr, ErrNotFound) {
+		if _, perr := transfer.ParseSessionID(wire); !errors.Is(perr, transfer.ErrInvalidSessionID) {
 			t.Fatalf("a %s id returned %v", name, perr)
 		}
 	}

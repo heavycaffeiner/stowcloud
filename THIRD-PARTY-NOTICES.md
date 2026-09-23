@@ -66,7 +66,7 @@ Stowcloud itself is AGPL-3.0-or-later; see [`LICENSE`](LICENSE).
 | [github.com/stowcloud/namesearch](https://pkg.go.dev/github.com/stowcloud/namesearch) | v0.1.0 | see text | [#27](#licence-text-27) |
 | [github.com/stowcloud/sandbox-worker](https://pkg.go.dev/github.com/stowcloud/sandbox-worker) | v0.1.0 | see text | [#27](#licence-text-27) |
 | [github.com/stowcloud/storage](https://pkg.go.dev/github.com/stowcloud/storage) | v0.1.0 | see text | [#28](#licence-text-28) |
-| [github.com/stowcloud/transfer](https://pkg.go.dev/github.com/stowcloud/transfer) | v0.1.1 | see text | [#29](#licence-text-29) |
+| [github.com/stowcloud/transfer](https://pkg.go.dev/github.com/stowcloud/transfer) | v0.2.0 | see text | [#29](#licence-text-29) |
 | [github.com/stowcloud/veracrypt](https://pkg.go.dev/github.com/stowcloud/veracrypt) | v0.1.2 | see text | [#30](#licence-text-30) |
 | [github.com/ugorji/go/codec](https://pkg.go.dev/github.com/ugorji/go/codec) | v1.3.2 | see text | [#31](#licence-text-31) |
 | [go.mongodb.org/mongo-driver/v2](https://pkg.go.dev/go.mongodb.org/mongo-driver/v2) | v2.8.1 | see text | [#1](#licence-text-1) |
@@ -2334,7 +2334,7 @@ SOFTWARE.
 
 ### Licence text 29
 
-Applies to: `github.com/stowcloud/transfer v0.1.1`
+Applies to: `github.com/stowcloud/transfer v0.2.0`
 
 ```
 Copyright 2026 Stowcloud maintainers

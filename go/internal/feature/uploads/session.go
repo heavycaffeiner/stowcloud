@@ -12,6 +12,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
+	"github.com/stowcloud/transfer"
 )
 
 // Create opens a session against a resolved destination.
@@ -36,12 +37,12 @@ func (e *Engine) Create(ctx context.Context, r core.Resolved, spec SessionSpec) 
 		return Session{}, err
 	}
 	if v := spec.Meta.Verify; v != nil {
-		if err := checkDigestLen(v.Algo, len(v.Digest)); err != nil {
-			return Session{}, err
+		if err := transfer.ValidateDigest(v.Algo, len(v.Digest)); err != nil {
+			return Session{}, fmt.Errorf("%w: %v", ErrBadRequest, err)
 		}
 	}
 
-	id, err := NewSessionID()
+	id, err := transfer.NewSessionID()
 	if err != nil {
 		return Session{}, err
 	}
@@ -298,7 +299,12 @@ func (e *Engine) Abort(ctx context.Context, id SessionID, user core.UserID) erro
 		terminal = true
 		return ErrNotFound
 	}
-	r.sess.State = int64(StateAborted)
+	next, terr := transfer.Transition(SessionState(r.sess.State), transfer.StateAborted)
+	if terr != nil {
+		unlock()
+		return fmt.Errorf("%w: %v", ErrSessionState, terr)
+	}
+	r.sess.State = int64(next)
 	r.sess.ExpiresNs = e.clk.Nanos()
 	if serr := e.save(ctx, r); serr != nil {
 		unlock()

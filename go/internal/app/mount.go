@@ -10,8 +10,6 @@ package app
 import (
 	"fmt"
 	"net/http"
-	"os"
-	"regexp"
 
 	"github.com/gin-gonic/gin"
 
@@ -31,27 +29,14 @@ func (e *Engine) Mount(app *gin.Engine) error {
 	}
 	table := server.Table()
 	handlers := e.handlers(table)
-
-	if err := server.Check(server.Preflight{
-		Routes:   table,
-		Roots:    []string{server.Base},
-		Chain:    middleware.Chain(),
-		Tasks:    e.tasks(),
-		Handlers: handlers,
+	if err := server.Bind(app, server.Binding{
+		Routes: table, Roots: []string{server.Base}, Chain: middleware.Chain(),
+		Tasks: e.tasks(), Handlers: handlers, Deps: e.deps(),
+		StartTasks:     e.startTasks,
+		BeforeAnnounce: func(router *gin.Engine) { e.mountEmergency(router) },
+		AfterAnnounce:  func(router *gin.Engine) { e.declarePublicLinks(router) },
 	}); err != nil {
-		return fmt.Errorf("the assembly is not servable: %w", err)
-	}
-
-	e.startTasks()
-
-	e.mountEmergency(app)
-	server.Announce(app, table)
-	e.declarePublicLinks(app)
-	if err := middleware.Mount(app, middleware.Chain(), e.deps(), nil); err != nil {
-		return fmt.Errorf("mounting the chain: %w", err)
-	}
-	if err := server.Register(app, table, handlers); err != nil {
-		return fmt.Errorf("registering routes: %w", err)
+		return err
 	}
 	e.mountDav(app)
 	e.mountPublicLinks(app)
@@ -74,14 +59,8 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 		switch r.Name {
 		case "system.health":
 			out[r.Name] = e.health
-		case "auth.login":
-			out[r.Name] = e.login
-		case "auth.login.totp":
-			out[r.Name] = e.loginTOTP
-		case "auth.session":
-			out[r.Name] = e.session
-		case "auth.logout":
-			out[r.Name] = e.logout
+		case "auth.login", "auth.login.totp", "auth.session", "auth.logout":
+			// Bound by the transport adapter after the product routes are enumerated.
 		case "jobs.list":
 			out[r.Name] = e.jobsList
 		case "jobs.get":
@@ -104,30 +83,11 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.directUploadComplete
 		case "direct-uploads.cancel":
 			out[r.Name] = e.directUploadCancel
-		case "account.sessions.list":
-			out[r.Name] = e.accountSessions
-		case "account.app-passwords.list":
-			out[r.Name] = e.accountAppPasswords
-		case "account.app-passwords.delete":
-			out[r.Name] = e.accountAppPasswordDelete
-		case "account.app-passwords.create":
-			out[r.Name] = e.accountAppPasswordCreate
-		case "account.app-passwords.wipe":
-			out[r.Name] = e.accountAppPasswordWipe
-		case "account.password":
-			out[r.Name] = e.accountPassword
-		case "account.sessions.delete":
-			out[r.Name] = e.accountSessionDelete
-		case "account.totp.setup":
-			out[r.Name] = e.accountTOTPSetup
-		case "account.totp.enroll":
-			out[r.Name] = e.accountTOTPEnroll
-		case "account.totp.disable":
-			out[r.Name] = e.accountTOTPDisable
-		case "account.totp.recovery-codes.list":
-			out[r.Name] = e.accountRecoveryCodesList
-		case "account.totp.recovery-codes.create":
-			out[r.Name] = e.accountRecoveryCodesCreate
+		case "account.sessions.list", "account.app-passwords.list", "account.app-passwords.delete",
+			"account.app-passwords.create", "account.app-passwords.wipe", "account.password",
+			"account.sessions.delete", "account.totp.setup", "account.totp.enroll",
+			"account.totp.disable", "account.totp.recovery-codes.list", "account.totp.recovery-codes.create":
+			// Bound by the account transport adapter.
 		case "files.list":
 			out[r.Name] = e.filesList
 		case "files.stat":
@@ -188,28 +148,10 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.trashRestore
 		case "trash.purge":
 			out[r.Name] = e.trashPurge
-		case "admin.users.list":
-			out[r.Name] = e.adminUsersList
-		case "admin.users.create":
-			out[r.Name] = e.adminUsersCreate
-		case "admin.users.update":
-			out[r.Name] = e.adminUsersUpdate
-		case "admin.users.delete":
-			out[r.Name] = e.adminUsersDelete
-		case "admin.groups.list":
-			out[r.Name] = e.adminGroupsList
-		case "admin.groups.create":
-			out[r.Name] = e.adminGroupsCreate
-		case "admin.groups.update":
-			out[r.Name] = e.adminGroupsUpdate
-		case "admin.groups.delete":
-			out[r.Name] = e.adminGroupsDelete
-		case "admin.groups.members.add":
-			out[r.Name] = e.adminGroupMemberAdd
-		case "admin.groups.members.remove":
-			out[r.Name] = e.adminGroupMemberRemove
-		case "admin.audit":
-			out[r.Name] = e.adminAudit
+		case "admin.users.list", "admin.users.create", "admin.users.update", "admin.users.delete",
+			"admin.groups.list", "admin.groups.create", "admin.groups.update", "admin.groups.delete",
+			"admin.groups.members.add", "admin.groups.members.remove", "admin.audit":
+			// Bound by the administrator transport adapter.
 		case "admin.logs.list":
 			out[r.Name] = e.adminLogsList
 		case "admin.logs.timeline":
@@ -233,7 +175,7 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 		case "admin.smb.apply":
 			out[r.Name] = e.adminSMBApply
 		case "admin.fs.browse":
-			out[r.Name] = e.adminFsBrowse
+			// Bound by the host filesystem transport adapter.
 		case "events":
 			out[r.Name] = e.eventsSocket()
 		case "system.setup.get":
@@ -241,7 +183,7 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 		case "system.setup.post":
 			out[r.Name] = e.systemSetupPost
 		case "system.setup.browse":
-			out[r.Name] = e.setupFsBrowse
+			// Bound by the host filesystem transport adapter.
 		case "files.thumbnail":
 			out[r.Name] = e.filesThumbnail
 		case "search.stream":
@@ -293,18 +235,34 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 		case "admin.encryption.disable":
 			out[r.Name] = e.shareEncryptionDisable
 
-		default:
-			// Every other route is named by the table and has no binding yet.
-			// It answers with the one honest thing available: this build does
-			// not serve it. A client reads a refusal rather than a hang.
-			name := r.Name
-			out[r.Name] = func(c *gin.Context) {
-				writeJSON(c, http.StatusNotImplemented, map[string]string{
-					"error":   "not_implemented",
-					"message": "this build does not serve " + name,
-				})
-			}
 		}
+	}
+	for name, h := range handler.NewAuthHandlers(handler.AuthHandlersDeps{
+		Service: e.Auth, Clock: e.clock, CSRFKey: e.csrfKey,
+		TOTPAllow: e.totpLimiter, SessionDetails: e.authSessionDetails,
+		OIDCEndSessionURL: e.oidcEndSessionURL,
+	}) {
+		out[name] = h
+	}
+	for name, h := range handler.NewAccountHandlers(handler.AccountHandlersDeps{
+		Service: e.Auth, Clock: e.clock,
+	}) {
+		out[name] = h
+	}
+	for name, h := range handler.NewAdminUsersHandlers(handler.AdminUsersDeps{
+		Auth: e.Auth, CleanupHome: e.Core.CleanupHome, Logger: e.logger,
+	}) {
+		out[name] = h
+	}
+	fsDeps := handler.AdminFSDeps{
+		Auth: e.Auth, Core: e.Core, DataDir: e.dataDir,
+		SetupRefusal: setupRefusal,
+	}
+	if e.setup != nil {
+		fsDeps.SetupVerify = e.setup.Verify
+	}
+	for name, h := range handler.NewAdminFSHandlers(fsDeps) {
+		out[name] = h
 	}
 	return out
 }
@@ -337,34 +295,4 @@ func (e *Engine) health(c *gin.Context) {
 // writeJSON sends a value as an API response.
 func writeJSON(c *gin.Context, status int, value any) {
 	c.JSON(status, value)
-}
-
-// UnboundRoutesForTest names every route the table declares that the binding
-// switch does not handle.
-//
-// Exported for a test because the fallback became unobservable when the last
-// route was bound: no request reaches it any more, so asking which names would
-// is the only way left to check that none do.
-//
-// It reads the switch's case labels rather than the handler map. Every name in
-// that map is bound to something, since the ones the switch does not name get
-// the fallback, and a lookup cannot tell the two apart.
-func UnboundRoutesForTest() []string {
-	src, err := os.ReadFile("mount.go")
-	if err != nil {
-		// The caller is a test in this package, so the file is beside it.
-		return []string{"mount.go could not be read: " + err.Error()}
-	}
-	bound := map[string]struct{}{}
-	for _, m := range regexp.MustCompile(`case "([a-z0-9.-]+)":`).FindAllSubmatch(src, -1) {
-		bound[string(m[1])] = struct{}{}
-	}
-
-	var out []string
-	for _, r := range server.Table() {
-		if _, ok := bound[r.Name]; !ok {
-			out = append(out, r.Name)
-		}
-	}
-	return out
 }

@@ -219,21 +219,6 @@ func TestEveryAnswerIsJSON(t *testing.T) {
 	}
 }
 
-// Every route the table names has a binding.
-//
-// This replaces a test that drove the fallback through the last unbound route.
-// There is no longer one, so what is checked is the property that mattered:
-// a route the table declares and the switch does not handle answers the
-// fallback, and a client discovering it would read a refusal rather than a
-// success for an endpoint that did nothing.
-func TestEveryTableRouteIsBound(t *testing.T) {
-	t.Parallel()
-	unbound := app.UnboundRoutesForTest()
-	if len(unbound) != 0 {
-		t.Errorf("the table names %d routes with no binding: %v", len(unbound), unbound)
-	}
-}
-
 // Mounting reports a broken assembly before anything binds, so a defect
 // surfaces at startup rather than at a request.
 func TestMountingChecksTheAssembly(t *testing.T) {

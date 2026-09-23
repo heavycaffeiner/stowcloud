@@ -11,6 +11,7 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
+	"github.com/stowcloud/transfer"
 )
 
 // The cache spool: its layout, its accounting, and what a restart rebuilds.
@@ -219,7 +220,7 @@ func parseCacheChunkName(name string) (uint64, bool) {
 // prefix keeps it unlistable, and it intentionally fails to parse as a chunk
 // name, which is what conceals it from the merger.
 func cacheStagingName() (string, error) {
-	id, err := NewSessionID()
+	id, err := transfer.NewSessionID()
 	if err != nil {
 		return "", err
 	}
@@ -349,9 +350,8 @@ func (e *Engine) RecoverCache(ctx context.Context) error {
 	return nil
 }
 
-// recoverSession trims a session's interval set to what remains on disk.
 func (e *Engine) recoverSession(ctx context.Context, id []byte, cacheDir string, merged int64) error {
-	sid, err := sessionIDFromBytes(id)
+	sid, err := transfer.SessionIDFromBytes(id)
 	if err != nil {
 		return err
 	}

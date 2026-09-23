@@ -14,6 +14,7 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
+	"github.com/stowcloud/transfer"
 )
 
 // verifyBufBytes sizes the reused read buffer for whole-file verification. The
@@ -28,7 +29,7 @@ func castagnoli() *crc32.Table { return crc32.MakeTable(crc32.Castagnoli) }
 // newHasher is the single point where an algorithm becomes a hash.
 func newHasher(a Algo) hash.Hash {
 	if a == AlgoBLAKE3 {
-		return blake3.New(digestLen(AlgoBLAKE3), nil)
+		return blake3.New(transfer.DigestLen(AlgoBLAKE3), nil)
 	}
 	return crc32.New(castagnoli())
 }
@@ -97,8 +98,8 @@ func constantTimeEqual(a, b []byte) bool {
 // holder of the read-write intent and the reason that intent exists: a read-only
 // reopen would fail the verification it was opened for.
 func VerifyWholeFile(f *vfs.File, v Verify, length uint64) error {
-	if err := checkDigestLen(v.Algo, len(v.Digest)); err != nil {
-		return err
+	if err := transfer.ValidateDigest(v.Algo, len(v.Digest)); err != nil {
+		return fmt.Errorf("%w: %v", ErrVerify, err)
 	}
 	h := newHasher(v.Algo)
 	buf := make([]byte, verifyBufBytes)

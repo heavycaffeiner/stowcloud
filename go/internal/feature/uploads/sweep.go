@@ -10,6 +10,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
+	"github.com/stowcloud/transfer"
 )
 
 // SweepReport records what a single sweep accomplished, broken down by kind of
@@ -191,7 +192,13 @@ func (e *Engine) recoverFinalizing(ctx context.Context, id SessionID) {
 	}
 	_, statErr := root.Stat(part)
 	if statErr == nil {
-		r.sess.State = int64(StateReceiving)
+		next, terr := transfer.Transition(SessionState(r.sess.State), transfer.StateReceiving)
+		if terr != nil {
+			unlock()
+			e.log.Warn("could not recover a finalizing upload after restart", "session", id.String(), "error", terr)
+			return
+		}
+		r.sess.State = int64(next)
 		r.sess.ExpiresNs = e.expiry()
 		if err := e.save(ctx, r); err != nil {
 			e.log.Warn("could not recover a finalizing upload after restart",

@@ -127,8 +127,8 @@ github.com/stowcloud/sandbox-worker v0.1.0 h1:+zc9CbUrgKEqi9OKOECcYSbKwzQn/j0Cp2
 github.com/stowcloud/sandbox-worker v0.1.0/go.mod h1:LSkVLn2YPjQRqye5/KzgsyfMAQS5ct6fdyAIQak68sA=
 github.com/stowcloud/storage v0.1.0 h1:EJdwM0b9B2CeDnnwCnVohRLOfFh4RmmSRXrL+eFV5f8=
 github.com/stowcloud/storage v0.1.0/go.mod h1:4BXrUZ4ttJ53eaIv47BTmUJfSWNsV2+Hk0ZkZ/Rm6Ww=
-github.com/stowcloud/transfer v0.1.1 h1:7MOgEN49DAbXZNIoJXjTevp+x5b9FtYsPZhbzJVwRQk=
-github.com/stowcloud/transfer v0.1.1/go.mod h1:uCW3gsxw7IRNiCa51wdndwxNALU7DLZ5L8VVAhy5TnI=
+github.com/stowcloud/transfer v0.2.0 h1:BFZ2uoNvwRpEkj+wSlYdkOfel7eyt/79qCoa1dS8IK8=
+github.com/stowcloud/transfer v0.2.0/go.mod h1:uCW3gsxw7IRNiCa51wdndwxNALU7DLZ5L8VVAhy5TnI=
 github.com/stowcloud/veracrypt v0.1.2 h1:yxs5yB5okN28cSXR+mFx7IxsiY0PFSP1DsAS0ost71s=
 github.com/stowcloud/veracrypt v0.1.2/go.mod h1:dfDTudQNvVXL0Hl+h+gqsYLWurhJWQNsrmwHzhHO31Y=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
