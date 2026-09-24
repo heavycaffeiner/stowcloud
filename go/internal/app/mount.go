@@ -16,6 +16,7 @@ import (
 	accountapp "github.com/heavycaffeiner/stowcloud/go/internal/app/account"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/handler"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/middleware"
+	previewhttp "github.com/heavycaffeiner/stowcloud/go/internal/transport/http/preview"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/route"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/server"
 )
@@ -184,9 +185,11 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 		case "system.setup.post":
 			out[r.Name] = e.systemSetupPost
 		case "system.setup.browse":
-			// Bound by the host filesystem transport adapter.
 		case "files.thumbnail":
-			out[r.Name] = e.filesThumbnail
+			out[r.Name] = previewhttp.ThumbnailHandler(previewhttp.ThumbnailDeps{
+				Core: e.Core, Owner: ownerOf, Resolve: e.resolve, OpenClaim: e.openBoundClaim,
+				PreviewLease: e.previewLease, Fail: fail, Refuse: refuse, Logger: e.logger,
+			})
 		case "search.stream":
 			out[r.Name] = e.searchRuntime.SearchStream
 		case "auth.oidc.config":
