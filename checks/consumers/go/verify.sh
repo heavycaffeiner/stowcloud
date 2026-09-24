@@ -12,7 +12,7 @@ expected=(
   'github.com/stowcloud/durablefs v0.1.0'
   'github.com/stowcloud/namesearch v0.1.0'
   'github.com/stowcloud/sandbox-worker v0.1.0'
-  'github.com/stowcloud/storage v0.1.0'
+  'github.com/stowcloud/storage v0.2.0'
   'github.com/stowcloud/transfer v0.2.0'
   'github.com/stowcloud/veracrypt v0.1.2'
 )

@@ -16,6 +16,9 @@ import (
 	"github.com/stowcloud/namesearch/index"
 	sandboxworker "github.com/stowcloud/sandbox-worker"
 	storage "github.com/stowcloud/storage"
+	"github.com/stowcloud/storage/local"
+	"github.com/stowcloud/storage/s3"
+	storagewatch "github.com/stowcloud/storage/watch"
 	"github.com/stowcloud/transfer"
 	"github.com/stowcloud/veracrypt"
 )
@@ -155,6 +158,35 @@ func TestStorageReleasedContract(t *testing.T) {
 	}
 	if err := lease.Release(); err != nil || lease.Release() != nil || releaseCalls != 1 {
 		t.Fatalf("lease release = %v, calls=%d", err, releaseCalls)
+	}
+}
+
+func TestReleasedStorageBackends(t *testing.T) {
+	root, err := local.OpenRoot(t.TempDir(), local.DefaultPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	path, err := local.ParsePath("created")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := root.Mkdir(path); err != nil {
+		t.Fatal(err)
+	}
+	entry, err := root.Stat(path)
+	if err != nil || entry.Kind != local.KindDir {
+		t.Fatalf("published local directory = %+v, %v", entry, err)
+	}
+	config, err := s3.ParseConfig([]byte(`{"endpoint":"http://127.0.0.1:9000","region":"us-east-1","bucket":"consumer","path_style":true}`))
+	if err != nil || config.Bucket != "consumer" {
+		t.Fatalf("public S3 configuration = %+v, %v", config, err)
+	}
+	if _, err := s3.ParseConfig([]byte(`{"endpoint":"https://example.com/path","region":"us-east-1","bucket":"consumer"}`)); err == nil {
+		t.Fatal("accepted an S3 endpoint path")
+	}
+	if _, err := storagewatch.ParseBackend("inotify"); err != nil {
+		t.Fatalf("public watcher backend: %v", err)
 	}
 }
 
