@@ -1,46 +1,126 @@
 //go:build linux
 
-// Administration: shares and the grants over them.
-//
-// Nothing here reports a host path. A share's on-disk location is server
-// configuration, and a client that learns it learns the layout of the machine.
-// The projection has no field for one, so a future edit has to add it
-// deliberately rather than by widening a struct.
-package app
+// Shares and grants, as an administrator sees them.
+package adminshares
+
+// Host paths and credentials are never rendered by the projections below.
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/auth"
+	core "github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
 	num "github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	secret "github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
-	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vault"
-
-	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
-	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/objstore"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vault"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/handler"
+	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/middleware"
+	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/route"
 )
+
+// Deps supplies the narrow product services used by administrator share and
+// grant routes. Runtime hooks are post-commit side effects of registration.
+type Deps struct {
+	Core                 *core.Core
+	Auth                 *auth.Service
+	MarkSearchIncomplete func()
+	WatchShare           func(core.ShareDef)
+	Logger               *slog.Logger
+}
+
+// NewHandlers builds administrator share and grant routes.
+func NewHandlers(d Deps) map[string]gin.HandlerFunc {
+	if d.Logger == nil {
+		d.Logger = slog.Default()
+	}
+	h := &handlers{d: d}
+	return map[string]gin.HandlerFunc{
+		"admin.shares.list": h.sharesList, "admin.shares.create": h.sharesCreate,
+		"admin.shares.update": h.sharesUpdate, "admin.shares.retry": h.sharesRetry,
+		"admin.shares.delete": h.sharesDelete, "admin.grants.list": h.grantsList,
+		"admin.grants.create": h.grantsCreate, "admin.grants.update": h.grantsUpdate,
+		"admin.grants.delete": h.grantsDelete,
+	}
+}
+
+type handlers struct{ d Deps }
+
+func (h *handlers) admin(c *gin.Context) (int64, bool) {
+	v, ok := c.Get(string(middleware.KeyCredential))
+	if !ok {
+		refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		return 0, false
+	}
+	p, ok := v.(middleware.Principal)
+	if !ok || p.UserID == 0 {
+		refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		return 0, false
+	}
+	is, err := h.d.Auth.IsAdmin(c.Request.Context(), p.UserID)
+	if err != nil {
+		fail(c, err)
+		return 0, false
+	}
+	if !is {
+		refuse(c, apierr.Classified{Class: apierr.Denied})
+		return 0, false
+	}
+	return p.UserID, true
+}
+
+func decode(c *gin.Context, v any) bool {
+	if err := middleware.DecodeJSON(middleware.LimitBody(c.Request.Body, route.BodyJSON), v); err != nil {
+		refuse(c, apierr.Classified{Class: apierr.Malformed})
+		return false
+	}
+	return true
+}
+func json(c *gin.Context, status int, v any) { c.JSON(status, v) }
+func notFound(c *gin.Context)                { fail(c, core.ErrNotFound) }
+func refuse(c *gin.Context, class apierr.Classified) {
+	status, body := apierr.REST(class)
+	json(c, status, body)
+}
+func fail(c *gin.Context, err error) {
+	if errors.Is(err, core.ErrNotFound) {
+		refuse(c, apierr.Classified{Class: apierr.NotFound})
+		return
+	}
+	middleware.SetCause(c, err)
+	refuse(c, apierr.Classify(err, apierr.VisibilityKnown))
+}
+func pathID(c *gin.Context) (int64, bool) {
+	n, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	return n, err == nil && n > 0
+}
+func queryInt(raw string) int64 {
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
+}
 
 // adminSharesList answers every registered share.
 //
 // Including the broken ones. A share whose disk never came back is still
 // registered, and dropping it from this listing is what once made an
 // unreachable share indistinguishable from a deleted one.
-func (e *Engine) adminSharesList(c *gin.Context) {
-	if _, ok := e.admin(c); !ok {
+func (h *handlers) sharesList(c *gin.Context) {
+	if _, ok := h.admin(c); !ok {
 		return
 	}
-	// One storage walk per share, bounded: the walk stops at the first entry
-	// it finds, so an occupied share costs one readdir and an empty one costs
-	// two (the tree and its trash).
 	ctx := c.Request.Context()
-	empty := func(id core.ShareID) bool { return e.Core.ShareEmpty(ctx, id) }
-	writeJSON(c, http.StatusOK, handler.SharesOf(e.Core.Shares(), empty))
+	empty := func(id core.ShareID) bool { return h.d.Core.ShareEmpty(ctx, id) }
+	json(c, http.StatusOK, handler.SharesOf(h.d.Core.Shares(), empty))
 }
 
 // createShareRequest registers a share, of whichever backend Backend names.
@@ -95,56 +175,39 @@ type shareVeracryptRequest struct {
 }
 
 // adminSharesCreate registers one.
-func (e *Engine) adminSharesCreate(c *gin.Context) {
-	admin, ok := e.admin(c)
+func (h *handlers) sharesCreate(c *gin.Context) {
+	admin, ok := h.admin(c)
 	if !ok {
 		return
 	}
-
 	var req createShareRequest
-	if err := decodeBody(c, &req); err != nil {
-		refuse(c, apierr.Classified{Class: apierr.Malformed})
+	if !decode(c, &req) {
 		return
 	}
-
 	spec, verr := shareSpecOf(req)
 	if verr != nil {
 		fail(c, verr)
 		return
 	}
-
-	share, err := e.Core.CreateShare(c.Request.Context(), spec)
+	share, err := h.d.Core.CreateShare(c.Request.Context(), spec)
 	if err != nil {
-		// CreateShare calls a backend name it does not implement
-		// unprocessable, which shareSpecOf has already refused with its own
-		// reason; reaching here means the two disagree, so the general class
-		// is the honest answer.
 		if errors.Is(err, core.ErrUnprocessable) {
-			refuse(c, apierr.Classified{
-				Class: apierr.Unprocessable, Key: "admin.share_backend_unknown",
-			})
+			refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "admin.share_backend_unknown"})
 			return
 		}
 		fail(c, err)
 		return
 	}
-	// The watcher learns about it now rather than at the next restart.
-	// Without this a share registered while the server is running is one no
-	// change is ever reported under, and the symptom is a folder that updates
-	// for everybody except the person who just created it.
-	e.searchRuntime.MarkIncomplete()
-	e.watchShare(share)
-
-	// The administrator who registered it can reach it. Access is granted
-	// separately from registration by design, and everybody else still needs
-	// a grant, but a folder that is invisible to the person who just added it
-	// reads as the registration having failed. Setup does the same for the
-	// shares that exist when it runs.
-	if gerr := e.grantShareTo(c, admin, share); gerr != nil {
-		e.logger.Warn("the new share was registered without a grant for its creator",
-			"share", int64(share.ID), "error", gerr)
+	if h.d.MarkSearchIncomplete != nil {
+		h.d.MarkSearchIncomplete()
 	}
-	writeJSON(c, http.StatusCreated, handler.ShareOf(share))
+	if h.d.WatchShare != nil {
+		h.d.WatchShare(share)
+	}
+	if err := h.grantShareTo(c, admin, share); err != nil {
+		h.d.Logger.Warn("the new share was registered without a grant for its creator", "share", int64(share.ID), "error", err)
+	}
+	json(c, http.StatusCreated, handler.ShareOf(share))
 }
 
 // unprocessable names a refusal about the request's own content, carrying
@@ -297,13 +360,11 @@ func marshalAndSealVault(cfg vault.Config, plain string) ([]byte, secret.Secret,
 //
 // The same permission set setup writes, and the share's own name as the
 // label, so the two paths produce grants a reader cannot tell apart.
-func (e *Engine) grantShareTo(c *gin.Context, user int64, share core.ShareDef) error {
-	_, err := e.Core.CreateGrant(c.Request.Context(), core.GrantSpec{
-		User:    &user,
-		Share:   share.ID,
+func (h *handlers) grantShareTo(c *gin.Context, user int64, share core.ShareDef) error {
+	_, err := h.d.Core.CreateGrant(c.Request.Context(), core.GrantSpec{
+		User: &user, Share: share.ID,
 		Allow:   acl.Read | acl.Write | acl.Create | acl.Delete | acl.Rename | acl.Move | acl.Share | acl.Download,
-		Inherit: true,
-		Label:   share.Name,
+		Inherit: true, Label: share.Name,
 	})
 	return err
 }
@@ -334,8 +395,8 @@ type updateShareRequest struct {
 }
 
 // adminSharesUpdate changes one.
-func (e *Engine) adminSharesUpdate(c *gin.Context) {
-	if _, ok := e.admin(c); !ok {
+func (h *handlers) sharesUpdate(c *gin.Context) {
+	if _, ok := h.admin(c); !ok {
 		return
 	}
 	id, ok := shareIDOf(c)
@@ -343,46 +404,32 @@ func (e *Engine) adminSharesUpdate(c *gin.Context) {
 		notFound(c)
 		return
 	}
-
 	var req updateShareRequest
-	if err := decodeBody(c, &req); err != nil {
-		refuse(c, apierr.Classified{Class: apierr.Malformed})
+	if !decode(c, &req) {
 		return
 	}
-
-	patch := core.SharePatch{
-		Name:         req.Name,
-		Host:         req.Host,
-		TrashEnabled: req.TrashEnabled,
-		Backend:      req.Backend,
-	}
+	patch := core.SharePatch{Name: req.Name, Host: req.Host, TrashEnabled: req.TrashEnabled, Backend: req.Backend}
 	if req.S3 != nil || req.Veracrypt != nil {
-		current, found := e.Core.Share(id)
+		current, found := h.d.Core.Share(id)
 		if !found {
 			notFound(c)
 			return
 		}
-		if perr := applyShareBackendPatch(&patch, current, req.S3, req.Veracrypt); perr != nil {
-			fail(c, perr)
+		if err := applyShareBackendPatch(&patch, current, req.S3, req.Veracrypt); err != nil {
+			fail(c, err)
 			return
 		}
 	}
-
-	share, err := e.Core.UpdateShare(c.Request.Context(), id, patch)
+	share, err := h.d.Core.UpdateShare(c.Request.Context(), id, patch)
 	if err != nil {
-		// The only thing UpdateShare calls unprocessable is the patch naming
-		// a backend the share does not already have, so the refusal is
-		// reported as that rather than as the general class.
 		if errors.Is(err, core.ErrUnprocessable) {
-			refuse(c, apierr.Classified{
-				Class: apierr.Unprocessable, Key: "admin.share_backend_immutable",
-			})
+			refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "admin.share_backend_immutable"})
 			return
 		}
 		fail(c, err)
 		return
 	}
-	writeJSON(c, http.StatusOK, handler.ShareOf(share))
+	json(c, http.StatusOK, handler.ShareOf(share))
 }
 
 // applyShareBackendPatch validates the request's s3 and veracrypt objects
@@ -505,8 +552,8 @@ func applyVeracryptPatch(cfg *vault.Config, req *shareVeracryptRequest) (string,
 // a dead mount can block, and a listing that retried every broken share would
 // take as long as the slowest one every time an administrator looked at the
 // screen.
-func (e *Engine) adminSharesRetry(c *gin.Context) {
-	if _, ok := e.admin(c); !ok {
+func (h *handlers) sharesRetry(c *gin.Context) {
+	if _, ok := h.admin(c); !ok {
 		return
 	}
 	id, ok := shareIDOf(c)
@@ -514,13 +561,12 @@ func (e *Engine) adminSharesRetry(c *gin.Context) {
 		notFound(c)
 		return
 	}
-
-	share, err := e.Core.RetryShare(c.Request.Context(), id)
+	share, err := h.d.Core.RetryShare(c.Request.Context(), id)
 	if err != nil {
 		fail(c, err)
 		return
 	}
-	writeJSON(c, http.StatusOK, handler.ShareOf(share))
+	json(c, http.StatusOK, handler.ShareOf(share))
 }
 
 // adminSharesDelete unregisters one.
@@ -528,8 +574,8 @@ func (e *Engine) adminSharesRetry(c *gin.Context) {
 // The stored files are not touched. Unregistering is an administrative act
 // about what this deployment serves; deleting the data would make a mistyped
 // id destroy a directory nobody meant to name.
-func (e *Engine) adminSharesDelete(c *gin.Context) {
-	if _, ok := e.admin(c); !ok {
+func (h *handlers) sharesDelete(c *gin.Context) {
+	if _, ok := h.admin(c); !ok {
 		return
 	}
 	id, ok := shareIDOf(c)
@@ -537,8 +583,7 @@ func (e *Engine) adminSharesDelete(c *gin.Context) {
 		notFound(c)
 		return
 	}
-
-	if err := e.Core.DeleteShare(c.Request.Context(), id); err != nil {
+	if err := h.d.Core.DeleteShare(c.Request.Context(), id); err != nil {
 		fail(c, err)
 		return
 	}
@@ -564,21 +609,16 @@ func shareIDOf(c *gin.Context) (core.ShareID, bool) {
 }
 
 // adminGrantsList answers the grants, optionally for one subject or share.
-func (e *Engine) adminGrantsList(c *gin.Context) {
-	if _, ok := e.admin(c); !ok {
+func (h *handlers) grantsList(c *gin.Context) {
+	if _, ok := h.admin(c); !ok {
 		return
 	}
-
-	rows, err := e.Core.ListGrants(c.Request.Context(), core.GrantFilter{
-		User:  queryInt(c.Query("user")),
-		Group: queryInt(c.Query("group")),
-		Share: queryInt(c.Query("share")),
-	})
+	rows, err := h.d.Core.ListGrants(c.Request.Context(), core.GrantFilter{User: queryInt(c.Query("user")), Group: queryInt(c.Query("group")), Share: queryInt(c.Query("share"))})
 	if err != nil {
 		fail(c, err)
 		return
 	}
-	writeJSON(c, http.StatusOK, handler.GrantsOf(rows))
+	json(c, http.StatusOK, handler.GrantsOf(rows))
 }
 
 // grantRequest is one permission assignment.
@@ -602,42 +642,30 @@ type grantRequest struct {
 }
 
 // adminGrantsCreate adds one.
-func (e *Engine) adminGrantsCreate(c *gin.Context) {
-	if _, ok := e.admin(c); !ok {
+func (h *handlers) grantsCreate(c *gin.Context) {
+	if _, ok := h.admin(c); !ok {
 		return
 	}
-
 	var req grantRequest
-	if err := decodeBody(c, &req); err != nil {
-		refuse(c, apierr.Classified{Class: apierr.Malformed})
+	if !decode(c, &req) {
 		return
 	}
-
 	spec, ok := grantSpecOf(req)
 	if !ok {
 		refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
 	}
-
-	// An unlabelled grant over a whole share takes the share's own name. The
-	// screen draws the label, and without one the listing falls back to a
-	// generated placeholder naming the share's id rather than the folder
-	// somebody picked.
 	if spec.Label == "" && spec.Subpath == "" {
-		if def, found := e.Core.Share(spec.Share); found {
+		if def, found := h.d.Core.Share(spec.Share); found {
 			spec.Label = def.Name
 		}
 	}
-
-	grant, err := e.Core.CreateGrant(c.Request.Context(), spec)
+	grant, err := h.d.Core.CreateGrant(c.Request.Context(), spec)
 	if err != nil {
 		fail(c, err)
 		return
 	}
-	// The whole grant, because the screen appends it to the list it is already
-	// showing. An id alone left every rendered row reading permission arrays
-	// that were not there.
-	writeJSON(c, http.StatusCreated, handler.GrantOf(grant))
+	json(c, http.StatusCreated, handler.GrantOf(grant))
 }
 
 // grantSpecOf validates a request into a spec.
@@ -725,8 +753,8 @@ type updateGrantRequest struct {
 }
 
 // adminGrantsUpdate changes one.
-func (e *Engine) adminGrantsUpdate(c *gin.Context) {
-	if _, ok := e.admin(c); !ok {
+func (h *handlers) grantsUpdate(c *gin.Context) {
+	if _, ok := h.admin(c); !ok {
 		return
 	}
 	id, ok := pathID(c)
@@ -734,13 +762,10 @@ func (e *Engine) adminGrantsUpdate(c *gin.Context) {
 		notFound(c)
 		return
 	}
-
 	var req updateGrantRequest
-	if err := decodeBody(c, &req); err != nil {
-		refuse(c, apierr.Classified{Class: apierr.Malformed})
+	if !decode(c, &req) {
 		return
 	}
-
 	allow, ok := permsOf(req.Allow)
 	if !ok {
 		refuse(c, apierr.Classified{Class: apierr.Unprocessable})
@@ -751,22 +776,17 @@ func (e *Engine) adminGrantsUpdate(c *gin.Context) {
 		refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
 	}
-
-	grant, err := e.Core.UpdateGrant(c.Request.Context(), id, allow, deny, req.Inherit, req.Label)
+	grant, err := h.d.Core.UpdateGrant(c.Request.Context(), id, allow, deny, req.Inherit, req.Label)
 	if err != nil {
 		fail(c, err)
 		return
 	}
-	// The whole grant, as the create route answers: the screen swaps the
-	// edited row for what came back, and every rendered row reads the
-	// permission arrays. Answering no content left it with nothing to swap
-	// in, and the change applied while the dialogue said it had not.
-	writeJSON(c, http.StatusOK, handler.GrantOf(grant))
+	json(c, http.StatusOK, handler.GrantOf(grant))
 }
 
 // adminGrantsDelete revokes one.
-func (e *Engine) adminGrantsDelete(c *gin.Context) {
-	if _, ok := e.admin(c); !ok {
+func (h *handlers) grantsDelete(c *gin.Context) {
+	if _, ok := h.admin(c); !ok {
 		return
 	}
 	id, ok := pathID(c)
@@ -774,8 +794,7 @@ func (e *Engine) adminGrantsDelete(c *gin.Context) {
 		notFound(c)
 		return
 	}
-
-	if err := e.Core.DeleteGrant(c.Request.Context(), id); err != nil {
+	if err := h.d.Core.DeleteGrant(c.Request.Context(), id); err != nil {
 		fail(c, err)
 		return
 	}

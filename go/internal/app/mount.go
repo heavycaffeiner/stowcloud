@@ -14,6 +14,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	accountapp "github.com/heavycaffeiner/stowcloud/go/internal/app/account"
+	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/adminshares"
+	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/directtransfer"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/handler"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/middleware"
 	previewhttp "github.com/heavycaffeiner/stowcloud/go/internal/transport/http/preview"
@@ -75,16 +77,9 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.jobsPause
 		case "jobs.resume":
 			out[r.Name] = e.jobsResume
-		case "direct-uploads.create":
-			out[r.Name] = e.directUploadCreate
-		case "direct-uploads.status":
-			out[r.Name] = e.directUploadStatus
-		case "direct-uploads.part":
-			out[r.Name] = e.directUploadPart
-		case "direct-uploads.complete":
-			out[r.Name] = e.directUploadComplete
-		case "direct-uploads.cancel":
-			out[r.Name] = e.directUploadCancel
+		case "direct-uploads.create", "direct-uploads.status", "direct-uploads.part",
+			"direct-uploads.complete", "direct-uploads.cancel":
+		// Bound by the direct transfer transport adapter.
 		case "account.sessions.list", "account.app-passwords.list", "account.app-passwords.delete",
 			"account.app-passwords.create", "account.app-passwords.wipe", "account.password",
 			"account.sessions.delete", "account.totp.setup", "account.totp.enroll",
@@ -219,24 +214,10 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.adminUserOIDCGet
 		case "admin.users.oidc.delete":
 			out[r.Name] = e.adminUserOIDCDelete
-		case "admin.shares.list":
-			out[r.Name] = e.adminSharesList
-		case "admin.shares.create":
-			out[r.Name] = e.adminSharesCreate
-		case "admin.shares.update":
-			out[r.Name] = e.adminSharesUpdate
-		case "admin.shares.retry":
-			out[r.Name] = e.adminSharesRetry
-		case "admin.shares.delete":
-			out[r.Name] = e.adminSharesDelete
-		case "admin.grants.list":
-			out[r.Name] = e.adminGrantsList
-		case "admin.grants.create":
-			out[r.Name] = e.adminGrantsCreate
-		case "admin.grants.update":
-			out[r.Name] = e.adminGrantsUpdate
-		case "admin.grants.delete":
-			out[r.Name] = e.adminGrantsDelete
+		case "admin.shares.list", "admin.shares.create", "admin.shares.update",
+			"admin.shares.retry", "admin.shares.delete", "admin.grants.list",
+			"admin.grants.create", "admin.grants.update", "admin.grants.delete":
+		// Bound by the administrator share transport adapter.
 		case "encryption.list":
 			out[r.Name] = e.shareEncryptionList
 		case "admin.encryption.enable":
@@ -263,6 +244,24 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 	}) {
 		out[name] = h
 	}
+	for name, h := range adminshares.NewHandlers(adminshares.Deps{
+		Core: e.Core, Auth: e.Auth, MarkSearchIncomplete: e.searchRuntime.MarkIncomplete,
+		WatchShare: e.watchShare, Logger: e.logger,
+	}) {
+		out[name] = h
+	}
+	transfer := directtransfer.NewHandler(directtransfer.Deps{
+		State: e.State, Owner: ownerOf, Resolve: e.resolve,
+		ShareEncrypted: e.Core.ShareEncrypted, GuardLock: e.guardDavLock,
+		ProviderForRow: e.directProviderForRow, RevalidateDestination: e.revalidateDirectDestination,
+		Now: e.now, Decode: decodeBody, Fail: fail, Refuse: refuse, NotFound: notFound,
+		Logger: e.log(),
+	})
+	out["direct-uploads.create"] = transfer.CreateHandler
+	out["direct-uploads.status"] = transfer.StatusHandler
+	out["direct-uploads.part"] = transfer.PartHandler
+	out["direct-uploads.complete"] = transfer.CompleteHandler
+	out["direct-uploads.cancel"] = transfer.CancelHandler
 	fsDeps := handler.AdminFSDeps{
 		Auth: e.Auth, Core: e.Core, DataDir: e.dataDir,
 		SetupRefusal: setupRefusal,
