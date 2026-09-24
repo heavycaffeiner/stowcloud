@@ -11,6 +11,7 @@ go/internal/transport/http/spa/build/*
 !go/internal/transport/http/spa/build/.gitkeep
 # Where it used to build, kept ignored so an old checkout does not commit one.
 web/build
+/checks/consumers/web/dist/
 *.qcow2
 *.log
 .env
