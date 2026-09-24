@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/ident"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 )
 
@@ -105,7 +105,7 @@ func (c *Core) Resolve(user UserID, p vfs.Vpath, need acl.Perms) (Resolved, erro
 		return Resolved{}, ErrNotFound
 	}
 
-	narrowed, err := num.Narrow[uint32](match.Share)
+	narrowed, err := number.Narrow[uint32](match.Share)
 	if err != nil {
 		return Resolved{}, errf(ErrNotFound, "the grant table holds a share id that does not fit")
 	}
@@ -274,7 +274,7 @@ func (c *Core) VpathFor(user UserID, share ShareID, p vfs.SharePath) (vfs.Vpath,
 
 	depth, label := -1, ""
 	for _, r := range c.labelledRoots(user) {
-		narrowed, err := num.Narrow[uint32](r.Share)
+		narrowed, err := number.Narrow[uint32](r.Share)
 		if err != nil || ShareID(narrowed) != share {
 			continue
 		}

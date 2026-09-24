@@ -8,7 +8,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/uploads/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 )
 

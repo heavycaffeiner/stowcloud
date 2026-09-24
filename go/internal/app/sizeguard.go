@@ -13,7 +13,7 @@ import (
 	"context"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/admin/settings/runtimecfg"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	task "github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/sizeguard"
 )
 

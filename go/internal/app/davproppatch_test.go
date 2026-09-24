@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	app "github.com/heavycaffeiner/stowcloud/go/internal/app"
+	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/dav"
 )
 
 // proppatch runs a PROPPATCH and returns the recorder.
@@ -31,7 +31,7 @@ func (f *fixture) storedProps(t *testing.T, path string) map[string]string {
 	if err != nil {
 		t.Fatalf("stat %q: %v", path, err)
 	}
-	rows, perr := f.props.Props(context.Background(), app.DavKeyOf(f.core.EntryAt(res, st)))
+	rows, perr := f.props.Props(context.Background(), dav.EntryKey(f.core.EntryAt(res, st)))
 	if perr != nil {
 		t.Fatalf("reading the properties of %q: %v", path, perr)
 	}
@@ -231,7 +231,7 @@ func TestDeletingAResourceDiscardsItsProperties(t *testing.T) {
 	if serr != nil {
 		t.Fatalf("stat: %v", serr)
 	}
-	key := app.DavKeyOf(f.core.EntryAt(res, st))
+	key := dav.EntryKey(f.core.EntryAt(res, st))
 
 	w := httptest.NewRecorder()
 	f.h.Delete(w, request("DELETE", "/files/a.txt", "", nil), res)

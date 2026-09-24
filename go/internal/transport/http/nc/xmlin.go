@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/protocol/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/apierr"
 )
 

@@ -13,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	accountapp "github.com/heavycaffeiner/stowcloud/go/internal/app/account"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/handler"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/route"
@@ -167,11 +168,11 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 		case "admin.storage":
 			out[r.Name] = e.adminStorage
 		case "admin.index.estimate":
-			out[r.Name] = e.adminIndexEstimate
+			out[r.Name] = e.searchRuntime.IndexEstimate
 		case "admin.index.status":
-			out[r.Name] = e.adminIndexStatus
+			out[r.Name] = e.searchRuntime.IndexStatus
 		case "admin.index.build":
-			out[r.Name] = e.adminIndexBuild
+			out[r.Name] = e.searchRuntime.IndexBuild
 		case "admin.smb.apply":
 			out[r.Name] = e.adminSMBApply
 		case "admin.fs.browse":
@@ -187,7 +188,7 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 		case "files.thumbnail":
 			out[r.Name] = e.filesThumbnail
 		case "search.stream":
-			out[r.Name] = e.searchStream
+			out[r.Name] = e.searchRuntime.SearchStream
 		case "auth.oidc.config":
 			out[r.Name] = e.authOIDCConfig
 		case "auth.oidc.start":
@@ -205,7 +206,12 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 		case "account.smb.password.delete":
 			out[r.Name] = e.accountSMBPasswordDelete
 		case "account.roots.order":
-			out[r.Name] = e.accountRootsOrder
+			out[r.Name] = accountapp.RootOrderHandler(accountapp.RootOrderDeps{
+				State: e.State, Owner: func(c *gin.Context) (int64, bool) {
+					owner, ok := ownerOf(c)
+					return int64(owner), ok
+				}, Fail: fail, Refuse: refuse, Decode: decodeBody,
+			})
 		case "admin.users.oidc.get":
 			out[r.Name] = e.adminUserOIDCGet
 		case "admin.users.oidc.delete":

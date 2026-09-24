@@ -9,7 +9,7 @@ import (
 	"io"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 	"github.com/stowcloud/transfer"
 )
@@ -280,7 +280,7 @@ func (e *Engine) writeBodyAt(
 	for {
 		read, rerr := body.Read(buf)
 		if read > 0 {
-			got, nerr := num.Narrow[uint64](read)
+			got, nerr := number.Narrow[uint64](read)
 			if nerr != nil {
 				return written, nil, nerr
 			}
@@ -325,7 +325,7 @@ func (e *Engine) writeBodyAt(
 // the file cannot take the bytes, and looping on it spins forever.
 func writeAllAt(f *vfs.File, b []byte, off uint64) error {
 	for len(b) > 0 {
-		at, err := num.Narrow[int64](off)
+		at, err := number.Narrow[int64](off)
 		if err != nil {
 			return err
 		}
@@ -336,7 +336,7 @@ func writeAllAt(f *vfs.File, b []byte, off uint64) error {
 		if werr != nil {
 			return mapVFSErr(werr)
 		}
-		wrote, nerr := num.Narrow[uint64](n)
+		wrote, nerr := number.Narrow[uint64](n)
 		if nerr != nil {
 			return nerr
 		}

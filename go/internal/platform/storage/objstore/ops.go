@@ -15,7 +15,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 )
 
@@ -46,7 +46,7 @@ func (r *Root) listObjectsV2(ctx context.Context, prefix, delimiter, token strin
 		in.ContinuationToken = aws.String(token)
 	}
 	if maxKeys >= 0 {
-		narrowed, narrowErr := num.Narrow[int32](maxKeys)
+		narrowed, narrowErr := number.Narrow[int32](maxKeys)
 		if narrowErr != nil {
 			return nil, narrowErr
 		}
@@ -162,7 +162,7 @@ func (r *Root) putEmptyObject(ctx context.Context, key string) error {
 	return sdkError("put object", e)
 }
 func (r *Root) putObject(ctx context.Context, key string, f *vfs.File, size uint64) error {
-	n, e := num.Narrow[int64](size)
+	n, e := number.Narrow[int64](size)
 	if e != nil {
 		return e
 	}

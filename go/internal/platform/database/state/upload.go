@@ -7,8 +7,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 )
 
 // The upload session store. These rows share this database rather than occupying
@@ -205,8 +205,8 @@ func (d *DB) RecordUploadInterval(
 			return err
 		}
 		for _, r := range runs {
-			lo, lerr := num.Narrow[int64](r[0])
-			hi, herr := num.Narrow[int64](r[1])
+			lo, lerr := number.Narrow[int64](r[0])
+			hi, herr := number.Narrow[int64](r[1])
 			if lerr != nil || herr != nil {
 				return fmt.Errorf("an interval %d..%d does not fit the column: %w",
 					r[0], r[1], errors.Join(lerr, herr))
@@ -232,8 +232,8 @@ func (d *DB) ReadUploadIntervals(ctx context.Context, id []byte) (out [][2]uint6
 		if serr := rows.Scan(&lo, &hi); serr != nil {
 			return nil, fmt.Errorf("reading upload intervals: %w", serr)
 		}
-		ulo, lerr := num.Narrow[uint64](lo)
-		uhi, herr := num.Narrow[uint64](hi)
+		ulo, lerr := number.Narrow[uint64](lo)
+		uhi, herr := number.Narrow[uint64](hi)
 		if lerr != nil || herr != nil {
 			return nil, fmt.Errorf("a stored interval %d..%d is negative: %w",
 				lo, hi, errors.Join(lerr, herr))

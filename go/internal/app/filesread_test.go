@@ -18,8 +18,8 @@ import (
 	app "github.com/heavycaffeiner/stowcloud/go/internal/app"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/secret"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
+	secret "github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 )
 
 // contentShare serves an engine holding one share with a file of known bytes.

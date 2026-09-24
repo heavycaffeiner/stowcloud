@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
 )
 
@@ -133,7 +133,7 @@ func TestRacingReservationsAdmitExactlyOne(t *testing.T) {
 	errs := make([]error, 16)
 	for i := range errs {
 		wg.Add(1)
-		task.Go(ctx, "quota: racing reservation", func() {
+		concurrency.Go(ctx, "quota: racing reservation", func() {
 			defer wg.Done()
 			ok, err := q.Reserve(ctx, 1, 100)
 			errs[i] = err

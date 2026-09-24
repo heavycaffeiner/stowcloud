@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/uploads/limits"
 )
 
 // permutations is every ordering of a small slice, so a normal-form property

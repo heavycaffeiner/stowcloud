@@ -286,6 +286,7 @@ export interface ActiveSession {
   absolute_expiry_ns: string
   ip_first: string | null
   ua_first: string | null
+  ua_display: string | null
   current: boolean
 }
 

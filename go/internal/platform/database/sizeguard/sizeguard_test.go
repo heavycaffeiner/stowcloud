@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/sizeguard"
 )
 
@@ -298,7 +298,7 @@ func TestRunReturnsWhenUnconfigured(t *testing.T) {
 
 	g := sizeguard.New(t.TempDir(), []sizeguard.File{&fakeFile{}})
 	done := make(chan struct{})
-	task.Go(context.Background(), "sizeguard-unconfigured", func() {
+	concurrency.Go(context.Background(), "sizeguard-unconfigured", func() {
 		g.Run(context.Background(), sizeguard.Config{}, nil)
 		close(done)
 	})
@@ -323,7 +323,7 @@ func TestRunSamplesBeforeTheFirstTick(t *testing.T) {
 	defer cancel()
 
 	changed := make(chan sizeguard.State, 1)
-	task.Go(ctx, "sizeguard-first-sample", func() {
+	concurrency.Go(ctx, "sizeguard-first-sample", func() {
 		g.Run(ctx, sizeguard.Config{MaxBytes: 4096, Interval: time.Hour}, func(st sizeguard.State) {
 			select {
 			case changed <- st:
@@ -355,7 +355,7 @@ func TestOnChangeFiresOnlyOnATransition(t *testing.T) {
 
 	var mu sync.Mutex
 	var calls int
-	task.Go(ctx, "sizeguard-transitions", func() {
+	concurrency.Go(ctx, "sizeguard-transitions", func() {
 		g.Run(ctx, sizeguard.Config{MaxBytes: 4096, Interval: 10 * time.Millisecond}, func(sizeguard.State) {
 			mu.Lock()
 			calls++

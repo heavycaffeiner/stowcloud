@@ -17,8 +17,8 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 
 	app "github.com/heavycaffeiner/stowcloud/go/internal/app"
 )
@@ -714,7 +714,7 @@ func TestClosingTheEngineReleasesOpenSockets(t *testing.T) {
 	// Closing runs through the same path a shutdown takes. It has to release
 	// the socket rather than wait on a peer that is not reading.
 	done := make(chan error, 1)
-	task.Go(context.Background(), "engine close", func() { done <- e.Close() })
+	concurrency.Go(context.Background(), "engine close", func() { done <- e.Close() })
 
 	select {
 	case cerr := <-done:

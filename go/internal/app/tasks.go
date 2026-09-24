@@ -18,8 +18,8 @@ import (
 
 	core "github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
+	num "github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/objstore"
 	runtimetasks "github.com/heavycaffeiner/stowcloud/go/internal/runtime/tasks"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/server"
@@ -82,7 +82,7 @@ func (e *Engine) tasks() []server.PeriodicTask {
 		{
 			Name:  "search.maintenance",
 			Every: probeInterval,
-			Run:   e.recoverSearchIndex,
+			Run:   e.searchRuntime.Recover,
 		},
 
 		// The three below are required by the startup check and have nothing
@@ -165,14 +165,14 @@ func (e *Engine) sweepLoginFlows(ctx context.Context) error {
 func (e *Engine) probeShares(ctx context.Context) error {
 	broke, healed := e.Core.ProbeShares(ctx)
 	if len(broke) > 0 {
-		e.markSearchIndexIncomplete()
+		e.searchRuntime.MarkIncomplete()
 		e.logger.Warn("share roots became unreachable", "count", len(broke))
 	}
 	if len(healed) > 0 {
 		for _, def := range healed {
 			e.watchShare(def)
 		}
-		e.markSearchIndexIncomplete()
+		e.searchRuntime.MarkIncomplete()
 		e.logger.Info("share roots came back", "count", len(healed))
 	}
 	return nil

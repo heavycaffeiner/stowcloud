@@ -19,7 +19,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
 	search "github.com/stowcloud/namesearch"
 	"github.com/stowcloud/namesearch/index"
 )

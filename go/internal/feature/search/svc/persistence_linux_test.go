@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 	search "github.com/stowcloud/namesearch"
 	"github.com/stowcloud/namesearch/index"
 )
@@ -269,7 +269,7 @@ func TestAnIncrementalUpdateSurvivesAReopen(t *testing.T) {
 		slog.New(slog.DiscardHandler))
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
-	task.Go(ctx, "search index updater", func() { u.Run(ctx); close(done) })
+	concurrency.Go(ctx, "search index updater", func() { u.Run(ctx); close(done) })
 	u.Offer(Change{Share: 1, Dir: "reports"})
 
 	// Wait for the update to land rather than sleeping for a fixed time.

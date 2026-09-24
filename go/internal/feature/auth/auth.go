@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
 )
 
@@ -43,26 +43,6 @@ type Config struct {
 
 	// Clock stamps every row. Nil takes the system clock.
 	Clock clock.Clock
-
-	// RenderPassdb turns credential facts into the bytes the sidecar imports.
-	// Nil means this deployment publishes no credential file, and every
-	// credential change then stops at the database, which is the correct
-	// behaviour for a deployment with no sidecar.
-	RenderPassdb func(creds []SMBCredential) ([]byte, error)
-
-	// PassdbPath is where those bytes are written. Empty has the same effect
-	// as a nil renderer.
-	PassdbPath string
-
-	// RenderPasswd turns the same accounts into the account file that sits
-	// beside the credential file. Nil means this deployment writes no account
-	// file, and PublishPasswdEntries then does nothing.
-	//
-	// It is a second seam rather than one call producing both, because the
-	// two files are written at different moments: the credential file follows
-	// every credential change, and the account file is written by the
-	// publisher pushing a whole configuration.
-	RenderPasswd func(creds []SMBCredential, gid uint32) ([]byte, error)
 
 	// OnMembership is the one crossing into the live permission evaluator. It
 	// is wired by the layer that owns the evaluator, which keeps this package
@@ -112,14 +92,6 @@ type Service struct {
 	// each persist a ring the other did not know about.
 	rotateMu sync.Mutex
 
-	renderPassdb func([]SMBCredential) ([]byte, error)
-	renderPasswd func([]SMBCredential, uint32) ([]byte, error)
-
-	// passdbMu guards the credential file's location, which a settings save
-	// can change while the server runs.
-	passdbMu   sync.RWMutex
-	passdbPath string
-
 	policyMu      sync.RWMutex
 	smbTOTPPolicy TOTPPolicy
 
@@ -148,8 +120,8 @@ type Service struct {
 //
 // The master key and the database's key version are not opened here.
 // OpenMasterKey does that once, before the first request, so a key that
-// cannot decrypt what is on disk is a refused startup rather than a cascade of
-// failing logins.
+// cannot decrypt what is on disk is a refused startup rather than a cascade
+// of failing logins.
 func New(cfg Config) *Service {
 	clk := cfg.Clock
 	if clk == nil {
@@ -168,9 +140,6 @@ func New(cfg Config) *Service {
 		gate:         newGate(),
 		cache:        newCaches(clk),
 		limit:        newLimiter(loginWindow, loginMaxAttempts, clk.Nanos),
-		renderPassdb: cfg.RenderPassdb,
-		passdbPath:   cfg.PassdbPath,
-		renderPasswd: cfg.RenderPasswd,
 		onMembership: cfg.OnMembership,
 	}
 }
@@ -182,9 +151,7 @@ func (s *Service) Generation() int64 { return s.gen.Load() }
 // bumpGeneration clears all tiers along the verification path.
 func (s *Service) bumpGeneration() { s.gen.Add(1) }
 
-// SetAccessChangeSink wires the publisher after construction, because the
-// publisher needs this service: it asks for the credentials only this package
-// can open.
+// SetAccessChangeSink wires the neutral post-commit notification callback.
 func (s *Service) SetAccessChangeSink(sink AccessChangeSink) {
 	s.sinkMu.Lock()
 	s.sink = sink

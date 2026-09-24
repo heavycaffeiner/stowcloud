@@ -15,8 +15,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 	"golang.org/x/sys/unix"
 )
 
@@ -80,7 +80,7 @@ func Serve(ctx context.Context, socket string, h Handler, configDir string, clk 
 	// Closing the listener is what releases the accept below. Absent that, a
 	// shutdown waits on a connection that may never arrive and the process
 	// hangs while exiting.
-	task.Go(ctx, "smb-agent-control-close", func() {
+	concurrency.Go(ctx, "smb-agent-control-close", func() {
 		<-ctx.Done()
 		if cerr := ln.Close(); cerr != nil {
 			log.Warn("the control socket did not close", "error", cerr)
@@ -266,7 +266,7 @@ func setMode(socket string, mode os.FileMode, log *slog.Logger) {
 func ServeInBackground(
 	ctx context.Context, socket string, h Handler, configDir string, clk clock.Clock, log *slog.Logger,
 ) {
-	task.Go(ctx, "smb-agent-control", func() {
+	concurrency.Go(ctx, "smb-agent-control", func() {
 		if err := Serve(ctx, socket, h, configDir, clk, log); err != nil {
 			log.Error("the control socket is not listening; changes will be picked up by the poll instead",
 				"socket", socket, "error", err)

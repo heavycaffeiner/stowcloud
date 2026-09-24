@@ -1,7 +1,7 @@
 // Command vetgo rejects a bare go statement anywhere but the task packages.
 //
 // The rule it enforces: a panic in a goroutine with no recover installed takes
-// the process down and every request in flight with it. task.Go is the one
+// the process down and every request in flight with it. concurrency.Go is the one
 // spawn that installs one, so it is the one spawn there is.
 //
 // The task package is the one approved spawning boundary in the internal layout.
@@ -25,7 +25,7 @@ import (
 // spawnPackages are the directories allowed to hold a go statement. Matched on
 // the path so that a fixture under testdata exercises the same rule the tree is
 // held to.
-var spawnPackages = []string{"internal/kit/task"}
+var spawnPackages = []string{"internal/platform/concurrency"}
 
 // spawnNames is the allowed set as it reads in a diagnostic.
 func spawnNames() string { return strings.Join(spawnPackages, " and ") }
@@ -52,7 +52,7 @@ func main() {
 	}
 	if found > 0 {
 		say(os.Stderr, "\nvetgo: %d go statement(s) outside %s.\n"+
-			"Use task.Go, which installs a recover; a bare go statement does not.\n",
+			"Use concurrency.Go, which installs a recover; a bare go statement does not.\n",
 			found, spawnNames())
 		os.Exit(1)
 	}

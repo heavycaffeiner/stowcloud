@@ -13,7 +13,7 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/auth"
 	core "github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/secret"
+	secret "github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/route"

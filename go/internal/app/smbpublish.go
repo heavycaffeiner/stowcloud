@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -34,14 +33,8 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/smb"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/smb/agent"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/smb/publish"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
 )
-
-// passdbFile is the credential file's name inside the mounted directory. The
-// publisher names the other three; this one is named here because auth writes
-// it directly, on every credential change, without going through a publish.
-const passdbFile = "smbpasswd"
 
 // publishTimeout bounds one push. It is the agent's own timeout with room for
 // rendering the files on top, so this never cuts off a call the agent is still
@@ -187,20 +180,6 @@ func (p *smbPublisher) Publish(ctx context.Context) (agent.Report, error) {
 	defer p.mu.Unlock()
 
 	s := smbSettingsOf(ctx, p.engine)
-
-	// Auth writes the credential file on every credential change, so it needs
-	// the path this push is using. It was fixed at startup, and a server that
-	// booted with sharing off then held an empty one forever: credentials were
-	// stored and never written, and the daemon reported every account as
-	// having none.
-	p.engine.Auth.SetPassdbPath(passdbPathOf(s))
-
-	// Read once per push rather than per share: the alternative is asking the
-	// core inside the Shares closure below, once per candidate, for a fact
-	// that does not change between them. A failure here fails the whole push
-	// rather than falling back to an empty set, because an empty set would be
-	// read as "nothing is encrypted" and publish exactly the shares this
-	// exists to withhold.
 	encryptedIDs, eerr := p.engine.Core.EncryptedShares(ctx)
 	if eerr != nil {
 		return agent.Report{}, fmt.Errorf("smb publish: reading the encrypted share set: %w", eerr)
@@ -214,7 +193,14 @@ func (p *smbPublisher) Publish(ctx context.Context) (agent.Report, error) {
 		Shares: func() []publish.Share {
 			return publishShares(p.engine.Core.Shares(), encrypted, p.engine.logger)
 		},
-		Accounts:   p.engine.Auth,
+		Credentials: func(c context.Context) ([]smb.Credential, error) {
+			creds, err := p.engine.Auth.SMBCredentials(c)
+			if err != nil {
+				return nil, err
+			}
+			return smbCredentialsOf(creds), nil
+		},
+		NowUnix:    func() int64 { return p.engine.clk().Nanos() / int64(time.Second) },
 		Grants:     func(c context.Context) ([]publish.Grant, error) { return publishGrants(c, p.engine.State) },
 		Names:      p.engine.Auth.NameOf,
 		ConfigDir:  s.ConfigDir,
@@ -228,8 +214,6 @@ func (p *smbPublisher) Publish(ctx context.Context) (agent.Report, error) {
 	return report, err
 }
 
-// AccessChanged is the sink auth calls once a credential change has committed.
-//
 // Synchronous, because it is a revocation reaching the other surface and the
 // administrator who asked for it is the right person to wait for it. Detached
 // from the caller's context, because a browser navigating away must not cancel
@@ -449,25 +433,6 @@ func (e *Engine) publishSMBSettings(ctx context.Context) {
 	}
 }
 
-// smbRenderers are the two seams auth publishes its credential facts through.
-//
-// They exist because auth must not name this format and the renderer must not
-// open a sealed hash. Both adapt one list, so the pair of files they produce
-// cannot disagree about which accounts exist or what uid each one carries.
-func smbRenderers(clk clock.Clock) (
-	passdb func([]auth.SMBCredential) ([]byte, error),
-	passwd func([]auth.SMBCredential, uint32) ([]byte, error),
-) {
-	passdb = func(creds []auth.SMBCredential) ([]byte, error) {
-		return smb.PassdbEntries(smbCredentialsOf(creds), clk.Nanos()/int64(time.Second))
-	}
-	passwd = func(creds []auth.SMBCredential, gid uint32) ([]byte, error) {
-		return smb.PasswdEntries(smb.PasswdUsers(smbCredentialsOf(creds)), gid)
-	}
-	return passdb, passwd
-}
-
-// smbCredentialsOf crosses the one seam between the facts and the format.
 func smbCredentialsOf(creds []auth.SMBCredential) []smb.Credential {
 	out := make([]smb.Credential, 0, len(creds))
 	for _, c := range creds {
@@ -515,22 +480,4 @@ func (e *Engine) adminSMBApply(c *gin.Context) {
 		return
 	}
 	writeJSON(c, http.StatusOK, handler.SMBReportOf(report))
-}
-
-// passdbPathOf is where the credential file goes, and empty when this
-// deployment publishes none.
-//
-// The switch is deliberately not consulted. It used to be, and the path was
-// then decided once at startup: a server that booted with sharing off held an
-// empty path forever, so turning sharing on stored credentials that were never
-// written and every account was told it had none. Only a restart fixed it.
-//
-// The directory is the honest condition. Publishing while the switch is off
-// writes a file the agent has already been told to tear down, and the teardown
-// removes it.
-func passdbPathOf(s smbSettings) string {
-	if s.ConfigDir == "" {
-		return ""
-	}
-	return filepath.Join(s.ConfigDir, passdbFile)
 }

@@ -11,9 +11,9 @@ import (
 	"fmt"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/secret"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 )
 
@@ -318,11 +318,11 @@ func pinIdentity(row *LinkRow, p vfs.SafePath, st vfs.Stat) {
 	if p.IsRoot() || st.BtimeNs == nil {
 		return
 	}
-	dev, err := num.Narrow[int64](st.Dev)
+	dev, err := number.Narrow[int64](st.Dev)
 	if err != nil {
 		return
 	}
-	ino, err := num.Narrow[int64](st.Ino)
+	ino, err := number.Narrow[int64](st.Ino)
 	if err != nil {
 		return
 	}
@@ -337,11 +337,11 @@ func sameIdent(st vfs.Stat, l Link) bool {
 	if l.dev == nil || l.ino == nil || l.btime == nil || st.BtimeNs == nil {
 		return false
 	}
-	dev, err := num.Narrow[int64](st.Dev)
+	dev, err := number.Narrow[int64](st.Dev)
 	if err != nil {
 		return false
 	}
-	ino, err := num.Narrow[int64](st.Ino)
+	ino, err := number.Narrow[int64](st.Ino)
 	if err != nil {
 		return false
 	}
@@ -355,7 +355,7 @@ func sameIdent(st vfs.Stat, l Link) bool {
 // A row whose ciphertext cannot be opened yields a nil Token rather than an
 // error: the link still works, its URL is simply not recoverable.
 func (c *Core) linkOf(row LinkRow) (Link, error) {
-	share, err := num.Narrow[uint32](row.Share)
+	share, err := number.Narrow[uint32](row.Share)
 	if err != nil {
 		return Link{}, fmt.Errorf("share link %d names share %d: %w", row.ID, row.Share, err)
 	}
@@ -363,7 +363,7 @@ func (c *Core) linkOf(row LinkRow) (Link, error) {
 	if err != nil {
 		return Link{}, fmt.Errorf("share link %d holds an unusable path: %w", row.ID, err)
 	}
-	downs, err := num.Narrow[int32](row.Downloads)
+	downs, err := number.Narrow[int32](row.Downloads)
 	if err != nil {
 		return Link{}, fmt.Errorf("share link %d counts %d downloads: %w", row.ID, row.Downloads, err)
 	}
@@ -381,7 +381,7 @@ func (c *Core) linkOf(row LinkRow) (Link, error) {
 	// A missing cap is unlimited, which the domain spells as -1.
 	l.MaxDown = -1
 	if row.MaxDown != nil {
-		capped, cerr := num.Narrow[int32](*row.MaxDown)
+		capped, cerr := number.Narrow[int32](*row.MaxDown)
 		if cerr != nil {
 			return Link{}, fmt.Errorf("share link %d caps at %d: %w", row.ID, *row.MaxDown, cerr)
 		}

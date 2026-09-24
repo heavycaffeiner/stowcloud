@@ -12,7 +12,7 @@ import (
 
 	app "github.com/heavycaffeiner/stowcloud/go/internal/app"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/auth"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/secret"
+	secret "github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 	emergencyHTTP "github.com/heavycaffeiner/stowcloud/go/internal/transport/http/emergency"
 )
 

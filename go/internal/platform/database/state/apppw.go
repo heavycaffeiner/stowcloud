@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 )
 
 // App passwords: the long-lived credentials a client stores. A row holds the
@@ -124,7 +124,7 @@ func scanAppPassword(row interface{ Scan(...any) error }, withUser bool) (AppPas
 	if err != nil {
 		return AppPassword{}, err
 	}
-	p, nerr := num.Narrow[uint16](perms)
+	p, nerr := number.Narrow[uint16](perms)
 	if nerr != nil {
 		return AppPassword{}, fmt.Errorf("app password %d carries scope bits %d: %w", a.ID, perms, nerr)
 	}

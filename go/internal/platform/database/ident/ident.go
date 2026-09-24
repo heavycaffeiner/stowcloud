@@ -7,7 +7,7 @@ package ident
 import (
 	"fmt"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 )
 
@@ -72,7 +72,7 @@ func (i Ident) ToSQL() (dev, ino, present, btime int64) {
 // saying so instead of truncating. The device and inode numbers are
 // reinterpreted, because that is how they were stored.
 func FromSQL(share, dev, ino, present, btime int64) (Ident, error) {
-	s, err := num.Narrow[uint32](share)
+	s, err := number.Narrow[uint32](share)
 	if err != nil {
 		return Ident{}, fmt.Errorf("stored identity carries share %d: %w", share, err)
 	}

@@ -20,8 +20,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
 )
 
 // Kind says what a ticket is for. A ticket is a capability, and the route
@@ -34,6 +33,11 @@ const (
 	KindArchive Kind = iota + 1
 	// KindFile streams one file as it is on disk.
 	KindFile
+)
+
+const (
+	archiveTicketsHeld = 1_000
+	archiveTicketTTL   = 5 * time.Minute
 )
 
 // Ticket is one validated selection waiting to be fetched.
@@ -88,10 +92,10 @@ func (s *Tickets) Put(token string, t *Ticket) bool {
 	defer s.mu.Unlock()
 	s.sweepLocked()
 
-	if len(s.byToken) >= limits.ArchiveTicketsHeld {
+	if len(s.byToken) >= archiveTicketsHeld {
 		return false
 	}
-	t.expires = s.clk.Now().Add(limits.ArchiveTicketTTL)
+	t.expires = s.clk.Now().Add(archiveTicketTTL)
 	s.byToken[token] = t
 	return true
 }

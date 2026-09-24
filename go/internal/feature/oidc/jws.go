@@ -15,7 +15,7 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/oidc/limits"
 )
 
 // Token verification implemented without a JOSE library. A general-purpose

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
 )
 
 // LimiterCap bounds how many client buckets are held at once.

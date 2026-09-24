@@ -4,15 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"unicode/utf16"
 
 	"golang.org/x/crypto/md4" //nolint:gosec,staticcheck // MD4 is fixed by the SMB protocol; the value is sealed at rest and only that algorithm matches.
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/secret"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
-	fsatomic "github.com/stowcloud/durablefs"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 )
 
 // The file-sharing credential and the sink every credential change calls.
@@ -290,118 +288,22 @@ func smbUID(rowID int64) (uint32, error) {
 	if rowID <= 0 || rowID > maxRowID {
 		return 0, fmt.Errorf("account %d has no representable uid", rowID)
 	}
-	offset, err := num.Narrow[uint32](rowID)
+	offset, err := number.Narrow[uint32](rowID)
 	if err != nil {
 		return 0, fmt.Errorf("account %d has no representable uid: %w", rowID, err)
 	}
 	return SMBBaseUid + offset, nil
 }
 
-// PublishPassdb renders the credential file now, without asking the sink to
-// push. It is for the publisher, which is what does the pushing: calling the
-// sink here would be the publisher asking this service for the file and this
-// service asking the publisher to publish.
-func (s *Service) PublishPassdb(ctx context.Context) error {
-	return s.renderPassdbFile(ctx)
-}
-
-// SetPassdbPath points the credential file at a directory chosen after
-// startup.
-//
-// File sharing can be configured while the server runs, and the path used to
-// be fixed when this service was built. A deployment that booted with sharing
-// off held an empty path forever: every credential a person set was stored and
-// never written, and the daemon reported them as having none.
-//
-// Empty still means write nothing, which is the state of a deployment with no
-// sidecar.
-func (s *Service) SetPassdbPath(path string) {
-	s.passdbMu.Lock()
-	defer s.passdbMu.Unlock()
-	s.passdbPath = path
-}
-
-// PublishPasswdEntries writes the account file the credential file is paired
-// with, at the path the caller names.
-//
-// The path is a parameter because this file belongs to the publisher's
-// directory rather than to this package: the credential file's location is
-// fixed at construction because every credential change rewrites it, and this
-// one is written only when a whole configuration is pushed.
-//
-// Both files are rendered from one account list. Deriving them separately is
-// what lets the two disagree on a uid, and a disagreement there imports as an
-// empty credential database with every login refused as an unknown account.
-func (s *Service) PublishPasswdEntries(ctx context.Context, path string, gid uint32) error {
-	if s.renderPasswd == nil || path == "" {
-		return nil
-	}
-	creds, err := s.SMBCredentials(ctx)
-	if err != nil {
-		return err
-	}
-	b, err := s.renderPasswd(creds, gid)
-	if err != nil {
-		return err
-	}
-	// Readable by the sidecar, unlike the credential file: this one carries
-	// names and numbers, and the daemon's own user has to resolve them.
-	res, err := fsatomic.ReplaceFileDurable(path, 0o644, func(f *os.File) error {
-		_, werr := f.Write(b)
-		return werr
-	})
-	return wrapPublication("publishing SMB passwd entries", res, err)
-}
-
-// republishCredentials is the sink every credential-changing path calls.
-//
-// It re-renders the whole file from the database and then tells the publisher,
-// because the rendered file is not what the daemon authenticates against: the
-// sidecar imports it, and a file written with nobody told is a revocation that
-// lands whenever something else happens to publish.
-//
-// It never fails the write that called it. The account change has committed;
-// reporting it as failed because a sidecar is down would be a change that
-// happened reported as one that did not.
+// notifyAccessChanged tells the publication owner after durable auth state has
+// changed. Publication failures are intentionally outside this operation: the
+// auth mutation already committed and must not be reported as failed because a
+// sidecar is unavailable.
 func (s *Service) republishCredentials(ctx context.Context) error {
-	if err := s.renderPassdbFile(ctx); err != nil {
-		switch PublicationOutcome(err) {
-		case fsatomic.PublicationUncertain:
-			s.warn("the SMB credential file publication is uncertain; it may have changed", err)
-		case fsatomic.NotPublished:
-			s.warn("the SMB credential file was not published", err)
-		default:
-			s.warn("the SMB credential file could not be written", err)
-		}
-	}
 	if sink := s.accessSink(); sink != nil {
 		sink.AccessChanged(ctx)
 	}
 	return nil
-}
-
-// renderPassdbFile writes the credential file, when this deployment has one.
-func (s *Service) renderPassdbFile(ctx context.Context) error {
-	s.passdbMu.RLock()
-	path := s.passdbPath
-	s.passdbMu.RUnlock()
-
-	if s.renderPassdb == nil || path == "" {
-		return nil
-	}
-	creds, err := s.SMBCredentials(ctx)
-	if err != nil {
-		return err
-	}
-	b, err := s.renderPassdb(creds)
-	if err != nil {
-		return err
-	}
-	res, err := fsatomic.ReplaceFileDurable(path, 0o600, func(f *os.File) error {
-		_, werr := f.Write(b)
-		return werr
-	})
-	return wrapPublication("publishing the SMB credential file", res, err)
 }
 
 // sealNTFor derives the protocol's hash from a plaintext and seals it under

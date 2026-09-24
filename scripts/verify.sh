@@ -394,9 +394,8 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
 
   # D8. One clock. F10 was a now_ns that unwrapped duration_since(UNIX_EPOCH),
   # which aborts the process on a machine whose RTC has not been set.
-  # One per tree while the two coexist; the old entry goes with the old tree.
   CLOCK_HITS=$(go_code 'time\.Now\(' \
-               | grep -vE '^go/internal/kit/clock/')
+               | grep -vE '^go/internal/platform/clock/')
   grep_gate "D8: time.Now only in the clock packages" "$CLOCK_HITS" \
     "Take a clock.Clock. Nothing else reads the wall clock."
 
@@ -470,7 +469,7 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
         | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)' || true
     }
     hits=""
-    for d in internal/kit internal/feature internal/platform internal/runtime internal/bootstrap; do
+    for d in internal/feature internal/platform internal/runtime internal/bootstrap; do
       [ -d "go/$d" ] || continue
       hits="$hits$(vendor_terms "go/$d")"
     done

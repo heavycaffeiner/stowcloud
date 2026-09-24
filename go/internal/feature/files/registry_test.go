@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/cache"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/dbfile"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
@@ -492,7 +492,7 @@ func TestTheRegistryTakesConcurrentReadsAndWrites(t *testing.T) {
 		id := ShareID(i + 1)
 		host := hosts[i]
 		wg.Add(2)
-		task.Go(ctx, "registry: register and unregister loop", func() {
+		concurrency.Go(ctx, "registry: register and unregister loop", func() {
 			defer wg.Done()
 			for range 50 {
 				d := ShareDef{ID: id, Name: "s", Host: host, Policy: vfs.DefaultSharePolicy()}
@@ -503,7 +503,7 @@ func TestTheRegistryTakesConcurrentReadsAndWrites(t *testing.T) {
 				c.UnregisterShare(id)
 			}
 		})
-		task.Go(ctx, "registry: accessor loop", func() {
+		concurrency.Go(ctx, "registry: accessor loop", func() {
 			defer wg.Done()
 			for range 50 {
 				c.Shares()

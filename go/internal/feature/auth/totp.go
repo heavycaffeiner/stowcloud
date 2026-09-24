@@ -11,9 +11,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/secret"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 )
 
 // The second factor: HMAC-SHA1 over a thirty-second counter with one step of
@@ -213,7 +213,7 @@ func (s *Service) VerifyCandidateTOTP(secretB32, code string, nowNs int64) (bool
 
 // totpAt computes the code for a secret at one step.
 func totpAt(secretBytes []byte, step int64) (string, error) {
-	counterValue, err := num.Narrow[uint64](step)
+	counterValue, err := number.Narrow[uint64](step)
 	if err != nil {
 		return "", fmt.Errorf("a second-factor step of %d has no counter: %w", step, err)
 	}

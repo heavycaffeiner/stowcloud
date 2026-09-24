@@ -21,10 +21,10 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/dbfile"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 )
 
@@ -179,7 +179,7 @@ func (d *DB) RecentSince(ctx context.Context, account uint32, sinceNs int64, lim
 		if err := rows.Scan(&share, &path, &op, &at); err != nil {
 			return nil, fmt.Errorf("reading a journal row: %w", err)
 		}
-		s, err := num.Narrow[uint32](share)
+		s, err := number.Narrow[uint32](share)
 		if err != nil {
 			return nil, fmt.Errorf("journal row carries share %d: %w", share, err)
 		}

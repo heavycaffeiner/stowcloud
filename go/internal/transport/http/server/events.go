@@ -24,8 +24,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
+	task "github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/handler"
 )
 

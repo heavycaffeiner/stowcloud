@@ -7,7 +7,7 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 )
 
 // tiffWith builds a minimal little-endian TIFF header carrying one orientation
@@ -36,7 +36,7 @@ func jpegWith(tif []byte) []byte {
 	seg = append(seg, 0xff, 0xe1) // APP1
 	// The segment length is a u16 by format, and every fixture here is far
 	// inside it, so a fixture that outgrew the field is a broken fixture.
-	segLen, err := num.Narrow[uint16](2 + len(payload))
+	segLen, err := number.Narrow[uint16](2 + len(payload))
 	if err != nil {
 		panic("the exif fixture does not fit a jpeg segment")
 	}

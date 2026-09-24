@@ -10,8 +10,8 @@ import (
 	"slices"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/uploads/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 )
 
@@ -53,7 +53,7 @@ func (e *Engine) PutNamed(
 		return fmt.Errorf("%w: a chunk name starts at one", ErrBadRequest)
 	}
 
-	next, nerr := num.Narrow[uint32](r.sess.NextName)
+	next, nerr := number.Narrow[uint32](r.sess.NextName)
 	if nerr != nil {
 		unlock()
 		return nerr
@@ -79,7 +79,7 @@ func (e *Engine) PutNamed(
 	logical := uint64(0)
 	stageDir := part.Parent()
 	if isNext {
-		logical, err = num.Narrow[uint64](r.sess.WriteHead)
+		logical, err = number.Narrow[uint64](r.sess.WriteHead)
 		if err != nil {
 			lease.release()
 			unlock()
@@ -134,7 +134,7 @@ func (e *Engine) PutNamed(
 	if fresh.mode() != SpoolNameOrdered {
 		return fmt.Errorf("%w: this session is offset-addressed", ErrBadRequest)
 	}
-	currentNext, nerr := num.Narrow[uint32](fresh.sess.NextName)
+	currentNext, nerr := number.Narrow[uint32](fresh.sess.NextName)
 	if nerr != nil {
 		return nerr
 	}
@@ -145,7 +145,7 @@ func (e *Engine) PutNamed(
 		return nil
 	}
 	if name == currentNext {
-		head, herr := num.Narrow[uint64](fresh.sess.WriteHead)
+		head, herr := number.Narrow[uint64](fresh.sess.WriteHead)
 		if herr != nil {
 			return herr
 		}
@@ -158,7 +158,7 @@ func (e *Engine) PutNamed(
 		if err := e.commitStagedAt(root, id, part, stage, head, n); err != nil {
 			return err
 		}
-		advanced, aerr := num.Narrow[int64](n)
+		advanced, aerr := number.Narrow[int64](n)
 		if aerr != nil {
 			return aerr
 		}
@@ -213,7 +213,7 @@ func (e *Engine) PutNamed(
 func (e *Engine) namedHeldBytes(
 	root vfs.Root, r *row, replacing uint32,
 ) (uint64, error) {
-	head, err := num.Narrow[uint64](r.sess.WriteHead)
+	head, err := number.Narrow[uint64](r.sess.WriteHead)
 	if err != nil {
 		return 0, err
 	}
@@ -245,7 +245,7 @@ func (e *Engine) drainSpool(ctx context.Context, root vfs.Root, r *row, strict b
 		if len(r.sess.SpooledNames) == 0 {
 			return nil
 		}
-		next, nerr := num.Narrow[uint32](r.sess.NextName)
+		next, nerr := number.Narrow[uint32](r.sess.NextName)
 		if nerr != nil {
 			return nerr
 		}
@@ -316,7 +316,7 @@ func (e *Engine) mergeChunk(root vfs.Root, r *row, name uint32) error {
 	if err != nil {
 		return err
 	}
-	head, herr := num.Narrow[uint64](r.sess.WriteHead)
+	head, herr := number.Narrow[uint64](r.sess.WriteHead)
 	if herr != nil {
 		return herr
 	}
@@ -333,7 +333,7 @@ func (e *Engine) mergeChunk(root vfs.Root, r *row, name uint32) error {
 	if copied != st.Size {
 		return fmt.Errorf("assembling chunk %d: copied %d of %d bytes", name, copied, st.Size)
 	}
-	written, nerr := num.Narrow[int64](copied)
+	written, nerr := number.Narrow[int64](copied)
 	if nerr != nil {
 		return nerr
 	}
@@ -379,11 +379,11 @@ func (e *Engine) ListChunks(
 	if r.mode() != SpoolNameOrdered {
 		return nil, nil
 	}
-	next, nerr := num.Narrow[uint32](r.sess.NextName)
+	next, nerr := number.Narrow[uint32](r.sess.NextName)
 	if nerr != nil {
 		return nil, nerr
 	}
-	head, herr := num.Narrow[uint64](r.sess.WriteHead)
+	head, herr := number.Narrow[uint64](r.sess.WriteHead)
 	if herr != nil {
 		return nil, herr
 	}

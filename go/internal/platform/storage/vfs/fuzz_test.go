@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/uniname"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/pathnames"
 )
 
 // FuzzParseVpath asserts more than "does not panic": for any input the
@@ -53,7 +53,7 @@ func FuzzParseVpath(f *testing.F) {
 		// proves nothing, and it caught the detector's own instability as a
 		// test failure rather than as the product bug it was.
 		got := v.String()
-		if !uniname.IsNormalized(got) {
+		if !pathnames.IsNormalized(got) {
 			t.Fatalf("ParseVpath(%q) returned %q, which is not well-formed NFC UTF-8", s, got)
 		}
 		again, err := ParseVpath(got)
@@ -64,7 +64,7 @@ func FuzzParseVpath(f *testing.F) {
 			t.Fatalf("parsing is not a fixed point: %q became %q then %q", s, got, again.String())
 		}
 		trimmed := strings.TrimPrefix(s, "/")
-		if uniname.IsNormalized(trimmed) && got != trimmed {
+		if pathnames.IsNormalized(trimmed) && got != trimmed {
 			t.Fatalf("ParseVpath(%q) rewrote an already normal path into %q", s, got)
 		}
 
@@ -141,7 +141,7 @@ func FuzzParseSafePath(f *testing.F) {
 		// recomputing the expected normalization would only compare the code
 		// under test against itself.
 		got := p.String()
-		if !uniname.IsNormalized(got) {
+		if !pathnames.IsNormalized(got) {
 			t.Fatalf("ParseSafePath(%q) returned %q, which is not well-formed NFC UTF-8", s, got)
 		}
 		again, err := ParseSafePath(got)
@@ -151,7 +151,7 @@ func FuzzParseSafePath(f *testing.F) {
 		if again.String() != got {
 			t.Fatalf("parsing is not a fixed point: %q became %q then %q", s, got, again.String())
 		}
-		if uniname.IsNormalized(s) && got != s {
+		if pathnames.IsNormalized(s) && got != s {
 			t.Fatalf("ParseSafePath(%q) rewrote an already normal path into %q", s, got)
 		}
 		comps := p.Components()

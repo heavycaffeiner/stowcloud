@@ -17,9 +17,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/secret"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/oidc/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 )
 
 const (

@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 )
 
 // totpCode is the reference computation from RFC 6238, written here rather
@@ -20,7 +20,7 @@ func totpCode(t *testing.T, secretB32 string, step int64) string {
 	if derr != nil {
 		t.Fatalf("decoding the secret: %v", derr)
 	}
-	counterValue, err := num.Narrow[uint64](step)
+	counterValue, err := number.Narrow[uint64](step)
 	if err != nil {
 		t.Fatalf("a step of %d has no counter: %v", step, err)
 	}

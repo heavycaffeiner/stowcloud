@@ -1,21 +1,18 @@
 import type { ReactNode } from 'react'
 import { useEffect, useRef } from 'react'
-import { useStore } from '../store/use-store'
-import { ui } from '../store/ui.store'
 import { useI18n } from '../i18n/use-i18n'
 export interface MenuProps {
   open: boolean
   onClose?: () => void
-  onclose?: () => void
+  compact?: boolean
   x?: number
   y?: number
   align?: 'start' | 'end'
   children?: ReactNode
 }
 
-export function Menu({ open, onClose, onclose, x, y, align = 'start', children }: MenuProps) {
-  const close = onClose ?? onclose ?? (() => undefined)
-  const compact = useStore(ui, (state) => state.compact)
+export function Menu({ open, onClose, compact = false, x, y, align = 'start', children }: MenuProps) {
+  const close = onClose ?? (() => undefined)
   const { t } = useI18n()
   const rootRef = useRef<HTMLDivElement>(null)
   const opener = useRef<HTMLElement | null>(null)

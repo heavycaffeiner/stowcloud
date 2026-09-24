@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/admin/logbook"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 )
 
 // counts is the walk under test, with the failure handling every case shares.
@@ -247,7 +247,7 @@ func TestCountsRunBesideWrites(t *testing.T) {
 	var wg sync.WaitGroup
 	for w := 0; w < writers; w++ {
 		wg.Add(1)
-		task.Go(ctx, "logbook counts writer", func() {
+		concurrency.Go(ctx, "logbook counts writer", func() {
 			defer wg.Done()
 			for i := 0; i < each; i++ {
 				log.Info("concurrent")
@@ -256,7 +256,7 @@ func TestCountsRunBesideWrites(t *testing.T) {
 	}
 	for r := 0; r < 3; r++ {
 		wg.Add(1)
-		task.Go(ctx, "logbook counts reader", func() {
+		concurrency.Go(ctx, "logbook counts reader", func() {
 			defer wg.Done()
 			for i := 0; i < 10; i++ {
 				if _, _, _, err := s.Counts(ctx, logbook.Query{}, int64(time.Minute)); err != nil {

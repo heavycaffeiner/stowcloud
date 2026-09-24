@@ -17,8 +17,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/search/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
+	protocolimits "github.com/heavycaffeiner/stowcloud/go/internal/platform/protocol/limits"
 	search "github.com/stowcloud/namesearch"
 	"github.com/stowcloud/namesearch/index"
 )
@@ -263,7 +264,7 @@ type Results struct {
 // The index answers unless it declines or cannot, in which case the walk does.
 func (s *Service) Query(ctx context.Context, sources []search.Source, opt QueryOptions) (Results, error) {
 	if len(opt.Query) > limits.SearchQueryBytes {
-		return Results{}, limits.Exceed("search query", limits.SearchQueryBytes, int64(len(opt.Query)))
+		return Results{}, protocolimits.Exceed("search query", limits.SearchQueryBytes, int64(len(opt.Query)))
 	}
 	if opt.Stream != nil {
 		opt.Complete = true

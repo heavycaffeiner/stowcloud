@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/ident"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/limits"
 )
 
 // Dead properties and locks, both keyed by the identity tuple rather than by

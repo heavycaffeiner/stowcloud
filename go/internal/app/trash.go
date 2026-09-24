@@ -17,7 +17,7 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	num "github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/handler"

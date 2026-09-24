@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/search/limits"
 	search "github.com/stowcloud/namesearch"
 	"github.com/stowcloud/namesearch/index"
 )

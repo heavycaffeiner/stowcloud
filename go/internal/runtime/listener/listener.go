@@ -21,8 +21,7 @@ import (
 	hanamibootstrap "github.com/heavycaffeiner/hanami/bootstrap"
 	hanamihttp "github.com/heavycaffeiner/hanami/http"
 	hanamiprocess "github.com/heavycaffeiner/hanami/process"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
-	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/server"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
 	fsatomic "github.com/stowcloud/durablefs"
 )
 
@@ -145,7 +144,7 @@ func (runtime *Runtime) publish() error {
 	if current.Address == "" {
 		return errors.New("publishing the health probe without a listener")
 	}
-	return server.WriteProbe(filepath.Join(runtime.config.DataDir, ".probe.json"), server.Probe{
+	return WriteProbe(filepath.Join(runtime.config.DataDir, ".probe.json"), Probe{
 		Addr: current.Address, Host: runtime.app.ProbeHost(),
 	}, durableWriter)
 }
@@ -209,11 +208,11 @@ func ensureCertificate(dataDir, address string) (tls.Certificate, error) {
 	if host != "localhost" {
 		hosts = append(hosts, "localhost")
 	}
-	paths := server.TLSPaths{Cert: filepath.Join(dataDir, "tls", "cert.pem"), Key: filepath.Join(dataDir, "tls", "key.pem")}
+	paths := TLSPaths{Cert: filepath.Join(dataDir, "tls", "cert.pem"), Key: filepath.Join(dataDir, "tls", "key.pem")}
 	if err := os.MkdirAll(filepath.Dir(paths.Cert), 0o700); err != nil {
 		return tls.Certificate{}, fmt.Errorf("creating the TLS directory: %w", err)
 	}
 	_, statErr := os.Stat(paths.Cert)
 	firstBoot := errors.Is(statErr, os.ErrNotExist)
-	return server.EnsureTLS(paths, hosts, clock.System(), firstBoot, durableWriter)
+	return EnsureTLS(paths, hosts, clock.System(), firstBoot, durableWriter)
 }

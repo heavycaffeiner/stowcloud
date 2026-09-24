@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"golang.org/x/sys/unix"
 )
 
@@ -122,7 +122,7 @@ func OpenShareRoot(id ShareID, host string, policy SharePolicy) (*ShareRoot, err
 	// registration outright, since the type only decides which gate
 	// applies next, and that gate itself rejects an unrecognized value.
 	if err := withFdErr(anchor, func(afd int) error { return unix.Fstatfs(afd, &sfs) }); err == nil {
-		if magic, nerr := num.Narrow[uint64](sfs.Type); nerr == nil {
+		if magic, nerr := number.Narrow[uint64](sfs.Type); nerr == nil {
 			fsType = FsType(magic)
 		}
 	}
@@ -251,7 +251,7 @@ func (r *ShareRoot) admitDevice(dir *os.File, dev uint64, path string) error {
 	if err := withFdErr(dir, func(fd int) error { return unix.Fstatfs(fd, &sfs) }); err != nil {
 		return mapErrno("statfs "+path, err)
 	}
-	magic, nerr := num.Narrow[uint64](sfs.Type)
+	magic, nerr := number.Narrow[uint64](sfs.Type)
 	if nerr != nil {
 		// A magic value this build cannot even represent is unclassifiable,
 		// which is the fail-closed outcome and not a reason to admit it.

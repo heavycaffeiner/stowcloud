@@ -6,7 +6,7 @@ import (
 	"crypto/subtle"
 	"errors"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/oidc/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
 )
 

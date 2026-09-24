@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/uploads/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 )
 
@@ -280,7 +280,7 @@ func TestConcurrentChunksDoNotSerialize(t *testing.T) {
 		started:  make(chan struct{}),
 	}
 	firstDone := make(chan error, 1)
-	task.Go(ctx, "upload: stalled chunk", func() {
+	concurrency.Go(ctx, "upload: stalled chunk", func() {
 		_, err := f.engine.PatchAt(ctx, f.root(t), s.ID, testUser, 0, stalled, nil)
 		firstDone <- err
 	})
@@ -288,7 +288,7 @@ func TestConcurrentChunksDoNotSerialize(t *testing.T) {
 
 	// The second chunk has to complete while the first is stalled mid-body.
 	secondDone := make(chan error, 1)
-	task.Go(ctx, "upload: second chunk", func() {
+	concurrency.Go(ctx, "upload: second chunk", func() {
 		_, err := f.engine.PatchAt(ctx, f.root(t), s.ID, testUser, uint64(chunk),
 			bytes.NewReader(chunkOf(uint64(chunk), chunk)), nil)
 		secondDone <- err

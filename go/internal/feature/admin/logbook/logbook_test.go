@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/admin/logbook"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 )
 
 // stepClock advances a fixed amount per reading, so segment names and record
@@ -439,7 +439,7 @@ func TestConcurrentWritersAndReaders(t *testing.T) {
 	for w := 0; w < writers; w++ {
 		wg.Add(1)
 		writer := w
-		task.Go(ctx, "logbook test writer", func() {
+		concurrency.Go(ctx, "logbook test writer", func() {
 			defer wg.Done()
 			for i := 0; i < each; i++ {
 				log.Info("concurrent", "writer", writer, "i", i)
@@ -448,7 +448,7 @@ func TestConcurrentWritersAndReaders(t *testing.T) {
 	}
 	for r := 0; r < 4; r++ {
 		wg.Add(1)
-		task.Go(ctx, "logbook test reader", func() {
+		concurrency.Go(ctx, "logbook test reader", func() {
 			defer wg.Done()
 			for i := 0; i < 20; i++ {
 				if _, err := s.Query(ctx, logbook.Query{Limit: 25}); err != nil {

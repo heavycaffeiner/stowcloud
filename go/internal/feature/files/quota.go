@@ -8,7 +8,7 @@ import (
 	"math"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 )
 
@@ -125,7 +125,7 @@ func (c *Core) CheckQuota(ctx context.Context, user UserID, bytes uint64) error 
 	if c.quota == nil || bytes == 0 {
 		return nil
 	}
-	signed, err := num.Narrow[int64](bytes)
+	signed, err := number.Narrow[int64](bytes)
 	if err != nil {
 		return err
 	}
@@ -157,7 +157,7 @@ func (c *Core) reserveQuota(ctx context.Context, user UserID, bytes uint64) (quo
 	if c.quota == nil || bytes == 0 {
 		return quotaReservation{}, nil
 	}
-	if _, err := num.Narrow[int64](bytes); err != nil {
+	if _, err := number.Narrow[int64](bytes); err != nil {
 		return quotaReservation{}, err
 	}
 	ok, err := c.quota.Reserve(ctx, int64(user), bytes)
@@ -189,7 +189,7 @@ func (c *Core) releaseQuota(ctx context.Context, user UserID, hold *quotaReserva
 	if hold == nil || !hold.active || c.quota == nil {
 		return
 	}
-	if rel, err := num.Narrow[int64](hold.bytes); err != nil {
+	if rel, err := number.Narrow[int64](hold.bytes); err != nil {
 		c.warn("releasing quota reservation failed; its size does not fit the ledger",
 			"bytes", hold.bytes, "error", err)
 	} else if rerr := c.quota.Release(ctx, int64(user), rel); rerr != nil {
@@ -216,7 +216,7 @@ func (c *Core) resizeQuota(
 		hold.bytes += next.bytes
 	case target < hold.bytes:
 		credit := hold.bytes - target
-		rel, err := num.Narrow[int64](credit)
+		rel, err := number.Narrow[int64](credit)
 		if err != nil {
 			return err
 		}

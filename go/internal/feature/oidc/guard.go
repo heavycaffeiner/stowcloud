@@ -18,8 +18,8 @@ import (
 	"net/netip"
 	"syscall"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/netzone"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/oidc/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/network/zone"
 )
 
 // ErrAddressBlocked is the guard refusing an address a socket was about to
@@ -120,7 +120,7 @@ func blocked(ip netip.Addr) bool {
 	// own.
 	ip = ip.Unmap()
 
-	if ip.IsUnspecified() || ip.IsLinkLocalMulticast() || netzone.IsPrivate(ip) {
+	if ip.IsUnspecified() || ip.IsLinkLocalMulticast() || zone.IsPrivate(ip) {
 		return true
 	}
 	if v4, ok := embedded4(ip); ok {

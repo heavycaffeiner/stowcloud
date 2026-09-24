@@ -6,8 +6,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/secret"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 )
 
 // The login flow and the account-enumeration defence around it.

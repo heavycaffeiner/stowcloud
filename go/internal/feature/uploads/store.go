@@ -8,8 +8,8 @@ import (
 	"fmt"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 	"github.com/stowcloud/transfer"
 )
@@ -38,7 +38,7 @@ func (r *row) totalLen() (uint64, bool) {
 	if r.sess.TotalLen == nil {
 		return 0, false
 	}
-	n, err := num.Narrow[uint64](*r.sess.TotalLen)
+	n, err := number.Narrow[uint64](*r.sess.TotalLen)
 	if err != nil {
 		return 0, false
 	}
@@ -124,7 +124,7 @@ func (e *Engine) session(r *row) (Session, error) {
 	if !ok {
 		return Session{}, fmt.Errorf("a session names a share id that does not fit: %d", r.sess.Share)
 	}
-	chunk, err := num.Narrow[uint64](r.sess.ChunkSize)
+	chunk, err := number.Narrow[uint64](r.sess.ChunkSize)
 	if err != nil {
 		return Session{}, fmt.Errorf("a session names a chunk size that does not fit: %w", err)
 	}
@@ -151,7 +151,7 @@ func (e *Engine) session(r *row) (Session, error) {
 	// empty until assembly populates it, so consulting the set here would report
 	// zero for precisely the sessions requiring an answer.
 	if r.mode() == SpoolNameOrdered && r.set.Count() == 0 {
-		head, herr := num.Narrow[uint64](r.sess.WriteHead)
+		head, herr := number.Narrow[uint64](r.sess.WriteHead)
 		if herr != nil {
 			return Session{}, fmt.Errorf("a session names a write head that does not fit: %w", herr)
 		}

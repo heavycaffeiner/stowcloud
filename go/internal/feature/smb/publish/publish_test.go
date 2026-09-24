@@ -15,35 +15,28 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/smb/agent"
 )
 
-// stubAccounts records what the credential half was asked for.
-type stubAccounts struct {
-	passwdPath string
-	passwdGID  uint32
-	passwdErr  error
-	passdbErr  error
-	passdbRan  bool
+// stubCredentials records the credential facts requested by publication.
+type stubCredentials struct {
+	called bool
+	err    error
 }
 
-func (s *stubAccounts) PublishPasswdEntries(_ context.Context, path string, gid uint32) error {
-	s.passwdPath, s.passwdGID = path, gid
-	if s.passwdErr != nil {
-		return s.passwdErr
+func (s *stubCredentials) Credentials(context.Context) ([]smb.Credential, error) {
+	s.called = true
+	if s.err != nil {
+		return nil, s.err
 	}
-	return os.WriteFile(path, []byte("svc:x:1000:1000:::\n"), 0o600)
-}
-
-func (s *stubAccounts) PublishPassdb(context.Context) error {
-	s.passdbRan = true
-	return s.passdbErr
+	return []smb.Credential{{Name: "svc", Uid: 1000}}, nil
 }
 
 // deps builds a publish over a temp directory with one share and one grant.
-func deps(t *testing.T, shares []Share, grants []Grant) (Deps, *stubAccounts) {
+func deps(t *testing.T, shares []Share, grants []Grant) (Deps, *stubCredentials) {
 	t.Helper()
-	acc := &stubAccounts{}
+	acc := &stubCredentials{}
 	return Deps{
-		Shares:   func() []Share { return shares },
-		Accounts: acc,
+		Shares:      func() []Share { return shares },
+		Credentials: acc.Credentials,
+		NowUnix:     func() int64 { return 0 },
 		Grants: func(context.Context) ([]Grant, error) {
 			return grants, nil
 		},
@@ -103,11 +96,11 @@ func TestPublishWritesTheSetAndReports(t *testing.T) {
 	if _, serr := os.Stat(filepath.Join(d.ConfigDir, filePolicy)); serr != nil {
 		t.Errorf("the policy file is missing: %v", serr)
 	}
-	if acc.passwdGID != 2000 {
-		t.Errorf("the account file was published with gid %d, want the configured one", acc.passwdGID)
+	if body := read(t, d.ConfigDir, filePasswd); !strings.Contains(body, "svc:x:1000:2000") {
+		t.Errorf("the account file was not rendered by the publisher: %s", body)
 	}
-	if !acc.passdbRan {
-		t.Error("the credentials were never published")
+	if !acc.called {
+		t.Error("the credential facts were never requested")
 	}
 }
 
@@ -404,16 +397,28 @@ func TestARefusedRenderWritesNothing(t *testing.T) {
 	}
 }
 
-// A credential publisher that fails stops the publish, because a configuration
-// naming accounts with no credentials is a login that fails as an unknown user.
+// A credential fact source that fails stops the publish, because a
+// configuration naming accounts with no credentials is a login that fails as
+// an unknown user.
 func TestACredentialFailureStopsThePublish(t *testing.T) {
 	d, acc := deps(t, oneShare(), []Grant{
 		{User: 1, Share: 7, WholeShare: true, AllowRead: true},
 	})
-	acc.passdbErr = errors.New("the key is not available")
+	acc.err = errors.New("the key is not available")
 
 	if _, err := Publish(t.Context(), d, enabled()); err == nil {
 		t.Fatal("a failed credential publish was reported as success")
+	}
+}
+func TestAnUnsetServiceGIDTakesTheDefault(t *testing.T) {
+	d, _ := deps(t, nil, nil)
+	d.ServiceGID = 0
+
+	if _, err := Publish(t.Context(), d, enabled()); err != nil {
+		t.Fatal(err)
+	}
+	if body := read(t, d.ConfigDir, filePasswd); !strings.Contains(body, ":1000::") {
+		t.Errorf("the account file did not use the default gid: %s", body)
 	}
 }
 
@@ -464,22 +469,6 @@ func TestPublishingTwiceRendersIdenticalBytes(t *testing.T) {
 	}
 	if second := read(t, d.ConfigDir, fileConf); second != first {
 		t.Errorf("the same state rendered different bytes:\n--- first ---\n%s\n--- second ---\n%s", first, second)
-	}
-}
-
-// A zero service gid must not reach a rendered file as root's group.
-func TestAnUnsetServiceGIDTakesTheDefault(t *testing.T) {
-	d, acc := deps(t, nil, nil)
-	d.ServiceGID = 0
-
-	if _, err := Publish(t.Context(), d, enabled()); err != nil {
-		t.Fatal(err)
-	}
-	if acc.passwdGID == 0 {
-		t.Error("the account file was published with root's group")
-	}
-	if acc.passwdGID != defaultServiceGID {
-		t.Errorf("the gid is %d, want the compiled-in default", acc.passwdGID)
 	}
 }
 

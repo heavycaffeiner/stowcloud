@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 )
@@ -131,7 +131,7 @@ func (c *Core) runClaim(claim state.OpClaim) {
 
 	var leaseLost atomic.Bool
 	renewDone := make(chan struct{})
-	task.Go(ctx, "core: operation lease renewer", func() {
+	concurrency.Go(ctx, "core: operation lease renewer", func() {
 		defer close(renewDone)
 		t := time.NewTicker(operationLeaseDuration / 3)
 		defer t.Stop()

@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/secret"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 )
 
 // sessionTokenLen is the entropy of a session token: 256 bits, returned once

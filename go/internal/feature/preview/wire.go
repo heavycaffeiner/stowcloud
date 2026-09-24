@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/preview/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 )
 
 // The RPC codec joining the parent to the jailed worker.
@@ -235,7 +235,7 @@ func (r Response) Encode() []byte {
 	}
 	// The truncation above keeps this comfortably within a uint16, so the
 	// conversion cannot shorten the length.
-	errLen, nerr := num.Narrow[uint16](len(msg))
+	errLen, nerr := number.Narrow[uint16](len(msg))
 	if nerr != nil {
 		errLen, msg = 0, ""
 	}

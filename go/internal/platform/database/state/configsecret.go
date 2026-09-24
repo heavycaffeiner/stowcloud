@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 )
 
 // Settings that happen to be credentials.
@@ -37,7 +37,7 @@ func (d *DB) ReadConfigSecret(ctx context.Context, name string) (ConfigSecret, b
 	if err != nil {
 		return ConfigSecret{}, false, fmt.Errorf("reading a configuration secret: %w", err)
 	}
-	v, err := num.Narrow[uint32](ver)
+	v, err := number.Narrow[uint32](ver)
 	if err != nil {
 		return ConfigSecret{}, false, fmt.Errorf(
 			"the configuration secret %q carries key version %d: %w", name, ver, err)

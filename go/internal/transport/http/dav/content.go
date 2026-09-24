@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/httpheader"
+	httpheader "github.com/heavycaffeiner/stowcloud/go/internal/platform/http/headers"
 )
 
 // KeyOf is how a caller turns an entry into the key its store understands.

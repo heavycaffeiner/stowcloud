@@ -7,8 +7,8 @@ import (
 
 	"golang.org/x/text/encoding/korean"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/uniname"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/pathnames"
 )
 
 // TestParseFunctionsNormalizeAnNFDPathToNFC covers the trust boundary every
@@ -139,7 +139,7 @@ func TestLegacyCP949PathNormalizesToKoreanText(t *testing.T) {
 }
 
 // TestAllASCIIPathTakesTheFastPath proves the fast path splitValidated
-// documents: an all-ASCII path is already normal, so uniname.Components
+// documents: an all-ASCII path is already normal, so pathnames.Components
 // must hand back the exact slice it was given rather than an equal-looking
 // copy, and splitValidated must then return the input string unchanged
 // rather than a joined reconstruction of it.
@@ -152,8 +152,8 @@ func TestAllASCIIPathTakesTheFastPath(t *testing.T) {
 	s := "documents/report.txt"
 
 	comps := strings.Split(s, "/")
-	if normalized := uniname.Components(comps); &normalized[0] != &comps[0] {
-		t.Fatalf("uniname.Components(%v) returned a new slice for an all-ASCII input", comps)
+	if normalized := pathnames.Components(comps); &normalized[0] != &comps[0] {
+		t.Fatalf("pathnames.Components(%v) returned a new slice for an all-ASCII input", comps)
 	}
 
 	got, gotComps, err := splitValidated(s)

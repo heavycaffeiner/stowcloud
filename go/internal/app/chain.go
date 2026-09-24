@@ -12,7 +12,7 @@ import (
 	"net/netip"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/secret"
+	secret "github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/spa"
 )

@@ -16,9 +16,9 @@ import (
 	"testing"
 
 	app "github.com/heavycaffeiner/stowcloud/go/internal/app"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/secret"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
+	num "github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
+	secret "github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 )
 
 const (

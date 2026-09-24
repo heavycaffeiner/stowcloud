@@ -6,7 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
 	"image"
 	"image/color"
 	"image/png"
@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 )
 
 // buildTestWorker compiles the unjailed worker once per run. The jail is
@@ -445,7 +445,7 @@ func TestConcurrentJobsAcrossSlots(t *testing.T) {
 	errs := make(chan error, 9)
 	for range 9 {
 		wg.Add(1)
-		task.Go(t.Context(), "preview: concurrent pool job", func() {
+		concurrency.Go(t.Context(), "preview: concurrent pool job", func() {
 			defer wg.Done()
 			in, out := sourceFile(t, 60, 60), outputFile(t)
 			resp, err := p.Generate(t.Context(), Request{

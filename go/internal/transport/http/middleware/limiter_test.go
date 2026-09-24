@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 )
 
 // stepClock is a clock the test moves by hand, so refill is measured rather
@@ -188,7 +188,7 @@ func TestConcurrentCallersShareOneBucket(t *testing.T) {
 	allowed := 0
 	for range 64 {
 		wg.Add(1)
-		task.Go(context.Background(), "middleware: concurrent limiter caller", func() {
+		concurrency.Go(context.Background(), "middleware: concurrent limiter caller", func() {
 			defer wg.Done()
 			if l.Allow("shared") {
 				mu.Lock()

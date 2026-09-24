@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/aws/smithy-go"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 )
 

@@ -20,7 +20,7 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/auth"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/oidc"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/secret"
+	secret "github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/handler"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/server"

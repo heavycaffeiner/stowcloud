@@ -13,8 +13,8 @@ import (
 
 	"golang.org/x/crypto/argon2"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/secret"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 )
 
 // Params holds a complete Argon2id parameter set. Increasing the cost helps
@@ -231,19 +231,19 @@ func parsePHC(s string) (parsedPHC, bool) {
 		}
 		switch name {
 		case "m":
-			v, nerr := num.Narrow[uint32](n)
+			v, nerr := number.Narrow[uint32](n)
 			if nerr != nil {
 				return parsedPHC{}, false
 			}
 			p.MemoryKiB = v
 		case "t":
-			v, nerr := num.Narrow[uint32](n)
+			v, nerr := number.Narrow[uint32](n)
 			if nerr != nil {
 				return parsedPHC{}, false
 			}
 			p.Iterations = v
 		case "p":
-			v, nerr := num.Narrow[uint8](n)
+			v, nerr := number.Narrow[uint8](n)
 			if nerr != nil {
 				return parsedPHC{}, false
 			}
@@ -263,7 +263,7 @@ func parsePHC(s string) (parsedPHC, bool) {
 	if err != nil || len(key) == 0 || len(key) > maxKeyLen {
 		return parsedPHC{}, false
 	}
-	keyLen, nerr := num.Narrow[uint32](len(key))
+	keyLen, nerr := number.Narrow[uint32](len(key))
 	if nerr != nil {
 		return parsedPHC{}, false
 	}

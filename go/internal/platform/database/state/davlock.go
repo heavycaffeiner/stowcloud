@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/limits"
 )
 
 // ErrLockConflict reports a lock another one already covers.

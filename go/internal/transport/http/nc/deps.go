@@ -14,7 +14,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/search/svc"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/uploads"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
 )
 
 // What this surface needs from the rest of the engine, and the one type that

@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 )
 
 // Everything in this database that rests as ciphertext, walked in one place.
@@ -224,7 +224,7 @@ func scanSealed(row interface{ Scan(...any) error }, kind SealedKind) (SealedRow
 	if err != nil {
 		return SealedRow{}, fmt.Errorf("reading a %s: %w", kind, err)
 	}
-	v, nerr := num.Narrow[uint32](ver)
+	v, nerr := number.Narrow[uint32](ver)
 	if nerr != nil {
 		return SealedRow{}, fmt.Errorf("a %s carries key version %d: %w", kind, ver, nerr)
 	}

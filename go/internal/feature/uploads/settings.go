@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/uploads/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 )
 
 // Settings holds the live chunk floor and default, the two values that can
@@ -52,8 +52,8 @@ func loadSettings(ctx context.Context, st *state.DB, cfgMin, cfgDefault uint64) 
 	if !stored.Override {
 		return s, nil
 	}
-	minBytes, minErr := num.Narrow[uint64](stored.Min)
-	defBytes, defErr := num.Narrow[uint64](stored.Default)
+	minBytes, minErr := number.Narrow[uint64](stored.Min)
+	defBytes, defErr := number.Narrow[uint64](stored.Default)
 	if minErr != nil || defErr != nil {
 		// An unreadable stored pair is no reason to refuse startup. The
 		// configuration's values serve as a working fallback and the override is
@@ -127,8 +127,8 @@ func (e *Engine) ApplySettings(ctx context.Context, minBytes, defaultBytes *uint
 	if newDefault < newMin {
 		return fmt.Errorf("%w: the default chunk is below the minimum", ErrBadRequest)
 	}
-	storedMin, minErr := num.Narrow[int64](newMin)
-	storedDefault, defErr := num.Narrow[int64](newDefault)
+	storedMin, minErr := number.Narrow[int64](newMin)
+	storedDefault, defErr := number.Narrow[int64](newDefault)
 	if minErr != nil || defErr != nil {
 		return fmt.Errorf("%w: a chunk bound is too large to store", ErrBadRequest)
 	}

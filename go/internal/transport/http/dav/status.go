@@ -10,7 +10,7 @@ import (
 	"net/http"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/protocol/limits"
 )
 
 // Turning an error into the status and precondition element a WebDAV client

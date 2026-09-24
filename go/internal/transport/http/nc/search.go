@@ -14,7 +14,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/search/stowcloud"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/search/svc"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	num "github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/apierr"
 	search "github.com/stowcloud/namesearch"
 )

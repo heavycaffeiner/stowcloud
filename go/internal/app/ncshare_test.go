@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/secret"
+	num "github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
+	secret "github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 )
 
 // Public links, from the client's request to a stranger fetching the file.

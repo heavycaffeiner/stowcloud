@@ -1287,6 +1287,7 @@ interface WireSession {
   absolute_ns: string
   ip?: string
   ua?: string
+  ua_display?: string
   current: boolean
 }
 
@@ -1301,6 +1302,7 @@ async function listSessions(): Promise<ActiveSession[]> {
     // unknown device rather than an empty line.
     ip_first: w.ip ?? null,
     ua_first: w.ua ?? null,
+    ua_display: w.ua_display ?? null,
     current: w.current
   }))
 }

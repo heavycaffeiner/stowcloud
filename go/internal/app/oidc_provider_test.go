@@ -24,7 +24,7 @@ import (
 	"time"
 
 	app "github.com/heavycaffeiner/stowcloud/go/internal/app"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
 )
 
 // A fake OpenID Connect provider, real enough to drive the whole flow: real

@@ -9,7 +9,7 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 	"github.com/stowcloud/transfer"
 )
@@ -293,7 +293,7 @@ func (e *Engine) Assemble(
 		}
 	}
 
-	head, herr := num.Narrow[uint64](rw.sess.WriteHead)
+	head, herr := number.Narrow[uint64](rw.sess.WriteHead)
 	if herr != nil {
 		return core.Entry{}, herr
 	}
@@ -315,7 +315,7 @@ func (e *Engine) Assemble(
 		total = head
 	}
 
-	declaredValue, nerr := num.Narrow[int64](total)
+	declaredValue, nerr := number.Narrow[int64](total)
 	if nerr != nil {
 		return core.Entry{}, nerr
 	}

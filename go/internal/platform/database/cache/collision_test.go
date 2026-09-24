@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/cache"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/ident"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 )
 
@@ -270,7 +270,7 @@ func collider(t *testing.T, path string, ino uint64) entry {
 // value that did not fit answers zero, which still separates the candidates
 // from each other by inode number.
 func identOf(ino uint64) ident.Ident {
-	b, err := num.Narrow[int64](ino)
+	b, err := number.Narrow[int64](ino)
 	if err != nil {
 		b = 0
 	}

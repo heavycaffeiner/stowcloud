@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
 )
 
 // ttlCache is one slot with a bounded lifetime, used for the discovery

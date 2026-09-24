@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/auth"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 )
 
 func TestLoginMintsASessionAndRecordsIt(t *testing.T) {
@@ -151,7 +151,7 @@ func TestTheLimiterSurvivesConcurrentAttempts(t *testing.T) {
 	wg.Add(callers)
 	for i := 0; i < callers; i++ {
 		n := i
-		task.Go(ctx, "auth: concurrent login attempt", func() {
+		concurrency.Go(ctx, "auth: concurrent login attempt", func() {
 			defer wg.Done()
 			// Distinct addresses as well as shared ones, so both the bucket
 			// path and the eviction path are hit.

@@ -13,9 +13,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/uniname"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/preview/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/pathnames"
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/charmap"
 )
@@ -96,7 +96,7 @@ const (
 // format's declared byte and entry counts, so underreported metadata cannot
 // make a large directory look small.
 func validateArchiveDirectory(r io.ReaderAt, size int64) error {
-	total, err := num.Narrow[uint64](size)
+	total, err := number.Narrow[uint64](size)
 	if err != nil {
 		return fmt.Errorf("%w: negative size", ErrNotArchive)
 	}
@@ -150,7 +150,7 @@ func validateArchiveDirectory(r io.ReaderAt, size int64) error {
 		if size < zip64EndLength || zip64Offset > uint64(size-zip64EndLength) {
 			return fmt.Errorf("%w: invalid ZIP64 directory offset", ErrNotArchive)
 		}
-		zip64Start, nerr := num.Narrow[int64](zip64Offset)
+		zip64Start, nerr := number.Narrow[int64](zip64Offset)
 		if nerr != nil {
 			return fmt.Errorf("%w: invalid ZIP64 directory offset", ErrNotArchive)
 		}
@@ -208,7 +208,7 @@ func validateCentralDirectory(r io.ReaderAt, offset, end, declaredEntries uint64
 		if remaining < uint64(len(header)) {
 			return fmt.Errorf("%w: trailing bytes in the central directory", ErrNotArchive)
 		}
-		at, nerr := num.Narrow[int64](offset)
+		at, nerr := number.Narrow[int64](offset)
 		if nerr != nil {
 			return fmt.Errorf("%w: a central directory offset is out of range", ErrNotArchive)
 		}
@@ -272,7 +272,7 @@ func ListArchive(ctx context.Context, r io.ReaderAt, size int64) (ArchiveListing
 		// CP437 is the fallback because that is the encoding the zip format
 		// specifies for an entry without the UTF-8 flag; the detector exists
 		// only to catch the East Asian code pages that no zip header declares.
-		cs = uniname.Charset(sample, charmap.CodePage437)
+		cs = pathnames.Charset(sample, charmap.CodePage437)
 	}
 
 	var (
@@ -304,9 +304,9 @@ func ListArchive(ctx context.Context, r io.ReaderAt, size int64) (ArchiveListing
 		// raw central-directory bytes.
 		var name string
 		if archiveNameNeedsDecode(f) {
-			name = uniname.Decode([]byte(f.Name), cs)
+			name = pathnames.Decode([]byte(f.Name), cs)
 		} else {
-			name = uniname.Normalize(f.Name)
+			name = pathnames.Normalize(f.Name)
 		}
 		if !safeArchiveName(name) {
 			out.Skipped++

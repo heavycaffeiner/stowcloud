@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/preview/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
 	"github.com/stowcloud/sandbox-worker"
 )
 

@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/secret"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 )
 
 // Creating, changing and removing accounts. Every path here that changes a

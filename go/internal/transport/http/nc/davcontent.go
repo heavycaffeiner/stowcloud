@@ -14,7 +14,7 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/httpheader"
+	httpheader "github.com/heavycaffeiner/stowcloud/go/internal/platform/http/headers"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/apierr"
 )
 

@@ -18,7 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	app "github.com/heavycaffeiner/stowcloud/go/internal/app"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/server"
 )
@@ -61,7 +61,7 @@ func serve(t *testing.T, e *app.Engine) string {
 		WriteTimeout:      5 * time.Second,
 		IdleTimeout:       5 * time.Second,
 	}
-	task.Go(context.Background(), "test listener", func() { served <- srv.Serve(ln) })
+	concurrency.Go(context.Background(), "test listener", func() { served <- srv.Serve(ln) })
 
 	t.Cleanup(func() {
 		if lerr := ln.Close(); lerr != nil && !errors.Is(lerr, net.ErrClosed) {

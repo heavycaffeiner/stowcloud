@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/protocol/limits"
 )
 
 // Absence and denial answer alike, which is what stops a stranger mapping a

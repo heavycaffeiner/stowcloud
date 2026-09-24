@@ -9,7 +9,7 @@ import (
 	"os"
 	"sync/atomic"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 	"github.com/stowcloud/transfer"
 )
@@ -112,7 +112,7 @@ func (c *cacheSpool) measure() int64 {
 				return true
 			}
 			if st, serr := c.root.Stat(child); serr == nil {
-				if n, nerr := num.Narrow[int64](st.Size); nerr == nil {
+				if n, nerr := number.Narrow[int64](st.Size); nerr == nil {
 					total += n
 				}
 			}
@@ -160,7 +160,7 @@ func (c *cacheSpool) budget() int64 {
 	// Available rather than free: the blocks reserved for root are not ours,
 	// and counting them buys a window that ends in a full disk.
 	const maxInt64 = int64(^uint64(0) >> 1)
-	avail, nerr := num.Narrow[int64](space.Available)
+	avail, nerr := number.Narrow[int64](space.Available)
 	if nerr != nil {
 		avail = maxInt64
 	}
@@ -174,7 +174,7 @@ func (c *cacheSpool) budget() int64 {
 // stepMax caps how much a single merge step copies.
 func (c *cacheSpool) stepMax() uint64 {
 	if n := c.step.Load(); n > 0 {
-		if v, err := num.Narrow[uint64](n); err == nil {
+		if v, err := number.Narrow[uint64](n); err == nil {
 			return v
 		}
 	}
@@ -290,7 +290,7 @@ func (c *cacheSpool) removeSession(dir vfs.SafePath) int64 {
 		if uerr := c.root.Unlink(child); uerr != nil && !errors.Is(uerr, vfs.ErrNotFound) {
 			return true
 		}
-		if n, nerr := num.Narrow[int64](st.Size); nerr == nil {
+		if n, nerr := number.Narrow[int64](st.Size); nerr == nil {
 			freed += n
 		}
 		return true
@@ -366,7 +366,7 @@ func (e *Engine) recoverSession(ctx context.Context, id []byte, cacheDir string,
 	if derr != nil {
 		return derr
 	}
-	frontier, ferr := num.Narrow[uint64](merged)
+	frontier, ferr := number.Narrow[uint64](merged)
 	if ferr != nil {
 		return ferr
 	}

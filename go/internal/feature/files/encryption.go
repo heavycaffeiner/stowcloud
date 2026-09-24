@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 )
 
@@ -97,7 +97,7 @@ func (c *Core) EncryptedShares(ctx context.Context) ([]ShareID, error) {
 		// A stored id too wide for a ShareID is a corrupt row, not a share
 		// to serve, and skipping it keeps one bad row from failing the whole
 		// set for every other share.
-		id, nerr := num.Narrow[uint32](r.Share)
+		id, nerr := number.Narrow[uint32](r.Share)
 		if nerr != nil {
 			c.warn("a share encryption row carries an impossible share id",
 				"share", r.Share, "error", nerr)

@@ -1134,6 +1134,7 @@ let mockSessions: ActiveSession[] = [
     absolute_expiry_ns: String(BigInt(Date.now() + 30 * 24 * 3600 * 1000) * 1_000_000n),
     ip_first: '127.0.0.1',
     ua_first: 'Mock/1.0',
+    ua_display: 'Mock/1.0',
     current: true
   },
   // The current-session badge only means something next to a row without it,
@@ -1145,6 +1146,7 @@ let mockSessions: ActiveSession[] = [
     absolute_expiry_ns: String(BigInt(Date.now() + 26 * 24 * 3600 * 1000) * 1_000_000n),
     ip_first: '192.0.2.44',
     ua_first: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Mobile/15E148 Safari/604.1',
+    ua_display: 'iOS - Safari',
     current: false
   },
   {
@@ -1154,6 +1156,7 @@ let mockSessions: ActiveSession[] = [
     absolute_expiry_ns: String(BigInt(Date.now() + 10 * 24 * 3600 * 1000) * 1_000_000n),
     ip_first: '203.0.113.7',
     ua_first: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+    ua_display: 'Windows - Chrome',
     current: false
   }
 ]

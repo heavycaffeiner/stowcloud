@@ -10,8 +10,8 @@ import (
 	"math"
 	"os"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/limits"
 	"golang.org/x/sys/unix"
 )
 
@@ -363,7 +363,7 @@ func spaceOf(f *os.File) (FsSpace, error) {
 	if err := withFdErr(f, func(fd int) error { return unix.Fstatfs(fd, &sfs) }); err != nil {
 		return FsSpace{}, mapErrno("statfs", err)
 	}
-	bsize, nerr := num.Narrow[uint64](sfs.Bsize)
+	bsize, nerr := number.Narrow[uint64](sfs.Bsize)
 	if nerr != nil {
 		return FsSpace{}, fmt.Errorf("statfs block size: %w", nerr)
 	}

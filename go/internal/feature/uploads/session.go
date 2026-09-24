@@ -9,8 +9,8 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 	"github.com/stowcloud/transfer"
 )
@@ -92,13 +92,13 @@ func (e *Engine) newRow(
 	id SessionID, r core.Resolved, dest vfs.SafePath, spec SessionSpec,
 ) (state.UploadSession, error) {
 	minAtCreation, chunkSize := e.settings.Snapshot()
-	floor, ferr := num.Narrow[int64](minAtCreation)
-	size, serr := num.Narrow[int64](chunkSize)
+	floor, ferr := number.Narrow[int64](minAtCreation)
+	size, serr := number.Narrow[int64](chunkSize)
 	if ferr != nil || serr != nil {
 		return state.UploadSession{}, fmt.Errorf("%w: a chunk setting does not fit", ErrBadRequest)
 	}
 	if spec.ChunkSize != nil {
-		customSize, cerr := num.Narrow[int64](*spec.ChunkSize)
+		customSize, cerr := number.Narrow[int64](*spec.ChunkSize)
 		if cerr != nil {
 			return state.UploadSession{}, fmt.Errorf("%w: a chunk size does not fit", ErrBadRequest)
 		}
@@ -144,7 +144,7 @@ func (e *Engine) newRow(
 		sess.CacheDir = cacheDirName(id)
 	}
 	if spec.TotalLen != nil {
-		n, nerr := num.Narrow[int64](*spec.TotalLen)
+		n, nerr := number.Narrow[int64](*spec.TotalLen)
 		if nerr != nil {
 			return state.UploadSession{}, fmt.Errorf("%w: the declared length does not fit", ErrBadRequest)
 		}
@@ -174,7 +174,7 @@ func (e *Engine) createPart(root vfs.Root, part vfs.SafePath, total *uint64) (*v
 	if total == nil {
 		return f, nil
 	}
-	n, nerr := num.Narrow[int64](*total)
+	n, nerr := number.Narrow[int64](*total)
 	if nerr != nil {
 		return nil, errors.Join(
 			fmt.Errorf("%w: the declared length does not fit", ErrBadRequest), f.Close())
@@ -247,7 +247,7 @@ func (e *Engine) SetLength(ctx context.Context, id SessionID, user core.UserID, 
 		return fmt.Errorf("%w: %d bytes have already landed, past the declared length of %d",
 			ErrBadRequest, received[len(received)-1].Hi, total)
 	}
-	n, nerr := num.Narrow[int64](total)
+	n, nerr := number.Narrow[int64](total)
 	if nerr != nil {
 		return fmt.Errorf("%w: the declared length does not fit", ErrBadRequest)
 	}

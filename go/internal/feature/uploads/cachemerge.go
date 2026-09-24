@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 )
 
@@ -117,7 +117,7 @@ func (e *Engine) mergerFor(id SessionID) *merger {
 	ctx, cancel := context.WithCancel(e.mergeCtx)
 	m := newMerger(cancel)
 	e.mergers[id] = m
-	task.Go(ctx, "upload cache merger", func() {
+	concurrency.Go(ctx, "upload cache merger", func() {
 		defer close(m.done)
 		e.mergeLoop(ctx, id, m)
 	})
@@ -210,7 +210,7 @@ func (e *Engine) mergeStep(ctx context.Context, id SessionID) (bool, error) {
 		unlock()
 		return false, derr
 	}
-	frontier, ferr := num.Narrow[uint64](r.sess.CacheMerged)
+	frontier, ferr := number.Narrow[uint64](r.sess.CacheMerged)
 	if ferr != nil {
 		unlock()
 		return false, ferr
@@ -259,7 +259,7 @@ func (e *Engine) mergeStep(ctx context.Context, id SessionID) (bool, error) {
 		return false, serr
 	}
 	if end > frontier {
-		moved, nerr := num.Narrow[int64](end)
+		moved, nerr := number.Narrow[int64](end)
 		if nerr != nil {
 			return false, nerr
 		}
@@ -282,7 +282,7 @@ func (e *Engine) mergeStep(ctx context.Context, id SessionID) (bool, error) {
 		e.log.Warn("a merged upload cache chunk could not be removed; "+
 			"the sweep will collect it",
 			"session", id.String(), "error", uerr)
-	} else if n, nerr := num.Narrow[int64](next.size); nerr == nil {
+	} else if n, nerr := number.Narrow[int64](next.size); nerr == nil {
 		e.cache.used.Add(-n)
 	}
 	return true, nil
@@ -444,14 +444,14 @@ func (e *Engine) commitCached(
 	}
 	var oldSize int64
 	if st, serr := e.cache.root.Stat(file); serr == nil {
-		oldSize, err = num.Narrow[int64](st.Size)
+		oldSize, err = number.Narrow[int64](st.Size)
 		if err != nil {
 			return err
 		}
 	} else if !errors.Is(serr, vfs.ErrNotFound) {
 		return mapVFSErr(serr)
 	}
-	newSize, nerr := num.Narrow[int64](n)
+	newSize, nerr := number.Narrow[int64](n)
 	if nerr != nil {
 		return nerr
 	}
@@ -495,7 +495,7 @@ func (e *Engine) waitForRoom(ctx context.Context, m *merger, id SessionID, off u
 		if err != nil {
 			return err
 		}
-		merged, nerr := num.Narrow[uint64](r.sess.CacheMerged)
+		merged, nerr := number.Narrow[uint64](r.sess.CacheMerged)
 		if nerr != nil {
 			return nerr
 		}

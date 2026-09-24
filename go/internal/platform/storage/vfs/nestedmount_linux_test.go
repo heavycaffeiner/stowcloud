@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"golang.org/x/sys/unix"
 )
 
@@ -118,7 +118,7 @@ func nestedMountChild(t *testing.T) {
 	// Statfs_t.Type is signed on this platform even though a magic number is
 	// never negative; num.Narrow is this tree's one sanctioned way to cross
 	// that width and signedness rather than a bare conversion.
-	magic, err := num.Narrow[uint64](sfs.Type)
+	magic, err := number.Narrow[uint64](sfs.Type)
 	if err != nil {
 		t.Fatalf("the mount's magic number does not fit a uint64: %v", err)
 	}

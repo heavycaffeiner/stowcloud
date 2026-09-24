@@ -11,9 +11,9 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/ident"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 )
 
@@ -306,8 +306,8 @@ func (s *Service) generate(ctx context.Context, r core.Resolved, key Key, preset
 		if key.Width > 0 && key.Height > 0 {
 			// An exact-size request. Both were clamped into 1..MaxSizedDimension
 			// on the way in, so each narrowing is proven in range beside it.
-			w, werr := num.Narrow[uint16](key.Width)
-			h, herr := num.Narrow[uint16](key.Height)
+			w, werr := number.Narrow[uint16](key.Width)
+			h, herr := number.Narrow[uint16](key.Height)
 			if werr != nil || herr != nil {
 				return fmt.Errorf("%w: a %dx%d box", ErrUnsupported, key.Width, key.Height)
 			}

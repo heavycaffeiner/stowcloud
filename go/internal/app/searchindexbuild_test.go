@@ -12,7 +12,7 @@ import (
 	"time"
 
 	app "github.com/heavycaffeiner/stowcloud/go/internal/app"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
 	searchindex "github.com/stowcloud/namesearch/index"
 )
 

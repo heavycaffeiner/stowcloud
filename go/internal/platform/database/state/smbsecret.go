@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 )
 
 // The file-sharing protocol's credential row and the singleton key version
@@ -86,7 +86,7 @@ func (d *DB) SMBSecretOf(ctx context.Context, user int64) (SMBSecret, error) {
 	if err != nil {
 		return SMBSecret{}, fmt.Errorf("reading an SMB credential: %w", err)
 	}
-	v, nerr := num.Narrow[uint32](ver)
+	v, nerr := number.Narrow[uint32](ver)
 	if nerr != nil {
 		return SMBSecret{}, fmt.Errorf(
 			"the SMB credential of account %d carries key version %d: %w", user, ver, nerr)
@@ -127,7 +127,7 @@ func (d *DB) PassdbRows(ctx context.Context) (out []PassdbRow, err error) {
 			return nil, fmt.Errorf("reading an SMB account: %w", serr)
 		}
 		if ct != nil && ver.Valid {
-			v, nerr := num.Narrow[uint32](ver.Int64)
+			v, nerr := number.Narrow[uint32](ver.Int64)
 			if nerr != nil {
 				// A version outside the range one can take cannot name a key,
 				// and guessing would try the wrong one. The account is
@@ -206,7 +206,7 @@ func readKeyVersion(ctx context.Context, q rowQuerier, query string) (uint32, er
 	if err != nil {
 		return 0, fmt.Errorf("reading the key version: %w", err)
 	}
-	v, nerr := num.Narrow[uint32](ver)
+	v, nerr := number.Narrow[uint32](ver)
 	if nerr != nil {
 		return 0, fmt.Errorf("the key version row carries %d: %w", ver, nerr)
 	}

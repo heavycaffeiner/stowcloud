@@ -32,8 +32,9 @@ import (
 	"sync"
 	"time"
 
+	previewlimits "github.com/heavycaffeiner/stowcloud/go/internal/feature/preview/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/search/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/smb"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/system/jail"
 )
 
@@ -192,7 +193,7 @@ func Defaults() Values {
 	return Values{
 		SearchConcurrentSSD:  limits.ConcurrentSearches,
 		SearchDeadlineSSD:    limits.SearchWalkDeadline,
-		ArchiveMaxConcurrent: limits.ConcurrentArchives,
+		ArchiveMaxConcurrent: previewlimits.ConcurrentArchives,
 		WatchHotSetMax:       defaultWatchHotSet,
 		RatePerSec:           defaultRatePerSec,
 		RateBurst:            defaultRateBurst,

@@ -38,7 +38,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
 	"time"
 )

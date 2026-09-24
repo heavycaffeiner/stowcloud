@@ -12,7 +12,7 @@ import (
 	"golang.org/x/crypto/argon2"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/auth"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 )
 
 func TestAHashVerifiesAndIsNotStaleUnderCurrentParameters(t *testing.T) {
@@ -100,7 +100,7 @@ func TestTheGateBoundsConcurrentInvocations(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(callers)
 	for i := 0; i < callers; i++ {
-		task.Go(ctx, "auth: concurrent hash", func() {
+		concurrency.Go(ctx, "auth: concurrent hash", func() {
 			defer wg.Done()
 			if _, err := f.svc.Hash(ctx, pw(testPassword)); err != nil {
 				t.Errorf("Hash: %v", err)

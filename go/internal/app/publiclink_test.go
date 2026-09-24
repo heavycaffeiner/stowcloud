@@ -17,7 +17,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/auth"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/secret"
+	secret "github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 )
 
 // A link's holder is not an account. Everything below is requested with no

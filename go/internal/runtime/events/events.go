@@ -7,7 +7,7 @@ package events
 import (
 	"context"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/watch"
 )
 
@@ -34,7 +34,7 @@ func Adapt(ctx context.Context, in <-chan watch.InvalEvent, buffer int, callback
 		buffer = 0
 	}
 	out := make(chan Event, buffer)
-	task.Go(ctx, "event translation", func() {
+	concurrency.Go(ctx, "event translation", func() {
 		defer close(out)
 		for {
 			select {

@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/netzone"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/network/zone"
 )
 
 // Config supplies the inputs to rendering. It arrives from operator-controlled
@@ -208,11 +208,11 @@ func checkConfig(cfg Config) error {
 // the address literally instead of the machine discovering it.
 func checkInterfaces(cfg Config) error {
 	for _, spec := range cfg.Interfaces {
-		ip, err := netzone.ParseAddrSpec(spec)
+		ip, err := zone.ParseAddrSpec(spec)
 		if err != nil {
 			return &BindError{Value: spec, Reason: err.Error()}
 		}
-		if !netzone.IsPrivate(ip) && !cfg.AllowPublicBind {
+		if !zone.IsPrivate(ip) && !cfg.AllowPublicBind {
 			return &BindError{
 				Value:  spec,
 				Reason: "not a private address; set smb.allow_public_bind to override",
@@ -367,7 +367,7 @@ func networkScope(cfg Config) (note, ifaces, hostsAllow string) {
 			"  # alone. The admission list stays wide on purpose: narrowing what\n" +
 			"  # smbd binds must not narrow who may reach the address it bound.\n",
 		"lo " + strings.Join(cfg.Interfaces, " "),
-		strings.Join(netzone.PrivateCIDRs(), " ")
+		strings.Join(zone.PrivateCIDRs(), " ")
 }
 
 // renderShare writes one block, dropping the account names it cannot write.

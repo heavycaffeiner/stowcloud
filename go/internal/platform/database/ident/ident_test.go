@@ -5,7 +5,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	num "github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 )
 

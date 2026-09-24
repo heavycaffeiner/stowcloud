@@ -13,7 +13,7 @@ import (
 	app "github.com/heavycaffeiner/stowcloud/go/internal/app"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/secret"
+	secret "github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 )
 
 // A link listing reports the path its owner's client can actually open.

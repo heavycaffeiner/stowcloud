@@ -10,8 +10,8 @@ import (
 	"sync"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/cache"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/journal"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
@@ -105,7 +105,7 @@ type Core struct {
 	homeOnce sync.Mutex
 
 	// jobs tracks request-detached work and the durable dispatcher.
-	jobs         task.Group
+	jobs         concurrency.Group
 	jobsCtx      context.Context
 	jobsStop     context.CancelFunc
 	jobStartOnce sync.Once

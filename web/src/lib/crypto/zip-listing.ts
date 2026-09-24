@@ -15,9 +15,9 @@ import { ciphertextSpanForRange, decryptPlaintextRange, plaintextSizeFromCiphert
 // it purely as a caching granularity).
 const BLOCK_SIZE = 65536
 
-// Matches limits.ArchiveEntriesListed in go/internal/kit/limits/limits.go.
-// same cap the plain-share listing enforces, so an encrypted archive is not
-// disclosed to a different degree than a plain one.
+// Matches limits.ArchiveEntriesListed in go/internal/feature/preview/limits.
+// The plain-share listing uses the same cap, so encrypted archives do not
+// disclose more than plain archives.
 const MAX_ENTRIES = 10_000
 
 // Matches maxArchiveNameBytes in go/internal/feature/preview/archive.go.

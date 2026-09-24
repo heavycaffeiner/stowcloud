@@ -16,7 +16,7 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/admin/settings/check"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/auth"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/secret"
+	secret "github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 )
 
 // The door is tested against a scripted authenticator rather than a real auth

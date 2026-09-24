@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/auth"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 )
 
 // ringFile renders a key ring file holding the given versions, so a test can
@@ -17,7 +17,7 @@ import (
 // one to be interrupted.
 func ringFile(t *testing.T, keys map[uint32][32]byte, order []uint32) []byte {
 	t.Helper()
-	count, err := num.Narrow[uint16](len(order))
+	count, err := number.Narrow[uint16](len(order))
 	if err != nil {
 		t.Fatalf("a fixture ring of %d keys: %v", len(order), err)
 	}

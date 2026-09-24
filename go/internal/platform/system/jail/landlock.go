@@ -10,7 +10,7 @@ import (
 	"runtime"
 	"unsafe"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"golang.org/x/sys/unix"
 )
 
@@ -186,7 +186,7 @@ func addPathBeneath(ruleset *os.File, g Grant, handled uint64) error {
 	}
 	defer closeAfter(target, "landlock grant path")
 
-	parent, err := num.Narrow[int32](int(target.Fd()))
+	parent, err := number.Narrow[int32](int(target.Fd()))
 	runtime.KeepAlive(target)
 	if err != nil {
 		return fmt.Errorf("landlock grant %s: %w", g.Path, err)

@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 )
 
 func quiet() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
@@ -64,7 +64,7 @@ func serve(t *testing.T, h Handler) string {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
-	task.Go(ctx, "smb agent under test", func() {
+	concurrency.Go(ctx, "smb agent under test", func() {
 		done <- Serve(ctx, socket, h, dir, clock.System(), quiet())
 	})
 
@@ -180,7 +180,7 @@ func TestAnOversizedRequestIsRefused(t *testing.T) {
 	// 8 MiB with no newline, which is 2048 times the request bound.
 	const flood = 8 << 20
 	chunk := []byte(strings.Repeat("x", 1<<16))
-	task.Go(t.Context(), "smb agent flood writer", func() {
+	concurrency.Go(t.Context(), "smb agent flood writer", func() {
 		for sent := 0; sent < flood; sent += len(chunk) {
 			if _, werr := conn.Write(chunk); werr != nil {
 				return
@@ -232,7 +232,7 @@ func TestATruncatedRequestIsNotParsed(t *testing.T) {
 	// is the refusal working rather than a test failure, so what is asserted is
 	// the answer and the handler count.
 	req := []byte(`{"op":"apply"}` + strings.Repeat(" ", MaxRequestBytes*4))
-	task.Go(t.Context(), "smb agent truncation writer", func() {
+	concurrency.Go(t.Context(), "smb agent truncation writer", func() {
 		_, _ = conn.Write(req) //nolint:errcheck // the refusal closes the socket mid-write; that reset is the assertion.
 	})
 
@@ -317,7 +317,7 @@ func TestTheClientRefusesAnOversizedReport(t *testing.T) {
 	}
 	defer closeQuietly(ln)
 
-	task.Go(t.Context(), "smb oversized report writer", func() {
+	concurrency.Go(t.Context(), "smb oversized report writer", func() {
 		conn, aerr := ln.Accept()
 		if aerr != nil {
 			return
@@ -392,7 +392,7 @@ func TestTheDeadlineReachesTheConnection(t *testing.T) {
 	defer closeQuietly(ln)
 
 	accepted := make(chan net.Conn, 1)
-	task.Go(t.Context(), "smb silent agent", func() {
+	concurrency.Go(t.Context(), "smb silent agent", func() {
 		conn, aerr := ln.Accept()
 		if aerr != nil {
 			return
@@ -433,7 +433,7 @@ func TestAStaleSocketFileDoesNotBlockTheBind(t *testing.T) {
 	defer cancel()
 
 	done := make(chan error, 1)
-	task.Go(ctx, "smb agent over a stale socket", func() {
+	concurrency.Go(ctx, "smb agent over a stale socket", func() {
 		done <- Serve(ctx, socket, &stubHandler{}, dir, clock.System(), quiet())
 	})
 

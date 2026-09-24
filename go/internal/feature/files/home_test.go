@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
 )
 
@@ -213,7 +213,7 @@ func TestConcurrentEnsureHomeProducesOneHome(t *testing.T) {
 	var wg sync.WaitGroup
 	for range 8 {
 		wg.Add(1)
-		task.Go(ctx, "home: concurrent ensure", func() {
+		concurrency.Go(ctx, "home: concurrent ensure", func() {
 			defer wg.Done()
 			if err := c.ensureHome(ctx, 1); err != nil {
 				t.Errorf("concurrent ensureHome: %v", err)

@@ -7,7 +7,7 @@ import (
 
 	"golang.org/x/crypto/chacha20poly1305"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 )
 
 // Everything encrypted at rest travels as nonce(24) || ciphertext under
@@ -79,7 +79,7 @@ func openWith(key [keyLen]byte, blob, aad []byte) ([]byte, error) {
 // this database can hold, so it is an error rather than a different eight
 // bytes that would silently fail to open.
 func aadUser(prefix string, user int64, keyVer uint32) ([]byte, error) {
-	id, err := num.Narrow[uint64](user)
+	id, err := number.Narrow[uint64](user)
 	if err != nil {
 		return nil, fmt.Errorf("account %d cannot be bound to a sealed record: %w", user, err)
 	}

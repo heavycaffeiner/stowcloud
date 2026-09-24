@@ -5,7 +5,7 @@ package svc
 import (
 	"context"
 	"errors"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/search/limits"
 	search "github.com/stowcloud/namesearch"
 	"github.com/stowcloud/namesearch/index"
 	"log/slog"

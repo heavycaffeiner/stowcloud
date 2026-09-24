@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/limits"
 )
 
 func parseSafe(t *testing.T, s string) SafePath {

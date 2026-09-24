@@ -1,6 +1,7 @@
 import type { MouseEventHandler, ReactNode } from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { Icon } from './Icon'
+import { useComponentState } from '../store/use-component-state'
 
 interface IconButtonElement extends HTMLElement {
   updateComplete?: Promise<unknown>
@@ -49,8 +50,8 @@ export function IconButton({
 
   const wrapperRef = useRef<HTMLSpanElement>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [shown, setShown] = useState(false)
-  const [position, setPosition] = useState({ left: 0, top: 0 })
+  const [tooltip, setTooltip] = useComponentState({ shown: false, position: { left: 0, top: 0 } })
+  const { shown, position } = tooltip
 
   const clearTimer = () => {
     if (timerRef.current !== null) {
@@ -60,13 +61,13 @@ export function IconButton({
   }
   const hide = () => {
     clearTimer()
-    setShown(false)
+    setTooltip((state) => ({ ...state, shown: false }))
   }
   const place = () => {
     const button = wrapperRef.current?.querySelector<HTMLElement>('mdui-button-icon')
     const rect = button?.getBoundingClientRect()
     if (!rect) return
-    setPosition({ left: rect.left + rect.width / 2, top: rect.bottom + EDGE_MARGIN_PX })
+    setTooltip((state) => ({ ...state, position: { left: rect.left + rect.width / 2, top: rect.bottom + EDGE_MARGIN_PX } }))
   }
   const show = (delay: number) => {
     if (disabled) return
@@ -74,7 +75,7 @@ export function IconButton({
     timerRef.current = setTimeout(() => {
       timerRef.current = null
       place()
-      setShown(true)
+      setTooltip((state) => ({ ...state, shown: true }))
     }, delay)
   }
 

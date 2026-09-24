@@ -25,7 +25,7 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/admin/settings/check"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/secret"
+	secret "github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/handler"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/server"

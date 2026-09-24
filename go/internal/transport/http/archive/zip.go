@@ -23,7 +23,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	num "github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 )
 
 // ErrName is an entry name this writer will not put in an archive.

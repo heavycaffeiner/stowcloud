@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 )
 
 // Quota is the per-user byte ledger. It is a separate value rather than
@@ -28,7 +28,7 @@ func NewQuota(db *DB) *Quota { return &Quota{db: db} }
 // volume would block uploads for a reason that has nothing to do with the
 // ledger.
 func (q *Quota) Reserve(ctx context.Context, user int64, additional uint64) (bool, error) {
-	delta, err := num.Narrow[int64](additional)
+	delta, err := number.Narrow[int64](additional)
 	if err != nil {
 		return false, fmt.Errorf("reserving %d bytes for user %d: %w", additional, user, err)
 	}

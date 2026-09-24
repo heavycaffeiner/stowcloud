@@ -1,42 +1,38 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef } from 'react'
 import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { swReady } from '../lib/crypto/download-sw'
 import { useI18n } from '../lib/i18n/use-i18n'
-import { startLiveInvalidation } from '../lib/query/live'
 import { isUnauthenticated, logoutMutation, screenOf, sessionQuery, setupRequiredQuery } from '../lib/query/session'
 import { openSearch as openSearchStore, search, searchTarget } from '../lib/store/search.store'
-import { COMPACT_MAX_PX, ui } from '../lib/store/ui.store'
+import { ui } from '../lib/store/ui.store'
 import { useStore } from '../lib/store/use-store'
-import { JobTray } from '../lib/ui/JobTray'
+import { JobTray } from '../features/jobs/JobTray'
 import { NavigationBar, type NavigationBarItem } from '../lib/ui/NavigationBar'
-import { NavigationDrawer, type NavItem, type RootItem } from '../lib/ui/NavigationDrawer'
-import { SearchSheet } from '../lib/ui/SearchSheet'
-import { Snackbar } from '../lib/ui/Snackbar'
+import { NavigationDrawer, type NavItem, type RootItem } from '../features/account/navigation/NavigationDrawer'
+import { SearchSheet } from '../features/search/SearchSheet'
 import { Icon } from '../lib/ui/Icon'
-import { UploadTray } from '../lib/ui/UploadTray'
+import { UploadTray } from '../features/uploads/UploadTray'
 import './shell.css'
+import { useRouteStore } from './use-route-store'
+import {
+  browsePathFromUrl,
+  useAccountMenuDismissal,
+  useBrowsePathState,
+  useCompactResize,
+  useShellKeyboardShortcuts,
+  useShellLiveInvalidation,
+  useShellRouteTransitions,
+  useTrayGeometry,
+  type ShellState
+} from './shell/use-shell-lifecycle'
 
 /** Where the create menu should open, in viewport coordinates. `align` says
- *  which edge `x` refers to: a left-hand trigger anchors its left edge, a
- *  right-hand one its right. */
+ * which edge `x` refers to: a left-hand trigger anchors its left edge, a
+ * right-hand one its right. */
 export interface NewActionAnchor {
   readonly x: number
   readonly y: number
   readonly align: 'start' | 'end'
-}
-
-function isBrowsePathname(pathname: string): boolean {
-  return pathname === '/b' || pathname.startsWith('/b/')
-}
-
-function browsePathFromUrl(pathname: string): string | null {
-  if (!isBrowsePathname(pathname)) return null
-  try {
-    return decodeURI(pathname.slice('/b'.length) || '/')
-  } catch {
-    return pathname.slice('/b'.length) || '/'
-  }
 }
 
 export function AppShell() {
@@ -56,34 +52,20 @@ export function AppShell() {
     setupPending: definitiveFailure && setup.isPending,
     setupRequired: setup.data === true
   })
-  const [lastBrowsePath, setLastBrowsePath] = useState<string | null>(null)
-  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false)
-  const [folderSelectorOpen, setFolderSelectorOpen] = useState(false)
-  const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  const [shell, setShell] = useRouteStore<ShellState>({ lastBrowsePath: null, mobileDrawerOpen: false, folderSelectorOpen: false, accountMenuOpen: false })
+  const { lastBrowsePath, mobileDrawerOpen, folderSelectorOpen, accountMenuOpen } = shell
   const trayStackRef = useRef<HTMLDivElement | null>(null)
   const accountMenuRef = useRef<HTMLDivElement | null>(null)
   const logout = useMutation(logoutMutation())
 
-  // A menu that outlives the click that opened it traps the pointer, so a
-  // press anywhere else closes it.
-  useEffect(() => {
-    if (!accountMenuOpen) return
-    const onPointerDown = (event: PointerEvent): void => {
-      if (!accountMenuRef.current?.contains(event.target as Node)) setAccountMenuOpen(false)
-    }
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setAccountMenuOpen(false)
-    }
-    window.addEventListener('pointerdown', onPointerDown, true)
-    window.addEventListener('keydown', onKeyDown)
-    return () => {
-      window.removeEventListener('pointerdown', onPointerDown, true)
-      window.removeEventListener('keydown', onKeyDown)
-    }
-  }, [accountMenuOpen])
+  useCompactResize()
+  useAccountMenuDismissal(accountMenuOpen, accountMenuRef, setShell)
+  useShellRouteTransitions(compact, location.pathname, location.search, screen, setShell)
+  useBrowsePathState(location.pathname, location.search, setShell)
+  useShellLiveInvalidation(screen)
 
   const signOut = (): void => {
-    setAccountMenuOpen(false)
+    setShell({ accountMenuOpen: false })
     logout.mutate(undefined, {
       onSettled: (result) => {
         // Single sign-on ends the provider's session through its own URL; a
@@ -94,38 +76,13 @@ export function AppShell() {
     })
   }
 
-  useEffect(() => {
-    const resize = (): void => ui.setCompact(window.innerWidth < COMPACT_MAX_PX)
-    window.addEventListener('resize', resize)
-    resize()
-    return () => window.removeEventListener('resize', resize)
-  }, [])
-
-  useEffect(() => {
-    setMobileDrawerOpen(false)
-    setFolderSelectorOpen(false)
-  }, [compact, location.pathname, location.search, screen])
-
-  useEffect(() => {
-    const browsePath = browsePathFromUrl(location.pathname)
-    if (browsePath !== null) setLastBrowsePath(`${browsePath}${location.search}`)
-  }, [location.pathname, location.search])
-
-  useEffect(() => {
-    if (screen !== 'browser') return
-    const stop = startLiveInvalidation()
-    void swReady()
-    return stop
-  }, [screen])
-
   const roots = useMemo<RootItem[]>(() => (session.data?.roots ?? []).map((root) => ({ id: root.label, label: root.label, icon: 'folder', brokenReason: root.broken_reason })), [session.data?.roots])
   const rootItems = roots
   const browsePath = browsePathFromUrl(location.pathname)
   const browseTarget = (): string => {
-    const current = browsePath
     const rootLabels = new Set(rootItems.map((item) => item.id))
     const valid = (path: string | null): path is string => path === '/' || (!!path && rootLabels.has(path.split('/').filter(Boolean)[0] ?? ''))
-    if (valid(current)) return current
+    if (valid(browsePath)) return browsePath
     const previous = lastBrowsePath?.split('?')[0] ?? null
     if (valid(previous)) return previous
     return rootItems.length > 0 ? `/${rootItems[0].id}` : '/'
@@ -136,44 +93,14 @@ export function AppShell() {
   const activeRoot = browsePath?.split('/').filter(Boolean)[0] ?? ''
 
   const openSearch = (): void => {
-    setMobileDrawerOpen(false)
-    setFolderSelectorOpen(false)
+    setShell({ mobileDrawerOpen: false, folderSelectorOpen: false })
     const target = searchTarget(browseScope)
     if (target) void navigate(target)
     else openSearchStore(browseScope)
   }
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (screen !== 'browser') return
-      const isInput = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || (event.target instanceof HTMLElement && event.target.isContentEditable)
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
-        event.preventDefault()
-        openSearch()
-      } else if (!isInput && event.key === '/' && !event.ctrlKey && !event.metaKey && !event.altKey) {
-        event.preventDefault()
-        openSearch()
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [location.pathname, navigate, screen, browseScope])
-
-  useEffect(() => {
-    const element = trayStackRef.current
-    if (!element) return
-    const publish = (): void => {
-      const top = element.offsetHeight > 0 ? `${window.innerHeight - element.getBoundingClientRect().top + 12}px` : '0px'
-      document.documentElement.style.setProperty('--sc-tray-stack-top', top)
-    }
-    const observer = new ResizeObserver(publish)
-    observer.observe(element)
-    publish()
-    return () => {
-      observer.disconnect()
-      document.documentElement.style.removeProperty('--sc-tray-stack-top')
-    }
-  }, [screen])
+  useShellKeyboardShortcuts(screen, openSearch)
+  useTrayGeometry(trayStackRef, screen === 'browser')
 
   const navItems = useMemo<NavItem[]>(() => {
     const items: NavItem[] = [
@@ -200,20 +127,17 @@ export function AppShell() {
 
   const navigateTo = (id: string, href?: string): void => {
     if (id === 'files') {
-      setMobileDrawerOpen(false)
-      setFolderSelectorOpen(false)
+      setShell({ mobileDrawerOpen: false, folderSelectorOpen: false })
       void navigate(browseHref(browseTarget()))
       return
     }
     if (id === 'more') {
-      setFolderSelectorOpen(false)
-      setMobileDrawerOpen((open) => !open)
+      setShell((current) => ({ folderSelectorOpen: false, mobileDrawerOpen: !current.mobileDrawerOpen }))
       return
     }
     const target = href ?? navItems.find((item) => item.id === id)?.href
     if (target) {
-      setMobileDrawerOpen(false)
-      setFolderSelectorOpen(false)
+      setShell({ mobileDrawerOpen: false, folderSelectorOpen: false })
       void navigate(target)
     }
   }
@@ -309,7 +233,7 @@ export function AppShell() {
                 aria-label={session.data?.user.display_name || session.data?.user.name || 'User'}
                 aria-haspopup="menu"
                 aria-expanded={accountMenuOpen}
-                onClick={() => setAccountMenuOpen((open) => !open)}
+                onClick={() => setShell((current) => ({ accountMenuOpen: !current.accountMenuOpen }))}
               >
                 <span className="sc-shell-header__avatar">{userInitial}</span>
               </button>
@@ -318,7 +242,7 @@ export function AppShell() {
                   <div className="sc-shell-header__account-name">
                     {session.data?.user.display_name || session.data?.user.name}
                   </div>
-                  <button type="button" role="menuitem" onClick={() => { setAccountMenuOpen(false); navigateTo('settings', '/settings') }}>
+                  <button type="button" role="menuitem" onClick={() => { setShell({ accountMenuOpen: false }); navigateTo('settings', '/settings') }}>
                     <Icon name="settings" size={18} />
                     {t('common.settings')}
                   </button>
@@ -358,7 +282,7 @@ export function AppShell() {
             items={compactItems}
             active={compactActive}
             onselect={(id) => {
-              if (id === 'more') setMobileDrawerOpen((open) => !open)
+              if (id === 'more') setShell((current) => ({ mobileDrawerOpen: !current.mobileDrawerOpen }))
               else navigateTo(id, compactItems.find((item) => item.id === id)?.href)
             }}
           />
@@ -370,9 +294,9 @@ export function AppShell() {
             active={activeRoot}
             folderSelectorOnly
             overlay
-            onclose={() => setFolderSelectorOpen(false)}
+            onclose={() => setShell({ folderSelectorOpen: false })}
             onselect={(root) => {
-              setFolderSelectorOpen(false)
+              setShell({ folderSelectorOpen: false })
               void navigate(`/b/${encodeURIComponent(root.id)}`)
             }}
           />
@@ -386,18 +310,18 @@ export function AppShell() {
             items={rootItems}
             active={activeRoot}
             userInitial={userInitial}
-            onclose={() => setMobileDrawerOpen(false)}
+            onclose={() => setShell({ mobileDrawerOpen: false })}
             onselect={(root) => {
-              setMobileDrawerOpen(false)
+              setShell({ mobileDrawerOpen: false })
               void navigate(`/b/${encodeURIComponent(root.id)}`)
             }}
             onnavselect={(item) => {
-              setMobileDrawerOpen(false)
+              setShell({ mobileDrawerOpen: false })
               navigateTo(item.id, item.href)
             }}
             onsearch={openSearch}
             onNew={activeNav === 'files' ? (trigger) => {
-              setMobileDrawerOpen(false)
+              setShell({ mobileDrawerOpen: false })
               triggerNewAction(trigger)
             } : undefined}
           />
@@ -408,7 +332,6 @@ export function AppShell() {
         <JobTray />
         <UploadTray />
       </div>
-      <Snackbar />
       <SearchSheet open={searchOpen && !compact} scope={searchScope} onclose={() => search.close()} />
     </>
   )

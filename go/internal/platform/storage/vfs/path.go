@@ -16,8 +16,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/uniname"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/pathnames"
 )
 
 // Vpath is the wire form a client names a path by: "{share label}/{rest}".
@@ -239,7 +239,7 @@ func checkComponentCount(n int) error {
 // than it started as; the per-component limits.NameBytes bound inside
 // validateExisting is therefore checked against the bytes that actually
 // reach the kernel, not the bytes the client sent. When every component
-// was already normal, uniname.Components hands back the same slice it was
+// was already normal, pathnames.Components hands back the same slice it was
 // given, and this returns the input string unchanged rather than paying
 // for a join that would only reproduce it.
 func splitValidated(s string) (string, []string, error) {
@@ -256,7 +256,7 @@ func splitValidated(s string) (string, []string, error) {
 		return "", nil, err
 	}
 	comps := strings.Split(s, "/")
-	normalized := uniname.Components(comps)
+	normalized := pathnames.Components(comps)
 	for _, c := range normalized {
 		if err := validateExisting(c); err != nil {
 			return "", nil, err
@@ -449,7 +449,7 @@ func (p SafePath) Parent() SafePath {
 // where normalization is the identity, so skipping it costs nothing and
 // keeps JoinControl free of a dependency the other two already carry.
 func (p SafePath) Join(name string) (SafePath, error) {
-	name = uniname.Normalize(name)
+	name = pathnames.Normalize(name)
 	if err := validateCreatable(name, true); err != nil {
 		return SafePath{}, err
 	}

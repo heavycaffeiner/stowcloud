@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
 )
 
@@ -239,7 +239,7 @@ func TestOnlyOneClaimantWinsATOTPStep(t *testing.T) {
 	)
 	wg.Add(racers)
 	for i := 0; i < racers; i++ {
-		task.Go(ctx, "state: concurrent step claim", func() {
+		concurrency.Go(ctx, "state: concurrent step claim", func() {
 			defer wg.Done()
 			claimed, err := d.ClaimTOTPStep(ctx, user, 1000, 999, 1)
 			mu.Lock()
@@ -307,7 +307,7 @@ func TestARecoveryCodeIsSingleUseUnderConcurrency(t *testing.T) {
 	)
 	wg.Add(racers)
 	for i := 0; i < racers; i++ {
-		task.Go(ctx, "state: concurrent code redemption", func() {
+		concurrency.Go(ctx, "state: concurrent code redemption", func() {
 			defer wg.Done()
 			used, err := d.ConsumeRecoveryCode(ctx, user, []byte("one"))
 			if err != nil {

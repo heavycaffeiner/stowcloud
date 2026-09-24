@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/dbfile"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/journal"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"

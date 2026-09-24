@@ -7,8 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
 )
 
 // An expired ticket is not fetchable, and does not sit in the map forever.
@@ -27,7 +26,7 @@ func TestAnExpiredTicketIsGone(t *testing.T) {
 		t.Fatal("a live ticket is not fetchable")
 	}
 
-	s.clk = clock.Fixed(now.Add(limits.ArchiveTicketTTL + time.Second))
+	s.clk = clock.Fixed(now.Add(archiveTicketTTL + time.Second))
 	if _, ok := s.Get("t", 13, KindArchive); ok {
 		t.Error("an expired ticket is still fetchable")
 	}
@@ -65,7 +64,7 @@ func TestATicketBelongsToItsOwner(t *testing.T) {
 // the store full.
 func TestAFullStoreRefusesTheMint(t *testing.T) {
 	s := NewTickets(clock.Fixed(time.Unix(1_700_000_000, 0)))
-	for i := range limits.ArchiveTicketsHeld {
+	for i := range archiveTicketsHeld {
 		if ok := s.Put(strconv.Itoa(i), &Ticket{Kind: KindArchive, Name: "a.zip", Owner: 1}); !ok {
 			t.Fatalf("ticket %d was refused below the bound", i)
 		}

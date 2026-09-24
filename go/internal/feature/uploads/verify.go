@@ -12,7 +12,7 @@ import (
 
 	"lukechampine.com/blake3"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 	"github.com/stowcloud/transfer"
 )
@@ -110,7 +110,7 @@ func VerifyWholeFile(f *vfs.File, v Verify, length uint64) error {
 		if remaining := length - at; remaining < want {
 			want = remaining
 		}
-		off, oerr := num.Narrow[int64](at)
+		off, oerr := number.Narrow[int64](at)
 		if oerr != nil {
 			return fmt.Errorf("verifying the upload: %w", oerr)
 		}
@@ -119,7 +119,7 @@ func VerifyWholeFile(f *vfs.File, v Verify, length uint64) error {
 			if _, werr := h.Write(buf[:n]); werr != nil {
 				return fmt.Errorf("verifying the upload: %w", werr)
 			}
-			read, nerr := num.Narrow[uint64](n)
+			read, nerr := number.Narrow[uint64](n)
 			if nerr != nil {
 				return fmt.Errorf("verifying the upload: %w", nerr)
 			}

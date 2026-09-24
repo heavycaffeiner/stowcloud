@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/dbfile"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
 )
@@ -258,7 +258,7 @@ func TestConsumeDownloadHonorsTheCapUnderConcurrency(t *testing.T) {
 	errs := make([]error, 16)
 	for i := range errs {
 		wg.Add(1)
-		task.Go(ctx, "link: racing download", func() {
+		concurrency.Go(ctx, "link: racing download", func() {
 			defer wg.Done()
 			ok, cerr := d.ConsumeDownload(ctx, id)
 			errs[i] = cerr

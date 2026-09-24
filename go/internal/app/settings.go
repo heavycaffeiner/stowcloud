@@ -92,7 +92,7 @@ func (e *Engine) loadSettings(ctx context.Context) {
 	// attaches or detaches it, and its updater, immediately: this is what
 	// makes turning search.name_index_enabled off actually drop the live
 	// index instead of leaving it running under a setting that says off.
-	e.openSearchIndex(ctx)
+	e.searchRuntime.OpenIndex(ctx)
 
 	// Whether an account with a second factor may reach the file-sharing
 	// protocol. The value was loaded and then dropped, so an operator who set

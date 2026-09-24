@@ -32,7 +32,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
 )
 
 // The bounds a deployment gets when it names none.

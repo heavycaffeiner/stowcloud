@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/dbfile"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 )
 
 // The grant table's write half. Reading is the evaluator's hot path and is
@@ -188,10 +188,10 @@ func scanGrantRows(rows *sql.Rows) ([]GrantRow, error) {
 		}
 		g.User, g.Group = user, group
 		var err error
-		if g.Allow, err = num.Narrow[uint16](allow); err != nil {
+		if g.Allow, err = number.Narrow[uint16](allow); err != nil {
 			return nil, fmt.Errorf("grant %d carries allow bits %d: %w", g.ID, allow, err)
 		}
-		if g.Deny, err = num.Narrow[uint16](deny); err != nil {
+		if g.Deny, err = number.Narrow[uint16](deny); err != nil {
 			return nil, fmt.Errorf("grant %d carries deny bits %d: %w", g.ID, deny, err)
 		}
 		if label != nil {

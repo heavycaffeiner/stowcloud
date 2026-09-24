@@ -7,9 +7,10 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
+	core "github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/uploads/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
+	protocolimits "github.com/heavycaffeiner/stowcloud/go/internal/platform/protocol/limits"
 	"github.com/stowcloud/transfer"
 )
 
@@ -106,7 +107,7 @@ func checkTransferID(tid string) error {
 	case tid == "":
 		return fmt.Errorf("%w: a transfer id cannot be empty", ErrBadRequest)
 	case len(tid) > aliasMaxBytes:
-		return limits.Exceed("transfer id bytes", aliasMaxBytes, int64(len(tid)))
+		return protocolimits.Exceed("transfer id bytes", aliasMaxBytes, int64(len(tid)))
 	}
 	for i := 0; i < len(tid); i++ {
 		if b := tid[i]; b <= 0x1F || b == 0x7F || b == '/' {

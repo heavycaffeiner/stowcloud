@@ -17,7 +17,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/admin/settings/runtimecfg"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	task "github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/watch"
 	runtimeevents "github.com/heavycaffeiner/stowcloud/go/internal/runtime/events"
@@ -45,10 +45,10 @@ func (e *Engine) startEvents(ctx context.Context, cfg watchSettings) {
 		Backend:        cfg.Backend,
 		HotSetMax:      cfg.HotSetMax,
 		FullThreshold:  cfg.FullThreshold,
-		OnCoverageLost: e.markSearchIndexIncomplete,
+		OnCoverageLost: e.searchRuntime.MarkIncomplete,
 	}, e.clock, events)
 	if err != nil {
-		e.markSearchIndexIncomplete()
+		e.searchRuntime.MarkIncomplete()
 		e.logger.Warn("change notifications are unavailable; clients fall back to polling",
 			"error", err)
 		return
@@ -77,7 +77,7 @@ func (e *Engine) startEvents(ctx context.Context, cfg watchSettings) {
 			// index sooner than the socket fan-out costs nothing, whereas the
 			// reverse would leave the index a step behind every client that
 			// requeries off the push it just received.
-			e.offerToSearchUpdater(ev.Share, ev.Dir, ev.All)
+			e.searchRuntime.Offer(ev.Share, ev.Dir, ev.All)
 		},
 	)
 	e.events = server.NewEventHub(ctx, server.EventDeps{

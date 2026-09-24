@@ -1,7 +1,8 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useRef } from 'react'
 import type { HTMLAttributes, KeyboardEvent, ReactNode } from 'react'
 import { defaultRangeExtractor, elementScroll, observeElementOffset, observeElementRect, useVirtualizer } from '@tanstack/react-virtual'
 import type { Range, Rect, Virtualizer } from '@tanstack/react-virtual'
+import { useComponentState } from '../store/use-component-state'
 
 type ItemKey = string | number
 type ListVirtualizer = Virtualizer<HTMLElement, HTMLLIElement>
@@ -143,9 +144,8 @@ export function VirtualList<T>({ items, itemKey, estimateSize, renderItem, itemP
   // subscriptions, row measurements or full-data key indexes.
   const windowed = items.length > SMALL_LIST_LIMIT
   const listRef = useRef<HTMLUListElement>(null)
-  const [layout, setLayout] = useState({ owner: null as HTMLElement | null, visible: false, margin: 0, gap: 0, top: 0, bottom: 0, left: 0, right: 0, borders: 0 })
-  const [focusedKey, setFocusedKey] = useState<ItemKey | null>(null)
-  const [focusRequest, setFocusRequest] = useState<{ key: ItemKey; backwards: boolean } | null>(null)
+  const [interaction, setInteraction] = useComponentState({ layout: { owner: null as HTMLElement | null, visible: false, margin: 0, gap: 0, top: 0, bottom: 0, left: 0, right: 0, borders: 0 }, focusedKey: null as ItemKey | null, focusRequest: null as { key: ItemKey; backwards: boolean } | null })
+  const { layout, focusedKey, focusRequest } = interaction
   const keyed = useMemo(() => {
     const keys: ItemKey[] = []
     const indices = new Map<ItemKey, number>()
@@ -213,7 +213,7 @@ export function VirtualList<T>({ items, itemKey, estimateSize, renderItem, itemP
       const px = (value: string) => Number.parseFloat(value) || 0
       const margin = owner === list ? 0 : list.getBoundingClientRect().top + list.clientTop + scrollOffset(owner) - (documentScroller(owner) ? 0 : owner.getBoundingClientRect().top + owner.clientTop)
       const next = { owner, visible: list.getClientRects().length > 0, margin, gap: px(css.rowGap), top: px(css.paddingTop), bottom: px(css.paddingBottom), left: px(css.paddingLeft), right: px(css.paddingRight), borders: px(css.borderTopWidth) + px(css.borderBottomWidth) }
-      setLayout((previous) => Object.keys(next).every((key) => previous[key as keyof typeof next] === next[key as keyof typeof next]) ? previous : next)
+      setInteraction((previous) => ({ ...previous, layout: Object.keys(next).every((key) => previous.layout[key as keyof typeof next] === next[key as keyof typeof next]) ? previous.layout : next }))
     }
     const schedule = () => { if (!frame) frame = requestAnimationFrame(update) }
     const observer = new ResizeObserver(schedule)
@@ -265,7 +265,7 @@ export function VirtualList<T>({ items, itemKey, estimateSize, renderItem, itemP
     if (!focusRequest || !listRef.current) return
     const index = keyed.indices.get(focusRequest.key)
     if (index === undefined) {
-      setFocusRequest(null)
+      setInteraction((previous) => ({ ...previous, focusRequest: null }))
       return
     }
     const row = listRef.current.querySelector<HTMLLIElement>(`:scope > li[data-index="${index}"]`)
@@ -274,11 +274,11 @@ export function VirtualList<T>({ items, itemKey, estimateSize, renderItem, itemP
     const target = (focusRequest.backwards ? stops.at(-1) : stops[0]) ?? row
     target.focus({ preventScroll: true })
     virtualizer.scrollToIndex(index, { align: 'auto' })
-    setFocusRequest(null)
+    setInteraction((previous) => ({ ...previous, focusRequest: null }))
   })
 
   const requestFocus = (index: number, backwards: boolean) => {
-    if (index >= 0 && index < items.length) setFocusRequest({ key: keyed.keys[index], backwards })
+    if (index >= 0 && index < items.length) setInteraction((previous) => ({ ...previous, focusRequest: { key: keyed.keys[index], backwards } }))
   }
   const handleKeyDown = (event: KeyboardEvent<HTMLUListElement>) => {
     onKeyDown?.(event)
@@ -322,7 +322,7 @@ export function VirtualList<T>({ items, itemKey, estimateSize, renderItem, itemP
       const row = ownRow(event.currentTarget, event.target)
       if (row) {
         const index = Number(row.dataset.index)
-        setFocusedKey(itemKey(items[index], index))
+        setInteraction((previous) => ({ ...previous, focusedKey: itemKey(items[index], index) }))
       }
     }}
     onBlurCapture={(event) => {
@@ -332,7 +332,7 @@ export function VirtualList<T>({ items, itemKey, estimateSize, renderItem, itemP
         if (listRef.current !== list) return
         const row = ownRow(list, activeElement(list.ownerDocument))
         const index = row ? Number(row.dataset.index) : -1
-        setFocusedKey(index >= 0 && index < items.length ? itemKey(items[index], index) : null)
+        setInteraction((previous) => ({ ...previous, focusedKey: index >= 0 && index < items.length ? itemKey(items[index], index) : null }))
       })
     }}
   >{rows.map((row) => {

@@ -1,29 +1,17 @@
-import { QueryClientProvider } from '@tanstack/react-query'
-import { useEffect } from 'react'
 import type { PropsWithChildren } from 'react'
-import { localeTag } from '../lib/i18n'
-import { localeStore } from '../lib/i18n/state'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from '../lib/query/client'
+import { localeStore } from '../lib/i18n/state'
 import { useStore } from '../lib/store/use-store'
 import { ui } from '../lib/store/ui.store'
-import { applyMduiLocale, applyMduiTheme, initMdui } from '../lib/ui/mdui-runtime'
-
+import { useMduiBootstrap, useMduiLocale, useMduiTheme } from './shell/use-root-providers'
 export function RootProviders({ children }: PropsWithChildren) {
   const theme = useStore(ui, (state) => state.theme)
   const locale = useStore(localeStore, (state) => state.locale)
 
-  useEffect(() => {
-    initMdui()
-  }, [])
-
-  useEffect(() => {
-    applyMduiTheme(theme)
-  }, [theme])
-
-  useEffect(() => {
-    document.documentElement.lang = localeTag()
-    void applyMduiLocale(locale)
-  }, [locale])
+  useMduiBootstrap()
+  useMduiTheme(theme)
+  useMduiLocale(locale)
 
   return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
 }

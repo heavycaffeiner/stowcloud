@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
 )
 
 // Single apply operation: parse server output, determine network scope, check

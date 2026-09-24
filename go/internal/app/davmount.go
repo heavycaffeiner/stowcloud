@@ -34,7 +34,7 @@ const keyDavPath davContextKey = "dav_path"
 // newDavHandler builds the protocol handler over the engine's services.
 func (e *Engine) newDavHandler() *dav.Handler {
 	if e.davLocks == nil {
-		e.davLocks = NewDavLocks(e.State, e.clock, e.logger)
+		e.davLocks = dav.NewStateLocks(e.State, e.clock, e.logger)
 	}
 	locks := e.davLocks
 	return dav.New(dav.Options{
@@ -43,8 +43,8 @@ func (e *Engine) newDavHandler() *dav.Handler {
 		TokensAt:        locks.Tokens,
 		LocksAt:         locks.At,
 		Taker:           locks,
-		Store:           NewDavProps(e.State),
-		KeyOf:           DavKeyOf,
+		Store:           dav.NewStateProps(e.State),
+		KeyOf:           dav.EntryKey,
 		InfinityEntries: davDefaultInfinity,
 		Logger:          e.logger,
 	})

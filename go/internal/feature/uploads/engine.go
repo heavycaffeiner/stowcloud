@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/uploads/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 	"github.com/stowcloud/transfer"
 )
@@ -570,7 +570,7 @@ func (e *Engine) checkAccountLimits(ctx context.Context, user core.UserID, total
 	if err != nil {
 		return err
 	}
-	want, nerr := num.Narrow[uint64](reserved)
+	want, nerr := number.Narrow[uint64](reserved)
 	if nerr != nil {
 		return nerr
 	}
@@ -683,7 +683,7 @@ func checkChunkFloor(r *row, off, n uint64) error {
 	if r == nil || n == 0 || r.mode() == SpoolNameOrdered {
 		return nil
 	}
-	floor, err := num.Narrow[uint64](r.sess.ChunkMinAtCreation)
+	floor, err := number.Narrow[uint64](r.sess.ChunkMinAtCreation)
 	if err != nil || floor == 0 {
 		return nil
 	}
@@ -712,7 +712,7 @@ func mapVFSErr(err error) error {
 }
 
 func shareIDOf(v int64) (core.ShareID, bool) {
-	id, err := num.Narrow[uint32](v)
+	id, err := number.Narrow[uint32](v)
 	if err != nil {
 		return 0, false
 	}

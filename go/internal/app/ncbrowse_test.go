@@ -18,7 +18,7 @@ import (
 	core "github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
 	stowcloud "github.com/heavycaffeiner/stowcloud/go/internal/feature/search/stowcloud"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/search/svc"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	task "github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 	search "github.com/stowcloud/namesearch"
 )
 
@@ -646,7 +646,7 @@ func TestASearchRefusedForBeingBusySaysSo(t *testing.T) {
 	// run with "Log in goroutine after test has completed".
 	done := make(chan error, 1)
 	var once sync.Once
-	task.Go(context.Background(), "test: hold the search slot", func() {
+	concurrency.Go(context.Background(), "test: hold the search slot", func() {
 		_, qerr := f.e.Search.Query(context.Background(), sources, svc.QueryOptions{
 			Query: "busy-target",
 			Stream: func([]search.Hit) {

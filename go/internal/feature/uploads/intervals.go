@@ -3,7 +3,7 @@
 package upload
 
 import (
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/uploads/limits"
 	"github.com/stowcloud/transfer"
 )
 

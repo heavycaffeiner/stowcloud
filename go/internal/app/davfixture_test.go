@@ -15,7 +15,7 @@ import (
 	app "github.com/heavycaffeiner/stowcloud/go/internal/app"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/cache"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/dbfile"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
@@ -45,10 +45,10 @@ type fixture struct {
 	locks *stubLocks
 	// props is the property store, for a test that reads back what PROPPATCH
 	// wrote rather than trusting the response alone.
-	props *app.DavProps
+	props *dav.StateProps
 	// real is the actual lock table, for the LOCK and UNLOCK tests. The stub
 	// above answers the write guard; this is what mints a token.
-	real *app.DavLocks
+	real *dav.StateLocks
 	// engine is what the mount hangs off. Only Core is populated, which is all
 	// the mount reads: the rest of an engine is other surfaces' dependencies.
 	engine *app.Engine
@@ -180,8 +180,8 @@ func build(t *testing.T, held []string, infinityEntries int) *fixture {
 	grantAll(t, c, st, int64(testUser), testShareOther, "safe")
 
 	locks := &stubLocks{}
-	props := app.NewDavProps(st)
-	real := app.NewDavLocks(st, clock.System(), nil)
+	props := dav.NewStateProps(st)
+	real := dav.NewStateLocks(st, clock.System(), nil)
 
 	return &fixture{
 		h: dav.New(dav.Options{
@@ -200,7 +200,7 @@ func build(t *testing.T, held []string, infinityEntries int) *fixture {
 			Taker:           real,
 			InfinityEntries: infinityEntries,
 			Store:           props,
-			KeyOf:           app.DavKeyOf,
+			KeyOf:           dav.EntryKey,
 		}),
 		core:   c,
 		dir:    shareDir,

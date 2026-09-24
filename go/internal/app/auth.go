@@ -17,8 +17,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	core "github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/secret"
+	uploadlimits "github.com/heavycaffeiner/stowcloud/go/internal/feature/uploads/limits"
+	secret "github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/objstore"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/handler"
@@ -58,8 +58,8 @@ func (e *Engine) limitsView() handler.LimitsView {
 		// are still reported, because a client plans against them before it
 		// discovers the route is absent.
 		return handler.LimitsView{
-			ChunkSize: limits.UploadChunkSizeDefault,
-			ChunkMin:  limits.UploadChunkMinDefault,
+			ChunkSize: uploadlimits.UploadChunkSizeDefault,
+			ChunkMin:  uploadlimits.UploadChunkMinDefault,
 			Parallel:  defaultUploadParallel,
 		}
 	}

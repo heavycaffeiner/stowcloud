@@ -46,17 +46,6 @@ func (e *PublicationError) Unwrap() error { return e.Err }
 
 func (e *PublicationError) PublicationOutcome() fsatomic.Outcome { return e.Outcome }
 
-func publicationOutcome(err error) fsatomic.Outcome {
-	if err == nil {
-		return fsatomic.Published
-	}
-	var out interface{ PublicationOutcome() fsatomic.Outcome }
-	if errors.As(err, &out) {
-		return out.PublicationOutcome()
-	}
-	return fsatomic.NotPublished
-}
-
 // The rendered file names. They are listed once because publishing writes them
 // and disabling removes them, and a name spelled twice is a file one half
 // forgets.
@@ -113,9 +102,13 @@ type Deps struct {
 	// of on everything the core can do.
 	Shares func() []Share
 
-	// Accounts publishes the two credential files, which this package does not
-	// render: the hashes are sealed and only that package holds the key.
-	Accounts Accounts
+	// Credentials opens and returns eligible credential facts. Auth owns the
+	// sealed hashes and eligibility; this package owns serialization and writes.
+	Credentials func(ctx context.Context) ([]smb.Credential, error)
+
+	// NowUnix stamps credential records. A stable stamp makes unchanged renders
+	// produce identical bytes.
+	NowUnix func() int64
 
 	// Grants reads the stored grants, which become the per-share account lists.
 	// Nil means no share receives a list, rendering every share unreachable
@@ -145,12 +138,8 @@ type Deps struct {
 	ServiceGID uint32
 }
 
-// Accounts is the credential half, which lives in the auth package because only
-// it can open the sealed hashes.
-type Accounts interface {
-	PublishPasswdEntries(ctx context.Context, path string, gid uint32) error
-	PublishPassdb(ctx context.Context) error
-}
+// Accounts is no longer a file-writing interface. Credential facts cross this
+// boundary through Deps.Credentials so this package owns all SMB file I/O.
 
 // defaultServiceGID is what an unset ServiceGID means. The settings layer holds
 // the operator-facing default under its own name; this is the fallback for a
@@ -206,17 +195,17 @@ func Publish(ctx context.Context, d Deps, cfg smb.Config) (agent.Report, error) 
 	if werr != nil {
 		return agent.Report{}, &PublicationError{Operation: "publishing the SMB configuration", Outcome: outcomeForResults(configResults), Err: werr}
 	}
-	configPublished := true
 
 	// The two credential files share account identifiers, since the import tool
-	// pairs them by identifier rather than by name. Writing one without the
-	// other produces a login rejected as an unknown user with no trace in any
-	// log.
-	if err := d.Accounts.PublishPasswdEntries(ctx, filepath.Join(d.ConfigDir, filePasswd), d.gid()); err != nil {
-		return agent.Report{}, wrapPublication("publishing the SMB account file", err, configPublished)
+	// pairs them by identifier rather than by name. Write both as one durable
+	// pair so they cannot disagree about which accounts exist or what uid each
+	// one carries.
+	creds, cerr := credentialsOf(ctx, d)
+	if cerr != nil {
+		return agent.Report{}, fmt.Errorf("reading SMB credentials: %w", cerr)
 	}
-	if err := d.Accounts.PublishPassdb(ctx); err != nil {
-		return agent.Report{}, wrapPublication("publishing the SMB credentials", err, true)
+	if err := writeCredentialFiles(d, creds); err != nil {
+		return agent.Report{}, err
 	}
 
 	return push(ctx, d)
@@ -236,12 +225,39 @@ func outcomeForResults(results []fsatomic.UnitResult) fsatomic.Outcome {
 	return fsatomic.NotPublished
 }
 
-func wrapPublication(operation string, err error, priorPublished bool) error {
-	outcome := publicationOutcome(err)
-	if priorPublished && outcome == fsatomic.NotPublished {
-		outcome = fsatomic.PublicationUncertain
+func credentialsOf(ctx context.Context, d Deps) ([]smb.Credential, error) {
+	if d.Credentials == nil {
+		return nil, nil
 	}
-	return &PublicationError{Operation: operation, Outcome: outcome, Err: err}
+	return d.Credentials(ctx)
+}
+
+func writeCredentialFiles(d Deps, creds []smb.Credential) error {
+	stamp := int64(0)
+	if d.NowUnix != nil {
+		stamp = d.NowUnix()
+	}
+	passdb, err := smb.PassdbEntries(creds, stamp)
+	if err != nil {
+		return fmt.Errorf("rendering SMB credentials: %w", err)
+	}
+	passwd, err := smb.PasswdEntries(smb.PasswdUsers(creds), d.gid())
+	if err != nil {
+		return fmt.Errorf("rendering SMB account entries: %w", err)
+	}
+	units := []fsatomic.Unit{
+		{Path: filepath.Join(d.ConfigDir, filePasswd), Mode: 0o644},
+		{Path: filepath.Join(d.ConfigDir, filePassdb), Mode: 0o600},
+	}
+	bodies := [][]byte{passwd, passdb}
+	results, werr := fsatomic.ReplaceFilesDurable(units, func(i int, f *os.File) error {
+		_, err := f.Write(bodies[i])
+		return err
+	})
+	if werr != nil {
+		return &PublicationError{Operation: "publishing SMB credentials", Outcome: outcomeForResults(results), Err: werr}
+	}
+	return nil
 }
 
 // logDropped reports the names the renderer would not write.

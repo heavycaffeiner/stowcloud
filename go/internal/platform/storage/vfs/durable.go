@@ -9,7 +9,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"golang.org/x/sys/unix"
 )
 
@@ -329,11 +329,11 @@ func (r *ShareRoot) Mkdir(p SafePath) error {
 }
 
 func chownFd(f *os.File, o Owner) error {
-	uid, err := num.Narrow[int](o.UID)
+	uid, err := number.Narrow[int](o.UID)
 	if err != nil {
 		return fmt.Errorf("apply ownership: %w", err)
 	}
-	gid, err := num.Narrow[int](o.GID)
+	gid, err := number.Narrow[int](o.GID)
 	if err != nil {
 		return fmt.Errorf("apply ownership: %w", err)
 	}
@@ -481,7 +481,7 @@ func CopyRange(src *File, srcOff uint64, dst *File, dstOff uint64, n uint64) (ui
 	var copied uint64
 	for copied < n {
 		remaining := n - copied
-		want, werr := num.Narrow[int](remaining)
+		want, werr := number.Narrow[int](remaining)
 		if werr != nil {
 			want = int(^uint(0) >> 1)
 		}
@@ -501,7 +501,7 @@ func CopyRange(src *File, srcOff uint64, dst *File, dstOff uint64, n uint64) (ui
 		case cerr == nil && got == 0:
 			return copied, nil
 		case cerr == nil:
-			n64, nerr := num.Narrow[uint64](got)
+			n64, nerr := number.Narrow[uint64](got)
 			if nerr != nil {
 				return copied, fmt.Errorf("copy range: %w", nerr)
 			}
@@ -517,7 +517,7 @@ func CopyRange(src *File, srcOff uint64, dst *File, dstOff uint64, n uint64) (ui
 }
 
 func int64Offset(v uint64) (int64, error) {
-	off, err := num.Narrow[int64](v)
+	off, err := number.Narrow[int64](v)
 	if err != nil {
 		return 0, fmt.Errorf("copy range offset: %w", err)
 	}
@@ -551,7 +551,7 @@ func bufferedCopyRange(src *File, srcOff uint64, dst *File, dstOff uint64, n uin
 			if _, werr := dst.WriteAt(buf[:got], wOff); werr != nil {
 				return copied, werr
 			}
-			n64, nerr := num.Narrow[uint64](got)
+			n64, nerr := number.Narrow[uint64](got)
 			if nerr != nil {
 				return copied, fmt.Errorf("copy range: %w", nerr)
 			}

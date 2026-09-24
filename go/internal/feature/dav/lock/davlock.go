@@ -23,7 +23,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/ident"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
 )

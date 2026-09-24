@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/ident"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
@@ -70,7 +70,7 @@ func TestConcurrentExclusiveLocksAdmitExactlyOne(t *testing.T) {
 		token := fmt.Sprintf("t%d", i)
 		req := lockAt(token, "/contested", state.LockExclusive, state.LockDepthZero, int64(i+1))
 
-		task.Go(ctx, "lock racer", func() {
+		concurrency.Go(ctx, "lock racer", func() {
 			defer done.Done()
 
 			start.Wait()
@@ -220,7 +220,7 @@ func TestConcurrentSharedLocksAllCoexist(t *testing.T) {
 	for i := 0; i < racers; i++ {
 		req := lockAt(fmt.Sprintf("s%d", i), "/shared", state.LockShared, state.LockDepthZero, int64(i+1))
 
-		task.Go(ctx, "shared lock racer", func() {
+		concurrency.Go(ctx, "shared lock racer", func() {
 			defer done.Done()
 
 			start.Wait()

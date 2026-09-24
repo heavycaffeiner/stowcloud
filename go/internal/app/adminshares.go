@@ -15,8 +15,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/secret"
+	num "github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
+	secret "github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vault"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
@@ -132,7 +132,7 @@ func (e *Engine) adminSharesCreate(c *gin.Context) {
 	// Without this a share registered while the server is running is one no
 	// change is ever reported under, and the symptom is a folder that updates
 	// for everybody except the person who just created it.
-	e.markSearchIndexIncomplete()
+	e.searchRuntime.MarkIncomplete()
 	e.watchShare(share)
 
 	// The administrator who registered it can reach it. Access is granted

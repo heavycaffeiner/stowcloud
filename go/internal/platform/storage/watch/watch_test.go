@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 	"golang.org/x/sys/unix"
 )
@@ -454,8 +454,8 @@ func namedRecord(t *testing.T, wd int, mask uint32, name string) []byte {
 	// Both crossings are checked rather than cast: the descriptor is what the
 	// kernel just handed back, and the padded length is this fixture's own
 	// arithmetic, so a failure here is a broken fixture.
-	descriptor, derr := num.Narrow[uint32](wd)
-	length, lerr := num.Narrow[uint32](padded)
+	descriptor, derr := number.Narrow[uint32](wd)
+	length, lerr := number.Narrow[uint32](padded)
 	if derr != nil || lerr != nil {
 		t.Fatalf("the record fixture does not fit its own fields: wd %d, len %d", wd, padded)
 	}

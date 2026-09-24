@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/auth"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 )
 
 // Paging the log while it is being appended to neither skips nor repeats a
@@ -35,7 +35,7 @@ func TestTheCursorPagesAConcurrentlyAppendedLog(t *testing.T) {
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Add(1)
-	task.Go(ctx, "auth: audit log writer during a paged read", func() {
+	concurrency.Go(ctx, "auth: audit log writer during a paged read", func() {
 		defer wg.Done()
 		for i := 0; ; i++ {
 			select {

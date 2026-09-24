@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"unsafe"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"golang.org/x/sys/unix"
 )
 
@@ -380,7 +380,7 @@ func assembleFor(kind FilterKind, goarch string) ([]unix.SockFilter, error) {
 		if oerr != nil {
 			return nil, oerr
 		}
-		number, nerr := num.Narrow[uint32](nr)
+		number, nerr := number.Narrow[uint32](nr)
 		if nerr != nil {
 			return nil, fmt.Errorf("syscall number %d: %w", nr, nerr)
 		}
@@ -394,7 +394,7 @@ func assembleFor(kind FilterKind, goarch string) ([]unix.SockFilter, error) {
 		if cerr != nil {
 			return nil, cerr
 		}
-		cloneNr, nerr := num.Narrow[uint32](unix.SYS_CLONE)
+		cloneNr, nerr := number.Narrow[uint32](unix.SYS_CLONE)
 		if nerr != nil {
 			return nil, fmt.Errorf("clone syscall number: %w", nerr)
 		}
@@ -430,7 +430,7 @@ func offsetTo(to, from int) (uint8, error) {
 	if d < 0 {
 		return 0, fmt.Errorf("a backward BPF jump from %d to %d, which the verifier refuses", from, to)
 	}
-	return num.Narrow[uint8](d)
+	return number.Narrow[uint8](d)
 }
 
 // InstallSeccomp builds and applies the policy for kind using TSYNC, so it
@@ -450,7 +450,7 @@ func InstallSeccomp(kind FilterKind) error {
 		return fmt.Errorf("prctl(PR_SET_NO_NEW_PRIVS): %w", perr)
 	}
 
-	length, err := num.Narrow[uint16](len(prog))
+	length, err := number.Narrow[uint16](len(prog))
 	if err != nil {
 		return fmt.Errorf("seccomp program length: %w", err)
 	}

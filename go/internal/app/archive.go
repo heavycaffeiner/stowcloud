@@ -24,9 +24,9 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/preview"
+	previewlimits "github.com/heavycaffeiner/stowcloud/go/internal/feature/preview/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/httpheader"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
+	httpheader "github.com/heavycaffeiner/stowcloud/go/internal/platform/http/headers"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/archive"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/handler"
@@ -204,7 +204,7 @@ type archiveConcurrencyGate struct {
 
 func (g *archiveConcurrencyGate) SetLimit(limit int) {
 	if limit <= 0 {
-		limit = limits.ConcurrentArchives
+		limit = previewlimits.ConcurrentArchives
 	}
 	g.mu.Lock()
 	g.limit = limit
@@ -216,7 +216,7 @@ func (g *archiveConcurrencyGate) TryAcquire() bool {
 	defer g.mu.Unlock()
 	limit := g.limit
 	if limit <= 0 {
-		limit = limits.ConcurrentArchives
+		limit = previewlimits.ConcurrentArchives
 	}
 	if g.active >= limit {
 		return false
@@ -254,8 +254,8 @@ const archiveIncompleteName = "__stowcloud_incomplete__.txt"
 
 const archiveIncompleteBody = "This archive is incomplete. One or more requested entries were omitted because an archive bound was reached or an entry changed while it was being read.\n"
 const (
-	archiveContentEntries = limits.ArchivePackedEntries
-	archiveContentBytes   = limits.ArchivePackedBytes
+	archiveContentEntries = previewlimits.ArchivePackedEntries
+	archiveContentBytes   = previewlimits.ArchivePackedBytes
 )
 
 // archiveBuilder applies one set of limits to both authenticated and public

@@ -10,7 +10,7 @@ import (
 	"image/png"
 	"io"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"golang.org/x/image/bmp"
 	"golang.org/x/image/tiff"
 	"golang.org/x/image/webp"
@@ -174,7 +174,7 @@ func checkBounds(w, h int, lim DecodeLimits) error {
 	}
 	// The multiplication uses uint64 so it cannot wrap before the comparison,
 	// which is precisely the overflow an attacker would target.
-	px, perr := num.Narrow[uint64](int64(w) * int64(h))
+	px, perr := number.Narrow[uint64](int64(w) * int64(h))
 	if perr != nil {
 		return fmt.Errorf("%w: a %dx%d image", ErrTooLarge, w, h)
 	}
@@ -265,7 +265,7 @@ func ThumbnailSized(src image.Image, maxW, maxH int, lim DecodeLimits) (image.Im
 	outW := max(int(float64(w)*scale), 1)
 	outH := max(int(float64(h)*scale), 1)
 
-	outPx, perr := num.Narrow[uint64](int64(outW) * int64(outH))
+	outPx, perr := number.Narrow[uint64](int64(outW) * int64(outH))
 	if perr != nil {
 		return nil, fmt.Errorf("%w: an output of %dx%d", ErrTooLarge, outW, outH)
 	}

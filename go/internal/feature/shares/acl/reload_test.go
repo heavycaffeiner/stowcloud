@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 )
 
 // Test 15. After a reload, Evaluate sees exactly the new table, never a mix.
@@ -69,7 +69,7 @@ func TestEvaluateRacingReloadNeverSplicesTheTwoTables(t *testing.T) {
 	stop := make(chan struct{})
 
 	wg.Add(1)
-	task.Go(context.Background(), "acl reload loop", func() {
+	concurrency.Go(context.Background(), "acl reload loop", func() {
 		defer wg.Done()
 		for i := range rounds {
 			var err error
@@ -88,7 +88,7 @@ func TestEvaluateRacingReloadNeverSplicesTheTwoTables(t *testing.T) {
 
 	for range 4 {
 		wg.Add(1)
-		task.Go(context.Background(), "acl evaluate loop", func() {
+		concurrency.Go(context.Background(), "acl evaluate loop", func() {
 			defer wg.Done()
 			for {
 				select {
@@ -214,7 +214,7 @@ func TestConcurrentReadsAgainstAStationaryTable(t *testing.T) {
 	var wg sync.WaitGroup
 	for range 8 {
 		wg.Add(1)
-		task.Go(context.Background(), "acl stationary read loop", func() {
+		concurrency.Go(context.Background(), "acl stationary read loop", func() {
 			defer wg.Done()
 			for range 100 {
 				if got := e.Effective(7, q); got != wantEffective {

@@ -7,8 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/journal"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 	"io"
 	"math"
@@ -52,7 +52,7 @@ func (c *Core) record(ctx context.Context, r Resolved, op journal.Op) {
 	}
 	// A user id past the journal's account column skips the row rather than
 	// truncating into some other account's history.
-	account, err := num.Narrow[uint32](int64(r.user))
+	account, err := number.Narrow[uint32](int64(r.user))
 	if err != nil {
 		c.warn("a write was not journalled: the account id does not fit the journal",
 			"user", int64(r.user), "error", err)
@@ -472,11 +472,11 @@ func (c *Core) PublishPart(
 // int64 accounting vocabulary. An unrepresentable size is rejected as an
 // accounting delta rather than wrapped into a false credit or debit.
 func deltaOf(now, before uint64) int64 {
-	a, err := num.Narrow[int64](now)
+	a, err := number.Narrow[int64](now)
 	if err != nil {
 		return 0
 	}
-	b, err := num.Narrow[int64](before)
+	b, err := number.Narrow[int64](before)
 	if err != nil {
 		return 0
 	}

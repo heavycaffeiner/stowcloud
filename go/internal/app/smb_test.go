@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	app "github.com/heavycaffeiner/stowcloud/go/internal/app"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/secret"
+	secret "github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 )
 
 // Setting the protocol credential needs the account password.
@@ -783,13 +783,6 @@ func TestTheRenderedFilesAgreeOnEveryAccount(t *testing.T) {
 			"current": loginPassword, "new": "a-long-enough-protocol-password",
 		}); status != http.StatusOK {
 		t.Fatalf("setting answered %d: %v", status, body)
-	}
-
-	// The account file is written by a publish rather than by a credential
-	// change, so one is asked for here.
-	if err := e.Auth.PublishPasswdEntries(context.Background(),
-		filepath.Join(configDir, "passwd"), 1000); err != nil {
-		t.Fatalf("publishing the account file: %v", err)
 	}
 
 	creds, err := e.Auth.SMBCredentials(context.Background())

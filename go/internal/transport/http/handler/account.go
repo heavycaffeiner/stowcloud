@@ -37,8 +37,9 @@ type SessionView struct {
 	// IP and UA are what the client itself presented. They are shown so a
 	// person can recognise their own devices, which is the whole reason the
 	// screen exists.
-	IP string `json:"ip,omitempty"`
-	UA string `json:"ua,omitempty"`
+	IP        string `json:"ip,omitempty"`
+	UA        string `json:"ua,omitempty"`
+	UADisplay string `json:"ua_display,omitempty"`
 
 	// Current marks the session making this request, so a client can warn
 	// before signing itself out.
@@ -98,6 +99,7 @@ func SessionOf(r auth.SessionRow, currentHash []byte) SessionView {
 		AbsoluteNs: strconv.FormatInt(r.AbsoluteNs, 10),
 		IP:         r.IP,
 		UA:         r.UA,
+		UADisplay:  DescribeUserAgent(r.UA),
 		// The length check is belt and braces: with no current session the
 		// comparison is against the hash of nothing, which no real digest
 		// produces. Named so the comparison is not mistaken for the guard.

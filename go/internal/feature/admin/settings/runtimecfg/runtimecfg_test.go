@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/system/jail"
 )
 
@@ -344,7 +344,7 @@ func TestTheHolderIsSafeUnderConcurrentReaders(t *testing.T) {
 	stop := make(chan struct{})
 	for range 4 {
 		wg.Add(1)
-		task.Go(t.Context(), "settings: holder reader", func() {
+		concurrency.Go(t.Context(), "settings: holder reader", func() {
 			defer wg.Done()
 			for {
 				select {

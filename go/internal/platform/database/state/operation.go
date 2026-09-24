@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 )
 
 // The operation store holds a bounded history of long operations that survives
@@ -306,7 +306,7 @@ func (d *DB) GetOp(ctx context.Context, id int64) (op Op, results []OpResult, er
 		if serr := rows.Scan(&r.Operation, &r.Idx, &r.Path, &r.OK, &reason, &text); serr != nil {
 			return Op{}, nil, fmt.Errorf("reading an operation result: %w", serr)
 		}
-		code, rerr := num.Narrow[int8](reason.Int64)
+		code, rerr := number.Narrow[int8](reason.Int64)
 		if rerr != nil {
 			return Op{}, nil, fmt.Errorf(
 				"operation %d item %d carries reason %d: %w", r.Operation, r.Idx, reason.Int64, rerr)

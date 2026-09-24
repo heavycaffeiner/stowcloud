@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 )
 
 // A share link keeps a path and, when it was made against a file rather than
@@ -298,7 +298,7 @@ func (d *DB) KeyVersion(ctx context.Context) (uint32, error) {
 	if err != nil {
 		return 0, fmt.Errorf("reading the link key version: %w", err)
 	}
-	v, err := num.Narrow[uint32](ver)
+	v, err := number.Narrow[uint32](ver)
 	if err != nil {
 		return 0, fmt.Errorf("the key version row carries %d: %w", ver, err)
 	}
@@ -328,14 +328,14 @@ func scanLinkRow(row interface{ Scan(...any) error }) (LinkRow, bool, error) {
 	}
 
 	if keyVer != nil {
-		v, verr := num.Narrow[uint32](*keyVer)
+		v, verr := number.Narrow[uint32](*keyVer)
 		if verr != nil {
 			return LinkRow{}, false, fmt.Errorf(
 				"share link %d carries key version %d: %w", r.ID, *keyVer, verr)
 		}
 		r.TokenKeyVer = &v
 	}
-	p, err := num.Narrow[uint16](perms)
+	p, err := number.Narrow[uint16](perms)
 	if err != nil {
 		return LinkRow{}, false, fmt.Errorf("share link %d carries perms %d: %w", r.ID, perms, err)
 	}

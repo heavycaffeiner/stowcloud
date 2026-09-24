@@ -10,8 +10,8 @@ import (
 	"slices"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/secret"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/adapters"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 	storage "github.com/stowcloud/storage"
@@ -427,7 +427,7 @@ func (c *Core) Roots(user UserID) []acl.RootEntry {
 	}
 	roots := c.labelledRoots(user)
 	for i := range roots {
-		id, err := num.Narrow[uint32](roots[i].Share)
+		id, err := number.Narrow[uint32](roots[i].Share)
 		if err != nil {
 			continue
 		}
@@ -488,7 +488,7 @@ func (c *Core) labelledRoots(user UserID) []acl.RootEntry {
 		if roots[i].Label != acl.GeneratedRootLabel(roots[i].Share) {
 			continue
 		}
-		id, err := num.Narrow[uint32](roots[i].Share)
+		id, err := number.Narrow[uint32](roots[i].Share)
 		if err != nil {
 			continue
 		}

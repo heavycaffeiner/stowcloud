@@ -3,15 +3,14 @@ package auth_test
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"path/filepath"
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/auth"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/secret"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/dbfile"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 )
 
 // The tests use a fixed weak-but-legal password, because the floor is the
@@ -25,14 +24,7 @@ type fixture struct {
 	svc   *auth.Service
 	store *state.DB
 	dir   string
-	// published counts what the credential renderer was asked for, so a test
-	// can assert that a change reached the sidecar rather than stopping at
-	// the database.
-	published *int
-	sink      *countingSink
-	// passwdGID records the group the account renderer was handed, which is
-	// the one value of that file this package chooses nothing about.
-	passwdGID *uint32
+	sink  *countingSink
 }
 
 type countingSink struct{ n int }
@@ -57,46 +49,13 @@ func newFixtureWithClock(t *testing.T, clk clock.Clock) fixture {
 		}
 	})
 	store := state.New(f)
-
-	published := 0
-	var passwdGID uint32
 	sink := &countingSink{}
-	svc := auth.New(auth.Config{
-		Store:      store,
-		StoreDir:   dir,
-		Clock:      clk,
-		PassdbPath: filepath.Join(dir, "passdb"),
-		RenderPassdb: func(creds []auth.SMBCredential) ([]byte, error) {
-			published++
-			var out []byte
-			for _, c := range creds {
-				out = append(out, c.Name...)
-				out = append(out, '\n')
-			}
-			return out, nil
-		},
-		// The real renderer lives in the SMB package, which this tier may not
-		// import. What is under test here is which accounts and which uid
-		// reach it, so the shape it writes is the simplest one a test can
-		// read back.
-		RenderPasswd: func(creds []auth.SMBCredential, gid uint32) ([]byte, error) {
-			passwdGID = gid
-			var out []byte
-			for _, c := range creds {
-				out = fmt.Appendf(out, "%s:%d\n", c.Name, c.UID)
-			}
-			return out, nil
-		},
-	})
+	svc := auth.New(auth.Config{Store: store, StoreDir: dir, Clock: clk})
 	svc.SetAccessChangeSink(sink)
-
-	// StoreDir alone already resolves to this path with no environment
-	// variable involved, which is what keeps this fixture safe to build from
-	// parallel tests: nothing here mutates process-wide state.
 	if _, err := svc.OpenMasterKey(context.Background()); err != nil {
 		t.Fatalf("OpenMasterKey: %v", err)
 	}
-	return fixture{svc: svc, store: store, dir: dir, published: &published, sink: sink, passwdGID: &passwdGID}
+	return fixture{svc: svc, store: store, dir: dir, sink: sink}
 }
 
 // account creates one and returns its id.

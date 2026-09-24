@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 )
 
 // The second factor's durable half: the sealed secret and the replay guard.
@@ -61,7 +61,7 @@ func (d *DB) TOTPSecretOf(ctx context.Context, user int64) (TOTPSecret, error) {
 	if err != nil {
 		return TOTPSecret{}, fmt.Errorf("reading a second factor: %w", err)
 	}
-	v, nerr := num.Narrow[uint32](ver)
+	v, nerr := number.Narrow[uint32](ver)
 	if nerr != nil {
 		return TOTPSecret{}, fmt.Errorf(
 			"the second factor of account %d carries key version %d: %w", user, ver, nerr)

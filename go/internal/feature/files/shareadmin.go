@@ -7,9 +7,9 @@ import (
 	"fmt"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/secret"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 )
 
@@ -33,7 +33,7 @@ const dynamicShareIDBase = 1_000_000
 // than truncating: an id that does not fit is corruption, and a truncated
 // one would collide with a real share.
 func shareIDOf(rowid int64) (ShareID, error) {
-	narrowed, err := num.Narrow[uint32](rowid + dynamicShareIDBase)
+	narrowed, err := number.Narrow[uint32](rowid + dynamicShareIDBase)
 	if err != nil {
 		return 0, fmt.Errorf("share rowid %d does not fit a share id: %w", rowid, err)
 	}
@@ -439,7 +439,7 @@ func (c *Core) UserScanSources(user UserID) []ScanSource {
 // answer there means the grant went away between the search and the render.
 func (c *Core) ShareLabel(user UserID, share ShareID) string {
 	for _, r := range c.labelledRoots(user) {
-		narrowed, err := num.Narrow[uint32](r.Share)
+		narrowed, err := number.Narrow[uint32](r.Share)
 		if err != nil {
 			continue
 		}

@@ -38,8 +38,8 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/admin/settings/check"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/admin/settings/runtimecfg"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/auth"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/netzone"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/secret"
+	netzone "github.com/heavycaffeiner/stowcloud/go/internal/platform/network/zone"
+	secret "github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 )
 
 // Prefix is the only path this package answers on.

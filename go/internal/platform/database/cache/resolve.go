@@ -8,8 +8,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/ident"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 )
 
@@ -68,7 +68,7 @@ func (d *DB) Resolve(ctx context.Context, id ident.FileID) (vfs.ShareID, vfs.Sha
 		return 0, vfs.SharePath{}, fmt.Errorf("resolving node %d: %w", id, ErrNoNode)
 	}
 
-	s, err := num.Narrow[uint32](share)
+	s, err := number.Narrow[uint32](share)
 	if err != nil {
 		return 0, vfs.SharePath{}, fmt.Errorf("node %d carries share %d: %w", id, share, err)
 	}

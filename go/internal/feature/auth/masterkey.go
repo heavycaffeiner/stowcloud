@@ -13,7 +13,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	fsatomic "github.com/stowcloud/durablefs"
 )
 
@@ -219,7 +219,7 @@ func (r *KeyRing) marshal() ([]byte, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	count, err := num.Narrow[uint16](len(r.order))
+	count, err := number.Narrow[uint16](len(r.order))
 	if err != nil {
 		return nil, fmt.Errorf("a ring of %d keys does not fit the file format: %w", len(r.order), err)
 	}

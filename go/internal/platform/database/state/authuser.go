@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/dbfile"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 )
 
 // The account directory: the user rows, the groups, and the memberships that
@@ -146,7 +146,7 @@ func scanAccount(row interface{ Scan(...any) error }) (Account, error) {
 		a.QuotaBytes = &q
 	}
 	if usage.Valid && usage.Int64 > 0 {
-		u, err := num.Narrow[uint64](usage.Int64)
+		u, err := number.Narrow[uint64](usage.Int64)
 		if err != nil {
 			return Account{}, fmt.Errorf("account %d carries usage %d: %w", a.ID, usage.Int64, err)
 		}

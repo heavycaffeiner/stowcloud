@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/journal"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 )
 
@@ -132,7 +132,7 @@ func (c *Core) Recent(ctx context.Context, user UserID, q RecentQuery) ([]Recent
 		// not an error. An empty list is the honest answer.
 		return nil, nil
 	}
-	account, err := num.Narrow[uint32](int64(user))
+	account, err := number.Narrow[uint32](int64(user))
 	if err != nil {
 		return nil, err
 	}

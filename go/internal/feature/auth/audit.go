@@ -3,7 +3,7 @@ package auth
 import (
 	"context"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
 )
 

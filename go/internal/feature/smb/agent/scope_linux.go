@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/netzone"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/network/zone"
 )
 
 // Deciding which addresses the daemon may bind.
@@ -115,7 +115,7 @@ func Compute(devices []Device, allowPublic bool) Scope {
 	// refusing those clients. Binding is unaffected, since only the virtual
 	// device exists to bind.
 	if len(ordered) > 0 && allVeth(ordered) {
-		for _, b := range netzone.PrivateCIDRs() {
+		for _, b := range zone.PrivateCIDRs() {
 			addHost(b)
 		}
 	}
@@ -134,7 +134,7 @@ func classify(dev Device, allowPublic bool) (accepted, blocks []string, rejected
 		// Judged as the family it actually is. A mapped address describes an
 		// IPv4 network wearing an IPv6 spelling, and classifying it as IPv6
 		// would put a private network outside every private block.
-		block := netzone.EnclosingPrivateRange(ip.Unmap())
+		block := zone.EnclosingPrivateRange(ip.Unmap())
 		switch {
 		case block != "":
 			accepted = append(accepted, ip.String())

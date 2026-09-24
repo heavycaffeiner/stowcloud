@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 )
 
 // countingAccounts answers the durable question the gate asks.
@@ -282,7 +282,7 @@ func TestConcurrentSetupCreatesOneAdministrator(t *testing.T) {
 	var wg sync.WaitGroup
 	for range 16 {
 		wg.Add(1)
-		task.Go(ctx, "server: concurrent setup", func() {
+		concurrency.Go(ctx, "server: concurrent setup", func() {
 			defer wg.Done()
 			// Fifteen of the sixteen are refused, which is the whole point:
 			// counted rather than discarded so a run where none was refused

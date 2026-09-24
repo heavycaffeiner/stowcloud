@@ -12,8 +12,8 @@ import (
 	"time"
 
 	core "github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/search/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/search/stowcloud"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 	search "github.com/stowcloud/namesearch"
 	"github.com/stowcloud/namesearch/index"

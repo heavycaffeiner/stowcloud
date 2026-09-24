@@ -15,9 +15,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 	"golang.org/x/sys/unix"
 )
@@ -121,9 +121,9 @@ func Start(ctx context.Context, cfg Config, clk clock.Clock, sink chan<- InvalEv
 	w.fullThreshold.Store(int64(cfg.FullThreshold))
 
 	w.wg.Add(3)
-	task.Go(ctx, "watch: read events", func() { defer w.wg.Done(); w.readLoop() })
-	task.Go(ctx, "watch: flush debounced", func() { defer w.wg.Done(); w.flushLoop() })
-	task.Go(ctx, "watch: rescan", func() { defer w.wg.Done(); w.rescanLoop() })
+	concurrency.Go(ctx, "watch: read events", func() { defer w.wg.Done(); w.readLoop() })
+	concurrency.Go(ctx, "watch: flush debounced", func() { defer w.wg.Done(); w.flushLoop() })
+	concurrency.Go(ctx, "watch: rescan", func() { defer w.wg.Done(); w.rescanLoop() })
 	return w, nil
 }
 
@@ -349,7 +349,7 @@ func (w *Watcher) addWatch(host string) (int, error) {
 func (w *Watcher) rmWatch(wd int) error {
 	// Watch descriptors come back from the kernel signed and are passed in
 	// unsigned, so this boundary is validated rather than blindly converted.
-	id, err := num.Narrow[uint32](wd)
+	id, err := number.Narrow[uint32](wd)
 	if err != nil {
 		return err
 	}
@@ -413,7 +413,7 @@ func (w *Watcher) consume(buf []byte) {
 		mask := binary.NativeEndian.Uint32(buf[off+offMask:])
 		nameLen := binary.NativeEndian.Uint32(buf[off+offNameLen:])
 
-		size, err := num.Narrow[int](nameLen)
+		size, err := number.Narrow[int](nameLen)
 		if err != nil || off+inotifyEventHeader+size > len(buf) {
 			// A name running past the buffer. Same answer: this batch cannot be
 			// trusted and neither can what follows it.

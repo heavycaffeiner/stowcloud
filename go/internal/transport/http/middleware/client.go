@@ -14,7 +14,7 @@ import (
 	"net/netip"
 	"strings"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/netzone"
+	netzone "github.com/heavycaffeiner/stowcloud/go/internal/platform/network/zone"
 )
 
 // Unroutable is what a request whose client cannot be resolved is keyed as.

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	kitTask "github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	kitTask "github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 )
 
 // Task is one recurring job.

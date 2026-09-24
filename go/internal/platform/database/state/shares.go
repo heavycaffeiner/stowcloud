@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 )
 
 // The persisted share registry. Every share an administrator created is a
@@ -76,7 +76,7 @@ func scanShare(row interface{ Scan(...any) error }) (ShareRow, error) {
 	}
 	r.SharedExternally = external != 0
 	r.TrashEnabled = trash != 0
-	v, err := num.Narrow[uint32](keyVer)
+	v, err := number.Narrow[uint32](keyVer)
 	if err != nil {
 		return ShareRow{}, fmt.Errorf(
 			"share %d carries backend secret key version %d: %w", r.ID, keyVer, err)

@@ -11,7 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 	"net/http"
 	"strconv"
@@ -190,7 +190,7 @@ func (r *Root) CompleteMultipart(ctx context.Context, key, id string, parts []Mu
 			return TransferReceipt{}, errors.New("objstore: invalid multipart part list")
 		}
 		last = p.PartNumber
-		partNumber, narrowErr := num.Narrow[int32](p.PartNumber)
+		partNumber, narrowErr := number.Narrow[int32](p.PartNumber)
 		if narrowErr != nil {
 			return TransferReceipt{}, narrowErr
 		}
@@ -222,7 +222,7 @@ func (r *Root) PresignUploadPart(ctx context.Context, key, id string, n int, siz
 	if e != nil {
 		return "", nil, e
 	}
-	partNumber, narrowErr := num.Narrow[int32](n)
+	partNumber, narrowErr := number.Narrow[int32](n)
 	if narrowErr != nil {
 		return "", nil, narrowErr
 	}

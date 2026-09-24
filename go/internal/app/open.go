@@ -20,9 +20,10 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"time"
 
+	"github.com/gin-gonic/gin"
+	"github.com/heavycaffeiner/stowcloud/go/internal/app/backends"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/admin/logbook"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/admin/settings/runtimecfg"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/auth"
@@ -32,20 +33,22 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/search/svc"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/uploads"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/clock"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/secret"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/cache"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/dbfile"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/instance"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/journal"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
+	secret "github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/watch"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/system/jail"
 	runtimetasks "github.com/heavycaffeiner/stowcloud/go/internal/runtime/tasks"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/archive"
+	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/dav"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/handler"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/middleware"
+	searchhttp "github.com/heavycaffeiner/stowcloud/go/internal/transport/http/search"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/server"
 )
 
@@ -205,9 +208,8 @@ type Engine struct {
 	claimKey        handler.ClaimKey
 	linkLimiter     *linkLimiter
 	totpLimiter     *linkLimiter
-	indexBuilding   atomic.Bool
-	indexRecovery   atomic.Bool
-	davLocks        *DavLocks
+	searchRuntime   *searchhttp.Manager
+	davLocks        *dav.StateLocks
 	// The provider client, rebuilt when the settings change. Nil is off, and
 	// off is the ordinary state: a deployment without single sign-on is one
 	// where people use passwords.
@@ -226,22 +228,7 @@ type Engine struct {
 	guardMu   sync.Mutex
 	guardStop context.CancelFunc
 
-	// searchUpdater keeps the attached name index current from watcher
-	// events, nil when no index is attached. searchUpdaterStop halts it.
-	// Both are read and swapped together under searchUpdaterMu, so a toggle
-	// takes effect atomically with respect to the event path that reads the
-	// pointer once per watcher event.
-	searchUpdaterMu   sync.Mutex
-	searchUpdater     *svc.Updater
-	searchUpdaterStop context.CancelFunc
-
-	// jobs holds the work an admin request started and left running: an index
-	// build, today. jobsStop ends the context those goroutines poll, so a
-	// close stops the walk at its next gate rather than waiting out a corpus.
-	//
-	// The long-lived loops are deliberately not in here. They end on their
-	// own cancellation and joining them in a close would hang it.
-	jobs     task.Group
+	jobs     concurrency.Group
 	jobsCtx  context.Context
 	jobsStop context.CancelFunc
 
@@ -429,12 +416,8 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 
 	e.ACL = acl.NewEvaluator()
 
-	// The file-sharing settings are read before auth is built, because the
-	// credential file's path is fixed at construction: every credential change
-	// rewrites it, so a path arriving later would leave the changes before it
-	// stopping at the database.
-	smbCfg := smbSettingsOf(ctx, e)
-	renderPassdb, renderPasswd := smbRenderers(clk)
+	// Auth owns durable credential facts. SMB publication is composed after
+	// the core and settings are ready, then receives a neutral post-commit hook.
 
 	e.Auth = auth.New(auth.Config{
 		Store:    e.State,
@@ -442,12 +425,6 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 		Clock:    clk,
 		Logger:   logger,
 		Params:   opt.PasswordParams,
-		// Without these two a revocation stops at the database while the
-		// sidecar keeps authenticating against the last file that was
-		// written, which is a withdrawn credential that still works.
-		RenderPassdb: renderPassdb,
-		RenderPasswd: renderPasswd,
-		PassdbPath:   passdbPathOf(smbCfg),
 		// The evaluator is reloaded when a membership changes. Wired here
 		// rather than inside auth, so that package holds no dependency on
 		// the evaluator it is telling about.
@@ -464,8 +441,7 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 		// unwired deployment got before this line existed.
 		Links: e.State,
 		// The real backend switch: a local directory, an S3 bucket or a
-		// VeraCrypt container, whichever a share's own Backend names.
-		Backend: backendOpener{dataDir: opt.DataDir, logger: logger},
+		Backend: backends.New(opt.DataDir, logger),
 		Clock:   clk,
 		Logger:  logger,
 	})
@@ -562,6 +538,13 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	// Search needs nothing but a clock and the shares it is handed per query,
 	// so it is built unconditionally. Its bounds come from the settings below.
 	e.Search = svc.New(svc.Options{Clock: clk, CPUs: runtime.NumCPU()})
+	e.searchRuntime = searchhttp.NewManager(searchhttp.Options{
+		Core: e.Core, State: e.State, Search: e.Search, DataDir: e.dataDir,
+		Clock: clk, Logger: logger, Jobs: &e.jobs, JobsCtx: jobsCtx, JobsStop: jobsStop,
+		Owner: ownerOf, Admin: func(c *gin.Context) (int64, bool) { owner, ok := e.admin(c); return int64(owner), ok },
+		Refuse: refuse, FailKnown: failKnown, WriteJSON: writeJSON,
+		HasWatcher: func() bool { return e.watcher != nil },
+	})
 
 	// The name index, when the operator asked for one, is attached inside
 	// loadSettings below rather than here: that is the same call a save
@@ -602,10 +585,9 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	// bound it.
 	e.startEvents(ctx, watchSettingsOf(ctx, e))
 
-	// The publisher needs the core's share registry and the credentials auth
-	// opens, so it is built after both. Auth is told about it here rather than
-	// at construction for the same reason: the sink asks this service for the
-	// credentials it publishes, so the two cannot both be built first.
+	// The publisher reads settings on every push, but construction still needs
+	// the initial configured/unconfigured decision for whether a sink exists.
+	smbCfg := smbSettingsOf(ctx, e)
 	e.smb = newSMBPublisher(e, smbCfg)
 	if e.smb != nil {
 		e.Auth.SetAccessChangeSink(e.smb)
@@ -649,7 +631,7 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	e.claimKey = handler.ClaimKey{Version: 1, Key: claimBytes}
 	e.linkLimiter = newLinkLimiter(5*time.Minute, 10, clk.Nanos)
 	e.totpLimiter = newLinkLimiter(5*time.Minute, 5, clk.Nanos)
-	e.davLocks = NewDavLocks(e.State, clk, e.logger)
+	e.davLocks = dav.NewStateLocks(e.State, clk, e.logger)
 	return e, nil
 }
 
@@ -694,23 +676,18 @@ const jobDrainTimeout = 10 * time.Second
 // engine's index build write into the same databases the close is about to
 // shut, so either one still running is the same problem.
 func (e *Engine) drainJobs() {
-	if e.jobsStop != nil {
-		e.jobsStop()
-	}
-	if e.Core == nil {
+	if e.searchRuntime == nil {
 		return
 	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), jobDrainTimeout)
 	defer cancel()
-
-	if derr := e.jobs.Wait(ctx); derr != nil {
-		e.logger.Warn("an index build was still running when the engine closed; its outcome may not be recorded",
-			"error", derr)
+	if derr := e.searchRuntime.DrainJobs(ctx); derr != nil {
+		e.logger.Warn("an index build was still running when the engine closed; its outcome may not be recorded", "error", derr)
 	}
-	if derr := e.Core.DrainJobs(ctx); derr != nil {
-		e.logger.Warn("a job was still running when the engine closed; its outcome may not be recorded",
-			"error", derr)
+	if e.Core != nil {
+		if derr := e.Core.DrainJobs(ctx); derr != nil {
+			e.logger.Warn("a job was still running when the engine closed; its outcome may not be recorded", "error", derr)
+		}
 	}
 }
 
@@ -736,8 +713,9 @@ func (e *Engine) Close() (err error) {
 	e.stopTasks()
 
 	// The search updater reads events off the watcher closed next. Stopping it
-	// first prevents a goroutine consuming a channel while it goes away.
-	e.stopSearchUpdater()
+	if e.searchRuntime != nil {
+		e.searchRuntime.StopUpdater()
+	}
 
 	// The sockets and the watcher first. They hold no database file, but they
 	// hold goroutines that read one, and closing a database out from under a

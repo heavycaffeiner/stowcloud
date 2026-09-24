@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/preview"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/preview/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/system/jail"
 	"github.com/stowcloud/sandbox-worker"
 )

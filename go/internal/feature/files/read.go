@@ -10,7 +10,7 @@ import (
 	"math"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 	storage "github.com/stowcloud/storage"
 )
@@ -64,13 +64,13 @@ func (s *Stream) Read(p []byte) (int, error) {
 	if s.pos >= s.end {
 		return 0, io.EOF
 	}
-	off, err := num.Narrow[int64](s.pos)
+	off, err := number.Narrow[int64](s.pos)
 	if err != nil {
 		return 0, fmt.Errorf("stream position: %w", err)
 	}
 	// A range wider than an int is not a range one call can take, and the
 	// chunk bound is what decides the size anyway.
-	want, err := num.Narrow[int](s.end - s.pos)
+	want, err := number.Narrow[int](s.end - s.pos)
 	if err != nil {
 		want = streamChunk
 	}
@@ -83,7 +83,7 @@ func (s *Stream) Read(p []byte) (int, error) {
 		s.end = s.pos
 		return 0, io.EOF
 	}
-	read, nerr := num.Narrow[uint64](n)
+	read, nerr := number.Narrow[uint64](n)
 	if nerr != nil {
 		return n, fmt.Errorf("stream read length: %w", nerr)
 	}
@@ -181,7 +181,7 @@ func (c *Core) OpenRandom(ctx context.Context, r Resolved) (FidEntry, *RandomRea
 	if err != nil {
 		return FidEntry{}, nil, err
 	}
-	size, err := num.Narrow[int64](entry.Size)
+	size, err := number.Narrow[int64](entry.Size)
 	if err != nil {
 		c.closeAfterFailure(f)
 		return FidEntry{}, nil, err

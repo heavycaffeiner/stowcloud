@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
 )
 
@@ -56,7 +56,7 @@ func TestExactlyOnePollClaimsDelivery(t *testing.T) {
 	done.Add(racers)
 
 	for i := 0; i < racers; i++ {
-		task.Go(ctx, "delivery claimer", func() {
+		concurrency.Go(ctx, "delivery claimer", func() {
 			defer done.Done()
 
 			start.Wait()
