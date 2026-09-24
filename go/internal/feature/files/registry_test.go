@@ -19,6 +19,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/dbfile"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
+	"github.com/stowcloud/storage/local"
 )
 
 // newCore builds a Core over real databases in a temporary directory. Real
@@ -239,12 +240,12 @@ func TestRejectionKindNamesWhyTheShareWouldNotOpen(t *testing.T) {
 		{"anything else", errors.New("i/o error"), "unavailable"},
 		{
 			"an admission refusal",
-			&vfs.AdmissionError{Path: "/mnt/x", Type: vfs.FsNfs, Reason: "no"},
+			&vfs.AdmissionError{Path: "/mnt/x", Type: local.FsType(vfs.FsNfs), Reason: "no"},
 			"nfs",
 		},
 		{
 			"an admission refusal, wrapped",
-			errf(&vfs.AdmissionError{Path: "/mnt/x", Type: vfs.FsOverlay}, "registering"),
+			errf(&vfs.AdmissionError{Path: "/mnt/x", Type: local.FsType(vfs.FsOverlay)}, "registering"),
 			"overlay",
 		},
 	}

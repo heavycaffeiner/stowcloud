@@ -246,7 +246,7 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 	}
 	for name, h := range adminshares.NewHandlers(adminshares.Deps{
 		Core: e.Core, Auth: e.Auth, MarkSearchIncomplete: e.searchRuntime.MarkIncomplete,
-		WatchShare: e.watchShare, Logger: e.logger,
+		WatchShare: e.watchShare, UnwatchShare: e.unwatchShare, Logger: e.logger,
 	}) {
 		out[name] = h
 	}

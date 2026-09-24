@@ -12,17 +12,19 @@ package app
 
 import (
 	"context"
-	"github.com/gin-gonic/gin"
+	"strconv"
 
+	"github.com/gin-gonic/gin"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/admin/settings/runtimecfg"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
 	task "github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
-	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/watch"
 	runtimeevents "github.com/heavycaffeiner/stowcloud/go/internal/runtime/events"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/server"
+	storage "github.com/stowcloud/storage"
+	storagewatch "github.com/stowcloud/storage/watch"
 )
 
 // eventQueue is how many invalidations may wait for the broker.
@@ -39,10 +41,10 @@ const eventQueue = 1024
 // refuses an inotify descriptor still serves every request; what it loses is
 // the push, and clients fall back to asking again.
 func (e *Engine) startEvents(ctx context.Context, cfg watchSettings) {
-	events := make(chan watch.InvalEvent, eventQueue)
+	events := make(chan storagewatch.Event, eventQueue)
 
-	watcher, err := watch.Start(ctx, watch.Config{
-		Backend:        cfg.Backend,
+	watcher, err := storagewatch.Start(ctx, storagewatch.Config{
+		Backend:        storagewatch.BackendInotify,
 		HotSetMax:      cfg.HotSetMax,
 		FullThreshold:  cfg.FullThreshold,
 		OnCoverageLost: e.searchRuntime.MarkIncomplete,
@@ -105,7 +107,14 @@ func (e *Engine) watchShare(def core.ShareDef) {
 	if e.watcher == nil || def.BrokenReason != "" || def.Host == "" {
 		return
 	}
-	e.watcher.AddShare(def.ID, def.Host, false)
+	e.watcher.AddOwner(storagewatch.OwnerID(strconv.FormatUint(uint64(def.ID), 10)), def.Host, false)
+}
+
+func (e *Engine) unwatchShare(def core.ShareDef) {
+	if e.watcher == nil {
+		return
+	}
+	e.watcher.RemoveOwner(storagewatch.OwnerID(strconv.FormatUint(uint64(def.ID), 10)))
 }
 
 // eventSources maps the runtime stream to the transport's opaque event shape.
@@ -197,7 +206,11 @@ func (e *Engine) pinForEvents(t server.EventTarget) {
 	if !ok {
 		return
 	}
-	e.watcher.Subscribe(vfs.ShareID(t.Share), path)
+	publicPath, err := storage.ParsePath(path.String())
+	if err != nil {
+		return
+	}
+	e.watcher.Subscribe(storagewatch.OwnerID(strconv.FormatUint(uint64(t.Share), 10)), publicPath)
 }
 
 // unpinForEvents releases one.
@@ -209,12 +222,16 @@ func (e *Engine) unpinForEvents(t server.EventTarget) {
 	if !ok {
 		return
 	}
-	e.watcher.Unsubscribe(vfs.ShareID(t.Share), path)
+	publicPath, err := storage.ParsePath(path.String())
+	if err != nil {
+		return
+	}
+	e.watcher.Unsubscribe(storagewatch.OwnerID(strconv.FormatUint(uint64(t.Share), 10)), publicPath)
 }
 
 // watchSettings is what the watcher needs out of the settings document.
 type watchSettings struct {
-	Backend       watch.Backend
+	Backend       storagewatch.Backend
 	HotSetMax     int
 	FullThreshold int
 }
@@ -228,7 +245,7 @@ type watchSettings struct {
 func watchSettingsOf(ctx context.Context, e *Engine) watchSettings {
 	values := runtimecfg.Load(ctx, e.State, runtimecfg.Defaults(), e.logger)
 	return watchSettings{
-		Backend:       watch.BackendInotify,
+		Backend:       storagewatch.BackendInotify,
 		HotSetMax:     values.WatchHotSetMax,
 		FullThreshold: values.WatchFullThreshold,
 	}

@@ -33,6 +33,7 @@ type Deps struct {
 	Auth                 *auth.Service
 	MarkSearchIncomplete func()
 	WatchShare           func(core.ShareDef)
+	UnwatchShare         func(core.ShareDef)
 	Logger               *slog.Logger
 }
 
@@ -429,6 +430,12 @@ func (h *handlers) sharesUpdate(c *gin.Context) {
 		fail(c, err)
 		return
 	}
+	if h.d.MarkSearchIncomplete != nil {
+		h.d.MarkSearchIncomplete()
+	}
+	if h.d.WatchShare != nil {
+		h.d.WatchShare(share)
+	}
 	json(c, http.StatusOK, handler.ShareOf(share))
 }
 
@@ -583,9 +590,17 @@ func (h *handlers) sharesDelete(c *gin.Context) {
 		notFound(c)
 		return
 	}
+	share, found := h.d.Core.Share(id)
+	if !found {
+		notFound(c)
+		return
+	}
 	if err := h.d.Core.DeleteShare(c.Request.Context(), id); err != nil {
 		fail(c, err)
 		return
+	}
+	if h.d.UnwatchShare != nil {
+		h.d.UnwatchShare(share)
 	}
 	c.Status(http.StatusNoContent)
 }

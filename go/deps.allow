@@ -51,19 +51,13 @@ golang.org/x/image
 # Gorilla owns WebSocket upgrade, control frames, close codes, and
 # fragmentation over native net/http.
 github.com/gorilla/websocket
-github.com/aws/aws-sdk-go-v2
-github.com/aws/aws-sdk-go-v2/config
-github.com/aws/aws-sdk-go-v2/credentials
-github.com/aws/aws-sdk-go-v2/service/s3
-github.com/aws/smithy-go
 github.com/stowcloud/durablefs
 
 # Standalone storage-neutral name search and SCNB v1 index.
 github.com/stowcloud/namesearch
 
-# Storage capability contracts, transfer intervals, worker IPC, and VeraCrypt
-# container formats are maintained as independent public modules.
+# Storage backends, transfer intervals and worker IPC are maintained as
+# independent public modules. AWS and VeraCrypt are indirect storage dependencies.
 github.com/stowcloud/storage
 github.com/stowcloud/transfer
 github.com/stowcloud/sandbox-worker
-github.com/stowcloud/veracrypt

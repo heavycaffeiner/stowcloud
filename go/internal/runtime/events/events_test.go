@@ -7,13 +7,13 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
-	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/watch"
+	"github.com/stowcloud/storage"
+	storagewatch "github.com/stowcloud/storage/watch"
 )
 
 func TestAdaptRunsCallbacksInOrderBeforeEmission(t *testing.T) {
-	in := make(chan watch.InvalEvent, 1)
-	in <- watch.InvalEvent{Share: vfs.ShareID(7), Dir: "docs"}
+	in := make(chan storagewatch.Event, 1)
+	in <- storagewatch.Event{Owner: "7", Path: mustPath(t, "docs")}
 	close(in)
 
 	var order []string
@@ -44,10 +44,19 @@ func TestAdaptRunsCallbacksInOrderBeforeEmission(t *testing.T) {
 
 func TestAdaptStopsWhenContextCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	in := make(chan watch.InvalEvent)
+	in := make(chan storagewatch.Event)
 	out := Adapt(ctx, in, 0)
 	cancel()
 	if _, ok := <-out; ok {
 		t.Fatal("adapter emitted after cancellation")
 	}
+}
+
+func mustPath(t *testing.T, raw string) storage.Path {
+	t.Helper()
+	p, err := storage.ParsePath(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
 }

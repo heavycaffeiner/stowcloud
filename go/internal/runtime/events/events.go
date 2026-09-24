@@ -8,12 +8,11 @@ import (
 	"context"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
-	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/watch"
+	storagewatch "github.com/stowcloud/storage/watch"
 )
 
-// Event is one share-relative invalidation. It deliberately contains no
-// storage or transport types: consumers decide what the opaque share and
-// directory identify in their own layer.
+// Event is one owner-relative invalidation. The product adapter maps the
+// public watch owner's opaque ID back to its share identity at the boundary.
 type Event struct {
 	Share uint32
 	Dir   string
@@ -29,7 +28,7 @@ type Callback func(context.Context, Event)
 // translated event. The returned stream is closed when the source closes or
 // ctx is canceled. buffer bounds the pending translated events; a caller can
 // use zero for an unbuffered stream.
-func Adapt(ctx context.Context, in <-chan watch.InvalEvent, buffer int, callbacks ...Callback) <-chan Event {
+func Adapt(ctx context.Context, in <-chan storagewatch.Event, buffer int, callbacks ...Callback) <-chan Event {
 	if buffer < 0 {
 		buffer = 0
 	}
@@ -44,7 +43,20 @@ func Adapt(ctx context.Context, in <-chan watch.InvalEvent, buffer int, callback
 				if !ok {
 					return
 				}
-				ev := Event{Share: uint32(raw.Share), Dir: raw.Dir, All: raw.All}
+				ev := Event{Dir: raw.Path.String(), All: raw.All}
+				if raw.Owner != "" {
+					// Product owner IDs are decimal share IDs. Invalid values are
+					// deliberately mapped to zero and ignored by cache policy.
+					var share uint64
+					for _, digit := range raw.Owner {
+						if digit < '0' || digit > '9' {
+							share = 0
+							break
+						}
+						share = share*10 + uint64(digit-'0')
+					}
+					ev.Share = uint32(share)
+				}
 				for _, callback := range callbacks {
 					if callback != nil {
 						callback(ctx, ev)

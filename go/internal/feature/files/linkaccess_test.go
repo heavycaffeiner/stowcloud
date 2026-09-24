@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 )
 
 // folderLink is a share holding a small tree, with a link over one folder in
@@ -138,6 +139,24 @@ func TestLinkStreamAtReadsBeneathAFolderLink(t *testing.T) {
 	}
 	if _, _, err := c.LinkStreamAt(ctx, link, "../private/secret.txt", nil); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("streaming out of the folder returned %v, want ErrNotFound", err)
+	}
+}
+
+func TestFolderLinkRefusesSymlinkEscape(t *testing.T) {
+	c, host, link := folderLink(t, acl.Read|acl.Download)
+	entry, ok := c.shareEntry(link.Share)
+	if !ok {
+		t.Fatal("link share is not registered")
+	}
+	entry.def.Policy.Symlink = vfs.SymlinkWithinShare
+	if err := c.RegisterShare(context.Background(), entry.def); err != nil {
+		t.Fatalf("re-registering with symlink policy: %v", err)
+	}
+	if err := os.Symlink("../private", filepath.Join(host, "shared/sibling")); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := c.LinkStreamAt(context.Background(), link, "sibling/secret.txt", nil); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("link symlink escape = %v, want ErrNotFound", err)
 	}
 }
 

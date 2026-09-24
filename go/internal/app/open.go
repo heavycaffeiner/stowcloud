@@ -40,8 +40,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/instance"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/journal"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
-	secret "github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
-	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/watch"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/system/jail"
 	runtimetasks "github.com/heavycaffeiner/stowcloud/go/internal/runtime/tasks"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/archive"
@@ -50,6 +49,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/middleware"
 	searchhttp "github.com/heavycaffeiner/stowcloud/go/internal/transport/http/search"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/server"
+	storagewatch "github.com/stowcloud/storage/watch"
 )
 
 // The request rate the limiter holds between construction and the settings
@@ -180,10 +180,9 @@ type Engine struct {
 	// rather than about construction.
 	setup *server.SetupGate
 
-	// watcher reports what changed on disk, and events fans that out to
-	// subscribed clients. Both are nil on a deployment whose kernel refused an
-	// inotify descriptor, which costs the push and nothing else.
-	watcher *watch.Watcher
+	// watcher reports filesystem changes, and events fans them out to clients.
+	// Both are nil when the host kernel refuses an inotify descriptor.
+	watcher *storagewatch.Watcher
 	events  *server.EventHub
 
 	clock  clock.Clock

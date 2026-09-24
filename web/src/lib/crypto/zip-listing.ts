@@ -5,15 +5,7 @@
 import { ZipReader, Reader } from '@zip.js/zip.js'
 import { api } from '../api/client'
 import type { ArchiveEntry, ArchiveListing, Entry } from '../api/types'
-import { ciphertextSpanForRange, decryptPlaintextRange, plaintextSizeFromCiphertextSize } from './e2ee'
-
-// rclone-crypt's fixed plaintext block size (e2ee.ts's own BLOCK_SIZE,
-// fixed by the format rather than a tuning knob, per that file's own
-// comment; not exported there since ciphertextSpanForRange and
-// decryptPlaintextRange already take a byte range directly and never need
-// their caller to align to it; this module aligns its own block cache to
-// it purely as a caching granularity).
-const BLOCK_SIZE = 65536
+import { BLOCK_SIZE, ciphertextSpanForRange, decryptPlaintextRange, plaintextSizeFromCiphertextSize } from './e2ee'
 
 // Matches limits.ArchiveEntriesListed in go/internal/feature/preview/limits.
 // The plain-share listing uses the same cap, so encrypted archives do not

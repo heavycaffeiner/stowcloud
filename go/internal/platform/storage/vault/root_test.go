@@ -32,6 +32,15 @@ func openTestRoot(t *testing.T, containerPath string, create bool, sizeMiB uint6
 	return root
 }
 
+func TestParseConfigRejectsTrailingData(t *testing.T) {
+	valid := `{"container":"/tmp/share.hc"}`
+	for _, input := range []string{valid + ` garbage`, valid + valid} {
+		if _, err := ParseConfig([]byte(input)); err == nil {
+			t.Errorf("ParseConfig accepted trailing data %q", input)
+		}
+	}
+}
+
 func TestRootEndToEnd(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -56,8 +65,19 @@ func TestRootEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Join docs: %v", err)
 	}
+
 	if merr := root.Mkdir(docsDir); merr != nil {
 		t.Fatalf("Mkdir docs: %v", merr)
+	}
+	missingPath, err := vfs.RootPath().Join("missing.txt")
+	if err != nil {
+		t.Fatalf("Join missing.txt: %v", err)
+	}
+	if _, openErr := root.OpenRead(missingPath, vfs.IntentRead); openErr == nil {
+		t.Fatal("OpenRead missing file succeeded")
+	}
+	if _, openErr := root.OpenRead(docsDir, vfs.IntentRead); openErr == nil {
+		t.Fatal("OpenRead directory succeeded")
 	}
 	filePath, err := docsDir.Join("report.txt")
 	if err != nil {
@@ -137,6 +157,36 @@ func TestRootEndToEnd(t *testing.T) {
 	}
 	if _, serr := root.Stat(filePath); !errors.Is(serr, vfs.ErrNotFound) {
 		t.Fatalf("Stat(old path) after rename = %v, want ErrNotFound", serr)
+	}
+	destination, err := vfs.RootPath().Join("existing.txt")
+	if err != nil {
+		t.Fatalf("Join existing.txt: %v", err)
+	}
+	if _, writeErr := root.WriteDurable(destination, vfs.DurableOpts{}, func(f *vfs.File) error {
+		_, werr := f.WriteAt([]byte("keep"), 0)
+		return werr
+	}); writeErr != nil {
+		t.Fatalf("WriteDurable destination: %v", writeErr)
+	}
+	if renameErr := root.Rename(movedPath, destination, true); !errors.Is(renameErr, vfs.ErrExists) {
+		t.Fatalf("no-replace rename = %v, want ErrExists", renameErr)
+	}
+	kept, err := root.OpenRead(destination, vfs.IntentRead)
+	if err != nil {
+		t.Fatalf("OpenRead destination: %v", err)
+	}
+	gotKept, err := io.ReadAll(kept.OSFile())
+	if closeErr := kept.Close(); closeErr != nil {
+		t.Fatalf("close kept file: %v", closeErr)
+	}
+	if err != nil {
+		t.Fatalf("read destination: %v", err)
+	}
+	if string(gotKept) != "keep" {
+		t.Fatalf("destination after no-replace rename = %q, want keep", gotKept)
+	}
+	if _, statErr := root.Stat(movedPath); statErr != nil {
+		t.Fatalf("source after no-replace rename: %v", statErr)
 	}
 
 	// CreatePart / PublishPart: the upload engine's two-phase write.

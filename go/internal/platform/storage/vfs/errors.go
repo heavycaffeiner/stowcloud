@@ -80,12 +80,3 @@ func mapErrno(op string, err error) error {
 	}
 	return fmt.Errorf("%s: %w", op, errno)
 }
-
-// isMissing is the only test a Unicode candidate-spelling loop uses to decide
-// whether to try the next spelling, against the raw errno a syscall wrapper
-// produced before mapErrno runs. Every other errno stops the loop at once:
-// widening this set would let a permission refusal on the first spelling look
-// like a missing file once a second spelling is tried.
-func isMissing(err error) bool {
-	return errors.Is(err, syscall.ENOENT) || errors.Is(err, syscall.ENOTDIR)
-}

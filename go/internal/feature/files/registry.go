@@ -349,7 +349,7 @@ func (c *Core) ShareStorage(id ShareID) (storage.ReadHierarchy, bool) {
 
 func (c *Core) publicRead(r Resolved) (storage.ReadHierarchy, storage.Path, bool) {
 	e, ok := c.shareEntry(r.share)
-	if !ok || e.storage == nil {
+	if !ok || e.storage == nil || r.root != e.root {
 		return nil, storage.Path{}, false
 	}
 	p, err := storage.ParsePath(r.path.String())

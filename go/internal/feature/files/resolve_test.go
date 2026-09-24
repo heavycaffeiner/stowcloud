@@ -203,6 +203,119 @@ func TestASymlinkOutOfTheShareIsRefusedByTheRootsPolicy(t *testing.T) {
 	}
 }
 
+func TestScopedGrantRefusesSymlinkEscapeAndReservedAlias(t *testing.T) {
+	for _, policy := range []vfs.SymlinkPolicy{vfs.SymlinkWithinShare, vfs.SymlinkFollow} {
+		t.Run(policy.String(), func(t *testing.T) {
+			c, st := newCore(t)
+			seedUser(t, st, 1, "ada")
+			d := def(t, 10, "documents")
+			d.Policy.Symlink = policy
+			if err := c.RegisterShare(context.Background(), d); err != nil {
+				t.Fatalf("RegisterShare: %v", err)
+			}
+			host := d.Host
+			if err := os.MkdirAll(filepath.Join(host, "allowed"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Join(host, "private"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Join(host, ".sctrash"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, host, "allowed/visible.txt", "visible")
+			writeFile(t, host, "private/secret.txt", "private")
+			writeFile(t, host, ".sctrash/secret.txt", "reserved")
+			if err := os.Symlink("../private", filepath.Join(host, "allowed/sibling")); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink("../.sctrash", filepath.Join(host, "allowed/control")); err != nil {
+				t.Fatal(err)
+			}
+			grantSubpathRead(t, c, st, 1, 10, "allowed", "Scoped")
+
+			visible, err := c.Resolve(1, vpath(t, "Scoped/visible.txt"), acl.Download)
+			if err != nil {
+				t.Fatalf("resolving ordinary file: %v", err)
+			}
+			_, stream, err := c.OpenStream(context.Background(), visible, nil)
+			if err != nil {
+				t.Fatalf("opening ordinary file: %v", err)
+			}
+			if got := drain(t, stream); got != "visible" {
+				t.Fatalf("ordinary file = %q", got)
+			}
+			closeStream(t, stream)
+
+			for _, path := range []string{"Scoped/sibling/secret.txt", "Scoped/control/secret.txt"} {
+				r, err := c.Resolve(1, vpath(t, path), acl.Download)
+				if err != nil {
+					t.Fatalf("resolving %s: %v", path, err)
+				}
+				if _, _, err := c.OpenStream(context.Background(), r, nil); !errors.Is(err, ErrDenied) {
+					t.Fatalf("opening %s = %v, want ErrDenied", path, err)
+				}
+			}
+		})
+	}
+}
+
+func TestWholeShareGrantRetainsConfiguredSymlinkPolicy(t *testing.T) {
+	for _, policy := range []vfs.SymlinkPolicy{vfs.SymlinkWithinShare, vfs.SymlinkFollow} {
+		t.Run(policy.String(), func(t *testing.T) {
+			c, st := newCore(t)
+			seedUser(t, st, 1, "ada")
+			d := def(t, 10, "documents")
+			d.Policy.Symlink = policy
+			if err := c.RegisterShare(context.Background(), d); err != nil {
+				t.Fatalf("RegisterShare: %v", err)
+			}
+			writeFile(t, d.Host, "target.txt", "target")
+			if err := os.Symlink("target.txt", filepath.Join(d.Host, "link.txt")); err != nil {
+				t.Fatal(err)
+			}
+			grantAt(t, c, st, 1, 10, "", "Documents", acl.Read|acl.Download)
+			r, err := c.Resolve(1, vpath(t, "Documents/link.txt"), acl.Download)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, stream, err := c.OpenStream(context.Background(), r, nil)
+			if err != nil {
+				t.Fatalf("configured symlink policy was disabled: %v", err)
+			}
+			if got := drain(t, stream); got != "target" {
+				t.Fatalf("symlink body = %q", got)
+			}
+			closeStream(t, stream)
+		})
+	}
+}
+
+func TestWholeShareGrantStillRefusesReservedAlias(t *testing.T) {
+	c, st := newCore(t)
+	seedUser(t, st, 1, "ada")
+	d := def(t, 10, "documents")
+	d.Policy.Symlink = vfs.SymlinkWithinShare
+	if err := c.RegisterShare(context.Background(), d); err != nil {
+		t.Fatalf("RegisterShare: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(d.Host, ".sctrash"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, d.Host, ".sctrash/secret.txt", "reserved")
+	if err := os.Symlink(".sctrash", filepath.Join(d.Host, "control")); err != nil {
+		t.Fatal(err)
+	}
+	grantAt(t, c, st, 1, 10, "", "Documents", acl.Read|acl.Download)
+	r, err := c.Resolve(1, vpath(t, "Documents/control/secret.txt"), acl.Download)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := c.OpenStream(context.Background(), r, nil); !errors.Is(err, ErrDenied) {
+		t.Fatalf("opening a reserved alias = %v, want ErrDenied", err)
+	}
+}
+
 func TestAGrantSubpathIsLaidOnTheFrontOfTheClientPath(t *testing.T) {
 	t.Parallel()
 	c, st := newCore(t)

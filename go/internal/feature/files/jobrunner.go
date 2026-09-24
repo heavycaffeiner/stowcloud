@@ -375,5 +375,9 @@ func (c *Core) resolveStoredPath(owner int64, share uint32, raw string, need acl
 	if !c.acl.Evaluate(owner, at, need).Allowed {
 		return Resolved{}, ErrDenied
 	}
-	return Resolved{user: UserID(owner), share: ShareID(share), root: entry.root, path: path, perms: c.acl.Effective(owner, at)}, nil
+	root, rerr := restrictScopedRoot(entry.root, path.Len() > 0)
+	if rerr != nil {
+		return Resolved{}, mapVFSErr(rerr)
+	}
+	return Resolved{user: UserID(owner), share: ShareID(share), root: root, path: path, perms: c.acl.Effective(owner, at)}, nil
 }

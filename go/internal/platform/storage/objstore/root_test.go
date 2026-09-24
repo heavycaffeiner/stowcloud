@@ -185,6 +185,12 @@ func mustWriteTestResponse(w io.Writer, p []byte) {
 	}
 }
 
+func panicInfallibleWrite(err error) {
+	if err != nil {
+		panic("objstore: fakeBucket: writing test fixture: " + err.Error())
+	}
+}
+
 func (b *fakeBucket) handleHead(w http.ResponseWriter, key string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -409,6 +415,40 @@ func TestRootEndToEnd(t *testing.T) {
 
 	if err := root.Alive(); err != nil {
 		t.Fatalf("Alive: %v", err)
+	}
+}
+
+func TestReadDirInodeMatchesStat(t *testing.T) {
+	srv, _ := newFakeS3Server(t, "inode-bucket")
+	root := openTestRoot(t, srv.URL, "inode-bucket", "team")
+	p := mustSafePath(t, "same.txt")
+	if _, err := root.WriteDurable(p, vfs.DurableOpts{Mode: 0o640}, func(f *vfs.File) error { _, err := f.WriteAt([]byte("x"), 0); return err }); err != nil {
+		t.Fatal(err)
+	}
+	st, err := root.Stat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := root.ReadDir(vfs.RootPath(), vfs.HideReserved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if e.Name == "same.txt" && e.Ino != st.Ino {
+			t.Fatalf("ReadDir inode %d, Stat inode %d", e.Ino, st.Ino)
+		}
+	}
+}
+
+func TestSpaceReportsScratchCapacity(t *testing.T) {
+	srv, _ := newFakeS3Server(t, "space-bucket")
+	root := openTestRoot(t, srv.URL, "space-bucket", "team")
+	s, err := root.Space(vfs.RootPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Total == 0 || s.Available == 0 {
+		t.Fatalf("scratch capacity = %+v", s)
 	}
 }
 

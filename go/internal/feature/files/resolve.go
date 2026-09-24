@@ -70,6 +70,22 @@ func (r Resolved) WithMask(mask acl.Perms) Resolved {
 	return r
 }
 
+type symlinkRestricter interface {
+	RestrictSymlinks() (vfs.Root, error)
+}
+
+func restrictScopedRoot(root vfs.Root, scoped bool) (vfs.Root, error) {
+	if !scoped || root.Policy().Symlink == vfs.SymlinkDeny {
+		return root, nil
+	}
+	guard, ok := root.(symlinkRestricter)
+	if !ok {
+		// Object and encrypted backends have no host symlinks to follow.
+		return root, nil
+	}
+	return guard.RestrictSymlinks()
+}
+
 // Resolve converts a client path into a share root, a validated path beneath it,
 // and the permissions the caller holds there. It is the sole gate: nothing else
 // in this package parses a virtual path, and no operation accepts one.
@@ -135,10 +151,14 @@ func (c *Core) Resolve(user UserID, p vfs.Vpath, need acl.Perms) (Resolved, erro
 	if !c.acl.Evaluate(int64(user), at, need).Allowed {
 		return Resolved{}, ErrDenied
 	}
+	root, err := restrictScopedRoot(entry.root, match.Subpath.Len() > 0)
+	if err != nil {
+		return Resolved{}, mapVFSErr(err)
+	}
 	return Resolved{
 		user:  user,
 		share: share,
-		root:  entry.root,
+		root:  root,
 		path:  full,
 		// The full effective set, so a later Require and an Entry's Perms
 		// cost no second evaluation.

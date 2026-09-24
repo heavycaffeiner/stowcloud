@@ -45,17 +45,7 @@ func (c *Core) ListSorted(ctx context.Context, r Resolved, cur Cursor, opt ListO
 		return Page{}, err
 	}
 
-	var dir []vfs.DirEntry
-	if backend, path, ok := c.publicRead(r); ok {
-		// Execute the public snapshot contract for this production path, then
-		// retain the confined VFS projection for symlink/type fidelity and
-		// identity metadata that the neutral contract intentionally omits.
-		_, readErr := backend.ReadDir(ctx, path)
-		if readErr != nil {
-			return Page{}, mapVFSErr(readErr)
-		}
-	}
-	dir, err = r.root.ReadDir(r.path, vfs.HideReserved)
+	dir, err := r.root.ReadDir(r.path, vfs.HideReserved)
 	if err != nil {
 		return Page{}, mapVFSErr(err)
 	}

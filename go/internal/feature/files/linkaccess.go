@@ -40,19 +40,31 @@ func (c *Core) linkLive(link Link) error {
 	return nil
 }
 
+func (c *Core) linkRoot(link Link, base vfs.SafePath) (vfs.Root, error) {
+	root, ok := c.ShareRoot(link.Share)
+	if !ok {
+		return nil, ErrLinkExpired
+	}
+	root, err := restrictScopedRoot(root, !base.IsRoot())
+	if err != nil {
+		return nil, ErrLinkExpired
+	}
+	return root, nil
+}
+
 // linkBase resolves the link's own path and cross-checks the pinned identity.
 //
 // The check runs against the link's own root rather than a subpath: a rename
 // of the shared folder kills the link, while a file moving inside the folder
 // is an ordinary change to what the folder contains.
 func (c *Core) linkBase(link Link) (vfs.Root, vfs.SafePath, error) {
-	root, ok := c.ShareRoot(link.Share)
-	if !ok {
-		return nil, vfs.SafePath{}, ErrLinkExpired
-	}
 	base, perr := link.Path.Safe()
 	if perr != nil {
 		return nil, vfs.SafePath{}, ErrLinkExpired
+	}
+	root, rerr := c.linkRoot(link, base)
+	if rerr != nil {
+		return nil, vfs.SafePath{}, rerr
 	}
 	st, serr := root.Stat(base)
 	if serr != nil {
@@ -71,13 +83,13 @@ func (c *Core) linkBase(link Link) (vfs.Root, vfs.SafePath, error) {
 // "..", absolute paths and all reserved names, so a visitor cannot reference
 // anything outside the folder the link was created for.
 func (c *Core) linkTarget(link Link, sub string) (vfs.Root, vfs.SafePath, error) {
-	root, ok := c.ShareRoot(link.Share)
-	if !ok {
-		return nil, vfs.SafePath{}, ErrLinkExpired
-	}
 	base, perr := link.Path.Safe()
 	if perr != nil {
 		return nil, vfs.SafePath{}, ErrLinkExpired
+	}
+	root, rerr := c.linkRoot(link, base)
+	if rerr != nil {
+		return nil, vfs.SafePath{}, rerr
 	}
 	sub = strings.Trim(sub, "/")
 	if sub == "" {
@@ -477,13 +489,13 @@ func (c *Core) linkDropDir(link Link) (vfs.Root, vfs.SafePath, error) {
 	if err := c.linkLive(link); err != nil {
 		return nil, vfs.SafePath{}, err
 	}
-	root, ok := c.ShareRoot(link.Share)
-	if !ok {
-		return nil, vfs.SafePath{}, ErrLinkExpired
-	}
 	base, perr := link.Path.Safe()
 	if perr != nil {
 		return nil, vfs.SafePath{}, ErrLinkExpired
+	}
+	root, rerr := c.linkRoot(link, base)
+	if rerr != nil {
+		return nil, vfs.SafePath{}, rerr
 	}
 	st, serr := root.Stat(base)
 	if serr != nil || !st.Kind.IsDir() {
