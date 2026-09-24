@@ -18,7 +18,7 @@ import (
 	core "github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
 	stowcloud "github.com/heavycaffeiner/stowcloud/go/internal/feature/search/stowcloud"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/search/svc"
-	task "github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
 	search "github.com/stowcloud/namesearch"
 )
 

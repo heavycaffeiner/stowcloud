@@ -332,6 +332,7 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	// database open after refusing to start holds the data directory's lock
 	// against the next attempt.
 	fail := func(err error) (*Engine, error) {
+		jobsStop()
 		// The close error is joined rather than dropped: a failure to start
 		// that also failed to release its files is two problems, and the
 		// second one is why the next attempt cannot take the lock.
@@ -621,7 +622,7 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	// the database.
 	flow, ferr := auth.NewLoginFlowWithService(e.State, e.Auth, clk.Nanos)
 	if ferr != nil {
-		return nil, fmt.Errorf("building the device login: %w", ferr)
+		return fail(fmt.Errorf("building the device login: %w", ferr))
 	}
 	e.Flow = flow
 	claimBytes := make([]byte, 32)

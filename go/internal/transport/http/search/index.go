@@ -218,7 +218,9 @@ func (m *Manager) runIndexBuild(ctx context.Context, id int64, sources []searchl
 	now := m.clk().Nanos()
 	if err != nil {
 		m.log().Warn("the index build failed", "error", err, "files", progress.Files)
-		_ = m.State.FinishOp(ctx, id, state.OpFailed, indexedCount(progress.Files), err.Error(), now, nil)
+		if ferr := m.State.FinishOp(ctx, id, state.OpFailed, indexedCount(progress.Files), err.Error(), now, nil); ferr != nil {
+			m.log().Warn("recording a failed index build failed", "error", ferr)
+		}
 		return
 	}
 	if !m.hasWatcher() {
@@ -227,20 +229,28 @@ func (m *Manager) runIndexBuild(ctx context.Context, id int64, sources []searchl
 	}
 	if elapsed := m.clk().Now().Sub(started); progress.Files > 0 && elapsed >= time.Second {
 		rate := uint64(float64(progress.Files) / elapsed.Seconds())
-		_ = m.State.SetIndexBuildRate(ctx, rate)
+		if rerr := m.State.SetIndexBuildRate(ctx, rate); rerr != nil {
+			m.log().Warn("recording the index build rate failed", "error", rerr)
+		}
 	}
 	indexed := indexedCount(progress.Files)
 	switch {
 	case m.jobsStopped():
-		_ = m.State.InterruptOp(ctx, id, now)
+		if ierr := m.State.InterruptOp(ctx, id, now); ierr != nil {
+			m.log().Warn("interrupting an index build failed", "error", ierr)
+		}
 	case m.buildCancelled(ctx, id):
-		_ = m.State.FinishOp(ctx, id, state.OpCancelled, indexed, "cancelled; the index holds what the walk reached", now, nil)
+		if ferr := m.State.FinishOp(ctx, id, state.OpCancelled, indexed, "cancelled; the index holds what the walk reached", now, nil); ferr != nil {
+			m.log().Warn("recording a cancelled index build failed", "error", ferr)
+		}
 	default:
 		message := ""
 		if progress.Partial {
 			message = "the corpus is larger than one build covers; a query beyond it falls back to a walk"
 		}
-		_ = m.State.FinishOp(ctx, id, state.OpDone, indexed, message, now, nil)
+		if ferr := m.State.FinishOp(ctx, id, state.OpDone, indexed, message, now, nil); ferr != nil {
+			m.log().Warn("recording a completed index build failed", "error", ferr)
+		}
 	}
 }
 

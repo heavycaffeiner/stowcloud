@@ -447,10 +447,11 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
     "Only the upload finalizer may take a writable descriptor on a read path."
 
   # D14. SQL is parameters only. Every statement is a package-level constant.
-  # Tests are excluded: they build fixture strings rather than statements, and
-  # a seeded row named with Sprintf is not a query.
+  # Tests build fixture strings rather than statements. Database limits format
+  # typed error messages, not queries.
   SQL_HITS=$(go_code 'fmt\.Sprintf\(|fmt\.Sprint\(|strings\.Builder' \
-             | grep '^go/internal/platform/database/' | grep -v '_test\.go:' || true)
+             | grep '^go/internal/platform/database/' | grep -v '_test\.go:' \
+             | grep -v '^go/internal/platform/database/limits/' || true)
   grep_gate "D14: no built SQL in the store" "$SQL_HITS" \
     "Bind parameters. A query built from parts is an injection waiting for input."
 
@@ -491,7 +492,7 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
       hits="$hits$(ingo go list -tags compat_nc -f '{{range .Imports}}{{.}}{{"\n"}}{{end}}' \
                    ./internal/transport/http/nc/... 2>/dev/null \
                    | grep 'stowcloud/go/internal/' \
-                   | grep -vE 'internal/(transport/http/(dav|apierr|middleware|route)|kit/|feature/)' || true)"
+                   | grep -vE 'internal/(transport/http/(dav|apierr|middleware|route)|platform/(clock|http/headers|number|protocol/limits)(/|$)|feature/)' || true)"
     fi
     printf '%s' "$hits" | grep -v '^[[:space:]]*$' || true
   }

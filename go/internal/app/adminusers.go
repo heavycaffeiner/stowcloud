@@ -3,8 +3,6 @@
 package app
 
 import (
-	"strconv"
-
 	"github.com/gin-gonic/gin"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/apierr"
 )
@@ -26,13 +24,4 @@ func (e *Engine) admin(c *gin.Context) (int64, bool) {
 		return 0, false
 	}
 	return int64(owner), true
-}
-
-// queryInt reads an optional decimal, zero when absent or unusable.
-func queryInt(raw string) int64 {
-	n, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil || n < 0 {
-		return 0
-	}
-	return n
 }

@@ -67,8 +67,8 @@ func ThumbnailHandler(d ThumbnailDeps) gin.HandlerFunc {
 			d.Fail(c, err)
 			return
 		}
-		if enc, err := d.Core.ShareEncrypted(c.Request.Context(), r.Share()); err != nil {
-			d.Fail(c, err)
+		if enc, eerr := d.Core.ShareEncrypted(c.Request.Context(), r.Share()); eerr != nil {
+			d.Fail(c, eerr)
 			return
 		} else if enc {
 			d.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})

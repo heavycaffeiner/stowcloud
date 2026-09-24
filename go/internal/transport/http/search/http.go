@@ -101,7 +101,9 @@ func (m *Manager) writeSearchStream(ctx context.Context, cancel context.CancelFu
 	if err != nil {
 		m.log().Warn("a search failed after its stream was committed", "error", err)
 		writeSSEEvent(w, "done", map[string]any{"error": searchErrorName(err), "count": count}, m)
-		_ = w.Flush()
+		if ferr := w.Flush(); ferr != nil {
+			m.log().Warn("flushing a failed search stream", "error", ferr)
+		}
 		return
 	}
 	writeSSEEvent(w, "done", map[string]any{"count": count, "tier": results.Tier.String(), "elapsed_ms": results.Elapsed.Milliseconds(), "truncated": results.Truncated}, m)

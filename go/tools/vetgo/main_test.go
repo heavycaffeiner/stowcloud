@@ -26,8 +26,8 @@ func TestAcceptsEverySpawningPackage(t *testing.T) {
 
 // The internal tree is the only supported layout. The fixture keeps the
 // package path identical to the production allowlist.
-func TestAcceptsInternalTaskPackage(t *testing.T) {
-	pkg := filepath.Join("testdata", "good", "internal", "kit", "task")
+func TestAcceptsInternalConcurrencyPackage(t *testing.T) {
+	pkg := filepath.Join("testdata", "good", "internal", "platform", "concurrency")
 	out, n := run(t, pkg)
 	if n != 0 {
 		t.Fatalf("reported %d go statements in %s:\n%s", n, pkg, out)

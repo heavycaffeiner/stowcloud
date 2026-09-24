@@ -140,14 +140,20 @@ func main() {
 		say(os.Stderr, "contractcheck: reading the handlers: %v\n", err)
 		os.Exit(2)
 	}
-	// Request decoders may live in either transport or application while route
-	// families move. Read both roots so every client request remains checked.
+	// Request decoders are split between application, generic handlers and the
+	// administrator-share transport. Read each owner without changing the set
+	// of client request contracts checked below.
 	appSrc, err := readGo(os.Args[3])
 	if err != nil {
 		say(os.Stderr, "contractcheck: reading application decoders: %v\n", err)
 		os.Exit(2)
 	}
-	reqSrc := goSrc + "\n" + appSrc
+	shareSrc, err := readGo(os.Args[2] + "/../adminshares")
+	if err != nil {
+		say(os.Stderr, "contractcheck: reading administrator share decoders: %v\n", err)
+		os.Exit(2)
+	}
+	reqSrc := goSrc + "\n" + appSrc + "\n" + shareSrc
 
 	bad := 0
 	for _, p := range pairs() {
