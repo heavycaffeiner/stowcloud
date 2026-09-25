@@ -9,7 +9,6 @@
 package app
 
 import (
-	"encoding/hex"
 	"math"
 	"net/http"
 	"time"
@@ -18,7 +17,6 @@ import (
 
 	core "github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
 	uploadlimits "github.com/heavycaffeiner/stowcloud/go/internal/feature/uploads/limits"
-	secret "github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/objstore"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/handler"
@@ -138,12 +136,4 @@ func failKnown(c *gin.Context, err error) {
 // clientAddr is the address the chain resolved, as the audit log records it.
 func clientAddr(c *gin.Context) string {
 	return middleware.ClientOf(c).String()
-}
-
-// printableToken renders a session token for the cookie.
-//
-// Hex rather than the secret's String, which redacts: a redacted cookie value
-// is a session nobody can present. The credential step decodes the same way.
-func printableToken(t secret.Secret) string {
-	return hex.EncodeToString(t.Reveal())
 }

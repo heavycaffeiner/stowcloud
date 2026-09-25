@@ -537,14 +537,14 @@ func TestAStoredClientSecretOpensAgain(t *testing.T) {
 
 	const name, secret = "oidc_client_secret", "a-provider-issued-secret-value"
 
-	if !e.HasConfigSecret(ctx, name) {
+	if !e.Settings.HasConfigSecret(ctx, name) {
 		// Nothing stored yet, which is the state to start from.
-		if serr := e.StoreConfigSecret(ctx, name, secret); serr != nil {
+		if serr := e.Settings.StoreConfigSecret(ctx, name, secret); serr != nil {
 			t.Fatalf("storing: %v", serr)
 		}
 	}
 
-	got, ok, err := e.ConfigSecret(ctx, name)
+	got, ok, err := e.Settings.ConfigSecret(ctx, name)
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -554,16 +554,16 @@ func TestAStoredClientSecretOpensAgain(t *testing.T) {
 	if got != secret {
 		t.Errorf("the secret opened as %q", got)
 	}
-	if !e.HasConfigSecret(ctx, name) {
+	if !e.Settings.HasConfigSecret(ctx, name) {
 		t.Error("the stored secret is not reported as present")
 	}
 
 	// An empty value clears rather than storing an empty string, which would
 	// be a credential the provider rejects.
-	if serr := e.StoreConfigSecret(ctx, name, ""); serr != nil {
+	if serr := e.Settings.StoreConfigSecret(ctx, name, ""); serr != nil {
 		t.Fatalf("clearing: %v", serr)
 	}
-	if e.HasConfigSecret(ctx, name) {
+	if e.Settings.HasConfigSecret(ctx, name) {
 		t.Error("the secret survived being cleared")
 	}
 }
@@ -660,7 +660,7 @@ func TestAnAppHostChangeRefreshesTheDeploymentProbe(t *testing.T) {
 	e, base, cookie, csrf := bindEngine(t)
 
 	changed := make(chan string, 1)
-	e.OnAppHostChange(func() { changed <- e.ProbeHost() })
+	e.Settings.OnAppHostChange(func() { changed <- e.Settings.ProbeHost() })
 
 	status, body := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/network",
 		cookie, csrf, map[string]any{"app_hosts": []any{"127.0.0.1", "health.example.test"}})
@@ -688,7 +688,7 @@ func TestAPinnedListenAddressSurvivesASettingsSave(t *testing.T) {
 	e, base, cookie, csrf := bindEngine(t)
 
 	moved := make(chan string, 4)
-	e.OnBindChange("127.0.0.1:19999", true, func(next string) { moved <- next })
+	e.Settings.OnBindChange("127.0.0.1:19999", true, func(next string) { moved <- next })
 
 	status, body := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/rate",
 		cookie, csrf, map[string]any{"per_sec": 30, "burst": 90})
@@ -710,7 +710,7 @@ func TestAStoredListenAddressStillMovesTheListener(t *testing.T) {
 	e, base, cookie, csrf := bindEngine(t)
 
 	moved := make(chan string, 4)
-	e.OnBindChange("127.0.0.1:19999", false, func(next string) { moved <- next })
+	e.Settings.OnBindChange("127.0.0.1:19999", false, func(next string) { moved <- next })
 
 	status, body := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/network",
 		cookie, csrf, map[string]any{"bind": "127.0.0.1:19998"})
@@ -735,7 +735,7 @@ func TestAStoredListenAddressStillMovesTheListener(t *testing.T) {
 func TestSavingABindAddressOnAPinnedProcessIsStoredNotApplied(t *testing.T) {
 	t.Parallel()
 	e, base, cookie, csrf := bindEngine(t)
-	e.OnBindChange("127.0.0.1:19999", true, func(string) {})
+	e.Settings.OnBindChange("127.0.0.1:19999", true, func(string) {})
 
 	status, body := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/network",
 		cookie, csrf, map[string]any{"bind": "0.0.0.0:8443"})
@@ -768,7 +768,7 @@ func TestSavingABindAddressOnAPinnedProcessIsStoredNotApplied(t *testing.T) {
 func TestSavingABindAddressWithoutAPinIsApplied(t *testing.T) {
 	t.Parallel()
 	e, base, cookie, csrf := bindEngine(t)
-	e.OnBindChange("127.0.0.1:19999", false, func(string) {})
+	e.Settings.OnBindChange("127.0.0.1:19999", false, func(string) {})
 
 	status, body := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/network",
 		cookie, csrf, map[string]any{"bind": "127.0.0.1:19997"})

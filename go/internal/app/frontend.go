@@ -49,15 +49,3 @@ func (e *Engine) mountFrontend(app *gin.Engine) error {
 	}
 	return nil
 }
-
-// serveFrontendDocument answers an HTML navigation with the interface
-// document, whose client router owns the path the visitor arrived at.
-func (e *Engine) serveFrontendDocument(c *gin.Context) {
-	h, ok := spa.Handler()
-	if !ok {
-		c.AbortWithStatus(http.StatusNotFound)
-		return
-	}
-	h.ServeHTTP(c.Writer, c.Request)
-	c.Abort()
-}

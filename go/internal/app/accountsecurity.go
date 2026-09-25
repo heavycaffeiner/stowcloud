@@ -11,10 +11,6 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/apierr"
 )
 
-type reconfirmRequest struct {
-	Current string `json:"current"`
-}
-
 func (e *Engine) reconfirm(c *gin.Context, owner int64, password string) bool {
 	if password == "" {
 		refuse(c, apierr.Classify(auth.ErrCredentials, apierr.VisibilityKnown))

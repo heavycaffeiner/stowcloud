@@ -16,7 +16,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/netip"
 	"path/filepath"
 	"runtime"
 	"sync"
@@ -25,6 +24,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/heavycaffeiner/stowcloud/go/internal/app/backends"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/admin/logbook"
+	live "github.com/heavycaffeiner/stowcloud/go/internal/feature/admin/settings/live"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/admin/settings/runtimecfg"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/auth"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
@@ -39,13 +39,17 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/dbfile"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/instance"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/journal"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/sizeguard"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/system/jail"
+	runtimerestart "github.com/heavycaffeiner/stowcloud/go/internal/runtime/restart"
 	runtimetasks "github.com/heavycaffeiner/stowcloud/go/internal/runtime/tasks"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/archive"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/dav"
+	filehttp "github.com/heavycaffeiner/stowcloud/go/internal/transport/http/files"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/handler"
+	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/links"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/middleware"
 	searchhttp "github.com/heavycaffeiner/stowcloud/go/internal/transport/http/search"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/server"
@@ -151,13 +155,12 @@ type Engine struct {
 	// console.
 	Logs *logbook.Sink
 
+	// Settings owns the applied document and live process callbacks.
+	Settings    *live.Coordinator
+	archiveGate *filehttp.ArchiveGate
 	// Archives names selections a browser is about to fetch. Never nil: a
 	// folder download is minted here before the navigation that collects it.
 	Archives *archive.Tickets
-	// archiveGate bounds the archive streams and ZIP directory parses that may
-	// run at once. Its limit is live through the settings path.
-	archiveGate archiveConcurrencyGate
-
 	// Search answers filename queries. Never nil: the walking tier needs no
 	// index and no subprocess, so every deployment has one.
 	Search *svc.Service
@@ -188,80 +191,30 @@ type Engine struct {
 	clock  clock.Clock
 	logger *slog.Logger
 
-	// dataDir is where the databases and the master key live. Kept because
-	// the repair door probes under it when a submitted section names no root
-	// of its own.
+	// dataDir is the trusted operator-owned state directory.
 	dataDir string
 
-	// The chain reads these per request, so an operator's settings change
-	// takes effect on the next request rather than at the next restart.
+	// The CSRF and content-claim keys derive from the master key at boot.
+	csrf          []byte
+	claimKey      handler.ClaimKey
+	linkLimiter   *links.Limiter
+	publicLinks   *links.Public
+	totpLimiter   *links.Limiter
+	searchRuntime *searchhttp.Manager
+	davLocks      *dav.StateLocks
+	oidcClient    *oidc.Client
+	oidcName      string
+	// SMB publication can become available after a settings save.
 	settingsMu sync.RWMutex
-	appHosts   middleware.Hosts
-	trusted    []netip.Prefix
-	// allowedOrigins and compatCanonical belong to the compatibility surface:
-	// the origins that may read its responses across origins, and the base
-	// URL it renders when a request carries no usable host.
-	allowedOrigins  []string
-	compatCanonical string
-	csrf            []byte
-	claimKey        handler.ClaimKey
-	linkLimiter     *linkLimiter
-	totpLimiter     *linkLimiter
-	searchRuntime   *searchhttp.Manager
-	davLocks        *dav.StateLocks
-	// The provider client, rebuilt when the settings change. Nil is off, and
-	// off is the ordinary state: a deployment without single sign-on is one
-	// where people use passwords.
-	oidcClient *oidc.Client
-	oidcName   string
+	limiter    *middleware.Limiter
+	files      []*dbfile.DB
 
-	// limiter is shared across requests, since a per-request one would count
-	// each request against an empty window and limit nothing.
-	limiter *middleware.Limiter
-
-	// files are the open databases, closed in reverse.
-	files []*dbfile.DB
-
-	// guardStop halts the size guard's sampler. Replaced on every settings
-	// save, because the sampler holds the configuration it was started with.
-	guardMu   sync.Mutex
-	guardStop context.CancelFunc
-
-	jobs     concurrency.Group
-	jobsCtx  context.Context
-	jobsStop context.CancelFunc
-
-	// maintenance owns the recurring tasks declared by tasks(). They start
-	// once per engine rather than once per mounted listener generation.
+	jobs        concurrency.Group
+	jobsCtx     context.Context
+	jobsStop    context.CancelFunc
 	maintenance *runtimetasks.Runner
-
-	// onBind is told when a settings save moved the listen address. The
-	// listener belongs to the process that started this engine, so the change
-	// is handed out rather than applied here.
-	//
-	// bindPinned marks an address the process was started with. A stored
-	// setting does not move that one: an operator who bound to loopback
-	// behind a proxy would otherwise find the socket on every interface
-	// after saving something unrelated.
-	bindMu     sync.Mutex
-	onBind     func(addr string)
-	boundAddr  string
-	bindPinned bool
-
-	// onAppHostChange publishes the name a process-local health probe must ask
-	// for after first-run setup or a live network settings change.
-	appHostChangeMu sync.Mutex
-	onAppHostChange func()
-
-	// onRestart replaces the process image. Same reason as onBind: the image
-	// belongs to the process, not to an engine mounted on it.
-	restartMu sync.Mutex
-	onRestart func()
-
-	// hardening is the sandbox policy this process actually installed, kept so
-	// a restart can tell a tightening change from one the kernel will not let
-	// it apply.
-	hardening jail.Policy
+	Restart     *runtimerestart.Signal
+	hardening   jail.Policy
 }
 
 // clk is the engine's clock.
@@ -321,10 +274,12 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 		jobsCtx:     jobsCtx,
 		jobsStop:    jobsStop,
 		maintenance: runtimetasks.New(logger),
+		Restart:     &runtimerestart.Signal{},
 		// Until settings are loaded, no proxy is trusted and no host is
 		// named. An empty host list is what first boot looks like, and the
 		// boundary admits only a private client in that state.
-		limiter: middleware.NewLimiter(clk, defaultRatePerSecond, defaultBurst),
+		limiter:     middleware.NewLimiter(clk, defaultRatePerSecond, defaultBurst),
+		archiveGate: filehttp.NewArchiveGate(),
 	}
 
 	// A failure past this point closes what is already open. Leaving a
@@ -565,11 +520,35 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	if values.ThumbnailEnabled {
 		e.Preview = openPreview(thumbsDir, opt.PreviewWorker, coreSvc, clk, logger)
 	}
+	files := make([]sizeguard.File, 0, len(e.files))
+	for _, file := range e.files {
+		files = append(files, file)
+	}
+	e.Settings = live.New(live.Options{
+		State: e.State, Auth: e.Auth, Logger: logger, DataDir: opt.DataDir, Files: files,
+		SearchBounds: e.Search.SetBounds, ArchiveLimit: e.archiveGate.SetLimit,
+		WatchBounds: func(hotSet, threshold int) {
+			if e.watcher != nil {
+				e.watcher.SetBounds(hotSet, threshold)
+			}
+		},
+		OpenIndex: e.searchRuntime.OpenIndex, SetSMBTOTPPolicy: e.Auth.SetSMBTOTPPolicy,
+		ApplyHomes: e.applyHomes, ApplyThumbnails: e.applyThumbnailSettings,
+		SetRateLimits: e.limiter.SetLimits,
+		BuildOIDC: func(ctx context.Context, cfg *runtimecfg.OIDC) *oidc.Client {
+			return e.buildOIDCClient(ctx, &oidcSettings{Issuer: cfg.Issuer, ClientID: cfg.ClientID, Scopes: cfg.Scopes, AllowPrivateEndpoints: cfg.AllowPrivateEndpoints, CACertFile: cfg.CACertFile, PublicClient: cfg.PublicClient})
+		},
+		SetOIDC: func(client *oidc.Client, name string) {
+			e.settingsMu.Lock()
+			e.oidcClient, e.oidcName = client, name
+			e.settingsMu.Unlock()
+		},
+	})
 	// The operator's settings, before anything serves. The chain reads the
 	// host lists and the proxy ranges per request, so leaving them at their
 	// zero values would run a configured deployment as though nothing had
 	// been configured.
-	e.loadSettings(ctx)
+	e.Settings.Load(ctx)
 
 	// The gate reads the account count through auth, so it is built after it.
 	// Unconditionally: a deployment that is already set up has a closed gate
@@ -629,8 +608,8 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 		return fail(fmt.Errorf("generating direct claim key: %w", rerr))
 	}
 	e.claimKey = handler.ClaimKey{Version: 1, Key: claimBytes}
-	e.linkLimiter = newLinkLimiter(5*time.Minute, 10, clk.Nanos)
-	e.totpLimiter = newLinkLimiter(5*time.Minute, 5, clk.Nanos)
+	e.linkLimiter = links.NewLimiter(5*time.Minute, 10, clk.Nanos)
+	e.totpLimiter = links.NewLimiter(5*time.Minute, 5, clk.Nanos)
 	e.davLocks = dav.NewStateLocks(e.State, clk, e.logger)
 	return e, nil
 }
@@ -724,7 +703,9 @@ func (e *Engine) Close() (err error) {
 
 	// The size guard reads those databases on a ticker, so it stops before
 	// they are closed rather than sampling a file that is going away.
-	e.stopSizeGuard()
+	if e.Settings != nil {
+		e.Settings.StopSizeGuard()
+	}
 
 	// The work a request started and left running: a recursive copy and an
 	// index build. Each writes its outcome when it finishes, so closing the

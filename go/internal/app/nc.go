@@ -28,6 +28,7 @@ import (
 	num "github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/handler"
+	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/links"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/nc"
 )
 
@@ -40,16 +41,16 @@ import (
 const ncVersion = "31.0.4"
 
 func (e *Engine) declarePublicLinkAliases(app *gin.Engine) {
-	e.declarePublicLinkPrefix(app, frontController+PublicLinkPrefix)
+	e.publicLinks.Declare(app, frontController+links.PublicLinkPrefix)
 }
 
 func (e *Engine) mountNCTagged(app *gin.Engine) {
 	e.ncServer().Mount(app)
-	app.GET(frontController+PublicLinkPrefix+"/:token", func(c *gin.Context) { e.linkLanding(c) })
-	app.POST(frontController+PublicLinkPrefix+"/:token/auth", func(c *gin.Context) { e.linkUnlock(c) })
-	app.GET(frontController+PublicLinkPrefix+"/:token/download", func(c *gin.Context) { e.linkDownload(c) })
-	app.GET(frontController+PublicLinkPrefix+"/:token/zip", func(c *gin.Context) { e.linkZip(c) })
-	app.POST(frontController+PublicLinkPrefix+"/:token/drop", func(c *gin.Context) { e.linkDrop(c) })
+	app.GET(frontController+links.PublicLinkPrefix+"/:token", e.publicLinks.Landing)
+	app.POST(frontController+links.PublicLinkPrefix+"/:token/auth", e.publicLinks.Unlock)
+	app.GET(frontController+links.PublicLinkPrefix+"/:token/download", e.publicLinks.Download)
+	app.GET(frontController+links.PublicLinkPrefix+"/:token/zip", e.publicLinks.Zip)
+	app.POST(frontController+links.PublicLinkPrefix+"/:token/drop", e.publicLinks.Drop)
 }
 
 func (e *Engine) contentRoute(method, path string) bool {
@@ -83,7 +84,7 @@ func (e *Engine) ncServer() *nc.Server {
 		LocateFile:     e.ncLocateFile,
 		SealClaim:      e.sealContentClaim,
 		OpenClaim:      e.openContentClaim,
-		PublicLinkPath: func(token string) string { return PublicLinkPrefix + "/" + token },
+		PublicLinkPath: func(token string) string { return links.PublicLinkPrefix + "/" + token },
 		LockGuard:      e.ncLockGuard,
 		Clock:          e.clk(),
 		Logger:         e.log(),
@@ -216,7 +217,7 @@ func (e *Engine) ncPeerTrusted(peer string) bool {
 	if err != nil {
 		return false
 	}
-	for _, prefix := range e.trustedPrefixes() {
+	for _, prefix := range e.trustedProxies() {
 		if prefix.Contains(addr) {
 			return true
 		}

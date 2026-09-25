@@ -98,9 +98,11 @@ func (a accessLog) Access(e middleware.AccessEvent) {
 // Read per request rather than captured, so a settings save takes effect on
 // the next request instead of at the next listener swap.
 func (e *Engine) hosts() middleware.Hosts {
-	e.settingsMu.RLock()
-	defer e.settingsMu.RUnlock()
-	return e.appHosts
+	if e.Settings == nil {
+		return middleware.Hosts{}
+	}
+	h := e.Settings.Hosts()
+	return middleware.Hosts{App: h.App, Content: h.Content}
 }
 
 // trustedProxies reports the networks whose forwarding headers are believed.
@@ -110,27 +112,26 @@ func (e *Engine) hosts() middleware.Hosts {
 // lets any caller claim any address, and the rate limiter and the audit log
 // both read what this decides.
 func (e *Engine) trustedProxies() []netip.Prefix {
-	e.settingsMu.RLock()
-	defer e.settingsMu.RUnlock()
-	return e.trusted
+	if e.Settings == nil {
+		return nil
+	}
+	return e.Settings.TrustedProxies()
 }
 
 // originAllowed reports whether a request Origin may read a compatibility
 // response across origins. Only an operator-listed origin is, matched exactly
 // after normalization; the list never widens the host guard.
 func (e *Engine) originAllowed(origin string) bool {
-	e.settingsMu.RLock()
-	allowed := e.allowedOrigins
-	e.settingsMu.RUnlock()
-	return middleware.OriginAllowed(origin, allowed)
+	return e.Settings != nil && middleware.OriginAllowed(origin, e.Settings.AllowedOrigins())
 }
 
 // compatCanonicalURL is the base URL the compatibility surface falls back to
 // when a request carries no host to render one from. Empty when unset.
 func (e *Engine) compatCanonicalURL() string {
-	e.settingsMu.RLock()
-	defer e.settingsMu.RUnlock()
-	return e.compatCanonical
+	if e.Settings == nil {
+		return ""
+	}
+	return e.Settings.CompatCanonicalURL()
 }
 
 // csrfKey returns the deployment's durable derivation key.

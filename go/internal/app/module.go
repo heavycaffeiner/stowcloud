@@ -55,13 +55,13 @@ func Module(config ModuleConfig) fx.Option {
 				Pinned:  config.Pinned,
 				Plain:   config.Plain,
 				Logger:  config.Logger,
-			}, engine, router, admission, controller)
+			}, engine.Settings, router, admission, controller)
 		}),
 		fx.Invoke(func(lifecycle fx.Lifecycle, runtime *listener.Runtime) {
 			lifecycle.Append(fx.Hook{OnStart: runtime.Start, OnStop: runtime.Stop})
 		}),
 		fx.Invoke(func(engine *Engine, controller *hanamiprocess.Controller) {
-			runtimerestart.Bind(engine, controller)
+			runtimerestart.Bind(engine.Restart, controller)
 		}),
 	)
 }

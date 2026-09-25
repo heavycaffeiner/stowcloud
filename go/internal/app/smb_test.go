@@ -642,6 +642,10 @@ func TestEnablingSharingLaterStillWritesCredentials(t *testing.T) {
 		cookie, csrf, map[string]any{"enabled": true}); status != http.StatusOK {
 		t.Fatalf("turning sharing on answered %d: %v", status, body)
 	}
+	if status, body := mutate(t, http.MethodPost, base+"/api/v1/admin/smb/apply",
+		cookie, csrf, nil); status != http.StatusOK {
+		t.Fatalf("applying SMB after enabling it answered %d: %v", status, body)
+	}
 
 	if status, body := mutate(t, http.MethodPost, base+"/api/v1/account/smb/password",
 		cookie, csrf, map[string]any{

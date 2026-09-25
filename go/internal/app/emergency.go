@@ -117,14 +117,6 @@ func (e *Engine) doorClient(r *http.Request) netip.Addr {
 	if err != nil {
 		return middleware.Unroutable()
 	}
-	return middleware.ClientAddr(peer.Addr(), e.trustedPrefixes(),
+	return middleware.ClientAddr(peer.Addr(), e.trustedProxies(),
 		r.Header.Get("CF-Connecting-IP"), r.Header.Get("X-Forwarded-For"))
-}
-
-// trustedPrefixes reads the deployment's proxy set under the lock the
-// settings path writes it with.
-func (e *Engine) trustedPrefixes() []netip.Prefix {
-	e.settingsMu.RLock()
-	defer e.settingsMu.RUnlock()
-	return e.trusted
 }

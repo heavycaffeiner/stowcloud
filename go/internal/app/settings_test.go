@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	app "github.com/heavycaffeiner/stowcloud/go/internal/app"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/admin/settings/live"
 )
 
 // A saved host list reaches the running server.
@@ -225,7 +226,7 @@ func TestASavedProxyRangeDecidesWhoIsBelieved(t *testing.T) {
 // then name whatever address they liked and have it believed.
 func TestAnUnparseableProxyRangeIsDropped(t *testing.T) {
 	t.Parallel()
-	trusted := app.ParsePrefixesForTest([]string{
+	trusted := live.ParsePrefixesForTest([]string{
 		"127.0.0.1", "10.0.0.0/8", "not-an-address", "", "999.999.999.999", "10.0.0.0/99",
 	})
 

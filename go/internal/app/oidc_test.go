@@ -273,7 +273,7 @@ func TestAConfiguredProviderBuildsAClient(t *testing.T) {
 	if _, cerr := e.Auth.CreateAdmin(ctx, "root", "Root", pwOf(loginPassword)); cerr != nil {
 		t.Fatal(cerr)
 	}
-	if serr := e.StoreConfigSecret(ctx, "oidc_client_secret", "a-secret"); serr != nil {
+	if serr := e.Settings.StoreConfigSecret(ctx, "oidc_client_secret", "a-secret"); serr != nil {
 		t.Fatalf("storing the secret: %v", serr)
 	}
 	if merr := e.State.MergeSettings(ctx, "oidc", map[string]any{

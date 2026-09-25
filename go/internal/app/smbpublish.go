@@ -17,13 +17,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"sync"
 	"time"
 
-	"github.com/gin-gonic/gin"
-
-	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/handler"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/admin/settings/runtimecfg"
@@ -439,45 +435,4 @@ func smbCredentialsOf(creds []auth.SMBCredential) []smb.Credential {
 		out = append(out, smb.Credential{Name: c.Name, Uid: c.UID, NTHash: c.NTHash})
 	}
 	return out
-}
-
-// adminSMBApply re-renders the configuration and asks the sidecar to take it.
-//
-// The report is the answer whether or not it is good news. A share path that
-// does not exist where the daemon runs is something an operator has to see,
-// and it is not a failure of this request.
-func (e *Engine) adminSMBApply(c *gin.Context) {
-	if _, ok := e.admin(c); !ok {
-		return
-	}
-	p := e.smbPublisherOf()
-	if p == nil {
-		// Nothing to apply to. Said plainly rather than answered with a
-		// success, which would report an apply that never happened.
-		refuse(c, apierr.Classified{
-			Class: apierr.SubsystemUnavailable,
-			Key:   "smb.not_configured",
-		})
-		return
-	}
-
-	// Detached from the request for the same reason the sink is: an
-	// administrator who navigates away must not cancel a push that is already
-	// rewriting the daemon's world.
-	ctx, cancel := context.WithTimeout(
-		context.WithoutCancel(c.Request.Context()), publishTimeout)
-	defer cancel()
-
-	report, err := p.Publish(ctx)
-	if err != nil {
-		// The files are written either way. What failed is getting an answer,
-		// and saying so beats reporting a success nobody confirmed.
-		e.logger.Warn("the SMB agent did not answer an apply", "error", err)
-		refuse(c, apierr.Classified{
-			Class: apierr.BadGateway,
-			Key:   "smb.agent_unreachable",
-		})
-		return
-	}
-	writeJSON(c, http.StatusOK, handler.SMBReportOf(report))
 }

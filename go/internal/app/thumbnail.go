@@ -13,7 +13,11 @@
 package app
 
 import (
+	"context"
 	"log/slog"
+	"path/filepath"
+
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/admin/settings/runtimecfg"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/preview"
@@ -64,4 +68,31 @@ func openPreview(
 		return nil
 	}
 	return svc
+}
+
+func (e *Engine) applyThumbnailSettings(_ context.Context, values runtimecfg.Values) {
+	e.thumbnailMu.Lock()
+	current := e.Preview
+	if values.ThumbnailEnabled == e.thumbnailOn && values.ThumbnailDir == e.thumbnailDir && current != nil {
+		e.thumbnailMu.Unlock()
+		return
+	}
+	e.thumbnailOn, e.thumbnailDir = values.ThumbnailEnabled, values.ThumbnailDir
+	if !values.ThumbnailEnabled {
+		e.Preview = nil
+	} else {
+		thumbsDir := filepath.Join(e.dataDir, "thumbs")
+		if values.ThumbnailDir != "" {
+			thumbsDir = values.ThumbnailDir
+		}
+		if e.Core != nil {
+			e.Preview = openPreview(thumbsDir, e.previewWorker, e.Core, e.clock, e.logger)
+		}
+	}
+	e.thumbnailMu.Unlock()
+	if current != nil {
+		if err := current.Close(); err != nil {
+			e.logger.Warn("closing the replaced thumbnail service", "error", err)
+		}
+	}
 }
