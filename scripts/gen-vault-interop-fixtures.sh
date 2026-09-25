@@ -1,6 +1,6 @@
 #!/bin/bash
 # Regenerates the VeraCrypt interop fixtures under
-# go/internal/platform/storage/vault/testdata/interop using the real VeraCrypt
+# backend/internal/storage/vault/testdata/interop using the real VeraCrypt
 # console binary rather than this repository's own writer.
 #
 # Prerequisites:
@@ -31,7 +31,7 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 vault_dir="$repo_root/scripts/vault-interop"
-out_dir="$repo_root/go/internal/platform/storage/vault/testdata/interop"
+out_dir="$repo_root/backend/internal/storage/vault/testdata/interop"
 scratch="${TMPDIR:-/tmp}/vault-interop-build"
 
 for bin in podman qemu-system-x86_64 mke2fs truncate dd fallocate; do

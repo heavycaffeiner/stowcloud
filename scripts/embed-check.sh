@@ -14,7 +14,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-BUNDLE_DIR=go/internal/transport/http/spa/build
+BUNDLE_DIR=backend/internal/http/spa/build
 
 # The binary below is built for the shipping target and then run, so this only
 # works where the host is that target. Elsewhere it built a Linux binary and
@@ -47,7 +47,7 @@ echo "    built bundle: $WANT"
 
 echo "==> building the binary with the embed tag"
 BIN=$(mktemp -d)/sc-engine
-(cd go && CGO_ENABLED=0 GOOS=linux go build -tags embed_ui -o "$BIN" ./cmd/sc-engine)
+(cd backend && CGO_ENABLED=0 GOOS=linux go build -tags embed_ui -o "$BIN" ./cmd/sc-engine)
 
 # The tag is what turns the embed on. A build without it serves no interface at
 # all, which is correct for a build with no bundle and would quietly pass a

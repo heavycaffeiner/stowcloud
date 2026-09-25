@@ -19,4 +19,4 @@
 # The cross-implementation fixtures are compared byte for byte by two
 # implementations in two languages. Anything git does to them on the way in or
 # out is a difference neither implementation caused, so it does none of it.
-go/testdata/golden/** -text
+backend/testdata/golden/** -text

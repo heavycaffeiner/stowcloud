@@ -1,7 +1,7 @@
 # Builds the rootfs for a throwaway VM (not a running container: this sandbox
 # has no loop-device access inside podman itself, only inside a nested VM
 # booted from this image's exported filesystem) that generates the VeraCrypt
-# interop fixtures under go/internal/platform/storage/vault/testdata/interop.
+# interop fixtures under backend/internal/storage/vault/testdata/interop.
 # The generator includes a real exFAT fixture; the VM loads the exfat module
 # before generation. Nothing in this image runs at `go test` time: it is only
 # used by scripts/gen-vault-interop-fixtures.sh.

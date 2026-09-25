@@ -59,7 +59,7 @@ on:
       - "Dockerfile"
       - "Dockerfile.smb"
       - ".dockerignore"
-      - "go/**"
+      - "backend/**"
       - "web/**"
       - "deploy/smb/**"
       - ".github/workflows/docker.yml"

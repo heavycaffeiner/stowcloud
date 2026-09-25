@@ -43,7 +43,7 @@ fi
 # once for this run and the embed check together.
 if [ "${SC_BUNDLE_FRESH:-0}" = 1 ]; then
   echo "==> the frontend was built already"
-  if [ ! -f go/internal/transport/http/spa/build/index.html ]; then
+  if [ ! -f backend/internal/http/spa/build/index.html ]; then
     echo "FAIL: SC_BUNDLE_FRESH is set, but the bundle is not there" >&2
     exit 1
   fi
@@ -54,7 +54,7 @@ fi
 
 echo "==> building the binary"
 BIN=$(mktemp -d)/sc-engine
-(cd go && CGO_ENABLED=0 GOOS=linux go build -tags embed_ui -o "$BIN" ./cmd/sc-engine)
+(cd backend && CGO_ENABLED=0 GOOS=linux go build -tags embed_ui -o "$BIN" ./cmd/sc-engine)
 
 DIR=$(mktemp -d)
 mkdir -p "$DIR/data" "$DIR/share/sub"

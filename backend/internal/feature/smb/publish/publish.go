@@ -1,0 +1,681 @@
+// Builds only on Linux, where the core types it reads are openat2 handles
+// beneath.
+//go:build linux
+
+// Package publish renders the SMB configuration and pushes it to the agent.
+//
+// The server decides what SMB ought to serve and can enforce none of it
+// directly: the daemon runs in another container, in another network namespace,
+// as a user permitted to edit the system account file. So this renders files
+// into a directory both sides mount, then asks the agent to apply them and
+// reports whatever the agent says.
+//
+// Asking is the part that used to be absent. Writing files and hoping made a
+// rejected configuration, a share path missing where the daemon runs, and an
+// import that yielded no credential all indistinguishable from success on this
+// side, surfacing only as a client that could not connect.
+package publish
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"sort"
+	"sync"
+	"time"
+
+	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
+	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/smb"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/smb/agent"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
+	fsatomic "github.com/stowcloud/durablefs"
+)
+
+// PublicationError preserves whether a durable publication changed a visible
+// destination when an operation also returned an error.
+type PublicationError struct {
+	Operation string
+	Outcome   fsatomic.Outcome
+	Err       error
+}
+
+func (e *PublicationError) Error() string {
+	return fmt.Sprintf("%s (%s): %v", e.Operation, e.Outcome, e.Err)
+}
+
+func (e *PublicationError) Unwrap() error { return e.Err }
+
+func (e *PublicationError) PublicationOutcome() fsatomic.Outcome { return e.Outcome }
+
+// The rendered file names. They are listed once because publishing writes them
+// and disabling removes them, and a name spelled twice is a file one half
+// forgets.
+const (
+	fileConf   = "smb.conf"
+	filePolicy = "network.policy"
+	filePasswd = "passwd"
+	filePassdb = "smbpasswd"
+)
+
+// Share is one registered share, in the terms publishing needs.
+//
+// Declared here rather than imported from the core, for the same reason the
+// grant below is: this package sits beside those packages in the tier and must
+// not import sideways into them. The wiring adapts the core's own type, so a
+// field the renderer never reads cannot arrive here at all.
+type Share struct {
+	ID               int64
+	Name             string
+	Path             string
+	ModeFile         uint32
+	ModeDir          uint32
+	SharedExternally bool
+}
+
+// Grant is one stored grant, in the terms publishing needs.
+//
+// Permissions travel as the caller's own bits, and this package tests only two
+// questions of them: whether a grant admits reading, and whether it admits
+// writing. Anything finer belongs to the evaluator, which is exactly the
+// argument the deny rule below rests on.
+type Grant struct {
+	// User is the account the grant is for. Zero means it is not a user grant,
+	// which SMB cannot express.
+	User int64
+	// Share is the share the grant covers.
+	Share int64
+	// WholeShare is false for a grant that begins partway down a tree. Such a
+	// grant cannot be expressed in this format at all, which has no notion of
+	// a permission starting below the root.
+	WholeShare bool
+	// AllowRead and AllowWrite are what the grant admits.
+	AllowRead  bool
+	AllowWrite bool
+	// Denies reports that the grant carries any deny bit, whatever it covers.
+	Denies bool
+}
+
+// Deps is what publishing requires, supplied by the caller rather than reached
+// for, so the caller determines what a publish can see.
+type Deps struct {
+	// Shares lists this server's registered shares. A function rather than the
+	// core itself, so this package depends on the one answer it needs instead
+	// of on everything the core can do.
+	Shares func() []Share
+
+	// Credentials opens and returns eligible credential facts. Auth owns the
+	// sealed hashes and eligibility; this package owns serialization and writes.
+	Credentials func(ctx context.Context) ([]smb.Credential, error)
+
+	// NowUnix stamps credential records. A stable stamp makes unchanged renders
+	// produce identical bytes.
+	NowUnix func() int64
+
+	// Grants reads the stored grants, which become the per-share account lists.
+	// Nil means no share receives a list, rendering every share unreachable
+	// rather than open.
+	Grants func(ctx context.Context) ([]Grant, error)
+
+	// Names maps an account id onto the name the rendered files carry. Nil
+	// leaves every grant unattributable, so no share receives a list.
+	Names func(ctx context.Context, id int64) (string, error)
+
+	// ConfigDir names the directory mounted by both containers.
+	ConfigDir string
+
+	// Socket locates the agent's listener. An empty value describes a
+	// deployment running no sidecar at all, which is supported.
+	Socket string
+
+	// Log reports what a successful publish had to leave out. Nil silences
+	// that, which is what a test that is not asserting on it wants.
+	Log *slog.Logger
+
+	// ServiceGID is the group every rendered account joins. It must exist in
+	// the agent's container, which the agent verifies and refuses over.
+	ServiceGID uint32
+}
+
+// Settings is the live SMB configuration read for each publication. The
+// settings callback keeps enable and disable changes effective without a
+// process restart.
+type Settings struct {
+	Config     smb.Config
+	ConfigDir  string
+	Socket     string
+	ServiceGID uint32
+	Configured bool
+}
+
+// PublisherDeps are the narrow feature dependencies needed to adapt server
+// state into the SMB renderer and sidecar files.
+type PublisherDeps struct {
+	Core     *core.Core
+	Auth     *auth.Service
+	State    *state.DB
+	Clock    clock.Clock
+	Logger   *slog.Logger
+	Settings func(context.Context) Settings
+}
+
+// Publisher serializes publications and retains the last sidecar report.
+type Publisher struct {
+	deps   PublisherDeps
+	mu     sync.Mutex
+	lastMu sync.RWMutex
+	last   *agent.Report
+}
+
+// New constructs a publisher. Settings are intentionally read only when a
+// publication starts so a live settings save reaches the sidecar immediately.
+func New(d PublisherDeps) *Publisher {
+	if d.Clock == nil {
+		d.Clock = clock.System()
+	}
+	if d.Logger == nil {
+		d.Logger = slog.Default()
+	}
+	return &Publisher{deps: d}
+}
+
+// LastReport returns the most recent sidecar report, or nil before a publish.
+func (p *Publisher) LastReport() *agent.Report {
+	p.lastMu.RLock()
+	defer p.lastMu.RUnlock()
+	if p.last == nil {
+		return nil
+	}
+	r := *p.last
+	return &r
+}
+
+func (p *Publisher) recordReport(r agent.Report) {
+	p.lastMu.Lock()
+	p.last = &r
+	p.lastMu.Unlock()
+}
+
+// Publish renders and applies the current live settings.
+func (p *Publisher) Publish(ctx context.Context) (agent.Report, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	settings := Settings{}
+	if p.deps.Settings != nil {
+		settings = p.deps.Settings(ctx)
+	}
+	if settings.ConfigDir == "" {
+		return agent.Report{}, errors.New("SMB publication is not configured")
+	}
+	base := Deps{ConfigDir: settings.ConfigDir, Socket: settings.Socket, ServiceGID: settings.ServiceGID, Log: p.deps.Logger}
+	if !settings.Config.Enabled {
+		report, err := Disable(ctx, base)
+		if err == nil {
+			p.recordReport(report)
+		}
+		return report, err
+	}
+	encryptedIDs, err := p.deps.Core.EncryptedShares(ctx)
+	if err != nil {
+		return agent.Report{}, fmt.Errorf("smb publish: reading the encrypted share set: %w", err)
+	}
+	encrypted := make(map[core.ShareID]bool, len(encryptedIDs))
+	for _, id := range encryptedIDs {
+		encrypted[id] = true
+	}
+	d := base
+	d.Shares = func() []Share { return publishShares(p.deps.Core.Shares(), encrypted, p.deps.Logger) }
+	d.Credentials = func(c context.Context) ([]smb.Credential, error) {
+		creds, credErr := p.deps.Auth.SMBCredentials(c)
+		if credErr != nil {
+			return nil, credErr
+		}
+		return smbCredentialsOf(creds)
+	}
+	d.NowUnix = func() int64 { return p.deps.Clock.Nanos() / int64(time.Second) }
+	d.Grants = func(c context.Context) ([]Grant, error) { return p.grants(c) }
+	d.Names = p.deps.Auth.NameOf
+	report, err := Publish(ctx, d, settings.Config)
+	if err == nil {
+		p.recordReport(report)
+	}
+	return report, err
+}
+
+// PublishWithInputs is the pure publication entry point used by tests and by
+// callers that already adapted their state into feature-owned inputs.
+func PublishWithInputs(ctx context.Context, d Deps, cfg smb.Config) (agent.Report, error) {
+	return Publish(ctx, d, cfg)
+}
+
+// AccessChanged republishes synchronously after a committed auth change.
+func (p *Publisher) AccessChanged(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), agent.DefaultTimeout+5*time.Second)
+	defer cancel()
+	report, err := p.Publish(ctx)
+	if err != nil {
+		p.deps.Logger.Warn("a change did not reach the SMB sidecar", "error", err)
+	} else if !report.OK {
+		p.deps.Logger.Warn("the SMB sidecar applied a change with a warning", "error", report.Error)
+	}
+}
+
+func (p *Publisher) grants(ctx context.Context) ([]Grant, error) {
+	rows, err := p.deps.State.ListGrants(ctx, state.GrantFilter{})
+	if err != nil {
+		return nil, err
+	}
+	memberships, err := p.deps.State.Memberships(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return grantsOf(rows, memberships), nil
+}
+
+func publishShares(defs []core.ShareDef, encrypted map[core.ShareID]bool, logger *slog.Logger) []Share {
+	out := make([]Share, 0, len(defs))
+	for _, d := range defs {
+		if d.BrokenReason != "" {
+			continue
+		}
+		if d.Backend != "" && d.Backend != core.BackendLocal {
+			logger.Warn("a share is not published over SMB because it has no local path", "share", d.Name, "backend", d.Backend)
+			continue
+		}
+		if encrypted[d.ID] {
+			logger.Warn("a share is not published over SMB because its content is end-to-end encrypted", "share", d.Name)
+			continue
+		}
+		out = append(out, Share{ID: int64(d.ID), Name: d.Name, Path: d.Host, ModeFile: d.Policy.ModeFile, ModeDir: d.Policy.ModeDir, SharedExternally: d.SharedExternally})
+	}
+	return out
+}
+
+// SharesOf adapts core share definitions for publication without exposing core
+// types to the renderer.
+func SharesOf(defs []core.ShareDef, encrypted map[core.ShareID]bool, logger *slog.Logger) []Share {
+	return publishShares(defs, encrypted, logger)
+}
+
+func grantsOf(rows []state.GrantRow, memberships []state.MembershipRow) []Grant {
+	groupUsers := make(map[int64][]int64)
+	for _, m := range memberships {
+		groupUsers[m.Group] = append(groupUsers[m.Group], m.User)
+	}
+	out := make([]Grant, 0, len(rows))
+	for _, r := range rows {
+		allow, deny := acl.Perms(r.Allow), acl.Perms(r.Deny)
+		g := Grant{Share: r.Share, WholeShare: r.Subpath == "", AllowRead: allow.Has(acl.Read | acl.Download), AllowWrite: allow.Intersects(acl.Write | acl.Create), Denies: !deny.IsEmpty()}
+		if r.User != nil {
+			g.User = *r.User
+			out = append(out, g)
+		}
+		if r.Group != nil {
+			users := groupUsers[*r.Group]
+			if len(users) == 0 {
+				out = append(out, g)
+				continue
+			}
+			for _, user := range users {
+				g.User = user
+				out = append(out, g)
+			}
+		}
+	}
+	return out
+}
+
+// GrantsOf adapts stored state rows into the pure publication grant shape.
+func GrantsOf(rows []state.GrantRow, memberships []state.MembershipRow) []Grant {
+	return grantsOf(rows, memberships)
+}
+
+func smbCredentialsOf(creds []auth.SMBCredential) ([]smb.Credential, error) {
+	out := make([]smb.Credential, 0, len(creds))
+	for _, c := range creds {
+		out = append(out, smb.Credential{Name: c.Name, Uid: c.UID, NTHash: c.NTHash})
+	}
+	return out, nil
+}
+
+// Accounts is no longer a file-writing interface. Credential facts cross this
+// boundary through Deps.Credentials so this package owns all SMB file I/O.
+
+// defaultServiceGID is what an unset ServiceGID means. The settings layer holds
+// the operator-facing default under its own name; this is the fallback for a
+// caller that set nothing, so zero never reaches a rendered file as root's
+// group.
+const defaultServiceGID = 1000
+
+func (d Deps) gid() uint32 {
+	if d.ServiceGID == 0 {
+		return defaultServiceGID
+	}
+	return d.ServiceGID
+}
+
+// Publish writes the rendered set and asks the agent to apply it.
+//
+// Failing to render leaves the previous files in place. A partial configuration
+// is worse than an outdated one, since the agent would validate and promote
+// it.
+func Publish(ctx context.Context, d Deps, cfg smb.Config) (agent.Report, error) {
+	if !cfg.Enabled {
+		return Disable(ctx, d)
+	}
+
+	shares, err := shareDefs(ctx, d)
+	if err != nil {
+		return agent.Report{}, err
+	}
+
+	// Rendering happens ahead of any write, keeping a configuration the renderer
+	// rejects out of the directory the agent reads.
+	conf, res, rerr := smb.Render(cfg, shares)
+	if rerr != nil {
+		return agent.Report{}, fmt.Errorf("rendering the SMB configuration: %w", rerr)
+	}
+	// A name the renderer dropped costs one account its access to one share,
+	// which is the per-entry degradation the renderer exists to prefer over
+	// refusing everyone. It is reported rather than discarded: silently, the
+	// symptom is one person unable to reach a share nobody changed.
+	logDropped(d, res)
+	if err := os.MkdirAll(d.ConfigDir, 0o750); err != nil {
+		return agent.Report{}, fmt.Errorf("the SMB configuration directory: %w", err)
+	}
+	configUnits := []fsatomic.Unit{
+		{Path: filepath.Join(d.ConfigDir, fileConf), Mode: 0o640},
+		{Path: filepath.Join(d.ConfigDir, filePolicy), Mode: 0o640},
+	}
+	configBodies := [][]byte{conf, policyFile(cfg)}
+	configResults, werr := fsatomic.ReplaceFilesDurable(configUnits, func(i int, f *os.File) error {
+		_, err := f.Write(configBodies[i])
+		return err
+	})
+	if werr != nil {
+		return agent.Report{}, &PublicationError{Operation: "publishing the SMB configuration", Outcome: outcomeForResults(configResults), Err: werr}
+	}
+
+	// The two credential files share account identifiers, since the import tool
+	// pairs them by identifier rather than by name. Write both as one durable
+	// pair so they cannot disagree about which accounts exist or what uid each
+	// one carries.
+	creds, cerr := credentialsOf(ctx, d)
+	if cerr != nil {
+		return agent.Report{}, fmt.Errorf("reading SMB credentials: %w", cerr)
+	}
+	if err := writeCredentialFiles(d, creds); err != nil {
+		return agent.Report{}, err
+	}
+
+	return push(ctx, d)
+}
+
+func outcomeForResults(results []fsatomic.UnitResult) fsatomic.Outcome {
+	for _, result := range results {
+		if result.Outcome == fsatomic.PublicationUncertain {
+			return fsatomic.PublicationUncertain
+		}
+	}
+	for _, result := range results {
+		if result.Outcome == fsatomic.Published {
+			return fsatomic.Published
+		}
+	}
+	return fsatomic.NotPublished
+}
+
+func credentialsOf(ctx context.Context, d Deps) ([]smb.Credential, error) {
+	if d.Credentials == nil {
+		return nil, nil
+	}
+	return d.Credentials(ctx)
+}
+
+func writeCredentialFiles(d Deps, creds []smb.Credential) error {
+	stamp := int64(0)
+	if d.NowUnix != nil {
+		stamp = d.NowUnix()
+	}
+	passdb, err := smb.PassdbEntries(creds, stamp)
+	if err != nil {
+		return fmt.Errorf("rendering SMB credentials: %w", err)
+	}
+	passwd, err := smb.PasswdEntries(smb.PasswdUsers(creds), d.gid())
+	if err != nil {
+		return fmt.Errorf("rendering SMB account entries: %w", err)
+	}
+	units := []fsatomic.Unit{
+		{Path: filepath.Join(d.ConfigDir, filePasswd), Mode: 0o644},
+		{Path: filepath.Join(d.ConfigDir, filePassdb), Mode: 0o600},
+	}
+	bodies := [][]byte{passwd, passdb}
+	results, werr := fsatomic.ReplaceFilesDurable(units, func(i int, f *os.File) error {
+		_, err := f.Write(bodies[i])
+		return err
+	})
+	if werr != nil {
+		return &PublicationError{Operation: "publishing SMB credentials", Outcome: outcomeForResults(results), Err: werr}
+	}
+	return nil
+}
+
+// logDropped reports the names the renderer would not write.
+//
+// A dropped name is not a failure of the publish, so it does not stop one. It
+// is the one thing about a successful render an operator has to be told: the
+// account still exists, still has its grant, and simply cannot reach that share
+// over this protocol.
+func logDropped(d Deps, res smb.Result) {
+	if d.Log == nil {
+		return
+	}
+	for _, drop := range res.Dropped {
+		d.Log.Warn("an account was left out of a rendered SMB share",
+			"share", drop.Share, "field", drop.Field, "name", drop.Name, "reason", drop.Reason)
+	}
+}
+
+// Disable removes the rendered files, which is how the setting being switched
+// off reaches the agent.
+//
+// Removal rather than an empty configuration: the agent treats absence as the
+// off switch and tears down the accounts and their credentials with it. A file
+// left behind would keep a revoked credential working.
+//
+// Every removal is attempted before any failure is reported, and the failures
+// are joined. Stopping at the first one would leave the rest of the set in
+// place, which is the state this call exists to end.
+func Disable(ctx context.Context, d Deps) (agent.Report, error) {
+	var errs []error
+	for _, name := range []string{fileConf, filePassdb, filePasswd, filePolicy} {
+		if err := os.Remove(filepath.Join(d.ConfigDir, name)); err != nil && !os.IsNotExist(err) {
+			errs = append(errs, fmt.Errorf("removing %s: %w", name, err))
+		}
+	}
+	if len(errs) > 0 {
+		return agent.Report{}, errors.Join(errs...)
+	}
+	return push(ctx, d)
+}
+
+// push requests an apply of the set that was just written.
+func push(ctx context.Context, d Deps) (agent.Report, error) {
+	if d.Socket == "" {
+		// No sidecar named, which is a deployment running without the SMB
+		// container. The files are rendered and nothing applies them.
+		return agent.Report{OK: true, Smbd: agent.ActionUnchanged}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, agent.DefaultTimeout)
+	defer cancel()
+
+	report, err := agent.Apply(ctx, d.Socket)
+	if err != nil {
+		// The files are written either way, so the poll on the other side still
+		// applies them. What is lost is the answer, and the caller is told that
+		// rather than shown a success it did not receive.
+		return agent.Report{}, fmt.Errorf(
+			"the configuration is written but the SMB agent did not answer: %w", err)
+	}
+	return report, nil
+}
+
+// lists are one share's three account lists, built as sets so a name granted
+// twice appears once.
+type lists struct {
+	valid, read, write map[string]bool
+}
+
+// shareDefs converts this server's shares and grants into share blocks.
+//
+// Shares carrying no grant are omitted rather than written with an empty account
+// list. Emptiness in this format admits every account, so writing one would
+// publish a share this server considers private.
+func shareDefs(ctx context.Context, d Deps) ([]smb.ShareDef, error) {
+	// Lacking any one of these there is nothing to render: without grants no
+	// account may reach a share, without names every grant is attributed to
+	// nobody, and without the share list there is nothing to attach a list to.
+	// Each answers with nothing rather than a share carrying no account list,
+	// which in that format is a share open to everyone.
+	if d.Grants == nil || d.Names == nil || d.Shares == nil {
+		return nil, nil
+	}
+	grants, err := d.Grants(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("reading the grants: %w", err)
+	}
+
+	byShare, berr := accountLists(ctx, d, grants)
+	if berr != nil {
+		return nil, berr
+	}
+
+	var out []smb.ShareDef
+	for _, s := range d.Shares() {
+		l := byShare[s.ID]
+		if l == nil || len(l.valid) == 0 {
+			continue
+		}
+		out = append(out, smb.ShareDef{
+			Name:             s.Name,
+			Path:             s.Path,
+			ValidUsers:       sortedKeys(l.valid),
+			ReadList:         sortedKeys(l.read),
+			WriteList:        sortedKeys(l.write),
+			ModeFile:         s.ModeFile,
+			ModeDir:          s.ModeDir,
+			SharedExternally: s.SharedExternally,
+		})
+	}
+	// Sorted, so identical state renders an identical file and the agent's
+	// unchanged case actually occurs.
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+// accountLists folds the grants into per-share account lists.
+//
+// The deny rule is the requirement this function exists to state. A share where
+// the user holds any grant carrying a deny bit is dropped from that user's SMB
+// view entirely, even where the deny covers nothing they could otherwise reach.
+// SMB grants are whole-share and additive only, so the format cannot express a
+// denial that survives the other lists. Fine-grained authority belongs to the
+// web evaluator, and an SMB render approximating subtree denials would be an
+// approximation somebody relies on.
+//
+// The deny is applied per user and share, after every grant has been read.
+// Deciding while iterating would let a deny arriving after an allow leave the
+// name already in the list.
+func accountLists(ctx context.Context, d Deps, grants []Grant) (map[int64]*lists, error) {
+	// Whole-share grants only. A grant on a subpath cannot be expressed in this
+	// format at all, which has no notion of a permission beginning partway down
+	// a tree, so rendering one would grant the whole share.
+	type who struct {
+		share int64
+		name  string
+	}
+	denied := map[who]bool{}
+	type allowed struct {
+		key   who
+		write bool
+	}
+	var admits []allowed
+
+	for _, g := range grants {
+		if !g.WholeShare || g.User == 0 {
+			continue
+		}
+		// Accounts whose names do not resolve are skipped rather than written
+		// with an empty name, which the daemon cannot look up and which turns
+		// the grant into a silent no-op.
+		name, uerr := d.Names(ctx, g.User)
+		if uerr != nil || name == "" {
+			continue
+		}
+		key := who{share: g.Share, name: name}
+
+		if g.Denies {
+			denied[key] = true
+			continue
+		}
+		if !g.AllowRead {
+			continue
+		}
+		admits = append(admits, allowed{key: key, write: g.AllowWrite})
+	}
+
+	byShare := map[int64]*lists{}
+	for _, a := range admits {
+		if denied[a.key] {
+			continue
+		}
+		l := byShare[a.key.share]
+		if l == nil {
+			l = &lists{valid: map[string]bool{}, read: map[string]bool{}, write: map[string]bool{}}
+			byShare[a.key.share] = l
+		}
+		l.valid[a.key.name] = true
+		if a.write {
+			l.write[a.key.name] = true
+			// A name that arrived read-only earlier is now a writer, and
+			// leaving it on both lists renders a contradiction.
+			delete(l.read, a.key.name)
+			continue
+		}
+		if !l.write[a.key.name] {
+			l.read[a.key.name] = true
+		}
+	}
+	return byShare, nil
+}
+
+// policyFile emits the two flags the agent consults when deciding network
+// scope.
+//
+// A pin means the rendered lines are already final and detection must not widen
+// them.
+func policyFile(cfg smb.Config) []byte {
+	out := make([]byte, 0, 64)
+	if cfg.AllowPublicBind {
+		out = append(out, "allow_public_bind=1\n"...)
+	}
+	if len(cfg.Interfaces) > 0 {
+		out = append(out, "pinned_interfaces=1\n"...)
+	}
+	return out
+}
+
+func sortedKeys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}

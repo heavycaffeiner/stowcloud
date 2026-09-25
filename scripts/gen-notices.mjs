@@ -87,9 +87,9 @@ const goList = execFileSync('go', [
   'list', '-deps', '-tags', BUILD_TAGS,
   '-f', '{{if .Module}}{{.Module.Path}}\t{{.Module.Version}}\t{{.Module.Dir}}{{end}}',
   './cmd/sc-engine',
-], { cwd: 'go', encoding: 'utf8', env: { ...process.env, CGO_ENABLED: '0' } })
+], { cwd: 'backend', encoding: 'utf8', env: { ...process.env, CGO_ENABLED: '0' } })
 
-const OWN = 'github.com/heavycaffeiner/stowcloud/go'
+const OWN = 'github.com/heavycaffeiner/stowcloud/backend'
 const modules = new Map()
 for (const line of goList.split('\n')) {
   if (!line.trim()) continue

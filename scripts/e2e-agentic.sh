@@ -43,7 +43,7 @@ if [ -n "${SC_TEST_BIN:-}" ] && [ -f "$SC_TEST_BIN" ]; then
 else
   echo "==> Building sc-engine binary"
   BIN=$(mktemp -d)/sc-engine
-  (cd go && CGO_ENABLED=0 go build -tags embed_ui -o "$BIN" ./cmd/sc-engine)
+  (cd backend && CGO_ENABLED=0 go build -tags embed_ui -o "$BIN" ./cmd/sc-engine)
 fi
 
 # 3. Create isolated temporary directories

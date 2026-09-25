@@ -6,7 +6,7 @@
 # every time.
 
 # The Go build cache and any local build output.
-go/.tools
+backend/.tools
 .dev
 
 # Frontend — rebuilt from source in the `frontend` stage. Critically, this

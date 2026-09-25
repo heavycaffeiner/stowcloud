@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
 const webRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
-const buildDir = path.resolve(webRoot, '../go/internal/transport/http/spa/build')
+const buildDir = path.resolve(webRoot, '../backend/internal/http/spa/build')
 const manifestPath = path.join(buildDir, '.vite', 'manifest.json')
 const indexHtmlPath = path.join(buildDir, 'index.html')
 

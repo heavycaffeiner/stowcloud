@@ -113,22 +113,7 @@ export interface Entry {
    */
   etag_weak: boolean
   perms: Perms
-  /**
-   * The stable fileid `POST /api/fs/link` needs as `fid`. **Absent far more
-   * often than not**: `go/internal/core/ops.go` only ever
-   * *looks up* an existing id (`MetaStore::lookup_fileid`, never
-   * `MetaStore::fileid`, the allocating one); `go/internal/store/state`
-   * own doc comment says a fileid is allocated lazily, only by "consumers
-   * that actually need a stable id" (DAV rename tracking, share-link
-   * creation): "a web-UI-only deployment... creates zero rows". A plain
-   * `list`/`stat` on a file nobody has ever shared or touched over WebDAV
-   * comes back with no `id` at all (confirmed live: `GET /api/fs/stat`
-   * omits the field entirely rather than sending a null). The UI has to
-   * treat this as a
-   * real, common case (not a shape bug to paper over), and tell the user
-   * why a download button doesn't work rather than send `fid: undefined`
-   * to a handler that requires it.
-   */
+  /** A stable file ID is optional until a client operation records it. */
   id?: number
   preview?: PreviewInfo
   link?: SymlinkInfo
@@ -1145,7 +1130,7 @@ export interface ShareLinkInfo {
 }
 
 /** `GET /api/v1/admin/links`: one link as an administrator reads it
- *  (`go/internal/transport/http/handler/links.go`'s `OwnedLinkView`). Everything
+ *  (`backend/internal/http/api/handler/links.go`'s `OwnedLinkView`). Everything
  *  `ShareLinkInfo` carries, plus which account it belongs to: `owner` is the
  *  account id and `owner_name` its display name at read time, empty when the
  *  account has since been deleted. Never carries a token, the same as

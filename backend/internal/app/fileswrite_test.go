@@ -1,0 +1,424 @@
+//go:build linux
+
+package app_test
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vfs"
+)
+
+// shareWith serves an engine whose account holds one share with exactly the
+// named permissions, and returns the base URL, a session for the account and
+// the share name.
+//
+// The permissions are the point: each write route needs a different one, and a
+// route that resolved with the wrong permission would be served by an account
+// that was never granted it.
+func shareWith(t *testing.T, perms acl.Perms) (base string, sess session, share string) {
+	t.Helper()
+	ctx := context.Background()
+
+	e, err := app.Open(ctx, app.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
+	if err != nil {
+		t.Fatalf("opening: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := e.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	})
+
+	id, err := e.Auth.CreateUser(ctx, "alice", "Alice", secret.New([]byte("a-long-enough-password")))
+	if err != nil {
+		t.Fatalf("creating the account: %v", err)
+	}
+
+	host := t.TempDir()
+	if werr := os.WriteFile(filepath.Join(host, "existing.txt"), []byte("x"), 0o600); werr != nil {
+		t.Fatalf("writing: %v", werr)
+	}
+
+	sh, err := e.Core.CreateShare(ctx, core.ShareSpec{Name: "work", Host: host})
+	if err != nil {
+		t.Fatalf("creating the share: %v", err)
+	}
+	if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
+		User: &id, Share: sh.ID, Allow: perms, Inherit: true, Label: sh.Name,
+	}); gerr != nil {
+		t.Fatalf("granting: %v", gerr)
+	}
+	if rerr := e.Core.ReloadGrants(ctx); rerr != nil {
+		t.Fatalf("reloading: %v", rerr)
+	}
+
+	// A session, because the native API admits nothing else. What refuses a
+	// request here is the grant, which is the point of the fixture: a session
+	// carries every permission the account has, so the grant is the only
+	// thing narrowing it.
+	served := serve(t, e)
+	return served, signIn(t, served, "alice", "a-long-enough-password"), sh.Name
+}
+
+// everyPerm is the full mask.
+func everyPerm() acl.Perms {
+	return acl.Read | acl.Write | acl.Create | acl.Delete |
+		acl.Rename | acl.Move | acl.Share | acl.Download
+}
+
+// post sends a JSON body with a browser session.
+func post(t *testing.T, url string, sess session, body any) (int, []byte) {
+	t.Helper()
+
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("encoding: %v", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(string(encoded)))
+	if err != nil {
+		t.Fatalf("building: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	sess.attach(req)
+
+	resp, err := testClient().Do(req)
+	if err != nil {
+		t.Fatalf("requesting: %v", err)
+	}
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	}()
+
+	out := make([]byte, 0, 512)
+	buf := make([]byte, 512)
+	for {
+		n, rerr := resp.Body.Read(buf)
+		out = append(out, buf[:n]...)
+		if rerr != nil {
+			break
+		}
+	}
+	return resp.StatusCode, out
+}
+
+// Each write route needs its own permission. A route resolving with the wrong
+// one is served by an account that was never granted it, which is the whole
+// reason the bits are separate.
+func TestEachWriteRouteNeedsItsOwnPermission(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		route   string
+		body    any
+		granted acl.Perms
+		missing acl.Perms
+	}{
+		{
+			name:  "mkdir needs Create",
+			route: "/api/v1/files/mkdir",
+			body:  map[string]string{"path": "/work/newdir"},
+			// Everything except the one bit this route needs. A grant with
+			// Read alone would refuse for the wrong reason.
+			granted: everyPerm() &^ acl.Create,
+			missing: acl.Create,
+		},
+		{
+			name:    "delete needs Delete",
+			route:   "/api/v1/files/delete",
+			body:    map[string]string{"path": "/work/existing.txt"},
+			granted: everyPerm() &^ acl.Delete,
+			missing: acl.Delete,
+		},
+		{
+			name:    "rename needs Rename",
+			route:   "/api/v1/files/rename",
+			body:    map[string]string{"path": "/work/existing.txt", "new_name": "renamed.txt"},
+			granted: everyPerm() &^ acl.Rename,
+			missing: acl.Rename,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			// Without the bit: refused.
+			base, sess, _ := shareWith(t, c.granted)
+			status, body := post(t, base+c.route, sess, c.body)
+			if status < 400 {
+				t.Errorf("%s succeeded without %v: %d %s", c.route, c.missing, status, body)
+			}
+
+			// With it: served. Otherwise the refusal above could be anything.
+			base2, sess2, _ := shareWith(t, everyPerm())
+			ok, okBody := post(t, base2+c.route, sess2, c.body)
+			if ok >= 400 {
+				t.Errorf("%s was refused with every permission: %d %s", c.route, ok, okBody)
+			}
+		})
+	}
+}
+
+// ACL permission denial on a known share returns 403 fs.denied.
+func TestWriteRoutesReturn403OnPermissionDenial(t *testing.T) {
+	t.Parallel()
+	base, sess, share := shareWith(t, everyPerm()&^acl.Delete)
+	status, body := post(t, base+"/api/v1/files/delete", sess,
+		map[string]string{"path": "/" + share + "/existing.txt"})
+	if status != http.StatusForbidden {
+		t.Fatalf("delete without Delete permission answered %d, want 403: %s", status, body)
+	}
+	if !strings.Contains(string(body), `"code":"fs.denied"`) {
+		t.Errorf("delete response does not carry code fs.denied: %s", body)
+	}
+}
+
+// A write actually writes. Without this the permission tests above could pass
+// against a route that refuses everything.
+func TestMkdirCreatesARealDirectory(t *testing.T) {
+	t.Parallel()
+	base, sess, share := shareWith(t, everyPerm())
+
+	status, body := post(t, base+"/api/v1/files/mkdir", sess,
+		map[string]string{"path": "/" + share + "/created"})
+	if status != http.StatusCreated {
+		t.Fatalf("mkdir answered %d: %s", status, body)
+	}
+
+	// And the listing shows it, which is the client's own view of the write.
+	listStatus, listBody := authed(t, http.MethodGet,
+		base+"/api/v1/files/list?path="+urlEscape("/"+share), sess)
+	if listStatus != http.StatusOK {
+		t.Fatalf("the listing answered %d: %s", listStatus, listBody)
+	}
+	if !strings.Contains(string(listBody), "created") {
+		t.Errorf("the new directory is not in the listing: %s", listBody)
+	}
+}
+
+// A delete removes the entry from the listing.
+func TestDeleteRemovesTheEntry(t *testing.T) {
+	t.Parallel()
+	base, sess, share := shareWith(t, everyPerm())
+
+	status, body := post(t, base+"/api/v1/files/delete", sess,
+		map[string]string{"path": "/" + share + "/existing.txt"})
+	if status != http.StatusNoContent {
+		t.Fatalf("delete answered %d: %s", status, body)
+	}
+
+	_, listBody := authed(t, http.MethodGet,
+		base+"/api/v1/files/list?path="+urlEscape("/"+share), sess)
+	if strings.Contains(string(listBody), "existing.txt") {
+		t.Errorf("the deleted entry is still listed: %s", listBody)
+	}
+}
+
+// A write to a path outside every held share is refused, and refused the same
+// way a missing one is.
+func TestAWriteOutsideTheSharesIsRefused(t *testing.T) {
+	t.Parallel()
+	base, sess, _ := shareWith(t, everyPerm())
+
+	escapes := []string{"/../etc/newdir", "/work/../../tmp/newdir", "/nothing/newdir"}
+
+	for _, path := range escapes {
+		t.Run(path, func(t *testing.T) {
+			status, body := post(t, base+"/api/v1/files/mkdir", sess,
+				map[string]string{"path": path})
+			if status < 400 {
+				t.Errorf("%q was created: %d %s", path, status, body)
+			}
+		})
+	}
+}
+
+// A write route needs a credential.
+func TestTheWriteRoutesNeedACredential(t *testing.T) {
+	t.Parallel()
+	base, _, _ := shareWith(t, everyPerm())
+
+	for _, route := range []string{
+		"/api/v1/files/mkdir",
+		"/api/v1/files/delete",
+		"/api/v1/files/rename",
+	} {
+		t.Run(route, func(t *testing.T) {
+			status, body := post(t, base+route, session{}, map[string]string{"path": "/work/x"})
+			// The refusal is disguised as a missing address, so a stranger
+			// cannot tell a real route from one that was never mounted.
+			if status != http.StatusNotFound {
+				t.Errorf("%s answered %d anonymously: %s", route, status, body)
+			}
+		})
+	}
+}
+
+// A body that is not JSON is refused as malformed rather than acted on with
+// zero values. A mkdir with an empty path is a request nobody made.
+func TestAMalformedBodyIsRefused(t *testing.T) {
+	t.Parallel()
+	base, sess, _ := shareWith(t, everyPerm())
+
+	req, err := http.NewRequest(http.MethodPost, base+"/api/v1/files/mkdir",
+		strings.NewReader("this is not json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	sess.attach(req)
+
+	resp, err := testClient().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	}()
+
+	if resp.StatusCode < 400 {
+		t.Errorf("a body that is not JSON answered %d", resp.StatusCode)
+	}
+}
+
+// A delete goes to the trash where the share has one. The route does not offer
+// a permanent delete: a caller that could ask for one could bypass a
+// deployment's own retention, which is what the trash is for.
+func TestADeleteGoesToTheTrashWhereTheShareHasOne(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	e, err := app.Open(ctx, app.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
+	if err != nil {
+		t.Fatalf("opening: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := e.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	})
+
+	id, err := e.Auth.CreateUser(ctx, "alice", "Alice", secret.New([]byte("a-long-enough-password")))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	host := t.TempDir()
+	if werr := os.WriteFile(filepath.Join(host, "doomed.txt"), []byte("x"), 0o600); werr != nil {
+		t.Fatal(werr)
+	}
+
+	sh, err := e.Core.CreateShare(ctx, core.ShareSpec{Name: "kept", Host: host})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Trash on, which is what makes the two delete modes differ at all.
+	on := true
+	if _, uerr := e.Core.UpdateShare(ctx, sh.ID, core.SharePatch{TrashEnabled: &on}); uerr != nil {
+		t.Fatalf("enabling trash: %v", uerr)
+	}
+	if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
+		User: &id, Share: sh.ID, Allow: everyPerm(), Inherit: true, Label: sh.Name,
+	}); gerr != nil {
+		t.Fatal(gerr)
+	}
+	if rerr := e.Core.ReloadGrants(ctx); rerr != nil {
+		t.Fatal(rerr)
+	}
+
+	base := serve(t, e)
+	sess := signIn(t, base, "alice", "a-long-enough-password")
+
+	status, body := post(t, base+"/api/v1/files/delete", sess,
+		map[string]string{"path": "/" + sh.Name + "/doomed.txt"})
+	if status != http.StatusNoContent {
+		t.Fatalf("delete answered %d: %s", status, body)
+	}
+
+	// The file is recoverable: a permanent delete would leave nothing to
+	// restore, and a person who deleted by mistake would have no way back.
+	resolved, err := e.Core.Resolve(core.UserID(id), vpathOf(t, "/"+sh.Name), acl.Read)
+	if err != nil {
+		t.Fatalf("resolving the share: %v", err)
+	}
+	entries, err := e.Core.TrashList(ctx, resolved)
+	if err != nil {
+		t.Fatalf("listing the trash: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("the trash holds %d entries, want the deleted file", len(entries))
+	}
+}
+
+// vpathOf parses a virtual path for a test.
+func vpathOf(t *testing.T, s string) vfs.Vpath {
+	t.Helper()
+
+	p, err := vfs.ParseVpath(s)
+	if err != nil {
+		t.Fatalf("parsing %q: %v", s, err)
+	}
+	return p
+}
+
+// A body that is not JSON never reaches a service. Acting on the zero value
+// would make a mkdir with an empty path into a request nobody sent, and the
+// refusal is what keeps a malformed request from becoming a well-formed one.
+func TestAMalformedBodyNeverReachesTheService(t *testing.T) {
+	t.Parallel()
+	base, sess, share := shareWith(t, everyPerm())
+
+	bodies := []string{"this is not json", "{", "[]", `{"path":`, ""}
+
+	for _, raw := range bodies {
+		t.Run(raw, func(t *testing.T) {
+			req, err := http.NewRequest(http.MethodPost, base+"/api/v1/files/mkdir",
+				strings.NewReader(raw))
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+			sess.attach(req)
+
+			resp, err := testClient().Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cerr := resp.Body.Close(); cerr != nil {
+				t.Errorf("closing: %v", cerr)
+			}
+			if resp.StatusCode < 400 {
+				t.Errorf("%q answered %d", raw, resp.StatusCode)
+			}
+		})
+	}
+
+	// And nothing was created by any of them.
+	_, listBody := authed(t, http.MethodGet,
+		base+"/api/v1/files/list?path="+urlEscape("/"+share), sess)
+
+	var page struct {
+		Entries []struct {
+			Name string `json:"name"`
+		} `json:"entries"`
+	}
+	if err := json.Unmarshal(listBody, &page); err != nil {
+		t.Fatalf("the listing does not parse: %v", err)
+	}
+	if len(page.Entries) != 1 || page.Entries[0].Name != "existing.txt" {
+		t.Errorf("a malformed body changed the share: %+v", page.Entries)
+	}
+}

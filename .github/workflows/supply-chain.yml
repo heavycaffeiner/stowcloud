@@ -10,10 +10,10 @@ name: supply-chain
 #     stronger statement than a version comparison and is why it belongs in the
 #     gate rather than in a separate job that can be ignored.
 #   - The allow-list is the policy gate over the lockfile. Every direct
-#     dependency is listed in go/deps.allow with the reason it is there, and
+#     dependency is listed in backend/deps.allow with the reason it is there, and
 #     the gate fails when the module graph and that file disagree. A dependency
 #     nobody justified cannot arrive quietly.
-#
+
 # What this workflow adds is the artefact: an SBOM in a format the common
 # off-the-shelf consumers read, produced from the same module graph the build
 # uses rather than from a scan of the result.
@@ -50,7 +50,7 @@ jobs:
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache-dependency-path: go/go.sum
+          cache-dependency-path: backend/go.sum
 
       # Reachability rather than a version comparison: this reports a
       # vulnerability when a path in this code reaches the vulnerable function,
@@ -58,14 +58,14 @@ jobs:
       # a red build somebody learns to ignore.
       - name: govulncheck
         run: |
-          cd go
+          cd backend
           go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
       # The module graph and the allow-list have to agree. A dependency added
       # without a recorded reason fails here.
-      - name: The direct dependencies match go/deps.allow
+      - name: The direct dependencies match backend/deps.allow
         run: |
-          cd go
+          cd backend
           go list -m -f '{{if and (not .Main) (not .Indirect)}}{{.Path}}{{end}}' all | grep -v '^$' | sort > /tmp/have
           grep -vE '^[[:space:]]*(#|$)' deps.allow | sort > /tmp/want
           diff -u /tmp/want /tmp/have
@@ -103,14 +103,14 @@ jobs:
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache-dependency-path: go/go.sum
+          cache-dependency-path: backend/go.sum
 
       # Built from the module graph rather than scanned out of the binary. The
       # graph is what the build actually resolved, and a scan of the result can
       # only report what it recognises.
       - name: Generate a CycloneDX SBOM
         run: |
-          cd go
+          cd backend
           go run github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@latest \
             mod -json -output /tmp/sbom.json
 
@@ -119,7 +119,7 @@ jobs:
       # already name.
       - name: Confirm the shipping build is static
         run: |
-          cd go
+          cd backend
           CGO_ENABLED=0 GOOS=linux go build -o /tmp/stowcloud ./cmd/sc-engine
           file /tmp/stowcloud
           ! go version -m /tmp/stowcloud | grep -q 'CGO_ENABLED=1'

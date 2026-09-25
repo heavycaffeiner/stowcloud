@@ -7,8 +7,8 @@ venv/
 # path outside its own package directory, and refuses a symlink out of one.
 # Contents are ignored but the directory itself is kept (a .gitkeep), because
 # //go:embed all:build needs the directory to exist at compile time.
-go/internal/transport/http/spa/build/*
-!go/internal/transport/http/spa/build/.gitkeep
+backend/internal/http/spa/build/*
+!backend/internal/http/spa/build/.gitkeep
 # Where it used to build, kept ignored so an old checkout does not commit one.
 web/build
 /checks/consumers/web/dist/
@@ -23,17 +23,17 @@ web/playwright-report/
 # The development server's scratch tree: its data directory holding a master
 # key and a TLS private key, its shares, the binary it builds and its log.
 # scripts/dev.sh makes one at the repository root and `go run` makes another
-# under go/, so the pattern is unanchored: an anchored rule covered only the
-# first and let the second's private key be committed.
+# under backend/, so the pattern is unanchored: an anchored rule covered only
+# the first and let the second's private key be committed.
 .dev/
-# `go build ./cmd/<name>` or `./tools/<name>` from inside go/ drops the binary
-# beside the source. One entry per command, because a bare `/go/*` would hide a
-# new directory.
-/go/differ
-/go/enginedrive
-/go/sc-engine
-/go/sc-smb-agent
-/go/stowcloud
+# `go build ./cmd/<name>` or `./tools/<name>` from inside backend/ drops the binary
+# beside the source. One entry per command, because a bare `/backend/*` would hide
+# a new directory.
+/backend/differ
+/backend/enginedrive
+/backend/sc-engine
+/backend/sc-smb-agent
+/backend/stowcloud
 # Runtime state the testbed compose stack creates beside its own file.
 /deploy/testbed/data
 /deploy/testbed/secrets
@@ -49,8 +49,8 @@ setup-token
 web/.tmp-*
 
 # Gate tooling and cross-compiled test binaries: build products, not source.
-/go/.tools/
-/go/.testbin/
+/backend/.tools/
+/backend/.testbin/
 
 # CPython's bytecode cache, dropped beside a script the moment it is imported.
 # The e2e helpers under scripts/ are importable, so this appears from a plain

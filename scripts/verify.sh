@@ -130,7 +130,7 @@ echo
 # would have hidden two real bugs behind.
 # ==========================================================================
 
-GO_TOOLS="$PWD/go/.tools/bin"
+GO_TOOLS="$PWD/backend/.tools/bin"
 # Pinned, because a linter that changes its rule set between two runs of this
 # script is a gate that means something different each time.
 GOLANGCI="github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1"
@@ -141,7 +141,7 @@ GOVULN="golang.org/x/vuln/cmd/govulncheck@latest"
 # native <path> -- a path in the form this host's own programs understand.
 native() { if [ "$HOST" = windows ]; then cygpath -w "$1"; else printf '%s' "$1"; fi; }
 
-# ingo <args...>      -- the shipping build environment, run from go/.
+# ingo <args...>      -- the shipping build environment, run from backend/.
 # ingo_host <args...> -- this host's own OS, which is what tests need.
 # ingo_cgo <args...>  -- the one environment that is not the shipping one.
 #
@@ -149,8 +149,8 @@ native() { if [ "$HOST" = windows ]; then cygpath -w "$1"; else printf '%s' "$1"
 # and that is load-bearing rather than tidy: go defaults it to 1 whenever a C
 # compiler is on PATH, so on a box that has one the difference between a static
 # binary and one linked against libc is this word.
-ingo()      { ( cd go && env CGO_ENABLED=0 GOOS=linux "$@" ); }
-ingo_host() { ( cd go && env CGO_ENABLED=0 "$@" ); }
+ingo()      { ( cd backend && env CGO_ENABLED=0 GOOS=linux "$@" ); }
+ingo_host() { ( cd backend && env CGO_ENABLED=0 "$@" ); }
 
 # ingo_cgo <args...> -- the one environment that is not the shipping one.
 #
@@ -167,11 +167,11 @@ ingo_cgo() {
   if [ "$HOST" = windows ]; then
     local go_exe; go_exe=$(command -v "$1") || return 127
     shift
-    ( cd go && env CGO_ENABLED=1 \
+    ( cd backend && env CGO_ENABLED=1 \
         PATH="$(native "$(dirname "$(cc_path)")");$(native "$(dirname "$(command -v go)")");$PATH" \
         "$go_exe" "$@" )
   else
-    ( cd go && env CGO_ENABLED=1 "$@" )
+    ( cd backend && env CGO_ENABLED=1 "$@" )
   fi
 }
 
@@ -185,12 +185,12 @@ cc_path() {
 have_cc() { [ -n "$(cc_path)" ]; }
 
 # go_tool <name> <module@version> -- print the path to a gate tool, installing
-# it under go/.tools/bin if it is not already there or on PATH. Installing into
+# it under backend/.tools/bin if it is not already there or on PATH. Installing into
 # the checkout rather than GOPATH/bin means a gate run writes nothing outside
 # the repository it was pointed at.
 #
 # A cached binary is reused only when it was built by the toolchain now on
-# PATH. Both of these tools load and type-check source with the go/* packages
+# PATH. Both of these tools load and type-check source with the backend/* packages
 # they were compiled against, so one built by an older release cannot parse a
 # newer standard library: golangci-lint panicked on go1.27's math/rand/v2 and
 # govulncheck refused to load any package at all. Both reported as a gate
@@ -212,7 +212,7 @@ go_tool() {
   if [ -n "$p" ] && { [ -z "$want" ] || go version "$p" 2>/dev/null | grep -qF "$want"; }; then
     printf '%s' "$p"; return 0
   fi
-  ( cd go && env CGO_ENABLED=0 GOBIN="$(native "$GO_TOOLS")" go install "$mod" ) \
+  ( cd backend && env CGO_ENABLED=0 GOBIN="$(native "$GO_TOOLS")" go install "$mod" ) \
     >/dev/null 2>&1 || return 1
   for p in "$GO_TOOLS/$name" "$GO_TOOLS/$name.exe"; do
     [ -x "$p" ] && { printf '%s' "$p"; return 0; }
@@ -233,14 +233,14 @@ native_tool() {
     # it. A total replacement left golangci-lint unable to run `go env`, since
     # it shells out and inherits this: it reported "executable file not found
     # in %PATH%" for go on a machine where go had just run.
-    ( cd "$(native "$PWD/go")" && env CGO_ENABLED=0 GOOS=linux \
+    ( cd "$(native "$PWD/backend")" && env CGO_ENABLED=0 GOOS=linux \
         PATH="$(native "$(dirname "$(command -v go)")");$PATH" "$exe" "$@" )
   else
-    ( cd go && env CGO_ENABLED=0 GOOS=linux "$exe" "$@" )
+    ( cd backend && env CGO_ENABLED=0 GOOS=linux "$exe" "$@" )
   fi
 }
 
-if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
+if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   echo
   echo "=== go: $(go version) ==="
   echo
@@ -269,7 +269,7 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   run "routecheck (the client's paths are mounted)" \
       ingo_host go run ./tools/routecheck \
         -client-dir ../web/src \
-        -routes internal/transport/http/server/v1table.go,internal/transport/http/links/public.go \
+        -routes internal/http/server/v1table.go,internal/http/publiclinks/public.go \
         -allow routes.allow \
         -server-only routes.server-only
   # routecheck proves the paths exist. This proves the bodies match: the
@@ -277,7 +277,7 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # by a person clicking something that then did nothing.
   run "contractcheck (the client's fields are sent)" \
       ingo_host go run ./tools/contractcheck \
-        ../web/src/lib/api/types.ts ./internal/transport/http/handler ./internal/app
+        ../web/src/lib/api/types.ts ./internal/http/api/handler ./internal/app
   # Settings saved by the client must be consumed by the runtime loader.
   run "settingscheck (a stored setting is read)" \
       ingo_host go run ./tools/settingscheck \
@@ -338,7 +338,7 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   done
   if [ -n "$SPEC_ROOT" ]; then
     run "speccheck (the current phase documents match the internal tree)" bash -c '
-      cd go
+      cd backend
       fail=0
       for area in foundation core auth oidc upload search preview settings smb http; do
         [ -d "'"$SPEC_ROOT"'/$area" ] || continue
@@ -353,16 +353,16 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   run "vetsecret (D12: no secret to a verb)" ingo_host go run ./tools/vetsecret ./...
   run "koscan (D15: no Korean in Go source)" ingo_host go run ./tools/koscan ./cmd ./tools ./internal
   run "layercheck (the internal tiers hold)" ingo_host go run ./tools/layercheck ./internal
-  FMT=$(cd go && gofmt -l . 2>/dev/null)
-  grep_gate "gofmt" "$FMT" "Run: cd go && gofmt -w ."
+  FMT=$(cd backend && gofmt -l . 2>/dev/null)
+  grep_gate "gofmt" "$FMT" "Run: cd backend && gofmt -w ."
   # D18. The module graph against the checked-in allowlist, so a new direct
   # dependency is a diff to a file rather than a line in go.mod nobody reads.
-  DEPS_WANT=$(grep -vE '^[[:space:]]*(#|$)' go/deps.allow | sort)
+  DEPS_WANT=$(grep -vE '^[[:space:]]*(#|$)' backend/deps.allow | sort)
   DEPS_HAVE=$(ingo go list -m -f '{{if and (not .Main) (not .Indirect)}}{{.Path}}{{end}}' all \
               2>/dev/null | grep -v '^$' | sort)
   DEPS_DIFF=$(diff <(printf '%s\n' "$DEPS_WANT") <(printf '%s\n' "$DEPS_HAVE") 2>/dev/null)
-  grep_gate "direct modules match go/deps.allow" "$DEPS_DIFF" \
-    "< is allowed and absent, > is present and not allowed. Edit go/deps.allow."
+  grep_gate "direct modules match backend/deps.allow" "$DEPS_DIFF" \
+    "< is allowed and absent, > is present and not allowed. Edit backend/deps.allow."
 
   # D1. Exceptions are countable, and the count is committed, so one being
   # added shows up in the diff beside the reason it was added for.
@@ -370,32 +370,32 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # Separate fixed counts for the outer command/tooling surface and the
   # feature-oriented internal tree. Both may only go down.
   nolint_count() {
-    grep -rIno '//nolint:[a-zA-Z,]*' go --include='*.go' 2>/dev/null \
+    grep -rIno '//nolint:[a-zA-Z,]*' backend --include='*.go' 2>/dev/null \
       | grep -c "$@" | tr -d '[:space:]'
   }
-  NOLINT_WANT=$(grep -vE '^[[:space:]]*(#|$)' go/nolint.budget | sed -n 1p | tr -d '[:space:]')
-  NOLINT_WANT_INTERNAL=$(grep -vE '^[[:space:]]*(#|$)' go/nolint.budget | sed -n 2p | tr -d '[:space:]')
-  NOLINT_HAVE=$(nolint_count -v '^go/internal/')
-  NOLINT_HAVE_INTERNAL=$(nolint_count '^go/internal/')
+  NOLINT_WANT=$(grep -vE '^[[:space:]]*(#|$)' backend/nolint.budget | sed -n 1p | tr -d '[:space:]')
+  NOLINT_WANT_INTERNAL=$(grep -vE '^[[:space:]]*(#|$)' backend/nolint.budget | sed -n 2p | tr -d '[:space:]')
+  NOLINT_HAVE=$(nolint_count -v '^backend/internal/')
+  NOLINT_HAVE_INTERNAL=$(nolint_count '^backend/internal/')
   NOLINT_HITS=""
   [ "$NOLINT_WANT" = "$NOLINT_HAVE" ] || \
-    NOLINT_HITS="the outer tree: go/nolint.budget says $NOLINT_WANT, it has $NOLINT_HAVE"
+    NOLINT_HITS="the outer tree: backend/nolint.budget says $NOLINT_WANT, it has $NOLINT_HAVE"
   [ "$NOLINT_WANT_INTERNAL" = "$NOLINT_HAVE_INTERNAL" ] || \
-    NOLINT_HITS="$NOLINT_HITS"$'\n'"the internal tree: go/nolint.budget says $NOLINT_WANT_INTERNAL, it has $NOLINT_HAVE_INTERNAL"
+    NOLINT_HITS="$NOLINT_HITS"$'\n'"the internal tree: backend/nolint.budget says $NOLINT_WANT_INTERNAL, it has $NOLINT_HAVE_INTERNAL"
   NOLINT_HITS=$(printf '%s' "$NOLINT_HITS" | sed '/^$/d')
-  grep_gate "//nolint counts match go/nolint.budget" "$NOLINT_HITS" \
+  grep_gate "//nolint counts match backend/nolint.budget" "$NOLINT_HITS" \
     "Every exception carries a reason on its line. Update the budget deliberately."
 
   # Three rules that are about a call appearing outside the one package that
   # owns it. Each scans code, not comments, for the same reason the compat
   # gate below does: a package may explain in a comment why the exception
   # exists without being the exception.
-  go_code() { grep -rIn --include='*.go' -E "$1" go 2>/dev/null | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)'; }
+  go_code() { grep -rIn --include='*.go' -E "$1" backend 2>/dev/null | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)'; }
 
   # D8. One clock. F10 was a now_ns that unwrapped duration_since(UNIX_EPOCH),
   # which aborts the process on a machine whose RTC has not been set.
   CLOCK_HITS=$(go_code 'time\.Now\(' \
-               | grep -vE '^go/internal/platform/clock/')
+               | grep -vE '^backend/internal/platform/clock/')
   grep_gate "D8: time.Now only in the clock packages" "$CLOCK_HITS" \
     "Take a clock.Clock. Nothing else reads the wall clock."
 
@@ -412,7 +412,7 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   #
   # Share-content renames and control-file publication have separate owners.
   RENAME_HITS=$(go_code 'os\.Rename\(|unix\.Renameat2?\(' \
-                | grep -vE '^go/internal/platform/storage/vfs/')
+                | grep -vE '^backend/internal/storage/vfs/')
   grep_gate "D11: rename only from the packages that own it" "$RENAME_HITS" \
     "Take the operation whose contract matches: vfs for share content, durablefs for a control file."
 
@@ -425,7 +425,7 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   #
   # Every raw descriptor use stays in the package that owns its *os.File.
   FD_HITS=$(go_code '\.Fd\(\)' \
-            | grep -vE '^go/internal/(platform/storage/vfs/root\.go|platform/system/jail/landlock\.go|feature/preview/transport\.go):')
+            | grep -vE '^backend/internal/(storage/vfs/root\.go|platform/system/jail/landlock\.go|feature/preview/transport\.go):')
   grep_gate "raw descriptors only through a keepalive helper" "$FD_HITS" \
     "Use the descriptor helper where the owning file lives."
 
@@ -440,7 +440,7 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # comment naming the intent is not a call site, so the count is of the
   # calls.
   rw_sites() { go_code 'OpenRead\([^)]*IntentReadWrite' | grep -v '_test\.go:' | grep -E "$1"; }
-  RW_FOUND=$(rw_sites '^go/internal/')
+  RW_FOUND=$(rw_sites '^backend/internal/')
   RW_HITS=""
   [ "$(printf '%s' "$RW_FOUND" | grep -c .)" -le 1 ] || RW_HITS="$RW_FOUND"
   grep_gate "IntentReadWrite has at most one call site" "$RW_HITS" \
@@ -450,15 +450,15 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # Tests build fixture strings rather than statements. Database limits format
   # typed error messages, not queries.
   SQL_HITS=$(go_code 'fmt\.Sprintf\(|fmt\.Sprint\(|strings\.Builder' \
-             | grep '^go/internal/platform/database/' | grep -v '_test\.go:' \
-             | grep -v '^go/internal/platform/database/limits/' || true)
+             | grep '^backend/internal/store/' | grep -v '_test\.go:' \
+             | grep -v '^backend/internal/store/limits/' || true)
   grep_gate "D14: no built SQL in the store" "$SQL_HITS" \
     "Bind parameters. A query built from parts is an injection waiting for input."
 
   # D19. Closes F8, where two files carried thirteen per cent of the tree with
   # no seam a reader could navigate by.
-  BIG=$(find go -name '*.go' -not -path '*/testdata/*' \
-        -exec awk 'END { if (NR > 1500) printf "%s: %d lines\n", FILENAME, NR }' {} \; 2>/dev/null)
+  BIG=$(find backend -name '*.go' -not -path '*/testdata/*' \
+        -exec awk 'END { if (NR > 1500) printf "%s: %d lines\\n", FILENAME, NR }' {} \; 2>/dev/null)
   grep_gate "no Go file over 1,500 lines" "$BIG" \
     "Split along a seam the problem already has, not one invented to hit a count."
 
@@ -467,41 +467,43 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   go_compat_isolation() {
     vendor_terms() {
       grep -rIn --include='*.go' -iE '\bocs\b|remote\.php|nextcloud' "$1" 2>/dev/null \
+        | grep -v '_test\.go:' \
         | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)' || true
     }
     hits=""
     for d in internal/feature internal/platform internal/runtime internal/bootstrap; do
-      [ -d "go/$d" ] || continue
-      hits="$hits$(vendor_terms "go/$d")"
+      [ -d "backend/$d" ] || continue
+      hits="$hits$(vendor_terms "backend/$d")"
     done
-    for d in apierr archive dav emergency handler route; do
-      [ -d "go/internal/transport/http/$d" ] || continue
-      hits="$hits$(vendor_terms "go/internal/transport/http/$d")"
+    for d in apierr archive dav emergency route middleware server api publiclinks; do
+      [ -d "backend/internal/http/$d" ] || continue
+      if [ "$d" = server ]; then
+        hits="$hits$(vendor_terms "backend/internal/http/$d" \
+                     | grep -vE '^backend/internal/http/server/(fallback|preflight)' || true)"
+      else
+        hits="$hits$(vendor_terms "backend/internal/http/$d")"
+      fi
     done
-    if [ -d go/internal/transport/http/server ]; then
-      hits="$hits$(vendor_terms go/internal/transport/http/server \
-                   | grep -vE '^go/internal/transport/http/server/(fallback|preflight)' || true)"
-    fi
-    if [ -d go/internal/transport/http/middleware ]; then
+    if [ -d backend/internal/http/middleware ]; then
       hits="$hits$(grep -rIn --include='*.go' -iE '\bocs\b|remote\.php|nextcloud' \
-                   go/internal/transport/http/middleware 2>/dev/null \
+                   backend/internal/http/middleware 2>/dev/null \
                    | grep -v '_test\.go:' \
                    | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)' || true)"
     fi
     # The compatibility adapter owns its store and claim bindings, so it may
     # depend on their concrete stores and the shared claim codec. Wire terms
     # still cannot enter those dependencies or unrelated transport packages.
-    if [ -d go/internal/transport/http/nc ]; then
+    if [ -d backend/internal/http/nextcloud ]; then
       hits="$hits$(ingo go list -tags compat_nc -f '{{range .Imports}}{{.}}{{"\n"}}{{end}}' \
-                   ./internal/transport/http/nc/... 2>/dev/null \
-                   | grep 'stowcloud/go/internal/' \
-                   | grep -vE 'internal/(transport/http/(dav|apierr|middleware|route|handler)|platform/(clock|http/headers|number|protocol/limits|database/(cache|ident|state)|storage/vfs)(/|$)|feature/)' || true)"
+                   ./internal/http/nextcloud/... 2>/dev/null \
+                   | grep 'stowcloud/backend/internal/' \
+                   | grep -vE 'internal/(http/(dav|apierr|middleware|route|api|publiclinks|headers)|platform/(clock|number|protocol/limits)|store/(cache|ident|state)|storage/vfs)(/|$)|feature/' || true)"
     fi
     printf '%s' "$hits" | grep -v '^[[:space:]]*$' || true
   }
   # The reference clients are cloned into .ref so their wire behaviour can be
   # read. Their code is under a different licence, so a line of it reaching
-  # go/ is a licensing problem rather than a style one. Long lines only: a
+  # backend/ is a licensing problem rather than a style one. Long lines only: a
   # short one is shared vocabulary, not copied expression.
   go_ref_contamination() {
     [ -d .ref ] || return 0
@@ -520,13 +522,13 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
       | grep -avE '^(//|\*|/\*|#|import|package|@)' \
       | awk 'length($0) >= 60' \
       | LC_ALL=C sort -u > "$scratch/ref.txt"
-    find go -name '*.go' -print0 2>/dev/null \
+    find backend -name '*.go' -print0 2>/dev/null \
       | xargs -0 -r cat 2>/dev/null \
       | tr -d '\r' \
       | iconv -f UTF-8 -t UTF-8 -c 2>/dev/null \
       | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
       | awk 'length($0) >= 60' \
-      | LC_ALL=C sort -u > "$scratch/go.txt"
+      | LC_ALL=C sort -u > "$scratch/backend.txt"
     # Name the file each surviving line sits in, so a hit is actionable
     # rather than a bare string.
     #
@@ -535,30 +537,30 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
     # Windows device names write that list identically or are wrong. Prose
     # and code carry lowercase words, so requiring one keeps the filter from
     # excusing a real copy.
-    LC_ALL=C comm -12 "$scratch/ref.txt" "$scratch/go.txt" \
+    LC_ALL=C comm -12 "$scratch/ref.txt" "$scratch/backend.txt" \
       | grep -aE '[a-z]{3}' \
       | while IFS= read -r line; do
           [ -n "$line" ] || continue
-          where=$(grep -ralF -- "$line" go --include='*.go' 2>/dev/null | head -1)
-          printf '%s: %.90s\n' "${where:-go/}" "$line"
+          where=$(grep -ralF -- "$line" backend --include='*.go' 2>/dev/null | head -1)
+          printf '%s: %.90s\n' "${where:-backend/}" "$line"
         done
     rm -rf "$scratch"
   }
   if [ -d .ref ]; then
     REF_HITS=$(go_ref_contamination)
-    grep_gate "no reference source copied into go/" "$REF_HITS" \
+    grep_gate "no reference source copied into backend/" "$REF_HITS" \
       "Read .ref for behaviour; never paste its code. It is licensed differently."
   else
-    skipped "no reference source copied into go/" "no .ref checkout" 0
+    skipped "no reference source copied into backend/" "no .ref checkout" 0
   fi
 
-  if [ -d go/internal/transport/http/nc ]; then
+  if [ -d backend/internal/http/nextcloud ]; then
     NC_HITS=$(go_compat_isolation)
     grep_gate "compat isolation (import graph, seam, text)" "$NC_HITS" \
       "Compat wire vocabulary belongs behind the compat layer."
   else
     skipped "compat isolation (import graph, seam, text)" \
-            "go/internal/transport/http/nc does not exist yet" "${VERIFY_REQUIRE_COMPAT:-0}"
+            "backend/internal/http/nextcloud does not exist yet" "${VERIFY_REQUIRE_COMPAT:-0}"
   fi
 
   # --- everything above is text, and everything below compiles -------------
@@ -606,7 +608,7 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # Linux and the binaries are Windows ones, so running them is an exec format
   # error for every package. They are built and thrown away.
   run "the build tags hold off Linux" bash -c '
-    cd go
+    cd backend
     fail=0
     for tags in "" "-tags compat_nc"; do
       # "?" lines name a package with no tests, and "go: downloading" is the
@@ -620,7 +622,7 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
 
   # The compat layer builds both ways. With no tag its packages are not
   # compiled at all, which is stronger than the feature flag it replaces.
-  if [ -d go/internal/transport/http/nc ]; then
+  if [ -d backend/internal/http/nextcloud ]; then
     run "go build (compat stripped)" ingo go build ./...
     run "go build -tags compat_nc"   ingo go build -tags compat_nc ./...
   fi
@@ -635,7 +637,7 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   if [ "$HOST" = linux ]; then
     run "go test ($HOST)" ingo_host go test -count=1 ./...
     run "VeraCrypt external golden" \
-        ingo_host bash -c 'VAULT_INTEROP_FIXTURE="$PWD/internal/platform/storage/vault/testdata/interop/hash_sha512.hc" go test -count=1 ./internal/platform/storage/vault -run "^TestOpenExternalVeraCryptFixture$" -v'
+        ingo_host bash -c 'VAULT_INTEROP_FIXTURE="$PWD/internal/storage/vault/testdata/interop/hash_sha512.hc" go test -count=1 ./internal/storage/vault -run "^TestOpenExternalVeraCryptFixture$" -v'
   else
     skipped "go test ($HOST)" "the durable runtime is Linux-only; off-Linux test binaries are compiled above" 0
   fi
@@ -661,10 +663,10 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # like everything it wraps, so off Linux the pattern matches no packages
   # and go reports that as an error: a step failing because the code it names
   # does not exist on this OS says nothing about the code.
-  if [ -d go/internal/transport/http/nc ]; then
+  if [ -d backend/internal/http/nextcloud ]; then
     if [ "$HOST" = linux ]; then
       run "go test -tags compat_nc" \
-          ingo_host go test -tags compat_nc -count=1 ./internal/transport/http/nc/... ./internal/app/...
+          ingo_host go test -tags compat_nc -count=1 ./internal/http/nextcloud/... ./internal/app/...
     else
       skipped "go test -tags compat_nc" "the compat layer is Linux only" 0
     fi
@@ -719,7 +721,7 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # to compile, so there is no stale-bundle hazard to clean around. The bundle
   # lives inside the embedding package because //go:embed cannot name a path
   # outside it, and refuses a symlink that points out.
-  if [ -f go/internal/transport/http/spa/build/index.html ]; then
+  if [ -f backend/internal/http/spa/build/index.html ]; then
     # One bundle build for the two checks below, which each used to run their
     # own. `SC_BUNDLE_FRESH` tells them the tree's bundle is the current
     # build, so they serve it instead of rebuilding it; CI sets it too,
@@ -749,7 +751,7 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
             "${VERIFY_REQUIRE_UI:-0}"
   fi
 else
-  why="no go/go.mod, or the go toolchain is not on PATH"
+  why="no backend/go.mod, or the go toolchain is not on PATH"
   for s in "go build (linux/amd64)" "go vet (linux)" "golangci-lint run" "go test ($HOST)"; do
     skipped "$s" "$why" 0
   done

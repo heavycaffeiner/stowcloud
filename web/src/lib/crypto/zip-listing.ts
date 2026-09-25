@@ -7,12 +7,12 @@ import { api } from '../api/client'
 import type { ArchiveEntry, ArchiveListing, Entry } from '../api/types'
 import { BLOCK_SIZE, ciphertextSpanForRange, decryptPlaintextRange, plaintextSizeFromCiphertextSize } from './e2ee'
 
-// Matches limits.ArchiveEntriesListed in go/internal/feature/preview/limits.
+// Matches limits.ArchiveEntriesListed in backend/internal/feature/preview/limits.
 // The plain-share listing uses the same cap, so encrypted archives do not
 // disclose more than plain archives.
 const MAX_ENTRIES = 10_000
 
-// Matches maxArchiveNameBytes in go/internal/feature/preview/archive.go.
+// Matches maxArchiveNameBytes in backend/internal/feature/preview/archive.go.
 const MAX_NAME_BYTES = 4096
 
 // Matches maxArchiveNameSampleBytes in the same file: caps what the charset
@@ -83,7 +83,7 @@ function detectCjkCharset(sample: Uint8Array): CjkLabel | null {
   return best && best.score > 0 ? best.label : null
 }
 
-/** Mirrors go/internal/feature/preview/archive.go's safeArchiveName: filters a
+/** Mirrors backend/internal/feature/preview/archive.go's safeArchiveName: filters a
  *  decoded name for display safety. Not a path-traversal guard (nothing
  *  here ever opens the name), but a control character or an absolute path
  *  inside a name that a client might render or forward to its own

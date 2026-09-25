@@ -2771,7 +2771,7 @@ async function shareDelete(id: number): Promise<void> {
 
 
 // ── share links, administrator overview: mirrors `GET /api/v1/admin/links`
-// (`go/internal/transport/http/handler/links.go`'s `OwnedLinkView`), every link on the
+// (`backend/internal/http/api/handler/links.go`'s `OwnedLinkView`), every link on the
 // deployment, whoever owns it. Fixed rows attributed to four of the seeded
 // accounts (`mockUsers` above) so the owner column has something to show
 // beyond "me": one plain link, one already expired, one that has used up its

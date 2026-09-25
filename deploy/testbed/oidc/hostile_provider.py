@@ -17,7 +17,7 @@ ever started (Python's standard library cannot produce an RSA signature). A
 single static token exercises the check exactly the same way a fresh one
 would: the server checks the issuer before it ever reads the nonce, so a
 token minted ahead of the run needing a nonce that does not yet exist is
-never a problem (see go/internal/feature/oidc/jws.go's checkClaims).
+never a problem (see backend/internal/feature/oidc/jws.go's checkClaims).
 
 It implements exactly enough of the authorization-code flow to reach that
 token: no PKCE verification, no client-secret check, one code per

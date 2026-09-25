@@ -48,7 +48,7 @@ function resolveBinary(): string {
   }
 
   execSync('go build -tags embed_ui -o ' + JSON.stringify(tempBin) + ' ./cmd/sc-engine', {
-    cwd: path.join(repoRoot, 'go'),
+    cwd: path.join(repoRoot, 'backend'),
     env: { ...process.env, CGO_ENABLED: '0', GOOS: 'linux' },
     stdio: 'pipe',
   });

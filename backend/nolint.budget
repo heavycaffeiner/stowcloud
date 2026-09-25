@@ -1,0 +1,536 @@
+# D1. The number of //nolint directives in backend/. The gate counts them and fails
+# on a mismatch, so an exception being added is a two-line diff rather than one
+# line nobody sees. Raise it deliberately, with the reason on the line the
+# directive sits on.
+#
+# The first line is the command and tooling surface outside backend/internal. The
+# second is the feature-oriented internal tree. Both are fixed budgets and may
+# only go down; a new exception needs a documented reason.
+#
+# The old tree's count is 276 rather than 249 as of this line. The gap arrived
+# with fba2b83 ("feat!: move every setting into the database and make failures
+# visible") and its neighbours, which added directives without moving the
+# budget, so the gate had been failing on master since then. The number is
+# corrected here to what the tree holds rather than the directives removed,
+# because none of them belong to this rebuild. Each one is still on a line
+# carrying its own reason.
+#
+# 276: the probe snapshot's own write went through vfs.ReplaceFileDurable, so
+# the gosec exception on its hand-rolled write is gone with the write.
+#
+# 277: layercheck's diagnostic writer, the same exemption every tool in
+# backend/tools carries, for a message that has nowhere else to go. The engine's
+# own count stays zero; backend/tools is not the engine.
+#
+# 287: the linter's own backlog, which had been failing alongside the count.
+# Four unchecked returns in tests were fixed rather than suppressed (a swallowed
+# Settings error and three type assertions that now say what they got), and one
+# dead function was deleted. The ten added here are the families this file
+# already names: G101 reading an identifier on statements against the
+# config_secret table, G703 reading a variable where the path is this file's own
+# constant under the operator's data directory or a test's own TempDir, and G302
+# on a test that makes its own spool read-only to prove the refusal and puts the
+# execute bit back so cleanup can descend.
+#
+# Phase 1 added four. Three are in internal/jail: the kernel takes a struct
+# pointer for landlock_create_ruleset, landlock_add_rule and seccomp, and
+# x/sys/unix carries no wrapper for any of the three. The fourth is the escape
+# proof re-executing its own binary to build a mount boundary in a private
+# namespace, which is the only way that row runs without being root.
+#
+# Phase 2 added ten. Five are the same shape: SQLite has one integer type and
+# it is signed, so a device number, an inode number, a birth time and a byte
+# offset cross into it as their bit pattern and come back unchanged. Narrowing
+# them would refuse values a real filesystem hands out, which is the opposite
+# of what the rule is for.
+#
+# Four are gosec reading an identifier rather than a value: a constant named
+# after the app_password or totp_secret table holds a SQL statement, not a
+# credential. The tenth is the import closing databases it only ever read.
+#
+# Phase 2.5 added two. One is the other direction of the same signed-integer
+# crossing: reading a stored device or inode number back out of the override
+# table. The other is the source-table inventory's row count, the one statement
+# in the tree that names a table rather than binding it, whose name comes from
+# that file's own literal map and is checked against a plain-identifier rule
+# before it is used. Two more are gosec reading a variable where a path is
+# expected: the data directory's lock file, whose name is this package's own
+# constant, and the import's staging database, whose name is its own random hex.
+# Both sit under a directory the caller handed in and neither takes a component
+# from anywhere else. The third of that shape is the development host's copy of
+# the control-file replacement, which the gate's own linter run never compiles
+# because it runs for GOOS=linux.
+#
+# Phase 3 added thirty-four. The auth package's at-rest crypto and its
+# credential-path queries are the bulk of them: the XChaCha20 buffers and the
+# HMAC/hash writers never fail, the identifier-name G101 hits on SQL statements
+# that mention a password or a secret table, the deliberately narrow
+# seed/step/bit-width casts are all proven in range beside the cast, and MD4 and
+# SHA-1 are fixed by the SMB and TOTP protocols, not chosen. The rest are the
+# rows.Close folds that use the errors.Join pattern the store owns first.
+#
+# Phase 4 added four. Two are the file ETag feeding a signed nanosecond
+# timestamp into a hash as its bit pattern, which is what a change token is:
+# reinterpreting a mtime or ctime through a narrowing check would refuse
+# nothing and prove nothing. One is the quota ledger's negated freed size,
+# clamped to the signed range on the line above the cast. One is the job
+# importer folding a uuid into a 63-bit id, masked before the conversion so the
+# value is proven in range beside the cast.
+#
+# Phase 5 added seven. Four are gosec reading an identifier or a variable
+# rather than a value: the setup code constant whose name contains "token",
+# the app-password listing statement whose table name contains "password",
+# the config file whose path is the operator's own argument, and the
+# healthcheck's certificate path and dial target, both built from that same
+# operator config. Two are the config read and the healthcheck's HTTP client,
+# same shape. One is hmac.Hash.Write, which never fails and has no error path
+# to act on.
+#
+# The core audit added nineteen, all the same families the phases before
+# already named: hash and hmac writers that never fail, rows.Close on a fully
+# read set, the device and inode numbers that cross into signed SQLite storage
+# as their bit pattern and come back unchanged, the stream offsets that are
+# bounded by the descriptor's own size, the rollback and close paths whose
+# primary error is the answer, and the share-id widening whose narrow check
+# sits on the line above.
+#
+# Phase 6 added seven. Three are hash.Hash.Write, which the interface documents
+# as never failing and which therefore has no error path to act on. Three are
+# gosec reading a conversion whose range check is on the line above or in the
+# constant it came from: the two chunk settings, both bounded by the compiled-in
+# floor, and the share-id widening the sweep does behind its own bound. The
+# seventh is the free-space probe, where a statfs that could not run is a fact
+# about the filesystem rather than a reason to refuse an upload. The eighth is
+# a test fixture writing mode 640, which is the file another program wrote that
+# the replacement has to keep the mode of.
+#
+# Phase 7 added six. One is xml.EscapeText writing into a bytes.Buffer, whose
+# Write is documented never to fail. Three are the close-and-rows family the
+# phases before already named: a multistatus close whose earlier write error is
+# the real answer, and two rows.Close on fully read sets. Two are the device
+# and inode numbers crossing into signed SQLite storage as their bit pattern,
+# the same conversion the cache already does for the same reason.
+#
+# Phase 8 added one: the folding Caser, which is immutable and documented safe
+# for concurrent use, so it is shared rather than rebuilt per name. Milestone 8c
+# added two more of the same shape: the zstd encoder and decoder, both
+# documented safe for concurrent use, built once rather than per block.
+# Milestone 8d added five: four gosec file-inclusion warnings on segment paths
+# this package builds from the operator's own index directory and a fixed name,
+# and one on a test writing into its own TempDir. Milestone 8e added one: a
+# test restoring a directory's execute bit so cleanup can descend into it,
+# which gosec reads as a file mode.
+#
+# Phase 9 removed one: the orphaned static package, whose panic-on-missing-embed
+# carried a forbidigo exception. The frontend now builds into the embedding
+# package and a build without one leaves the route unmounted, so there is
+# nothing to panic about.
+#
+# Milestones 9c and 9d added twenty-one, and all but two are the same two
+# families the phases before already named: a close whose error has no reader,
+# on job descriptors and on a control socket that is what just failed, and a
+# process kill or wait where the process being already gone is the case being
+# handled. The two others are gosec reading a subprocess launch: the pool execs
+# this binary's own path, and a test builds a helper from constant arguments.
+#
+# Milestone 9e settled at this count after the socket and rename work moved into
+# internal/vfs, where the keepalive and rename rules already live. What remains
+# in preview is the same close-and-kill family, plus one bit-pattern hash of a
+# timestamp in the cache key and two gosec subprocess warnings: the pool execs
+# this binary's own path, and a test builds its helper from constant arguments.
+#
+# Milestones 9g and 9h added ten. Most are a measurement command reporting to a
+# terminal that has no second channel to report a failed write on. The rest are
+# the jail proof reaching the kernel directly: a raw openat needs AT_FDCWD as
+# its bit pattern and a NUL-terminated path, because a probe that went through
+# the standard library might not issue the syscall the filter is meant to stop.
+#
+# Milestone 10a added one: the compat wiring narrowing a stored share id, where
+# a value that no longer fits one is a corrupt row rather than a truncation.
+# Milestone 10d added two, both the OCS writer answering a client after the
+# status is already sent, where a short write has no second channel. Milestones
+# 10b and 10d added four more: the router answering after its status is sent,
+# and three test type assertions whose shape the decode above them proved.
+# Milestone 10g added three: a rows.Close on a fully read set, and two gosec
+# readings of a statement that names a credential column rather than holding
+# one.
+# Milestone 11b added one: the passdb narrowing a stored key version, where the
+# bound directly above the conversion is what makes it fit. Two more that the
+# first draft had were removed instead, by narrowing the value once rather than
+# converting it at each of three use sites.
+# Milestone 11c added three: reading the operator's own certificate path, the
+# only way to ask whether a system certificate pool is empty, and a test key
+# that is deliberately undersized so the refusal can be proved, plus a test
+# hash write that cannot fail.
+# Milestone 11e added two: a nested-mount test creating its own temporary
+# directory and handing it to its own child, and reading the kernel's magic
+# value back from the mount that test just made, the test binary re-executing
+# itself, and two reads of a test's own temporary directory.
+# Phase 13 added three, all in the response differ: it verifies no certificate
+# because it talks to two self-signed loopback servers, it reads its own corpus
+# directory, and its request carries no context because the client's own
+# timeout is the bound.
+# Phase 13 added three more in the no-Landlock proof: the test binary
+# re-executing itself, a filter length bounded on the line above the
+# conversion, and the address the kernel takes a filter by.
+# Phase 13's route work added three: two hash writes that cannot fail in the
+# sign-in challenge, and one in the settings document reader.
+# The archive writer and the link update added eight: six width conversions in
+# the zip format, each bounded on the line above it, one statement naming a
+# credential column, and one hash write that cannot fail.
+# The SMB sidecar agent added thirty-one. Most are the security scanner
+# reading this agent's own configured paths as untrusted input: it edits the
+# system account file and promotes a configuration by design, so the paths it
+# writes are its whole purpose rather than a traversal. The rest are file modes
+# the scanner wants narrower than they can be, since a system account file
+# every name lookup reads cannot be private, and signals to a process that has
+# already exited. One more marks the example configuration test writing into
+# the framework's own temporary directory, and one more the corpus scan's own
+# bound, which is a positive constant the line above it checks. Two more sit in the
+# single-sign-on flow test: a certificate pool holding only the test provider's
+# own certificate, and that provider redirecting where it was told, which is
+# what a provider does. Two more: the route checker reading the client directory
+# it was pointed at, and the search stream writing an event to a response that
+# is already committed.
+# The repairs from the risk list added one: the index build dividing its own
+# file count by its own elapsed nanoseconds to report the rate it measured,
+# both of which the line above it checks are positive.
+# The runtime settings added one: the SMB service group crossing into the
+# unsigned type the rendered file carries it as, bounded on the line above it
+# so the value cannot be one that does not fit.
+# The settings dry run added one: reading an optional string out of a decoded
+# body, where absent and wrong-typed both mean the field was not named and the
+# line below handles that case.
+#
+# Deleting the migration path removed fifteen. Every one belonged to code that
+# read a format the previous build wrote: the importer's SQLite integers
+# carrying device and inode numbers as their bit pattern, its gosec exceptions
+# for statements named after credential tables, and its close of databases it
+# only ever read. They are gone with the readers, not suppressed.
+# contractcheck added one: the same diagnostic-writer exemption every tool in
+# this directory carries, for a message that cannot be printed.
+# Wiring the thumbnails added two, both closes on a path that has already
+# decided its outcome: the thumbnail file once the response is written, and the
+# worker pool being abandoned because its cache could not be opened.
+# The size guard added one: the kernel's block size crossing into an unsigned
+# multiply, where statfs guarantees it is positive.
+#
+# Reporting how a preview worker ended removed one. The pool waited on the
+# process and discarded the status, on the grounds that every death is the same
+# event to it. True of what it does next, false of what it can say: a worker
+# killed by a signal and one that exited on its own both read as "the worker
+# died: EOF". The status is read now, so the exception is gone rather than
+# suppressed.
+#
+# Naming the syscall a seccomp kill refused added three. A kill prints nothing,
+# so a filter missing an entry and a decoder that crashed look identical; the
+# proof re-runs the load under a filter that traps instead, and the runtime
+# then prints a stack naming the call. The exceptions are the child process
+# that is meant to fail, since its output rather than its status is the answer,
+# and two pool closes on a path that has already reported a failure.
+#
+# 242: the openat2 probe test restores a directory mode in its cleanup, which
+# gosec reads as a file mode and wants at 0o600 or less.
+#
+# 244: the SMB control socket's directory and its fallback mode. Both are
+# wider than gosec's default on purpose: the server is a different uid and the
+# channel exists for it to reach.
+#
+# 245: the device-login consent page's template execution. The headers are
+# already written by then, so a failed body has nowhere to be reported to.
+#
+# 248: the public share-link surface. Three closes on paths where the bytes
+# are already going out, so the close's error has nowhere left to be reported.
+#
+# 249: the virtual root's multistatus. The document is already on the wire by
+# the time the close runs, so its error has nowhere to be reported either.
+#
+# 248: the share link's POST download folded into the GET, taking one of the
+# three closes with it. A browser navigates to a download, so minting a URL to
+# navigate to was a round trip that spent the cap on a discarded response.
+#
+# 249: auth.weak_password, the code the refusal mapper returns for a password
+# under the floor. G101 reads the identifier rather than what it holds.
+#
+# 277: the settings-in-the-database change and the work around it, counted
+# rather than justified one by one, for the reason at the top of this file.
+#
+# The engine's four are all one thing: two hash functions the protocols fix.
+# MD4 is what SMB authenticates against and SHA-1 is what RFC 6238 computes a
+# code with, so neither is a choice this tree makes and neither is used as a
+# collision-resistant hash. Two of the four are the imports, one is the MD4
+# constructor, and one is the reference computation in the test that checks
+# the second factor against the published vector.
+#
+# 6: the relying party adds two. One is asking whether the system certificate
+# pool is empty, which has no other accessor and which an empty pool must be a
+# startup refusal for. One is a deliberately undersized key in the test that
+# proves an undersized key is refused, which cannot be written with a key the
+# rule accepts.
+#
+# 7: the upload engine adds one. A free-space probe that could not run is a
+# fact about the filesystem rather than a reason to refuse an upload, so the
+# nil return beside a non-nil error is the decision rather than a mistake.
+#
+# 15: the search family adds eight. Two are immutable values shared rather
+# than rebuilt per call, which both libraries document as safe for concurrent
+# use: the folding Caser, and the zstd encoders and decoders. Four are gosec
+# reading a file path as untrusted where every component is this package's
+# own: the base and tombstone segments are fixed names under the operator's
+# index directory, and a delta segment's name is built from that directory and
+# a counter this package increments. The last two are the same reading in the
+# segment tests, where the path is the framework's own TempDir and a fixed
+# name, and the corruption being staged is the point of the test.
+#
+# 51: the preview family adds thirty-six, and they are the families a jailed
+# subprocess brings with it rather than new kinds.
+#
+# Three are the kernel taking a struct pointer where x/sys carries no wrapper:
+# landlock_create_ruleset, landlock_add_rule and seccomp. Two more are the
+# openat probe reaching the syscall directly, which is the only way to prove
+# the filter refuses it: AT_FDCWD travels as its bit pattern and the path is a
+# NUL-terminated buffer.
+#
+# Sixteen are closes and kills where the outcome is already decided: a control
+# socket that is what just failed, a job descriptor whose reader has gone, a
+# process that being already gone is the case being handled, a probe that
+# failed by succeeding, and the descriptor sweep where EBADF on a descriptor
+# this process never held is the expected result.
+#
+# The rest are gosec reading a path or a subprocess as untrusted where every
+# component is this tree's own: a thumbnail whose whole filename is a digest
+# this package computed, the pool exec'ing this binary's own path, and the
+# tests reading their own TempDir. Three are values shared rather than rebuilt:
+# the worker's startup rlimits, captured once before the filter closes the call
+# that reads them, and the two test binaries each suite builds once.
+#
+# 52: the settings loader narrowing a stored service GID to uint32. The bound
+# it is read through starts at one and stops at the width of the type, so the
+# conversion cannot lose a value or produce a negative; gosec cannot see the
+# bound because it lives behind the read helper's parameter.
+#
+# 290: freshscan, the gate that keeps the rebuilt engine's prose its own. Three
+# directives, each matching what the other tools in this directory already do:
+# the diagnostic writer whose error has nowhere to go, the read-only open of a
+# path the walker produced rather than a request, and the close of a file that
+# was only read.
+#
+# 60: the SMB agent's control channel. Three closes whose outcome is already
+# decided (the exchange is finished, the process is ending, the reply is
+# written), two directory and socket modes the hand-over argument in that file
+# explains, and three in its tests: the shared close helper, and the two reads
+# and writes a refusal deliberately interrupts, which is the behaviour under
+# test rather than an ignored failure.
+#
+# 62: the agent's two pdbedit calls. Both run the daemon's own credential tool,
+# which is the only supported way to write a tdbsam database; the import's
+# arguments are the agent's own configured paths, and the prune's account name
+# passed the portable rule on the line above it.
+#
+# 65: the agent's runtime reads. Two probe /sys/class/net for a device name the
+# kernel itself listed, to tell one end of a virtual pair from a real
+# interface, and one reads the flag file in the agent's own configured
+# directory. None takes a path from a request.#
+# 70: five in the acceptance tests that drive real external tools, where the
+# argument is made once per file rather than at each call site.
+#
+# The count reached 83 before this entry, because two commits added eighteen
+# directives without moving the budget. That is precisely the lapse this file
+# exists to catch, and it caught it. Rather than raise the number by eighteen,
+# the repeated ones were collapsed: an exec helper in each of the three test
+# files, and a fixture-opening helper that closes through t.Cleanup and so
+# needs no errcheck exception at all.
+#
+# What is left is one gosec exception per test file for invoking a binary that
+# came from LookPath with arguments that are constants in that file or paths
+# under the test's own TempDir, plus two on reading a tool's output where a
+# non-zero exit is itself the assertion: exiv2 exits non-zero when a file
+# carries no metadata, which is the passing case.
+#
+# 71: the emergency door's JSON writer. A client that stopped reading cannot be
+# told that it stopped reading, and the door has no error path left to take at
+# that point.
+
+#
+# 291: settingscheck's diagnostic writer, the same exemption every tool in
+# backend/tools carries. The tool exists because a settings key the client writes
+# and no loader reads is stored, reported as saved, and read by nobody.
+#
+# 294: speccheck's three. The diagnostic writer every tool in backend/tools carries,
+# a grep invocation whose arguments are this tool's own root and an identifier
+# read from a document in the same repository, and a document read whose path
+# came from walking the caller's own documents directory.
+#
+# 295: the cookie probe in the emergency door's TLS test. It builds cookies the
+# browser rules forbid on purpose, to measure which of the three __Host- rules
+# Go's cookiejar actually enforces, so the linter's objection is the test's
+# subject rather than a defect in it.
+
+#
+# 73: two in the search comparison against independent tools. One runs a binary
+# LookPath resolved with this test's own temp directory and needles, and one
+# reads an exit status where a non-zero value means "nothing matched", which is
+# an answer rather than a failure.
+#
+# 74: the error classifier's JSON writer, the same shape as the emergency
+# door's. Once the status line is out, a client that stopped reading cannot be
+# told that it stopped reading.
+#
+# 75: the CSRF derivation's HMAC write. hash.Hash documents Write as never
+# returning an error, so there is no failure to act on.
+#
+# 76: the chain's credential context key. G101 reads the identifier, which
+# contains "credential"; the value is a map key into the request context and
+# holds no secret.
+#
+# 77: the listener swap's serving probe. It asks the new generation for a
+# reply before the old one is dropped, and the client's own timeout is the
+# bound, so noctx has no context to want.
+#
+# 78: the TLS test staging a mismatched key. G703 reads the write path as
+# tainted; it is this test's own TempDir, produced by the helper three lines
+# above the call.
+#
+# The old tree's 296th is speccheck's literal route search: G204 reads the
+# grep argument as tainted; it is the tool's own argument and a string from a
+# document in this repository.
+#
+# 79: reading the probe snapshot. G304 reads the path as tainted; it is the
+# operator's own data directory, and the read is bounded by a stat above it.
+#
+# 80: the DAV method table. A map literal read-only after init, kept as one
+# table so what a method needs is answered in one place.
+#
+# 81: the compat prefix list. Both spellings a vendor request may arrive
+# under, read-only after init.
+#
+# 82: the compat feature matrix. What each feature needs before it may be
+# advertised, read-only after init.
+#
+# 83: the challenge MAC. errcheck reads the hash write; hash.Hash documents
+# Write as never returning an error, so there is nothing to handle.
+#
+# 84: SHA-1 in the login test's reference code. G505 reads the import; RFC
+# 6238 fixes the algorithm, and this is the independent computation the test
+# drives the endpoint with rather than a choice about what to deploy.
+#
+# 85: the share-id truncation check in the admin test. G115 reads the
+# conversion; the truncation is the property under test, and the assertion
+# exists to fail if the chosen id does not actually wrap onto the real one.
+#
+# 86: the configuration secret's row name. G101 reads the identifier as a
+# credential; it names the row the sealed value is stored in, and the value
+# itself never appears in source.
+# 87 and 88: the thumbnail route's test builds the shipped decoder. One is the
+# exec of go build, whose every argument is this test's own constant. The other
+# is the memoised result: one build per test binary, which is what the
+# memoisation exists for, and a closure keeps it out of reach of anything else
+# in the package.
+#
+# 89: the change channel closing a socket. Every caller reaches it because the
+# peer is already going away, so a close that fails has nobody left to be
+# reported to.
+#
+# The cutover work adds twenty, and eighteen of them arrive with one package:
+# the SMB supervisor, which the old tree carried and the engine had no home
+# for. They are the families a process supervisor brings rather than new kinds.
+#
+# Twelve are errcheck on a path whose outcome is already settled. Signalling a
+# process group where the group having already exited is the case being
+# handled, reaping a child that is going away either way, and closing a
+# descriptor on a path that has already decided what it will report.
+#
+# Six are gosec reading this agent's own configuration as untrusted input. It
+# edits the system account file and promotes a daemon configuration by design,
+# so the paths it writes are its purpose rather than a traversal, and the
+# service manager it invokes takes a unit name from this package's own
+# detection. The same argument the old tree's agent made, for the same code.
+#
+# 107: the lock manager's URN scheme. G101 reads the identifier; it is a URI
+# scheme prefix, and the token itself is minted per lock from the CSPRNG and
+# never appears in source.
+#
+# 108: the instance lock's file open. G304 reads the variable; the filename is
+# this package's own constant and only the directory came from the caller.
+#
+# 108: the size guard's block-size conversion. G115 reads the widening; statfs
+# guarantees a positive block size, and a filesystem reporting otherwise would
+# be reporting a negative volume. The test that checks the probe needed a
+# second one until the arithmetic was split from the syscall, which let the
+# test hand over a volume rather than read one.
+#
+# 110: the clone guard's build and disassemble commands. G204 reads the
+# subprocess; the test names the package it compiles and the symbol it reads,
+# both this file's own constants.
+#
+# 112: the jail proof's diagnostic re-run. Two errcheck suppressions, on the
+# failure path of another test: the pool close and the decode whose error is
+# not the answer, the worker's own words are.
+#
+# 113: the listener swap's self-check. G402 reads the skipped verification;
+# the request only asks whether anything answers the socket, and the
+# deployment's own certificate is routinely one this process would not trust:
+# self-signed on first boot, and issued for a host name rather than for the
+# address being dialled.
+#
+# The service-manager branch of the SMB agent went with the bare-metal
+# deployment, and took three G204 suppressions with it: the systemctl and
+# rc-service invocations, and the unit-name probe.
+#
+# 111: the archive listing's live bound. gochecknoglobals reads a package-level
+# atomic; ListArchive is a bare function with no service to hold one, and the
+# compiled-in constant it replaces was equally process-wide.
+#
+# 112: the restart's exec. G204 reads a variable path, which is
+# /proc/self/exe: this running image, not anything a caller supplies.
+#
+# 113: the Nextcloud WebDAV trashbin listing. G705 reads writing an XML response
+# body to http.ResponseWriter; every field in the response document is
+# XML-escaped and write errors are logged.
+#
+# 115: the log store's two file opens. G304 reads a variable path, which is a
+# segment name this store either just generated or read back from its own
+# directory listing; nothing a request supplies reaches either call.
+#
+# 117: the durable log's graph and the access log's redaction table. G304
+# reads a variable path in the counting walk, which is a segment name from
+# this store's own directory listing, the same argument the two opens above
+# already make. gochecknoglobals reads the access log's list of path prefixes
+# whose next segment is a secret, read-only after init and the same shape as
+# the DAV method table and the compat prefix list.
+#
+# 24 (the old tree): the listener builder's close on a failed bind. errcheck
+# reads the discarded error; the bind already failed and the listener is going
+# away with it.
+#
+# 118: one message code the single-sign-on work added. The other was removed
+# at source by naming the constants for what they are: G101 matches on the
+# identifier, so `keyOIDCSecretRequired` became `keyOIDCClientAuthMissing`
+# and the finding went with the word rather than being suppressed. The one
+# that remains is `auth.invalid_credentials`, where the trigger is in the
+# wire code itself: the client maps that string to a sentence, and apierr
+# already carries the same literal in its own table. Scoped to the line
+# rather than the file, which also handles the real client secret.
+#
+# Deleting the old Nextcloud compatibility layer removed three: the compat
+# prefix list and the compat feature matrix, both read-only lookup tables
+# gochecknoglobals exempted, and the trashbin listing's XML write, whose
+# escaping and logging comment went with the handler it guarded.
+#
+# The rewritten layer adds one back: the trash entry's synthetic identity
+# hashes a byte slice, and hash.Hash.Write reports an error it cannot
+# produce. The whole vocabulary table beside it is functions rather than
+# variables for the same reason, so this is the only exception the package
+# needs.
+#
+# The path picker's browse endpoint adds one: probing whether this process can
+# open a candidate directory passes a path that is not a constant, which is
+# the whole point of a picker. The candidates are a fixed list plus the paths
+# an administrator registered as shares, and nothing beneath them is read.
+#
+# 116: the audit remediation removed the archive listing's package-level
+# atomic. The live archive setting now bounds concurrent streams through the
+# engine's own gate, and the parser and listing bounds are compiled-in
+# constants again, so there is no global left for the exception to cover.
+22
+97

@@ -22,7 +22,7 @@ export default defineConfig({
     conditions: ['module', 'browser', 'production', 'import', 'default']
   },
   build: {
-    outDir: '../go/internal/transport/http/spa/build',
+    outDir: '../backend/internal/http/spa/build',
     emptyOutDir: true,
     manifest: true,
     chunkSizeWarningLimit: 1024,
