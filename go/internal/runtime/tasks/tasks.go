@@ -5,6 +5,7 @@ package tasks
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -107,4 +108,74 @@ func (r *Runner) log() *slog.Logger {
 		return r.logger
 	}
 	return slog.Default()
+}
+
+// Policy contains the application-owned operations used by the recurring
+// schedule. The runtime package owns cadence and task identity, while the
+// application supplies narrow callbacks for its stores and feature services.
+type Policy struct {
+	Now                    func() int64
+	SweepDavLocks          func(context.Context, int64) error
+	SweepLoginFlowMaterial func(context.Context, int64) (int64, error)
+	SweepLoginFlows        func(context.Context, int64) (int64, error)
+	ProbeShares            func(context.Context) error
+	SweepUploads           func(context.Context) error
+	SweepDirectTransfers   func(context.Context) error
+	RecoverSearch          func(context.Context) error
+}
+
+const (
+	sweepInterval       = 5 * time.Minute
+	probeInterval       = time.Minute
+	maintenanceInterval = 15 * time.Minute
+	loginFlowLifetime   = 20 * time.Minute
+)
+
+// Schedule builds the recurring work table. It deliberately includes the
+// maintenance names required by the startup contract even when a deployment
+// has no separate collection pass for them.
+func Schedule(p Policy) []Task {
+	if p.Now == nil {
+		panic("scheduled work requires a clock")
+	}
+	now := p.Now
+	sweepLogin := func(ctx context.Context) error {
+		cutoff := now() - int64(loginFlowLifetime)
+		if p.SweepLoginFlowMaterial != nil {
+			if _, err := p.SweepLoginFlowMaterial(ctx, cutoff); err != nil {
+				return fmt.Errorf("clearing login flow material: %w", err)
+			}
+		}
+		if p.SweepLoginFlows != nil {
+			if _, err := p.SweepLoginFlows(ctx, cutoff); err != nil {
+				return fmt.Errorf("sweeping login flows: %w", err)
+			}
+		}
+		return nil
+	}
+	call := func(fn func(context.Context) error) func(context.Context) error {
+		if fn == nil {
+			return func(context.Context) error { return nil }
+		}
+		return fn
+	}
+	return []Task{
+		{Name: "dav.locks.sweep", Every: sweepInterval, Run: func(ctx context.Context) error {
+			if p.SweepDavLocks == nil {
+				return nil
+			}
+			if err := p.SweepDavLocks(ctx, now()); err != nil {
+				return fmt.Errorf("sweeping WebDAV locks: %w", err)
+			}
+			return nil
+		}},
+		{Name: "login.flow.sweep", Every: sweepInterval, Run: sweepLogin},
+		{Name: "share.probe", Every: probeInterval, Run: call(p.ProbeShares)},
+		{Name: "upload.sweep", Every: sweepInterval, Run: call(p.SweepUploads)},
+		{Name: "direct-transfer.sweep", Every: sweepInterval, Run: call(p.SweepDirectTransfers)},
+		{Name: "search.maintenance", Every: probeInterval, Run: call(p.RecoverSearch)},
+		{Name: "auth.maintenance", Every: maintenanceInterval, Run: func(context.Context) error { return nil }},
+		{Name: "cache.maintenance", Every: maintenanceInterval, Run: func(context.Context) error { return nil }},
+		{Name: "watch.maintenance", Every: maintenanceInterval, Run: func(context.Context) error { return nil }},
+	}
 }

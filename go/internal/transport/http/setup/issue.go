@@ -1,11 +1,11 @@
 //go:build linux
 
-// First-run boot token issuance remains in app composition. Request handling
-// lives in transport/http/setup so the application owns no HTTP setup logic.
-package app
+// The setup token is published before serving the first-run routes.
+package setup
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -15,20 +15,20 @@ import (
 
 const setupTokenFile = "setup-token"
 
-func (e *Engine) issueSetupToken(ctx context.Context) {
-	if e.setup == nil {
+func IssueToken(ctx context.Context, gate *server.SetupGate, dataDir string, logger *slog.Logger) {
+	if gate == nil {
 		return
 	}
-	open, err := e.setup.Open(ctx)
+	open, err := gate.Open(ctx)
 	if err != nil || !open {
 		return
 	}
-	token, ierr := e.setup.Issue(ctx)
+	token, ierr := gate.Issue(ctx)
 	if ierr != nil {
-		e.logger.Error("no first-run setup token could be issued", "error", ierr)
+		logger.Error("no first-run setup token could be issued", "error", ierr)
 		return
 	}
-	path := filepath.Join(e.dataDir, setupTokenFile)
+	path := filepath.Join(dataDir, setupTokenFile)
 	res, werr := fsatomic.ReplaceFileDurable(path, 0o600, func(f *os.File) error {
 		_, w := f.WriteString(token + "\n")
 		return w
@@ -38,8 +38,8 @@ func (e *Engine) issueSetupToken(ctx context.Context) {
 		if res.Outcome == fsatomic.NotPublished {
 			message = "the first-run setup token could not be written to data directory"
 		}
-		e.logger.Warn(message, "path", path, "outcome", res.Outcome.String(), "error", werr)
+		logger.Warn(message, "path", path, "outcome", res.Outcome.String(), "error", werr)
 	}
-	e.logger.Info("this deployment needs setting up; initial setup token issued",
+	logger.Info("this deployment needs setting up; initial setup token issued",
 		"setup_token", token, "valid_for", server.SetupTokenLifetime.String())
 }

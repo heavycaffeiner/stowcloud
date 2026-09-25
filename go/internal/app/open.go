@@ -22,16 +22,17 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/heavycaffeiner/stowcloud/go/internal/app/backends"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/admin/logbook"
 	live "github.com/heavycaffeiner/stowcloud/go/internal/feature/admin/settings/live"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/admin/settings/runtimecfg"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/auth"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files/backends"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/oidc"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/preview"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/search/svc"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/smb/publish"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/uploads"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/concurrency"
@@ -43,6 +44,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/system/jail"
+	runtimeevents "github.com/heavycaffeiner/stowcloud/go/internal/runtime/events"
 	runtimerestart "github.com/heavycaffeiner/stowcloud/go/internal/runtime/restart"
 	runtimetasks "github.com/heavycaffeiner/stowcloud/go/internal/runtime/tasks"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/archive"
@@ -53,7 +55,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/middleware"
 	searchhttp "github.com/heavycaffeiner/stowcloud/go/internal/transport/http/search"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/server"
-	storagewatch "github.com/stowcloud/storage/watch"
+	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/setup"
 )
 
 // The request rate the limiter holds between construction and the settings
@@ -176,7 +178,7 @@ type Engine struct {
 	// smb pushes the rendered file-sharing configuration to the sidecar. Nil
 	// is a deployment with no sidecar, which is the ordinary case and not a
 	// degradation: the apply route then refuses by saying so.
-	smb *smbPublisher
+	smb *publish.Publisher
 
 	// setup guards first-administrator creation. It is built unconditionally,
 	// because whether the window is open is a question about the account count
@@ -185,7 +187,7 @@ type Engine struct {
 
 	// watcher reports filesystem changes, and events fans them out to clients.
 	// Both are nil when the host kernel refuses an inotify descriptor.
-	watcher *storagewatch.Watcher
+	watcher *runtimeevents.Manager
 	events  *server.EventHub
 
 	clock  clock.Clock
@@ -230,6 +232,8 @@ func (e *Engine) clk() clock.Clock {
 	}
 	return e.clock
 }
+
+func (e *Engine) now() int64 { return e.clk().Now().UnixNano() }
 
 // log is the engine's logger.
 //
@@ -496,8 +500,8 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	e.searchRuntime = searchhttp.NewManager(searchhttp.Options{
 		Core: e.Core, State: e.State, Search: e.Search, DataDir: e.dataDir,
 		Clock: clk, Logger: logger, Jobs: &e.jobs, JobsCtx: jobsCtx, JobsStop: jobsStop,
-		Owner: ownerOf, Admin: func(c *gin.Context) (int64, bool) { owner, ok := e.admin(c); return int64(owner), ok },
-		Refuse: refuse, FailKnown: failKnown, WriteJSON: writeJSON,
+		Owner: handler.Owner, Admin: func(c *gin.Context) (int64, bool) { return handler.Admin(c, e.Auth) },
+		Refuse: handler.Refuse, FailKnown: handler.FailKnown, WriteJSON: func(c *gin.Context, status int, v any) { c.JSON(status, v) },
 		HasWatcher: func() bool { return e.watcher != nil },
 	})
 
@@ -518,7 +522,7 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	e.thumbnailOn = values.ThumbnailEnabled
 	e.thumbnailDir = values.ThumbnailDir
 	if values.ThumbnailEnabled {
-		e.Preview = openPreview(thumbsDir, opt.PreviewWorker, coreSvc, clk, logger)
+		e.Preview = preview.Open(thumbsDir, opt.PreviewWorker, coreSvc, clk, logger)
 	}
 	files := make([]sizeguard.File, 0, len(e.files))
 	for _, file := range e.files {
@@ -536,7 +540,11 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 		ApplyHomes: e.applyHomes, ApplyThumbnails: e.applyThumbnailSettings,
 		SetRateLimits: e.limiter.SetLimits,
 		BuildOIDC: func(ctx context.Context, cfg *runtimecfg.OIDC) *oidc.Client {
-			return e.buildOIDCClient(ctx, &oidcSettings{Issuer: cfg.Issuer, ClientID: cfg.ClientID, Scopes: cfg.Scopes, AllowPrivateEndpoints: cfg.AllowPrivateEndpoints, CACertFile: cfg.CACertFile, PublicClient: cfg.PublicClient})
+			return oidc.BuildFromSettings(ctx, oidc.Config{
+				Issuer: cfg.Issuer, ClientID: cfg.ClientID, Scopes: cfg.Scopes,
+				AllowPrivateEndpoints: cfg.AllowPrivateEndpoints, CACertFile: cfg.CACertFile,
+				PublicClient: cfg.PublicClient,
+			}, e.Settings.ConfigSecret, e.log(), e.clk())
 		},
 		SetOIDC: func(client *oidc.Client, name string) {
 			e.settingsMu.Lock()
@@ -558,7 +566,7 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	// The token is minted at boot because nothing else can mint one: the form
 	// that would ask for it is the form the token opens. A deployment that
 	// already has an account mints none.
-	e.issueSetupToken(ctx)
+	setup.IssueToken(ctx, e.setup, e.dataDir, e.logger)
 
 	// The change channel, after the registry it watches and the settings that
 	// bound it.
@@ -751,6 +759,53 @@ func (e *Engine) Close() (err error) {
 		e.Logs = nil
 	}
 	return errors.Join(errs...)
+}
+
+// applyHomes brings the homes share into line with the stored settings.
+//
+// Called at boot and again on every settings save, because both have to answer
+// the same question: does this deployment serve homes, and from where. The core
+// treats a second call as a re-registration, so a root that moved takes effect
+// without a restart.
+//
+// A failure is logged rather than returned. Homes are one surface among
+// several, and a homes root that cannot be created must not stop a deployment
+// from serving the shares it already had.
+func (e *Engine) applyHomes(ctx context.Context, values runtimecfg.Values) {
+	if !values.HomesEnabled || values.HomesRoot == "" {
+		e.Core.DisableHomes()
+		return
+	}
+	if err := e.Core.EnableHomes(ctx, values.HomesRoot); err != nil {
+		e.logger.Error("home folders are configured and could not be opened",
+			"root", values.HomesRoot, "error", err)
+	}
+}
+func (e *Engine) applyThumbnailSettings(_ context.Context, values runtimecfg.Values) {
+	e.thumbnailMu.Lock()
+	current := e.Preview
+	if values.ThumbnailEnabled == e.thumbnailOn && values.ThumbnailDir == e.thumbnailDir && current != nil {
+		e.thumbnailMu.Unlock()
+		return
+	}
+	e.thumbnailOn, e.thumbnailDir = values.ThumbnailEnabled, values.ThumbnailDir
+	if !values.ThumbnailEnabled {
+		e.Preview = nil
+	} else {
+		thumbsDir := filepath.Join(e.dataDir, "thumbs")
+		if values.ThumbnailDir != "" {
+			thumbsDir = values.ThumbnailDir
+		}
+		if e.Core != nil {
+			e.Preview = preview.Open(thumbsDir, e.previewWorker, e.Core, e.clock, e.logger)
+		}
+	}
+	e.thumbnailMu.Unlock()
+	if current != nil {
+		if err := current.Close(); err != nil {
+			e.logger.Warn("closing the replaced thumbnail service", "error", err)
+		}
+	}
 }
 
 func (e *Engine) thumbnailEnabled() bool {

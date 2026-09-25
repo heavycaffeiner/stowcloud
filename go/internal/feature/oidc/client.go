@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,7 +16,7 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/oidc/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
-	"github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
+	secret "github.com/heavycaffeiner/stowcloud/go/internal/platform/security/secret"
 )
 
 // The refusals this package answers with. None of them chooses a wire status:
@@ -67,6 +68,41 @@ type Config struct {
 	// "none", and only when the document itself advertises it; a confidential
 	// deployment leaves this false and nothing about its behaviour changes.
 	PublicClient bool
+}
+
+// SecretReader opens a deployment configuration secret without exposing its
+// storage or encryption details to the OIDC feature.
+type SecretReader func(context.Context, string) (plain string, ok bool, err error)
+
+// BuildFromSettings constructs a provider client from deployment settings.
+// Incomplete or unreadable configuration disables sign-on and is logged rather
+// than preventing the deployment from starting.
+func BuildFromSettings(ctx context.Context, cfg Config, readSecret SecretReader, logger *slog.Logger, clk clock.Clock) *Client {
+	if cfg.Issuer == "" || cfg.ClientID == "" || readSecret == nil {
+		return nil
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
+	plain, ok, err := readSecret(ctx, "oidc_client_secret")
+	if err != nil {
+		logger.Error("the single sign-on secret could not be opened; sign-on stays off", "error", err)
+		return nil
+	}
+	if !ok && !cfg.PublicClient {
+		logger.Error("single sign-on is configured with no client secret and is not a public client; it stays off")
+		return nil
+	}
+	client, err := New(Config{
+		Issuer: cfg.Issuer, ClientID: cfg.ClientID, ClientSecret: secret.New([]byte(plain)),
+		Scopes: cfg.Scopes, AllowPrivateEndpoints: cfg.AllowPrivateEndpoints,
+		CACertFile: cfg.CACertFile, PublicClient: cfg.PublicClient,
+	}, clk)
+	if err != nil {
+		logger.Error("the single sign-on client would not build; it stays off", "error", err)
+		return nil
+	}
+	return client
 }
 
 // Client is the relying party. It is safe for concurrent use: the two caches

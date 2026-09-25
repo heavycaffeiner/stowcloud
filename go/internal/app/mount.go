@@ -10,20 +10,23 @@ package app
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 
-	accountapp "github.com/heavycaffeiner/stowcloud/go/internal/app/account"
 	core "github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
 	featureoidc "github.com/heavycaffeiner/stowcloud/go/internal/feature/oidc"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/smb/agent"
+	accounthttp "github.com/heavycaffeiner/stowcloud/go/internal/transport/http/account"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/adminlogs"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/adminsettings"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/adminshares"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/adminsmb"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/adminstorage"
+	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/dav"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/directtransfer"
+	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/emergency"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/encryption"
 	filehttp "github.com/heavycaffeiner/stowcloud/go/internal/transport/http/files"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/handler"
@@ -32,10 +35,10 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/oidc"
 	previewhttp "github.com/heavycaffeiner/stowcloud/go/internal/transport/http/preview"
-	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/route"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/server"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/setup"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/smbaccount"
+	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/spa"
 	trashhttp "github.com/heavycaffeiner/stowcloud/go/internal/transport/http/trash"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/uploads"
 )
@@ -50,12 +53,19 @@ func (e *Engine) Mount(app *gin.Engine) error {
 	}
 	e.publicLinks = e.newPublicLinks()
 	table := server.Table()
-	handlers := e.handlers(table)
+	handlers := e.handlers()
 	if err := server.Bind(app, server.Binding{
 		Routes: table, Roots: []string{server.Base}, Chain: middleware.Chain(),
 		Tasks: e.tasks(), Handlers: handlers, Deps: e.deps(),
-		StartTasks:     e.startTasks,
-		BeforeAnnounce: func(router *gin.Engine) { e.mountEmergency(router) },
+		StartTasks: e.startTasks,
+		BeforeAnnounce: func(router *gin.Engine) {
+			emergency.Mount(router, emergency.Deps{
+				Auth:  emergency.NewAuthenticator(e.Auth, e.clk().Nanos),
+				State: e.State, Page: spa.Page(), DataDir: e.dataDir,
+				Reason:     func() string { return "" },
+				ClientAddr: emergency.ClientAddr(e.trustedProxies),
+			})
+		},
 		AfterAnnounce: func(router *gin.Engine) {
 			e.publicLinks.Declare(router, links.PublicLinkPrefix)
 			e.declarePublicLinkAliases(router)
@@ -63,13 +73,47 @@ func (e *Engine) Mount(app *gin.Engine) error {
 	}); err != nil {
 		return err
 	}
-	e.mountDav(app)
+	dav.Mount(app, dav.Deps{Core: e.Core, State: e.State, Locks: e.davLocks, Clock: e.clk(), Logger: e.log(), InfinityEntries: 10_000})
 	e.publicLinks.Mount(app)
 	e.mountNCTagged(app)
-	if err := e.mountFrontend(app); err != nil {
+	if err := spa.Install(app); err != nil {
 		return err
 	}
 	return nil
+}
+func (e *Engine) newPublicLinks() *links.Public {
+	return links.NewPublic(links.PublicDeps{
+		Core:       e.Core,
+		State:      e.State,
+		ClaimKey:   e.claimKey.Key,
+		Limiter:    e.linkLimiter,
+		Now:        e.now,
+		ClientAddr: handler.ClientAddr,
+		Audit: func(ctx context.Context, event, target, ip, ua string, ok bool) error {
+			return e.Auth.Audit(ctx, nil, event, target, ip, ua, ok)
+		},
+		Logger:      e.log(),
+		Frontend:    spa.Page(),
+		Fail:        handler.Fail,
+		Refuse:      handler.Refuse,
+		WriteJSON:   func(c *gin.Context, status int, v any) { c.JSON(status, v) },
+		Decode:      filehttp.Decode,
+		CloseStream: func(stream *core.Stream, name string) { filehttp.CloseStream(stream, name, e.log()) },
+		SendStream:  filehttp.SendStream,
+		AcquireArchive: func() (func(), bool) {
+			if !e.archiveGate.TryAcquire() {
+				return nil, false
+			}
+			return e.archiveGate.Release, true
+		},
+		WriteArchive: func(ctx context.Context, w io.Writer, link core.Link, sub, name string) {
+			if err := filehttp.BuildArchive(ctx, w, name, func(ctx context.Context, visit filehttp.ArchiveVisit) error {
+				return e.Core.LinkArchiveWalk(ctx, link, sub, visit)
+			}, e.log()); err != nil {
+				e.log().Warn("a link archive ended early", "name", name, "error", err)
+			}
+		},
+	})
 }
 
 // handlers binds a projection to every route the table names.
@@ -77,92 +121,32 @@ func (e *Engine) Mount(app *gin.Engine) error {
 // Each entry is a real function rather than a stub that returns 501: a route
 // registered to something that cannot answer is worse than one that is absent,
 // because a client discovers it and then fails.
-func (e *Engine) handlers(table []route.Route) server.Handlers {
-	out := make(server.Handlers, len(table))
+func (e *Engine) handlers() server.Handlers {
+	out := make(server.Handlers)
+	admin := func(c *gin.Context) (int64, bool) { return handler.Admin(c, e.Auth) }
+	resolve := filehttp.Resolve(e.Core)
+	openClaim := filehttp.OpenBoundClaim(e.claimKey, e.clk().Nanos)
+	projection := filehttp.NewProjection(filehttp.ProjectionDeps{Core: e.Core, ClaimKey: e.claimKey, Now: e.clk().Nanos, Logger: e.log()})
+	out["system.health"] = e.health
+	out["admin.index.estimate"] = e.searchRuntime.IndexEstimate
+	out["admin.index.status"] = e.searchRuntime.IndexStatus
+	out["admin.index.build"] = e.searchRuntime.IndexBuild
+	out["search.stream"] = e.searchRuntime.SearchStream
+	out["events"] = e.eventsSocket()
+	out["files.thumbnail"] = previewhttp.ThumbnailHandler(previewhttp.ThumbnailDeps{
+		Core: e.Core, Owner: handler.Owner, Resolve: resolve, OpenClaim: openClaim,
+		PreviewLease: e.previewLease, Fail: handler.Fail, Refuse: handler.Refuse, Logger: e.logger,
+	})
+	out["account.roots.order"] = accounthttp.RootOrderHandler(accounthttp.RootOrderDeps{
+		State: e.State, Owner: func(c *gin.Context) (int64, bool) {
+			owner, ok := handler.Owner(c)
+			return int64(owner), ok
+		}, Fail: handler.Fail, Refuse: handler.Refuse, Decode: filehttp.Decode,
+	})
 
-	for _, r := range table {
-		switch r.Name {
-		case "system.health":
-			out[r.Name] = e.health
-		case "auth.login", "auth.login.totp", "auth.session", "auth.logout":
-			// Bound by the transport adapter after the product routes are enumerated.
-		case "jobs.list", "jobs.get", "jobs.cancel", "jobs.retry", "jobs.pause", "jobs.resume":
-			// Bound by the jobs transport adapter.
-		case "direct-uploads.create", "direct-uploads.status", "direct-uploads.part",
-			"direct-uploads.complete", "direct-uploads.cancel":
-		// Bound by the direct transfer transport adapter.
-		case "account.sessions.list", "account.app-passwords.list", "account.app-passwords.delete",
-			"account.app-passwords.create", "account.app-passwords.wipe", "account.password",
-			"account.sessions.delete", "account.totp.setup", "account.totp.enroll",
-			"account.totp.disable", "account.totp.recovery-codes.list", "account.totp.recovery-codes.create":
-			// Bound by the account transport adapter.
-		case "files.list", "files.stat", "files.mkdir", "files.delete", "files.rename",
-			"files.read", "files.write", "files.move", "files.copy", "files.size",
-			"files.recent", "files.archive", "files.archive.fetch", "files.archive.list",
-			"files.download", "files.download.fetch", "links.list", "admin.links.list",
-			"links.create", "links.delete", "links.update", "uploads.discover",
-			"uploads.discover.one", "uploads.create", "uploads.status", "uploads.patch", "uploads.abort":
-			// Bound by the file, link and upload transport adapters.
-		case "trash.list", "trash.restore", "trash.purge":
-			// Bound by the trash transport adapter.
-		case "admin.users.list", "admin.users.create", "admin.users.update", "admin.users.delete",
-			"admin.groups.list", "admin.groups.create", "admin.groups.update", "admin.groups.delete",
-			"admin.groups.members.add", "admin.groups.members.remove", "admin.audit":
-			// Bound by the administrator transport adapter.
-		case "admin.logs.list", "admin.logs.timeline":
-			// Bound by the administrative logs adapter.
-		case "admin.settings.get", "admin.settings.patch", "admin.system.restart",
-			"admin.oidc.endpoints":
-			// Bound by the settings and OIDC transport adapters.
-		case "admin.storage":
-			// Bound by the administrator storage adapter.
-		case "admin.index.estimate":
-			out[r.Name] = e.searchRuntime.IndexEstimate
-		case "admin.index.status":
-			out[r.Name] = e.searchRuntime.IndexStatus
-		case "admin.index.build":
-			out[r.Name] = e.searchRuntime.IndexBuild
-		case "admin.smb.apply":
-			// Bound by the administrator SMB adapter.
-		case "admin.fs.browse":
-			// Bound by the host filesystem transport adapter.
-		case "events":
-			out[r.Name] = e.eventsSocket()
-		case "system.setup.get", "system.setup.post", "system.setup.browse":
-			// Bound by the first-run setup adapter and setup gate.
-		case "files.thumbnail":
-			out[r.Name] = previewhttp.ThumbnailHandler(previewhttp.ThumbnailDeps{
-				Core: e.Core, Owner: ownerOf, Resolve: e.resolve, OpenClaim: e.openBoundClaim,
-				PreviewLease: e.previewLease, Fail: fail, Refuse: refuse, Logger: e.logger,
-			})
-		case "search.stream":
-			out[r.Name] = e.searchRuntime.SearchStream
-		case "auth.oidc.config", "auth.oidc.start", "auth.oidc.callback",
-			"account.oidc-link.start", "account.oidc-link.delete":
-			// Bound by the OIDC transport adapter.
-		case "account.smb.create", "account.smb.password.set", "account.smb.password.delete":
-			// Bound by the account SMB adapter.
-		case "account.roots.order":
-			out[r.Name] = accountapp.RootOrderHandler(accountapp.RootOrderDeps{
-				State: e.State, Owner: func(c *gin.Context) (int64, bool) {
-					owner, ok := ownerOf(c)
-					return int64(owner), ok
-				}, Fail: fail, Refuse: refuse, Decode: decodeBody,
-			})
-		case "admin.users.oidc.get", "admin.users.oidc.delete":
-			// Bound by the OIDC transport adapter.
-		case "admin.shares.list", "admin.shares.create", "admin.shares.update",
-			"admin.shares.retry", "admin.shares.delete", "admin.grants.list",
-			"admin.grants.create", "admin.grants.update", "admin.grants.delete":
-		// Bound by the administrator share transport adapter.
-		case "encryption.list", "admin.encryption.enable", "admin.encryption.disable":
-			// Bound by the share encryption adapter.
-
-		}
-	}
 	nativeLinks := links.NewNative(links.NativeDeps{
-		Core: e.Core, Auth: e.Auth, Owner: ownerOf, Admin: e.admin,
-		Resolve: e.resolve, Now: e.now, Decode: decodeBody,
+		Core: e.Core, Auth: e.Auth, Owner: handler.Owner, Admin: admin,
+		Resolve: resolve, Now: e.now, Decode: filehttp.Decode,
 		VpathOf: func(l core.Link) string {
 			vp, err := e.Core.VpathFor(l.Owner, l.Share, l.Path)
 			if err != nil {
@@ -170,7 +154,7 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			}
 			return vp.String()
 		},
-		Fail: fail, Refuse: refuse, NotFound: notFound, WriteJSON: writeJSON,
+		Fail: handler.Fail, Refuse: handler.Refuse, NotFound: handler.NotFound, WriteJSON: func(c *gin.Context, status int, v any) { c.JSON(status, v) },
 	})
 	for name, h := range map[string]gin.HandlerFunc{
 		"links.list": nativeLinks.List, "admin.links.list": nativeLinks.AdminList,
@@ -181,10 +165,10 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 	}
 	filesHandler := filehttp.NewHandler(filehttp.Deps{
 		Core: e.Core, Archives: e.Archives, Gate: e.archiveGate,
-		Owner: ownerOf, Resolve: e.resolve, OpenClaim: e.openBoundClaim,
-		EntryView: e.entryView, Vpath: e.vpath, Refs: e.refsOf,
-		Fail: fail, Refuse: refuse, NotFound: notFound, Decode: decodeBody,
-		Body: requestBodyReader, GuardLock: e.guardDavLock,
+		Owner: handler.Owner, Resolve: resolve, OpenClaim: openClaim,
+		EntryView: projection.EntryView, Vpath: projection.Vpath, Refs: projection.Refs,
+		Fail: handler.Fail, Refuse: handler.Refuse, NotFound: handler.NotFound, Decode: filehttp.Decode,
+		Body: handler.Body, GuardLock: e.guardDavLock,
 		Now: e.clk().Now, Journal: e.Journal != nil, Logger: e.log(),
 	})
 	for name, h := range map[string]gin.HandlerFunc{
@@ -205,17 +189,27 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 		DisplayName: func() string { e.settingsMu.RLock(); defer e.settingsMu.RUnlock(); return e.oidcName },
 		AppHosts:    func() []string { return e.Settings.Hosts().App },
 		Logger:      e.log(),
-		Owner:       func(c *gin.Context) (int64, bool) { owner, ok := ownerOf(c); return int64(owner), ok },
-		Admin:       e.admin, Reconfirm: e.reconfirm, Decode: decodeBody,
-		Fail: fail, FailKnown: failKnown, Refuse: refuse, WriteJSON: writeJSON,
-		ClientAddr: clientAddr, SetSessionCookie: e.setSessionCookie,
+		Owner:       func(c *gin.Context) (int64, bool) { owner, ok := handler.Owner(c); return int64(owner), ok },
+		Admin:       admin, Reconfirm: func(c *gin.Context, owner int64, password string) bool {
+			return handler.Reconfirm(c, e.Auth, owner, password)
+		}, Decode: filehttp.Decode,
+		Fail: handler.Fail, FailKnown: handler.FailKnown, Refuse: handler.Refuse, WriteJSON: func(c *gin.Context, status int, v any) { c.JSON(status, v) },
+		ClientAddr: handler.ClientAddr, SetSessionCookie: handler.SetSessionCookie,
 	})
 	for name, h := range oidcRoutes.Routes() {
 		out[name] = h
 	}
 	for name, h := range handler.NewAuthHandlers(handler.AuthHandlersDeps{
 		Service: e.Auth, Clock: e.clock, CSRFKey: e.csrfKey,
-		TOTPAllow: e.totpLimiter, SessionDetails: e.authSessionDetails,
+		TOTPAllow: e.totpLimiter, SessionDetails: func(ctx context.Context, id int64) (handler.SessionDetails, error) {
+			return handler.SessionDetailsOf(ctx, id, handler.SessionDetailsDeps{
+				Auth: e.Auth, Core: e.Core, Upload: e.Upload,
+				Features: handler.FeaturesInputs{
+					SMBEnabled:     func() bool { return e.smbPublisherOf() != nil },
+					PreviewEnabled: e.thumbnailEnabled, SearchHasIndex: e.Search.HasIndex,
+				},
+			})
+		},
 		OIDCEndSessionURL: oidcRoutes.EndSessionURL,
 	}) {
 		out[name] = h
@@ -237,10 +231,11 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 		out[name] = h
 	}
 	transfer := directtransfer.NewHandler(directtransfer.Deps{
-		State: e.State, Owner: ownerOf, Resolve: e.resolve,
+		State: e.State, Owner: handler.Owner, Resolve: resolve,
 		ShareEncrypted: e.Core.ShareEncrypted, GuardLock: e.guardDavLock,
-		ProviderForRow: e.directProviderForRow, RevalidateDestination: e.revalidateDirectDestination,
-		Now: e.now, Decode: decodeBody, Fail: fail, Refuse: refuse, NotFound: notFound,
+		ProviderForRow:        directtransfer.ProviderForRow(e.Core, resolve),
+		RevalidateDestination: directtransfer.RevalidateDestination(e.Core, resolve, e.guardDavLock),
+		Now:                   e.now, Decode: filehttp.Decode, Fail: handler.Fail, Refuse: handler.Refuse, NotFound: handler.NotFound,
 		Logger: e.log(),
 	})
 	out["direct-uploads.create"] = transfer.CreateHandler
@@ -249,9 +244,9 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 	out["direct-uploads.complete"] = transfer.CompleteHandler
 	out["direct-uploads.cancel"] = transfer.CancelHandler
 	uploadRoutes := uploads.NewHandlers(uploads.Deps{
-		Upload: e.Upload, Core: e.Core, Resolve: e.resolve,
-		Owner: ownerOf, Admin: e.admin, Fail: fail, Refuse: refuse,
-		Decode: decodeBody, WriteJSON: writeJSON,
+		Upload: e.Upload, Core: e.Core, Resolve: resolve,
+		Owner: handler.Owner, Admin: admin, Fail: handler.Fail, Refuse: handler.Refuse,
+		Decode: filehttp.Decode, WriteJSON: func(c *gin.Context, status int, v any) { c.JSON(status, v) },
 	})
 	for name, h := range uploadRoutes {
 		if name != "admin.settings.upload" {
@@ -260,20 +255,26 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 	}
 	for name, h := range adminsettings.NewHandlers(adminsettings.Deps{
 		State: e.State, Auth: e.Auth, Settings: e.Settings,
-		DataDir: e.dataDir, Hardening: e.hardening, Admin: e.admin,
-		UploadPatch:  uploadRoutes["admin.settings.upload"],
-		SMBAgentView: e.smbAgentView, PublishSMB: e.publishSMBSettings,
+		DataDir: e.dataDir, Hardening: e.hardening, Admin: admin,
+		UploadPatch: uploadRoutes["admin.settings.upload"],
+		SMBAgentView: func() *handler.SMBAgentView {
+			p := e.smbPublisherOf()
+			if p == nil {
+				return nil
+			}
+			return handler.SMBAgentOf(p.LastReport())
+		}, PublishSMB: e.publishSMBSettings,
 		OnRestart: e.Restart.Request, Logger: e.log(),
 	}) {
 		out[name] = h
 	}
-	for name, h := range jobs.NewHandlers(jobs.Deps{Core: e.Core, State: e.State, Owner: ownerOf, StartJobs: e.Core.StartJobs, NowNs: e.now}) {
+	for name, h := range jobs.NewHandlers(jobs.Deps{Core: e.Core, State: e.State, Owner: handler.Owner, StartJobs: e.Core.StartJobs, NowNs: e.now}) {
 		out[name] = h
 	}
-	for name, h := range adminlogs.NewHandlers(adminlogs.Deps{Logs: e.Logs, Auth: e.Auth, Admin: e.admin, Fail: failKnown, Refuse: refuse}) {
+	for name, h := range adminlogs.NewHandlers(adminlogs.Deps{Logs: e.Logs, Auth: e.Auth, Admin: admin, Fail: handler.FailKnown, Refuse: handler.Refuse}) {
 		out[name] = h
 	}
-	trashHandler := trashhttp.NewHandler(trashhttp.Deps{Core: e.Core, Owner: ownerOf, Resolve: e.resolve, Decode: decodeBody, Fail: fail, Refuse: refuse})
+	trashHandler := trashhttp.NewHandler(trashhttp.Deps{Core: e.Core, Owner: handler.Owner, Resolve: resolve, Decode: filehttp.Decode, Fail: handler.Fail, Refuse: handler.Refuse})
 	out["trash.list"], out["trash.restore"], out["trash.purge"] = trashHandler.List, trashHandler.Restore, trashHandler.Purge
 	for name, h := range smbaccount.NewHandlers(smbaccount.Deps{Auth: e.Auth}) {
 		out[name] = h
@@ -336,10 +337,12 @@ func (e *Engine) health(c *gin.Context) {
 
 	h := handler.HealthOf(status, reasons)
 	h.Revision = e.Revision
-	writeJSON(c, http.StatusOK, h)
+	c.JSON(http.StatusOK, h)
 }
 
-// writeJSON sends a value as an API response.
-func writeJSON(c *gin.Context, status int, value any) {
-	c.JSON(status, value)
+func (e *Engine) guardDavLock(ctx context.Context, share uint32, path string, principal int64) error {
+	if e.davLocks == nil {
+		return nil
+	}
+	return e.davLocks.Guard(ctx, share, path, principal, nil)
 }

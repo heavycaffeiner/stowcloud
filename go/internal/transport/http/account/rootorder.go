@@ -1,6 +1,6 @@
 //go:build linux
 
-// Package account owns account-scoped HTTP handlers assembled by the app.
+// Package account owns account-scoped HTTP handlers.
 package account
 
 import (
@@ -11,9 +11,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/apierr"
 )
 
-// RootOrderDeps supplies the app-owned policy and durable operation needed by
-// the account root-order route. Keeping those decisions as dependencies lets
-// this package own the complete feature handler without importing app.Engine.
+// RootOrderDeps supplies the authorization and durable operation for root ordering.
 type RootOrderDeps struct {
 	State  *state.DB
 	Owner  func(*gin.Context) (int64, bool)

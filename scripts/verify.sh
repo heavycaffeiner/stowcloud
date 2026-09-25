@@ -488,11 +488,14 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
                    | grep -v '_test\.go:' \
                    | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)' || true)"
     fi
+    # The compatibility adapter owns its store and claim bindings, so it may
+    # depend on their concrete stores and the shared claim codec. Wire terms
+    # still cannot enter those dependencies or unrelated transport packages.
     if [ -d go/internal/transport/http/nc ]; then
       hits="$hits$(ingo go list -tags compat_nc -f '{{range .Imports}}{{.}}{{"\n"}}{{end}}' \
                    ./internal/transport/http/nc/... 2>/dev/null \
                    | grep 'stowcloud/go/internal/' \
-                   | grep -vE 'internal/(transport/http/(dav|apierr|middleware|route)|platform/(clock|http/headers|number|protocol/limits)(/|$)|feature/)' || true)"
+                   | grep -vE 'internal/(transport/http/(dav|apierr|middleware|route|handler)|platform/(clock|http/headers|number|protocol/limits|database/(cache|ident|state)|storage/vfs)(/|$)|feature/)' || true)"
     fi
     printf '%s' "$hits" | grep -v '^[[:space:]]*$' || true
   }

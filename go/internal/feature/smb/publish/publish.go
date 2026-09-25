@@ -24,9 +24,16 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
+	"time"
 
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/auth"
+	core "github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/smb"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/smb/agent"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
+	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
 	fsatomic "github.com/stowcloud/durablefs"
 )
 
@@ -132,10 +139,208 @@ type Deps struct {
 
 	// ServiceGID is the group every rendered account joins. It must exist in
 	// the agent's container, which the agent verifies and refuses over.
-	//
-	// Zero takes this package's default rather than root's group, so a value
-	// nobody set cannot become the one group no service account may join.
 	ServiceGID uint32
+}
+
+// Settings is the live SMB configuration read for each publication. The
+// settings callback keeps enable and disable changes effective without a
+// process restart.
+type Settings struct {
+	Config     smb.Config
+	ConfigDir  string
+	Socket     string
+	ServiceGID uint32
+	Configured bool
+}
+
+// PublisherDeps are the narrow feature dependencies needed to adapt server
+// state into the SMB renderer and sidecar files.
+type PublisherDeps struct {
+	Core     *core.Core
+	Auth     *auth.Service
+	State    *state.DB
+	Clock    clock.Clock
+	Logger   *slog.Logger
+	Settings func(context.Context) Settings
+}
+
+// Publisher serializes publications and retains the last sidecar report.
+type Publisher struct {
+	deps   PublisherDeps
+	mu     sync.Mutex
+	lastMu sync.RWMutex
+	last   *agent.Report
+}
+
+// New constructs a publisher. Settings are intentionally read only when a
+// publication starts so a live settings save reaches the sidecar immediately.
+func New(d PublisherDeps) *Publisher {
+	if d.Clock == nil {
+		d.Clock = clock.System()
+	}
+	if d.Logger == nil {
+		d.Logger = slog.Default()
+	}
+	return &Publisher{deps: d}
+}
+
+// LastReport returns the most recent sidecar report, or nil before a publish.
+func (p *Publisher) LastReport() *agent.Report {
+	p.lastMu.RLock()
+	defer p.lastMu.RUnlock()
+	if p.last == nil {
+		return nil
+	}
+	r := *p.last
+	return &r
+}
+
+func (p *Publisher) recordReport(r agent.Report) {
+	p.lastMu.Lock()
+	p.last = &r
+	p.lastMu.Unlock()
+}
+
+// Publish renders and applies the current live settings.
+func (p *Publisher) Publish(ctx context.Context) (agent.Report, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	settings := Settings{}
+	if p.deps.Settings != nil {
+		settings = p.deps.Settings(ctx)
+	}
+	if settings.ConfigDir == "" {
+		return agent.Report{}, errors.New("SMB publication is not configured")
+	}
+	base := Deps{ConfigDir: settings.ConfigDir, Socket: settings.Socket, ServiceGID: settings.ServiceGID, Log: p.deps.Logger}
+	if !settings.Config.Enabled {
+		report, err := Disable(ctx, base)
+		if err == nil {
+			p.recordReport(report)
+		}
+		return report, err
+	}
+	encryptedIDs, err := p.deps.Core.EncryptedShares(ctx)
+	if err != nil {
+		return agent.Report{}, fmt.Errorf("smb publish: reading the encrypted share set: %w", err)
+	}
+	encrypted := make(map[core.ShareID]bool, len(encryptedIDs))
+	for _, id := range encryptedIDs {
+		encrypted[id] = true
+	}
+	d := base
+	d.Shares = func() []Share { return publishShares(p.deps.Core.Shares(), encrypted, p.deps.Logger) }
+	d.Credentials = func(c context.Context) ([]smb.Credential, error) {
+		creds, credErr := p.deps.Auth.SMBCredentials(c)
+		if credErr != nil {
+			return nil, credErr
+		}
+		return smbCredentialsOf(creds)
+	}
+	d.NowUnix = func() int64 { return p.deps.Clock.Nanos() / int64(time.Second) }
+	d.Grants = func(c context.Context) ([]Grant, error) { return p.grants(c) }
+	d.Names = p.deps.Auth.NameOf
+	report, err := Publish(ctx, d, settings.Config)
+	if err == nil {
+		p.recordReport(report)
+	}
+	return report, err
+}
+
+// PublishWithInputs is the pure publication entry point used by tests and by
+// callers that already adapted their state into feature-owned inputs.
+func PublishWithInputs(ctx context.Context, d Deps, cfg smb.Config) (agent.Report, error) {
+	return Publish(ctx, d, cfg)
+}
+
+// AccessChanged republishes synchronously after a committed auth change.
+func (p *Publisher) AccessChanged(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), agent.DefaultTimeout+5*time.Second)
+	defer cancel()
+	report, err := p.Publish(ctx)
+	if err != nil {
+		p.deps.Logger.Warn("a change did not reach the SMB sidecar", "error", err)
+	} else if !report.OK {
+		p.deps.Logger.Warn("the SMB sidecar applied a change with a warning", "error", report.Error)
+	}
+}
+
+func (p *Publisher) grants(ctx context.Context) ([]Grant, error) {
+	rows, err := p.deps.State.ListGrants(ctx, state.GrantFilter{})
+	if err != nil {
+		return nil, err
+	}
+	memberships, err := p.deps.State.Memberships(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return grantsOf(rows, memberships), nil
+}
+
+func publishShares(defs []core.ShareDef, encrypted map[core.ShareID]bool, logger *slog.Logger) []Share {
+	out := make([]Share, 0, len(defs))
+	for _, d := range defs {
+		if d.BrokenReason != "" {
+			continue
+		}
+		if d.Backend != "" && d.Backend != core.BackendLocal {
+			logger.Warn("a share is not published over SMB because it has no local path", "share", d.Name, "backend", d.Backend)
+			continue
+		}
+		if encrypted[d.ID] {
+			logger.Warn("a share is not published over SMB because its content is end-to-end encrypted", "share", d.Name)
+			continue
+		}
+		out = append(out, Share{ID: int64(d.ID), Name: d.Name, Path: d.Host, ModeFile: d.Policy.ModeFile, ModeDir: d.Policy.ModeDir, SharedExternally: d.SharedExternally})
+	}
+	return out
+}
+
+// SharesOf adapts core share definitions for publication without exposing core
+// types to the renderer.
+func SharesOf(defs []core.ShareDef, encrypted map[core.ShareID]bool, logger *slog.Logger) []Share {
+	return publishShares(defs, encrypted, logger)
+}
+
+func grantsOf(rows []state.GrantRow, memberships []state.MembershipRow) []Grant {
+	groupUsers := make(map[int64][]int64)
+	for _, m := range memberships {
+		groupUsers[m.Group] = append(groupUsers[m.Group], m.User)
+	}
+	out := make([]Grant, 0, len(rows))
+	for _, r := range rows {
+		allow, deny := acl.Perms(r.Allow), acl.Perms(r.Deny)
+		g := Grant{Share: r.Share, WholeShare: r.Subpath == "", AllowRead: allow.Has(acl.Read | acl.Download), AllowWrite: allow.Intersects(acl.Write | acl.Create), Denies: !deny.IsEmpty()}
+		if r.User != nil {
+			g.User = *r.User
+			out = append(out, g)
+		}
+		if r.Group != nil {
+			users := groupUsers[*r.Group]
+			if len(users) == 0 {
+				out = append(out, g)
+				continue
+			}
+			for _, user := range users {
+				g.User = user
+				out = append(out, g)
+			}
+		}
+	}
+	return out
+}
+
+// GrantsOf adapts stored state rows into the pure publication grant shape.
+func GrantsOf(rows []state.GrantRow, memberships []state.MembershipRow) []Grant {
+	return grantsOf(rows, memberships)
+}
+
+func smbCredentialsOf(creds []auth.SMBCredential) ([]smb.Credential, error) {
+	out := make([]smb.Credential, 0, len(creds))
+	for _, c := range creds {
+		out = append(out, smb.Credential{Name: c.Name, Uid: c.UID, NTHash: c.NTHash})
+	}
+	return out, nil
 }
 
 // Accounts is no longer a file-writing interface. Credential facts cross this

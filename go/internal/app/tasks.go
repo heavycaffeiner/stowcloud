@@ -14,7 +14,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	core "github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
@@ -22,98 +21,36 @@ import (
 	num "github.com/heavycaffeiner/stowcloud/go/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/objstore"
 	runtimetasks "github.com/heavycaffeiner/stowcloud/go/internal/runtime/tasks"
+	directtransfer "github.com/heavycaffeiner/stowcloud/go/internal/transport/http/directtransfer"
+	filehttp "github.com/heavycaffeiner/stowcloud/go/internal/transport/http/files"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/server"
 )
 
-// How often each task runs. Written together so the intervals can be compared
-// rather than found one at a time.
-const (
-	// sweepInterval suits work that reclaims space and expires rows. Often
-	// enough that an abandoned session does not sit for an hour, rarely
-	// enough that an idle deployment is busy.
-	sweepInterval = 5 * time.Minute
-
-	// probeInterval suits work that checks the world outside this process,
-	// where the answer changes without anything here writing.
-	probeInterval = time.Minute
-
-	// maintenanceInterval suits work that trims what this process wrote,
-	// which grows only as fast as it is used.
-	maintenanceInterval = 15 * time.Minute
-)
-
-// loginFlowLifetime is how long an unapproved flow lives.
-const loginFlowLifetime = 20 * time.Minute
-
-// tasks returns the periodic table for this engine.
 func (e *Engine) tasks() []server.PeriodicTask {
-	return []server.PeriodicTask{
-		{
-			Name:  "dav.locks.sweep",
-			Every: sweepInterval,
-			Run: func(ctx context.Context) error {
-				if _, err := e.State.SweepDavLocks(ctx, e.now()); err != nil {
-					return fmt.Errorf("sweeping WebDAV locks: %w", err)
-				}
-				return nil
-			},
+	items := runtimetasks.Schedule(runtimetasks.Policy{
+		Now: e.now,
+		SweepDavLocks: func(ctx context.Context, now int64) error {
+			_, err := e.State.SweepDavLocks(ctx, now)
+			return err
 		},
-		{
-			Name:  "login.flow.sweep",
-			Every: sweepInterval,
-			Run:   e.sweepLoginFlows,
+		SweepLoginFlowMaterial: func(ctx context.Context, cutoff int64) (int64, error) {
+			return e.State.SweepLoginFlowMaterial(ctx, cutoff)
 		},
-		{
-			Name:  "share.probe",
-			Every: probeInterval,
-			Run:   e.probeShares,
+		SweepLoginFlows: func(ctx context.Context, cutoff int64) (int64, error) {
+			return e.State.SweepLoginFlows(ctx, cutoff)
 		},
-		{
-			Name:  "upload.sweep",
-			Every: sweepInterval,
-			Run:   e.sweepUploads,
-		},
-		{
-			Name:  "direct-transfer.sweep",
-			Every: sweepInterval,
-			Run:   e.sweepDirectTransfers,
-		},
-
-		{
-			Name:  "search.maintenance",
-			Every: probeInterval,
-			Run:   e.searchRuntime.Recover,
-		},
-
-		// The three below are required by the startup check and have nothing
-		// to call in this build. Each names what is missing rather than
-		// pretending, so a reader can tell an unwired task from a done one.
-		{
-			Name:  "auth.maintenance",
-			Every: maintenanceInterval,
-			// Session expiry and audit trimming have no store method yet.
-			Run: func(context.Context) error { return nil },
-		},
-		{
-			Name:  "cache.maintenance",
-			Every: maintenanceInterval,
-			// The cache trims itself as directories are re-walked; there is
-			// no separate collection pass to call.
-			Run: func(context.Context) error { return nil },
-		},
-		{
-			Name:  "watch.maintenance",
-			Every: maintenanceInterval,
-			// Watches are released when their subscriber disconnects; there
-			// is no periodic collection to call.
-			Run: func(context.Context) error { return nil },
-		},
+		ProbeShares:          e.probeShares,
+		SweepUploads:         e.sweepUploads,
+		SweepDirectTransfers: e.sweepDirectTransfers,
+		RecoverSearch:        e.searchRuntime.Recover,
+	})
+	periodic := make([]server.PeriodicTask, len(items))
+	for i, item := range items {
+		periodic[i] = server.PeriodicTask{Name: item.Name, Every: item.Every, Run: item.Run}
 	}
+	return periodic
 }
 
-// startTasks starts each recurring task once for this engine. The first pass
-// runs immediately, so stale upload parts and unreachable shares do not wait
-// through a full interval after every restart.
 func (e *Engine) startTasks() {
 	periodic := e.tasks()
 	table := make([]runtimetasks.Task, len(periodic))
@@ -123,8 +60,6 @@ func (e *Engine) startTasks() {
 	e.maintenance.Start(table)
 }
 
-// stopTasks cancels recurring work and waits before any service or database it
-// may be using is closed.
 func (e *Engine) stopTasks() {
 	if e.maintenance == nil {
 		return
@@ -134,27 +69,6 @@ func (e *Engine) stopTasks() {
 	if err := e.maintenance.Stop(ctx); err != nil {
 		e.logger.Warn("stopping maintenance tasks failed", "error", err)
 	}
-}
-
-// now is the current time in nanoseconds, from the engine's clock.
-func (e *Engine) now() int64 { return e.clk().Now().UnixNano() }
-
-// sweepLoginFlows expires flows and the sealed credentials they carry.
-//
-// Two clocks, one call: the flow itself expires, and so does the temporary
-// delivery material a client may still be collecting. The material goes first,
-// because deleting the row that references it would leave the ciphertext with
-// nothing pointing at it.
-func (e *Engine) sweepLoginFlows(ctx context.Context) error {
-	cutoff := e.now() - int64(loginFlowLifetime)
-
-	if _, err := e.State.SweepLoginFlowMaterial(ctx, cutoff); err != nil {
-		return fmt.Errorf("clearing login flow material: %w", err)
-	}
-	if _, err := e.State.SweepLoginFlows(ctx, cutoff); err != nil {
-		return fmt.Errorf("sweeping login flows: %w", err)
-	}
-	return nil
 }
 
 // probeShares rechecks that every share root is still reachable.
@@ -207,8 +121,8 @@ func (e *Engine) sweepDirectTransfers(ctx context.Context) error {
 		return fmt.Errorf("listing expired direct transfers: %w", err)
 	}
 	for _, row := range rows {
-		if r, rerr := e.resolve(core.UserID(row.Owner), row.Path, acl.Write|acl.Create); rerr == nil {
-			if provider, ok := directProvider(r.Root()); ok && provider.DirectTransfer() {
+		if r, rerr := filehttp.Resolve(e.Core)(core.UserID(row.Owner), row.Path, acl.Write|acl.Create); rerr == nil {
+			if provider, ok := directtransfer.Provider(r.Root()); ok && provider.DirectTransfer() {
 				if aerr := provider.AbortMultipart(ctx, row.ObjectKey, row.UploadID); aerr != nil && !errors.Is(aerr, objstore.ErrDirectTransferUnsupported) {
 					e.logger.Warn("aborting expired direct transfer failed", "error", aerr)
 					continue
@@ -242,7 +156,7 @@ func (e *Engine) reconcileDirectTransfers(ctx context.Context) error {
 		return fmt.Errorf("listing completing direct transfers: %w", err)
 	}
 	for _, row := range rows {
-		provider, ok, perr := e.directProviderForRow(ctx, row)
+		provider, ok, perr := directtransfer.ProviderForRow(e.Core, filehttp.Resolve(e.Core))(ctx, row)
 		if perr != nil || !ok || !provider.DirectTransfer() {
 			continue
 		}

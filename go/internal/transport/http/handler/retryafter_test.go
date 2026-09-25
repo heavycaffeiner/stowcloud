@@ -1,6 +1,6 @@
 //go:build linux
 
-package app
+package handler
 
 import (
 	"errors"
@@ -24,10 +24,10 @@ func TestASpoolRefusalCarriesItsOwnDelay(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	app := gin.New()
 	app.GET("/full", func(c *gin.Context) {
-		fail(c, &upload.CacheFullError{RetryAfterSeconds: 7})
+		Fail(c, &upload.CacheFullError{RetryAfterSeconds: 7})
 	})
 	app.GET("/other", func(c *gin.Context) {
-		fail(c, errors.New("something else"))
+		Fail(c, errors.New("something else"))
 	})
 
 	full := httptest.NewRecorder()

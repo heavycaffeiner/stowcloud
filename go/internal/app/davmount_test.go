@@ -10,12 +10,13 @@ import (
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/dav"
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/middleware"
 )
 
-// mounted builds the mount.
+// mounted builds the transport-owned mount around the fixture handler.
 func (f *fixture) mounted() http.Handler {
-	return f.engine.DavHandler(f.h)
+	return dav.NewMount(dav.Deps{Core: f.core, Handler: f.h})
 }
 
 // asDavUser attaches the principal the chain would have put there.

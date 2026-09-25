@@ -1,127 +1,21 @@
 //go:build linux
 
-// Joining the two halves of file-sharing publication.
-//
-// The server decides what the protocol ought to serve and can apply none of
-// it: the daemon runs in another container, reading files from a directory
-// both sides mount. So this renders into that directory and asks the sidecar
-// to import what it finds.
-//
-// The wiring lives here because neither half can reach the other. Auth holds
-// the sealed hashes and cannot name the file format; the renderer holds the
-// format and cannot open a hash; the publisher needs both plus the share
-// registry. Assembly is the one place that sees all three.
+// SMB publication composition. Rendering, grant mapping, and publication state
+// belong to feature/smb/publish; this file only wires application dependencies.
 package app
 
 import (
 	"context"
-	"fmt"
-	"log/slog"
-	"sync"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/handler"
-
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/admin/settings/runtimecfg"
-	"github.com/heavycaffeiner/stowcloud/go/internal/feature/auth"
-	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
-	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/smb"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/smb/agent"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/smb/publish"
-	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
 )
 
-// publishTimeout bounds one push. It is the agent's own timeout with room for
-// rendering the files on top, so this never cuts off a call the agent is still
-// working on.
 const publishTimeout = agent.DefaultTimeout + 5*time.Second
 
-// smbPublisher pushes the whole rendered set and is the sink every credential
-// change tells.
-//
-// It reads the settings on every push rather than holding the ones it was
-// built with. The file-sharing switch is a value the agent acts on: enabled
-// renders the shares and starts the daemon, disabled tears it down and prunes
-// the credentials. Holding the construction-time copy meant the switch reached
-// the sidecar only at the next start, so turning sharing off left the daemon
-// serving until somebody restarted the container.
-type smbPublisher struct {
-	engine *Engine
-
-	// mu serializes pushes. Two at once would render the same directory from
-	// two reads of the database, and whichever finished last would win
-	// regardless of which read the newer state.
-	mu sync.Mutex
-
-	// last is what the sidecar said about the most recent push, so the admin
-	// screen can show whether the daemon is actually serving. Without it the
-	// screen shows SMB as simply on, which is what it showed while smbd was
-	// dying on every start.
-	lastMu sync.RWMutex
-	last   *agent.Report
-}
-
-// lastReport is what the sidecar said about the most recent push, or nil when
-// nothing has been pushed yet.
-func (p *smbPublisher) lastReport() *agent.Report {
-	p.lastMu.RLock()
-	defer p.lastMu.RUnlock()
-	return p.last
-}
-
-func (p *smbPublisher) recordReport(r agent.Report) {
-	p.lastMu.Lock()
-	p.last = &r
-	p.lastMu.Unlock()
-}
-
-// smbAgentView projects the last push's report for the settings screen, or
-// nil when sharing is off or nothing has been pushed yet.
-//
-// The message key is chosen here rather than on the screen: what a report
-// means is this side's reading of it, and the screen's job is to render the
-// sentence that reading names.
-func (e *Engine) smbAgentView() *handler.SMBAgentView {
-	if e.smb == nil {
-		return nil
-	}
-	r := e.smb.lastReport()
-	if r == nil {
-		return nil
-	}
-	key := "smb.agent_applied"
-	switch {
-	case r.Smbd == agent.ActionFailed:
-		key = "smb.agent_daemon_failed"
-	case !r.OK:
-		key = "smb.agent_applied_with_warnings"
-	}
-	return &handler.SMBAgentView{
-		Key:        key,
-		OK:         r.OK && r.Smbd != agent.ActionFailed,
-		Shares:     listOf(r.Shares),
-		Interfaces: r.Interfaces,
-		HostsAllow: r.HostsAllow,
-		Smbd:       string(r.Smbd),
-		// Never null: a nil slice marshals as `null`, and the screen reads
-		// `.length` on each of these. One absent list took the whole settings
-		// section down, which reads as a tab that loads forever.
-		MissingPaths:  listOf(r.MissingPaths),
-		MissingPassdb: listOf(r.MissingPassdb),
-		Detail:        r.Error,
-	}
-}
-
-// listOf is a slice the JSON encoder writes as `[]` rather than `null`.
-func listOf(in []string) []string {
-	if in == nil {
-		return []string{}
-	}
-	return in
-}
-
-// smbSettings is what a push needs out of the settings document.
 type smbSettings struct {
 	Config     smb.Config
 	ConfigDir  string
@@ -130,280 +24,44 @@ type smbSettings struct {
 	Configured bool
 }
 
-// smbSettingsOf reads the stored document for the file-sharing section.
-//
-// A document that cannot be read leaves the protocol off. Off is the direction
-// that refuses rather than admits, and a deployment that never configured a
-// sidecar looks the same as one whose settings row would not load.
 func smbSettingsOf(ctx context.Context, e *Engine) smbSettings {
 	values := runtimecfg.Load(ctx, e.State, runtimecfg.Defaults(), e.logger)
-	return smbSettings{
-		Config:     values.SMB,
-		ConfigDir:  values.SMBConfigDir,
-		Socket:     values.SMBSocket,
-		GID:        values.SMBServiceGID,
-		Configured: values.SMBConfigured,
-	}
+	return smbSettings{Config: values.SMB, ConfigDir: values.SMBConfigDir, Socket: values.SMBSocket, GID: values.SMBServiceGID, Configured: values.SMBConfigured}
 }
 
-// newSMBPublisher builds the publisher, or nil when this deployment has no
-// sidecar to talk to at all.
-//
-// Nil means the settings hold no file-sharing section, which is most
-// deployments: they serve files over the web alone and there is nothing on the
-// other end of a push. The switch inside that section is not consulted here,
-// because it can be flipped while the server runs and a publisher that did not
-// exist could not carry the change.
-func newSMBPublisher(e *Engine, s smbSettings) *smbPublisher {
+func newSMBPublisher(e *Engine, s smbSettings) *publish.Publisher {
 	if !s.Configured || s.ConfigDir == "" {
 		return nil
 	}
-	return &smbPublisher{engine: e}
-}
-
-// Publish renders the whole set from current state and asks the agent to apply
-// it.
-//
-// Rebuilt whole rather than diffed. A change that stopped at one surface is
-// then still corrected by the next publish, whatever caused that publish.
-//
-// The settings are re-read here, so flipping the file-sharing switch reaches
-// the sidecar on the next push: enabled renders the shares and starts the
-// daemon, disabled sends the same message the agent reads as teardown, which
-// stops it and prunes the credentials.
-func (p *smbPublisher) Publish(ctx context.Context) (agent.Report, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	s := smbSettingsOf(ctx, p.engine)
-	encryptedIDs, eerr := p.engine.Core.EncryptedShares(ctx)
-	if eerr != nil {
-		return agent.Report{}, fmt.Errorf("smb publish: reading the encrypted share set: %w", eerr)
-	}
-	encrypted := make(map[core.ShareID]bool, len(encryptedIDs))
-	for _, id := range encryptedIDs {
-		encrypted[id] = true
-	}
-
-	report, err := publish.Publish(ctx, publish.Deps{
-		Shares: func() []publish.Share {
-			return publishShares(p.engine.Core.Shares(), encrypted, p.engine.logger)
+	return publish.New(publish.PublisherDeps{
+		Core:   e.Core,
+		Auth:   e.Auth,
+		State:  e.State,
+		Clock:  e.clk(),
+		Logger: e.log(),
+		Settings: func(ctx context.Context) publish.Settings {
+			current := smbSettingsOf(ctx, e)
+			return publish.Settings{Config: current.Config, ConfigDir: current.ConfigDir, Socket: current.Socket, ServiceGID: current.GID, Configured: current.Configured}
 		},
-		Credentials: func(c context.Context) ([]smb.Credential, error) {
-			creds, err := p.engine.Auth.SMBCredentials(c)
-			if err != nil {
-				return nil, err
-			}
-			return smbCredentialsOf(creds), nil
-		},
-		NowUnix:    func() int64 { return p.engine.clk().Nanos() / int64(time.Second) },
-		Grants:     func(c context.Context) ([]publish.Grant, error) { return publishGrants(c, p.engine.State) },
-		Names:      p.engine.Auth.NameOf,
-		ConfigDir:  s.ConfigDir,
-		Socket:     s.Socket,
-		ServiceGID: s.GID,
-		Log:        p.engine.logger,
-	}, s.Config)
-	if err == nil {
-		p.recordReport(report)
-	}
-	return report, err
+	})
 }
 
-// Synchronous, because it is a revocation reaching the other surface and the
-// administrator who asked for it is the right person to wait for it. Detached
-// from the caller's context, because a browser navigating away must not cancel
-// a revocation that is halfway to the sidecar.
-//
-// It never reports failure upward. The database write has committed and this
-// server is already enforcing it, so refusing here would describe a change
-// that happened as one that did not. An unreachable sidecar is logged instead.
-func (p *smbPublisher) AccessChanged(ctx context.Context) {
-	pctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), publishTimeout)
-	defer cancel()
-
-	report, err := p.Publish(pctx)
-	switch {
-	case err != nil:
-		p.engine.logger.Warn("a change did not reach the SMB sidecar", "error", err)
-	case !report.OK:
-		// The files were promoted and something in them needs an operator: a
-		// share path absent where the daemon runs, or an account the import
-		// produced no credential for. Neither is this caller's failure.
-		p.engine.logger.Warn("the SMB sidecar applied a change with a warning",
-			"error", report.Error)
-	}
-}
-
-// publishShares adapts the registry's definitions to what rendering reads.
-//
-// A broken share is left out. Its backing did not open, so rendering it would
-// publish a network name whose path does not resolve, which reads to a client
-// as a share that exists and refuses.
-//
-// A non-local share is left out too, and logged rather than silently
-// dropped: this format renders a path into a share stanza, and a
-// bucket or a container has none. An operator who expected it on the
-// network share list needs to see why it is not there rather than
-// conclude the publish is broken.
-//
-// An encrypted share is left out for a different reason: an SMB client has no
-// way to decrypt what it would read, so exporting it would hand out ciphertext
-// under a name that looks like an ordinary document. encrypted is the set the
-// caller read from the core just before this ran; a query rather than a flag
-// on ShareDef, since the registry knows nothing about encryption and this
-// package must not import sideways into the state layer to ask it directly.
-func publishShares(defs []core.ShareDef, encrypted map[core.ShareID]bool, logger *slog.Logger) []publish.Share {
-	out := make([]publish.Share, 0, len(defs))
-	for _, d := range defs {
-		if d.BrokenReason != "" {
-			continue
-		}
-		if d.Backend != "" && d.Backend != core.BackendLocal {
-			logger.Warn("a share is not published over SMB because it has no local path",
-				"share", d.Name, "backend", d.Backend)
-			continue
-		}
-		if encrypted[d.ID] {
-			logger.Warn("a share is not published over SMB because its content is end-to-end encrypted",
-				"share", d.Name)
-			continue
-		}
-		out = append(out, publish.Share{
-			ID:               int64(d.ID),
-			Name:             d.Name,
-			Path:             d.Host,
-			ModeFile:         d.Policy.ModeFile,
-			ModeDir:          d.Policy.ModeDir,
-			SharedExternally: d.SharedExternally,
-		})
-	}
-	return out
-}
-
-// publishGrants adapts the stored grants to the four questions rendering asks
-// of one.
-//
-// The permission bits are collapsed here rather than passed through, so a bit
-// this format cannot express cannot reach the renderer at all. Whole-share is
-// the empty subpath: the format has no way to state a permission beginning
-// partway down a tree.
-func publishGrants(ctx context.Context, st *state.DB) ([]publish.Grant, error) {
-	rows, err := st.ListGrants(ctx, state.GrantFilter{})
-	if err != nil {
-		return nil, err
-	}
-	memberships, err := st.Memberships(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return grantsOf(rows, memberships), nil
-}
-
-// grantsOf is the mapping itself, separated from the read so the collapse can
-// be checked without a database behind it.
-func grantsOf(rows []state.GrantRow, memberships ...[]state.MembershipRow) []publish.Grant {
-	groupUsers := make(map[int64][]int64)
-	if len(memberships) > 0 {
-		for _, m := range memberships[0] {
-			groupUsers[m.Group] = append(groupUsers[m.Group], m.User)
-		}
-	}
-	out := make([]publish.Grant, 0, len(rows))
-	for _, r := range rows {
-		allow, deny := acl.Perms(r.Allow), acl.Perms(r.Deny)
-		wholeShare := r.Subpath == ""
-		allowRead := allow.Has(acl.Read | acl.Download)
-		allowWrite := allow.Intersects(acl.Write | acl.Create)
-		denies := !deny.IsEmpty()
-
-		if r.User != nil {
-			out = append(out, publish.Grant{
-				User:       *r.User,
-				Share:      r.Share,
-				WholeShare: wholeShare,
-				AllowRead:  allowRead,
-				AllowWrite: allowWrite,
-				Denies:     denies,
-			})
-		}
-		if r.Group != nil {
-			users := groupUsers[*r.Group]
-			if len(users) == 0 {
-				out = append(out, publish.Grant{
-					User:       0,
-					Share:      r.Share,
-					WholeShare: wholeShare,
-					AllowRead:  allowRead,
-					AllowWrite: allowWrite,
-					Denies:     denies,
-				})
-			} else {
-				for _, u := range users {
-					out = append(out, publish.Grant{
-						User:       u,
-						Share:      r.Share,
-						WholeShare: wholeShare,
-						AllowRead:  allowRead,
-						AllowWrite: allowWrite,
-						Denies:     denies,
-					})
-				}
-			}
-		}
-	}
-	return out
-}
-
-// GrantsOf exports grantsOf for package callers and tests.
-func GrantsOf(rows []state.GrantRow, memberships ...[]state.MembershipRow) []publish.Grant {
-	return grantsOf(rows, memberships...)
-}
-
-// publishSMBAtBoot pushes once at startup.
-//
-// The state can have moved while this server was not running: a migration, an
-// edited database, or a change made by a build with no sink. Without this the
-// daemon serves whatever it was left with until the next write happens.
-//
-// A failure degrades rather than stops the boot. File sharing is one surface
-// of several, and refusing to start would take the rest of the deployment down
-// with it.
 func (e *Engine) publishSMBAtBoot(ctx context.Context) {
 	if e.smb == nil {
 		return
 	}
 	if _, err := e.smb.Publish(ctx); err != nil {
-		e.logger.Warn("the SMB configuration could not be published at startup", "error", err)
+		e.log().Warn("the SMB configuration could not be published at startup", "error", err)
 	}
 }
 
-// smbPublisherOf reads the publisher under the settings lock.
-//
-// A lock, because a settings save can build one while the server runs: the
-// field is no longer written once at startup and read forever after.
-func (e *Engine) smbPublisherOf() *smbPublisher {
+func (e *Engine) smbPublisherOf() *publish.Publisher {
 	e.settingsMu.RLock()
 	defer e.settingsMu.RUnlock()
 	return e.smb
 }
 
-// publishSMBSettings pushes after a settings save.
-//
-// This is what makes the file-sharing switch live. The agent reads an enabled
-// configuration as "render the shares and run the daemon" and a disabled one
-// as teardown: stop it and prune the credentials. Before this the switch was
-// only read when the process started, so turning sharing off left the daemon
-// serving every share until somebody restarted the container.
-//
-// A failure is logged rather than returned. The document has committed and the
-// next push corrects the sidecar, so refusing the save would describe a change
-// that happened as one that did not.
 func (e *Engine) publishSMBSettings(ctx context.Context) {
-	// Built here as well as at boot, because the section can be configured
-	// while the server runs. A publisher that only ever existed from startup
-	// meant the save that first named a sidecar could not reach it, and the
-	// screen asked for a restart to do what the save had already stored.
 	e.settingsMu.Lock()
 	if e.smb == nil {
 		if p := newSMBPublisher(e, smbSettingsOf(ctx, e)); p != nil {
@@ -413,26 +71,16 @@ func (e *Engine) publishSMBSettings(ctx context.Context) {
 	}
 	p := e.smb
 	e.settingsMu.Unlock()
-
 	if p == nil {
 		return
 	}
 	pctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), publishTimeout)
 	defer cancel()
-
 	report, err := p.Publish(pctx)
 	switch {
 	case err != nil:
-		e.logger.Warn("a file-sharing settings change did not reach the SMB sidecar", "error", err)
+		e.log().Warn("a file-sharing settings change did not reach the SMB sidecar", "error", err)
 	case !report.OK:
-		e.logger.Warn("the SMB sidecar applied the settings change with a warning", "error", report.Error)
+		e.log().Warn("the SMB sidecar applied the settings change with a warning", "error", report.Error)
 	}
-}
-
-func smbCredentialsOf(creds []auth.SMBCredential) []smb.Credential {
-	out := make([]smb.Credential, 0, len(creds))
-	for _, c := range creds {
-		out = append(out, smb.Credential{Name: c.Name, Uid: c.UID, NTHash: c.NTHash})
-	}
-	return out
 }

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"sync"
 
@@ -395,4 +396,48 @@ func maxPixelsFor() uint32 {
 		return ^uint32(0)
 	}
 	return uint32(lim.MaxPixels)
+}
+
+// Open builds the decoder pool and its cache.
+//
+// A nil result is a deployment with no thumbnails, not a broken one. Every
+// failure here is about the host rather than the request: no worker binary,
+// no room for a cache. Refusing to boot over it would take down a server that
+// can still serve every file it holds.
+func Open(thumbsDir, worker string, c *core.Core, clk clock.Clock, log *slog.Logger) *Service {
+	opt := PoolOptions{Clock: clk}
+	if worker != "" {
+		// Only the binary. The pool supplies its default argument either way,
+		// and the shipped decoder reads no argv at all: its socket arrives on
+		// a fixed descriptor, which is what leaves it no way to name a file.
+		opt.Exe = worker
+	}
+	pool, perr := NewPool(opt)
+	if perr != nil {
+		log.Warn("thumbnails are unavailable: the decoder pool did not open",
+			"error", perr)
+		return nil
+	}
+
+	cache, cerr := NewCache(thumbsDir)
+	if cerr != nil {
+		log.Warn("thumbnails are unavailable: the cache directory did not open",
+			"error", cerr)
+		if clerr := pool.Close(); clerr != nil {
+			log.Warn("closing the decoder pool", "error", clerr)
+		}
+		return nil
+	}
+
+	svc, serr := NewService(ServiceOptions{
+		Core: c, Pool: pool, Cache: cache, Clock: clk,
+	})
+	if serr != nil {
+		log.Warn("thumbnails are unavailable", "error", serr)
+		if clerr := pool.Close(); clerr != nil {
+			log.Warn("closing the decoder pool", "error", clerr)
+		}
+		return nil
+	}
+	return svc
 }

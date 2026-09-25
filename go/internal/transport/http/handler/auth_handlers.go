@@ -169,7 +169,7 @@ func (h *authHandlers) grantSession(c *gin.Context, sess auth.Session) {
 		return
 	}
 	printable := hex.EncodeToString(sess.Token.Reveal())
-	setSessionCookieTransport(c, printable)
+	SetSessionCookie(c, printable)
 	writeTransportJSON(c, http.StatusOK, IdentityViewOf(sess.UserID, info.LoginName, info.DisplayName, admin, middleware.CSRFToken(h.d.CSRFKey(), printable)))
 }
 
@@ -253,11 +253,15 @@ func writeTransportJSON(c *gin.Context, status int, value any) { c.JSON(status, 
 func failKnownTransport(c *gin.Context, err error) {
 	refuseTransport(c, apierr.Classify(err, apierr.VisibilityKnown))
 }
+func FailKnown(c *gin.Context, err error) { failKnownTransport(c, err) }
+
+func ClientAddr(c *gin.Context) string { return middleware.ClientOf(c).String() }
+
 func refuseTransport(c *gin.Context, class apierr.Classified) {
 	status, body := apierr.REST(class)
 	writeTransportJSON(c, status, body)
 }
-func setSessionCookieTransport(c *gin.Context, value string) {
+func SetSessionCookie(c *gin.Context, value string) {
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie(middleware.SessionCookieName, value, int(sessionCookieMaxAge/time.Second), "/", "", true, true)
 }

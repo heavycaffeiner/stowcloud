@@ -9,6 +9,7 @@ import (
 
 	app "github.com/heavycaffeiner/stowcloud/go/internal/app"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/admin/settings/live"
+	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/dav"
 )
 
 // A saved host list reaches the running server.
@@ -132,7 +133,7 @@ func TestAContentHostServesNoApplicationRoute(t *testing.T) {
 	}{
 		{"the native API", http.MethodGet, "/api/v1/system/health"},
 		{"the interface", http.MethodGet, "/b/"},
-		{"the native DAV mount", "PROPFIND", app.DavPrefix + "/"},
+		{"the native DAV mount", "PROPFIND", dav.DavPrefix + "/"},
 		{"the public link surface", http.MethodGet, "/s/nosuchtoken"},
 	} {
 		req, rerr := http.NewRequest(c.method, base+c.path, nil)

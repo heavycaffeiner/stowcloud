@@ -338,6 +338,28 @@ func TestDisableRemovesEveryFile(t *testing.T) {
 	}
 }
 
+// An unreadable settings document falls back to an unconfigured, disabled
+// section. The publisher still removes old credentials from its target.
+func TestPublisherDisablesWhenSettingsAreUnconfigured(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{fileConf, filePassdb, filePasswd, filePolicy} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("stale"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p := New(PublisherDeps{Settings: func(context.Context) Settings {
+		return Settings{ConfigDir: dir}
+	}})
+	if _, err := p.Publish(t.Context()); err != nil {
+		t.Fatalf("disabling a fallback configuration: %v", err)
+	}
+	for _, name := range []string{fileConf, filePassdb, filePasswd, filePolicy} {
+		if _, err := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(err) {
+			t.Errorf("%s survived the settings fallback: %v", name, err)
+		}
+	}
+}
+
 // Disabling a deployment that never published is not an error: the files are
 // already absent, which is the state being asked for.
 func TestDisableToleratesAbsentFiles(t *testing.T) {

@@ -13,6 +13,7 @@ package handler
 import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/admin/settings/catalogue"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/admin/settings/check"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/smb/agent"
 )
 
 // FindingView is one check result.
@@ -92,6 +93,38 @@ type SMBAgentView struct {
 	// Shown verbatim rather than translated: it is the daemon's own words,
 	// which is what names the thing to fix.
 	Detail string `json:"detail,omitempty"`
+}
+
+// SMBAgentOf reports the last sidecar push, or nil before publication.
+func SMBAgentOf(r *agent.Report) *SMBAgentView {
+	if r == nil {
+		return nil
+	}
+	key := "smb.agent_applied"
+	switch {
+	case r.Smbd == agent.ActionFailed:
+		key = "smb.agent_daemon_failed"
+	case !r.OK:
+		key = "smb.agent_applied_with_warnings"
+	}
+	return &SMBAgentView{
+		Key:           key,
+		OK:            r.OK && r.Smbd != agent.ActionFailed,
+		Shares:        listOf(r.Shares),
+		Interfaces:    r.Interfaces,
+		HostsAllow:    r.HostsAllow,
+		Smbd:          string(r.Smbd),
+		MissingPaths:  listOf(r.MissingPaths),
+		MissingPassdb: listOf(r.MissingPassdb),
+		Detail:        r.Error,
+	}
+}
+
+func listOf(in []string) []string {
+	if in == nil {
+		return []string{}
+	}
+	return in
 }
 
 // SettingsOf projects the resource.

@@ -12,7 +12,6 @@ import (
 	"strings"
 	"testing"
 
-	app "github.com/heavycaffeiner/stowcloud/go/internal/app"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/clock"
@@ -49,9 +48,6 @@ type fixture struct {
 	// real is the actual lock table, for the LOCK and UNLOCK tests. The stub
 	// above answers the write guard; this is what mints a token.
 	real *dav.StateLocks
-	// engine is what the mount hangs off. Only Core is populated, which is all
-	// the mount reads: the rest of an engine is other surfaces' dependencies.
-	engine *app.Engine
 	// state is the database, for a test that narrows a grant.
 	state *state.DB
 }
@@ -188,9 +184,6 @@ func build(t *testing.T, held []string, infinityEntries int) *fixture {
 			Core:  c,
 			Locks: locks,
 			TokensAt: func(ctx context.Context, share uint32, path string) []string {
-				// The real table first, so a lock this fixture actually took
-				// satisfies an If header naming its token. held is the override
-				// for the tests that need a token without a lock behind it.
 				if got := real.Tokens(ctx, share, path); len(got) > 0 {
 					return got
 				}
@@ -202,13 +195,12 @@ func build(t *testing.T, held []string, infinityEntries int) *fixture {
 			Store:           props,
 			KeyOf:           dav.EntryKey,
 		}),
-		core:   c,
-		dir:    shareDir,
-		locks:  locks,
-		props:  props,
-		real:   real,
-		engine: &app.Engine{Core: c, State: st, Cache: ca},
-		state:  st,
+		core:  c,
+		dir:   shareDir,
+		locks: locks,
+		props: props,
+		real:  real,
+		state: st,
 	}
 }
 

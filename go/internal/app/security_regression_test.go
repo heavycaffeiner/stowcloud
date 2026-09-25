@@ -17,6 +17,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/auth"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/go/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/go/internal/feature/smb/publish"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/database/state"
 	"github.com/heavycaffeiner/stowcloud/go/internal/platform/storage/vfs"
 )
@@ -292,7 +293,7 @@ func TestRegressionSMBGroupGrantsExpandedToMembers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	grants := app.GrantsOf(rows, memberships)
+	grants := publish.GrantsOf(rows, memberships)
 
 	// Alice (group member) must receive grants for share 1 and share 2.
 	var aliceShare1, aliceShare2Deny bool

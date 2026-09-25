@@ -1,13 +1,6 @@
 //go:build linux && compat_nc
 
-// The approval page of the device login.
-//
-// A client opens it in the system browser with nothing of the application
-// behind it, so the page is rendered here rather than by the frontend bundle:
-// what makes it trustworthy is all server-side, the session that says who is
-// approving, the token derived from that session, and the answer for a visitor
-// with neither.
-package app
+package nc
 
 import (
 	"crypto/rand"
@@ -21,13 +14,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/transport/http/middleware"
 )
 
-// ncConsentTemplate is the whole document.
-//
-// The token and the CSRF value travel to the script as data attributes rather
-// than as interpolated JavaScript. The template engine's escaping guarantees
-// stop at a script body's boundary, so putting either there would mean
-// vouching for characters that arrived in a URL.
-func ncConsentTemplate() *template.Template {
+func consentTemplate() *template.Template {
 	return template.Must(template.New("consent").Parse(`<!doctype html>
 <html lang="en">
 <head>
@@ -105,54 +92,46 @@ document.getElementById('sc-approve').addEventListener('click', async function (
 `))
 }
 
-// ncLoginConsent shows the page, or sends a visitor with no session to sign in
-// and come back.
-//
-// Redirecting is the honest answer rather than a refusal: the browser that
-// opened this belongs to somebody who has not signed in yet, that is the
-// normal path, and a 401 here breaks the flow at the one step it exists to
-// start.
-func (e *Engine) ncLoginConsent(c *gin.Context) {
-	cookie, err := c.Cookie(middleware.SessionCookieName)
-	if err != nil {
-		cookie = ""
-	}
-	_, signedIn := c.Get(string(middleware.KeyCredential))
-	if cookie == "" || !signedIn {
-		c.Redirect(http.StatusFound, "/login?returnTo="+url.QueryEscape(c.Request.URL.Path))
-		c.Abort()
-		return
-	}
+// ConsentPage renders the device approval page using the caller's session.
+func ConsentPage(csrfKey func() []byte) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		cookie, err := c.Cookie(middleware.SessionCookieName)
+		if err != nil {
+			cookie = ""
+		}
+		_, signedIn := c.Get(string(middleware.KeyCredential))
+		if cookie == "" || !signedIn {
+			c.Redirect(http.StatusFound, "/login?returnTo="+url.QueryEscape(c.Request.URL.Path))
+			c.Abort()
+			return
+		}
 
-	nonce, err := ncConsentNonce()
-	if err != nil {
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
+		nonce, err := consentNonce()
+		if err != nil {
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+		token := c.Param("token")
+		if token == "" {
+			token = c.Query("token")
+		}
+		c.Header("Content-Type", "text/html; charset=utf-8")
+		c.Header("Cache-Control", "no-store")
+		c.Header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-"+nonce+"'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+		if err := consentTemplate().Execute(c.Writer, map[string]string{
+			"Token": token,
+			"CSRF":  middleware.CSRFToken(csrfKey(), cookie),
+			"Grant": "/index.php/login/v2/grant",
+			"Nonce": nonce,
+		}); err != nil {
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+		c.Abort()
 	}
-	token := c.Param("token")
-	if token == "" {
-		token = c.Query("token")
-	}
-	c.Header("Content-Type", "text/html; charset=utf-8")
-	c.Header("Cache-Control", "no-store")
-	c.Header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-"+nonce+"'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
-	if err := ncConsentTemplate().Execute(c.Writer, map[string]string{
-		"Token": token,
-		"CSRF":  middleware.CSRFToken(e.csrfKey(), cookie),
-		"Grant": ncGrantPath,
-		"Nonce": nonce,
-	}); err != nil {
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-	c.Abort()
 }
 
-// ncGrantPath is where the page posts the approval.
-const ncGrantPath = "/index.php/login/v2/grant"
-
-// ncConsentNonce is one script nonce, from the system random source.
-func ncConsentNonce() (string, error) {
+func consentNonce() (string, error) {
 	var raw [16]byte
 	if _, err := rand.Read(raw[:]); err != nil {
 		return "", err
