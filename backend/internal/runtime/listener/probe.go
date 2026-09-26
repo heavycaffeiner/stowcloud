@@ -40,6 +40,8 @@ type Probe struct {
 	// Host is the first configured app host, or empty on a deployment that has
 	// named none yet.
 	Host string `json:"host,omitempty"`
+	// Plain records whether the listener speaks HTTP rather than HTTPS.
+	Plain bool `json:"plain,omitempty"`
 }
 
 // WriteProbe publishes the snapshot durably.

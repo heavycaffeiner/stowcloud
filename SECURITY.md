@@ -67,6 +67,11 @@ discussion, not an advisory:
 
 ## Known gaps
 
+The sandbox grants parent directories and discovered mounts writable so shares
+can be added without restarting the server. This weakens per-share
+confinement: the process policy intentionally covers more than each individual
+share root.
+
 Stated in `README.md` as well, repeated here because it bears on what a report
 is worth: this code has never been reviewed by anyone outside this repository.
 There is no Litmus conformance run in CI and no automated sync-client

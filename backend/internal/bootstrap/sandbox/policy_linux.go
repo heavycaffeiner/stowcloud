@@ -13,8 +13,8 @@ import (
 )
 
 // BuildPolicy builds the server's process policy from one startup configuration
-// snapshot. Exact-file grants remain separate from directory grants: a
-// container file must not expose its siblings.
+// snapshot. Parent directories and discovered mounts are granted writable so
+// shares can be added without a restart, which weakens per-share confinement.
 func BuildPolicy(values runtimecfg.Values, dataDir string, roots, shareHosts, exactPaths []string) securitylinux.Policy {
 	mode := policyMode(values.Hardening)
 	policy := securitylinux.Policy{

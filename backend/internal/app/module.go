@@ -13,19 +13,21 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/system/jail"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/runtime/listener"
 	runtimerestart "github.com/heavycaffeiner/stowcloud/backend/internal/runtime/restart"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/store/instance"
 	"go.uber.org/fx"
 )
 
 // ModuleConfig contains the process-level values needed to construct the
 // application and bind its runtime adapters.
 type ModuleConfig struct {
-	DataDir   string
-	Address   string
-	Pinned    bool
-	Plain     bool
-	Hardening jail.Policy
-	Revision  string
-	Logger    *slog.Logger
+	DataDir      string
+	Address      string
+	Pinned       bool
+	Plain        bool
+	Hardening    jail.Policy
+	Revision     string
+	Logger       *slog.Logger
+	InstanceLock *instance.Lock
 }
 
 // Module composes the Stowcloud application graph. Feature services remain
@@ -39,7 +41,8 @@ func Module(config ModuleConfig) fx.Option {
 				Logger:                         config.Logger,
 				Hardening:                      config.Hardening,
 				Revision:                       config.Revision,
-				InstanceLockAcquiredExternally: true,
+				InstanceLockAcquiredExternally: false,
+				InstanceLock:                   config.InstanceLock,
 			})
 		}),
 		fx.Invoke(func(lifecycle fx.Lifecycle, engine *Engine) {
@@ -50,11 +53,12 @@ func Module(config ModuleConfig) fx.Option {
 				return nil, err
 			}
 			return listener.New(listener.Config{
-				DataDir: config.DataDir,
-				Address: config.Address,
-				Pinned:  config.Pinned,
-				Plain:   config.Plain,
-				Logger:  config.Logger,
+				DataDir: config.DataDir, Address: config.Address, Pinned: config.Pinned,
+				Plain: config.Plain, Logger: config.Logger,
+				Hosts: func() (app, content []string) {
+					hosts := engine.Settings.Hosts()
+					return hosts.App, hosts.Content
+				},
 			}, engine.Settings, router, admission, controller)
 		}),
 		fx.Invoke(func(lifecycle fx.Lifecycle, runtime *listener.Runtime) {

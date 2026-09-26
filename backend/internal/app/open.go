@@ -108,6 +108,7 @@ type Options struct {
 	// owner must be responsible for its entire lifetime, and ownership cannot be
 	// split between the process host and the engine.
 	InstanceLockAcquiredExternally bool
+	InstanceLock                   *instance.Lock
 
 	// PasswordParams sets the Argon2id parameters auth writes new password
 	// hashes under. The zero value means auth.CurrentParams(). A test build
@@ -302,15 +303,9 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 		return nil, err
 	}
 
-	// A caller that acquired the lock externally remains its sole owner. In
-	// that mode the engine must not take or release a second lock: releasing
-	// here would drop ownership that belongs to the host.
-	if !opt.InstanceLockAcquiredExternally {
-		// The data directory is one server's, and the lock is what says so.
-		// Taken before anything is opened, because two processes writing these
-		// databases is a real shape: an emergency repair run opens the same files
-		// to fix them, and a repair applied to a document a running server then
-		// overwrites is worse than a refusal.
+	if opt.InstanceLock != nil {
+		e.lock = opt.InstanceLock
+	} else if !opt.InstanceLockAcquiredExternally {
 		lock, lockErr := instance.Take(opt.DataDir)
 		if lockErr != nil {
 			return nil, fmt.Errorf("the data directory is in use: %w", lockErr)
@@ -488,7 +483,7 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	// exactly like a share somebody deleted.
 	rejected, rerr := coreSvc.ReloadPersistedShares(ctx)
 	if rerr != nil {
-		return nil, fmt.Errorf("reloading the registered shares: %w", rerr)
+		return fail(fmt.Errorf("reloading the registered shares: %w", rerr))
 	}
 	for _, r := range rejected {
 		logger.Error("a registered share is not servable",
@@ -657,12 +652,12 @@ func reloadMemberships(ctx context.Context, e *Engine, logger *slog.Logger) {
 	e.ACL.SetMemberships(byUser)
 }
 
-// jobDrainTimeout backstops the wait for detached work once it has been told
-// to stop. Long enough for an item to finish and write its outcome row, short
-// enough that one long item does not hold a restart open.
+// jobDrainTimeout bounds how long a close waits for detached work to finish
+// on its own. Past it the work is stopped and given a short grace to record
+// its outcome, so one long item does not hold a restart open.
 const jobDrainTimeout = 10 * time.Second
 
-// drainJobs tells the detached work to stop and waits for it.
+// drainJobs waits for detached work, stopping it when the wait runs out.
 //
 // Both holders are drained under one deadline: the core's copies and this
 // engine's index build write into the same databases the close is about to

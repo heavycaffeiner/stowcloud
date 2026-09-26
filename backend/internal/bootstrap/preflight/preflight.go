@@ -6,6 +6,7 @@ package preflight
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vault"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/store/dbfile"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/store/instance"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
 )
 
@@ -36,6 +38,7 @@ type Config struct {
 	Address    string
 	Pinned     bool
 	Plain      bool
+	Lock       *instance.Lock
 }
 
 // Options controls the startup read.
@@ -47,8 +50,9 @@ type Options struct {
 	SkipRootDiscovery bool
 }
 
-// Load resolves the data directory, checks the resolver, reads persisted
+// Load takes the data-directory lock, checks the resolver, reads persisted
 // settings, and discovers filesystem roots before the runtime is constructed.
+// The returned Config holds the lock; a failed Load releases it.
 func Load(ctx context.Context, options Options) (Config, error) {
 	logger := options.Logger
 	if logger == nil {
@@ -58,14 +62,29 @@ func Load(ctx context.Context, options Options) (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("resolving the data directory: %w", err)
 	}
-	if err := os.MkdirAll(abs, 0o700); err != nil {
-		return Config{}, fmt.Errorf("creating the data directory: %w", err)
+	if mkErr := os.MkdirAll(abs, 0o700); mkErr != nil {
+		return Config{}, fmt.Errorf("creating the data directory: %w", mkErr)
 	}
-	if err := vfs.RequireResolver(vfs.Probe()); err != nil {
+	lock, err := instance.Take(abs)
+	if err != nil {
+		return Config{}, fmt.Errorf("the data directory is in use: %w", err)
+	}
+	failed := true
+	defer func() {
+		if !failed {
+			return
+		}
+		if rerr := lock.Release(); rerr != nil {
+			logger.Warn("releasing the data-directory lock after a failed start", "error", rerr)
+		}
+	}()
+	if resolverErr := vfs.RequireResolver(vfs.Probe()); resolverErr != nil {
+		return Config{}, resolverErr
+	}
+	values, shareHosts, exactPaths, err := bootSettings(ctx, abs, logger)
+	if err != nil {
 		return Config{}, err
 	}
-
-	values, shareHosts, exactPaths := bootSettings(ctx, abs, logger)
 	var roots []string
 	if !options.SkipRootDiscovery {
 		mounts, err := mountinfo.Self()
@@ -75,7 +94,6 @@ func Load(ctx context.Context, options Options) (Config, error) {
 			roots = shareRoots(mounts)
 		}
 	}
-
 	address := options.Addr
 	if address == "" {
 		address = values.Listen
@@ -83,39 +101,45 @@ func Load(ctx context.Context, options Options) (Config, error) {
 	if address == "" {
 		address = DefaultListen
 	}
+	failed = false
 	return Config{
 		DataDir: abs, Values: values, Roots: roots, ShareHosts: shareHosts,
-		ExactPaths: exactPaths, Address: address, Pinned: options.Addr != "", Plain: options.Plain,
+		ExactPaths: exactPaths, Address: address, Pinned: options.Addr != "", Plain: options.Plain, Lock: lock,
 	}, nil
 }
 
 // bootSettings reads persisted settings and every path a registered share
 // makes the process open. The probe is closed before runtime construction.
 func bootSettings(ctx context.Context, dataDir string, log *slog.Logger) (
-	values runtimecfg.Values, shareHosts, exactPaths []string,
+	values runtimecfg.Values, shareHosts, exactPaths []string, err error,
 ) {
 	stateFile, err := dbfile.Open(ctx, state.Spec(filepath.Join(dataDir, "state.db")))
 	if err != nil {
-		return runtimecfg.Defaults(), nil, nil
+		if _, statErr := os.Stat(filepath.Join(dataDir, "state.db")); errors.Is(statErr, os.ErrNotExist) {
+			return runtimecfg.Defaults(), nil, nil, nil
+		}
+		return runtimecfg.Values{}, nil, nil, fmt.Errorf("opening the state database: %w", err)
 	}
 	defer func() {
-		closeErr := stateFile.Close()
-		if closeErr != nil {
+		if closeErr := stateFile.Close(); closeErr != nil {
 			log.Warn("closing the settings probe", "error", closeErr)
+			if err == nil {
+				err = fmt.Errorf("closing the settings probe: %w", closeErr)
+			}
 		}
 	}()
 	st := state.New(stateFile)
 	values = runtimecfg.Load(ctx, st, runtimecfg.Defaults(), log)
 	rows, err := st.ListShares(ctx)
 	if err != nil {
-		return values, nil, nil
+		return values, nil, nil, fmt.Errorf("reading registered shares: %w", err)
 	}
 	for _, row := range rows {
 		switch row.Backend {
 		case string(core.BackendVeracrypt):
-			cfg, err := vault.ParseConfig([]byte(row.BackendConfig))
-			if err != nil {
-				log.Warn("a veracrypt share's configuration is unreadable, so its container is not granted", "share", row.Name, "error", err)
+			cfg, parseErr := vault.ParseConfig([]byte(row.BackendConfig))
+			if parseErr != nil {
+				log.Warn("a veracrypt share's configuration is unreadable, so its container is not granted", "share", row.Name, "error", parseErr)
 				continue
 			}
 			exactPaths = append(exactPaths, cfg.Container)
@@ -124,7 +148,7 @@ func bootSettings(ctx context.Context, dataDir string, log *slog.Logger) (
 			shareHosts = append(shareHosts, row.Host)
 		}
 	}
-	return values, shareHosts, exactPaths
+	return values, shareHosts, exactPaths, nil
 }
 
 func namedShareDirs() []string {

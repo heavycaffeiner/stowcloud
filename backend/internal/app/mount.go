@@ -66,10 +66,10 @@ func (e *Engine) Mount(app *gin.Engine) error {
 		Handlers: handlers, Deps: e.deps(),
 		BeforeAnnounce: func(router *gin.Engine) {
 			emergency.Mount(router, emergency.Deps{
-				Auth:  emergency.NewAuthenticator(e.Auth, e.clk().Nanos),
-				State: e.State, Page: spa.Page(), DataDir: e.dataDir,
-				Reason:     func() string { return "" },
-				ClientAddr: emergency.ClientAddr(e.trustedProxies),
+				Auth: emergency.NewAuthenticator(e.Auth, e.clk().Nanos), State: e.State, Settings: e.Settings,
+				Page: spa.Page(), DataDir: e.dataDir, Reason: func() string { return "" },
+				ClientAddr:     emergency.ClientAddr(e.trustedProxies),
+				TrustedProxies: e.trustedProxies,
 			})
 		},
 		AfterAnnounce: func(router *gin.Engine) {
@@ -99,14 +99,14 @@ func (e *Engine) newPublicLinks() *publiclinks.Public {
 		Audit: func(ctx context.Context, event, target, ip, ua string, ok bool) error {
 			return e.Auth.Audit(ctx, nil, event, target, ip, ua, ok)
 		},
-		Logger:      e.log(),
-		Frontend:    spa.Page(),
-		Fail:        handler.Fail,
-		Refuse:      handler.Refuse,
-		WriteJSON:   func(c *gin.Context, status int, v any) { c.JSON(status, v) },
-		Decode:      filehttp.Decode,
-		CloseStream: func(stream *core.Stream, name string) { filehttp.CloseStream(stream, name, e.log()) },
-		SendStream:  filehttp.SendStream,
+		Logger:          e.log(),
+		Frontend:        spa.Page(),
+		Fail:            handler.Fail,
+		Refuse:          handler.Refuse,
+		WriteJSON:       func(c *gin.Context, status int, v any) { c.JSON(status, v) },
+		Decode:          filehttp.Decode,
+		CloseStream:     func(stream *core.Stream, name string) { filehttp.CloseStream(stream, name, e.log()) },
+		SendStreamRange: filehttp.SendStreamRange,
 		AcquireArchive: func() (func(), bool) {
 			if !e.archiveGate.TryAcquire() {
 				return nil, false
@@ -191,16 +191,18 @@ func (e *Engine) handlers() server.Handlers {
 		out[name] = h
 	}
 	oidcRoutes := oidc.New(oidc.Deps{
-		Auth:        e.Auth,
-		Client:      func() *featureoidc.Client { e.settingsMu.RLock(); defer e.settingsMu.RUnlock(); return e.oidcClient },
-		DisplayName: func() string { e.settingsMu.RLock(); defer e.settingsMu.RUnlock(); return e.oidcName },
-		AppHosts:    func() []string { return e.Settings.Hosts().App },
-		Logger:      e.log(),
-		Owner:       func(c *gin.Context) (int64, bool) { owner, ok := handler.Owner(c); return int64(owner), ok },
-		Admin:       admin, Reconfirm: func(c *gin.Context, owner int64, password string) bool {
+		Auth:          e.Auth,
+		Client:        func() *featureoidc.Client { e.settingsMu.RLock(); defer e.settingsMu.RUnlock(); return e.oidcClient },
+		DisplayName:   func() string { e.settingsMu.RLock(); defer e.settingsMu.RUnlock(); return e.oidcName },
+		AppHosts:      func() []string { return e.Settings.Hosts().App },
+		RequestScheme: func(r *http.Request) string { return middleware.RequestScheme(r, e.trustedProxies()) },
+		Logger:        e.log(),
+		Owner:         func(c *gin.Context) (int64, bool) { owner, ok := handler.Owner(c); return int64(owner), ok },
+		Admin:         admin, Reconfirm: func(c *gin.Context, owner int64, password string) bool {
 			return handler.Reconfirm(c, e.Auth, owner, password)
-		}, Decode: filehttp.Decode,
-		Fail: handler.Fail, FailKnown: handler.FailKnown, Refuse: handler.Refuse, WriteJSON: func(c *gin.Context, status int, v any) { c.JSON(status, v) },
+		},
+		Decode: filehttp.Decode, Fail: handler.Fail, FailKnown: handler.FailKnown, Refuse: handler.Refuse,
+		WriteJSON:  func(c *gin.Context, status int, v any) { c.JSON(status, v) },
 		ClientAddr: handler.ClientAddr, SetSessionCookie: handler.SetSessionCookie,
 	})
 	for name, h := range oidcRoutes.Routes() {

@@ -54,32 +54,26 @@ func runHealthcheck(argv []string) int {
 	// server writes beside the certificate it is about to verify.
 	probe := listener.ReadProbe(filepath.Join(dataDir, ".probe.json"))
 
-	// The data directory is the operator's own argument, never request input.
-	certPEM, err := os.ReadFile(filepath.Join(dataDir, "tls", "cert.pem")) //nolint:gosec // G703 reads the variable: the path is the operator's argument.
-	if err != nil {
-		// No certificate material yet means the server has never started;
-		// that is the "nothing answered" case, not a degraded one.
-		return healthExitNoAnswer
-	}
-	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM(certPEM) {
-		errOut.Println("sc-engine healthcheck: the stored certificate does not parse")
-		return healthExitNoAnswer
-	}
-
-	client := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				RootCAs:    roots,
-				ServerName: "localhost",
-			},
-		},
-		Timeout: 5 * time.Second,
+	var client *http.Client
+	scheme := "https"
+	if probe.Plain {
+		client = &http.Client{Timeout: 5 * time.Second}
+		scheme = "http"
+	} else {
+		certPEM, err := os.ReadFile(filepath.Join(dataDir, "tls", "cert.pem")) //nolint:gosec // G703 reads the variable: the path is the operator's argument.
+		if err != nil {
+			return healthExitNoAnswer
+		}
+		roots := x509.NewCertPool()
+		if !roots.AppendCertsFromPEM(certPEM) {
+			errOut.Println("sc-engine healthcheck: the stored certificate does not parse")
+			return healthExitNoAnswer
+		}
+		client = &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, ServerName: "localhost"}}, Timeout: 5 * time.Second}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	// The dial target comes from the operator's config, never from a request.
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://127.0.0.1"+tlsPortOf(probe.Addr)+"/api/v1/system/health", nil) //nolint:gosec // G704 reads the variable: the address is the server's own snapshot.
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, scheme+"://127.0.0.1"+tlsPortOf(probe.Addr)+"/api/v1/system/health", nil) //nolint:gosec // G704 reads the variable: the address is the server's own snapshot.
 	if err != nil {
 		return healthExitNoAnswer
 	}

@@ -532,5 +532,10 @@
 # atomic. The live archive setting now bounds concurrent streams through the
 # engine's own gate, and the parser and listing bounds are compiled-in
 # constants again, so there is no global left for the exception to cover.
+#
+# Unchanged at 97: the SMB agent no longer widens its control socket to 0666
+# when the hand-over chown fails, so that G302 exception went. The emergency
+# door now stores the OIDC client secret the way the admin path does, and its
+# config-key constant carries the same G101 exception as the admin one.
 22
 97

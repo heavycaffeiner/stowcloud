@@ -21,9 +21,26 @@ import (
 	"path/filepath"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/bootstrap/args"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/settings/check"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/store/dbfile"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/store/instance"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
 )
+
+func takeSettingsLock(out *log.Logger, dataDir string) (*instance.Lock, bool) {
+	lock, err := instance.Take(dataDir)
+	if err != nil {
+		out.Printf("sc-engine settings: cannot edit settings while the server is running: %v\n", err)
+		return nil, false
+	}
+	return lock, true
+}
+
+func releaseSettingsLock(out *log.Logger, lock *instance.Lock) {
+	if err := lock.Release(); err != nil {
+		out.Printf("sc-engine settings: releasing the data-directory lock: %v\n", err)
+	}
+}
 
 // runSettings dispatches the settings verbs. `set` replaces one section from
 // a JSON document on standard input; `get` prints the whole stored document.
@@ -57,8 +74,8 @@ func settingsUsage() int {
 }
 
 // runSettingsSet replaces one section from a JSON document on standard input.
-//
-// The arguments are the section name and the data directory, in either
+// The document passes the same validation an administrator's save does, and
+// the write takes the data-directory lock, so it refuses while a server runs.
 func runSettingsSet(argv []string) int {
 	out := log.New(os.Stderr, "", 0)
 	section, dataDir := args.ParseSettingsArgs(argv)
@@ -76,7 +93,20 @@ func runSettingsSet(argv []string) int {
 		out.Printf("sc-engine settings: the document is not a JSON object: %v\n", jerr)
 		return 1
 	}
-
+	if !check.Known(section) {
+		out.Printf("sc-engine settings: unknown section %q\n", section)
+		return 1
+	}
+	findings := check.Section(check.Input{Section: section, Body: sectionBody, DataDir: dataDir, Lockout: check.LockoutWarns})
+	if check.Blocked(findings) {
+		out.Printf("sc-engine settings: settings refused: %v\n", findings)
+		return 1
+	}
+	lock, ok := takeSettingsLock(out, dataDir)
+	if !ok {
+		return 1
+	}
+	defer releaseSettingsLock(out, lock)
 	stateFile, err := dbfile.Open(context.Background(), state.Spec(filepath.Join(dataDir, "state.db")))
 	if err != nil {
 		out.Printf("sc-engine settings: opening the store: %v\n", err)
@@ -99,6 +129,11 @@ func runSettingsSet(argv []string) int {
 func runSettingsGet(argv []string) int {
 	out := log.New(os.Stderr, "", 0)
 	dataDir := args.DataDir(argv)
+	lock, ok := takeSettingsLock(out, dataDir)
+	if !ok {
+		return 1
+	}
+	defer releaseSettingsLock(out, lock)
 
 	stateFile, err := dbfile.Open(context.Background(), state.Spec(filepath.Join(dataDir, "state.db")))
 	if err != nil {

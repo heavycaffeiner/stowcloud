@@ -40,7 +40,7 @@
 # is the dependency floor and the two move independently, but the image and CI
 # building with different compilers means the binary an image ships is not the
 # one the gate ran against.
-ARG GO_IMAGE=golang:1.27.1-bookworm
+ARG GO_IMAGE=golang:1.27.1-bookworm@sha256:69a7b9788769bec032d238959b61854e9ae87f57be9029ec04e9885fabf99195
 
 # node 24, not 22, for the npm major it bundles. The lockfile in frontend/ was
 # written by npm 11, and npm 10 reads the same file as out of sync and fails on
@@ -48,7 +48,7 @@ ARG GO_IMAGE=golang:1.27.1-bookworm
 # succeeds under npm 11 and fails only under 10, so the image moves rather than
 # the lockfile, which would silently downgrade what every developer here has
 # installed.
-ARG NODE_IMAGE=node:24-alpine
+ARG NODE_IMAGE=node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1
 
 # The runtime base. Alpine rather than distroless, and the same 3.24 the SMB
 # sidecar pins, so both images track one base and one support window.

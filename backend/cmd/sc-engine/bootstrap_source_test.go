@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestHanamiBootstrapOwnsSecurityOwnershipAndDeferredEngineConstruction(t *testing.T) {
+func TestHanamiBootstrapOwnsSecurityAndDeferredEngineConstruction(t *testing.T) {
 	path := filepath.Join("main.go")
 	file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
 	if err != nil {
@@ -21,27 +21,15 @@ func TestHanamiBootstrapOwnsSecurityOwnershipAndDeferredEngineConstruction(t *te
 		t.Fatal("run function is missing")
 	}
 
-	var securityPosition, ownershipPosition int
-	position := 0
+	securityFound := false
 	ast.Inspect(run.Body, func(node ast.Node) bool {
-		call, ok := node.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		position++
-		switch selectorName(call.Fun) {
-		case "securitylinux.WithPolicy":
-			securityPosition = position
-		case "ownership.WithRequirement":
-			ownershipPosition = position
+		if call, ok := node.(*ast.CallExpr); ok && selectorName(call.Fun) == "securitylinux.WithPolicy" {
+			securityFound = true
 		}
 		return true
 	})
-	if securityPosition == 0 || ownershipPosition == 0 {
-		t.Fatalf("security or ownership integration is missing: security=%d ownership=%d", securityPosition, ownershipPosition)
-	}
-	if securityPosition >= ownershipPosition {
-		t.Fatal("ownership runs before process security and would leak its descriptor into the handoff")
+	if !securityFound {
+		t.Fatal("process security integration is missing")
 	}
 
 	modules := findModulesLiteral(run.Body)

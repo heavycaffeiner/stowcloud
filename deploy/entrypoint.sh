@@ -95,21 +95,21 @@ fi
 # reported as a refused share with the path in the message, which is a better
 # outcome than silently taking ownership of somebody's media library.
 #
-# A directory that is already owned correctly is left alone, and one on a
-# read-only mount is skipped rather than fatal: under `read_only: true` these
-# paths are read-only unless a volume is mounted over them, and the image ships
-# them owned by the build's uid, so there is nothing to fix in that case.
+# A directory that is already owned correctly is left alone, but its children
+# are still reconciled. Chown failures are returned so startup cannot proceed
+# with a partially repaired private directory.
 #
 # -h so a symlink in the data directory is not followed out of it.
 hand_over() {
     dir="$1"
     [ -d "$dir" ] || return 0
-    [ "$(stat -c '%u:%g' "$dir")" = "$PUID:$PGID" ] && return 0
-    if ! chown -h "$PUID:$PGID" "$dir" 2>/dev/null; then
-        echo "stowcloud: $dir is not writable and is owned by $(stat -c '%u:%g' "$dir"), not $PUID:$PGID" >&2
-        return 0
+    if [ "$(stat -c '%u:%g' "$dir")" != "$PUID:$PGID" ]; then
+        if ! chown -h "$PUID:$PGID" "$dir"; then
+            echo "stowcloud: $dir is not writable and is owned by $(stat -c '%u:%g' "$dir"), not $PUID:$PGID" >&2
+            return 1
+        fi
     fi
-    find "$dir" -mindepth 1 -exec chown -h "$PUID:$PGID" {} + 2>/dev/null || true
+    find "$dir" -mindepth 1 \( ! -user "$PUID" -o ! -group "$PGID" \) -exec chown -h "$PUID:$PGID" {} +
 }
 
 # The data directory is this server's alone. The SMB render directory is

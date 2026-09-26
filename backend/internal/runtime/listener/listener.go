@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	hanamibootstrap "github.com/heavycaffeiner/hanami/bootstrap"
@@ -25,13 +26,13 @@ import (
 	fsatomic "github.com/stowcloud/durablefs"
 )
 
-// Config describes the process-local listener selected during bootstrap.
 type Config struct {
 	DataDir string
 	Address string
 	Pinned  bool
 	Plain   bool
 	Logger  *slog.Logger
+	Hosts   func() (app, content []string)
 }
 
 // Application is the product surface the listener needs. It deliberately
@@ -76,19 +77,21 @@ func New(config Config, app Application, router *gin.Engine, admission *hanamibo
 	if config.Plain {
 		protocol = hanamihttp.ProtocolHTTP
 	} else {
-		value, err := ensureCertificate(config.DataDir, config.Address)
+		value, err := ensureCertificate(config.DataDir, config.Address, config.Hosts)
 		if err != nil {
 			return nil, err
 		}
 		cert = &value
 	}
 	serverConfig := hanamihttp.ServerConfig{
-		Address:       config.Address,
-		Protocol:      protocol,
-		Certificate:   cert,
-		Handler:       router,
-		ProbePath:     "/health/ready",
-		ProbeIdentity: "sc-engine",
+		Address:           config.Address,
+		Protocol:          protocol,
+		Certificate:       cert,
+		Handler:           router,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+		ProbePath:         "/health/ready",
+		ProbeIdentity:     "sc-engine",
 	}
 	manager, err := hanamihttp.NewManager(hanamihttp.ManagerConfig{
 		Server: serverConfig, Admission: admission, Controller: controller,
@@ -98,6 +101,12 @@ func New(config Config, app Application, router *gin.Engine, admission *hanamibo
 	}
 	runtime := &Runtime{manager: manager, server: serverConfig, config: config, app: app, logger: logger}
 	app.OnAppHostChange(func() {
+		if !config.Plain {
+			if err := runtime.replaceCertificate(context.Background()); err != nil {
+				logger.Error("the TLS certificate could not be refreshed after a host change", "error", err)
+				return
+			}
+		}
 		if err := runtime.publish(); err != nil {
 			logger.Error("the health probe snapshot could not be updated", "error", err)
 		}
@@ -139,13 +148,29 @@ func (runtime *Runtime) replaceAddress(ctx context.Context, address string) (han
 	return result, err
 }
 
+func (runtime *Runtime) replaceCertificate(ctx context.Context) error {
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	cert, err := ensureCertificate(runtime.config.DataDir, runtime.server.Address, runtime.config.Hosts)
+	if err != nil {
+		return err
+	}
+	next := runtime.server
+	next.Certificate = &cert
+	if _, err := runtime.manager.Replace(ctx, hanamihttp.ReplaceRequest{Server: next}); err != nil {
+		return err
+	}
+	runtime.server = next
+	return nil
+}
+
 func (runtime *Runtime) publish() error {
 	current := runtime.manager.Current()
 	if current.Address == "" {
 		return errors.New("publishing the health probe without a listener")
 	}
 	return WriteProbe(filepath.Join(runtime.config.DataDir, ".probe.json"), Probe{
-		Addr: current.Address, Host: runtime.app.ProbeHost(),
+		Addr: current.Address, Host: runtime.app.ProbeHost(), Plain: runtime.config.Plain,
 	}, durableWriter)
 }
 
@@ -196,7 +221,7 @@ func classifyDurableResults(results []fsatomic.UnitResult, operationErr error) e
 	return fmt.Errorf("durable publication incomplete (%s)", strings.Join(details, "; "))
 }
 
-func ensureCertificate(dataDir, address string) (tls.Certificate, error) {
+func ensureCertificate(dataDir, address string, hostsFn func() (app, content []string)) (tls.Certificate, error) {
 	host, _, err := net.SplitHostPort(address)
 	if err != nil {
 		host = address
@@ -205,6 +230,11 @@ func ensureCertificate(dataDir, address string) (tls.Certificate, error) {
 		host = "127.0.0.1"
 	}
 	hosts := []string{host}
+	if hostsFn != nil {
+		app, content := hostsFn()
+		hosts = append(hosts, app...)
+		hosts = append(hosts, content...)
+	}
 	if host != "localhost" {
 		hosts = append(hosts, "localhost")
 	}

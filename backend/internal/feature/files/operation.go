@@ -337,23 +337,39 @@ func (c *Core) jobsStopped() bool {
 	return c.jobsCtx != nil && c.jobsCtx.Err() != nil
 }
 
-// DrainJobs waits for the work a request started and left running.
+// DrainJobs waits for the work a request started and left running. When ctx
+// ends first, the work is told to stop and waited for, so nothing writes into
+// the databases the caller is about to close.
 func (c *Core) DrainJobs(ctx context.Context) error {
 	for {
 		runnable, err := c.state.HasRunnableOp(ctx, c.clk.Nanos())
 		if err != nil {
-			return err
+			return errors.Join(err, c.stopAndWait())
 		}
 		if !runnable && len(c.jobSlots) == 0 {
 			break
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return errors.Join(ctx.Err(), c.stopAndWait())
 		case <-time.After(5 * time.Millisecond):
 		}
 	}
 	c.StopJobs()
+	return c.jobs.Wait(ctx)
+}
+
+// stopGrace bounds the wait after a stop: long enough for a copy to finish its
+// current item and record the interruption, short enough to keep a restart
+// from hanging on work that ignores the cancel.
+const stopGrace = 5 * time.Second
+
+// stopAndWait cancels detached work and waits a bounded time for it to
+// observe the cancel.
+func (c *Core) stopAndWait() error {
+	c.StopJobs()
+	ctx, cancel := context.WithTimeout(context.Background(), stopGrace)
+	defer cancel()
 	return c.jobs.Wait(ctx)
 }
 

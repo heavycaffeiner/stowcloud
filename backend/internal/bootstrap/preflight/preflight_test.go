@@ -3,13 +3,37 @@
 package preflight
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"slices"
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/system/mountinfo"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/store/instance"
 )
+
+// A second start against a live data directory is refused before it opens,
+// and so before it can migrate, the state database.
+func TestLoadRefusesAHeldDataDirectoryBeforeOpeningState(t *testing.T) {
+	dir := t.TempDir()
+	held, err := instance.Take(dir)
+	if err != nil {
+		t.Fatalf("taking the lock: %v", err)
+	}
+	t.Cleanup(func() {
+		if rerr := held.Release(); rerr != nil {
+			t.Errorf("releasing the lock: %v", rerr)
+		}
+	})
+
+	if _, err := Load(context.Background(), Options{DataDir: dir, SkipRootDiscovery: true}); err == nil {
+		t.Fatal("Load succeeded against a data directory another owner holds")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "state.db")); !os.IsNotExist(err) {
+		t.Fatalf("the refused Load touched state.db: %v", err)
+	}
+}
 
 func TestShareRootsAppliesEachRule(t *testing.T) {
 	xfsBind := t.TempDir()

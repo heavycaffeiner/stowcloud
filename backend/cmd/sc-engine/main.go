@@ -12,11 +12,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"runtime/debug"
 
 	"github.com/heavycaffeiner/hanami"
-	"github.com/heavycaffeiner/hanami/ownership"
 	securitylinux "github.com/heavycaffeiner/hanami/security/linux"
 	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/bootstrap/preflight"
@@ -103,22 +101,20 @@ func run(addr, dataDir string, plain bool) error {
 		},
 		Modules: func(config preflight.Config) fx.Option {
 			return app.Module(app.ModuleConfig{
-				DataDir:   config.DataDir,
-				Address:   config.Address,
-				Pinned:    config.Pinned,
-				Plain:     config.Plain,
-				Hardening: config.Values.Hardening,
-				Revision:  buildRevision(),
-				Logger:    logger,
+				DataDir:      config.DataDir,
+				Address:      config.Address,
+				Pinned:       config.Pinned,
+				Plain:        config.Plain,
+				Hardening:    config.Values.Hardening,
+				Revision:     buildRevision(),
+				Logger:       logger,
+				InstanceLock: config.Lock,
 			})
 		},
 	}
 	options := []hanami.Option[preflight.Config]{
 		securitylinux.WithPolicy(func(config preflight.Config) (securitylinux.Policy, error) {
 			return sandbox.BuildPolicy(config.Values, config.DataDir, config.Roots, config.ShareHosts, config.ExactPaths), nil
-		}),
-		ownership.WithRequirement(func(config preflight.Config) (ownership.Requirement, error) {
-			return ownership.Requirement{LockPath: filepath.Join(config.DataDir, ".stowcloud-instance.lock")}, nil
 		}),
 		hanami.WithLogger[preflight.Config](logger),
 	}
