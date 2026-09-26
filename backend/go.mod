@@ -11,7 +11,7 @@ require (
 	github.com/stowcloud/durablefs v0.1.0
 	github.com/stowcloud/namesearch v0.1.0
 	github.com/stowcloud/sandbox-worker v0.1.0
-	github.com/stowcloud/storage v0.2.0
+	github.com/stowcloud/storage v0.3.0
 	github.com/stowcloud/transfer v0.2.0
 	go.uber.org/fx v1.24.0
 	golang.org/x/crypto v0.56.0
@@ -56,7 +56,6 @@ require (
 	github.com/go-playground/validator/v10 v10.30.3 // indirect
 	github.com/goccy/go-json v0.10.6 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
-	github.com/gofrs/flock v0.13.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.20.0 // indirect

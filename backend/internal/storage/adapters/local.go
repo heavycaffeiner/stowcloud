@@ -226,7 +226,7 @@ func (l *Local) ReadDir(ctx context.Context, path storage.Path) ([]storage.Entry
 	for _, de := range es {
 		child, e := path.Join(de.Name)
 		if e != nil {
-			continue
+			return nil, fmt.Errorf("joining directory entry %q: %w", de.Name, e)
 		}
 		st, e := l.stat(child)
 		if e != nil {

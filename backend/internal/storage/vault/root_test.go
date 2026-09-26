@@ -322,3 +322,121 @@ func TestOpenExternalVeraCryptFixture(t *testing.T) {
 		t.Fatalf("external MARKER.TXT = %q, want %q", got, want)
 	}
 }
+
+func mustSafePath(t *testing.T, s string) vfs.SafePath {
+	t.Helper()
+	p, err := vfs.ParseSafePath(s)
+	if err != nil {
+		t.Fatalf("ParseSafePath(%q): %v", s, err)
+	}
+	return p
+}
+
+func mustPartPath(t *testing.T, suffix string) vfs.SafePath {
+	t.Helper()
+	p, err := vfs.RootPath().JoinControl(".scpart-" + suffix)
+	if err != nil {
+		t.Fatalf("JoinControl: %v", err)
+	}
+	return p
+}
+
+func openTestRootWithScratch(t *testing.T, containerPath, scratch string, create bool) *Root {
+	t.Helper()
+	root, err := Open(context.Background(), Options{
+		Share: vfs.ShareID(1), Config: Config{Container: containerPath, CreateSizeMiB: minContainerDataMiB},
+		Password: secret.New([]byte("end to end test password")), Create: create, ScratchDir: scratch, Policy: vfs.DefaultSharePolicy(),
+	})
+	if err != nil {
+		t.Fatalf("Open(create=%v): %v", create, err)
+	}
+	return root
+}
+
+func TestPartSurvivesVaultRootReopen(t *testing.T) {
+	dir := t.TempDir()
+	container := filepath.Join(dir, "share.hc")
+	scratch := t.TempDir()
+	part, dest := mustPartPath(t, "abcdefghijklmnopqrstuv"), mustSafePath(t, "reopened.txt")
+	root := openTestRootWithScratch(t, container, scratch, true)
+	f, err := root.CreatePart(part)
+	if err != nil {
+		t.Fatalf("CreatePart: %v", err)
+	}
+	body := []byte("persistent vault bytes")
+	if _, werr := f.WriteAt(body, 0); werr != nil {
+		t.Fatalf("WriteAt: %v", werr)
+	}
+	if cerr := f.Close(); cerr != nil {
+		t.Fatalf("Close part: %v", cerr)
+	}
+	if cerr := root.Close(); cerr != nil {
+		t.Fatalf("Close root: %v", cerr)
+	}
+	root = openTestRootWithScratch(t, container, scratch, false)
+	read, err := root.OpenRead(part, vfs.IntentRead)
+	if err != nil {
+		t.Fatalf("OpenRead reopened part: %v", err)
+	}
+	got, err := io.ReadAll(read.OSFile())
+	if closeErr := read.Close(); closeErr != nil {
+		t.Fatalf("Close read: %v", closeErr)
+	}
+	if err != nil {
+		t.Fatalf("Read part: %v", err)
+	}
+	if !bytes.Equal(got, body) {
+		t.Fatalf("reopened part = %q, want %q", got, body)
+	}
+	if _, perr := root.PublishPart(part, dest, false); perr != nil {
+		t.Fatalf("PublishPart: %v", perr)
+	}
+	published, err := root.OpenRead(dest, vfs.IntentRead)
+	if err != nil {
+		t.Fatalf("OpenRead published: %v", err)
+	}
+	got, err = io.ReadAll(published.OSFile())
+	if closeErr := published.Close(); closeErr != nil {
+		t.Fatalf("Close published: %v", closeErr)
+	}
+	if err != nil {
+		t.Fatalf("Read published: %v", err)
+	}
+	if !bytes.Equal(got, body) {
+		t.Fatalf("published bytes = %q, want %q", got, body)
+	}
+	if err := root.Close(); err != nil {
+		t.Fatalf("Close reopened root: %v", err)
+	}
+}
+
+func TestPublishPartUsesPartMtime(t *testing.T) {
+	dir := t.TempDir()
+	root := openTestRoot(t, filepath.Join(dir, "share.hc"), true, minContainerDataMiB)
+	part, dest := mustPartPath(t, "abcdefghijklmnopqrstuw"), mustSafePath(t, "mtime.txt")
+	f, err := root.CreatePart(part)
+	if err != nil {
+		t.Fatalf("CreatePart: %v", err)
+	}
+	if _, werr := f.WriteAt([]byte("mtime bytes"), 0); werr != nil {
+		t.Fatalf("WriteAt: %v", werr)
+	}
+	if cerr := f.Close(); cerr != nil {
+		t.Fatalf("Close part: %v", cerr)
+	}
+	want := int64(1_700_000_123_456_789_000)
+	if serr := root.SetTimes(part, want); serr != nil {
+		t.Fatalf("SetTimes(part): %v", serr)
+	}
+	if _, perr := root.PublishPart(part, dest, false); perr != nil {
+		t.Fatalf("PublishPart: %v", perr)
+	}
+	st, err := root.Stat(dest)
+	if err != nil {
+		t.Fatalf("Stat published: %v", err)
+	}
+	// The container stores FAT timestamps, which resolve to two seconds.
+	if diff := st.MtimeNs - want; diff < -2_000_000_000 || diff > 2_000_000_000 {
+		t.Fatalf("published mtime = %d, want %d within the container's resolution", st.MtimeNs, want)
+	}
+}

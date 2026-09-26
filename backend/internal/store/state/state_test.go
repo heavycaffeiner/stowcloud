@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/concurrency"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/store/dbfile"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/store/ident"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
@@ -723,6 +724,36 @@ func TestSearchSettingsDoNotDropEachOther(t *testing.T) {
 	}
 	if !on {
 		t.Error("the switch did not survive")
+	}
+}
+
+func TestSearchSettingsConcurrentUpdatesKeepBothKeys(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	d, _ := open(t)
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	concurrency.Go(ctx, "test: enable the index", func() {
+		<-start
+		errs <- d.SetIndexNameEnabled(ctx, true)
+	})
+	concurrency.Go(ctx, "test: record the build rate", func() {
+		<-start
+		errs <- d.SetIndexBuildRate(ctx, 1234)
+	})
+	close(start)
+	for range 2 {
+		if err := <-errs; err != nil {
+			t.Fatalf("concurrent settings update: %v", err)
+		}
+	}
+	on, err := d.IndexNameEnabled(ctx)
+	if err != nil || !on {
+		t.Fatalf("IndexNameEnabled = %v, %v", on, err)
+	}
+	rate, err := d.IndexBuildRate(ctx)
+	if err != nil || rate != 1234 {
+		t.Fatalf("IndexBuildRate = %d, %v", rate, err)
 	}
 }
 

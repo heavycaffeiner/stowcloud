@@ -3,7 +3,9 @@
 package objstore
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -37,7 +39,48 @@ type fakeBucket struct {
 	copyFailAt              int
 	copyErrorStatus         int
 	copyErrorBody           []byte
+	putCalls                int
+	putFailAt               int
+	putErrorStatus          int
+	putErrorBody            []byte
 	requireSignedCopySource bool
+}
+
+func (b *fakeBucket) handlePut(w http.ResponseWriter, r *http.Request, key string) {
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	b.mu.Lock()
+	b.putCalls++
+	putCall := b.putCalls
+	if b.putFailAt > 0 && putCall >= b.putFailAt {
+		status := b.putErrorStatus
+		if status == 0 {
+			status = http.StatusInternalServerError
+		}
+		body := append([]byte(nil), b.putErrorBody...)
+		b.mu.Unlock()
+		w.Header().Set("Content-Type", "application/xml")
+		w.WriteHeader(status)
+		mustWriteTestResponse(w, body)
+		return
+	}
+	if r.Header.Get("If-None-Match") == "*" {
+		if _, exists := b.objects[key]; exists {
+			b.mu.Unlock()
+			w.Header().Set("Content-Type", "application/xml")
+			w.WriteHeader(http.StatusPreconditionFailed)
+			mustWriteTestResponse(w, []byte(`<Error><Code>PreconditionFailed</Code><Message>object exists</Message></Error>`))
+			return
+		}
+	}
+	b.objects[key] = data
+	b.mtimes[key] = b.clk.Now()
+	b.mu.Unlock()
+	w.Header().Set("ETag", `"x"`)
+	w.WriteHeader(http.StatusOK)
 }
 
 func newFakeBucket() *fakeBucket {
@@ -214,20 +257,6 @@ func (b *fakeBucket) handleGet(w http.ResponseWriter, key string) {
 		return
 	}
 	mustWriteTestResponse(w, content)
-}
-
-func (b *fakeBucket) handlePut(w http.ResponseWriter, r *http.Request, key string) {
-	data, err := io.ReadAll(r.Body)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	b.mu.Lock()
-	b.objects[key] = data
-	b.mtimes[key] = b.clk.Now()
-	b.mu.Unlock()
-	w.Header().Set("ETag", `"x"`)
-	w.WriteHeader(http.StatusOK)
 }
 
 func (b *fakeBucket) handleDelete(w http.ResponseWriter, key string) {
@@ -715,4 +744,135 @@ func hasEntry(entries []vfs.DirEntry, name string, kind vfs.Kind) bool {
 		}
 	}
 	return false
+}
+
+func openTestRootWithScratch(t *testing.T, endpoint, bucket, prefix, scratch string) *Root {
+	t.Helper()
+	root, err := Open(context.Background(), Options{
+		Share:  vfs.ShareID(7),
+		Config: Config{Endpoint: endpoint, Region: "us-east-1", Bucket: bucket, Prefix: prefix, AccessKey: "AKIAEXAMPLE", PathStyle: true},
+		Secret: secret.New([]byte("supersecretkey")), ScratchDir: scratch, Policy: vfs.DefaultSharePolicy(), Clock: fixedTestClock(),
+	})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	return root
+}
+
+func mustPartPath(t *testing.T, seed byte) vfs.SafePath {
+	t.Helper()
+	encoded := base64.RawURLEncoding.EncodeToString([]byte{seed, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16})[:22]
+	p, err := vfs.RootPath().JoinControl(".scpart-" + encoded)
+	if err != nil {
+		t.Fatalf("JoinControl: %v", err)
+	}
+	return p
+}
+
+func TestPublishPartRetainsPartAfterPutFailure(t *testing.T) {
+	srv, fb := newFakeS3Server(t, "bucket-put-failure")
+	root := openTestRoot(t, srv.URL, "bucket-put-failure", "team")
+	part := mustPartPath(t, 1)
+	f, err := root.CreatePart(part)
+	if err != nil {
+		t.Fatalf("CreatePart: %v", err)
+	}
+	body := []byte("retryable part")
+	if _, err := f.WriteAt(body, 0); err != nil {
+		t.Fatalf("WriteAt: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	fb.putFailAt = 1
+	if _, err := root.PublishPart(part, mustSafePath(t, "retry.txt"), true); err == nil {
+		t.Fatal("PublishPart succeeded despite backend PutObject failure")
+	}
+	fb.putFailAt = 0
+	if _, err := root.PublishPart(part, mustSafePath(t, "retry.txt"), true); err != nil {
+		t.Fatalf("retry PublishPart: %v", err)
+	}
+	fb.mu.Lock()
+	got := append([]byte(nil), fb.objects["team/retry.txt"]...)
+	fb.mu.Unlock()
+	if !bytes.Equal(got, body) {
+		t.Fatalf("published bytes = %q, want %q", got, body)
+	}
+}
+
+func TestPartSurvivesObjstoreRootReopen(t *testing.T) {
+	srv, fb := newFakeS3Server(t, "bucket-reopen")
+	scratch := t.TempDir()
+	part, dest := mustPartPath(t, 2), mustSafePath(t, "reopened.txt")
+	root := openTestRootWithScratch(t, srv.URL, "bucket-reopen", "team", scratch)
+	f, err := root.CreatePart(part)
+	if err != nil {
+		t.Fatalf("CreatePart: %v", err)
+	}
+	body := []byte("persistent staged bytes")
+	if _, werr := f.WriteAt(body, 0); werr != nil {
+		t.Fatalf("WriteAt: %v", werr)
+	}
+	if cerr := f.Close(); cerr != nil {
+		t.Fatalf("Close: %v", cerr)
+	}
+	if cerr := root.Close(); cerr != nil {
+		t.Fatalf("Close root: %v", cerr)
+	}
+	root = openTestRootWithScratch(t, srv.URL, "bucket-reopen", "team", scratch)
+	read, err := root.OpenRead(part, vfs.IntentRead)
+	if err != nil {
+		t.Fatalf("OpenRead reopened part: %v", err)
+	}
+	got, err := io.ReadAll(read.OSFile())
+	if closeErr := read.Close(); closeErr != nil {
+		t.Fatalf("close part read: %v", closeErr)
+	}
+	if err != nil {
+		t.Fatalf("read part: %v", err)
+	}
+	if !bytes.Equal(got, body) {
+		t.Fatalf("reopened part = %q, want %q", got, body)
+	}
+	if _, err := root.PublishPart(part, dest, false); err != nil {
+		t.Fatalf("PublishPart reopened part: %v", err)
+	}
+	fb.mu.Lock()
+	published := append([]byte(nil), fb.objects["team/reopened.txt"]...)
+	fb.mu.Unlock()
+	if !bytes.Equal(published, body) {
+		t.Fatalf("published reopened bytes = %q, want %q", published, body)
+	}
+	if err := root.Close(); err != nil {
+		t.Fatalf("Close reopened root: %v", err)
+	}
+}
+
+func TestPublishPartNoClobberPreservesDestination(t *testing.T) {
+	srv, fb := newFakeS3Server(t, "bucket-no-clobber")
+	root := openTestRoot(t, srv.URL, "bucket-no-clobber", "team")
+	dest := mustSafePath(t, "existing.txt")
+	if _, err := root.WriteDurable(dest, vfs.DurableOpts{}, func(f *vfs.File) error { _, err := f.WriteAt([]byte("keep"), 0); return err }); err != nil {
+		t.Fatalf("seed destination: %v", err)
+	}
+	part := mustPartPath(t, 3)
+	f, err := root.CreatePart(part)
+	if err != nil {
+		t.Fatalf("CreatePart: %v", err)
+	}
+	if _, err := f.WriteAt([]byte("replace"), 0); err != nil {
+		t.Fatalf("WriteAt: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, err := root.PublishPart(part, dest, false); !errors.Is(err, vfs.ErrExists) {
+		t.Fatalf("PublishPart no-clobber = %v, want ErrExists", err)
+	}
+	fb.mu.Lock()
+	got := append([]byte(nil), fb.objects["team/existing.txt"]...)
+	fb.mu.Unlock()
+	if string(got) != "keep" {
+		t.Fatalf("destination = %q, want keep", got)
+	}
 }

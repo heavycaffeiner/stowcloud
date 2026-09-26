@@ -29,26 +29,35 @@ type Aggregate struct {
 // since both call for recomputation.
 func (d *DB) DirEtag(
 	ctx context.Context, share vfs.ShareID, id ident.FileID,
-) (Aggregate, bool, error) {
-	current, err := d.ShareGen(ctx, share)
+) (agg Aggregate, ok bool, err error) {
+	// One read transaction, so the generation and the row come from the same
+	// snapshot and a concurrent bump cannot pass a stale row as current.
+	tx, err := d.SQL().BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
-		return Aggregate{}, false, err
+		return Aggregate{}, false, fmt.Errorf("beginning aggregate read: %w", err)
 	}
-
+	defer func() {
+		if rerr := tx.Rollback(); rerr != nil && !errors.Is(rerr, sql.ErrTxDone) {
+			err = errors.Join(err, rerr)
+		}
+	}()
+	var current int64
+	if genErr := tx.QueryRowContext(ctx, `SELECT COALESCE((SELECT gen FROM share_gen WHERE share = ?), 0)`, int64(share)).Scan(&current); genErr != nil {
+		return Aggregate{}, false, fmt.Errorf("reading the generation of share %d: %w", share, genErr)
+	}
 	var (
 		etag          string
 		rsize, rcount int64
 		gen, valid    int64
 	)
-	err = d.st.readDiretag.QueryRowContext(ctx, int64(share), int64(id)).
-		Scan(&etag, &rsize, &rcount, &gen, &valid)
+	err = tx.QueryRowContext(ctx, `SELECT etag, rsize, rcount, gen, valid FROM diretag WHERE share = ? AND fileid = ?`, int64(share), int64(id)).Scan(&etag, &rsize, &rcount, &gen, &valid)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Aggregate{}, false, nil
 	}
 	if err != nil {
 		return Aggregate{}, false, fmt.Errorf("reading the aggregate for node %d: %w", id, err)
 	}
-	if valid == 0 || sizeFromSQL(gen) != current {
+	if valid == 0 || sizeFromSQL(gen) != sizeFromSQL(current) {
 		return Aggregate{}, false, nil
 	}
 	return Aggregate{Etag: etag, RSize: sizeFromSQL(rsize), RCount: sizeFromSQL(rcount)}, true, nil

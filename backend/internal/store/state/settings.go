@@ -55,30 +55,31 @@ func (d *DB) Settings(ctx context.Context) (map[string]any, error) {
 // singleton insert on a fresh database.
 func (d *DB) MergeSettings(ctx context.Context, section string, value any) error {
 	return d.Write(ctx, func(tx *sql.Tx) error {
-		merged := map[string]any{}
-		var raw string
-		switch err := tx.QueryRowContext(ctx, sqlReadSettings).Scan(&raw); {
-		case err == nil:
-			if raw != "" {
-				if jerr := json.Unmarshal([]byte(raw), &merged); jerr != nil {
-					return jerr
-				}
-			}
-		case errors.Is(err, sql.ErrNoRows):
-			// No document exists yet, so this writes one holding just this
-			// section.
-		default:
-			return err
-		}
-
-		merged[section] = mergeKeys(merged[section], value)
-		encoded, jerr := json.Marshal(merged)
-		if jerr != nil {
-			return jerr
-		}
-		_, eerr := tx.ExecContext(ctx, sqlWriteSettings, string(encoded))
-		return eerr
+		return mergeSettingsTx(ctx, tx, section, value)
 	})
+}
+
+func mergeSettingsTx(ctx context.Context, tx *sql.Tx, section string, value any) error {
+	merged := map[string]any{}
+	var raw string
+	switch err := tx.QueryRowContext(ctx, sqlReadSettings).Scan(&raw); {
+	case err == nil:
+		if raw != "" {
+			if jerr := json.Unmarshal([]byte(raw), &merged); jerr != nil {
+				return jerr
+			}
+		}
+	case errors.Is(err, sql.ErrNoRows):
+	default:
+		return err
+	}
+	merged[section] = mergeKeys(merged[section], value)
+	encoded, jerr := json.Marshal(merged)
+	if jerr != nil {
+		return jerr
+	}
+	_, eerr := tx.ExecContext(ctx, sqlWriteSettings, string(encoded))
+	return eerr
 }
 
 // mergeKeys folds a section patch over what is stored, and only when both
@@ -101,18 +102,6 @@ func mergeKeys(stored, patch any) any {
 	return out
 }
 
-// searchSection is the stored search settings, or an empty document when
-// there are none. The section holds values written by different callers at
-// different times, so reading it whole before writing either is what keeps
-// one from dropping the other.
-func searchSection(all map[string]any) map[string]any {
-	section, ok := all["search"].(map[string]any)
-	if !ok || section == nil {
-		return map[string]any{}
-	}
-	return section
-}
-
 // IndexNameEnabled reports whether the name index is enabled. An absent value
 // means off, since building one is a deliberate choice somebody must make.
 func (d *DB) IndexNameEnabled(ctx context.Context) (bool, error) {
@@ -133,13 +122,9 @@ func (d *DB) IndexNameEnabled(ctx context.Context) (bool, error) {
 // than replacing it, so storing the switch does not drop the measured build
 // rate stored beside it.
 func (d *DB) SetIndexNameEnabled(ctx context.Context, enabled bool) error {
-	all, err := d.Settings(ctx)
-	if err != nil {
-		return err
-	}
-	section := searchSection(all)
-	section["name_index_enabled"] = enabled
-	return d.MergeSettings(ctx, "search", section)
+	return d.Write(ctx, func(tx *sql.Tx) error {
+		return mergeSettingsTx(ctx, tx, "search", map[string]any{"name_index_enabled": enabled})
+	})
 }
 
 // IndexBuildRate is the entries-per-second the last completed build
@@ -169,13 +154,9 @@ func (d *DB) IndexBuildRate(ctx context.Context) (uint64, error) {
 // estimate comes from this corpus on this disk instead of an untimed
 // constant.
 func (d *DB) SetIndexBuildRate(ctx context.Context, rate uint64) error {
-	all, err := d.Settings(ctx)
-	if err != nil {
-		return err
-	}
-	section := searchSection(all)
-	section["build_rate"] = rate
-	return d.MergeSettings(ctx, "search", section)
+	return d.Write(ctx, func(tx *sql.Tx) error {
+		return mergeSettingsTx(ctx, tx, "search", map[string]any{"build_rate": rate})
+	})
 }
 
 // FileBytes is how much disk this database occupies, which is what the

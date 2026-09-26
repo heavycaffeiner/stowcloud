@@ -5,21 +5,22 @@ package objstore
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
-	"log/slog"
-	"math"
-	"net/http"
-	"sync"
-
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/limits"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vfs"
 	"github.com/stowcloud/storage"
 	publics3 "github.com/stowcloud/storage/s3"
+	"io"
+	"log/slog"
+	"math"
+	"net/http"
+	"strings"
 )
 
 const objstoreDeviceTag = uint64(0x6f626a73_00000000)
@@ -37,8 +38,6 @@ type Options struct {
 	Clock      clock.Clock
 }
 
-type partHandle struct{ scratch vfs.SafePath }
-
 type Root struct {
 	share   vfs.ShareID
 	cfg     Config
@@ -46,8 +45,7 @@ type Root struct {
 	scratch *vfs.ShareRoot
 	backend *publics3.Root
 	dev     uint64
-	mu      sync.Mutex
-	parts   map[string]partHandle
+	logger  *slog.Logger
 }
 
 var _ vfs.Root = (*Root)(nil)
@@ -61,7 +59,11 @@ func Open(ctx context.Context, opt Options) (*Root, error) {
 	if err != nil {
 		return nil, errors.Join(fmt.Errorf("objstore: open %s: %w", opt.Config.Describe(), err), scratch.Close())
 	}
-	return &Root{share: opt.Share, cfg: opt.Config, policy: opt.Policy, scratch: scratch, backend: backend, dev: syntheticDevice(opt.Share), parts: make(map[string]partHandle)}, nil
+	logger := opt.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &Root{share: opt.Share, cfg: opt.Config, policy: opt.Policy, scratch: scratch, backend: backend, dev: syntheticDevice(opt.Share), logger: logger}, nil
 }
 
 func (r *Root) ID() vfs.ShareID                         { return r.share }
@@ -74,8 +76,10 @@ func (r *Root) IsScratch() bool                         { return false }
 func (r *Root) Alive() error                            { return mapErr(r.backend.Alive(context.Background())) }
 func (r *Root) Close() error                            { return errors.Join(r.backend.Close(), r.scratch.Close()) }
 func (r *Root) Space(vfs.SafePath) (vfs.FsSpace, error) { return r.scratch.Space(vfs.RootPath()) }
-func (r *Root) SetTimes(vfs.SafePath, int64) error      { return nil }
-func (r *Root) ObjectKey(p vfs.SafePath) string         { return r.backend.ObjectKey(mustStoragePath(p)) }
+
+// Object stores assign Last-Modified; client mtime cannot be persisted.
+func (r *Root) SetTimes(vfs.SafePath, int64) error { return nil }
+func (r *Root) ObjectKey(p vfs.SafePath) string    { return r.backend.ObjectKey(mustStoragePath(p)) }
 
 func storagePath(p vfs.SafePath) (storage.Path, error) { return storage.ParsePath(p.String()) }
 func mustStoragePath(p vfs.SafePath) storage.Path {
@@ -109,6 +113,18 @@ func mintScratchPath() (vfs.SafePath, error) {
 	}
 	return vfs.RootPath().JoinControl(".scpart-" + hex.EncodeToString(suffix[:]))
 }
+func scratchPartPath(p vfs.SafePath) (vfs.SafePath, error) {
+	h := sha256.Sum256([]byte(p.String()))
+	return vfs.RootPath().JoinControl(".scpart-p-" + hex.EncodeToString(h[:]))
+}
+func isPartPath(p vfs.SafePath) bool {
+	name := p.Name()
+	if !strings.HasPrefix(name, ".scpart-") || len(name) != len(".scpart-")+22 {
+		return false
+	}
+	_, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(name, ".scpart-"))
+	return err == nil
+}
 func (r *Root) newScratchFile() (*vfs.File, vfs.SafePath, error) {
 	p, err := mintScratchPath()
 	if err != nil {
@@ -119,6 +135,13 @@ func (r *Root) newScratchFile() (*vfs.File, vfs.SafePath, error) {
 }
 
 func (r *Root) Stat(p vfs.SafePath) (vfs.Stat, error) {
+	if isPartPath(p) {
+		sp, err := scratchPartPath(p)
+		if err != nil {
+			return vfs.Stat{}, err
+		}
+		return r.scratch.Stat(sp)
+	}
 	e, err := r.backend.Stat(context.Background(), mustStoragePath(p))
 	if err != nil {
 		return vfs.Stat{}, mapErr(err)
@@ -188,7 +211,14 @@ func (r *Root) ReadDirFunc(p vfs.SafePath, policy vfs.ReservedPolicy, fn func(vf
 	}
 	return nil
 }
-func (r *Root) OpenRead(p vfs.SafePath, _ vfs.AccessIntent) (*vfs.File, error) {
+func (r *Root) OpenRead(p vfs.SafePath, intent vfs.AccessIntent) (*vfs.File, error) {
+	if isPartPath(p) {
+		sp, err := scratchPartPath(p)
+		if err != nil {
+			return nil, err
+		}
+		return r.scratch.OpenRead(sp, intent)
+	}
 	m, err := r.backend.Materialize(context.Background(), mustStoragePath(p))
 	if err != nil {
 		return nil, mapErr(err)
@@ -209,27 +239,22 @@ func (r *Root) OpenRead(p vfs.SafePath, _ vfs.AccessIntent) (*vfs.File, error) {
 	return f, nil
 }
 func (r *Root) CreatePart(p vfs.SafePath) (*vfs.File, error) {
-	f, scratch, err := r.newScratchFile()
-	if err == nil {
-		r.mu.Lock()
-		r.parts[p.String()] = partHandle{scratch}
-		r.mu.Unlock()
+	sp, err := scratchPartPath(p)
+	if err != nil {
+		return nil, err
 	}
-	return f, err
+	return r.scratch.CreatePart(sp)
 }
 func (r *Root) PublishPart(part, dest vfs.SafePath, replacing bool) (d vfs.Durable, retErr error) {
-	r.mu.Lock()
-	ph, ok := r.parts[part.String()]
-	delete(r.parts, part.String())
-	r.mu.Unlock()
-	if !ok {
-		return vfs.Durable{}, fmt.Errorf("publish part: %w", vfs.ErrNotFound)
-	}
-	f, err := r.scratch.OpenRead(ph.scratch, vfs.IntentRead)
+	sp, err := scratchPartPath(part)
 	if err != nil {
-		return vfs.Durable{}, errors.Join(err, r.scratch.Unlink(ph.scratch))
+		return vfs.Durable{}, err
 	}
-	defer func() { retErr = errors.Join(retErr, f.Close(), r.scratch.Unlink(ph.scratch)) }()
+	f, err := r.scratch.OpenRead(sp, vfs.IntentRead)
+	if err != nil {
+		return vfs.Durable{}, err
+	}
+	defer func() { r.releaseScratch(f, sp, retErr == nil) }()
 	st, err := f.Stat()
 	if err != nil {
 		return vfs.Durable{}, err
@@ -241,21 +266,30 @@ func (r *Root) PublishPart(part, dest vfs.SafePath, replacing bool) (d vfs.Durab
 	if statErr != nil && !errors.Is(statErr, publics3.ErrNotFound) {
 		return vfs.Durable{}, mapErr(statErr)
 	}
+	if statErr == nil && existed.Kind == storage.KindDirectory {
+		return vfs.Durable{}, fmt.Errorf("publish part: %w", vfs.ErrIsDirectory)
+	}
 	if statErr == nil && !replacing {
 		return vfs.Durable{}, fmt.Errorf("publish part: %w", vfs.ErrExists)
 	}
 	size := int64(st.Size)
-	if putErr := r.backend.PutObject(context.Background(), mustStoragePath(dest), io.NewSectionReader(f.OSFile(), 0, size), size); putErr != nil {
+	var putErr error
+	if replacing {
+		putErr = r.backend.PutObject(context.Background(), mustStoragePath(dest), io.NewSectionReader(f.OSFile(), 0, size), size)
+	} else {
+		putErr = r.backend.PutObjectNoClobber(context.Background(), mustStoragePath(dest), io.NewSectionReader(f.OSFile(), 0, size), size)
+	}
+	if putErr != nil {
 		return vfs.Durable{}, mapErr(putErr)
 	}
-	return vfs.Durable{Replaced: statErr == nil && existed.Kind != storage.KindOther}, nil
+	return vfs.Durable{Replaced: statErr == nil}, nil
 }
 func (r *Root) WriteDurable(p vfs.SafePath, opt vfs.DurableOpts, write func(*vfs.File) error) (d vfs.Durable, retErr error) {
 	f, scratch, err := r.newScratchFile()
 	if err != nil {
 		return vfs.Durable{}, err
 	}
-	defer func() { retErr = errors.Join(retErr, f.Close(), r.scratch.Unlink(scratch)) }()
+	defer func() { r.releaseScratch(f, scratch, true) }()
 	if writeErr := write(f); writeErr != nil {
 		return vfs.Durable{}, writeErr
 	}
@@ -273,23 +307,51 @@ func (r *Root) WriteDurable(p vfs.SafePath, opt vfs.DurableOpts, write func(*vfs
 	if statErr != nil && !errors.Is(statErr, publics3.ErrNotFound) {
 		return vfs.Durable{}, mapErr(statErr)
 	}
-	if statErr == nil && opt.NoClobber {
-		return vfs.Durable{}, fmt.Errorf("write durable: %w", vfs.ErrExists)
+	if statErr == nil && existing.Kind == storage.KindDirectory {
+		return vfs.Durable{}, fmt.Errorf("write durable: %w", vfs.ErrIsDirectory)
 	}
 	size := int64(st.Size)
-	if putErr := r.backend.PutObject(context.Background(), mustStoragePath(p), io.NewSectionReader(f.OSFile(), 0, size), size); putErr != nil {
+	var putErr error
+	if opt.NoClobber {
+		putErr = r.backend.PutObjectNoClobber(context.Background(), mustStoragePath(p), io.NewSectionReader(f.OSFile(), 0, size), size)
+	} else {
+		putErr = r.backend.PutObject(context.Background(), mustStoragePath(p), io.NewSectionReader(f.OSFile(), 0, size), size)
+	}
+	if putErr != nil {
 		return vfs.Durable{}, mapErr(putErr)
 	}
-	return vfs.Durable{Replaced: statErr == nil && existing.Kind != storage.KindOther}, nil
+	return vfs.Durable{Replaced: statErr == nil}, nil
+}
+
+// releaseScratch closes a scratch file and, when asked, removes it. A failure
+// here follows a committed publication, so it is logged rather than returned:
+// the sweep collects what is left behind.
+func (r *Root) releaseScratch(f *vfs.File, p vfs.SafePath, unlink bool) {
+	if err := f.Close(); err != nil {
+		r.logger.Warn("objstore: closing a scratch file", "path", p.String(), "error", err)
+	}
+	if !unlink {
+		return
+	}
+	if err := r.scratch.Unlink(p); err != nil && !errors.Is(err, vfs.ErrNotFound) {
+		r.logger.Warn("objstore: removing a scratch file", "path", p.String(), "error", err)
+	}
 }
 func (r *Root) Mkdir(p vfs.SafePath) error {
 	return mapErr(r.backend.Mkdir(context.Background(), mustStoragePath(p)))
 }
+func (r *Root) Unlink(p vfs.SafePath) error {
+	if isPartPath(p) {
+		sp, err := scratchPartPath(p)
+		if err != nil {
+			return err
+		}
+		return r.scratch.Unlink(sp)
+	}
+	return mapErr(r.backend.Unlink(context.Background(), mustStoragePath(p)))
+}
 func (r *Root) Rmdir(p vfs.SafePath) error {
 	return mapErr(r.backend.Rmdir(context.Background(), mustStoragePath(p)))
-}
-func (r *Root) Unlink(p vfs.SafePath) error {
-	return mapErr(r.backend.Unlink(context.Background(), mustStoragePath(p)))
 }
 func (r *Root) Rename(from, to vfs.SafePath, noReplace bool) error {
 	var err error
