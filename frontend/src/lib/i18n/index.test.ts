@@ -25,18 +25,18 @@ vi.mock('./ko.json', () => ({
 
 import { formatModifiedDateNs, t, tp, setLocale } from './index'
 
-beforeEach(() => {
-  setLocale('en')
+beforeEach(async () => {
+  await setLocale('en')
 })
 
 describe('translation lookup', () => {
-  it('preserves flat keys, interpolation, raw unknown keys and Korean fallback', () => {
+  it('preserves flat keys, interpolation, raw unknown keys and Korean fallback', async () => {
     expect(t('test.greeting', { name: '<Alice & Bob>' })).toBe('Hello <Alice & Bob>!')
     expect(t('test.greeting')).toBe('Hello {name}!')
     expect(t('test.empty')).toBe('')
     expect(t('test.only_korean')).toBe('한국어 fallback')
     expect(t('test.unknown')).toBe('test.unknown')
-    setLocale('ko')
+    await setLocale('ko')
     expect(t('test.greeting', { name: 'Kim' })).toBe('안녕하세요 Kim!')
   })
 })
@@ -68,8 +68,8 @@ describe('tp', () => {
     expect(tp('test.items', 1, { count: 'one' })).toBe('one item')
   })
 
-  it('works when switching to Korean locale', () => {
-    setLocale('ko')
+  it('works when switching to Korean locale', async () => {
+    await setLocale('ko')
     expect(tp('test.items', 1)).toBe('항목 1개')
     expect(tp('test.items', 0)).toBe('항목 0개')
     expect(tp('test.items', 5)).toBe('항목 5개')
@@ -82,10 +82,10 @@ describe('tp', () => {
 describe('formatModifiedDateNs', () => {
   const nanoseconds = (date: Date) => (BigInt(date.getTime()) * 1_000_000n).toString()
 
-  it('keeps day before month and 24-hour time in both languages', () => {
+  it('keeps day before month and 24-hour time in both languages', async () => {
     const stamp = nanoseconds(new Date(2026, 8, 17, 18, 4, 59))
     expect(formatModifiedDateNs(stamp)).toBe('2026-17-09 18:04')
-    setLocale('ko')
+    await setLocale('ko')
     expect(formatModifiedDateNs(stamp)).toBe('2026-17-09 18:04')
   })
 

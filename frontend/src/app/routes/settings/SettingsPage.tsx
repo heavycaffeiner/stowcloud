@@ -80,7 +80,7 @@ export function SettingsPage() {
             else restoreValue(group, theme)
           }}
           onLocaleChange={(value, group) => {
-            if (value === 'ko' || value === 'en') setLocale(value)
+            if (value === 'ko' || value === 'en') void setLocale(value).catch(() => restoreValue(group, locale))
             else restoreValue(group, locale)
           }}
           onConcurrencyChange={(value, group) => {

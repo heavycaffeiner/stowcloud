@@ -5,8 +5,8 @@ import { formatEntrySize } from './entry-size'
 describe('formatEntrySize', () => {
   // The label goes through `t()`, and the locale defaults to Korean when
   // there is no localStorage to read a choice from, as in a test.
-  beforeEach(() => {
-    setLocale('en')
+  beforeEach(async () => {
+    await setLocale('en')
   })
 
   it('formats unencrypted files using formatBytes directly', () => {
