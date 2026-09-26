@@ -3,7 +3,7 @@
 // this one, so it is omitted here.
 /// <reference lib="webworker" />
 
-// frontend/src/service-worker.ts answers two synthetic same-origin prefixes on
+// frontend/src/workers/service-worker.ts answers two synthetic same-origin prefixes on
 // behalf of the page that registered them: one-shot downloads at
 // /sc-download/<id>, and seekable, Range-capable media at /sc-media/<token>.
 // See download-sw.ts for the page-side protocol. Precaches nothing.
@@ -11,13 +11,8 @@
 // the default lib set; the cast picks the worker-only shape this file uses.
 const worker = self as unknown as ServiceWorkerGlobalScope
 
-// A newly-installed worker takes over every open tab immediately rather
-// than waiting for each to close and reopen: someone who has just unlocked
-// a share for the first time should get a working download on the very
-// next click, not after a second reload they have no reason to expect.
-worker.addEventListener('install', () => {
-  worker.skipWaiting()
-})
+// Do not call skipWaiting here: an older worker may still own in-memory
+// download streams. Waiting for it to become idle preserves those claims.
 worker.addEventListener('activate', (event) => {
   event.waitUntil(worker.clients.claim())
 })

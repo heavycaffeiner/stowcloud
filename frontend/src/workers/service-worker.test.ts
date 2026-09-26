@@ -1,4 +1,4 @@
-// frontend/src/service-worker.test.ts: unit coverage for the pure pieces of the
+// frontend/src/workers/service-worker.test.ts: unit coverage for the pure pieces of the
 // worker: header building, Range parsing, and the one-shot download claim.
 // The `fetch`/`install`/`activate` listeners themselves need a real
 // `ServiceWorkerGlobalScope` (`self.clients`, `FetchEvent`) this jsdom
