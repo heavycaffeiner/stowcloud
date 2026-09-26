@@ -14,7 +14,7 @@ export function ListItem({ selected = false, onClick, onclick, leading, trailing
   const action = onClick ?? onclick
   return (
     <div
-      className={`sc-list-item${selected ? ' sc-list-item--selected' : ''}${action ? ' sc-list-item--clickable' : ''}`}
+      className={`sc-list-item${selected ? ' sc-list-item-selected' : ''}${action ? ' sc-list-item-clickable' : ''}`}
       onClick={action}
       role={action ? 'button' : 'presentation'}
       tabIndex={action ? 0 : undefined}

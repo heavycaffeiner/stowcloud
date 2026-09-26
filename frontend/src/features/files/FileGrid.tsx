@@ -231,12 +231,12 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
   }
 
   const cardElement = (entry: Entry | undefined, index: number, isFolder: boolean, col: number) => {
-    if (!entry) return <div key={`skeleton-${index}`} className={`sc-file-grid-card sc-file-grid-card--${isFolder ? 'folder' : 'file'} sc-file-grid-skeleton`} style={{ width: cardW }} aria-busy="true"><span className="sc-file-grid-skeleton-line" />{!isFolder ? <span className="sc-file-grid-skeleton-block" /> : null}</div>
+    if (!entry) return <div key={`skeleton-${index}`} className={`sc-file-grid-card sc-file-grid-card-${isFolder ? 'folder' : 'file'} sc-file-grid-skeleton`} style={{ width: cardW }} aria-busy="true"><span className="sc-file-grid-skeleton-line" />{!isFolder ? <span className="sc-file-grid-skeleton-block" /> : null}</div>
     const selected = names.has(entry.name)
     const focusedCard = focusedName === entry.name
     const icon = entry.kind === 'dir' ? 'folder' : isVideoFile(entry.name) ? 'video' : entry.preview?.available ? 'image' : 'file'
     return (
-      <div id={domId(entry.name)} key={entry.path} className={`sc-file-grid-card sc-file-grid-card--${isFolder ? 'folder' : 'file'}${selected ? ' sc-file-grid-card--selected' : ''}${focusedCard ? ' sc-file-grid-card--focused' : ''}`} role="gridcell" aria-colindex={col + 1} aria-selected={selected} style={{ width: cardW }} {...activation.handlers(entry, index)} onContextMenu={(event) => { activation.cancel(); event.preventDefault(); event.stopPropagation(); onContextMenu(entry, event) }}>
+      <div id={domId(entry.name)} key={entry.path} className={`sc-file-grid-card sc-file-grid-card-${isFolder ? 'folder' : 'file'}${selected ? ' sc-file-grid-card-selected' : ''}${focusedCard ? ' sc-file-grid-card-focused' : ''}`} role="gridcell" aria-colindex={col + 1} aria-selected={selected} style={{ width: cardW }} {...activation.handlers(entry, index)} onContextMenu={(event) => { activation.cancel(); event.preventDefault(); event.stopPropagation(); onContextMenu(entry, event) }}>
         <FileCardHeader entry={entry} isFolder={isFolder} selected={selected} menuFor={menuFor} onToggle={() => selection.toggle(entry.name, index)} onCancel={activation.cancel} onContextMenu={(event) => onContextMenu(entry, event)} />
         {!isFolder ? <>
           <div className="sc-file-grid-thumb"><Thumbnail entry={entry} dim={512} fallback={icon} iconSize={40} /></div>
@@ -259,7 +259,7 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
 
   const active = focusedName && document.getElementById(domId(focusedName)) ? domId(focusedName) : undefined
   return (
-    <div ref={viewport} data-density={density} className={`sc-file-grid sc-file-grid--contained${names.size ? ' sc-file-grid--reserve-selection' : ''}`} style={{ touchAction: 'manipulation' }} role="grid" aria-multiselectable="true" aria-rowcount={folderRows + fileRows} aria-colcount={columns} aria-label={t('grid.file_grid')} aria-activedescendant={active} aria-busy={loadingMore} tabIndex={0} onKeyDown={keyDown} onPointerDown={(event) => { if (!(event.target as HTMLElement).closest('[aria-selected]')) activation.cancel() }} onContextMenu={activation.cancel}>
+    <div ref={viewport} data-density={density} className={`sc-file-grid sc-file-grid-contained${names.size ? ' sc-file-grid-reserve-selection' : ''}`} style={{ touchAction: 'manipulation' }} role="grid" aria-multiselectable="true" aria-rowcount={folderRows + fileRows} aria-colcount={columns} aria-label={t('grid.file_grid')} aria-activedescendant={active} aria-busy={loadingMore} tabIndex={0} onKeyDown={keyDown} onPointerDown={(event) => { if (!(event.target as HTMLElement).closest('[aria-selected]')) activation.cancel() }} onContextMenu={activation.cancel}>
       {total === 0 && !loading ? <p className="sc-file-grid-empty">{t('common.folder_empty')}</p> : <>
         {folderCount > 0 ? <><p className="sc-file-grid-group" aria-hidden="true">{t('grid.folders')}</p><div ref={folderEl} className="sc-file-grid-section" role="rowgroup" aria-label={t('grid.folders')} style={{ height: folderWin.totalHeight }}><div className="sc-file-grid-window" style={{ transform: `translate3d(0,${folderWin.padTop}px,0)` }}>{renderSection(true)}</div></div></> : null}
         {fileCount > 0 ? <><p className="sc-file-grid-group" aria-hidden="true">{t('grid.files')}</p><div ref={fileEl} className="sc-file-grid-section" role="rowgroup" aria-label={t('grid.files')} style={{ height: fileWin.totalHeight }}><div className="sc-file-grid-window" style={{ transform: `translate3d(0,${fileWin.padTop}px,0)` }}>{renderSection(false)}</div></div></> : null}

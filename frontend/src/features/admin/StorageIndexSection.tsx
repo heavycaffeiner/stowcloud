@@ -80,7 +80,7 @@ export function StorageIndexSection() {
       <AdminCard id="storage-index" title={t('storage.search_index')} subtitle={t('storage.what_the_index_is_for')} icon={<Icon name="search" />}>
         <div className="sc-storage-status-row">
           <span className="sc-storage-status-label">{t('storage.index_status')}</span>
-          <span className={`sc-storage-status-badge ${status.data?.enabled ? 'sc-storage-status-badge--on' : ''}`}>
+          <span className={`sc-storage-status-badge ${status.data?.enabled ? 'sc-storage-status-badge-on' : ''}`}>
             {status.isPending ? <ProgressCircular size={16} /> : statusText}
           </span>
         </div>

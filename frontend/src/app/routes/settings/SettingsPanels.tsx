@@ -110,7 +110,7 @@ export function AppearancePanel({ theme, locale, concurrency, concurrencyChoices
   return (
     <div className="sc-settings-page-grid">
       <SettingsCard leading={<div className="sc-settings-card-icon"><Icon name="settings" size={20} /></div>} title={t('settings.theme')} description={<p className="sc-settings-card-hint">{t('settings.choosing_system_follows_your_device')}</p>}>
-        <div className="sc-settings-row sc-settings-row--segmented">
+        <div className="sc-settings-row sc-settings-row-segmented">
           <mdui-segmented-button-group selects="single" aria-label={t('settings.theme')} value={theme} onChange={(event) => {
             const group = event.currentTarget as HTMLElement & { value: string | string[] }
             onThemeChange(group.value, group)
@@ -122,7 +122,7 @@ export function AppearancePanel({ theme, locale, concurrency, concurrencyChoices
         </div>
       </SettingsCard>
       <SettingsCard leading={<div className="sc-settings-card-icon"><Icon name="info" size={20} /></div>} title={t('settings.language')} description={<p className="sc-settings-card-hint">{t('settings.language_choice_stays_this_browser')}</p>}>
-        <div className="sc-settings-row sc-settings-row--segmented">
+        <div className="sc-settings-row sc-settings-row-segmented">
           <mdui-segmented-button-group selects="single" aria-label={t('settings.language')} value={locale} onChange={(event) => {
             const group = event.currentTarget as HTMLElement & { value: string | string[] }
             onLocaleChange(group.value, group)
@@ -133,7 +133,7 @@ export function AppearancePanel({ theme, locale, concurrency, concurrencyChoices
         </div>
       </SettingsCard>
       <SettingsCard leading={<div className="sc-settings-card-icon"><Icon name="upload" size={20} /></div>} title={t('settings.upload_concurrency')} description={<p className="sc-settings-card-hint">{t('settings.upload_concurrency_hint')}</p>}>
-        <div className="sc-settings-row sc-settings-row--segmented">
+        <div className="sc-settings-row sc-settings-row-segmented">
           <mdui-segmented-button-group selects="single" aria-label={t('settings.upload_concurrency')} value={String(concurrency)} onChange={(event) => {
             const group = event.currentTarget as HTMLElement & { value: string | string[] }
             onConcurrencyChange(group.value, group)

@@ -165,7 +165,7 @@ export function AppShell() {
 
   return (
     <>
-      <div className={compact ? 'sc-app-shell sc-app-shell--compact' : 'sc-app-shell'}>
+      <div className={compact ? 'sc-app-shell sc-app-shell-compact' : 'sc-app-shell'}>
         <header className="sc-shell-header">
           <div className="sc-shell-header-left">
             {!compact ? (
@@ -272,7 +272,7 @@ export function AppShell() {
             />
           ) : null}
 
-          <main className={`sc-app-shell-main${!compact && sidebarCollapsed ? ' sc-app-shell-main--collapsed' : !compact ? ' sc-app-shell-main--drawer' : ''}`}>
+          <main className={`sc-app-shell-main${!compact && sidebarCollapsed ? ' sc-app-shell-main-collapsed' : !compact ? ' sc-app-shell-main-drawer' : ''}`}>
             <Outlet />
           </main>
         </div>
@@ -328,7 +328,7 @@ export function AppShell() {
         ) : null}
       </div>
 
-      <div ref={trayStackRef} className={compact ? 'sc-tray-stack sc-tray-stack--compact' : 'sc-tray-stack'}>
+      <div ref={trayStackRef} className={compact ? 'sc-tray-stack sc-tray-stack-compact' : 'sc-tray-stack'}>
         <JobTray />
         <UploadTray />
       </div>

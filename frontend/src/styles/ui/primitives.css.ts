@@ -136,7 +136,7 @@ globalStyle(".sc-checkbox > mdui-checkbox,\n.sc-switch-row > mdui-switch", {
 globalStyle(".sc-checkbox > span,\n.sc-switch-row > span", {
     minWidth: "0"
 });
-globalStyle(".sc-switch-row--disabled", {
+globalStyle(".sc-switch-row-disabled", {
     cursor: "not-allowed",
     opacity: "0.38"
 });
@@ -149,17 +149,17 @@ globalStyle(".sc-button-wrap", {
 globalStyle(".sc-button-wrap > mdui-button", {
     display: "inline-flex"
 });
-globalStyle("mdui-button.sc-button--square", {
+globalStyle("mdui-button.sc-button-square", {
     inlineSize: "var(--sc-control-min)",
     minInlineSize: "var(--sc-control-min)",
     minBlockSize: "var(--sc-control-min)",
     paddingInline: "0"
 });
-globalStyle("mdui-button.sc-button--square::part(button)", {
+globalStyle("mdui-button.sc-button-square::part(button)", {
     paddingInline: "0",
     justifyContent: "center"
 });
-globalStyle("mdui-button.sc-button--square::part(label)", {
+globalStyle("mdui-button.sc-button-square::part(label)", {
     display: "none"
 });
 globalStyle("mdui-button[variant=\"outlined\"]", {
@@ -263,7 +263,7 @@ globalStyle(".sc-icon-button-tip", {
     transform: "translateX(-50%)",
     opacity: "0"
 });
-globalStyle(".sc-icon-button-tip--placed", {
+globalStyle(".sc-icon-button-tip-placed", {
     opacity: "1"
 });
 globalStyle(".sc-icon-button-tip", {
@@ -365,10 +365,10 @@ globalStyle(".sc-list-item", {
     padding: "8px 16px",
     color: "rgb(var(--mdui-color-on-surface))"
 });
-globalStyle(".sc-list-item--clickable", {
+globalStyle(".sc-list-item-clickable", {
     cursor: "pointer"
 });
-globalStyle(".sc-list-item--selected", {
+globalStyle(".sc-list-item-selected", {
     background: "rgb(var(--mdui-color-secondary-container))",
     color: "rgb(var(--mdui-color-on-secondary-container))"
 });
@@ -554,20 +554,20 @@ globalStyle(".sc-breadcrumb-item", {
     height: "40px",
     whiteSpace: "nowrap"
 });
-globalStyle(".sc-breadcrumb-item--root", {
+globalStyle(".sc-breadcrumb-item-root", {
     maxWidth: "min(144px, 22%)"
 });
-globalStyle(".sc-breadcrumb-item--ancestor", {
+globalStyle(".sc-breadcrumb-item-ancestor", {
     maxWidth: "min(160px, 18%)"
 });
-globalStyle(".sc-breadcrumb-item--parent", {
+globalStyle(".sc-breadcrumb-item-parent", {
     maxWidth: "min(200px, 24%)"
 });
-globalStyle(".sc-breadcrumb-item--current", {
+globalStyle(".sc-breadcrumb-item-current", {
     maxWidth: "360px",
     flex: "1 1 0"
 });
-globalStyle(".sc-breadcrumb-item--ellipsis", {
+globalStyle(".sc-breadcrumb-item-ellipsis", {
     flex: "0 0 auto"
 });
 globalStyle(".sc-breadcrumb-link,\n.sc-breadcrumb-current", {
@@ -683,7 +683,7 @@ globalStyle(".sc-breadcrumb-ellipsis-btn", {
         }
     }
 });
-globalStyle(".sc-breadcrumb-item--root", {
+globalStyle(".sc-breadcrumb-item-root", {
     "@media": {
         "(max-width: 599.98px)": {
             maxWidth: "30%"
@@ -705,13 +705,13 @@ globalStyle(".sc-progress-linear mdui-linear-progress", {
     display: "block",
     inlineSize: "100%"
 });
-globalStyle(".sc-progress-linear--weak", {
+globalStyle(".sc-progress-linear-weak", {
     vars: { "--mdui-color-primary": "var(--mdui-color-error)" }
 });
-globalStyle(".sc-progress-linear--fair", {
+globalStyle(".sc-progress-linear-fair", {
     vars: { "--mdui-color-primary": "var(--mdui-color-tertiary)" }
 });
-globalStyle(".sc-progress-linear--strong", {
+globalStyle(".sc-progress-linear-strong", {
     vars: { "--mdui-color-primary": "var(--mdui-color-primary)" }
 });
 globalStyle("mdui-snackbar", {

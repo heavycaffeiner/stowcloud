@@ -71,11 +71,11 @@ globalStyle(".sc-edit-language", {
     background: "rgb(var(--mdui-color-secondary-container))",
     color: "rgb(var(--mdui-color-on-secondary-container))"
 });
-globalStyle(".sc-edit-badge--dirty", {
+globalStyle(".sc-edit-badge-dirty", {
     background: "rgb(var(--mdui-color-primary-container))",
     color: "rgb(var(--mdui-color-on-primary-container))"
 });
-globalStyle(".sc-edit-badge--readonly", {
+globalStyle(".sc-edit-badge-readonly", {
     background: "rgb(var(--mdui-color-error-container))",
     color: "rgb(var(--mdui-color-on-error-container))"
 });
@@ -149,7 +149,7 @@ globalStyle(".sc-code-editor-status", {
     padding: "24px",
     color: "rgb(var(--mdui-color-on-surface-variant))"
 });
-globalStyle(".sc-code-editor-status--error", {
+globalStyle(".sc-code-editor-status-error", {
     color: "rgb(var(--mdui-color-error))"
 });
 globalStyle(".sc-edit-toolbar", {
@@ -175,7 +175,7 @@ globalStyle(".sc-edit-title", {
         }
     }
 });
-globalStyle(".sc-edit-badge--dirty", {
+globalStyle(".sc-edit-badge-dirty", {
     "@media": {
         "(max-width: 600px)": {
             width: "8px",

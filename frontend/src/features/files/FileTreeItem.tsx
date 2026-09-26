@@ -20,7 +20,7 @@ export function FileTreeItem({ path, name, depth, active, ancestor, expanded, ta
 
   return (
     <div
-      className={`sc-tree-row${active ? ' sc-tree-row--active' : ''}${ancestor ? ' sc-tree-row--ancestor' : ''}`}
+      className={`sc-tree-row${active ? ' sc-tree-row-active' : ''}${ancestor ? ' sc-tree-row-ancestor' : ''}`}
       style={{ paddingInlineStart: depth * 16 + 8 }}
     >
       <button
@@ -35,7 +35,7 @@ export function FileTreeItem({ path, name, depth, active, ancestor, expanded, ta
           onToggle(path)
         }}
       >
-        <span className={`sc-tree-row-twisty-icon${expanded ? ' sc-tree-row-twisty-icon--expanded' : ''}`} aria-hidden="true">
+        <span className={`sc-tree-row-twisty-icon${expanded ? ' sc-tree-row-twisty-icon-expanded' : ''}`} aria-hidden="true">
           <Icon name="chevron_right" size={16} />
         </span>
       </button>

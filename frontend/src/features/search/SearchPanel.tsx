@@ -60,13 +60,13 @@ export const SearchPanel = forwardRef<SearchPanelHandle, SearchPanelProps>(funct
         <div className="sc-search-categories" role="tablist" aria-label={t('search.kind_label')} ref={categoriesRef}>
           {CATEGORIES.map((cat) => {
             const isSelected = controller.activeCategory === cat.id
-            return <button key={cat.id} type="button" className={`sc-search-category-pill${isSelected ? ' sc-search-category-pill--active' : ''}`} aria-pressed={isSelected} onClick={() => controller.selectCategory(cat.id)}><Icon name={cat.icon} size={15} /><span>{t(cat.labelKey)}</span></button>
+            return <button key={cat.id} type="button" className={`sc-search-category-pill${isSelected ? ' sc-search-category-pill-active' : ''}`} aria-pressed={isSelected} onClick={() => controller.selectCategory(cat.id)}><Icon name={cat.icon} size={15} /><span>{t(cat.labelKey)}</span></button>
           })}
         </div>
         <div className="sc-search-scope-pill" title={scope ? t('search.scope_current_prioritized', { folder: scope }) : t('search.scope_explanation')}><Icon name={scope ? 'folder' : 'search'} size={14} /><span>{scope ? (scope.split('/').filter(Boolean).at(-1) ?? scope) : t('search.scope_all_accessible')}</span></div>
         <div className="sc-search-sort-wrap">
           <button type="button" className="sc-search-sort-btn" aria-expanded={state.sortOpen} aria-label={t('search.sort_by', { key: sortLabel })} onClick={() => controller.set('sortOpen', (open) => !open)}><Icon name="sort" size={15} /><span>{sortLabel}</span></button>
-          {state.sortOpen ? <div className="sc-search-menu sc-search-menu--end" role="menu">{SORT_KEYS.map(([key, labelKey]) => <button key={key} type="button" role="menuitemradio" aria-checked={state.sortKey === key} onClick={() => { controller.set('sortKey', key); controller.set('sortOpen', false) }}>{state.sortKey === key ? '✓ ' : ''}{t(labelKey)}</button>)}</div> : null}
+          {state.sortOpen ? <div className="sc-search-menu sc-search-menu-end" role="menu">{SORT_KEYS.map(([key, labelKey]) => <button key={key} type="button" role="menuitemradio" aria-checked={state.sortKey === key} onClick={() => { controller.set('sortKey', key); controller.set('sortOpen', false) }}>{state.sortKey === key ? '✓ ' : ''}{t(labelKey)}</button>)}</div> : null}
         </div>
       </div>
 

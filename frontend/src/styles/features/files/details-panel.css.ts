@@ -10,7 +10,7 @@ globalStyle(".sc-details", {
     color: "var(--sc-content-primary)",
     overflowY: "auto"
 });
-globalStyle(".sc-details--sheet", {
+globalStyle(".sc-details-sheet", {
     position: "fixed",
     inset: "0",
     zIndex: "30",

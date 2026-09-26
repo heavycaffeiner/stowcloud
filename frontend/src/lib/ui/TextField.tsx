@@ -114,7 +114,7 @@ export function TextField({
   }, [autoFocus])
 
   return (
-    <div className={`sc-field${error ? ' sc-field--error' : ''}`}>
+    <div className={`sc-field${error ? ' sc-field-error' : ''}`}>
       <mdui-text-field
         ref={ref}
         variant={variant}

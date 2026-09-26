@@ -39,7 +39,7 @@ export function ShareManageDialog({ open, path, targetName, targetIsDir, onClose
               <IconButton label={t('share.copy_link')} onClick={() => void copyLink(justCreated.url ?? '', -1)}><Icon name="copy" /></IconButton>
             </div>
             {copiedId === -1 ? <p className="sc-share-copy-feedback" role="status">{t('common.copied')}</p> : null}
-            {copyErrorId === -1 ? <p className="sc-share-copy-feedback sc-share-copy-feedback--error" role="alert">{t('share.copy_failed')}</p> : null}
+            {copyErrorId === -1 ? <p className="sc-share-copy-feedback sc-share-copy-feedback-error" role="alert">{t('share.copy_failed')}</p> : null}
             <Button variant="text" onClick={acknowledgeIssued}>{t('share.acknowledge_link_saved')}</Button>
           </div>
         ) : null}

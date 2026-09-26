@@ -185,7 +185,7 @@ function findingList(outcome: ApplyOutcome | null, t: Translator): ReactNode {
     items={findings}
     itemKey={(finding, index) => `${finding.section}-${finding.field ?? ''}-${finding.reason}-${index}`}
     estimateSize={72}
-    itemProps={(finding) => ({ className: `sc-server-settings-finding ${finding.blocking ? 'sc-server-settings-finding--block' : 'sc-server-settings-finding--ok'}` })}
+    itemProps={(finding) => ({ className: `sc-server-settings-finding ${finding.blocking ? 'sc-server-settings-finding-block' : 'sc-server-settings-finding-ok'}` })}
     renderItem={(finding) => <><strong>{finding.blocking ? t('settings.finding_blocking') : t('settings.finding_advisory')}</strong>{finding.field ? <code>{finding.field}</code> : null}{t(finding.reason, finding.args ?? {})}</>}
   />
 }
@@ -269,8 +269,8 @@ export function ServerSettingsSection() {
   function status(group: Group): ReactNode {
     if (activeGroup !== group) return null
     if (mutation.isPending) return <p className="sc-admin-section-status" role="status">{t('common.saving')}</p>
-    if (validationError) return <p ref={errorRef} className="sc-admin-section-status sc-admin-section-status--error" role="alert" tabIndex={-1}>{validationError}</p>
-    if (outcome && !(outcome.stored || outcome.applied || outcome.restart_required)) return <p className="sc-admin-section-status sc-admin-section-status--error" role="status">{t('common.could_not_save')}</p>
+    if (validationError) return <p ref={errorRef} className="sc-admin-section-status sc-admin-section-status-error" role="alert" tabIndex={-1}>{validationError}</p>
+    if (outcome && !(outcome.stored || outcome.applied || outcome.restart_required)) return <p className="sc-admin-section-status sc-admin-section-status-error" role="status">{t('common.could_not_save')}</p>
     if (isDirty(group)) return <p className="sc-admin-section-status" role="status">{t('settings.unsaved_changes')}</p>
     if (outcome) return <p className="sc-admin-section-status" role="status">{outcome.restart_required ? t('server.change_takes_full_effect_only') : outcome.applied ? t('server.change_took_effect_immediately') : outcome.stored ? t('server.change_takes_full_effect_only') : t('common.could_not_save')}</p>
     return null

@@ -132,7 +132,7 @@ export function DetailsPanel({
   const heroDesc = one ? kindDescription(one) : many ? formatBytes(bytes) : t('details.folder')
 
   return (
-    <aside ref={panel} className={`sc-details${compact ? ' sc-details--sheet' : ''}`} role={compact ? 'dialog' : 'complementary'} aria-modal={compact ? 'true' : undefined} aria-label={t('details.title')}>
+    <aside ref={panel} className={`sc-details${compact ? ' sc-details-sheet' : ''}`} role={compact ? 'dialog' : 'complementary'} aria-modal={compact ? 'true' : undefined} aria-label={t('details.title')}>
       <header className="sc-details-head">
         <span className="sc-details-head-icon" aria-hidden="true" style={{ color: heroIcon.color }}>
           <Icon name={heroIcon.name} size={20} />

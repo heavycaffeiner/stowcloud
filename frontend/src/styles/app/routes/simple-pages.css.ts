@@ -191,7 +191,7 @@ globalStyle(".sc-route-back,\n.sc-route-icon-button", {
     cursor: "pointer",
     flex: "none"
 });
-globalStyle(".sc-route-icon-button--danger", {
+globalStyle(".sc-route-icon-button-danger", {
     color: "var(--m3c-error)"
 });
 globalStyle(".sc-route-icon-button:disabled", {
@@ -222,7 +222,7 @@ globalStyle(".sc-links-flag", {
     letterSpacing: "var(--mdui-typescale-label-medium-tracking)",
     overflowWrap: "anywhere"
 });
-globalStyle(".sc-links-row--readonly", {
+globalStyle(".sc-links-row-readonly", {
     cursor: "default",
     opacity: "0.72"
 });

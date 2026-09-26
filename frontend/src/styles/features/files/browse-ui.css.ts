@@ -46,7 +46,7 @@ globalStyle(".sc-dest-status", {
     color: "var(--sc-content-secondary)",
     overflowWrap: "anywhere"
 });
-globalStyle(".sc-dest-status--warn", {
+globalStyle(".sc-dest-status-warn", {
     minHeight: "20px",
     margin: "8px 0 0",
     color: "rgb(var(--mdui-color-error))",

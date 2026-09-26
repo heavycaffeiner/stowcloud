@@ -254,7 +254,7 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
                               expanded={expanded}
                               onClick={() => toggleExpanded(grant.id)}
                             >
-                              <span className={`sc-admin-grant-chevron${expanded ? ' sc-admin-grant-chevron--open' : ''}`}>
+                              <span className={`sc-admin-grant-chevron${expanded ? ' sc-admin-grant-chevron-open' : ''}`}>
                                 <Icon name="chevron-right" size={18} />
                               </span>
                             </IconButton>

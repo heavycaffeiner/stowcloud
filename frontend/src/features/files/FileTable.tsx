@@ -166,12 +166,12 @@ export const FileTable = forwardRef<FileViewHandle, FileTableProps>(function Fil
   const rows = Array.from({ length: Math.max(0, win.end - win.start) }, (_, offset) => { const index = win.start + offset; return { index, entry: entries[index] } })
   const active = focusedName && rows.some((row) => row.entry?.name === focusedName) ? domId(focusedName) : undefined
 
-  return <div ref={viewport} className={`sc-file-table sc-file-table--contained${mobileRows ? ' sc-file-table--mobile-rows' : ''}${names.size ? ' sc-file-table--reserve-selection' : ''}`} style={{ touchAction: 'manipulation' }} data-density={density} role="grid" aria-multiselectable="true" aria-rowcount={total + 1} aria-label={t('table.file_list')} aria-activedescendant={active} aria-busy={loadingMore} tabIndex={0} onKeyDown={keyDown} onPointerDown={(event) => { if (!(event.target as HTMLElement).closest('[aria-selected]')) activation.cancel() }} onContextMenu={activation.cancel}>
+  return <div ref={viewport} className={`sc-file-table sc-file-table-contained${mobileRows ? ' sc-file-table-mobile-rows' : ''}${names.size ? ' sc-file-table-reserve-selection' : ''}`} style={{ touchAction: 'manipulation' }} data-density={density} role="grid" aria-multiselectable="true" aria-rowcount={total + 1} aria-label={t('table.file_list')} aria-activedescendant={active} aria-busy={loadingMore} tabIndex={0} onKeyDown={keyDown} onPointerDown={(event) => { if (!(event.target as HTMLElement).closest('[aria-selected]')) activation.cancel() }} onContextMenu={activation.cancel}>
     {total === 0 && !loading ? <p className="sc-file-table-empty">{t('common.folder_empty')}</p> : <>
       <div className="sc-file-table-header" role="row" aria-rowindex={1}>
         <button
           type="button"
-          className="sc-file-table-header-cell sc-file-table-header-cell--select sc-touch-target"
+          className="sc-file-table-header-cell sc-file-table-header-cell-select sc-touch-target"
           role="columnheader"
           aria-label={t('browse.select_all')}
           onClick={() => {
@@ -179,17 +179,17 @@ export const FileTable = forwardRef<FileViewHandle, FileTableProps>(function Fil
             else selection.all(loadedNames)
           }}
         >
-          <span className={`sc-custom-checkbox${names.size > 0 && names.size === entries.length ? ' sc-custom-checkbox--checked' : names.size > 0 ? ' sc-custom-checkbox--indeterminate' : ''}`} aria-hidden="true">
+          <span className={`sc-custom-checkbox${names.size > 0 && names.size === entries.length ? ' sc-custom-checkbox-checked' : names.size > 0 ? ' sc-custom-checkbox-indeterminate' : ''}`} aria-hidden="true">
             {names.size > 0 && names.size === entries.length ? <Icon name="check" size={13} /> : names.size > 0 ? <span className="sc-custom-checkbox-bar" /> : null}
           </span>
         </button>
-        {(['name', 'size', 'mtime'] as const).map((key) => <span key={key} className={`sc-file-table-header-cell sc-file-table-header-cell--${key}`} role="columnheader" aria-sort={sortKey === key ? sortOrder === 'asc' ? 'ascending' : 'descending' : 'none'}>
-          <button type="button" className={`sc-file-table-header-button${sortKey === key ? ' sc-file-table-header-button--active' : ''}`} onClick={() => chooseSort(key)} aria-label={`${sortLabel(key)}${sortKey === key ? `, ${sortOrder === 'asc' ? t('browse.sort_ascending') : t('browse.sort_descending')}` : ''}`}>
+        {(['name', 'size', 'mtime'] as const).map((key) => <span key={key} className={`sc-file-table-header-cell sc-file-table-header-cell-${key}`} role="columnheader" aria-sort={sortKey === key ? sortOrder === 'asc' ? 'ascending' : 'descending' : 'none'}>
+          <button type="button" className={`sc-file-table-header-button${sortKey === key ? ' sc-file-table-header-button-active' : ''}`} onClick={() => chooseSort(key)} aria-label={`${sortLabel(key)}${sortKey === key ? `, ${sortOrder === 'asc' ? t('browse.sort_ascending') : t('browse.sort_descending')}` : ''}`}>
             <span>{sortLabel(key)}</span>
             {sortKey === key ? <span className="sc-file-table-header-sort" aria-hidden="true">{sortOrder === 'asc' ? '↑' : '↓'}</span> : null}
           </button>
         </span>)}
-        <span className="sc-file-table-header-cell sc-file-table-header-cell--actions" role="columnheader" />
+        <span className="sc-file-table-header-cell sc-file-table-header-cell-actions" role="columnheader" />
       </div>
       <div className="sc-file-table-spacer" style={{ height: win.totalHeight }}><div className="sc-file-table-window" style={{ transform: `translate3d(0,${win.padTop}px,0)` }}>{rows.map(({ index, entry }) => entry ? <FileRow key={entry.path} entry={entry} rowIndex={index + 2} selected={names.has(entry.name)} focused={focusedName === entry.name} domId={domId(entry.name)} encrypted={encrypted} {...activation.handlers(entry, index)} onCancelActivation={activation.cancel} onContextMenu={(event) => { activation.cancel(); event.preventDefault(); event.stopPropagation(); onContextMenu(entry, event) }} onToggleCheck={() => selection.toggle(entry.name, index)} /> : <FileRowSkeleton key={`skeleton-${index}`} rowIndex={index + 2} />)}</div></div>
     </>}

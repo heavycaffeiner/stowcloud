@@ -160,22 +160,22 @@ globalStyle(".sc-admin-chip .sc-button-wrap", {
     display: "inline-flex",
     alignItems: "center"
 });
-globalStyle(".sc-admin-chip mdui-button.sc-button--square", {
+globalStyle(".sc-admin-chip mdui-button.sc-button-square", {
     inlineSize: "44px",
     minInlineSize: "44px",
     blockSize: "44px",
     minBlockSize: "44px",
     borderRadius: "var(--mdui-shape-corner-full)"
 });
-globalStyle(".sc-admin-chip mdui-button.sc-button--square svg", {
+globalStyle(".sc-admin-chip mdui-button.sc-button-square svg", {
     width: "14px",
     height: "14px"
 });
-globalStyle(".sc-admin-chip--muted", {
+globalStyle(".sc-admin-chip-muted", {
     background: "rgb(var(--mdui-color-surface-container-highest))",
     color: "rgb(var(--mdui-color-on-surface-variant))"
 });
-globalStyle(".sc-admin-chip--danger", {
+globalStyle(".sc-admin-chip-danger", {
     background: "rgb(var(--mdui-color-error-container))",
     color: "rgb(var(--mdui-color-on-error-container))"
 });
@@ -298,7 +298,7 @@ globalStyle(".sc-admin-grant-chevron", {
     display: "inline-flex",
     transition: "transform 150ms ease"
 });
-globalStyle(".sc-admin-grant-chevron--open", {
+globalStyle(".sc-admin-grant-chevron-open", {
     transform: "rotate(90deg)"
 });
 globalStyle(".sc-admin-facts, .sc-user-oidc-facts", {

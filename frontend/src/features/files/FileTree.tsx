@@ -304,7 +304,7 @@ export function FileTreeList({ roots, currentPath, onNavigate, rowSize = 40, 'ar
           </button>
         ) : (
           <p
-            className={`sc-tree-row-status${row.status === 'error' ? ' sc-tree-row-status--error' : ''}`}
+            className={`sc-tree-row-status${row.status === 'error' ? ' sc-tree-row-status-error' : ''}`}
             style={{ paddingInlineStart: row.depth * 16 + 8 }}
             role={row.status === 'error' ? 'alert' : row.status === 'loading' ? 'status' : undefined}
           >
@@ -349,7 +349,7 @@ export function FileTree({ currentPath, onNavigate, overlay = false, onClose }: 
   const tree = <FileTreeList roots={roots} currentPath={currentPath} onNavigate={onNavigate} rowSize={overlay ? 44 : 40} />
   if (!overlay) return <nav className="sc-file-tree" aria-label={t('tree.folder_tree')}>{tree}</nav>
   return (
-    <dialog ref={dialog} className="sc-file-tree sc-file-tree--overlay" aria-label={t('tree.folder_tree')} onClick={(event) => { if (event.target === event.currentTarget) onClose?.() }} onCancel={(event) => { event.preventDefault(); onClose?.() }} onClose={(event) => { if (!event.currentTarget.open && wasOpen.current) onClose?.() }}>
+    <dialog ref={dialog} className="sc-file-tree sc-file-tree-overlay" aria-label={t('tree.folder_tree')} onClick={(event) => { if (event.target === event.currentTarget) onClose?.() }} onCancel={(event) => { event.preventDefault(); onClose?.() }} onClose={(event) => { if (!event.currentTarget.open && wasOpen.current) onClose?.() }}>
       <div className="sc-file-tree-overlay-header"><button type="button" onClick={onClose} aria-label={t('tree.close_folder_tree')}>×</button></div>
       <nav aria-label={t('tree.folder_tree')}>{tree}</nav>
     </dialog>

@@ -12,7 +12,7 @@ export function ProgressLinear({ value = null, label, tone = 'primary' }: Progre
   const fraction = Math.min(Math.max(value ?? 0, 0), 1)
   const resolved = label ?? t('progress.progress')
   return (
-    <div className={`sc-progress-linear sc-progress-linear--${tone}`}>
+    <div className={`sc-progress-linear sc-progress-linear-${tone}`}>
       <mdui-linear-progress value={indeterminate ? undefined : fraction} max={1} aria-label={resolved} />
     </div>
   )

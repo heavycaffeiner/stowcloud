@@ -84,17 +84,17 @@ globalStyle(".sc-settings-row", {
     gap: "12px",
     minWidth: "0"
 });
-globalStyle(".sc-settings-row--segmented", {
+globalStyle(".sc-settings-row-segmented", {
     display: "block",
     maxWidth: "100%",
     overflowX: "auto",
     paddingBlock: "2px",
     scrollbarWidth: "none"
 });
-globalStyle(".sc-settings-row--segmented::-webkit-scrollbar", {
+globalStyle(".sc-settings-row-segmented::-webkit-scrollbar", {
     display: "none"
 });
-globalStyle(".sc-settings-row--segmented mdui-segmented-button-group", {
+globalStyle(".sc-settings-row-segmented mdui-segmented-button-group", {
     width: "max-content",
     minWidth: "max-content"
 });
@@ -155,7 +155,7 @@ globalStyle(".sc-settings-card-head > .sc-settings-badge", {
     flex: "none",
     marginInlineStart: "auto"
 });
-globalStyle(".sc-settings-badge--on", {
+globalStyle(".sc-settings-badge-on", {
     background: "rgb(var(--mdui-color-primary-container))",
     color: "rgb(var(--mdui-color-on-primary-container))"
 });
@@ -302,7 +302,7 @@ globalStyle(".sc-totp-badge, .sc-oidc-badge", {
     fontSize: "var(--mdui-typescale-label-small-size)",
     lineHeight: "var(--mdui-typescale-label-small-line-height)"
 });
-globalStyle(".sc-totp-badge--on, .sc-oidc-badge--on", {
+globalStyle(".sc-totp-badge-on, .sc-oidc-badge-on", {
     background: "rgb(var(--mdui-color-primary-container))",
     color: "rgb(var(--mdui-color-on-primary-container))"
 });
@@ -310,7 +310,7 @@ globalStyle(".sc-totp-recovery-count", {
     margin: "0",
     color: "rgb(var(--mdui-color-on-surface-variant))"
 });
-globalStyle(".sc-totp-recovery-count--low", {
+globalStyle(".sc-totp-recovery-count-low", {
     color: "rgb(var(--mdui-color-error))",
     fontWeight: "500"
 });
@@ -408,7 +408,7 @@ globalStyle(".sc-settings-codes, .sc-totp-codes", {
         }
     }
 });
-globalStyle(".sc-settings-row--segmented", {
+globalStyle(".sc-settings-row-segmented", {
     "@media": {
         "(max-width: 599.98px)": {
             maxWidth: "calc(100vw - (2 * var(--sc-content-pad)))"

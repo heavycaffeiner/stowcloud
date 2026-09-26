@@ -85,8 +85,8 @@ async function checkNewCenter(page) {
 
 async function checkDateColumn(page) {
   const geometry = await page.evaluate(() => {
-    const header = document.querySelector('.sc-file-table-header-cell--mtime').getBoundingClientRect()
-    const cells = [...document.querySelectorAll('.sc-row-cell--mtime')].map(el => {
+    const header = document.querySelector('.sc-file-table-header-cell-mtime').getBoundingClientRect()
+    const cells = [...document.querySelectorAll('.sc-row-cell-mtime')].map(el => {
       const rect = el.getBoundingClientRect()
       return { x: rect.x, width: rect.width, text: el.textContent, clipped: el.scrollWidth > el.clientWidth }
     })
@@ -133,7 +133,7 @@ async function checkDragSelection(page) {
   await page.locator('.sc-browse-selection-close-btn').click()
   await page.locator('.sc-browse-selection-bar').waitFor({ state: 'hidden' })
   await viewToggle.click()
-  await page.locator('.sc-row-cell--mtime').first().waitFor()
+  await page.locator('.sc-row-cell-mtime').first().waitFor()
 }
 
 try {
@@ -149,7 +149,7 @@ try {
     }, locale)
     const page = await context.newPage()
     await page.goto(`${base}b/home`)
-    await page.locator('.sc-row-cell--mtime').first().waitFor()
+    await page.locator('.sc-row-cell-mtime').first().waitFor()
     await checkButtons(page)
     await checkNewCenter(page)
     await checkGroup(page, '.sc-browse-toolbar-actions', 'y')
@@ -170,7 +170,7 @@ try {
     await page.locator('mdui-dialog[open]').waitFor({ state: 'hidden' })
 
     await page.locator('.sc-shell-header-menu-btn').click()
-    await page.locator('.sc-nav-drawer--collapsed').waitFor()
+    await page.locator('.sc-nav-drawer-collapsed').waitFor()
     await checkNewCenter(page)
     await checkGroup(page, '.sc-nav-drawer-body', 'x')
     await checkButtons(page)
@@ -186,7 +186,7 @@ try {
     }
 
     await page.goto(`${base}b/home`)
-    await page.locator('.sc-row-cell--mtime').first().waitFor()
+    await page.locator('.sc-row-cell-mtime').first().waitFor()
     await page.locator('.sc-shell-header-search').click()
     await page.locator('.sc-search-category-pill').first().waitFor()
     await checkButtons(page, '.sc-search')
@@ -195,13 +195,13 @@ try {
 
     for (const width of [800, 390]) {
       await page.setViewportSize({ width, height: 900 })
-      await page.locator('.sc-app-shell--compact').waitFor()
+      await page.locator('.sc-app-shell-compact').waitFor()
       await checkButtons(page)
       await checkGroup(page, '.sc-nav-bar', 'y')
       await page.locator('.sc-nav-bar-item[aria-haspopup="dialog"]').click()
-      await page.locator('.sc-nav-drawer--overlay').waitFor()
+      await page.locator('.sc-nav-drawer-overlay').waitFor()
       await checkNewCenter(page)
-      await checkButtons(page, '.sc-nav-drawer--overlay')
+      await checkButtons(page, '.sc-nav-drawer-overlay')
       await checkGroup(page, '.sc-nav-drawer-list', 'x', 'start')
       await page.keyboard.press('Escape')
     }

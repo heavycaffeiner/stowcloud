@@ -74,7 +74,7 @@ export function DestinationPickerDialog({
             aria-label={t('dest.destination_folder')}
           />
         </div>
-        <p className={`sc-dest-status${isWarn ? ' sc-dest-status--warn' : ''}`} aria-live="polite">
+        <p className={`sc-dest-status${isWarn ? ' sc-dest-status-warn' : ''}`} aria-live="polite">
           {problem === 'into_itself'
             ? t('dest.cannot_move_folder_into_itself')
             : problem === 'same_folder'

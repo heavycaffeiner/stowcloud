@@ -118,7 +118,7 @@ export function PathPickerDialog({ open, mode, start, token, onclose, onpick }: 
                     ) : mode === 'file' ? (
                       <button
                         type="button"
-                        className={`sc-picker-entry sc-focus-ring${selected === entry.path ? ' sc-picker-entry--selected' : ''}`}
+                        className={`sc-picker-entry sc-focus-ring${selected === entry.path ? ' sc-picker-entry-selected' : ''}`}
                         aria-pressed={selected === entry.path}
                         onClick={() => setState((value) => ({ ...value, selected: entry.path }))}
                       >
@@ -126,7 +126,7 @@ export function PathPickerDialog({ open, mode, start, token, onclose, onpick }: 
                         <span>{entry.name}</span>
                       </button>
                     ) : (
-                      <span className="sc-picker-entry sc-picker-entry--disabled" aria-disabled="true">
+                      <span className="sc-picker-entry sc-picker-entry-disabled" aria-disabled="true">
                         <Icon name="draft" />
                         <span>{entry.name}</span>
                       </span>

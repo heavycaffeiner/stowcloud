@@ -128,7 +128,7 @@ export function JobTray() {
     <>
       <div ref={politeRef} className="sc-job-tray-sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
       <div ref={assertiveRef} className="sc-job-tray-sr-only" role="alert" aria-live="assertive" aria-atomic="true"></div>
-      <section className={open ? 'sc-job-tray' : 'sc-job-tray sc-job-tray--collapsed'} aria-label={t('job.jobs')}>
+      <section className={open ? 'sc-job-tray' : 'sc-job-tray sc-job-tray-collapsed'} aria-label={t('job.jobs')}>
         <header className="sc-job-tray-header">
           <button className="sc-job-tray-title" type="button" onClick={() => jobTray.setOpen(!open)} aria-expanded={open}>
             <Icon name="refresh" />
@@ -187,7 +187,7 @@ export function JobTray() {
                             renderItem={(path, index) => (
                               <>
                                 {index < item.attempting.length
-                                  ? <span className="sc-job-tray-tag sc-job-tray-tag--check">{t('job.needs_checking')}</span>
+                                  ? <span className="sc-job-tray-tag sc-job-tray-tag-check">{t('job.needs_checking')}</span>
                                   : <span className="sc-job-tray-tag">{t('job.not_started')}</span>}
                                 {path}
                               </>

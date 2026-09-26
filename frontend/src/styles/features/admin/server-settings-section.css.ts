@@ -42,7 +42,7 @@ globalStyle(".sc-admin-section-status", {
     color: "rgb(var(--mdui-color-primary))",
     overflowWrap: "anywhere"
 });
-globalStyle(".sc-admin-section-status--error", {
+globalStyle(".sc-admin-section-status-error", {
     color: "rgb(var(--mdui-color-error))"
 });
 globalStyle(".sc-server-settings-nav", {
@@ -184,10 +184,10 @@ globalStyle(".sc-server-settings-finding", {
     fontSize: "var(--mdui-typescale-body-small-size)",
     overflowWrap: "anywhere"
 });
-globalStyle(".sc-server-settings-finding--block", {
+globalStyle(".sc-server-settings-finding-block", {
     borderInlineStartColor: "rgb(var(--mdui-color-error))"
 });
-globalStyle(".sc-server-settings-finding--ok", {
+globalStyle(".sc-server-settings-finding-ok", {
     borderInlineStartColor: "rgb(var(--mdui-color-primary))"
 });
 globalStyle(".sc-server-settings-finding strong, .sc-server-settings-finding code", {

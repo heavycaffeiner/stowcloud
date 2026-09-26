@@ -59,11 +59,11 @@ globalStyle("button.sc-picker-entry", {
 globalStyle("button.sc-picker-entry:hover", {
     background: "var(--sc-raised-surface)"
 });
-globalStyle(".sc-picker-entry--selected", {
+globalStyle(".sc-picker-entry-selected", {
     background: "var(--sc-state-selection)",
     color: "var(--sc-state-selection-content)"
 });
-globalStyle(".sc-picker-entry--disabled", {
+globalStyle(".sc-picker-entry-disabled", {
     color: "var(--sc-content-secondary)",
     opacity: "0.6"
 });

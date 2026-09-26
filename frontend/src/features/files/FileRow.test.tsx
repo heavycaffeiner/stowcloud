@@ -47,7 +47,7 @@ afterEach(async () => {
 })
 
 describe.each([
-  ['list', FileTable, '.sc-row', '.sc-row-cell--select', '.sc-row-more-btn'],
+  ['list', FileTable, '.sc-row', '.sc-row-cell-select', '.sc-row-more-btn'],
   ['grid', FileGrid, '.sc-file-grid-card', '.sc-file-grid-check', '.sc-file-grid-kebab']
 ] as const)('%s file activation', (_name, View, entrySelector, checkSelector, menuSelector) => {
   function renderView(initialEntries: Entry[] = [documents, pictures]) {

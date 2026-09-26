@@ -70,7 +70,7 @@ export function OidcSection() {
     <div className="sc-oidc">
       {flowError ? <p className="sc-oidc-error" role="alert">{flowError}</p> : null}
       <div className="sc-oidc-status">
-        <span className={linked ? 'sc-oidc-badge sc-oidc-badge--on' : 'sc-oidc-badge'}>{linked ? t('oidc.connected') : t('oidc.not_connected')}</span>
+        <span className={linked ? 'sc-oidc-badge sc-oidc-badge-on' : 'sc-oidc-badge'}>{linked ? t('oidc.connected') : t('oidc.not_connected')}</span>
         {linked ? <Button variant="outlined" onClick={openDisconnect}>{t('oidc.disconnect')}</Button> : configured ? <Button onClick={openConnect}>{t('oidc.connect_provider', { provider: providerLabel })}</Button> : null}
       </div>
       {linked ? (

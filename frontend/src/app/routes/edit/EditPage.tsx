@@ -108,12 +108,12 @@ export function EditPage() {
         <div className="sc-edit-identity">
           <div className="sc-edit-title">
             <MiddleEllipsis name={filename} className="sc-edit-filename" />
-            {dirty ? <span className="sc-edit-badge sc-edit-badge--dirty" title={t('editor.unsaved_changes')}>{t('editor.unsaved_changes')}</span> : null}
+            {dirty ? <span className="sc-edit-badge sc-edit-badge-dirty" title={t('editor.unsaved_changes')}>{t('editor.unsaved_changes')}</span> : null}
           </div>
           <div className="sc-edit-details">
             <span className="sc-edit-language">{languageName ?? t('editor.plain_text')}</span>
             {entry ? <span className="sc-edit-meta">{formatBytes(entry.size)}</span> : null}
-            {readOnly && entry ? <span className="sc-edit-badge sc-edit-badge--readonly">{t('common.read_only')}</span> : null}
+            {readOnly && entry ? <span className="sc-edit-badge sc-edit-badge-readonly">{t('common.read_only')}</span> : null}
           </div>
         </div>
         <div className="sc-edit-actions"><Button loading={saveMutation.isPending} disabled={!canSave} onClick={() => void saveFlow.save()}>{t('editor.save_ctrl_s')}</Button></div>

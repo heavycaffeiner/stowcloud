@@ -56,7 +56,7 @@ globalStyle(".sc-snackbar", {
     boxShadow: "0 4px 16px rgba(0, 0, 0, 0.28)",
     animation: "sc-snackbar-enter 200ms cubic-bezier(0.2, 0, 0, 1)"
 });
-globalStyle(".sc-app-shell--compact .sc-snackbar", {
+globalStyle(".sc-app-shell-compact .sc-snackbar", {
     bottom: "max(calc(16px + var(--sc-nav-bar-height) + env(safe-area-inset-bottom, 0px)), var(--sc-tray-stack-top, 0px))"
 });
 globalKeyframes("sc-snackbar-enter", {
@@ -77,7 +77,7 @@ globalStyle(".sc-browse", {
     position: "relative",
     background: "var(--sc-page-surface, var(--mdui-color-surface, var(--m3c-surface)))"
 });
-globalStyle(".sc-app-shell--compact .sc-browse", {
+globalStyle(".sc-app-shell-compact .sc-browse", {
     flex: "1",
     height: "auto"
 });
@@ -95,7 +95,7 @@ globalStyle(".sc-browse-toolbar", {
     borderBottom: "none",
     background: "transparent"
 });
-globalStyle(".sc-browse-toolbar--compact", {
+globalStyle(".sc-browse-toolbar-compact", {
     padding: "10px 16px",
     gap: "8px",
     vars: { "--sc-content-pad": "16px" }
@@ -112,10 +112,10 @@ globalStyle(".sc-browse-folder-heading", {
 globalStyle(".sc-browse-folder-heading > .sc-breadcrumb", {
     flexBasis: "auto"
 });
-globalStyle(".sc-browse-toolbar--compact .sc-browse-folder-heading", {
+globalStyle(".sc-browse-toolbar-compact .sc-browse-folder-heading", {
     flexBasis: "auto"
 });
-globalStyle(".sc-breadcrumb-item--root .sc-breadcrumb-label", {
+globalStyle(".sc-breadcrumb-item-root .sc-breadcrumb-label", {
     color: "rgb(var(--mdui-color-primary))",
     fontWeight: "600"
 });
@@ -150,7 +150,7 @@ globalStyle(".sc-browse-filter-pill:hover", {
     background: "color-mix(in srgb, var(--sc-content-primary) 10%, transparent)",
     color: "var(--sc-content-primary)"
 });
-globalStyle(".sc-browse-filter-pill--active", {
+globalStyle(".sc-browse-filter-pill-active", {
     background: "var(--sc-state-selection)",
     borderColor: "color-mix(in srgb, var(--sc-state-selection-content) 35%, transparent)",
     color: "var(--sc-state-selection-content)",
@@ -282,7 +282,7 @@ globalStyle(".sc-browse-encrypted-badge", {
     background: "var(--mdui-color-surface-container-highest, var(--m3c-surface-container-highest))",
     color: "var(--sc-content-secondary, var(--mdui-color-on-surface-variant, var(--m3c-on-surface-variant)))"
 });
-globalStyle(".sc-browse-encrypted-badge--locked", {
+globalStyle(".sc-browse-encrypted-badge-locked", {
     minHeight: "var(--sc-control-min)",
     paddingInline: "12px",
     border: "none",
@@ -290,14 +290,14 @@ globalStyle(".sc-browse-encrypted-badge--locked", {
     background: "var(--mdui-color-secondary-container, var(--m3c-secondary-container))",
     color: "var(--mdui-color-on-secondary-container, var(--m3c-on-secondary-container))"
 });
-globalStyle(".sc-browse-encrypted-badge--locked:active", {
+globalStyle(".sc-browse-encrypted-badge-locked:active", {
     transform: "scale(0.95)"
 });
-globalStyle(".sc-browse-encrypted-badge--locked:focus-visible", {
+globalStyle(".sc-browse-encrypted-badge-locked:focus-visible", {
     outline: "var(--sc-focus-ring-width) solid var(--sc-state-focus)",
     outlineOffset: "var(--sc-focus-ring-offset)"
 });
-globalStyle(".sc-browse-table-wrap--marquee", {
+globalStyle(".sc-browse-table-wrap-marquee", {
     userSelect: "none",
     cursor: "crosshair"
 });
@@ -322,7 +322,7 @@ globalStyle(".sc-browse-selection-bar", {
     boxShadow: "0 8px 32px rgba(0, 0, 0, 0.32)",
     animation: "sc-selection-bar-enter 180ms cubic-bezier(0.2, 0, 0, 1)"
 });
-globalStyle(".sc-app-shell--compact .sc-browse-selection-bar", {
+globalStyle(".sc-app-shell-compact .sc-browse-selection-bar", {
     bottom: "max(\n    calc(16px + var(--sc-nav-bar-height) + env(safe-area-inset-bottom, 0px)),\n    var(--sc-tray-stack-top, 0px)\n  )"
 });
 globalStyle(".sc-browse-selection-bar-inner", {
@@ -401,7 +401,7 @@ globalStyle(".sc-browse-table-wrap", {
     minWidth: "0",
     minHeight: "0"
 });
-globalStyle(".sc-browse-table-wrap--dragover", {
+globalStyle(".sc-browse-table-wrap-dragover", {
     outline: "2px dashed var(--mdui-color-primary, var(--m3c-primary))",
     outlineOffset: "-2px"
 });
@@ -670,7 +670,7 @@ globalStyle("button.sc-preview-archive-row", {
 globalStyle(".sc-preview-archive-row:hover", {
     background: "rgb(var(--mdui-color-surface-container-highest))"
 });
-globalStyle(".sc-preview-archive-row--up", {
+globalStyle(".sc-preview-archive-row-up", {
     gridTemplateColumns: "auto 1fr"
 });
 globalStyle(".sc-preview-archive-name", {

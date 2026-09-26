@@ -61,18 +61,18 @@ export function BrowseToolbar(props: ToolbarProps) {
   const { model, actions, t } = props
   const { compact, details, mode, canCreate, filterType, filterDate, filterTypeLabel, filterDateLabel, sortLabel, crumbs, external, encrypted, unlocked, broken } = model
   const { onNavigate, onUnlock, onFilter, onRefresh, onToggleView, onToggleDetails, onSort, onNew, onOverflow } = actions
-  return <header className={`sc-browse-toolbar${compact ? ' sc-browse-toolbar--compact' : ''}`}>
+  return <header className={`sc-browse-toolbar${compact ? ' sc-browse-toolbar-compact' : ''}`}>
     <div className="sc-browse-folder-heading">
       <h1 className="sc-sr-only">{crumbs.at(-1)?.label ?? t('nav.files')}</h1>
       <Breadcrumb crumbs={crumbs} onNavigate={onNavigate} />
       {external ? <span className="sc-browse-external-badge"><Icon name="warning" size={14} />{t('common.shared_with_other_services')}</span> : null}
-      {encrypted ? unlocked ? <span className="sc-browse-encrypted-badge"><Icon name="lock" size={14} />{t('browse.encrypted_badge')}</span> : <button type="button" className="sc-browse-encrypted-badge sc-browse-encrypted-badge--locked" onClick={onUnlock}><Icon name="lock" size={14} />{t('browse.encrypted_locked_badge')}</button> : null}
+      {encrypted ? unlocked ? <span className="sc-browse-encrypted-badge"><Icon name="lock" size={14} />{t('browse.encrypted_badge')}</span> : <button type="button" className="sc-browse-encrypted-badge sc-browse-encrypted-badge-locked" onClick={onUnlock}><Icon name="lock" size={14} />{t('browse.encrypted_locked_badge')}</button> : null}
       {broken ? <span className="sc-browse-broken-badge"><Icon name="warning" size={14} />{t('browse.this_folder_is_unavailable')}</span> : null}
     </div>
     <div className="sc-browse-toolbar-actions">
       {!compact ? <>
-        <button type="button" className={`sc-browse-filter-pill${filterType !== 'all' ? ' sc-browse-filter-pill--active' : ''}`} aria-label={t('browse.filter_type')} onClick={(event) => onFilter('type', event)}><span>{filterTypeLabel}</span><Icon name="arrow-drop-down" size={16} /></button>
-        <button type="button" className={`sc-browse-filter-pill${filterDate !== 'any' ? ' sc-browse-filter-pill--active' : ''}`} aria-label={t('browse.filter_date')} onClick={(event) => onFilter('date', event)}><span>{filterDateLabel}</span><Icon name="arrow-drop-down" size={16} /></button>
+        <button type="button" className={`sc-browse-filter-pill${filterType !== 'all' ? ' sc-browse-filter-pill-active' : ''}`} aria-label={t('browse.filter_type')} onClick={(event) => onFilter('type', event)}><span>{filterTypeLabel}</span><Icon name="arrow-drop-down" size={16} /></button>
+        <button type="button" className={`sc-browse-filter-pill${filterDate !== 'any' ? ' sc-browse-filter-pill-active' : ''}`} aria-label={t('browse.filter_date')} onClick={(event) => onFilter('date', event)}><span>{filterDateLabel}</span><Icon name="arrow-drop-down" size={16} /></button>
         <button type="button" className="sc-browse-action-btn sc-icon-button" aria-label={t('common.refresh')} onClick={onRefresh}><Icon name="refresh" size={18} /></button>
         <button type="button" className="sc-browse-action-btn sc-icon-button" aria-label={mode === 'list' ? t('browse.grid_view') : t('browse.list_view')} onClick={onToggleView}><Icon name={mode === 'list' ? 'grid' : 'list'} size={18} /></button>
         <button type="button" className={`sc-browse-action-btn sc-icon-button${details ? ' is-active' : ''}`} aria-label={details ? t('details.hide') : t('details.show')} onClick={onToggleDetails}><Icon name="info" size={18} /></button>
@@ -134,7 +134,7 @@ export function BrowseContent(props: BrowseContentProps) {
   const dirs = all ? directory.dirs : filteredEntries.filter((entry) => entry.kind === 'dir').length
   return <div className="sc-browse-content">
     {treeOpen ? <FileTree currentPath={path} onNavigate={onTreeNavigate} overlay={compact} onClose={onTreeClose} /> : null}
-    <div className={`sc-browse-table-wrap${dragOver ? ' sc-browse-table-wrap--dragover' : ''}${marqueeRect ? ' sc-browse-table-wrap--marquee' : ''}`} onPointerDown={onPointerDown} onContextMenu={onBlankMenu} onClick={onEmptyClick}>
+    <div className={`sc-browse-table-wrap${dragOver ? ' sc-browse-table-wrap-dragover' : ''}${marqueeRect ? ' sc-browse-table-wrap-marquee' : ''}`} onPointerDown={onPointerDown} onContextMenu={onBlankMenu} onClick={onEmptyClick}>
       {noShares ? <div className="sc-browse-nothing"><div className="sc-browse-nothing-icon" aria-hidden="true"><Icon name="folder" size={40} /></div><h2 className="sc-browse-nothing-title">{t('browse.nothing_here')}</h2><p className="sc-browse-nothing-hint">{isAdmin ? t('browse.press_this_button_to_set_up_your_first_folder') : t('browse.ask_an_administrator_for_a_folder')}</p>{isAdmin ? <Button onClick={onAddFolder}>{t('common.add_folder')}</Button> : null}</div> : isPending ? <div className="sc-browse-loading"><mdui-circular-progress /></div> : error ? <p className="sc-browse-error" role="alert">{errorText}</p> : <div className="sc-browse-view">{mode === 'list' ? <FileTable ref={tableRef} entries={filteredEntries} total={all ? directory.total : filteredEntries.length} dirs={dirs} loading={isPending} loadingMore={isFetchingMore} requestMore={onRequestMore} perms={directory.perms} onOpen={onOpen} onContextMenu={onContextMenu} onRename={onRename} onDelete={onDelete} onSearchFocus={onSearchFocus} encrypted={encrypted} /> : <FileGrid ref={gridRef} entries={filteredEntries} total={all ? directory.total : filteredEntries.length} dirs={dirs} loading={isPending} loadingMore={isFetchingMore} requestMore={onRequestMore} perms={directory.perms} onOpen={onOpen} onContextMenu={onContextMenu} onRename={onRename} onDelete={onDelete} onSearchFocus={onSearchFocus} encrypted={encrypted} />}</div>}
       {dragOver ? <div className="sc-browse-drop-overlay">{t('browse.drop_here_upload')}</div> : null}
     </div>

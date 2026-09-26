@@ -47,7 +47,7 @@ globalStyle(".sc-share-copy-feedback", {
     margin: "8px 0 0",
     fontSize: "var(--mdui-typescale-body-small-size, .875rem)"
 });
-globalStyle(".sc-share-copy-feedback--error,\n.sc-share-error", {
+globalStyle(".sc-share-copy-feedback-error,\n.sc-share-error", {
     color: "var(--mdui-color-error, var(--m3c-error))",
     overflowWrap: "anywhere"
 });

@@ -52,7 +52,7 @@ export function Switch({
 
   const accessibleLabel = label ?? (typeof children === 'string' ? children : undefined)
   return (
-    <label className={`sc-switch-row${disabled ? ' sc-switch-row--disabled' : ''}`}>
+    <label className={`sc-switch-row${disabled ? ' sc-switch-row-disabled' : ''}`}>
       <mdui-switch
         ref={ref}
         checked={checked}

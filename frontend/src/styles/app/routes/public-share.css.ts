@@ -33,7 +33,7 @@ globalStyle(".sc-public-share-status", {
     overflowWrap: "anywhere",
     color: "var(--sc-content-secondary)"
 });
-globalStyle(".sc-public-share-status--error", {
+globalStyle(".sc-public-share-status-error", {
     color: "var(--m3c-error)"
 });
 globalStyle(".sc-public-share-state,\n.sc-public-share-unlock", {
@@ -42,7 +42,7 @@ globalStyle(".sc-public-share-state,\n.sc-public-share-unlock", {
     gap: "16px",
     minWidth: "0"
 });
-globalStyle(".sc-public-share-state--error", {
+globalStyle(".sc-public-share-state-error", {
     padding: "16px",
     borderRadius: "var(--sc-radius-medium)",
     background: "var(--sc-state-error)",
@@ -100,7 +100,7 @@ globalStyle(".sc-public-share-row:hover", {
 globalStyle(".sc-public-share-row:last-child", {
     borderBottom: "none"
 });
-globalStyle(".sc-public-share-row--empty", {
+globalStyle(".sc-public-share-row-empty", {
     justifyContent: "center",
     color: "var(--sc-content-secondary)",
     textAlign: "center"

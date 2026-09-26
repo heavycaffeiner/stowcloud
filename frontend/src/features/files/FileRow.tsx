@@ -120,14 +120,14 @@ export function FileRow({
     <div
       {...activationHandlers}
       id={domId}
-      className={`sc-row${selected ? ' sc-row--selected' : ''}${focused ? ' sc-row--focused' : ''}`}
+      className={`sc-row${selected ? ' sc-row-selected' : ''}${focused ? ' sc-row-focused' : ''}`}
       role="row"
       aria-rowindex={rowIndex}
       aria-selected={selected}
       onContextMenu={onContextMenu}
     >
       <span
-        className="sc-row-cell sc-row-cell--select sc-touch-target"
+        className="sc-row-cell sc-row-cell-select sc-touch-target"
         role="gridcell"
         onClick={(event) => {
           event.stopPropagation()
@@ -141,12 +141,12 @@ export function FileRow({
         }}
         onDoubleClick={(event) => event.stopPropagation()}
       >
-        <span className={`sc-custom-checkbox${selected ? ' sc-custom-checkbox--checked' : ''}`} aria-hidden="true">
+        <span className={`sc-custom-checkbox${selected ? ' sc-custom-checkbox-checked' : ''}`} aria-hidden="true">
           {selected ? <Icon name="check" size={13} /> : null}
         </span>
         <span className="sc-sr-only">{t('common.select', { name: entry.name })}</span>
       </span>
-      <span className="sc-row-cell sc-row-cell--name" role="gridcell">
+      <span className="sc-row-cell sc-row-cell-name" role="gridcell">
         <span className="sc-row-icon-badge" style={{ color: fileIcon.color }}>
           <Icon name={fileIcon.name} size={20} />
         </span>
@@ -162,13 +162,13 @@ export function FileRow({
           </span>
         ) : null}
       </span>
-      <span className="sc-row-cell sc-row-cell--size" role="gridcell">
+      <span className="sc-row-cell sc-row-cell-size" role="gridcell">
         {entry.kind === 'dir' ? '-' : formatEntrySize(entry.size, encrypted)}
       </span>
-      <span className="sc-row-cell sc-row-cell--mtime" role="gridcell">
+      <span className="sc-row-cell sc-row-cell-mtime" role="gridcell">
         {formatModifiedDateNs(entry.mtime_ns)}
       </span>
-      <span className="sc-row-cell sc-row-cell--actions" role="gridcell">
+      <span className="sc-row-cell sc-row-cell-actions" role="gridcell">
         <button
           type="button"
           className="sc-row-more-btn sc-icon-button"

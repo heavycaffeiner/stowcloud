@@ -10,7 +10,7 @@ test.describe('Authentication UI Smoke', () => {
     const admin = await workerApp.setupAdmin();
 
     await page.goto(`${workerApp.baseURL}/login`, { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('form.sc-auth-card--login')).toBeVisible();
+    await expect(page.locator('form.sc-auth-card-login')).toBeVisible();
 
     // 1. Wrong credentials
     const usernameInput = page.locator('mdui-text-field[autocomplete="username"] input, input[autocomplete="username"]').first();
@@ -43,7 +43,7 @@ test.describe('Authentication UI Smoke', () => {
     await signOutButton.click();
 
     await expect(page).toHaveURL(/\/login/, { timeout: 10000 });
-    await expect(page.locator('form.sc-auth-card--login')).toBeVisible();
+    await expect(page.locator('form.sc-auth-card-login')).toBeVisible();
 
     // Check artifacts
     await assertNoUnexpectedErrors(artifacts);

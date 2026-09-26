@@ -22,7 +22,7 @@ globalStyle(".sc-auth-card", {
     boxShadow: "var(--sc-elevation-1)",
     animation: "sc-scale-up 240ms cubic-bezier(0.2, 0, 0, 1)"
 });
-globalStyle(".sc-auth-card--login", {
+globalStyle(".sc-auth-card-login", {
     width: "min(100%, 36rem)",
     marginInline: "auto",
     borderRadius: "var(--sc-radius-large)",

@@ -72,7 +72,7 @@ export function Button({
         form={form}
         aria-label={ariaLabel}
         aria-pressed={pressed === undefined ? undefined : pressed}
-        className={square ? 'sc-button--square' : undefined}
+        className={square ? 'sc-button-square' : undefined}
         aria-busy={loading ? 'true' : undefined}
         onClick={onClick}
       >

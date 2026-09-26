@@ -189,7 +189,7 @@ globalStyle(".sc-storage-status-badge", {
     fontSize: "var(--mdui-typescale-label-medium-size)",
     fontWeight: "500"
 });
-globalStyle(".sc-storage-status-badge--on", {
+globalStyle(".sc-storage-status-badge-on", {
     background: "rgb(var(--mdui-color-surface-container-highest))",
     color: "rgb(var(--mdui-color-primary))"
 });

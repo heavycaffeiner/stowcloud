@@ -118,9 +118,9 @@ export function NavigationDrawer({
   const settingNavItems = destinations.filter((item) => ['settings', 'admin'].includes(item.id))
 
   const drawerClass = overlay
-    ? 'sc-nav-drawer sc-nav-drawer--overlay'
+    ? 'sc-nav-drawer sc-nav-drawer-overlay'
     : collapsed
-      ? 'sc-nav-drawer sc-nav-drawer--collapsed'
+      ? 'sc-nav-drawer sc-nav-drawer-collapsed'
       : 'sc-nav-drawer'
 
   const content = (
@@ -145,7 +145,7 @@ export function NavigationDrawer({
           <div className="sc-nav-drawer-new-wrap">
             <button
               type="button"
-              className={collapsed ? 'sc-nav-drawer-new-btn sc-nav-drawer-new-btn--collapsed' : 'sc-nav-drawer-new-btn'}
+              className={collapsed ? 'sc-nav-drawer-new-btn sc-nav-drawer-new-btn-collapsed' : 'sc-nav-drawer-new-btn'}
               aria-label={t('browse.new')}
               title={t('browse.new')}
               onClick={(event) => {
@@ -168,7 +168,7 @@ export function NavigationDrawer({
                 return (
                   <li key={item.id} className="sc-nav-drawer-entry">
                     <button
-                      className={isActive ? 'sc-nav-drawer-item sc-nav-drawer-item--active' : 'sc-nav-drawer-item'}
+                      className={isActive ? 'sc-nav-drawer-item sc-nav-drawer-item-active' : 'sc-nav-drawer-item'}
                       type="button"
                       aria-current={isActive ? 'page' : undefined}
                       aria-label={item.label}
@@ -203,12 +203,12 @@ export function NavigationDrawer({
             <ul className="sc-nav-drawer-list" aria-label={t('nav.folder_selector')}>
               <li className="sc-nav-drawer-entry">
                 <VirtualList
-                  className={overlay ? 'sc-nav-drawer-sublist sc-nav-drawer-sublist--overlay' : 'sc-nav-drawer-sublist'}
+                  className={overlay ? 'sc-nav-drawer-sublist sc-nav-drawer-sublist-overlay' : 'sc-nav-drawer-sublist'}
                   items={displayRoots}
                   itemKey={(root) => root.id}
                   estimateSize={reordering ? 48 : overlay ? 48 : 40}
                   renderItem={(root, index) => reordering ? (
-                    <div className="sc-nav-drawer-subitem sc-nav-drawer-subitem--reorder">
+                    <div className="sc-nav-drawer-subitem sc-nav-drawer-subitem-reorder">
                       <span className="sc-nav-drawer-item-icon"><Icon name={root.icon ?? 'folder'} size={18} /></span>
                       <span className="sc-nav-drawer-subitem-label sc-filename">{root.label}</span>
                       <span className="sc-nav-drawer-reorder-actions">
@@ -217,7 +217,7 @@ export function NavigationDrawer({
                           disabled={index === 0}
                           onClick={() => moveRoot(index, -1)}
                         >
-                          <span className="sc-nav-drawer-reorder-chevron sc-nav-drawer-reorder-chevron--up">
+                          <span className="sc-nav-drawer-reorder-chevron sc-nav-drawer-reorder-chevron-up">
                             <Icon name="chevron_right" size={16} />
                           </span>
                         </IconButton>
@@ -226,7 +226,7 @@ export function NavigationDrawer({
                           disabled={index === displayRoots.length - 1}
                           onClick={() => moveRoot(index, 1)}
                         >
-                          <span className="sc-nav-drawer-reorder-chevron sc-nav-drawer-reorder-chevron--down">
+                          <span className="sc-nav-drawer-reorder-chevron sc-nav-drawer-reorder-chevron-down">
                             <Icon name="chevron_right" size={16} />
                           </span>
                         </IconButton>
@@ -235,7 +235,7 @@ export function NavigationDrawer({
                   ) : (
                     <button
                       type="button"
-                      className={active === root.id ? 'sc-nav-drawer-subitem sc-nav-drawer-subitem--active' : 'sc-nav-drawer-subitem'}
+                      className={active === root.id ? 'sc-nav-drawer-subitem sc-nav-drawer-subitem-active' : 'sc-nav-drawer-subitem'}
                       aria-current={active === root.id ? 'location' : undefined}
                       onClick={() => {
                         onselect?.(root)
@@ -264,7 +264,7 @@ export function NavigationDrawer({
                   <li key={item.id} className="sc-nav-drawer-entry">
                     <button
                       type="button"
-                      className={isActive ? 'sc-nav-drawer-item sc-nav-drawer-item--active' : 'sc-nav-drawer-item'}
+                      className={isActive ? 'sc-nav-drawer-item sc-nav-drawer-item-active' : 'sc-nav-drawer-item'}
                       aria-current={isActive ? 'page' : undefined}
                       aria-label={item.label}
                       title={collapsed ? item.label : undefined}

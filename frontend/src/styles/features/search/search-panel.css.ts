@@ -133,13 +133,13 @@ globalStyle(".sc-search-category-pill:hover", {
     background: "color-mix(in srgb, var(--sc-content-primary) 10%, transparent)",
     color: "var(--sc-content-primary)"
 });
-globalStyle(".sc-search-category-pill--active", {
+globalStyle(".sc-search-category-pill-active", {
     background: "var(--sc-state-selection)",
     borderColor: "color-mix(in srgb, var(--sc-state-selection-content) 35%, transparent)",
     color: "var(--sc-state-selection-content)",
     fontWeight: "600"
 });
-globalStyle(".sc-search-category-pill--active:hover", {
+globalStyle(".sc-search-category-pill-active:hover", {
     background: "color-mix(in srgb, var(--sc-state-selection) 88%, var(--sc-content-primary))",
     color: "var(--sc-state-selection-content)"
 });

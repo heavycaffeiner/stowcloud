@@ -5,7 +5,7 @@ import { assertNoUnexpectedErrors } from '../helpers/ux-invariants';
 test.describe('Accessibility Scans and Accessible Names', () => {
   test('login page accessibility scan with axe-core', async ({ page, workerApp }) => {
     await page.goto(`${workerApp.baseURL}/login`, { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('form.sc-auth-card--login')).toBeVisible();
+    await expect(page.locator('form.sc-auth-card-login')).toBeVisible();
 
     const results = await new AxeBuilder({ page })
       .disableRules(['color-contrast'])

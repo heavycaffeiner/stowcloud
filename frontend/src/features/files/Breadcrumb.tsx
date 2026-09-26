@@ -53,7 +53,7 @@ export function Breadcrumb({ crumbs, onNavigate }: BreadcrumbProps) {
         {visibleCrumbs.map((crumb, index) => (
           <Fragment key={crumb.path}>
             {shouldCollapse && index === (compact ? 0 : 1) && (
-              <li className="sc-breadcrumb-item sc-breadcrumb-item--ellipsis">
+              <li className="sc-breadcrumb-item sc-breadcrumb-item-ellipsis">
                 <button
                   type="button"
                   className="sc-breadcrumb-ellipsis-btn"
@@ -69,7 +69,7 @@ export function Breadcrumb({ crumbs, onNavigate }: BreadcrumbProps) {
                 <span className="sc-breadcrumb-sep" aria-hidden="true">/</span>
               </li>
             )}
-            <li className={`sc-breadcrumb-item sc-breadcrumb-item--${index === visibleCrumbs.length - 1 ? 'current' : index === 0 ? 'root' : index === visibleCrumbs.length - 2 ? 'parent' : 'ancestor'}`}>
+            <li className={`sc-breadcrumb-item sc-breadcrumb-item-${index === visibleCrumbs.length - 1 ? 'current' : index === 0 ? 'root' : index === visibleCrumbs.length - 2 ? 'parent' : 'ancestor'}`}>
               {index < visibleCrumbs.length - 1 ? (
                 <>
                   <button

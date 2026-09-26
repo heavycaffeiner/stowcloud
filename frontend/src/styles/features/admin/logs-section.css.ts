@@ -74,11 +74,11 @@ globalStyle(".sc-logs-source-button", {
 globalStyle(".sc-logs-source-button:hover", {
     background: "rgb(var(--mdui-color-surface-container-highest))"
 });
-globalStyle(".sc-logs-source-button--active", {
+globalStyle(".sc-logs-source-button-active", {
     background: "rgb(var(--mdui-color-primary-container))",
     color: "rgb(var(--mdui-color-on-primary-container))"
 });
-globalStyle(".sc-logs-source-button:focus-visible,\n.sc-logs-bar:focus-visible,\n.sc-logs-row--button:focus-visible,\n.sc-logs-table-wrap summary:focus-visible", {
+globalStyle(".sc-logs-source-button:focus-visible,\n.sc-logs-bar:focus-visible,\n.sc-logs-row-button:focus-visible,\n.sc-logs-table-wrap summary:focus-visible", {
     outline: "var(--sc-focus-ring-width) solid var(--sc-state-focus)",
     outlineOffset: "var(--sc-focus-ring-offset)"
 });
@@ -189,7 +189,7 @@ globalStyle(".sc-logs-bar", {
     background: "none",
     cursor: "pointer"
 });
-globalStyle(".sc-logs-bar--active", {
+globalStyle(".sc-logs-bar-active", {
     background: "rgb(var(--mdui-color-surface-container-high))",
     outline: "1px solid rgb(var(--mdui-color-outline))"
 });
@@ -213,26 +213,26 @@ globalStyle(".sc-logs-baseline", {
 globalStyle(".sc-logs-seg, .sc-logs-swatch", {
     background: "rgb(var(--mdui-color-outline))"
 });
-globalStyle(".sc-logs-seg--server-debug", {
+globalStyle(".sc-logs-seg-server-debug", {
     background: "rgb(var(--mdui-color-surface-container-highest))"
 });
-globalStyle(".sc-logs-seg--server-info", {
+globalStyle(".sc-logs-seg-server-info", {
     background: "rgb(var(--mdui-color-secondary-container))",
     backgroundImage: "repeating-linear-gradient(45deg, transparent 0 3px, rgb(var(--mdui-color-on-secondary-container)) 3px 4px)"
 });
-globalStyle(".sc-logs-seg--server-warn", {
+globalStyle(".sc-logs-seg-server-warn", {
     background: "rgb(var(--mdui-color-tertiary-container))",
     backgroundImage: "repeating-linear-gradient(-45deg, transparent 0 3px, rgb(var(--mdui-color-on-tertiary-container)) 3px 4px)"
 });
-globalStyle(".sc-logs-seg--server-error", {
+globalStyle(".sc-logs-seg-server-error", {
     background: "rgb(var(--mdui-color-error-container))",
     backgroundImage: "repeating-linear-gradient(90deg, transparent 0 2px, rgb(var(--mdui-color-on-error-container)) 2px 4px)"
 });
-globalStyle(".sc-logs-seg--audit-ok", {
+globalStyle(".sc-logs-seg-audit-ok", {
     background: "rgb(var(--mdui-color-primary-container))",
     backgroundImage: "repeating-linear-gradient(0deg, transparent 0 3px, rgb(var(--mdui-color-on-primary-container)) 3px 4px)"
 });
-globalStyle(".sc-logs-seg--audit-failed", {
+globalStyle(".sc-logs-seg-audit-failed", {
     background: "rgb(var(--mdui-color-error-container))",
     backgroundImage: "repeating-linear-gradient(45deg, transparent 0 3px, rgb(var(--mdui-color-on-error-container)) 3px 4px), repeating-linear-gradient(-45deg, transparent 0 3px, rgb(var(--mdui-color-on-error-container)) 3px 4px)"
 });
@@ -359,7 +359,7 @@ globalStyle(".sc-logs-row", {
     color: "rgb(var(--mdui-color-on-surface))",
     textAlign: "start"
 });
-globalStyle(".sc-logs-row--button", {
+globalStyle(".sc-logs-row-button", {
     background: "none",
     border: "0",
     font: "inherit",
@@ -377,19 +377,19 @@ globalStyle(".sc-logs-level", {
     color: "rgb(var(--mdui-color-on-surface-variant))",
     fontSize: "var(--mdui-typescale-label-medium-size)"
 });
-globalStyle(".sc-logs-level--error, .sc-logs-level--failed", {
+globalStyle(".sc-logs-level-error, .sc-logs-level-failed", {
     background: "rgb(var(--mdui-color-error-container))",
     color: "rgb(var(--mdui-color-on-error-container))"
 });
-globalStyle(".sc-logs-level--warn", {
+globalStyle(".sc-logs-level-warn", {
     background: "rgb(var(--mdui-color-tertiary-container))",
     color: "rgb(var(--mdui-color-on-tertiary-container))"
 });
-globalStyle(".sc-logs-level--info", {
+globalStyle(".sc-logs-level-info", {
     background: "rgb(var(--mdui-color-secondary-container))",
     color: "rgb(var(--mdui-color-on-secondary-container))"
 });
-globalStyle(".sc-logs-level--ok", {
+globalStyle(".sc-logs-level-ok", {
     background: "rgb(var(--mdui-color-primary-container))",
     color: "rgb(var(--mdui-color-on-primary-container))"
 });
@@ -431,7 +431,7 @@ globalStyle(".sc-logs-chevron", {
     display: "inline-flex",
     transition: "rotate 150ms ease-out"
 });
-globalStyle(".sc-logs-chevron--open", {
+globalStyle(".sc-logs-chevron-open", {
     rotate: "90deg"
 });
 globalStyle(".sc-logs-attrs", {

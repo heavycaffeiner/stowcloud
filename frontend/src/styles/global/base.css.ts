@@ -346,7 +346,7 @@ globalStyle(".sc-icon-button-tip", {
     opacity: "0",
     transition: "opacity 120ms ease, transform 120ms ease"
 });
-globalStyle(".sc-icon-button-tip--placed", {
+globalStyle(".sc-icon-button-tip-placed", {
     opacity: "1"
 });
 globalStyle(".sc-thumb-wrap", {

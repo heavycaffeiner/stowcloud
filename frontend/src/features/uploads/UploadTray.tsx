@@ -71,7 +71,7 @@ export function UploadTray() {
       <div ref={politeRef} className="sc-upload-tray-sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
       <div ref={assertiveRef} className="sc-upload-tray-sr-only" role="alert" aria-live="assertive" aria-atomic="true"></div>
       {items.length > 0 ? (
-        <section className={open ? 'sc-upload-tray' : 'sc-upload-tray sc-upload-tray--collapsed'} aria-label={t('common.upload')}>
+        <section className={open ? 'sc-upload-tray' : 'sc-upload-tray sc-upload-tray-collapsed'} aria-label={t('common.upload')}>
           <header className="sc-upload-tray-header">
             <button className="sc-upload-tray-title" type="button" onClick={() => uploads.setOpen(!open)} aria-expanded={open}>
               <Icon name="upload_file" />
