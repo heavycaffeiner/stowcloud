@@ -242,6 +242,8 @@ func (h *handlers) Patch(c *gin.Context) {
 		h.d.Fail(c, core.ErrNotFound)
 		return
 	}
+	// Deferred-length sessions are quota-bounded by PatchAt while bytes arrive;
+	// the handler must not wait for Upload-Length because it is intentionally absent.
 	next, err := engine.PatchAt(c.Request.Context(), root, id, owner, offset, requestBodyReader(c), sum)
 	if err != nil {
 		h.failUpload(c, err)

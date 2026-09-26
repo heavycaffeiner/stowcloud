@@ -136,25 +136,51 @@ func (c *Core) MkdirParents(ctx context.Context, r Resolved) error {
 // per-caller constant is how two routes end up creating files that differ only
 // by which route made them.
 func (c *Core) WriteStream(ctx context.Context, r Resolved, src io.Reader, ifMatch *Token) (Entry, error) {
+	prior, err := c.prepareWrite(r, ifMatch)
+	if err != nil {
+		return Entry{}, err
+	}
 	opts := vfs.DurableOpts{Mode: r.root.Policy().ModeFile}
-	return c.CreateFile(ctx, r, opts, ifMatch, func(f *vfs.File) error {
-		// Positional, because the descriptor carries no shared offset: the
-		// running total is the only cursor there is.
-		var off int64
-		_, err := io.Copy(writerAt{f: f, off: &off}, src)
-		return err
+	// Growth is reserved before each write reaches the staging file, so a body
+	// of unknown length stops at the quota instead of filling the disk first.
+	done, _, werr := c.writeDurableQuotaStream(ctx, r, opts, prior, func(f *vfs.File, reserve func(uint64) error) error {
+		var off uint64
+		if _, err := io.Copy(writerAt{f: f, off: &off, reserve: reserve}, src); err != nil {
+			return err
+		}
+		end, err := number.Narrow[int64](off)
+		if err != nil {
+			return err
+		}
+		return f.Truncate(end)
 	})
+	return c.finishWrite(ctx, r, done, werr)
 }
 
-// writerAt turns positional writes into a stream.
+// writerAt turns positional writes into a stream while admitting growth before
+// each write reaches the durable staging file.
 type writerAt struct {
-	f   *vfs.File
-	off *int64
+	f       *vfs.File
+	off     *uint64
+	reserve func(uint64) error
 }
 
 func (w writerAt) Write(p []byte) (int, error) {
-	n, err := w.f.WriteAt(p, *w.off)
-	*w.off += int64(n)
+	if w.reserve != nil {
+		if err := w.reserve(*w.off + uint64(len(p))); err != nil {
+			return 0, err
+		}
+	}
+	at, err := number.Narrow[int64](*w.off)
+	if err != nil {
+		return 0, err
+	}
+	n, err := w.f.WriteAt(p, at)
+	wrote, nerr := number.Narrow[uint64](n)
+	if nerr != nil {
+		return n, errors.Join(err, nerr)
+	}
+	*w.off += wrote
 	return n, err
 }
 
@@ -172,38 +198,51 @@ func (c *Core) CreateFile(
 	ctx context.Context, r Resolved, mode vfs.DurableOpts,
 	ifMatch *Token, write func(*vfs.File) error,
 ) (Entry, error) {
-	if err := r.Require(acl.Write | acl.Create); err != nil {
+	prior, err := c.prepareWrite(r, ifMatch)
+	if err != nil {
 		return Entry{}, err
 	}
+	done, _, werr := c.writeDurableQuota(ctx, r, mode, prior, write)
+	return c.finishWrite(ctx, r, done, werr)
+}
 
-	// One stat, and the write below is what actually settles the race with
-	// it. WriteDurable's own clobber and replace semantics are the atomic
-	// truth; the precondition is advisory ordering on top, as it is in
-	// every If-Match implementation over a real filesystem.
+// prepareWrite checks permission and the precondition, and returns what the
+// write replaces, or nil for a new name.
+//
+// One stat, and the write that follows is what actually settles the race with
+// it. WriteDurable's own clobber and replace semantics are the atomic truth;
+// the precondition is advisory ordering on top, as it is in every If-Match
+// implementation over a real filesystem.
+func (c *Core) prepareWrite(r Resolved, ifMatch *Token) (*vfs.Stat, error) {
+	if err := r.Require(acl.Write | acl.Create); err != nil {
+		return nil, err
+	}
 	st, serr := r.root.Stat(r.path)
-	var prior *vfs.Stat
 	switch {
 	case serr == nil:
-		prior = &st
 		if perr := precondition(ifMatch, st); perr != nil {
-			return Entry{}, perr
+			return nil, perr
 		}
+		return &st, nil
 	case mapVFSErr(serr) == ErrNotFound:
 		if ifMatch != nil {
 			// A validator against a missing file failed by definition, and
 			// the empty current token says the file is gone rather than
 			// changed.
-			return Entry{}, &PreconditionError{Current: ""}
+			return nil, &PreconditionError{Current: ""}
 		}
 		// The name is about to be minted, so the creation table applies.
 		if cerr := requireCreatableLeaf(r.path); cerr != nil {
-			return Entry{}, mapVFSErr(cerr)
+			return nil, mapVFSErr(cerr)
 		}
+		return nil, nil
 	default:
-		return Entry{}, mapVFSErr(serr)
+		return nil, mapVFSErr(serr)
 	}
+}
 
-	done, _, werr := c.writeDurableQuota(ctx, r, mode, prior, write)
+// finishWrite records a completed durable write and answers its entry.
+func (c *Core) finishWrite(ctx context.Context, r Resolved, done vfs.Durable, werr error) (Entry, error) {
 	if werr != nil {
 		return Entry{}, mapVFSErr(werr)
 	}
@@ -211,7 +250,6 @@ func (c *Core) CreateFile(
 		c.warn("the replaced file's ownership could not be restored",
 			"path", r.path.String(), "error", done.OwnerRestore)
 	}
-
 	c.markDirty(ctx, r.share, r.path)
 	c.record(ctx, r, journal.OpUpload)
 	return c.buildEntry(r, r.path.Name(), r.path), nil

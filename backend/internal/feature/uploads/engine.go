@@ -477,7 +477,10 @@ func (e *Engine) handleFor(root vfs.Root, id SessionID, part vfs.SafePath) (*vfs
 
 // lockChunk serializes concurrent writes targeting the same chunk offset within a session,
 // preventing interleaving multi-buffer pwrite calls while allowing disjoint offsets to proceed in parallel.
-func (e *Engine) lockChunk(id SessionID, off uint64) func() {
+func (e *Engine) lockChunk(ctx context.Context, id SessionID, off uint64) (func(), error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	e.handlesMu.Lock()
 	h, ok := e.handles[id]
 	if !ok {
@@ -501,10 +504,14 @@ func (e *Engine) lockChunk(id SessionID, off uint64) func() {
 				delete(h.active, off)
 				close(done)
 				h.mu.Unlock()
-			}
+			}, nil
 		}
 		h.mu.Unlock()
-		<-waitCh
+		select {
+		case <-waitCh:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
 }
 func (e *Engine) putHandle(id SessionID, f *vfs.File) {

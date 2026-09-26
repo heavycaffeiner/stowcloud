@@ -3,6 +3,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/store/dbfile"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/store/journal"
@@ -780,5 +782,51 @@ func TestANilJournalDoesNotFailAWrite(t *testing.T) {
 	mustCreate(t, c, under(t, c, "Documents/nojournal.txt", acl.Write), "x")
 	if got := readHost(t, host, "nojournal.txt"); got != "x" {
 		t.Fatalf("the write with no journal left %q", got)
+	}
+}
+
+type cappedWriteSink struct{ remaining uint64 }
+
+func (s *cappedWriteSink) Reserve(_ context.Context, _ int64, additional uint64) (bool, error) {
+	if additional > s.remaining {
+		return false, nil
+	}
+	s.remaining -= additional
+	return true, nil
+}
+
+func (s *cappedWriteSink) Commit(context.Context, int64, uint64) error { return nil }
+
+func (s *cappedWriteSink) Release(_ context.Context, _ int64, delta int64) error {
+	back, err := number.Narrow[uint64](delta)
+	if err != nil {
+		return err
+	}
+	s.remaining += back
+	return nil
+}
+
+func TestAChunkedWritePastRemainingQuotaLeavesNoStagedFile(t *testing.T) {
+	t.Parallel()
+	c, _, host, _ := writable(t)
+	if err := c.AttachQuotaSink(&cappedWriteSink{remaining: 1024}); err != nil {
+		t.Fatalf("attaching quota sink: %v", err)
+	}
+	r := under(t, c, "Documents/over-cap.bin", acl.Write|acl.Create)
+	_, err := c.WriteStream(context.Background(), r, bytes.NewReader(bytes.Repeat([]byte("x"), 2048)), nil)
+	if !errors.Is(err, ErrQuotaExceeded) {
+		t.Fatalf("an over-quota stream returned %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(host, "over-cap.bin")); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("the failed stream left a published file: %v", statErr)
+	}
+	entries, readErr := os.ReadDir(host)
+	if readErr != nil {
+		t.Fatalf("reading the destination directory: %v", readErr)
+	}
+	for _, entry := range entries {
+		if vfs.IsReservedName(entry.Name()) {
+			t.Fatalf("the failed stream left reserved staging file %q", entry.Name())
+		}
 	}
 }

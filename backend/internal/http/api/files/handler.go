@@ -508,7 +508,7 @@ func (h *Handler) ArchiveFetch(c *gin.Context) {
 	c.Header("Content-Disposition", httpheader.Attachment(ticket.Name))
 	c.Status(http.StatusOK)
 	c.Writer.Flush()
-	if err := BuildArchive(context.WithoutCancel(c.Request.Context()), c.Writer, ticket.Name, func(ctx context.Context, visit ArchiveVisit) error {
+	if err := BuildArchive(c.Request.Context(), c.Writer, ticket.Name, func(ctx context.Context, visit ArchiveVisit) error {
 		for _, root := range roots {
 			if err := h.d.Core.ArchiveWalk(ctx, root, visit); err != nil {
 				return err
@@ -683,26 +683,7 @@ func (h *Handler) Write(c *gin.Context) {
 			return
 		}
 	}
-	reader := h.d.Body(c)
-	entry, err := h.d.Core.CreateFile(c.Request.Context(), r, vfs.DurableOpts{Mode: r.Root().Policy().ModeFile}, ifMatchOf(c), func(f *vfs.File) error {
-		var off int64
-		buf := make([]byte, 256<<10)
-		for {
-			n, rerr := reader.Read(buf)
-			if n > 0 {
-				if _, werr := f.WriteAt(buf[:n], off); werr != nil {
-					return werr
-				}
-				off += int64(n)
-			}
-			if errors.Is(rerr, io.EOF) {
-				return f.Truncate(off)
-			}
-			if rerr != nil {
-				return rerr
-			}
-		}
-	})
+	entry, err := h.d.Core.WriteStream(c.Request.Context(), r, h.d.Body(c), ifMatchOf(c))
 	if err != nil {
 		h.fail(c, err)
 		return

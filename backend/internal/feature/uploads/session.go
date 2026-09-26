@@ -177,10 +177,12 @@ func (e *Engine) createPart(root vfs.Root, part vfs.SafePath, total *uint64) (*v
 	n, nerr := number.Narrow[int64](*total)
 	if nerr != nil {
 		return nil, errors.Join(
-			fmt.Errorf("%w: the declared length does not fit", ErrBadRequest), f.Close())
+			fmt.Errorf("%w: the declared length does not fit", ErrBadRequest),
+			e.discardPart(root, part, f),
+		)
 	}
 	if terr := f.Truncate(n); terr != nil {
-		return nil, errors.Join(mapVFSErr(terr), f.Close())
+		return nil, errors.Join(mapVFSErr(terr), e.discardPart(root, part, f))
 	}
 	return f, nil
 }

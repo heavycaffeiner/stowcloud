@@ -333,6 +333,9 @@ func (e *Engine) mergeChunk(root vfs.Root, r *row, name uint32) error {
 	if copied != st.Size {
 		return fmt.Errorf("assembling chunk %d: copied %d of %d bytes", name, copied, st.Size)
 	}
+	if serr := dst.SyncData(); serr != nil {
+		return mapVFSErr(serr)
+	}
 	written, nerr := number.Narrow[int64](copied)
 	if nerr != nil {
 		return nerr

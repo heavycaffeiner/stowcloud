@@ -285,6 +285,79 @@ func (c *Core) writeDurableQuota(
 	return done, delta, nil
 }
 
+// streamReserveStep is how far ahead a streamed write reserves quota.
+const streamReserveStep = 8 << 20
+
+// writeDurableQuotaStream reserves positive growth before each streamed write.
+// The reservation remains held until the durable publication succeeds, so an
+// unknown-length body cannot spend quota after its first accepted chunk.
+func (c *Core) writeDurableQuotaStream(
+	ctx context.Context,
+	r Resolved,
+	mode vfs.DurableOpts,
+	prior *vfs.Stat,
+	write func(*vfs.File, func(uint64) error) error,
+) (vfs.Durable, int64, error) {
+	var oldSize uint64
+	if prior != nil {
+		oldSize = prior.Size
+	}
+	var hold quotaReservation
+	var delta int64
+	reserveGrowth := func(target uint64) error {
+		if target <= oldSize || target-oldSize <= hold.bytes {
+			return nil
+		}
+		// Reserved ahead in steps so a stream costs one ledger write per step
+		// rather than one per buffer; the surplus is credited back below.
+		need := target - oldSize - hold.bytes
+		next, err := c.reserveQuota(ctx, r.user, max(need, streamReserveStep))
+		if errors.Is(err, ErrQuotaExceeded) && need < streamReserveStep {
+			next, err = c.reserveQuota(ctx, r.user, need)
+		}
+		if err != nil {
+			return err
+		}
+		hold.bytes += next.bytes
+		hold.active = hold.bytes > 0
+		return nil
+	}
+	done, err := r.root.WriteDurable(r.path, mode, func(f *vfs.File) error {
+		if err := write(f, reserveGrowth); err != nil {
+			return err
+		}
+		st, err := f.Stat()
+		if err != nil {
+			return err
+		}
+		delta = deltaOf(st.Size, oldSize)
+		if delta < 0 {
+			if hold.active {
+				c.releaseQuota(ctx, r.user, &hold)
+			}
+			return nil
+		}
+		if uint64(delta) < hold.bytes {
+			credit := hold.bytes - uint64(delta)
+			rel, nerr := number.Narrow[int64](credit)
+			if nerr != nil {
+				return nerr
+			}
+			if err := c.quota.Release(ctx, int64(r.user), rel); err != nil {
+				return err
+			}
+			hold.bytes = uint64(delta)
+		}
+		return nil
+	})
+	if err != nil {
+		c.releaseQuota(ctx, r.user, &hold)
+		return done, delta, err
+	}
+	c.settleQuota(ctx, r.user, delta, &hold)
+	return done, delta, nil
+}
+
 // treeBytes measures file bytes beneath a path without using the aggregate
 // cache. Control paths are deliberately supported here because trash entries
 // live beneath one; the policy decides whether reserved children participate.

@@ -36,7 +36,10 @@ func (e *Engine) PatchAt(
 	ctx context.Context, root vfs.Root, id SessionID, user core.UserID,
 	off uint64, body io.Reader, sum *Checksum,
 ) (uint64, error) {
-	unlockChunk := e.lockChunk(id, off)
+	unlockChunk, lockErr := e.lockChunk(ctx, id, off)
+	if lockErr != nil {
+		return 0, lockErr
+	}
 	defer unlockChunk()
 
 	unlock := e.lockRow(id)
@@ -77,8 +80,16 @@ func (e *Engine) PatchAt(
 	unlock()
 	defer lease.release()
 
+	// Deferred-length sessions have no admission reservation. Check the
+	// cumulative received bytes before each read so a rejected body never
+	// reaches the staging file.
+	if _, declared := r.totalLen(); !declared && e.core != nil {
+		base := r.set.Received()
+		body = &quotaBoundReader{ctx: ctx, core: e.core, user: user, base: base, src: body}
+	}
+
 	// Every body is staged and validated before it can touch an accepted
-	// range. This is what makes a rejected replacement observationally
+	// range. This is what makes a rejected replacement observationally safe.
 	var (
 		stage vfs.SafePath
 		n     uint64
@@ -340,8 +351,61 @@ func writeAllAt(f *vfs.File, b []byte, off uint64) error {
 		if nerr != nil {
 			return nerr
 		}
+
 		b = b[n:]
 		off += wrote
 	}
 	return nil
+}
+
+// quotaStep is how many bytes one quota probe admits before the next.
+const quotaStep = 8 << 20
+
+// quotaBoundReader stops a deferred-length body at the owner's quota. It
+// probes the ledger once per step rather than per read, and near the limit
+// narrows to exactly what still fits.
+type quotaBoundReader struct {
+	ctx     context.Context
+	core    *core.Core
+	user    core.UserID
+	base    uint64
+	read    uint64
+	allowed uint64
+	src     io.Reader
+}
+
+func (r *quotaBoundReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	if r.read >= r.allowed {
+		if err := r.admit(); err != nil {
+			return 0, err
+		}
+	}
+	room := r.allowed - r.read
+	if uint64(len(p)) > room {
+		p = p[:room]
+	}
+	n, err := r.src.Read(p)
+	if n > 0 {
+		r.read += uint64(n)
+	}
+	return n, err
+}
+
+// admit extends the allowance by a step, or by the largest amount the ledger
+// still accepts, halving down to one byte before refusing.
+func (r *quotaBoundReader) admit() error {
+	for step := uint64(quotaStep); step > 0; step /= 2 {
+		err := r.core.CheckQuota(r.ctx, r.user, r.base+r.read+step)
+		if err == nil {
+			r.allowed = r.read + step
+			return nil
+		}
+		if !errors.Is(err, core.ErrQuotaExceeded) {
+			return err
+		}
+	}
+	return core.ErrQuotaExceeded
 }
