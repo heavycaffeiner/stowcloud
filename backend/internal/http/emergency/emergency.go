@@ -31,13 +31,13 @@ import (
 	"io"
 	"net/http"
 	"net/netip"
-	"net/url"
 	"strings"
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/settings/check"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/settings/runtimecfg"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
 	netzone "github.com/heavycaffeiner/stowcloud/backend/internal/platform/network/zone"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 )
@@ -86,6 +86,14 @@ type Authenticator interface {
 	Record(ctx context.Context, actor int64, event, target, ip, ua string, ok bool)
 }
 
+// SettingsSecrets seals configuration credentials and reports whether one exists.
+type SettingsSecrets interface {
+	HasConfigSecret(context.Context, string) bool
+	StoreConfigSecret(context.Context, string, string) error
+}
+
+const secretOIDCClient = "oidc_client_secret" //nolint:gosec // G101 flags this config key; it names stored secret material but is not secret material itself.
+
 // SettingsStore is the settings document, read whole and merged one section at
 // a time.
 type SettingsStore interface {
@@ -96,8 +104,9 @@ type SettingsStore interface {
 // Deps is what the door needs, and every field is something a process with no
 // engine can still produce.
 type Deps struct {
-	Auth  Authenticator
-	State SettingsStore
+	Auth     Authenticator
+	State    SettingsStore
+	Settings SettingsSecrets
 
 	// DataDir is the base the homes probe falls back to when the submitted
 	// section names no root of its own.
@@ -108,15 +117,13 @@ type Deps struct {
 	// shows it, so somebody who arrived at a redirect learns what failed.
 	Reason func() string
 
-	// Restart ends the process so a supervisor brings it back, which is how a
-	// saved value reaches a running engine. Leave it nil where nothing would
-	// restart the process; the action then says so instead of pretending.
+	// TrustedProxies controls forwarded scheme handling for exact Origin checks.
+	TrustedProxies func() []netip.Prefix
+
+	// Restart ends the process so a supervisor brings it back with the saved values.
 	Restart func()
 
-	// ClientAddr resolves who a request is from. The main chain has already
-	// decided this when the door is mounted inside it, and re-deciding would be
-	// a second rule that can disagree with the first. A nil one falls back to
-	// the peer address, which trusts no proxy.
+	// ClientAddr resolves who a request is from.
 	ClientAddr func(r *http.Request) netip.Addr
 
 	// Page draws the screen. A nil one leaves the API answering and the path
@@ -154,7 +161,7 @@ func gate(d Deps, next http.Handler) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		if !sameOrigin(r) {
+		if !sameOrigin(d, r) {
 			refuse(w, http.StatusBadRequest, "invalid_request", "malformed request")
 			return
 		}
@@ -162,30 +169,22 @@ func gate(d Deps, next http.Handler) http.Handler {
 	})
 }
 
-// sameOrigin compares Origin against the request's own Host rather than against
-// the configured app-host list. That list is one of the things this door
-// repairs, so a wrong list would take the repair with it. What is asserted is
-// only that the page posting was served from the address it is posting to.
-//
-// The session cookie is SameSite=Lax, so a cross-site write carries no
-// credential in the first place. This is the second layer.
-func sameOrigin(r *http.Request) bool {
+// sameOrigin requires the exact effective scheme and authority, including port.
+func sameOrigin(d Deps, r *http.Request) bool {
 	switch r.Method {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
 		return true
 	}
 	origin := r.Header.Get("Origin")
 	if origin == "" {
-		// No Origin on a write means it did not come from a browser, and a
-		// browser is the only thing a cross-site request can come from. A
-		// terminal client is the operator, who already holds the credential.
+		// Non-browser clients do not send Origin and are already authenticated.
 		return true
 	}
-	u, err := url.Parse(origin)
-	if err != nil {
-		return false
+	var trusted []netip.Prefix
+	if d.TrustedProxies != nil {
+		trusted = d.TrustedProxies()
 	}
-	return strings.EqualFold(u.Host, r.Host)
+	return middleware.OriginMatchesRequest(origin, middleware.RequestScheme(r, trusted), r.Host)
 }
 
 // clientAddr is who this request is from. Without a resolver the peer address
@@ -318,11 +317,7 @@ func requireAdmin(d Deps, w http.ResponseWriter, r *http.Request) (int64, bool) 
 	return p.UserID, true
 }
 
-// readSettings returns the settings document unmodified.
-//
-// Whole rather than a rendered field list, because the field list is built from
-// what the engine loaded and the engine may not be running. What is true in
-// every mode is what the database holds.
+// readSettings returns the settings document without credential material.
 func readSettings(d Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if _, ok := requireAdmin(d, w, r); !ok {
@@ -332,6 +327,9 @@ func readSettings(d Deps) http.HandlerFunc {
 		if err != nil {
 			refuse(w, http.StatusInternalServerError, "internal", "the settings could not be read")
 			return
+		}
+		if oidc, ok := doc["oidc"].(map[string]any); ok {
+			delete(oidc, "client_secret")
 		}
 		listen := runtimecfg.DefaultListen
 		appHosts := []string{}
@@ -352,24 +350,10 @@ func readSettings(d Deps) http.HandlerFunc {
 			}
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"stored":    doc,
-			"sections":  check.Sections(),
-			"listen":    listen,
-			"app_hosts": appHosts,
+			"stored": doc, "sections": check.Sections(), "listen": listen, "app_hosts": appHosts,
 		})
 	}
 }
-
-// writeSettings commits one section through the same probes every other surface
-// runs.
-//
-// Lockout findings warn here where the settings screen refuses. Somebody
-// reaching this page has usually already been shut out by the host list, and a
-// refusal keyed on the host they arrived on would reject the repair itself.
-//
-// A save takes effect on the next start. Nothing in this process holds the
-// value: standalone there is no engine to push it into, and inside the normal
-// server the engine is either degraded or needs its own restart anyway.
 func writeSettings(d Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		uid, ok := requireAdmin(d, w, r)
@@ -385,7 +369,20 @@ func writeSettings(d Deps) http.HandlerFunc {
 		if !decode(w, r, &body) {
 			return
 		}
-
+		if section == "oidc" && d.Settings != nil {
+			if raw, present := body["client_secret"]; present {
+				plain, ok := raw.(string)
+				if !ok {
+					refuse(w, http.StatusUnprocessableEntity, "invalid_request", "malformed request")
+					return
+				}
+				if err := d.Settings.StoreConfigSecret(r.Context(), secretOIDCClient, plain); err != nil {
+					refuse(w, http.StatusInternalServerError, "internal", "the settings could not be written")
+					return
+				}
+				delete(body, "client_secret")
+			}
+		}
 		findings := check.Section(check.Input{
 			Section: section, Body: body,
 			SelfHost: check.HostOnly(r.Host), DataDir: d.DataDir,
@@ -403,9 +400,6 @@ func writeSettings(d Deps) http.HandlerFunc {
 		}
 		d.Auth.Record(r.Context(), uid, EventSave, section, ip, r.UserAgent(), true)
 		writeJSON(w, http.StatusOK, map[string]any{
-			// Committed to the database, waiting on a restart to take effect.
-			// The caller is told which, because the engine that would pick the
-			// value up is the one whose failure brought them here.
 			"applied":  "restart_required",
 			"warnings": renderFindings(check.Advisory(findings)),
 		})

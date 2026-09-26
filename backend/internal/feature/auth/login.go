@@ -67,7 +67,11 @@ func (s *Service) Login(
 		s.recordLoginFailure(ctx, &acct.ID, req)
 		return Session{}, ErrCredentials
 	}
-	if link, lerr := s.store.OIDCLinkOf(ctx, acct.ID); lerr == nil && link.Issuer != "" {
+	link, lerr := s.store.OIDCLinkOf(ctx, acct.ID)
+	if lerr != nil && !errors.Is(lerr, state.ErrNoOIDCLink) {
+		return Session{}, lerr
+	}
+	if lerr == nil && link.Issuer != "" {
 		if derr := s.burnDecoy(ctx, req.Password); derr != nil {
 			return Session{}, derr
 		}
@@ -231,7 +235,11 @@ func (s *Service) VerifyPassword(ctx context.Context, name string, pw secret.Sec
 		}
 		return Principal{}, ErrCredentials
 	}
-	if link, lerr := s.store.OIDCLinkOf(ctx, acct.ID); lerr == nil && link.Issuer != "" {
+	link, lerr := s.store.OIDCLinkOf(ctx, acct.ID)
+	if lerr != nil && !errors.Is(lerr, state.ErrNoOIDCLink) {
+		return Principal{}, lerr
+	}
+	if lerr == nil && link.Issuer != "" {
 		if derr := s.burnDecoy(ctx, pw); derr != nil {
 			return Principal{}, derr
 		}

@@ -273,6 +273,17 @@ func OriginAllowed(origin string, allowed []string) bool {
 	return false
 }
 
+// OriginMatchesRequest reports whether an Origin header exactly matches the
+// effective request scheme and authority after canonicalization.
+func OriginMatchesRequest(origin, scheme, host string) bool {
+	have, ok := parseOrigin(origin)
+	if !ok {
+		return false
+	}
+	want, ok := parseRequestOrigin(scheme, host)
+	return ok && have == want
+}
+
 type originValue struct {
 	scheme    string
 	authority string

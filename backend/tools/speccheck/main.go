@@ -113,10 +113,10 @@ var ignored = map[string]string{
 	"osMkdirAll":            "the same",
 	"homes.go":              "the old tree's file, named as the source of the grant INSERT",
 
-	// The old tree's spelling, named to say what replaced it. Checked by hand:
-	// the access class is route.AccessAnyCredential and the jobs category
-	// carries it.
-	"AccessAny": "the old tree's class; it is route.AccessAnyCredential now",
+	// The old tree's spelling, named to say what replaced it. The class is
+	// gone: the native API is session-only and device credentials use the
+	// WebDAV and compatibility surfaces.
+	"AccessAny": "the old tree's class; the native API is session-only now",
 	// The wrapper is gone and the sentinels are on state.DB, but nothing above
 	// the store maps them yet: login flow v2 is not built. This entry covers
 	// only the wrapper's absence, so remove it when that handler lands and let

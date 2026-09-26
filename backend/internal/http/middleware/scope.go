@@ -23,9 +23,6 @@ var ErrCredentialRequired = errors.New("this route requires a credential")
 // ErrSessionRequired is a route that accepts only a browser session.
 var ErrSessionRequired = errors.New("this route requires a session")
 
-// ErrInsufficientPermission is an app password missing a bit the route needs.
-var ErrInsufficientPermission = errors.New("this credential does not carry the required permission")
-
 // Principal is what Auth resolved, as scope needs it.
 type Principal struct {
 	// UserID is the account the credential proved. Zero is an anonymous
@@ -66,24 +63,10 @@ func Scope(req route.Requirement, p Principal) error {
 		return ErrSessionRequired
 	}
 
-	switch req.Access {
-	case route.AccessSession, route.AccessAnyCredential:
+	if req.Access == route.AccessSession {
 		return nil
-
-	case route.AccessPerms:
-		// Every declared bit, not any of them. A route naming read and write
-		// needs both, since it does both.
-		if !p.Mask.Has(req.Perms) {
-			return ErrInsufficientPermission
-		}
-		return nil
-
-	case route.AccessPublic, route.AccessUnset:
-		return ErrCredentialRequired
-
-	default:
-		return ErrCredentialRequired
 	}
+	return ErrCredentialRequired
 }
 
 // SessionMask is the permission mask a session carries.

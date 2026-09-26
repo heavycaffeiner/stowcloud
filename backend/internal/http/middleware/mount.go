@@ -377,6 +377,20 @@ func requestScheme(c *gin.Context, d Deps) string {
 	return "http"
 }
 
+// RequestScheme applies the boundary's transport and trusted-proxy scheme policy
+// to a net/http request for handlers that need to construct an absolute origin.
+func RequestScheme(r *http.Request, trusted []netip.Prefix) string {
+	if r.TLS != nil {
+		return "https"
+	}
+	peer, err := remoteAddr(r.RemoteAddr)
+	if err == nil && PeerTrusted(peer, trusted) &&
+		strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https") {
+		return "https"
+	}
+	return "http"
+}
+
 func resolveClient(c *gin.Context, d Deps) netip.Addr {
 	peer, err := remoteAddr(c.Request.RemoteAddr)
 	if err != nil {

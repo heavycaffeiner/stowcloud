@@ -99,6 +99,17 @@ func (f *fakeStore) MergeSettings(_ context.Context, section string, value any) 
 	return nil
 }
 
+type fakeSecrets struct {
+	stored []struct{ key, value string }
+}
+
+func (f *fakeSecrets) HasConfigSecret(context.Context, string) bool { return false }
+
+func (f *fakeSecrets) StoreConfigSecret(_ context.Context, key, value string) error {
+	f.stored = append(f.stored, struct{ key, value string }{key, value})
+	return nil
+}
+
 // signedIn is a door whose cookie resolves to an administrator.
 func signedIn(t *testing.T) (*fakeAuth, *fakeStore, http.Handler) {
 	t.Helper()
@@ -658,6 +669,50 @@ func TestTheReadReturnsTheStoredDocument(t *testing.T) {
 	}
 	if secs, ok := out["sections"].([]any); !ok || len(secs) == 0 {
 		t.Error("the read carries no section list, so the screen cannot draw the form")
+	}
+}
+
+// An OIDC client secret is sealed separately and absent from settings JSON.
+func TestOIDCClientSecretIsStoredSeparatelyAndRedacted(t *testing.T) {
+	a, s, _ := signedIn(t)
+	secrets := &fakeSecrets{}
+	h := Handler(Deps{
+		Auth: a, State: s, Settings: secrets, DataDir: t.TempDir(),
+		ClientAddr: func(*http.Request) netip.Addr { return netip.MustParseAddr("192.168.1.10") },
+	})
+	payload := `{"enabled":true,"issuer":"https://idp.example.test","client_id":"stowcloud","public_client":true,"client_secret":"top-secret"}`
+	if w := ask(h, "PATCH", Prefix+"/api/settings/oidc", payload, withCookie("01020304")); w.Code != http.StatusOK {
+		t.Fatalf("the OIDC write returned %d: %s", w.Code, w.Body)
+	}
+	if len(secrets.stored) != 1 || secrets.stored[0].key != secretOIDCClient || secrets.stored[0].value != "top-secret" {
+		t.Fatalf("stored secrets = %+v", secrets.stored)
+	}
+	s.doc["oidc"] = map[string]any{
+		"enabled": true, "issuer": "https://idp.example.test", "client_id": "stowcloud", "client_secret": "top-secret",
+	}
+	if len(s.merged) != 1 {
+		t.Fatalf("merged settings = %+v", s.merged)
+	}
+	merged, ok := s.merged[0].value.(map[string]any)
+	if !ok {
+		t.Fatalf("merged value has type %T", s.merged[0].value)
+	}
+	if _, present := merged["client_secret"]; present {
+		t.Fatal("the stored settings contain client_secret")
+	}
+
+	w := ask(h, "GET", Prefix+"/api/settings", "", withCookie("01020304"))
+	if w.Code != http.StatusOK {
+		t.Fatalf("the settings read returned %d: %s", w.Code, w.Body)
+	}
+	stored, ok := body(t, w)["stored"].(map[string]any)
+	if !ok {
+		t.Fatalf("stored settings have type %T", body(t, w)["stored"])
+	}
+	if oidc, ok := stored["oidc"].(map[string]any); ok {
+		if _, present := oidc["client_secret"]; present {
+			t.Fatal("the settings response contains client_secret")
+		}
 	}
 }
 

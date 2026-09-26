@@ -342,6 +342,7 @@ func TestAnAudienceListIsAcceptedWhenItNamesThisClient(t *testing.T) {
 
 	claims := claimsAt(clk)
 	claims["aud"] = []string{"another-client", testClientID}
+	claims["azp"] = testClientID
 	raw := s.sign(t, map[string]any{"alg": algRS256, "kid": testKid}, claims)
 	if _, err := c.VerifyIDToken(ctx, raw, testNonce); err != nil {
 		t.Fatalf("an audience list naming this client was refused: %v", err)

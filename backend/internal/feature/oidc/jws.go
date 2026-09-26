@@ -102,12 +102,13 @@ type jwsHeader struct {
 
 // Claims holds the assertions a verified token makes.
 type Claims struct {
-	Issuer   string `json:"iss"`
-	Subject  string `json:"sub"`
-	Audience audArg `json:"aud"`
-	Expiry   int64  `json:"exp"`
-	IssuedAt int64  `json:"iat"`
-	Nonce    string `json:"nonce"`
+	Issuer          string `json:"iss"`
+	Subject         string `json:"sub"`
+	Audience        audArg `json:"aud"`
+	AuthorizedParty string `json:"azp"`
+	Expiry          int64  `json:"exp"`
+	IssuedAt        int64  `json:"iat"`
+	Nonce           string `json:"nonce"`
 
 	Email         string `json:"email"`
 	EmailVerified bool   `json:"email_verified"`
@@ -224,6 +225,12 @@ func (c *Client) checkClaims(claims *Claims, nonce string) error {
 		// A token minted for a different client of the same provider is
 		// perfectly valid and says nothing about this server.
 		return refuse("it was not issued for this client")
+	}
+	if len(claims.Audience) > 1 && claims.AuthorizedParty != c.cfg.ClientID {
+		return refuse("a multi-audience token names a different authorized party")
+	}
+	if claims.AuthorizedParty != "" && claims.AuthorizedParty != c.cfg.ClientID {
+		return refuse("it names a different authorized party")
 	}
 
 	now := c.clk.Now().Unix()

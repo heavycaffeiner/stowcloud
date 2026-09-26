@@ -19,6 +19,7 @@ import (
 	featureoidc "github.com/heavycaffeiner/stowcloud/backend/internal/feature/oidc"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
 )
 
 const (
@@ -49,12 +50,12 @@ type linkStartRequest struct {
 }
 
 // Deps are the narrow application services and request policies needed by OIDC.
-// The transport does not receive an Engine-shaped object.
 type Deps struct {
 	Auth             *auth.Service
 	Client           func() *featureoidc.Client
 	DisplayName      func() string
 	AppHosts         func() []string
+	RequestScheme    func(*http.Request) string
 	Logger           *slog.Logger
 	Owner            func(*gin.Context) (int64, bool)
 	Admin            func(*gin.Context) (int64, bool)
@@ -376,8 +377,13 @@ func (h *handlers) requestOrigin(c *gin.Context) (string, bool) {
 		return "", false
 	}
 	scheme := "https"
-	if c.Request.URL.Scheme == "http" || c.Request.TLS == nil {
+	if h.d.RequestScheme != nil {
+		scheme = h.d.RequestScheme(c.Request)
+	} else if c.Request.URL.Scheme == "http" || c.Request.TLS == nil {
 		scheme = "http"
+	}
+	if !middleware.OriginMatchesRequest(scheme+"://"+host, scheme, host) {
+		return "", false
 	}
 	return scheme + "://" + host, true
 }

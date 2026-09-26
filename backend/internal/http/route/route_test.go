@@ -3,8 +3,6 @@ package route
 import (
 	"strings"
 	"testing"
-
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 )
 
 // A route that forgot to declare its access class must not default into the
@@ -16,32 +14,6 @@ func TestAnUndeclaredAccessClassIsRefused(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "unset") {
 		t.Errorf("the refusal does not say what is wrong: %v", err)
-	}
-}
-
-// A permission-scoped route with no bits demands nothing, which is a public
-// route wearing a stricter name.
-func TestPermissionAccessWithNoBitsIsRefused(t *testing.T) {
-	err := Validate([]Route{{
-		Method: "GET", Path: "/x", Name: "x",
-		Requirement: Requirement{Access: AccessPerms},
-	}})
-	if err == nil {
-		t.Fatal("a perms route with no bits validated")
-	}
-}
-
-// Bits on a route whose class never consults them read as a guarantee nothing
-// enforces, which is worse than no guarantee.
-func TestPermissionBitsOnANonPermissionRouteAreRefused(t *testing.T) {
-	for _, access := range []Access{AccessPublic, AccessSession, AccessAnyCredential} {
-		err := Validate([]Route{{
-			Method: "GET", Path: "/x", Name: "x",
-			Requirement: Requirement{Access: access, Perms: acl.Read},
-		}})
-		if err == nil {
-			t.Errorf("%s access carrying permission bits validated", access)
-		}
 	}
 }
 
@@ -183,8 +155,6 @@ func TestTheAccessClassesHaveNames(t *testing.T) {
 		{AccessUnset, "unset"},
 		{AccessPublic, "public"},
 		{AccessSession, "session"},
-		{AccessAnyCredential, "any-credential"},
-		{AccessPerms, "perms"},
 	} {
 		if got := c.access.String(); got != c.want {
 			t.Errorf("the access class printed as %q, want %q", got, c.want)

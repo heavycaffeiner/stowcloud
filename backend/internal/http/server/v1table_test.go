@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/route"
 )
 
@@ -168,24 +167,6 @@ func TestTheAccountSurfaceIsSessionOnly(t *testing.T) {
 	}
 	if count == 0 {
 		t.Fatal("no account routes were examined")
-	}
-}
-
-// Minting a link for a stranger demands the sharing bit, which is the
-// tightening the document records: the old fs/link half required only Read.
-func TestTheLinkSurfaceDemandsTheSharingBit(t *testing.T) {
-	count := 0
-	for _, r := range Table() {
-		if categoryOf(r.Path) != "links" {
-			continue
-		}
-		count++
-		if !r.Requirement.Perms.Has(acl.Share) {
-			t.Errorf("%s %s mints or manages a link without demanding the sharing bit", r.Method, r.Path)
-		}
-	}
-	if count != 4 {
-		t.Errorf("the links category has %d routes, want the four the document lists", count)
 	}
 }
 

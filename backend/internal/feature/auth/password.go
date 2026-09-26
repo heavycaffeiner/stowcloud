@@ -81,6 +81,15 @@ const saltLen = 16
 // hostile row cannot ask for an allocation nobody chose.
 const maxKeyLen = 64
 
+// Stored-hash limits keep attacker-controlled costs within a bounded envelope.
+// Memory is 4 GiB in Argon2's KiB units; the remaining limits exceed configured costs.
+const (
+	maxMemoryKiB   = 4 * 1024 * 1024
+	maxIterations  = 32
+	maxParallelism = 16
+	maxSaltLen     = 64
+)
+
 // gate limits concurrent Argon2 work through a fixed pool of permits. A
 // buffered channel is the entire mechanism: send to acquire, receive to release,
 // with no reference count to get wrong.
@@ -209,8 +218,8 @@ func encodePHC(p Params, salt, key []byte) string {
 }
 
 // parsePHC decodes one. Every numeric field is bounded before it is narrowed,
-// so a hostile stored hash cannot truncate an out-of-range cost into an
-// allocation nobody chose.
+// and the decoded salt and key are bounded too, so a hostile stored hash cannot
+// turn an out-of-range cost into an allocation nobody chose.
 func parsePHC(s string) (parsedPHC, bool) {
 	fields := strings.Split(s, "$")
 	// Six fields: empty, algorithm, version, cost parameters, salt, key.
@@ -231,18 +240,27 @@ func parsePHC(s string) (parsedPHC, bool) {
 		}
 		switch name {
 		case "m":
+			if n <= 0 || n > maxMemoryKiB {
+				return parsedPHC{}, false
+			}
 			v, nerr := number.Narrow[uint32](n)
 			if nerr != nil {
 				return parsedPHC{}, false
 			}
 			p.MemoryKiB = v
 		case "t":
+			if n <= 0 || n > maxIterations {
+				return parsedPHC{}, false
+			}
 			v, nerr := number.Narrow[uint32](n)
 			if nerr != nil {
 				return parsedPHC{}, false
 			}
 			p.Iterations = v
 		case "p":
+			if n <= 0 || n > maxParallelism {
+				return parsedPHC{}, false
+			}
 			v, nerr := number.Narrow[uint8](n)
 			if nerr != nil {
 				return parsedPHC{}, false
@@ -256,7 +274,7 @@ func parsePHC(s string) (parsedPHC, bool) {
 		return parsedPHC{}, false
 	}
 	salt, err := base64.RawStdEncoding.Strict().DecodeString(fields[4])
-	if err != nil || len(salt) == 0 {
+	if err != nil || len(salt) == 0 || len(salt) > maxSaltLen {
 		return parsedPHC{}, false
 	}
 	key, err := base64.RawStdEncoding.Strict().DecodeString(fields[5])

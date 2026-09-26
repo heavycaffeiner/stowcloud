@@ -16,8 +16,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 )
 
 // Access is the credential class a route demands.
@@ -33,19 +31,10 @@ const (
 	AccessPublic
 
 	// AccessSession needs the browser session cookie specifically. An app
-	// password does not satisfy it: these are the routes that manage the
-	// account itself, and a filesystem credential handed to a device must not
-	// be able to change the password that would revoke it.
+	// password does not satisfy it: the native API is the browser interface's
+	// own, and device credentials belong to the WebDAV and compatibility
+	// surfaces, which resolve their own callers.
 	AccessSession
-
-	// AccessAnyCredential needs any authenticated caller, session or app
-	// password. It is for bookkeeping a device legitimately does on its own
-	// behalf, such as reading the progress of a job it started.
-	AccessAnyCredential
-
-	// AccessPerms needs a credential carrying particular permission bits. The
-	// bits travel in the requirement beside it.
-	AccessPerms
 )
 
 func (a Access) String() string {
@@ -54,10 +43,6 @@ func (a Access) String() string {
 		return "public"
 	case AccessSession:
 		return "session"
-	case AccessAnyCredential:
-		return "any-credential"
-	case AccessPerms:
-		return "perms"
 	}
 	return "unset"
 }
@@ -65,11 +50,6 @@ func (a Access) String() string {
 // Requirement is a route's complete credential demand.
 type Requirement struct {
 	Access Access
-
-	// Perms are the bits AccessPerms demands, and must be zero otherwise. A
-	// permission set on a route that never consults it reads as a guarantee
-	// nothing enforces.
-	Perms acl.Perms
 }
 
 // BodyClass is the shape of request body a route accepts. The boundary reads
@@ -182,19 +162,8 @@ func checkRequirement(where string, req Requirement) []string {
 	switch req.Access {
 	case AccessUnset:
 		out = append(out, fmt.Sprintf("%s: the access class is unset", where))
-	case AccessPerms:
-		// A permission-scoped route with no bits demands nothing, which is a
-		// public route wearing a stricter name.
-		if req.Perms == 0 {
-			out = append(out, fmt.Sprintf("%s: the access class is perms and no permission bits are named", where))
-		}
-	case AccessPublic, AccessSession, AccessAnyCredential:
-		// Bits on a route that never consults them read as a guarantee nothing
-		// enforces, which is worse than no guarantee at all.
-		if req.Perms != 0 {
-			out = append(out, fmt.Sprintf("%s: %s access carries permission bits nothing will check",
-				where, req.Access))
-		}
+	case AccessPublic, AccessSession:
+		// Both classes are complete on their own.
 	default:
 		out = append(out, fmt.Sprintf("%s: the access class %d is not one this build knows", where, req.Access))
 	}

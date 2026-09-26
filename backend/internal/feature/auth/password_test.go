@@ -90,6 +90,32 @@ func TestAMalformedHashRefusesWithoutAnErrorAndReportsStale(t *testing.T) {
 	}
 }
 
+// Costs above the parser bounds are rejected before Argon2 is invoked.
+func TestAnOutOfBoundsPHCCostIsRejectedWithoutHashing(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name string
+		cost string
+	}{
+		{name: "memory", cost: "m=4294967295,t=1,p=1"},
+		{name: "iterations", cost: "m=8192,t=33,p=1"},
+		{name: "parallelism", cost: "m=8192,t=1,p=17"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			enc := "$argon2id$v=19$" + tc.cost + "$c2FsdA$a2V5"
+			ok, stale, err := f.svc.Verify(ctx, enc, pw(testPassword))
+			if err != nil {
+				t.Fatalf("Verify returned an error: %v", err)
+			}
+			if ok || !stale {
+				t.Fatalf("Verify = ok %v, stale %v, want false, true", ok, stale)
+			}
+		})
+	}
+}
+
 // Peak memory is the memory cost times the number of invocations in flight,
 // so the bound is enforced where the memory is spent.
 func TestTheGateBoundsConcurrentInvocations(t *testing.T) {

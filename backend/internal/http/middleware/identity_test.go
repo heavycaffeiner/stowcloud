@@ -127,47 +127,18 @@ func TestSessionRoutesRefuseAnAppPassword(t *testing.T) {
 	}
 }
 
-// A permission route needs every declared bit, and only a session reaches it.
-func TestAPermissionRouteNeedsEveryBitAndASession(t *testing.T) {
-	req := route.Requirement{Access: route.AccessPerms, Perms: acl.Read | acl.Write}
-
-	// A device credential does not reach the interface's own API at all, so
-	// the bits it carries are never consulted.
-	full := Principal{Kind: CredentialBearerApp, Mask: acl.Read | acl.Write | acl.Delete}
-	if err := Scope(req, full); !errors.Is(err, ErrSessionRequired) {
-		t.Errorf("an app password carrying both bits returned %v", err)
-	}
-
-	partial := Principal{Kind: CredentialSessionCookie, Mask: acl.Read}
-	if err := Scope(req, partial); !errors.Is(err, ErrInsufficientPermission) {
-		t.Errorf("a session carrying one of two bits returned %v", err)
-	}
-
-	// A session carries every bit, so it satisfies any permission route.
-	if err := Scope(req, Principal{Kind: CredentialSessionCookie, Mask: SessionMask()}); err != nil {
-		t.Errorf("a session on a permission route: %v", err)
-	}
-}
-
-// Public needs nothing. Every other class needs the browser session: the
+// Public needs nothing. The session class needs the browser session: the
 // native API is the interface's own surface, and a device credential belongs
 // to the compatibility mount and the file protocol.
-func TestTheOtherAccessClasses(t *testing.T) {
+func TestAnAppPasswordNeverReachesTheNativeAPI(t *testing.T) {
 	none := Principal{Kind: CredentialNone}
-	app := Principal{Kind: CredentialBasicApp}
-	session := Principal{Kind: CredentialSessionCookie, Mask: SessionMask()}
+	app := Principal{Kind: CredentialBasicApp, Mask: SessionMask()}
 
 	if err := Scope(route.Requirement{Access: route.AccessPublic}, none); err != nil {
 		t.Errorf("a public route refused an anonymous request: %v", err)
 	}
-	if err := Scope(route.Requirement{Access: route.AccessAnyCredential}, session); err != nil {
-		t.Errorf("any-credential refused a session: %v", err)
-	}
-	if err := Scope(route.Requirement{Access: route.AccessAnyCredential}, app); !errors.Is(err, ErrSessionRequired) {
-		t.Errorf("any-credential admitted an app password: %v", err)
-	}
-	if err := Scope(route.Requirement{Access: route.AccessAnyCredential}, none); !errors.Is(err, ErrCredentialRequired) {
-		t.Error("any-credential admitted an anonymous request")
+	if err := Scope(route.Requirement{Access: route.AccessSession}, app); !errors.Is(err, ErrSessionRequired) {
+		t.Errorf("an app password carrying every bit returned %v", err)
 	}
 }
 
@@ -255,13 +226,7 @@ func TestScopeRefusesThroughTheChain(t *testing.T) {
 		t.Errorf("a session route with no credential answered %d, want 404", got)
 	}
 	if got := build(
-		route.Requirement{Access: route.AccessPerms, Perms: acl.Read | acl.Write},
-		Principal{Kind: CredentialSessionCookie, Mask: acl.Read},
-	); got != http.StatusNotFound {
-		t.Errorf("a session missing a bit answered %d, want 404", got)
-	}
-	if got := build(
-		route.Requirement{Access: route.AccessPerms, Perms: acl.Read},
+		route.Requirement{Access: route.AccessSession},
 		Principal{Kind: CredentialBearerApp, Mask: acl.Read | acl.Write},
 	); got != http.StatusNotFound {
 		t.Errorf("an app password on the native API answered %d, want 404", got)

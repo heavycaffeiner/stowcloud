@@ -11,10 +11,7 @@
 
 package server
 
-import (
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/route"
-)
+import "github.com/heavycaffeiner/stowcloud/backend/internal/http/route"
 
 // Base is the prefix every route here carries. The version is in the path so
 // the next breaking change is a v2 mounted beside v1 rather than another flag
@@ -41,27 +38,18 @@ func defaultAccess() map[string]route.Requirement {
 		"auth":    {Access: route.AccessSession},
 		"account": {Access: route.AccessSession},
 
-		// The file surfaces are permission-scoped and reachable with an app
-		// password carrying the bits, which is what makes a sync client possible.
-		"files":          {Access: route.AccessPerms, Perms: acl.Read},
-		"trash":          {Access: route.AccessPerms, Perms: acl.Read},
-		"uploads":        {Access: route.AccessPerms, Perms: acl.Write | acl.Create},
-		"direct-uploads": {Access: route.AccessPerms, Perms: acl.Write | acl.Create},
-		"search":         {Access: route.AccessPerms, Perms: acl.Read},
-
-		// Minting a link for a stranger is sharing, so the whole category demands
-		// the sharing bit. The old tree had one half of this family requiring only
-		// Read; merging them tightened that half rather than loosening the other.
-		"links": {Access: route.AccessPerms, Perms: acl.Share},
-
-		// Bookkeeping a caller does about work it started, which a device does
-		// legitimately on its own behalf.
-		"jobs":   {Access: route.AccessAnyCredential},
-		"events": {Access: route.AccessAnyCredential},
-
-		// This category serves a share's salt and verifier, the two public
-		// values a client needs to derive and check a passphrase.
-		"encryption": {Access: route.AccessAnyCredential},
+		// The native API serves the browser interface only. Device credentials
+		// belong to the WebDAV and compatibility surfaces, which resolve their
+		// own callers and apply app-password masks and share limits there.
+		"files":          {Access: route.AccessSession},
+		"trash":          {Access: route.AccessSession},
+		"uploads":        {Access: route.AccessSession},
+		"direct-uploads": {Access: route.AccessSession},
+		"search":         {Access: route.AccessSession},
+		"links":          {Access: route.AccessSession},
+		"jobs":           {Access: route.AccessSession},
+		"events":         {Access: route.AccessSession},
+		"encryption":     {Access: route.AccessSession},
 
 		// The system category has no default worth having: health is public
 		// and setup has the setup gate's own rule, so both say so per route.
@@ -105,13 +93,6 @@ func exceptions() map[string]exception {
 			"the provider sends the browser here with no credential of ours",
 		},
 
-		// Logging out with an app password is a device disposing of its own
-		// session, which is a thing to permit rather than refuse.
-		"POST " + Base + "/auth/logout": {
-			route.Requirement{Access: route.AccessAnyCredential},
-			"any authenticated caller may end its own session",
-		},
-
 		// Protocol discovery carries no credential by definition: the client is
 		// asking what the server supports before it has anything to present.
 		"OPTIONS " + Base + "/uploads": {
@@ -141,79 +122,6 @@ func exceptions() map[string]exception {
 		"POST " + Base + "/system/setup/browse": {
 			route.Requirement{Access: route.AccessPublic},
 			"first-boot only too: the token itself is what the handler verifies",
-		},
-
-		// Reading a file needs Read; writing to one needs more. Stated per route
-		// because the files category is one noun covering both.
-		"POST " + Base + "/files/mkdir": {
-			route.Requirement{Access: route.AccessPerms, Perms: acl.Create},
-			"creating a directory is a create rather than a read",
-		},
-		"POST " + Base + "/files/write": {
-			route.Requirement{Access: route.AccessPerms, Perms: acl.Write | acl.Create},
-			"writing a file may create it",
-		},
-		"POST " + Base + "/files/delete": {
-			route.Requirement{Access: route.AccessPerms, Perms: acl.Delete},
-			"deleting is its own bit",
-		},
-		"POST " + Base + "/files/move": {
-			route.Requirement{Access: route.AccessPerms, Perms: acl.Move},
-			"moving is its own bit",
-		},
-		"POST " + Base + "/files/copy": {
-			route.Requirement{Access: route.AccessPerms, Perms: acl.Read | acl.Create},
-			"a copy reads the source and creates the destination",
-		},
-		"POST " + Base + "/files/rename": {
-			route.Requirement{Access: route.AccessPerms, Perms: acl.Rename},
-			"renaming is its own bit",
-		},
-		"GET " + Base + "/files/read": {
-			route.Requirement{Access: route.AccessPerms, Perms: acl.Read | acl.Download},
-			"reading the bytes is a download, which is a bit of its own",
-		},
-		"GET " + Base + "/files/thumbnail": {
-			route.Requirement{Access: route.AccessPerms, Perms: acl.Read | acl.Download},
-			"a thumbnail derives from the bytes, so seeing one is seeing the file",
-		},
-		"POST " + Base + "/files/archive": {
-			route.Requirement{Access: route.AccessPerms, Perms: acl.Read | acl.Download},
-			"an archive streams the bytes out, which is a download",
-		},
-		"POST " + Base + "/files/download": {
-			route.Requirement{Access: route.AccessPerms, Perms: acl.Read | acl.Download},
-			"minting a download ticket is agreeing to hand over the bytes",
-		},
-
-		// Restoring and purging change the tree rather than reading it.
-		"POST " + Base + "/trash/restore": {
-			route.Requirement{Access: route.AccessPerms, Perms: acl.Create},
-			"a restore puts a file back, which is a create",
-		},
-		"POST " + Base + "/trash/purge": {
-			route.Requirement{Access: route.AccessPerms, Perms: acl.Delete},
-			"a purge is the delete that cannot be undone",
-		},
-
-		// The verifier lets an offline attacker check passphrase guesses at
-		// rclone's fixed scrypt cost, so reading it demands the same browser
-		// session as the two mutations below rather than any app password.
-		"GET " + Base + "/encryption": {
-			route.Requirement{Access: route.AccessSession},
-			"the verifier is an offline dictionary-attack target, so only a browser session may read it",
-		},
-
-		// Turning a share's encryption on or off is a decision about the
-		// deployment's own share registry, the same class of decision every
-		// other admin/* mutation demands a browser session for.
-		"POST " + Base + "/encryption/{id}": {
-			route.Requirement{Access: route.AccessSession},
-			"enabling a share's encryption is administrative, and only a browser session authenticates one",
-		},
-		"DELETE " + Base + "/encryption/{id}": {
-			route.Requirement{Access: route.AccessSession},
-			"disabling carries the same administrative weight as enabling",
 		},
 	}
 }

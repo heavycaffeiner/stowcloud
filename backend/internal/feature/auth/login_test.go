@@ -2,6 +2,7 @@ package auth_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"sync"
 	"testing"
@@ -10,6 +11,50 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/concurrency"
 )
+
+// A non-sentinel OIDC lookup error refuses login before a session is minted.
+func TestLoginPropagatesOIDCLinkLookupErrors(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	f.account(t, "alice")
+	dropOIDCLinkTable(t, f)
+
+	sess, err := f.svc.Login(context.Background(), auth.LoginRequest{
+		Name: "alice", Password: pw(testPassword), IP: "192.0.2.1",
+	}, 0)
+	if err == nil {
+		t.Fatal("Login succeeded despite an OIDC lookup error")
+	}
+	if sess.Token.Len() != 0 {
+		t.Fatalf("Login minted a session after the OIDC lookup error: %+v", sess)
+	}
+}
+
+// A non-sentinel OIDC lookup error refuses password verification.
+func TestVerifyPasswordPropagatesOIDCLinkLookupErrors(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	f.account(t, "alice")
+	dropOIDCLinkTable(t, f)
+
+	principal, err := f.svc.VerifyPassword(context.Background(), "alice", pw(testPassword))
+	if err == nil {
+		t.Fatal("VerifyPassword succeeded despite an OIDC lookup error")
+	}
+	if principal.UserID != 0 {
+		t.Fatalf("VerifyPassword returned a principal after the OIDC lookup error: %+v", principal)
+	}
+}
+
+func dropOIDCLinkTable(t *testing.T, f fixture) {
+	t.Helper()
+	if err := f.store.Write(context.Background(), func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(context.Background(), "DROP TABLE oidc_link")
+		return err
+	}); err != nil {
+		t.Fatalf("drop oidc_link table: %v", err)
+	}
+}
 
 func TestLoginMintsASessionAndRecordsIt(t *testing.T) {
 	t.Parallel()
