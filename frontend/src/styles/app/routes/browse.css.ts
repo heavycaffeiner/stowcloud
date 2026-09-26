@@ -419,6 +419,14 @@ globalStyle(".sc-browse-loading", {
     flex: "1",
     minHeight: "240px"
 });
+globalStyle(".sc-browse-loading-more", {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "8px",
+    padding: "12px",
+    color: "var(--sc-color-text-muted)"
+});
 globalStyle(".sc-browse-nothing", {
     display: "flex",
     flex: "1",

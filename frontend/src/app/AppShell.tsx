@@ -1,11 +1,11 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useMemo, useRef } from 'react'
 import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { useI18n } from '../lib/i18n/use-i18n'
+import { useI18n } from '../hooks/use-i18n'
 import { isUnauthenticated, logoutMutation, screenOf, sessionQuery, setupRequiredQuery } from '../lib/query/session'
 import { openSearch as openSearchStore, search, searchTarget } from '../lib/store/search.store'
 import { ui } from '../lib/store/ui.store'
-import { useStore } from '../lib/store/use-store'
+import { useStore } from '../hooks/use-store'
 import { JobTray } from '../features/jobs/JobTray'
 import { NavigationBar, type NavigationBarItem } from '../lib/ui/NavigationBar'
 import { NavigationDrawer, type NavItem, type RootItem } from '../features/account/navigation/NavigationDrawer'
@@ -13,7 +13,7 @@ import { SearchSheet } from '../features/search/SearchSheet'
 import { Icon } from '../lib/ui/Icon'
 import { UploadTray } from '../features/uploads/UploadTray'
 import '../styles/app/shell.css.ts'
-import { useRouteStore } from './use-route-store'
+import { useRouteStore } from './hooks/use-route-store'
 import {
   browsePathFromUrl,
   useAccountMenuDismissal,
@@ -24,7 +24,7 @@ import {
   useShellRouteTransitions,
   useTrayGeometry,
   type ShellState
-} from './shell/use-shell-lifecycle'
+} from './hooks/use-shell-lifecycle'
 
 /** Where the create menu should open, in viewport coordinates. `align` says
  * which edge `x` refers to: a left-hand trigger anchors its left edge, a
@@ -45,6 +45,7 @@ export function AppShell() {
   const searchScope = useStore(search, (state) => state.scope)
   const session = useQuery(sessionQuery())
   const definitiveFailure = session.isError && isUnauthenticated(session.error)
+  const sessionUnavailable = session.isError && !definitiveFailure
   const setup = useQuery(setupRequiredQuery(definitiveFailure))
   const screen = screenOf({
     hasSession: session.data !== undefined && !definitiveFailure,
@@ -156,9 +157,21 @@ export function AppShell() {
   }
 
   const userInitial = (session.data?.user.display_name || session.data?.user.name || 'S').slice(0, 1).toUpperCase()
-
   if (screen === 'login') return <Navigate to="/login" replace />
   if (screen === 'first-run') return <Navigate to="/setup" replace />
+  if (sessionUnavailable) {
+    return (
+      <main className="sc-error-page">
+        <section className="sc-error-page-card" role="alert">
+          <h1>{t('session.connection_error')}</h1>
+          <p>{t('session.connection_error_hint')}</p>
+          <div className="sc-error-page-actions">
+            <mdui-button variant="filled" onClick={() => void session.refetch()}>{t('common.retry')}</mdui-button>
+          </div>
+        </section>
+      </main>
+    )
+  }
   if (screen !== 'browser') {
     return <div className="sc-app-shell-boot" role="status" aria-label={t('nav.checking_your_session')}><mdui-circular-progress></mdui-circular-progress></div>
   }

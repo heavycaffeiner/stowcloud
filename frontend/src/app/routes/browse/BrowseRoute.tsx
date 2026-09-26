@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
-import { useI18n } from '../../../lib/i18n/use-i18n'
-import { useStore } from '../../../lib/store/use-store'
+import { useI18n } from '../../../hooks/use-i18n'
+import { useStore } from '../../../hooks/use-store'
 import { ui } from '../../../lib/store/ui.store'
 import { view } from '../../../lib/store/view.store'
 import { selection } from '../../../lib/store/selection.store'
@@ -12,13 +12,13 @@ import type { Entry, SortKey } from '../../../lib/api/client'
 import type { FileGridHandle } from '../../../features/files/FileGrid'
 import type { FileViewHandle } from '../../../features/files/FileTable'
 import { PreviewDialog } from '../../../features/preview/PreviewDialog'
-import { useDocumentTitle } from '../../use-document-title'
-import { useBrowseState } from './use-browse-state'
-import { useBrowseListing } from './use-browse-listing'
-import { useBrowseActions } from './use-browse-actions'
-import { useBrowseMarquee } from './use-browse-marquee'
-import { useBrowseMenus } from './use-browse-menus'
-import { useBrowsePathSelection, useBrowseRouteFocus } from './use-browse-route-effects'
+import { useDocumentTitle } from '../../hooks/use-document-title'
+import { useBrowseState } from './hooks/use-browse-state'
+import { useBrowseListing } from './hooks/use-browse-listing'
+import { useBrowseActions } from './hooks/use-browse-actions'
+import { useBrowseMarquee } from './hooks/use-browse-marquee'
+import { useBrowseMenus } from './hooks/use-browse-menus'
+import { useBrowsePathSelection, useBrowseRouteFocus } from './hooks/use-browse-route-effects'
 import { BrowseSelectionBar } from './BrowseSelectionBar'
 import { BrowseToolbar, BrowseContent, BrowseDialogs } from './BrowseView'
 import '../../../styles/app/routes/browse.css.ts'
@@ -90,8 +90,8 @@ function BrowsePageContent({ path }: { path: string }) {
   return <div className="sc-browse" role="region" aria-label={t('browse.file_browser')} onDragOver={(event) => { event.preventDefault(); patch({ dragOver: canCreate }) }} onDragLeave={() => patch({ dragOver: false })} onDrop={actions.onDrop}>
     <BrowseToolbar model={{ compact, details, mode, canCreate, filterType, filterDate, filterTypeLabel, filterDateLabel, sortLabel: t('browse.sort_by', { key: sortLabel }), crumbs, external: Boolean(root?.shared_externally), encrypted, unlocked, broken: Boolean(root?.broken_reason) }} actions={{ onNavigate: (next) => void navigate(`/b${next}`), onUnlock, onFilter: menus.openFilterMenu, onRefresh: () => void query.refetch(), onToggleView, onToggleDetails, onSort: menus.openSort, onNew: menus.openNewMenu, onOverflow: menus.openOverflow }} t={t} />
     {selected.length ? <BrowseSelectionBar state={{ compact, details, count: selected.length, bytes: selectionBytes }} actions={{ onClear: selection.clear, onToggleDetails, actions: actions.actions }} t={t} /> : null}
-    <BrowseContent path={path} compact={compact} details={details} mode={mode} filteredEntries={filteredEntries} directory={directory} noShares={noShares} isAdmin={Boolean(session.data?.user.is_admin)} isPending={query.isPending} isFetchingMore={query.isFetchingNextPage} hasNextPage={Boolean(query.hasNextPage)} error={query.error} errorText={query.error ? describeApiError(query.error, t('browse.this_folder_could_not_be_opened')) : ''} encrypted={encrypted} dragOver={state.dragOver} marqueeRect={state.marqueeRect} marqueeScroll={state.marqueeScroll} treeOpen={state.treeOpen} selected={selected} tableRef={tableRef} gridRef={gridRef} onPointerDown={marquee.onPointerDown} onEmptyClick={marquee.onEmptyAreaClick} onBlankMenu={marquee.openBlankMenu} onOpen={actions.onOpen} onContextMenu={openContextFor} onRename={() => patch({ renameTarget: actionTarget })} onDelete={() => patch({ deleteOpen: true })} onSearchFocus={openSearchForPath} onRequestMore={() => { if (query.hasNextPage && !query.isFetchingNextPage) void query.fetchNextPage() }} onTreeNavigate={(next) => { patch({ treeOpen: false }); void navigate(`/b${next}`) }} onTreeClose={() => patch({ treeOpen: false })} onDetailsClose={() => ui.setDetails(false)} onDownload={actions.downloadSelection} onShare={() => { if (actionTarget) patch({ shareTarget: actionTarget }) }} onDetailsContext={onDetailsContext} onAddFolder={() => void navigate('/admin#shares')} t={t} showingAll={showingAll} />
-    <BrowseDialogs model={{ state, path, root, selectedCount: selected.length || (state.contextEntry ? 1 : 0), rowActions: actions.actions, fileInputRef, dirInputRef, compact, mode, densityLabel, sortKey, sortOrder, treeOpen: state.treeOpen, canCreate }} actions={{ onPatch: patch, onCloseSort: menus.closeSort, onCloseNew: menus.closeNewMenu, onCloseOverflow: menus.closeOverflow, onToggleView, onToggleDetails, onToggleTree, onCycleDensity, onNavigateTrash: () => void navigate('/trash'), onRefresh: () => void query.refetch(), onChooseSort, onUploadFiles: actions.handleUploadFiles, onUploadEntries: actions.handleUploadEntries, onCreateFolder: actions.createFolder, onRename: actions.doRename, onDelete: actions.doDelete, onTransfer: (dest, kind) => void actions.transfer(state.destSources, dest, kind, 'fail'), onDownloadEntry: actions.downloadEntry, onEdit: actions.openEditor }} t={t} />
+    <BrowseContent path={path} compact={compact} details={details} mode={mode} filteredEntries={filteredEntries} directory={directory} noShares={noShares} isAdmin={Boolean(session.data?.user.is_admin)} isPending={query.isPending} isFetchingMore={query.isFetchingNextPage} hasNextPage={Boolean(query.hasNextPage)} error={query.error} errorText={query.error ? describeApiError(query.error, t('browse.this_folder_could_not_be_opened')) : ''} encrypted={encrypted} dragOver={state.dragOver} marqueeRect={state.marqueeRect} marqueeScroll={state.marqueeScroll} treeOpen={state.treeOpen} selected={selected} tableRef={tableRef} gridRef={gridRef} onPointerDown={marquee.onPointerDown} onEmptyClick={marquee.onEmptyAreaClick} onBlankMenu={marquee.openBlankMenu} onOpen={actions.onOpen} onContextMenu={openContextFor} onRename={() => {}} onDelete={() => {}} onSearchFocus={openSearchForPath} onRequestMore={() => void query.fetchNextPage()} onTreeNavigate={(next) => void navigate(`/b${next}`)} onTreeClose={() => patch({ treeOpen: false })} onDetailsClose={onToggleDetails} onDownload={() => {}} onShare={() => { const entry = selected[0] ?? state.contextEntry; if (entry) patch({ shareTarget: entry }) }} onDetailsContext={onDetailsContext} onAddFolder={() => {}} t={t} showingAll={showingAll} />
+    <BrowseDialogs model={{ state, path, root, selectedCount: selected.length || (state.contextEntry ? 1 : 0), rowActions: actions.actions, fileInputRef, dirInputRef, compact, mode, densityLabel, sortKey, sortOrder, treeOpen: state.treeOpen, canCreate }} actions={{ onPatch: patch, onCloseSort: menus.closeSort, onCloseNew: menus.closeNewMenu, onCloseOverflow: menus.closeOverflow, onToggleView, onToggleDetails, onToggleTree, onCycleDensity, onNavigateTrash: () => void navigate('/trash'), onRefresh: () => void query.refetch(), onChooseSort, onUploadFiles: actions.handleUploadFiles, onUploadEntries: actions.handleUploadEntries, onCreateFolder: actions.createFolder, onRename: actions.doRename, onDelete: actions.doDelete, onTransfer: () => undefined, onDownloadEntry: actions.downloadEntry, onEdit: (entry) => void actions.openEditor(entry) }} t={t} />
     <PreviewDialog open={state.previewOpen && previewEntry !== null} entry={previewEntry} path={previewEntry ? joinPath(path, previewEntry.name) : ''} hasPrev={hasPreviewNeighbour(-1)} hasNext={hasPreviewNeighbour(1)} onClose={() => patch({ previewOpen: false })} onPrev={() => stepPreview(-1)} onNext={() => stepPreview(1)} onDownload={actions.downloadEntry} onEdit={(entry) => void actions.openEditor(entry)} />
   </div>
 }

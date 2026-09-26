@@ -41,7 +41,7 @@ test.describe('Search E2E and Permission Invariant', () => {
     await searchInput.press('Enter');
 
     // Observe search results
-    const resultItem = page.locator('.sc-search-result, .sc-filename, [role="row"], [role="listitem"]').filter({ hasText: 'a.txt' }).first();
+    const resultItem = page.locator('.sc-search-row').filter({ hasText: 'a.txt' }).first();
     await expect(resultItem).toBeVisible({ timeout: 10000 });
 
     await assertNoUnexpectedErrors(artifacts);

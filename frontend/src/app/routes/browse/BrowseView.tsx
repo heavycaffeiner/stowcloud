@@ -1,4 +1,5 @@
 import type { ChangeEvent, MouseEvent as ReactMouseEvent, RefObject } from 'react'
+import { useEffect } from 'react'
 import type { Entry, Perms } from '../../../lib/api/client'
 import type { FileGridHandle } from '../../../features/files/FileGrid'
 import type { FileViewHandle } from '../../../features/files/FileTable'
@@ -20,8 +21,8 @@ import { Menu } from '../../../lib/ui/Menu'
 import { Breadcrumb } from '../../../features/files/Breadcrumb'
 import { pickDirectory, filesFromWebkitDirectoryInput, supportsDirectoryPicker } from '../../../lib/upload/directory-picker'
 import { joinPath } from '../../../lib/api/path-utils'
-import type { BrowseState, BrowseFilterDate, BrowseFilterType } from './types'
-import type { RowAction } from '../../../features/files/row-actions'
+import type { BrowseState, BrowseFilterDate, BrowseFilterType } from './logic/types'
+import type { RowAction } from '../../../features/files/logic/row-actions'
 
 type Patch = (patch: Partial<BrowseState> | ((state: BrowseState) => Partial<BrowseState>)) => void
 type Translate = (key: string, params?: Record<string, string | number>) => string
@@ -97,7 +98,6 @@ type BrowseContentProps = {
   isAdmin: boolean
   isPending: boolean
   isFetchingMore: boolean
-  hasNextPage?: boolean
   error: unknown
   errorText: string
   encrypted: boolean
@@ -126,16 +126,21 @@ type BrowseContentProps = {
   onAddFolder: () => void
   t: Translate
   showingAll?: boolean
+  hasNextPage?: boolean
 }
 
 export function BrowseContent(props: BrowseContentProps) {
   const { path, compact, details, mode, filteredEntries, directory, noShares, isAdmin, isPending, isFetchingMore, error, errorText, encrypted, dragOver, marqueeRect, marqueeScroll, treeOpen, selected, tableRef, gridRef, onPointerDown, onEmptyClick, onBlankMenu, onOpen, onContextMenu, onRename, onDelete, onSearchFocus, onRequestMore, onTreeNavigate, onTreeClose, onDetailsClose, onDownload, onShare, onDetailsContext, onAddFolder, t, showingAll, hasNextPage } = props
   const all = showingAll ?? filteredEntries.length === directory.total
   const dirs = all ? directory.dirs : filteredEntries.filter((entry) => entry.kind === 'dir').length
+  useEffect(() => {
+    if (all || !hasNextPage || isFetchingMore) return
+    onRequestMore()
+  }, [all, hasNextPage, isFetchingMore, onRequestMore])
   return <div className="sc-browse-content">
     {treeOpen ? <FileTree currentPath={path} onNavigate={onTreeNavigate} overlay={compact} onClose={onTreeClose} /> : null}
     <div className={`sc-browse-table-wrap${dragOver ? ' sc-browse-table-wrap-dragover' : ''}${marqueeRect ? ' sc-browse-table-wrap-marquee' : ''}`} onPointerDown={onPointerDown} onContextMenu={onBlankMenu} onClick={onEmptyClick}>
-      {noShares ? <div className="sc-browse-nothing"><div className="sc-browse-nothing-icon" aria-hidden="true"><Icon name="folder" size={40} /></div><h2 className="sc-browse-nothing-title">{t('browse.nothing_here')}</h2><p className="sc-browse-nothing-hint">{isAdmin ? t('browse.press_this_button_to_set_up_your_first_folder') : t('browse.ask_an_administrator_for_a_folder')}</p>{isAdmin ? <Button onClick={onAddFolder}>{t('common.add_folder')}</Button> : null}</div> : isPending ? <div className="sc-browse-loading"><mdui-circular-progress /></div> : error ? <p className="sc-browse-error" role="alert">{errorText}</p> : <div className="sc-browse-view">{mode === 'list' ? <FileTable ref={tableRef} entries={filteredEntries} total={all ? directory.total : filteredEntries.length} dirs={dirs} loading={isPending} loadingMore={isFetchingMore} requestMore={onRequestMore} perms={directory.perms} onOpen={onOpen} onContextMenu={onContextMenu} onRename={onRename} onDelete={onDelete} onSearchFocus={onSearchFocus} encrypted={encrypted} /> : <FileGrid ref={gridRef} entries={filteredEntries} total={all ? directory.total : filteredEntries.length} dirs={dirs} loading={isPending} loadingMore={isFetchingMore} requestMore={onRequestMore} perms={directory.perms} onOpen={onOpen} onContextMenu={onContextMenu} onRename={onRename} onDelete={onDelete} onSearchFocus={onSearchFocus} encrypted={encrypted} />}</div>}
+      {noShares ? <div className="sc-browse-nothing"><div className="sc-browse-nothing-icon" aria-hidden="true"><Icon name="folder" size={40} /></div><h2 className="sc-browse-nothing-title">{t('browse.nothing_here')}</h2><p className="sc-browse-nothing-hint">{isAdmin ? t('browse.press_this_button_to_set_up_your_first_folder') : t('browse.ask_an_administrator_for_a_folder')}</p>{isAdmin ? <Button onClick={onAddFolder}>{t('common.add_folder')}</Button> : null}</div> : isPending ? <div className="sc-browse-loading"><mdui-circular-progress /></div> : error ? <p className="sc-browse-error" role="alert">{errorText}</p> : <div className="sc-browse-view">{mode === 'list' ? <FileTable ref={tableRef} entries={filteredEntries} total={filteredEntries.length} dirs={dirs} loading={isPending} loadingMore={isFetchingMore} requestMore={onRequestMore} perms={directory.perms} onOpen={onOpen} onContextMenu={onContextMenu} onRename={onRename} onDelete={onDelete} onSearchFocus={onSearchFocus} encrypted={encrypted} /> : <FileGrid ref={gridRef} entries={filteredEntries} total={filteredEntries.length} dirs={dirs} loading={isPending} loadingMore={isFetchingMore} requestMore={onRequestMore} perms={directory.perms} onOpen={onOpen} onContextMenu={onContextMenu} onRename={onRename} onDelete={onDelete} onSearchFocus={onSearchFocus} encrypted={encrypted} />}{isFetchingMore ? <div className="sc-browse-loading-more" role="status" aria-live="polite"><mdui-circular-progress />{t('common.loading')}</div> : null}</div>}
       {dragOver ? <div className="sc-browse-drop-overlay">{t('browse.drop_here_upload')}</div> : null}
     </div>
     {marqueeRect ? <div className="sc-browse-marquee" aria-hidden="true" style={{ left: marqueeRect.left - marqueeScroll.x, top: marqueeRect.top - marqueeScroll.y, width: marqueeRect.right - marqueeRect.left, height: marqueeRect.bottom - marqueeRect.top }} /> : null}

@@ -1,10 +1,10 @@
-import { forwardRef, useImperativeHandle, useRef } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent, ReactNode } from 'react'
-import { useI18n } from '../../lib/i18n/use-i18n'
+import { useI18n } from '../../hooks/use-i18n'
 import { Icon } from '../../lib/ui/Icon'
-import { useSearchController } from './use-search-controller'
-import { useSearchNavigation } from './use-search-navigation'
-import { CATEGORIES, SORT_KEYS } from './search-state'
+import { useSearchController } from './hooks/use-search-controller'
+import { useSearchNavigation } from './hooks/use-search-navigation'
+import { CATEGORIES, SORT_KEYS } from './logic/search-state'
 import { SearchResults } from './SearchResults'
 import '../../styles/features/search/search-panel.css.ts'
 
@@ -25,6 +25,17 @@ export const SearchPanel = forwardRef<SearchPanelHandle, SearchPanelProps>(funct
   const navigation = useSearchNavigation({ scope, state: controller.state, onNavigated: onnavigated })
   const { state } = controller
   useImperativeHandle(ref, () => ({ focus: () => controller.inputRef.current?.focus() }), [controller.inputRef])
+  const [spokenStatus, setSpokenStatus] = useState('')
+  const lastSpokenAt = useRef(0)
+  useEffect(() => {
+    const text = state.running
+      ? `${t('search.searching_label')}${state.scanned ? `, ${t('search.scanning', { dirs: String(state.scanned.dirs) })}` : ''}`
+      : controller.status.key ? t(controller.status.key, controller.status.values) : ''
+    const now = Date.now()
+    if (state.running && now - lastSpokenAt.current < 1000) return
+    lastSpokenAt.current = now
+    setSpokenStatus(text)
+  }, [controller.status.key, controller.status.values, state.running, state.scanned, t])
 
   const onSubmit = (event: FormEvent): void => {
     event.preventDefault()
@@ -75,7 +86,7 @@ export const SearchPanel = forwardRef<SearchPanelHandle, SearchPanelProps>(funct
           {state.running ? <span className="sc-search-progress" role="img" aria-label={t('search.searching_label')}><mdui-circular-progress /></span> : null}
           <span>{controller.status.key ? t(controller.status.key, controller.status.values) : ''}{state.running && state.scanned ? `, ${t('search.scanning', { dirs: String(state.scanned.dirs) })}` : ''}</span>
         </span>
-        <span className="sc-search-spoken" role="status" aria-live="polite">{state.running ? '' : controller.status.key ? t(controller.status.key, controller.status.values) : ''}</span>
+        <span className="sc-search-spoken" role="status" aria-live="polite">{spokenStatus}</span>
         <span className="sc-search-status-actions">
           {!state.running && controller.fileCount > 0 && controller.dirCount > 0 ? <span className="sc-search-breakdown">{t('search.summary', { files: String(controller.fileCount), folders: String(controller.dirCount) })}</span> : null}
           {state.running ? <button type="button" className="sc-search-stop-btn" onClick={controller.stop}>{t('search.stop')}</button> : null}
