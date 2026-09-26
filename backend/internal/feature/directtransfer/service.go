@@ -5,12 +5,15 @@
 package directtransfer
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -30,10 +33,11 @@ const (
 )
 
 var (
-	ErrUnsupported   = errors.New("direct transfer is unsupported")
-	ErrLocked        = errors.New("direct transfer destination is locked")
-	ErrExpired       = errors.New("direct transfer is expired")
-	ErrPartsMismatch = errors.New("direct transfer parts do not match")
+	ErrUnsupported     = errors.New("direct transfer is unsupported")
+	ErrUnsupportedSize = errors.New("direct transfer size is unsupported")
+	ErrLocked          = errors.New("direct transfer destination is locked")
+	ErrExpired         = errors.New("direct transfer is expired")
+	ErrPartsMismatch   = errors.New("direct transfer parts do not match")
 )
 
 type Dependencies struct {
@@ -158,6 +162,9 @@ func RevalidateDestination(
 }
 
 func (s *Service) Create(ctx context.Context, owner core.UserID, req CreateRequest) (state.DirectTransferReservation, error) {
+	if req.Size == 0 || req.Size > PartSize*MaxParts {
+		return state.DirectTransferReservation{}, ErrUnsupportedSize
+	}
 	resolved, err := s.d.Resolve(owner, req.Path, acl.Write|acl.Create)
 	if err != nil {
 		return state.DirectTransferReservation{}, err
@@ -296,6 +303,9 @@ func (s *Service) Complete(
 		parts, listErr := s.d.State.ListDirectTransferParts(ctx, id)
 		return row, parts, listErr
 	}
+	if s.d.Now() >= row.ExpiresNs {
+		return state.DirectTransferReservation{}, nil, ErrExpired
+	}
 	provider, ok, err := s.d.ProviderForRow(ctx, row)
 	if err != nil {
 		return state.DirectTransferReservation{}, nil, err
@@ -337,11 +347,29 @@ func (s *Service) Complete(
 		return state.DirectTransferReservation{}, nil, destinationErr
 	}
 	if transitionErr := s.d.State.BeginDirectTransferCompletion(ctx, id, int64(owner), s.d.Now()); transitionErr != nil {
+		if errors.Is(transitionErr, state.ErrDirectTransferExpired) {
+			return state.DirectTransferReservation{}, nil, ErrExpired
+		}
+		if errors.Is(transitionErr, state.ErrDirectTransferConflict) {
+			return state.DirectTransferReservation{}, nil, ErrLocked
+		}
 		return state.DirectTransferReservation{}, nil, transitionErr
+	}
+	if destinationErr := s.d.RevalidateDestination(ctx, row); destinationErr != nil {
+		if resetErr := s.d.State.ResetDirectTransferCompletion(ctx, id, int64(owner), s.d.Now()); resetErr != nil {
+			return state.DirectTransferReservation{}, nil, errors.Join(destinationErr, resetErr)
+		}
+		return state.DirectTransferReservation{}, nil, destinationErr
 	}
 	receipt, completeErr := provider.CompleteMultipart(ctx, row.ObjectKey, row.UploadID, providerParts(client))
 	if completeErr != nil {
 		size, etag, checksum, found, metadataErr := provider.ObjectMetadata(ctx, row.ObjectKey)
+		if metadataErr == nil && !found {
+			if resetErr := s.d.State.ResetDirectTransferCompletion(ctx, id, int64(owner), s.d.Now()); resetErr != nil {
+				return state.DirectTransferReservation{}, nil, errors.Join(completeErr, resetErr)
+			}
+			return state.DirectTransferReservation{}, nil, completeErr
+		}
 		if metadataErr != nil || !metadataMatches(row, size, checksum, found) {
 			return state.DirectTransferReservation{}, nil, completeErr
 		}
@@ -365,6 +393,12 @@ func (s *Service) reconcileCompletion(ctx context.Context, owner core.UserID, ro
 	if err != nil {
 		return state.DirectTransferReservation{}, nil, err
 	}
+	if !found {
+		if rerr := s.d.State.ResetDirectTransferCompletion(ctx, row.ID, int64(owner), s.d.Now()); rerr != nil {
+			return state.DirectTransferReservation{}, nil, fmt.Errorf("direct transfer publication is unresolved: %w", rerr)
+		}
+		return state.DirectTransferReservation{}, nil, fmt.Errorf("direct transfer publication is unresolved")
+	}
 	if !metadataMatches(row, size, checksum, found) {
 		return state.DirectTransferReservation{}, nil, fmt.Errorf("direct transfer publication is unresolved")
 	}
@@ -373,27 +407,20 @@ func (s *Service) reconcileCompletion(ctx context.Context, owner core.UserID, ro
 
 func (s *Service) publish(ctx context.Context, owner core.UserID, row state.DirectTransferReservation, parts []state.DirectTransferPart, receipt objstore.TransferReceipt) (state.DirectTransferReservation, []state.DirectTransferPart, error) {
 	now := s.d.Now()
-	if err := s.d.State.PublishDirectTransfer(ctx, row.ID, int64(owner), receipt.Size, receipt.ETag, receipt.Checksum, now); err != nil {
+	if err := s.d.State.PublishDirectTransferAndReleaseUsage(ctx, row.ID, int64(owner), receipt.Size, receipt.ETag, receipt.Checksum, now, publishRelease(row)); err != nil {
 		return state.DirectTransferReservation{}, nil, err
-	}
-	quota, err := s.d.State.ReleaseDirectTransferQuota(ctx, row.ID)
-	if err != nil {
-		return state.DirectTransferReservation{}, nil, err
-	}
-	if quota > row.PriorSize {
-		amount, err := number.Narrow[int64](quota - row.PriorSize)
-		if err != nil {
-			return state.DirectTransferReservation{}, nil, err
-		}
-		if err := state.NewQuota(s.d.State).Release(ctx, int64(owner), amount); err != nil {
-			return state.DirectTransferReservation{}, nil, err
-		}
 	}
 	row.State = state.DirectTransferComplete
 	row.CompletedNs = &now
 	return row, parts, nil
 }
 
+// publishRelease is what publication returns to the owner's usage. Usage
+// already counts the replaced file and Create reserved the new size, so the
+// replaced bytes are what must come back.
+func publishRelease(row state.DirectTransferReservation) uint64 {
+	return min(row.QuotaReservation, row.PriorSize)
+}
 func (s *Service) Cancel(ctx context.Context, owner core.UserID, id string) error {
 	row, err := s.d.State.GetDirectTransferOf(ctx, int64(owner), id)
 	if err != nil {
@@ -402,23 +429,16 @@ func (s *Service) Cancel(ctx context.Context, owner core.UserID, id string) erro
 	if row.State != state.DirectTransferPending {
 		return ErrExpired
 	}
+	if cancelErr := s.d.State.CancelDirectTransferAndReleaseUsage(ctx, id, int64(owner), s.d.Now(), row.QuotaReservation); cancelErr != nil {
+		return cancelErr
+	}
 	provider, ok, err := s.d.ProviderForRow(ctx, row)
 	if err != nil {
 		return err
 	}
 	if ok && provider.DirectTransfer() {
-		if err := provider.AbortMultipart(ctx, row.ObjectKey, row.UploadID); err != nil && !errors.Is(err, objstore.ErrDirectTransferUnsupported) {
-			return err
-		}
-	}
-	if err := s.d.State.CancelDirectTransfer(ctx, id, int64(owner), s.d.Now()); err != nil {
-		return err
-	}
-	if quota, err := s.d.State.ReleaseDirectTransferQuota(ctx, id); err == nil && quota > 0 {
-		if amount, narrowErr := number.Narrow[int64](quota); narrowErr == nil {
-			if releaseErr := state.NewQuota(s.d.State).Release(ctx, int64(owner), amount); releaseErr != nil {
-				s.d.Logger.Warn("releasing direct transfer quota failed", "error", releaseErr)
-			}
+		if abortErr := provider.AbortMultipart(ctx, row.ObjectKey, row.UploadID); abortErr != nil && !errors.Is(abortErr, objstore.ErrDirectTransferUnsupported) {
+			return abortErr
 		}
 	}
 	return nil
@@ -445,15 +465,8 @@ func Sweep(ctx context.Context, db *state.DB, now int64, resolve func(context.Co
 				continue
 			}
 		}
-		if expireErr := db.ExpireDirectTransfer(ctx, row.ID, now); expireErr != nil {
+		if expireErr := db.ExpireDirectTransferAndReleaseUsage(ctx, row.ID, now, row.Owner, row.QuotaReservation); expireErr != nil {
 			continue
-		}
-		if quota, releaseErr := db.ReleaseDirectTransferQuota(ctx, row.ID); releaseErr == nil && quota > 0 {
-			if amount, narrowErr := number.Narrow[int64](quota); narrowErr == nil {
-				if quotaErr := state.NewQuota(db).Release(ctx, row.Owner, amount); quotaErr != nil {
-					logger.Warn("releasing direct transfer quota failed", "error", quotaErr)
-				}
-			}
 		}
 		report.Expired++
 	}
@@ -467,19 +480,22 @@ func Sweep(ctx context.Context, db *state.DB, now int64, resolve func(context.Co
 			continue
 		}
 		size, etag, checksum, found, metadataErr := provider.ObjectMetadata(ctx, row.ObjectKey)
-		if metadataErr != nil || !metadataMatches(row, size, checksum, found) {
+		if metadataErr != nil {
 			continue
 		}
-		if err := db.PublishDirectTransfer(ctx, row.ID, row.Owner, size, etag, checksum, now); err != nil {
+		if !found {
+			// A completion that left no object is retryable, not stuck.
+			if resetErr := db.ResetDirectTransferCompletion(ctx, row.ID, row.Owner, now); resetErr != nil {
+				logger.Warn("resetting an unresolved direct transfer failed", "error", resetErr)
+			}
+			continue
+		}
+		if !metadataMatches(row, size, checksum, found) {
+			continue
+		}
+		if err := db.PublishDirectTransferAndReleaseUsage(ctx, row.ID, row.Owner, size, etag, checksum, now, publishRelease(row)); err != nil {
 			logger.Warn("recording reconciled direct transfer failed", "error", err)
 			continue
-		}
-		if quota, releaseErr := db.ReleaseDirectTransferQuota(ctx, row.ID); releaseErr == nil && quota > row.PriorSize {
-			if amount, narrowErr := number.Narrow[int64](quota - row.PriorSize); narrowErr == nil {
-				if err := state.NewQuota(db).Release(ctx, row.Owner, amount); err != nil {
-					logger.Warn("releasing reconciled direct transfer quota failed", "error", err)
-				}
-			}
 		}
 		report.Reconciled++
 	}
@@ -531,6 +547,7 @@ func partsFromInput(id string, input []CompletePart, total uint64) ([]state.Dire
 			Size: part.Size, Checksum: part.Checksum, State: state.DirectTransferPartUploaded,
 		})
 	}
+	sort.Slice(parts, func(i, j int) bool { return parts[i].PartNumber < parts[j].PartNumber })
 	return parts, nil
 }
 
@@ -563,7 +580,7 @@ func validateParts(row state.DirectTransferReservation, client, persisted []stat
 		if !ok || normalizeETag(part.ETag) != clientPart.ETag || size != clientPart.Size {
 			return ErrPartsMismatch
 		}
-		if clientPart.Checksum != "" && !strings.EqualFold(part.Checksum, clientPart.Checksum) {
+		if clientPart.Checksum != "" && !checksumsEqual(part.Checksum, clientPart.Checksum) {
 			return ErrPartsMismatch
 		}
 		total += size
@@ -590,7 +607,31 @@ func providerParts(parts []state.DirectTransferPart) []objstore.MultipartPart {
 }
 
 func metadataMatches(row state.DirectTransferReservation, size uint64, checksum string, found bool) bool {
-	return found && size == row.ExpectedSize && (row.ExpectedChecksum == "" || (checksum != "" && strings.EqualFold(checksum, row.ExpectedChecksum)))
+	return found && size == row.ExpectedSize && (row.ExpectedChecksum == "" || checksumsEqual(checksum, row.ExpectedChecksum))
+}
+
+func checksumBytes(value string) ([]byte, bool) {
+	value = strings.TrimSpace(value)
+	if dash := strings.LastIndexByte(value, '-'); dash >= 0 {
+		value = value[:dash]
+	}
+	if len(value) == 64 {
+		decoded, err := hex.DecodeString(value)
+		if err == nil {
+			return decoded, true
+		}
+	}
+	decoded, err := base64.StdEncoding.DecodeString(value)
+	if err != nil || len(decoded) != 32 {
+		return nil, false
+	}
+	return decoded, true
+}
+
+func checksumsEqual(left, right string) bool {
+	a, aOK := checksumBytes(left)
+	b, bOK := checksumBytes(right)
+	return aOK && bOK && bytes.Equal(a, b)
 }
 
 func singleHeaders(headers map[string][]string) map[string]string {

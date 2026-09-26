@@ -51,7 +51,7 @@ func TestCommitThenTimeoutSurvivesRestartWithoutAbort(t *testing.T) {
 		ID: "transfer-recovery", Owner: 1, Share: 1, Path: "files/object.bin",
 		ObjectKey: "team/object.bin", UploadID: "upload-recovery", ExpectedSize: 7,
 		ExpectedChecksum: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		QuotaReservation: 7, CreatedNs: 1, UpdatedNs: 1, ExpiresNs: 2,
+		QuotaReservation: 7, CreatedNs: 1, UpdatedNs: 1, ExpiresNs: 20,
 		State: state.DirectTransferPending,
 	}
 	if createErr := d.CreateDirectTransfer(ctx, row); createErr != nil {

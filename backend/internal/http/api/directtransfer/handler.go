@@ -250,6 +250,8 @@ func (h *Handler) Cancel(c *gin.Context) {
 
 func (h *Handler) writeServiceError(c *gin.Context, err error) {
 	switch {
+	case errors.Is(err, feature.ErrUnsupportedSize):
+		h.d.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "transfer.unsupported_size"})
 	case errors.Is(err, feature.ErrUnsupported):
 		h.d.Refuse(c, apierr.Classified{Class: apierr.NotImplemented, Key: "direct_transfer.unsupported"})
 	case errors.Is(err, feature.ErrLocked):

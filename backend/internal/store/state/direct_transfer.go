@@ -254,7 +254,34 @@ func (d *DB) ListDirectTransferParts(ctx context.Context, id string) (out []Dire
 // about to start. Completing rows are never eligible for expiry cleanup.
 func (d *DB) BeginDirectTransferCompletion(ctx context.Context, id string, owner int64, nowNs int64) error {
 	return d.Write(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, `UPDATE direct_transfer SET state=?,updated_ns=?,expires_ns=CASE WHEN expires_ns > ? THEN expires_ns ELSE ? END WHERE id=? AND owner=? AND state=?`, int64(DirectTransferCompleting), nowNs, nowNs, nowNs, id, owner, int64(DirectTransferPending))
+		res, err := tx.ExecContext(ctx, `UPDATE direct_transfer SET state=?,updated_ns=? WHERE id=? AND owner=? AND state=? AND expires_ns > ? AND NOT EXISTS (SELECT 1 FROM direct_transfer AS other WHERE other.share=direct_transfer.share AND other.path=direct_transfer.path AND other.state=?)`, int64(DirectTransferCompleting), nowNs, id, owner, int64(DirectTransferPending), nowNs, int64(DirectTransferCompleting))
+		if err != nil {
+			return err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n == 1 {
+			return nil
+		}
+		var expires int64
+		if err := tx.QueryRowContext(ctx, `SELECT expires_ns FROM direct_transfer WHERE id=? AND owner=? AND state=?`, id, owner, int64(DirectTransferPending)).Scan(&expires); errors.Is(err, sql.ErrNoRows) {
+			return directTransferMutationFailure(ctx, tx, id, owner)
+		} else if err != nil {
+			return err
+		}
+		if expires <= nowNs {
+			return ErrDirectTransferExpired
+		}
+		return ErrDirectTransferConflict
+	})
+}
+
+// ResetDirectTransferCompletion makes an unresolved provider failure retryable.
+func (d *DB) ResetDirectTransferCompletion(ctx context.Context, id string, owner int64, nowNs int64) error {
+	return d.Write(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `UPDATE direct_transfer SET state=?,updated_ns=? WHERE id=? AND owner=? AND state=?`, int64(DirectTransferPending), nowNs, id, owner, int64(DirectTransferCompleting))
 		if err != nil {
 			return err
 		}
@@ -269,9 +296,7 @@ func (d *DB) BeginDirectTransferCompletion(ctx context.Context, id string, owner
 	})
 }
 
-// PublishDirectTransfer records the provider receipt and publishes the row in
-// one transaction. It is valid after a successful or ambiguous provider call;
-// callers must pass metadata read from the provider, never client claims.
+// PublishDirectTransfer records the provider receipt and publishes a completing row.
 func (d *DB) PublishDirectTransfer(ctx context.Context, id string, owner int64, receiptSize uint64, receiptETag, receiptChecksum string, completedNs int64) error {
 	size, err := narrowTransferSize(receiptSize)
 	if err != nil {
@@ -290,6 +315,81 @@ func (d *DB) PublishDirectTransfer(ctx context.Context, id string, owner int64, 
 			return nil
 		}
 		return directTransferMutationFailure(ctx, tx, id, owner)
+	})
+}
+
+// PublishDirectTransferAndReleaseUsage records the provider receipt and credits
+// the replacement bytes in one transaction.
+func (d *DB) PublishDirectTransferAndReleaseUsage(ctx context.Context, id string, owner int64, receiptSize uint64, receiptETag, receiptChecksum string, completedNs int64, release uint64) error {
+	size, err := narrowTransferSize(receiptSize)
+	if err != nil {
+		return err
+	}
+	delta, err := narrowTransferSize(release)
+	if err != nil {
+		return err
+	}
+	return d.Write(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `UPDATE direct_transfer SET state=?,updated_ns=?,completed_ns=?,receipt_recorded=1,receipt_size=?,receipt_etag=?,receipt_checksum=?,error_key=NULL,error_detail=NULL,lease_id=NULL,lease_expires_ns=0,quota_released=1 WHERE id=? AND owner=? AND state=? AND quota_released=0`, int64(DirectTransferComplete), completedNs, completedNs, size, textArg(receiptETag), textArg(receiptChecksum), id, owner, int64(DirectTransferCompleting))
+		if err != nil {
+			return err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n != 1 {
+			return directTransferMutationFailure(ctx, tx, id, owner)
+		}
+		_, err = tx.ExecContext(ctx, sqlReleaseQuota, delta, owner)
+		return err
+	})
+}
+
+// CancelDirectTransferAndReleaseUsage atomically terminates a pending row and
+// credits its reservation before the provider abort is attempted.
+func (d *DB) CancelDirectTransferAndReleaseUsage(ctx context.Context, id string, owner int64, nowNs int64, release uint64) error {
+	delta, err := narrowTransferSize(release)
+	if err != nil {
+		return err
+	}
+	return d.Write(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `UPDATE direct_transfer SET state=?,updated_ns=?,error_key='cancelled',error_detail='cancelled by owner',completed_ns=?,lease_id=NULL,lease_expires_ns=0,quota_released=1 WHERE id=? AND owner=? AND state=? AND quota_released=0`, int64(DirectTransferCancelled), nowNs, nowNs, id, owner, int64(DirectTransferPending))
+		if err != nil {
+			return err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n != 1 {
+			return directTransferMutationFailure(ctx, tx, id, owner)
+		}
+		_, err = tx.ExecContext(ctx, sqlReleaseQuota, delta, owner)
+		return err
+	})
+}
+
+// ExpireDirectTransferAndReleaseUsage atomically expires a row and credits its reservation.
+func (d *DB) ExpireDirectTransferAndReleaseUsage(ctx context.Context, id string, nowNs int64, owner int64, release uint64) error {
+	delta, err := narrowTransferSize(release)
+	if err != nil {
+		return err
+	}
+	return d.Write(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `UPDATE direct_transfer SET state=?,updated_ns=?,error_key='expired',error_detail='reservation expired',lease_id=NULL,lease_expires_ns=0,quota_released=1 WHERE id=? AND owner=? AND state=? AND expires_ns <= ? AND quota_released=0`, int64(DirectTransferExpired), nowNs, id, owner, int64(DirectTransferPending), nowNs)
+		if err != nil {
+			return err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n != 1 {
+			return directTransferMutationFailure(ctx, tx, id, owner)
+		}
+		_, err = tx.ExecContext(ctx, sqlReleaseQuota, delta, owner)
+		return err
 	})
 }
 
@@ -440,6 +540,36 @@ func (d *DB) ReleaseDirectTransferQuota(ctx context.Context, id string) (uint64,
 		return 0, fmt.Errorf("negative quota reservation")
 	}
 	return uint64(released), nil
+}
+
+// ReleaseDirectTransferQuotaAndUsage marks the reservation released and credits
+// the user's ledger in the same transaction, so a failed credit is retryable.
+func (d *DB) ReleaseDirectTransferQuotaAndUsage(ctx context.Context, id string, owner int64, amount uint64) error {
+	delta, err := narrowTransferSize(amount)
+	if err != nil {
+		return err
+	}
+	return d.Write(ctx, func(tx *sql.Tx) error {
+		var rowOwner int64
+		var released bool
+		scanErr := tx.QueryRowContext(ctx, `SELECT owner,quota_released FROM direct_transfer WHERE id=?`, id).Scan(&rowOwner, &released)
+		if errors.Is(scanErr, sql.ErrNoRows) {
+			return ErrNoSuchDirectTransfer
+		} else if scanErr != nil {
+			return scanErr
+		}
+		if rowOwner != owner {
+			return ErrDirectTransferConflict
+		}
+		if released {
+			return nil
+		}
+		if _, markErr := tx.ExecContext(ctx, `UPDATE direct_transfer SET quota_released=1,updated_ns=updated_ns+1 WHERE id=? AND quota_released=0`, id); markErr != nil {
+			return markErr
+		}
+		_, creditErr := tx.ExecContext(ctx, sqlReleaseQuota, delta, owner)
+		return creditErr
+	})
 }
 
 func directTransferMutationFailure(ctx context.Context, tx *sql.Tx, id string, owner int64) error {
