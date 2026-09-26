@@ -11,8 +11,6 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/gin-gonic/gin"
-
 	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	httpheader "github.com/heavycaffeiner/stowcloud/backend/internal/http/headers"
@@ -27,21 +25,6 @@ func CloseStream(stream *core.Stream, name string, logger *slog.Logger) {
 	if err := stream.Close(); err != nil && logger != nil {
 		logger.Warn("closing a stream", "name", name, "error", err)
 	}
-}
-
-// It closes the stream after copying, including when copying fails.
-func SendStream(c *gin.Context, entry core.FidEntry, stream *core.Stream) error {
-	defer CloseStream(stream, entry.Name, nil)
-	length, err := num.Narrow[int64](stream.Remaining())
-	if err != nil {
-		return err
-	}
-	c.Header("Content-Type", "application/octet-stream")
-	c.Header("Content-Length", strconv.FormatInt(length, 10))
-	c.Header("Content-Disposition", httpheader.Attachment(entry.Name))
-	c.Status(http.StatusOK)
-	_, err = io.CopyN(c.Writer, &sharedLoggedStream{inner: stream, name: entry.Name}, length)
-	return err
 }
 
 // SendStreamRange writes an inline or attachment stream with range headers.

@@ -330,7 +330,7 @@ func parseSingleRange(h string, size uint64) (*[2]uint64, error) {
 	a, b = strings.TrimSpace(a), strings.TrimSpace(b)
 	if a == "" {
 		n, e := strconv.ParseUint(b, 10, 64)
-		if e != nil || n == 0 {
+		if e != nil || n == 0 || size == 0 {
 			return nil, errors.New("bad range")
 		}
 		if n > size {

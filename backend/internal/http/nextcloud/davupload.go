@@ -311,6 +311,10 @@ func (s *Server) uploadAssemble(w http.ResponseWriter, r *http.Request, p Princi
 		s.failDav(w, r, rerr, apierr.VisibilityHidden)
 		return
 	}
+	if lerr := s.guardLock(ctx, res, p); lerr != nil {
+		WriteDAVError(w, http.StatusLocked, "Sabre\\DAV\\Exception\\Locked", "The resource is locked")
+		return
+	}
 
 	// The core refuses every validator it is handed by design (every etag
 	// it mints is metadata-derived, so a strong comparison always fails),

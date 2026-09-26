@@ -42,43 +42,34 @@ func (s *Server) davGet(w http.ResponseWriter, r *http.Request, p Principal, t T
 		s.failDav(w, r, err, apierr.VisibilityHidden)
 		return
 	}
-	entry, err := s.deps.Core.Stat(ctx, res)
+	stat, err := s.deps.Core.Stat(ctx, res)
 	if err != nil {
 		s.failDav(w, r, err, apierr.VisibilityHidden)
 		return
 	}
-	if entry.IsDir {
-		// A collection carries no body to send, but it does exist, and one
-		// client asks exactly this question before every upload: it probes
-		// the target folder with HEAD and accepts only 200. Answering the
-		// method as not allowed failed that probe, and the upload was
-		// abandoned before a single byte was sent. So the answer is the
-		// entry's own headers and nothing else.
-		s.setEntryHeaders(ctx, w, entry)
-		w.Header().Set("Content-Type", ContentTypeOf(true, entry.Name))
+	if stat.IsDir {
+		s.setEntryHeaders(ctx, w, stat)
+		w.Header().Set("Content-Type", ContentTypeOf(true, stat.Name))
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	token := entry.ETag
-
-	// The desktop client aborts a download that carries no etag, so both
-	// conditional checks compare against the value setEntryHeaders is about
-	// to send, never against a placeholder. If-Match is evaluated first,
-	// per RFC 7232: a client that sends both is asking two different
-	// questions and the precondition is the stronger claim.
-	if h := r.Header.Get("If-Match"); ifMatchFails(h, token) {
-		WriteDAVError(w, http.StatusPreconditionFailed,
-			"Sabre\\DAV\\Exception\\PreconditionFailed", "The precondition failed")
+	entry, stream, err := s.deps.Core.OpenStream(ctx, res, nil)
+	if err != nil {
+		s.failDav(w, r, err, apierr.VisibilityHidden)
 		return
 	}
-	if h := r.Header.Get("If-None-Match"); ifNoneMatchSatisfied(h, token) {
-		w.Header().Set("ETag", ETagValue(token))
-		w.Header().Set("OC-ETag", ETagValue(token))
+	s.closeDownload(stream)
+	if h := r.Header.Get("If-Match"); ifMatchFails(h, entry.ETag) {
+		WriteDAVError(w, http.StatusPreconditionFailed, "Sabre\\DAV\\Exception\\PreconditionFailed", "The precondition failed")
+		return
+	}
+	if h := r.Header.Get("If-None-Match"); ifNoneMatchSatisfied(h, entry.ETag) {
+		w.Header().Set("ETag", ETagValue(entry.ETag))
+		w.Header().Set("OC-ETag", ETagValue(entry.ETag))
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
-
 	rng, ok := parseRange(r.Header.Get("Range"), entry.Size)
 	if !ok {
 		w.Header().Set("Accept-Ranges", "bytes")
@@ -86,19 +77,13 @@ func (s *Server) davGet(w http.ResponseWriter, r *http.Request, p Principal, t T
 		w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
 		return
 	}
-
-	_, stream, err := s.deps.Core.OpenStream(ctx, res, rng)
+	entry, stream, err = s.deps.Core.OpenStream(ctx, res, rng)
 	if err != nil {
 		s.failDav(w, r, err, apierr.VisibilityHidden)
 		return
 	}
-	defer func() {
-		if cerr := stream.Close(); cerr != nil {
-			s.log.Warn("a download stream did not close cleanly", "error", cerr)
-		}
-	}()
-
-	s.setEntryHeaders(ctx, w, entry)
+	defer s.closeDownload(stream)
+	s.setEntryHeaders(ctx, w, core.Entry{Name: entry.Name, Size: entry.Size, MTimeNs: entry.MTime, ETag: entry.ETag, IsDir: false})
 	contentType := ContentTypeOf(false, entry.Name)
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -107,25 +92,19 @@ func (s *Server) davGet(w http.ResponseWriter, r *http.Request, p Principal, t T
 	} else {
 		w.Header().Set("Content-Security-Policy", httpheader.SafeInlineCSP)
 	}
-	// setEntryHeaders wrote the whole file size. A ranged response must replace
-	// it with the number of bytes that follow.
 	w.Header().Set("Content-Length", strconv.FormatUint(stream.Remaining(), 10))
 	w.Header().Set("Accept-Ranges", "bytes")
-
 	status := http.StatusOK
 	if rng != nil {
 		status = http.StatusPartialContent
 		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", rng[0], rng[1], entry.Size))
 	}
 	w.WriteHeader(status)
-
 	if !body {
 		return
 	}
 	buf := make([]byte, copyBufferSize)
 	if _, cerr := io.CopyBuffer(w, stream, buf); cerr != nil {
-		// The status line already went out; nothing left to answer with but
-		// a short body and a log line.
 		s.log.Warn("a download body stopped early", "error", cerr)
 	}
 }
@@ -310,6 +289,13 @@ func parentExists(res core.Resolved) bool {
 	}
 	st, err := res.Root().Stat(p.Parent())
 	return err == nil && st.Kind.IsDir()
+}
+
+// closeDownload closes a GET stream, logging a failure the client cannot see.
+func (s *Server) closeDownload(stream *core.Stream) {
+	if err := stream.Close(); err != nil {
+		s.log.Warn("a download stream did not close cleanly", "error", err)
+	}
 }
 
 // davDelete removes a resource, through the deployment's own trash policy.

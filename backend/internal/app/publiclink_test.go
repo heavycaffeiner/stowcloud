@@ -42,6 +42,32 @@ func TestAPublicLinkDownloadsWithoutACredential(t *testing.T) {
 		t.Errorf("the disposition is %q, which does not name the file", got)
 	}
 }
+func TestAPublicLinkServesARequestedRange(t *testing.T) {
+	t.Parallel()
+	base, token, _ := linkEngine(t, "note.txt", []byte("shared bytes"), acl.Read|acl.Download)
+	status, header, body := anonymousWithHeaders(t, http.MethodGet, base+"/s/"+token+"/download", map[string]string{"Range": "bytes=0-5"})
+	if status != http.StatusPartialContent {
+		t.Fatalf("the ranged download answered %d: %s", status, body)
+	}
+	if string(body) != "shared" {
+		t.Errorf("the ranged body is %q", body)
+	}
+	if got := header.Get("Content-Range"); got != "bytes 0-5/12" {
+		t.Errorf("Content-Range is %q, want bytes 0-5/12", got)
+	}
+}
+
+func TestAPublicLinkRefusesAnOutOfRangeRequest(t *testing.T) {
+	t.Parallel()
+	base, token, _ := linkEngine(t, "note.txt", []byte("shared bytes"), acl.Read|acl.Download)
+	status, header, body := anonymousWithHeaders(t, http.MethodGet, base+"/s/"+token+"/download", map[string]string{"Range": "bytes=99-100"})
+	if status != http.StatusRequestedRangeNotSatisfiable {
+		t.Fatalf("the invalid range answered %d: %s", status, body)
+	}
+	if got := header.Get("Content-Range"); got != "bytes */12" {
+		t.Errorf("Content-Range is %q, want bytes */12", got)
+	}
+}
 
 // The landing endpoint describes the link so the page can draw itself.
 func TestAPublicLinkDescribesItself(t *testing.T) {
@@ -298,6 +324,26 @@ func anonymousWithCookie(
 		req.Header.Set("Origin", req.URL.Scheme+"://"+req.Host)
 	}
 
+	resp, err := testClient().Do(req)
+	if err != nil {
+		t.Fatalf("requesting %s: %v", url, err)
+	}
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	}()
+	return resp.StatusCode, resp.Header, readAll(t, resp)
+}
+func anonymousWithHeaders(t *testing.T, method, url string, headers map[string]string) (int, http.Header, []byte) {
+	t.Helper()
+	req, err := http.NewRequest(method, url, bytes.NewReader(nil))
+	if err != nil {
+		t.Fatalf("building: %v", err)
+	}
+	for name, value := range headers {
+		req.Header.Set(name, value)
+	}
 	resp, err := testClient().Do(req)
 	if err != nil {
 		t.Fatalf("requesting %s: %v", url, err)

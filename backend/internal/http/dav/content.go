@@ -368,6 +368,9 @@ func parseByteRange(header string, size uint64) (*[2]uint64, error) {
 		if err != nil || n == 0 {
 			return nil, ErrBadRange
 		}
+		if size == 0 {
+			return nil, ErrBadRange
+		}
 		if n > size {
 			n = size
 		}

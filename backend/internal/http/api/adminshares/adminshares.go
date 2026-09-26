@@ -409,6 +409,10 @@ func (h *handlers) sharesUpdate(c *gin.Context) {
 	if !decode(c, &req) {
 		return
 	}
+	if req.Name == nil && req.Host == nil && req.TrashEnabled == nil && req.Backend == nil && req.S3 == nil && req.Veracrypt == nil {
+		refuse(c, apierr.Classified{Class: apierr.Malformed})
+		return
+	}
 	patch := core.SharePatch{Name: req.Name, Host: req.Host, TrashEnabled: req.TrashEnabled, Backend: req.Backend}
 	if req.S3 != nil || req.Veracrypt != nil {
 		current, found := h.d.Core.Share(id)

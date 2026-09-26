@@ -73,8 +73,9 @@ func Serve(ctx context.Context, socket string, h Handler, configDir string, clk 
 		return fmt.Errorf("binding the control socket in %s: %w", filepath.Dir(socket), err)
 	}
 	defer ln.Close() //nolint:errcheck // the process is ending and the next start removes the socket file.
-
-	handOver(socket, configDir, log)
+	if err := handOver(socket, configDir, log); err != nil {
+		return err
+	}
 	log.Info("listening for apply requests from the server", "socket", socket)
 
 	// Closing the listener is what releases the accept below. Absent that, a
@@ -108,9 +109,10 @@ func answer(ctx context.Context, conn net.Conn, h Handler, clk clock.Clock, log 
 		log.Warn("could not bound the control exchange", "error", err)
 		return
 	}
+	exchangeCtx, cancel := context.WithTimeout(ctx, ExchangeTimeout)
+	defer cancel()
 
-	report := dispatch(ctx, conn, h, log)
-
+	report := dispatch(exchangeCtx, conn, h, log)
 	body, merr := json.Marshal(report)
 	if merr != nil {
 		body = []byte(`{"ok":false,"error":"the report could not be encoded"}`)
@@ -203,60 +205,35 @@ func prepareSocketDir(dir string) error {
 }
 
 // handOver makes the socket reachable by the server and by as little else as
-// can be managed.
-//
-// The recipient is whoever owns the rendered configuration directory, because
-// that is the process writing there, which by construction is the server.
-//
-// Inside a container the hand-over cannot happen at all. Having dropped every
-// capability, this sidecar cannot give a file away, leaving a narrowly-moded
-// socket unreachable from the server's container. Granting that capability back
-// to a container parsing SMB off the wire costs more than it returns, so the
-// fallback widens the mode instead.
-//
-// That fallback rests on an assumption worth stating where the code relying on
-// it lives: a world-writable control socket able to trigger an apply is a
-// privilege surface if the volume isolation ever fails to hold. It holds today
-// because the socket sits on a volume reachable only by the two containers that
-// mount it and by the host's root, and the vocabulary behind it is two words.
-func handOver(socket, configDir string, log *slog.Logger) {
+// can be managed. Failure leaves the socket at the narrow mode and aborts
+// startup rather than widening a privileged control surface.
+func handOver(socket, configDir string, log *slog.Logger) error {
 	const narrow = os.FileMode(0o660)
 
 	st, err := os.Stat(configDir)
 	if err != nil {
-		setMode(socket, narrow, log)
-		return
+		return setMode(socket, narrow, log)
 	}
 	sys, ok := st.Sys().(*syscall.Stat_t)
 	if !ok || int(sys.Uid) == os.Geteuid() {
-		setMode(socket, narrow, log)
-		return
+		return setMode(socket, narrow, log)
 	}
-
-	// The mode is set before the owner changes. Once the socket belongs to
-	// somebody else this process can no longer chmod it, so the opposite order
-	// left a socket correctly handed over and still at whatever mode the umask
-	// produced.
-	setMode(socket, narrow, log)
-	if cerr := os.Chown(socket, int(sys.Uid), int(sys.Gid)); cerr != nil {
-		log.Info(
-			"cannot hand the control socket to the server's account, so it is opened to anything that can already reach this directory",
-			"uid", sys.Uid, "error", cerr)
-		// Widened only because the narrow mode is now unusable by the one
-		// process that has to reach it.
-		setMode(socket, 0o666, log) //nolint:gosec // G302: the hand-over failed, so the alternative is a socket nothing can use.
+	if err := setMode(socket, narrow, log); err != nil {
+		return err
 	}
+	if err := os.Chown(socket, int(sys.Uid), int(sys.Gid)); err != nil {
+		return fmt.Errorf("handing the control socket to uid %d gid %d: %w", sys.Uid, sys.Gid, err)
+	}
+	return nil
 }
 
-// setMode applies a mode and reports a failure without stopping the agent.
-//
-// A socket nobody can reach costs the push and leaves the poll doing the work,
-// which is what this deployment had before the channel existed. The server
-// reports it as unreachable rather than continuing in silence.
-func setMode(socket string, mode os.FileMode, log *slog.Logger) {
+// setMode applies a mode and reports a failure without widening permissions.
+func setMode(socket string, mode os.FileMode, log *slog.Logger) error {
 	if err := os.Chmod(socket, mode); err != nil {
 		log.Warn("could not set the control socket's mode", "mode", mode, "error", err)
+		return fmt.Errorf("setting the control socket mode: %w", err)
 	}
+	return nil
 }
 
 // ServeInBackground runs the listener alongside the poll loop.

@@ -58,8 +58,9 @@ func ParsePassdbListing(out string) []string {
 
 // Prune drops credentials for accounts that are no longer this agent's.
 //
-// Without it, disabling a user on the server would leave them able to
-// authenticate over SMB using the credential just revoked.
+// It assumes this agent owns the whole tdbsam database. Without it, disabling
+// a user on the server would leave them able to authenticate over SMB using
+// the credential just revoked.
 func Prune(ctx context.Context, desired []Entry) ([]string, error) {
 	keep := map[string]bool{}
 	for _, e := range desired {

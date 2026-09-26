@@ -435,6 +435,10 @@ func (s *Server) trashRestore(w http.ResponseWriter, r *http.Request, p Principa
 		s.failDav(w, r, rerr, apierr.VisibilityHidden)
 		return
 	}
+	if lerr := s.guardLock(ctx, res, p); lerr != nil {
+		WriteDAVError(w, http.StatusLocked, "Sabre\\DAV\\Exception\\Locked", "The resource is locked")
+		return
+	}
 	if _, err := s.deps.Core.TrashRestore(ctx, res, id); err != nil {
 		s.failDav(w, r, err, apierr.VisibilityHidden)
 		return

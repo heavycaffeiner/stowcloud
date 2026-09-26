@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -20,10 +21,12 @@ import (
 
 	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	httpheader "github.com/heavycaffeiner/stowcloud/backend/internal/http/headers"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/route"
+	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/protocol/limits"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
 )
@@ -31,21 +34,24 @@ import (
 const PublicLinkPrefix = "/s"
 
 type PublicDeps struct {
-	Core           *core.Core
-	State          *state.DB
-	ClaimKey       []byte
-	Limiter        interface{ Allow(string) bool }
-	Now            func() int64
-	ClientAddr     func(*gin.Context) string
-	Audit          func(context.Context, string, string, string, string, bool) error
-	Logger         Logger
-	Frontend       http.Handler
-	Fail           func(*gin.Context, error)
-	Refuse         func(*gin.Context, apierr.Classified)
-	WriteJSON      func(*gin.Context, int, any)
-	Decode         func(*gin.Context, any) error
-	CloseStream    func(*core.Stream, string)
-	SendStream     func(*gin.Context, core.FidEntry, *core.Stream) error
+	Core            *core.Core
+	State           *state.DB
+	ClaimKey        []byte
+	Limiter         interface{ Allow(string) bool }
+	Now             func() int64
+	ClientAddr      func(*gin.Context) string
+	Audit           func(context.Context, string, string, string, string, bool) error
+	Logger          Logger
+	Frontend        http.Handler
+	Fail            func(*gin.Context, error)
+	Refuse          func(*gin.Context, apierr.Classified)
+	WriteJSON       func(*gin.Context, int, any)
+	Decode          func(*gin.Context, any) error
+	CloseStream     func(*core.Stream, string)
+	SendStreamRange func(c interface {
+		Header(string, string)
+		Status(int)
+	}, writer io.Writer, entry core.FidEntry, stream *core.Stream, ranged bool, rng handler.ByteRange, size int64, attachAs string, logger *slog.Logger)
 	AcquireArchive func() (func(), bool)
 	WriteArchive   func(context.Context, io.Writer, core.Link, string, string)
 }
@@ -252,19 +258,53 @@ func (p *Public) Download(c *gin.Context) {
 		p.d.Refuse(c, apierr.Classified{Class: apierr.Denied, Key: "fs.link_no_download"})
 		return
 	}
-	entry, s, err := p.d.Core.LinkStreamAt(c.Request.Context(), link, c.Query("path"), nil)
+	ctx := c.Request.Context()
+	path := c.Query("path")
+	entry, stream, err := p.d.Core.LinkStreamAt(ctx, link, path, nil)
 	if err != nil {
 		p.d.Fail(c, err)
 		return
 	}
-	if err = p.d.Core.NoteLinkDownload(c.Request.Context(), link); err != nil {
-		p.d.CloseStream(s, entry.Name)
+	size, nerr := num.Narrow[int64](entry.Size)
+	if nerr != nil {
+		p.d.CloseStream(stream, entry.Name)
+		p.d.Fail(c, core.ErrNotFound)
+		return
+	}
+	rng, ranged, rerr := handler.ParseRange(c.GetHeader("Range"), size)
+	if rerr != nil {
+		p.d.CloseStream(stream, entry.Name)
+		if errors.Is(rerr, handler.ErrRangeUnsatisfiable) {
+			c.Header("Accept-Ranges", "bytes")
+			c.Header("Content-Range", handler.UnsatisfiedRange(size))
+			p.d.Refuse(c, apierr.Classified{Class: apierr.RangeNotSatisfiable})
+			return
+		}
+		p.d.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		return
+	}
+	if ranged {
+		p.d.CloseStream(stream, entry.Name)
+		start, serr := num.Narrow[uint64](rng.Start)
+		last, lerr := num.Narrow[uint64](rng.End - 1)
+		if serr != nil || lerr != nil {
+			p.d.Fail(c, core.ErrNotFound)
+			return
+		}
+		entry, stream, err = p.d.Core.LinkStreamAt(ctx, link, path, &[2]uint64{start, last})
+		if err != nil {
+			p.d.Fail(c, err)
+			return
+		}
+	}
+	if err = p.d.Core.NoteLinkDownload(ctx, link); err != nil {
+		p.d.CloseStream(stream, entry.Name)
 		p.d.Fail(c, err)
 		return
 	}
-	if err = p.d.SendStream(c, entry, s); err != nil && p.d.Logger != nil {
-		p.d.Logger.Warn("copying a public link download ended early", "name", entry.Name, "error", err)
-	}
+	// Always an attachment: a stranger's download must never render inline
+	// under this origin.
+	p.d.SendStreamRange(c, c.Writer, entry, stream, ranged, rng, size, entry.Name, nil)
 }
 func (p *Public) Zip(c *gin.Context) {
 	link, err := p.linkFor(c)
@@ -302,7 +342,7 @@ func (p *Public) Zip(c *gin.Context) {
 	c.Header("Content-Type", "application/zip")
 	c.Header("Content-Disposition", httpheader.Attachment(listing.Name+".zip"))
 	c.Status(http.StatusOK)
-	p.d.WriteArchive(context.WithoutCancel(c.Request.Context()), c.Writer, link, sub, listing.Name)
+	p.d.WriteArchive(c.Request.Context(), c.Writer, link, sub, listing.Name)
 }
 func (p *Public) Drop(c *gin.Context) {
 	link, err := p.linkFor(c)

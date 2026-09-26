@@ -309,6 +309,10 @@ func (s *Server) davProppatch(w http.ResponseWriter, r *http.Request, p Principa
 		s.failDav(w, r, err, apierr.VisibilityHidden)
 		return
 	}
+	if lerr := s.guardLock(ctx, res, p); lerr != nil {
+		WriteDAVError(w, http.StatusLocked, "Sabre\\DAV\\Exception\\Locked", "The resource is locked")
+		return
+	}
 	entry, err := s.deps.Core.Stat(ctx, res)
 	if err != nil {
 		s.failDav(w, r, err, apierr.VisibilityHidden)
