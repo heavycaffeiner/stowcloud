@@ -83,9 +83,11 @@ async function withRetry<T>(attempt: () => Promise<T>, safe: boolean): Promise<T
 
 export class DirectUploadUnsupportedError extends Error {
   readonly unsupported = true
-  constructor() {
-    super('direct multipart upload is not supported')
+  readonly code?: string
+  constructor(code?: string) {
+    super(code ? `direct multipart upload is not supported: ${code}` : 'direct multipart upload is not supported')
     this.name = 'DirectUploadUnsupportedError'
+    this.code = code
   }
 }
 
@@ -196,9 +198,12 @@ export class HttpTransport implements Transport {
           ...(p.ifMatch !== undefined ? { if_match: p.ifMatch } : {})
         })
       })
-      if (res.status === 501 || res.status === 422) throw new DirectUploadUnsupportedError()
+      const responseBody = (await res.json().catch(() => null)) as Record<string, unknown> | null
+      const error = responseBody && typeof responseBody.error === 'object' && responseBody.error !== null ? (responseBody.error as Record<string, unknown>) : null
+      const errorCode = error && typeof error.code === 'string' ? error.code : undefined
+      if (res.status === 501 || (res.status === 422 && errorCode === 'transfer.unsupported_size')) throw new DirectUploadUnsupportedError(errorCode)
       if (!res.ok) throw new UploadHttpError(res.status, `direct upload reservation failed: ${res.status}`, retryAfterMs(res.headers.get('Retry-After')))
-      const body = (await res.json().catch(() => null)) as Record<string, unknown> | null
+      const body = responseBody
       if (!body || body.capability !== true || typeof body.id !== 'string') throw new DirectUploadUnsupportedError()
       const size = Number(body.size)
       const partSize = Number(body.part_size)

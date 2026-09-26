@@ -341,7 +341,7 @@ function entryFromWire(w: WireEntry): Entry {
     name: w.name,
     path: w.path,
     kind: w.kind,
-    size: Number(w.size ?? 0),
+    size: decimalWire(w.size, 'entry size'),
     mtime_ns: w.mtime_ns ?? '0',
     etag: w.etag ?? '',
     etag_weak: w.etag_weak ?? false,
@@ -422,7 +422,7 @@ async function session(): Promise<SessionInfo> {
       // The wire carries the id as a decimal string, because an account id
       // past 2^53 is not exact as a JavaScript number. Nothing here does
       // arithmetic on it, so it is parsed once for the shape the app reads.
-      id: Number(w.id),
+      id: decimalWire(w.id, 'session id'),
       name: w.login,
       display_name: w.display ?? '',
       is_admin: w.admin,
@@ -734,7 +734,7 @@ async function archiveList(path: string): Promise<ArchiveListing> {
   return {
     entries: (w.entries ?? []).map((e) => ({
       name: e.name,
-      size: Number(e.size ?? 0),
+      size: decimalWire(e.size, 'archive entry size'),
       kind: e.is_dir ? ('dir' as const) : ('file' as const)
     })),
     truncated: w.truncated === true,
@@ -791,7 +791,7 @@ async function folderSize(path: string): Promise<FolderSize> {
   // Decimal strings, because a folder's rollup can exceed what a JavaScript
   // number holds exactly.
   const w = await request<{ size: string; count: string }>(`/files/size${qs({ path })}`)
-  return { bytes: Number(w.size ?? 0), files: Number(w.count ?? 0) }
+  return { bytes: decimalWire(w.size, 'folder size'), files: decimalWire(w.count, 'folder file count') }
 }
 
 /** One recent write as the wire sends it: a bare list, with the addressable
@@ -825,7 +825,7 @@ async function recentList(opts: RecentQuery = {}): Promise<{ hits: RecentHit[] }
         share: cut < 0 ? w.path : w.path.slice(0, cut),
         subpath: cut < 0 ? '' : w.path.slice(cut + 1),
         name: w.name,
-        size: Number(w.size ?? 0),
+        size: decimalWire(w.size, 'recent file size'),
         mtime_ns: w.mtime_ns,
         at_ns: w.at_ns,
         op: w.op
@@ -873,11 +873,11 @@ function jobFromWire(w: WireJob): JobStatus {
     id: w.id,
     kind: w.kind,
     state: w.state === 'failed' ? 'error' : w.state,
-    done: Number(w.progress ?? 0),
-    total: Number(w.total ?? 0),
+    done: decimalWire(w.progress, 'job progress'),
+    total: decimalWire(w.total, 'job total'),
     progress_unit: w.progress_unit ?? 'items',
-    attempt: Number(w.attempt ?? 0),
-    max_attempts: Number(w.max_attempts ?? 0),
+    attempt: decimalWire(w.attempt ?? '0', 'job attempt'),
+    max_attempts: decimalWire(w.max_attempts ?? '0', 'job max attempts'),
     next_run_ns: w.next_run_ns ?? '0',
     error_key: w.error_key ?? '',
     current: w.message ? w.message : null,
@@ -914,7 +914,7 @@ async function trashList(): Promise<TrashEntry[]> {
     id: w.id,
     name: w.name,
     is_dir: w.is_dir === true,
-    size: Number(w.size ?? 0),
+    size: decimalWire(w.size, 'trash size'),
     deleted_at_ns: w.deleted_at_ns
   }))
 }
@@ -956,14 +956,14 @@ function shareLinkURL(token: string): string {
 
 function linkFromWire(w: WireLink, token?: string): ShareLinkInfo {
   return {
-    id: Number(w.id),
+    id: decimalWire(w.id, 'share link id'),
     path: w.path,
     perms: permsFromNames(w.perms),
     // Absent means "never", which the app spells as null. Zero would be a real
     // instant in 1970 and read as long expired.
     expires_ns: w.expires_ns ?? null,
-    max_downloads: w.max_downloads !== undefined ? Number(w.max_downloads) : null,
-    downloads: Number(w.downloads ?? 0),
+    max_downloads: w.max_downloads !== undefined ? decimalWire(w.max_downloads, 'share link download limit') : null,
+    downloads: decimalWire(w.downloads, 'share link downloads'),
     label: w.label ?? null,
     has_password: w.has_password,
     created_ns: w.created_ns,
@@ -990,7 +990,7 @@ interface WireOwnedLink extends WireLink {
 }
 
 function ownedLinkFromWire(w: WireOwnedLink): OwnedShareLinkInfo {
-  return { ...linkFromWire(w), owner: Number(w.owner), owner_name: w.owner_name ?? '' }
+  return { ...linkFromWire(w), owner: decimalWire(w.owner, 'owned link owner id'), owner_name: w.owner_name ?? '' }
 }
 
 /** `GET /api/v1/admin/links`: every share link on the deployment, whoever
@@ -1207,7 +1207,7 @@ const WRITING_PERMS = ['write', 'create', 'delete', 'rename', 'move', 'share']
 async function listAppPasswords(): Promise<AppPasswordInfo[]> {
   const rows = await request<WireAppPassword[]>('/account/app-passwords')
   return (rows ?? []).map((w) => ({
-    id: Number(w.id),
+    id: decimalWire(w.id, 'app password id'),
     name: w.name,
     created_ns: w.created_ns,
     // Absent means never used and never expires. Zero is a real instant for
@@ -1432,11 +1432,11 @@ interface WireStorage {
 async function adminStorage(): Promise<StorageReport> {
   const w = await request<WireStorage>('/admin/storage')
   return {
-    db_bytes: Number(w.db_bytes ?? 0),
+    db_bytes: decimalWire(w.db_bytes, 'database size'),
     shares: (w.shares ?? []).map((s) => ({
       label: s.label,
-      free_bytes: Number(s.free_bytes ?? 0),
-      total_bytes: Number(s.total_bytes ?? 0)
+      free_bytes: decimalWire(s.free_bytes, 'free storage bytes'),
+      total_bytes: decimalWire(s.total_bytes, 'total storage bytes')
     }))
   }
 }
@@ -1452,8 +1452,8 @@ async function adminIndexEstimate(): Promise<IndexEstimate> {
     confidence: string
   }>('/admin/index/estimate')
   return {
-    files: Number(w.files ?? 0),
-    index_bytes: Number(w.index_bytes ?? 0),
+    files: decimalWire(w.files, 'index file count'),
+    index_bytes: decimalWire(w.index_bytes, 'index size'),
     build_secs: w.build_secs ?? 0,
     confidence: w.confidence
   }
@@ -1501,7 +1501,7 @@ async function adminIndexStatus(): Promise<IndexStatus> {
   return {
     enabled: Boolean(w.enabled),
     // A decimal string on the wire, for the reason every count here is one.
-    entries: Number(w.entries ?? 0),
+    entries: decimalWire(w.entries, 'index entry count'),
     incomplete: Boolean(w.incomplete)
   }
 }
@@ -1686,7 +1686,7 @@ interface WireAdminUser {
 
 function adminUserFromWire(w: WireAdminUser): AdminUser {
   return {
-    id: Number(w.id),
+    id: decimalWire(w.id, 'admin user id'),
     name: w.login,
     display_name: w.display ?? '',
     is_admin: w.admin,
@@ -1758,7 +1758,7 @@ interface WireAdminShare {
 
 function adminShareFromWire(w: WireAdminShare): AdminShare {
   return {
-    id: Number(w.id),
+    id: decimalWire(w.id, 'admin share id'),
     name: w.name,
     host: w.host,
     // A server that predates backends sends neither field. Reading an absent
@@ -1848,11 +1848,11 @@ interface WireGrant {
 
 function grantFromWire(w: WireGrant): AdminGrant {
   return {
-    id: Number(w.id),
+    id: decimalWire(w.id, 'grant id'),
     principal: w.group !== undefined
-      ? { kind: 'group', id: Number(w.group) }
-      : { kind: 'user', id: Number(w.user ?? 0) },
-    share: Number(w.share),
+      ? { kind: 'group', id: decimalWire(w.group, 'grant group id') }
+      : { kind: 'user', id: decimalWire(w.user, 'grant user id') },
+    share: decimalWire(w.share, 'grant share id'),
     subpath: w.subpath ?? '',
     allow: w.allow ?? [],
     deny: w.deny ?? [],
@@ -1919,7 +1919,7 @@ interface WireGroup {
 }
 
 function groupFromWire(w: WireGroup): AdminGroup {
-  return { id: Number(w.id), name: w.name, members: (w.members ?? []).map(Number) }
+  return { id: decimalWire(w.id, 'group id'), name: w.name, members: (w.members ?? []).map((member) => decimalWire(member, 'group member id')) }
 }
 
 async function adminListGroups(): Promise<AdminGroup[]> {
@@ -1988,11 +1988,11 @@ async function adminListAudit(query: AuditQuery = {}): Promise<AuditPage> {
   )
   return {
     rows: (page.rows ?? []).map((w) => ({
-      rowid: Number(w.id),
+      rowid: decimalWire(w.id, 'audit row id'),
       ts_ns: w.ts_ns,
       // Absent means the event had no actor, which is not the same as an
       // actor whose name is blank.
-      actor: w.actor !== undefined ? Number(w.actor) : null,
+      actor: w.actor !== undefined ? decimalWire(w.actor, 'audit actor id') : null,
       actor_name: w.actor_name ?? null,
       event: w.event,
       target: w.target ?? null,
@@ -2000,7 +2000,7 @@ async function adminListAudit(query: AuditQuery = {}): Promise<AuditPage> {
       ok: w.ok,
       detail: w.detail ?? null
     })),
-    next: page.next !== undefined ? Number(page.next) : null
+    next: page.next !== undefined ? decimalWire(page.next, 'audit next row id') : null
   }
 }
 
@@ -2121,7 +2121,7 @@ function toSearchHit(raw: RawSearchHit): SearchHit {
       // from a result addresses the file by.
       path: normalizePath(raw.path),
       kind: raw.is_dir ? 'dir' : 'file',
-      size: raw.size == null ? 0 : Number(raw.size),
+      size: raw.size == null ? 0 : decimalWire(raw.size, 'search result size'),
       mtime_ns: raw.mtime_ns ?? '0',
       // A search hit carries no change token, so there is nothing to be exact
       // about and nothing here may be used for a conditional write.

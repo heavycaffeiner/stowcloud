@@ -18,6 +18,19 @@ import type { AddItem, Cmd, Evt } from './worker'
 
 let worker: Worker | null = null
 
+export function resetUploadQueue(): void {
+  for (const preparation of preparations.values()) {
+    preparation.canceled = true
+    cancelEncryptedPermit(preparation.id)
+  }
+  preparations.clear()
+  for (const waiter of encryptedPermitWaiters.splice(0)) waiter.resolve(false)
+  encryptedPermitOwner = null
+  worker?.terminate()
+  worker = null
+  uploads.reset()
+}
+
 export function handle(evt: Evt): void {
   switch (evt.t) {
     case 'queued': {
@@ -256,16 +269,22 @@ async function digestBytes(bytes: Uint8Array): Promise<string | undefined> {
   }
 }
 
+const IDENTITY_SAMPLE_BYTES = 4 * 1024 * 1024
+
 async function digestFile(file: Blob): Promise<string | undefined> {
-  let bytes: Uint8Array | undefined
   try {
-    bytes = new Uint8Array(await file.arrayBuffer())
-    return await digestBytes(bytes)
+    const sampleSize = Math.min(file.size, IDENTITY_SAMPLE_BYTES * 2)
+    const first = await file.slice(0, Math.min(file.size, IDENTITY_SAMPLE_BYTES)).arrayBuffer()
+    const lastStart = Math.max(IDENTITY_SAMPLE_BYTES, file.size - IDENTITY_SAMPLE_BYTES)
+    const last = lastStart < file.size ? await file.slice(lastStart).arrayBuffer() : new ArrayBuffer(0)
+    const sample = new Uint8Array(sampleSize)
+    sample.set(new Uint8Array(first), 0)
+    if (last.byteLength > 0) sample.set(new Uint8Array(last), sampleSize - last.byteLength)
+    const digest = await digestBytes(sample)
+    sample.fill(0)
+    return digest === undefined ? undefined : `sample-v1:${file.size}:${digest}`
   } catch {
     return undefined
-  } finally {
-    // This is a temporary identity buffer, not the File's backing storage.
-    bytes?.fill(0)
   }
 }
 

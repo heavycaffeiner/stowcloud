@@ -38,19 +38,19 @@ export interface ResumeRecord {
   cleanupPending?: boolean
 }
 
-/** A cancellation recovery record does not depend on the metadata and
- * identity required to resume an upload. It exists solely to retain a server
- * session id until its DELETE is confirmed. */
+/** A cancellation recovery record does not depend on the metadata and identity
+ * required to resume an upload. It exists solely to retain a server session or
+ * direct reservation id until its cancellation is confirmed. */
 export interface CleanupRecord {
   key: string
   sessionId: string
   updatedAt: number
+  direct?: boolean
 }
 
 export function cleanupKey(sessionId: string): string {
   return `v1:${sessionId}`
 }
-
 /** Stable key for one source and transfer target. Content identities remain
  * fields on the record and are checked before adoption, so a same-metadata
  * file cannot resume a different byte stream. */
@@ -60,7 +60,7 @@ export function resumeKey(
   lastModified: number,
   context: ResumeKeyContext
 ): string {
-  return `v2:${JSON.stringify([
+  return `v3:${JSON.stringify([
     context.accountId,
     context.sessionContext,
     context.dest,

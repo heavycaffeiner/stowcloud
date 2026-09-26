@@ -8,6 +8,7 @@ import { makeZip } from 'client-zip'
 import { api } from '../api/client'
 import type { Entry } from '../api/types'
 import {
+  BLOCK_SIZE,
   ciphertextSpanForRange,
   decryptPlaintextRange,
   decryptStream,
@@ -22,7 +23,7 @@ import { encryptionForLabel, shareLabelOf } from './encrypted-shares'
 import { isSafeArchiveName } from './zip-listing'
 
 const SERVICE_WORKER_URL = '/service-worker.js'
-// Must match `DOWNLOAD_PREFIX`/`MEDIA_PREFIX` in frontend/src/service-worker.ts.
+// Must match `DOWNLOAD_PREFIX`/`MEDIA_PREFIX` in frontend/src/workers/service-worker.ts.
 const DOWNLOAD_PREFIX = '/sc-download/'
 const MEDIA_PREFIX = '/sc-media/'
 
@@ -189,7 +190,7 @@ export async function downloadEncryptedFile(entry: Entry): Promise<void> {
   // copy only after a usable body exists, so a failed fetch cannot retain it.
   if (!isUnlocked(encryption.salt)) throw new LockedSessionError()
 
-  const res = await fetch(api.contentUrl(entry))
+  const res = await fetch(api.contentUrl(entry), { credentials: 'include' })
   if (!res.ok || !res.body) throw new Error(`could not fetch ${entry.path}: HTTP ${res.status}`)
   const transform = decryptStream(encryption.salt, entry.size)
   await streamToDownload(entry.name, res.body.pipeThrough(transform), plaintextSizeFromCiphertextSize(entry.size))
@@ -242,7 +243,7 @@ export async function downloadEncryptedFolder(vpath: string): Promise<void> {
       // A hostile listing response could otherwise smuggle a `../` or
       // absolute-path entry name straight into the zip on disk.
       if (!isSafeArchiveName(relative)) continue
-      const res = await fetch(api.contentUrl(file))
+      const res = await fetch(api.contentUrl(file), { credentials: 'include' })
       if (!res.ok || !res.body) throw new Error(`could not fetch ${file.path}: HTTP ${res.status}`)
       yield { name: relative, input: res.body.pipeThrough(decryptStream(salt, file.size)) }
     }
@@ -311,7 +312,7 @@ type MediaReply =
 async function nonceForToken(token: string, entry: Entry): Promise<Uint8Array> {
   const cached = nonceCache.get(token)
   if (cached) return cached
-  const res = await fetch(api.contentUrl(entry), { headers: { Range: 'bytes=0-31' } })
+  const res = await fetch(api.contentUrl(entry), { credentials: 'include', headers: { Range: 'bytes=0-31' } })
   if (!res.ok || !res.body) throw new Error(`could not read the rclone-crypt header for ${entry.path}: HTTP ${res.status}`)
   const header = new Uint8Array(await res.arrayBuffer())
   if (header.length < 32 || !equalBytes(header.subarray(0, 8), RCLONE_CRYPT_MAGIC)) {
@@ -345,18 +346,30 @@ async function resolveMediaRange(req: MediaRangeRequest): Promise<MediaReply> {
     if (start < 0 || start > end) return { ok: false, reason: 'unsatisfiable-range' }
 
     const nonce0 = await nonceForToken(req.token, entry)
-    const span = ciphertextSpanForRange(start, end + 1, plaintextSize)
-    const res = await fetch(api.contentUrl(entry), {
-      headers: { Range: `bytes=${span.offset}-${span.offset + span.length - 1}` }
-    })
-    if (!res.ok || !res.body) return { ok: false, reason: 'ciphertext-fetch-failed' }
-    const cipherBytes = new Uint8Array(await res.arrayBuffer())
-    const plaintext = decryptPlaintextRange(salt, nonce0, start, end + 1, cipherBytes)
-
+    let position = start
     const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(plaintext)
-        controller.close()
+      async pull(controller) {
+        if (position > end) {
+          controller.close()
+          return
+        }
+        const chunkStart = position
+        const chunkEnd = Math.min(end + 1, chunkStart + BLOCK_SIZE * 8)
+        try {
+          const span = ciphertextSpanForRange(chunkStart, chunkEnd, plaintextSize)
+          const res = await fetch(api.contentUrl(entry), {
+            credentials: 'include',
+            headers: { Range: `bytes=${span.offset}-${span.offset + span.length - 1}` }
+          })
+          if (!res.ok || !res.body) throw new Error(`could not fetch ${entry.path}: HTTP ${res.status}`)
+          const cipherBytes = new Uint8Array(await res.arrayBuffer())
+          const plaintext = decryptPlaintextRange(salt, nonce0, chunkStart, chunkEnd, cipherBytes)
+          position = chunkEnd
+          controller.enqueue(plaintext)
+          if (position > end) controller.close()
+        } catch (error) {
+          controller.error(error)
+        }
       }
     })
     return { ok: true, start, end, totalSize: plaintextSize, contentType, stream }

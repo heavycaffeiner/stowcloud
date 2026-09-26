@@ -142,6 +142,8 @@ const pendingControls = new Map<string, 'paused' | 'canceled'>()
  * lifetime even when IndexedDB is temporarily unavailable. The persisted copy
  * is still written whenever the browser storage allows it. */
 const pendingCleanupRecords = new Map<string, CleanupRecord>()
+const directReservations = new Map<string, DirectReservation>()
+const directAborts = new Map<string, AbortController>()
 const cleanupInFlight = new Map<string, Promise<boolean>>()
 let cleanupRecoveryPromise: Promise<void> | null = null
 
@@ -279,16 +281,16 @@ async function deleteSessionConfirmed(sessionId: string): Promise<boolean> {
   }
 }
 
-function cleanupRecordFor(sessionId: string): CleanupRecord {
+function cleanupRecordFor(sessionId: string, direct = false): CleanupRecord {
   const existing = pendingCleanupRecords.get(sessionId)
   if (existing) return existing
-  const record = { key: cleanupKey(sessionId), sessionId, updatedAt: Date.now() }
+  const record = { key: cleanupKey(sessionId), sessionId, updatedAt: Date.now(), ...(direct ? { direct: true } : {}) }
   pendingCleanupRecords.set(sessionId, record)
   return record
 }
 
-async function rememberCleanup(sessionId: string): Promise<CleanupRecord> {
-  const record = cleanupRecordFor(sessionId)
+async function rememberCleanup(sessionId: string, direct = false): Promise<CleanupRecord> {
+  const record = cleanupRecordFor(sessionId, direct)
   await putCleanupRecord(record).catch(() => {})
   return record
 }
@@ -301,7 +303,7 @@ async function forgetCleanup(sessionId: string): Promise<void> {
 
 /** DELETE is confirmation of cancellation only when it resolves or explicitly
  * reports that the session is gone. An uncertain request leaves both the
- * resumable record (when present) and the independent cleanup record intact. */
+ * resumable record and the independent cleanup record intact. */
 async function cleanupServerSession(record: ResumeRecord): Promise<boolean> {
   return cleanupSession(record.sessionId, record)
 }
@@ -311,22 +313,33 @@ async function cleanupCreatedSession(sessionId: string, record?: ResumeRecord): 
   return cleanupSession(sessionId, record)
 }
 
-function cleanupSession(sessionId: string, record?: ResumeRecord): Promise<boolean> {
+async function deleteDirectConfirmed(reservationId: string): Promise<boolean> {
+  if (!transport.cancelDirect) return false
+  try {
+    await transport.cancelDirect(reservationId)
+    return true
+  } catch (err) {
+    return statusConfirmsRemoval(err)
+  }
+}
+
+function cleanupSession(sessionId: string, record?: ResumeRecord, direct = false): Promise<boolean> {
   if (!sessionId) return Promise.resolve(true)
   const running = cleanupInFlight.get(sessionId)
   if (running) return running
 
   const run = (async (): Promise<boolean> => {
     try {
-      await rememberCleanup(sessionId)
+      await rememberCleanup(sessionId, direct)
       if (record) await putResumeRecord({ ...record, cleanupPending: true }).catch(() => {})
-      if (!(await deleteSessionConfirmed(sessionId))) return false
+      const removed = direct ? await deleteDirectConfirmed(sessionId) : await deleteSessionConfirmed(sessionId)
+      if (!removed) return false
       if (record) await deleteResumeRecord(record.key).catch(() => {})
       await forgetCleanup(sessionId)
       return true
     } catch {
-      // Cleanup failures are represented by the pending result. The session id
-      // remains in memory and in IndexedDB whenever storage is available.
+      // Cleanup failures are represented by the pending result. The id remains
+      // in memory and in IndexedDB whenever storage is available.
       return false
     }
   })()
@@ -345,7 +358,7 @@ async function recoverPendingCleanups(): Promise<void> {
   const records = new Map<string, CleanupRecord>()
   for (const record of pendingCleanupRecords.values()) records.set(record.sessionId, record)
   for (const record of persisted) records.set(record.sessionId, record)
-  for (const record of records.values()) await cleanupSession(record.sessionId)
+  for (const record of records.values()) await cleanupSession(record.sessionId, undefined, record.direct === true)
 }
 
 function ensureCleanupRecovery(): Promise<void> {
@@ -386,7 +399,22 @@ async function sha256Hex(blob: Blob): Promise<string> {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
+async function cleanupDirectReservation(id: string, reservation: DirectReservation): Promise<boolean> {
+  directAborts.get(id)?.abort()
+  directAborts.delete(id)
+  const cleaned = await cleanupSession(reservation.id, undefined, true)
+  if (cleaned) directReservations.delete(id)
+  return cleaned
+}
+async function cancelDirectReservation(id: string, reservation: DirectReservation): Promise<boolean> {
+  const cleaned = await cleanupDirectReservation(id, reservation)
+  if (cleaned) post({ t: 'canceled', id })
+  else postCleanupPending(id)
+  return cleaned
+}
+
 async function tryDirectUpload(item: AddItem, id: string): Promise<boolean> {
+  if (item.file.size === 0) return false
   if (!directCapability || !transport.reserveDirect || !transport.directPart || !transport.uploadDirectPart || !transport.completeDirect) return false
   const path = `${item.dest}/${item.relativePath ?? item.file.name}`.replace(/\/{2,}/g, '/').replace(/^\/+/, '')
   let reservation: DirectReservation
@@ -396,7 +424,16 @@ async function tryDirectUpload(item: AddItem, id: string): Promise<boolean> {
     if (error instanceof DirectUploadUnsupportedError) return false
     throw error
   }
+  directReservations.set(id, reservation)
+  const abort = new AbortController()
+  directAborts.set(id, abort)
   if (reservation.size !== item.file.size || reservation.partSize <= 0) throw new UploadHttpError(502, 'direct upload reservation was inconsistent')
+  if (item.file.size > reservation.partSize * 10000) {
+    await cleanupSession(reservation.id, undefined, true)
+    directReservations.delete(id)
+    directAborts.delete(id)
+    return false
+  }
   const existing = new Map(reservation.parts.map((part) => [part.partNumber, part]))
   const completed: DirectPart[] = []
   const count = Math.ceil(item.file.size / reservation.partSize)
@@ -408,23 +445,33 @@ async function tryDirectUpload(item: AddItem, id: string): Promise<boolean> {
     if (saved && saved.size === size && saved.etag) {
       completed.push({ partNumber, size, etag: saved.etag, ...(saved.checksum ? { checksum: saved.checksum } : {}) })
     } else {
-      const current = pendingControls.get(id)
-      if (current === 'canceled') {
+      if (pendingControls.get(id) === 'canceled') {
         pendingControls.delete(id)
-        if (transport.cancelDirect) await transport.cancelDirect(reservation.id).catch(() => {})
-        post({ t: 'canceled', id })
+        await cancelDirectReservation(id, reservation)
         return true
       }
       const body = item.file.slice(offset, offset + size)
       const checksum = await sha256Hex(body)
       const url = await transport.directPart(reservation.id, partNumber, size, checksum)
-      const uploaded = await transport.uploadDirectPart(url, body)
+      const uploaded = await transport.uploadDirectPart(url, body, abort.signal)
       completed.push({ partNumber, size, etag: uploaded.etag, checksum })
+      if (pendingControls.get(id) === 'canceled') {
+        pendingControls.delete(id)
+        await cancelDirectReservation(id, reservation)
+        return true
+      }
     }
     post({ t: 'progress', id, sent: Math.min(item.file.size, offset + size), total: item.file.size, rate: 0, etaSec: 0 })
   }
+  if (pendingControls.get(id) === 'canceled') {
+    pendingControls.delete(id)
+    await cancelDirectReservation(id, reservation)
+    return true
+  }
   const final = await transport.completeDirect(reservation.id, completed)
   if (final.state !== 'complete' && final.state !== 'completed') throw new UploadHttpError(502, 'direct upload did not complete')
+  directReservations.delete(id)
+  directAborts.delete(id)
   post({ t: 'done', id, dest: item.dest, name: item.relativePath ? item.relativePath.split('/').pop()! : item.file.name, size: item.file.size, mtimeNs: String(BigInt(item.file.lastModified) * 1_000_000n) })
   return true
 }
@@ -436,19 +483,25 @@ async function addFile(item: AddItem): Promise<void> {
   let handedOff = false
 
   try {
-    if (directCapability && transport.reserveDirect) {
-      const direct = await tryDirectUpload(item, id)
-      if (direct) {
-        handedOff = true
-        return
+    try {
+      if (directCapability && transport.reserveDirect) {
+        const direct = await tryDirectUpload(item, id)
+        if (direct) {
+          handedOff = true
+          return
+        }
       }
+    } catch {
+      const reservation = directReservations.get(id)
+      if (reservation) await cleanupDirectReservation(id, reservation)
+      post({ t: 'error', id, code: 'upload.failed', message: /* i18n */ 'upload.upload_failed_out_retries' })
+      return
     }
     if (pendingControls.get(id) === 'canceled') {
       pendingControls.delete(id)
       post({ t: 'canceled', id })
       return
     }
-
     const context = resumeContextOf(item)
     const source = sourceDetails(item)
     const key = context
@@ -913,6 +966,13 @@ self.addEventListener('message', (ev: MessageEvent<Cmd>) => {
       break
     }
     case 'cancel': {
+      const direct = directReservations.get(cmd.id)
+      if (direct) {
+        pendingControls.set(cmd.id, 'canceled')
+        directAborts.get(cmd.id)?.abort()
+        void cancelDirectReservation(cmd.id, direct)
+        break
+      }
       const f = files.get(cmd.id)
       if (!f) {
         pendingControls.set(cmd.id, 'canceled')

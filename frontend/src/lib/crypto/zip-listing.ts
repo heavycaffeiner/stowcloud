@@ -132,7 +132,7 @@ class EncryptedZipReader extends Reader<void> {
    *  makes for the same reason. */
   private async nonce(): Promise<Uint8Array> {
     if (this.nonce0) return this.nonce0
-    const res = await fetch(api.contentUrl(this.entry), { headers: { Range: 'bytes=0-31' } })
+    const res = await fetch(api.contentUrl(this.entry), { credentials: 'include', headers: { Range: 'bytes=0-31' } })
     if (!res.ok || !res.body) {
       throw new Error(`could not read the rclone-crypt header for ${this.entry.path}: HTTP ${res.status}`)
     }
@@ -162,6 +162,7 @@ class EncryptedZipReader extends Reader<void> {
     const rangeEnd = Math.min(endBlock * BLOCK_SIZE + BLOCK_SIZE, this.size)
     const span = ciphertextSpanForRange(rangeStart, rangeEnd, this.size)
     const res = await fetch(api.contentUrl(this.entry), {
+      credentials: 'include',
       headers: { Range: `bytes=${span.offset}-${span.offset + span.length - 1}` }
     })
     if (!res.ok || !res.body) throw new Error(`could not fetch ${this.entry.path}: HTTP ${res.status}`)

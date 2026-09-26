@@ -219,7 +219,9 @@ describe('writeFile', () => {
     // asking whether the share is encrypted costs no request here. Pinning
     // the write to `calls[0]` keeps this case about the write rather than
     // about how that set happens to be fetched.
-    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(200, { name: 'a.txt' }))
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(200, {
+      name: 'a.txt', path: 's/a.txt', kind: 'file', is_dir: false, size: '5', mtime_ns: '0', etag: 'e', etag_weak: false, perms: []
+    }))
     vi.stubGlobal('fetch', fetchMock)
 
     await httpApi.writeFile('/s/a.txt', 'hello')
@@ -285,11 +287,8 @@ describe('the wire entry widening', () => {
     expect(entry.btime_ns).toBeUndefined()
   })
 
-  it('keeps the size exact past what a JavaScript number holds', async () => {
-    const entry = await listOnce({ ...wireEntry, size: '9007199254740993' })
-    // The wire carries a string for this reason; the app's field is a number,
-    // so this records where the exactness is actually lost.
-    expect(entry.size).toBe(9007199254740992)
+  it('rejects an unsafe size rather than rounding it', async () => {
+    await expect(listOnce({ ...wireEntry, size: '9007199254740993' })).rejects.toMatchObject({ code: 'server.malformed_response' })
   })
 })
 

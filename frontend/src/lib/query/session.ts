@@ -7,6 +7,7 @@ import { isSessionDead, type SessionInfo } from '../api/types'
 import { lock } from '../crypto/e2ee'
 import { invalidateEncryptedShares } from '../crypto/encrypted-shares'
 import { queryClient } from './client'
+import { resetUploadQueue } from '../upload/queue'
 import { keys } from './keys'
 
 /** `api.session()` also installs the CSRF token every write needs, so this is
@@ -90,9 +91,9 @@ export function logoutMutation() {
   return mutationOptions({
     mutationFn: () => api.logout(),
     onSettled: () => {
-      // Everything in the cache belonged to the account that just left, and so
-      // does the unlocked share key: without dropping it the next account
-      // signing in on this tab would encrypt under the previous one's key.
+      // Stop worker activity before clearing the account cache so no queued
+      // command can be sent with the next account's credentials.
+      resetUploadQueue()
       lock()
       queryClient.clear()
       invalidateEncryptedShares()

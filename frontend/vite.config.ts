@@ -14,7 +14,7 @@ declare const process: { env: Record<string, string | undefined> }
 
 export default defineConfig({
   base: '/',
-  plugins: [vanillaExtractPlugin({ identifiers: 'debug' }), react()],
+  plugins: [vanillaExtractPlugin({ identifiers: process.env.NODE_ENV === 'production' ? 'short' : 'debug' }), react()],
   resolve: {
     alias: [
       { find: 'react-router/dom', replacement: reactRouterDomProduction },
@@ -30,7 +30,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         app: fileURLToPath(new URL('./index.html', import.meta.url)),
-        'service-worker': fileURLToPath(new URL('./src/service-worker.ts', import.meta.url))
+        'service-worker': fileURLToPath(new URL('./src/workers/service-worker.ts', import.meta.url))
       },
       output: {
         entryFileNames: (chunk) => (chunk.name === 'service-worker' ? 'service-worker.js' : 'app/[name]-[hash].js'),
