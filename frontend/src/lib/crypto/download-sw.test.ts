@@ -1,4 +1,4 @@
-// web/src/lib/crypto/download-sw.test.ts: the page side of the download and
+// frontend/src/lib/crypto/download-sw.test.ts: the page side of the download and
 // media Service Worker protocols. jsdom has no real `navigator.serviceWorker`
 // by default, which this file uses rather than works around for the
 // "no usable Service Worker" tests (the buffered fallback, `downloadEncryptedFile`/

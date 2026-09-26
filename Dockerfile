@@ -42,7 +42,7 @@
 # one the gate ran against.
 ARG GO_IMAGE=golang:1.27.1-bookworm
 
-# node 24, not 22, for the npm major it bundles. The lockfile in web/ was
+# node 24, not 22, for the npm major it bundles. The lockfile in frontend/ was
 # written by npm 11, and npm 10 reads the same file as out of sync and fails on
 # a nested transitive entry. The lockfile is not corrupt: the same install
 # succeeds under npm 11 and fails only under 10, so the image moves rather than
@@ -93,10 +93,10 @@ ARG PGID=1000
 # not read them even when present.
 # ----------------------------------------------------------------------------
 FROM ${NODE_IMAGE} AS frontend
-WORKDIR /src/web
-COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
+WORKDIR /src/frontend
+COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
 RUN corepack enable && pnpm install --frozen-lockfile
-COPY web/ ./
+COPY frontend/ ./
 RUN pnpm build \
     && test -f ../backend/internal/http/spa/build/index.html \
     && test -d ../backend/internal/http/spa/build/app

@@ -10,7 +10,7 @@ venv/
 backend/internal/http/spa/build/*
 !backend/internal/http/spa/build/.gitkeep
 # Where it used to build, kept ignored so an old checkout does not commit one.
-web/build
+frontend/build
 /checks/consumers/web/dist/
 *.qcow2
 *.log
@@ -18,8 +18,8 @@ web/build
 /.demo
 test-results/
 playwright-report/
-web/test-results/
-web/playwright-report/
+frontend/test-results/
+frontend/playwright-report/
 # The development server's scratch tree: its data directory holding a master
 # key and a TLS private key, its shares, the binary it builds and its log.
 # scripts/dev.sh makes one at the repository root and `go run` makes another
@@ -46,7 +46,7 @@ setup-token
 # Screenshots and fixtures left behind by browser verification runs.
 # A broad `git add -A` swept four of these into a commit once.
 .tmp-*
-web/.tmp-*
+frontend/.tmp-*
 
 # Gate tooling and cross-compiled test binaries: build products, not source.
 /backend/.tools/

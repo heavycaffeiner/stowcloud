@@ -1,8 +1,8 @@
-// web/src/lib/crypto/encrypted-shares.ts - which shares this account sees
+// frontend/src/lib/crypto/encrypted-shares.ts - which shares this account sees
 // are end-to-end encrypted, fetched once per session and cached, keyed on
 // the vpath label a destination or entry is addressed by.
 //
-// `ShareEncryption.labels` (web/src/lib/api/types.ts) is a per-caller
+// `ShareEncryption.labels` (frontend/src/lib/api/types.ts) is a per-caller
 // projection, not a stored column: an account can hold two grants on the
 // same share under two different subpaths, each surfaced under its own
 // label, so the same share can appear under more than one label for this

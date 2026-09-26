@@ -1,4 +1,4 @@
-// web/src/lib/crypto/e2ee.test.ts: the browser side of the rclone-crypt-v1
+// frontend/src/lib/crypto/e2ee.test.ts: the browser side of the rclone-crypt-v1
 // round trip. Cross-implementation compatibility against real rclone is not
 // asserted here: asserting encrypt against this module's own decrypt proves
 // nothing about a second implementation.

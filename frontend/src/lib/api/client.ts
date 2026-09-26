@@ -17,7 +17,7 @@ export const isMock = import.meta.env.VITE_API_MOCK === '1'
 if (import.meta.env.PROD && isMock) {
   throw new Error(
     'VITE_API_MOCK=1 in a production build. The mock backend must never be embedded ' +
-      'in the server binary. Move the flag to web/.env.development.'
+      'in the server binary. Move the flag to frontend/.env.development.'
   )
 }
 

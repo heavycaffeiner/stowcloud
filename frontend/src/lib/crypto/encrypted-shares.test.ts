@@ -1,4 +1,4 @@
-// web/src/lib/crypto/encrypted-shares.test.ts
+// frontend/src/lib/crypto/encrypted-shares.test.ts
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {

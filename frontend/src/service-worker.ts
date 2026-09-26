@@ -3,7 +3,7 @@
 // this one, so it is omitted here.
 /// <reference lib="webworker" />
 
-// web/src/service-worker.ts answers two synthetic same-origin prefixes on
+// frontend/src/service-worker.ts answers two synthetic same-origin prefixes on
 // behalf of the page that registered them: one-shot downloads at
 // /sc-download/<id>, and seekable, Range-capable media at /sc-media/<token>.
 // See download-sw.ts for the page-side protocol. Precaches nothing.

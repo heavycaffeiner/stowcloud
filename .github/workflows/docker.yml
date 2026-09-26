@@ -60,7 +60,7 @@ on:
       - "Dockerfile.smb"
       - ".dockerignore"
       - "backend/**"
-      - "web/**"
+      - "frontend/**"
       - "deploy/smb/**"
       - ".github/workflows/docker.yml"
   workflow_dispatch:

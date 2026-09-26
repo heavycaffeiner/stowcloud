@@ -16,8 +16,8 @@ if ! command -v node >/dev/null 2>&1; then
   echo "SKIP: no node" >&2
   exit 0
 fi
-if [ ! -d web/node_modules ]; then
-  echo "SKIP: no web/node_modules; run pnpm install in web/" >&2
+if [ ! -d frontend/node_modules ]; then
+  echo "SKIP: no frontend/node_modules; run pnpm install in frontend/" >&2
   exit 0
 fi
 # The install does not fetch a browser: Playwright downloads one separately.
@@ -27,14 +27,14 @@ fi
 # A launch rather than a path check: chromium.launch() resolves to the headless
 # shell, which is a different download from the one executablePath() names, so
 # testing that path reports missing on a machine where the suite runs.
-if ! (cd web && node -e '
+if ! (cd frontend && node -e '
 const { chromium } = require("playwright");
 chromium.launch().then(b => b.close()).then(
   () => process.exit(0),
   () => process.exit(1),
 );
 ' 2>/dev/null); then
-  echo "SKIP: no browser; run: cd web && pnpm exec playwright install chromium" >&2
+  echo "SKIP: no browser; run: cd frontend && pnpm exec playwright install chromium" >&2
   exit 0
 fi
 
@@ -49,7 +49,7 @@ if [ "${SC_BUNDLE_FRESH:-0}" = 1 ]; then
   fi
 else
   echo "==> building the frontend"
-  (cd web && pnpm build >/dev/null)
+  (cd frontend && pnpm build >/dev/null)
 fi
 
 echo "==> building the binary"
@@ -109,13 +109,13 @@ TOKEN=$(cat "$DIR/data/setup-token" 2>/dev/null || true)
 # loopback address it answers a misdirected request, which is the host guard
 # working rather than a fault.
 echo "==> the session, in a browser"
-(cd web && node e2e/session.spec.mjs https://localhost:18900 "$TOKEN" "$DIR/share")
+(cd frontend && node e2e/session.spec.mjs https://localhost:18900 "$TOKEN" "$DIR/share")
 
 echo "==> the grant path, in a browser"
-(cd web && node e2e/grant.spec.mjs https://localhost:18900)
+(cd frontend && node e2e/grant.spec.mjs https://localhost:18900)
 
 echo "==> the surfaces that used to answer 501, in a browser"
-(cd web && node e2e/surfaces.spec.mjs https://localhost:18900)
+(cd frontend && node e2e/surfaces.spec.mjs https://localhost:18900)
 
 # chrome-devtools-mcp is a separate download from Playwright's own browser,
 # fetched over the network the first time this runs, and it needs a working
@@ -126,7 +126,7 @@ if ! command -v pnpm >/dev/null 2>&1; then
   echo "SKIP: no pnpm; chrome-devtools-mcp is launched with pnpm dlx" >&2
 else
   echo "==> the webdav connection guide, in a browser via chrome-devtools-mcp"
-  if (cd web && node e2e/webdav.spec.mjs https://localhost:18900 "$TOKEN" "$DIR/share"); then
+  if (cd frontend && node e2e/webdav.spec.mjs https://localhost:18900 "$TOKEN" "$DIR/share"); then
     :
   else
     status=$?
@@ -139,6 +139,6 @@ else
 fi
 
 echo "==> deterministic playwright test runner"
-(cd web && SC_TEST_BIN="$BIN" pnpm exec playwright test --project=chromium)
+(cd frontend && SC_TEST_BIN="$BIN" pnpm exec playwright test --project=chromium)
 
 echo "PASS: the shipped interface signs in and reaches every surface it calls"

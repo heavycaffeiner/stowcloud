@@ -1,5 +1,5 @@
 # Keep the build context small and, more importantly, make the image build
-# self-contained: nothing host-built (a stale web/build from a previous
+# self-contained: nothing host-built (a stale frontend/build from a previous
 # `npm run build` on this machine, a leftover node_modules with
 # platform-specific native bindings) can leak into what Docker builds. The
 # frontend and the server binary are both built fresh inside their own stages
@@ -14,11 +14,11 @@ backend/.tools
 # which is a second, independent reason (beyond Vite's mode system and
 # client.ts's throw-at-load guard) VITE_API_MOCK=1 cannot end up embedded:
 # the file carrying it never leaves the host.
-web/node_modules
-web/build
-web/.env
-web/.env.development
-web/.env.*.local
+frontend/node_modules
+frontend/build
+frontend/.env
+frontend/.env.development
+frontend/.env.*.local
 
 # VCS / editor / OS noise
 .git

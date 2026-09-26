@@ -1,4 +1,4 @@
-// web/src/lib/format/download.test.ts: the two-step download is the only
+// frontend/src/lib/format/download.test.ts: the two-step download is the only
 // path left to trigger a plain-share file download: mint a ticket by path,
 // then hand its `url` to the browser's own navigation. No client code may
 // compose a download URL from a path directly. `downloadPath` calls the

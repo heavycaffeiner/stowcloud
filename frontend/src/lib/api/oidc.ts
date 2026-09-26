@@ -1,4 +1,4 @@
-// web/src/lib/api/oidc.ts: the OIDC surface that has to work before anyone
+// frontend/src/lib/api/oidc.ts: the OIDC surface that has to work before anyone
 // is logged in. Standalone, the same reasoning as setup.ts: it does NOT
 // import ./client, ./mock or ./http, so the unauthenticated bundle (the login
 // screen) never pulls in the full fs mock or the rest of the authenticated

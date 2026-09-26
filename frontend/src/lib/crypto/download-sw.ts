@@ -1,4 +1,4 @@
-// web/src/lib/crypto/download-sw.ts: the page half of the download/media
+// frontend/src/lib/crypto/download-sw.ts: the page half of the download/media
 // Service Worker (service-worker.ts). The worker is a dumb pipe; the
 // unlocked key and the streams it serves live here instead, never in the
 // worker. Two protocols: one-shot download (/sc-download/<id>) and
@@ -22,7 +22,7 @@ import { encryptionForLabel, shareLabelOf } from './encrypted-shares'
 import { isSafeArchiveName } from './zip-listing'
 
 const SERVICE_WORKER_URL = '/service-worker.js'
-// Must match `DOWNLOAD_PREFIX`/`MEDIA_PREFIX` in web/src/service-worker.ts.
+// Must match `DOWNLOAD_PREFIX`/`MEDIA_PREFIX` in frontend/src/service-worker.ts.
 const DOWNLOAD_PREFIX = '/sc-download/'
 const MEDIA_PREFIX = '/sc-media/'
 

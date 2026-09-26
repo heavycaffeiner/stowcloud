@@ -35,7 +35,7 @@ if [ "${SC_BUNDLE_FRESH:-0}" = 1 ]; then
   fi
 else
   echo "==> building the frontend"
-  (cd web && pnpm build >/dev/null)
+  (cd frontend && pnpm build >/dev/null)
 fi
 
 WANT=$(grep -oE 'app/[^"'"'"'[:space:]]+\.js' "$BUNDLE_DIR/index.html" | head -1 || true)

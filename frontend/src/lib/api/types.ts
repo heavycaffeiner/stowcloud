@@ -1,4 +1,4 @@
-// web/src/lib/api/types.ts: shapes mirroring.
+// frontend/src/lib/api/types.ts: shapes mirroring.
 
 export type Kind = 'file' | 'dir' | 'symlink' | 'other'
 

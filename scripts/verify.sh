@@ -268,7 +268,7 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   # surface. Both files are checked so either registration site cannot drift.
   run "routecheck (the client's paths are mounted)" \
       ingo_host go run ./tools/routecheck \
-        -client-dir ../web/src \
+        -client-dir ../frontend/src \
         -routes internal/http/server/v1table.go,internal/http/publiclinks/public.go \
         -allow routes.allow \
         -server-only routes.server-only
@@ -277,11 +277,11 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   # by a person clicking something that then did nothing.
   run "contractcheck (the client's fields are sent)" \
       ingo_host go run ./tools/contractcheck \
-        ../web/src/lib/api/types.ts ./internal/http/api/handler ./internal/app
+        ../frontend/src/lib/api/types.ts ./internal/http/api/handler ./internal/app
   # Settings saved by the client must be consumed by the runtime loader.
   run "settingscheck (a stored setting is read)" \
       ingo_host go run ./tools/settingscheck \
-        ../web/src/lib/api/types.ts ./internal/feature/admin/settings/runtimecfg/load.go
+        ../frontend/src/lib/api/types.ts ./internal/feature/admin/settings/runtimecfg/load.go
   # And this keeps a byte-serving URL from being composed out of a path
   # again. Both routes take the row's own sealed reference; the one client
   # that joined a path itself joined it wrongly, and an account granted a
@@ -297,13 +297,13 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
     grep -vE '^([^:]+:)?[0-9]+:[[:space:]]*(//|/\*|\*)'
   }
   CONTENT_URL_HITS=$(
-    grep -rn 'files/\(read\|thumbnail\)' web/src \
+    grep -rn 'files/\(read\|thumbnail\)' frontend/src \
       --include='*.ts' --include='*.tsx' 2>/dev/null \
-      | grep -v '^web/src/lib/api/http\.ts:' | no_comment || true
+      | grep -v '^frontend/src/lib/api/http\.ts:' | no_comment || true
   )
   # The API layer names them, and only with a claim.
   CONTENT_URL_HITS="$CONTENT_URL_HITS$(
-    grep -n 'files/\(read\|thumbnail\)' web/src/lib/api/http.ts 2>/dev/null \
+    grep -n 'files/\(read\|thumbnail\)' frontend/src/lib/api/http.ts 2>/dev/null \
       | grep -v 'claim:' | no_comment || true
   )"
   grep_gate "no content URL composed from a path" "$CONTENT_URL_HITS" \
@@ -728,7 +728,7 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
     # because its own workflow step builds the frontend before this script.
     if command -v pnpm >/dev/null 2>&1; then
       if [ "${SC_BUNDLE_FRESH:-0}" != 1 ]; then
-        run "the frontend bundle builds" bash -c 'cd web && pnpm build >/dev/null'
+        run "the frontend bundle builds" bash -c 'cd frontend && pnpm build >/dev/null'
       fi
       export SC_BUNDLE_FRESH=1
     fi
@@ -747,7 +747,7 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
       skipped "the embedded bundle is the built one" "no pnpm" "${VERIFY_REQUIRE_UI:-0}"
     fi
   else
-    skipped "go build -tags embed_ui" "no built frontend; run: cd web && pnpm build" \
+    skipped "go build -tags embed_ui" "no built frontend; run: cd frontend && pnpm build" \
             "${VERIFY_REQUIRE_UI:-0}"
   fi
 else

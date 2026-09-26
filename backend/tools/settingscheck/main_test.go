@@ -153,7 +153,7 @@ func TestNoAllowedKeyIsOneTheLoaderActuallyReads(t *testing.T) {
 // request type exists for it. Removing the entry is the fix, and this is what
 // would have said so.
 func TestEveryMappedInterfaceExists(t *testing.T) {
-	src, err := readFileForTest("../../../web/src/lib/api/types.ts")
+	src, err := readFileForTest("../../../frontend/src/lib/api/types.ts")
 	if err != nil {
 		t.Skipf("the client types are not where this test expects: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestEveryMappedInterfaceExists(t *testing.T) {
 // The tool has to see fields at the indentation the client actually uses. A
 // regex that matched nothing would report every section as clean.
 func TestTheClientScanFindsTheRealInterfaces(t *testing.T) {
-	src, err := readFileForTest("../../../web/src/lib/api/types.ts")
+	src, err := readFileForTest("../../../frontend/src/lib/api/types.ts")
 	if err != nil {
 		t.Skipf("the client types are not where this test expects: %v", err)
 	}
@@ -184,7 +184,7 @@ func TestTheClientScanFindsTheRealInterfaces(t *testing.T) {
 // Every section the client can PATCH is one this tool knows about. A route
 // added without a mapping here silently checks nothing.
 func TestEverySectionTheClientPatchesIsMapped(t *testing.T) {
-	src, err := readFileForTest("../../../web/src/lib/api/http.ts")
+	src, err := readFileForTest("../../../frontend/src/lib/api/http.ts")
 	if err != nil {
 		t.Skipf("the client is not where this test expects: %v", err)
 	}

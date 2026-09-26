@@ -21,13 +21,13 @@ import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 
 const OUT = 'THIRD-PARTY-NOTICES.md'
-const NM = 'web/node_modules'
+const NM = 'frontend/node_modules'
 // The tags the image builds with. Without them the graph is a different
 // binary's, and the notice would describe something nobody ships.
 const BUILD_TAGS = 'embed_ui compat_nc'
 
 // Packages whose code or data reaches the browser. Everything else in
-// `web/package.json` is a build tool.
+// `frontend/package.json` is a build tool.
 const JS_RUNTIME = [
   'react', 'react-dom', 'react-router-dom', '@tanstack/react-query', 'zustand',
   'mdui', 'clsx', '@ktibow/iconset-material-symbols', '@stowcloud/rclone-crypt',
@@ -41,7 +41,7 @@ for (const scope of ['@codemirror', '@lezer']) {
 const LICENSE_FILE = /^(licen[sc]e|copying|notice|unlicense)/i
 
 const LICENSE_FALLBACKS = new Map([
-  ['@ktibow/iconset-material-symbols', 'web/licenses/material-design-icons-Apache-2.0.txt'],
+  ['@ktibow/iconset-material-symbols', 'frontend/licenses/material-design-icons-Apache-2.0.txt'],
 ])
 const REPOSITORY_FALLBACKS = new Map([
   ['@stowcloud/rclone-crypt', 'https://github.com/Stowcloud/rclone-crypt'],
@@ -117,7 +117,7 @@ for (const [path, { version, dir }] of [...modules].sort((a, b) => a[0].localeCo
 for (const name of JS_RUNTIME.sort()) {
   const dir = join(NM, name)
   const pj = join(dir, 'package.json')
-  if (!existsSync(pj)) throw new Error(`${name}: not installed, run pnpm install in web/ first`)
+  if (!existsSync(pj)) throw new Error(`${name}: not installed, run pnpm install in frontend/ first`)
   const j = JSON.parse(readFileSync(pj, 'utf8'))
   const files = licenseTexts(dir)
   const fallback = LICENSE_FALLBACKS.get(name)

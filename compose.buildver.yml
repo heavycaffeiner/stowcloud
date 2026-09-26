@@ -13,7 +13,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    # The frontend is embedded in the binary, so a change under web/ needs
+    # The frontend is embedded in the binary, so a change under frontend/ needs
     # --build rather than a restart.
     image: stowcloud:dev
     restart: unless-stopped

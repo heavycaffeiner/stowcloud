@@ -1,4 +1,4 @@
-// web/src/lib/api/mock.ts: in-memory mock of, swapped in via
+// frontend/src/lib/api/mock.ts: in-memory mock of, swapped in via
 // VITE_API_MOCK=1 (see client.ts). Implements listing sessions + cursor
 // pagination exactly like the real server so the browse screen never has to
 // know which backend it's talking to.

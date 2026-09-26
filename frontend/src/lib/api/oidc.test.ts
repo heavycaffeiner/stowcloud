@@ -1,4 +1,4 @@
-// web/src/lib/api/oidc.test.ts: the two pieces of `oidc.ts` that are pure
+// frontend/src/lib/api/oidc.test.ts: the two pieces of `oidc.ts` that are pure
 // logic and easy to break silently.
 //
 // `oidcErrorMessage` is a translation of §5-2 table B of

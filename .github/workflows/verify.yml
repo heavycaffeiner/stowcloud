@@ -92,10 +92,10 @@ jobs:
       # unit test and a type error as a type error, rather than as whatever the
       # build does next. `vite build` strips types with esbuild without
       # checking them, so without `pnpm check` nothing in CI ever reads the
-      # types in `web/`.
+      # types in `frontend/`.
       - name: Build frontend
         run: |
-          cd web
+          cd frontend
           pnpm install --frozen-lockfile
           pnpm test
           pnpm check
@@ -108,11 +108,11 @@ jobs:
       # --with-deps because the runner has no shared libraries chromium needs.
       - name: Install the browser the end-to-end step drives
         run: |
-          cd web
+          cd frontend
           pnpm exec playwright install --with-deps chromium
 
       - name: Check browser alignment
-        working-directory: web
+        working-directory: frontend
         run: pnpm test:alignment
 
       # The file views render a window of rows and move it as the viewport
@@ -120,7 +120,7 @@ jobs:
       # at its first screenful, which no unit test sees: the maths is right and
       # the input is wrong. This drives a real wheel over a real layout.
       - name: Check deep scrolling in the file views
-        working-directory: web
+        working-directory: frontend
         run: pnpm test:virtual-scroll
 
       # Enforces the frontend byte budgets. Deliberately
@@ -129,7 +129,7 @@ jobs:
       # the budget check only claims what is actually enforced.
       - name: Check frontend bundle-size budgets
         run: |
-          cd web
+          cd frontend
           pnpm check:bundle-size
 
 
@@ -160,7 +160,7 @@ jobs:
       # indistinguishable from a compile error in a collapsed log.
       - name: Disk
         if: always()
-        run: df -h / && du -sh backend/.tools web/node_modules 2>/dev/null || true
+        run: df -h / && du -sh backend/.tools frontend/node_modules 2>/dev/null || true
   consumers:
     name: released module consumers (ubuntu-latest)
     runs-on: ubuntu-latest
@@ -216,7 +216,7 @@ jobs:
       - name: Build frontend
         shell: bash
         run: |
-          cd web
+          cd frontend
           pnpm install --frozen-lockfile
           pnpm test
           pnpm check
@@ -225,7 +225,7 @@ jobs:
       - name: Check frontend bundle-size budgets
         shell: bash
         run: |
-          cd web
+          cd frontend
           pnpm check:bundle-size
 
       # No VERIFY_REQUIRE_RACE here: the race step depends on whether the image
@@ -243,7 +243,7 @@ jobs:
       - name: Disk
         if: always()
         shell: bash
-        run: df -h . && du -sh backend/.tools web/node_modules 2>/dev/null || true
+        run: df -h . && du -sh backend/.tools frontend/node_modules 2>/dev/null || true
 
   agentic-smoke:
     name: agentic-smoke (ubuntu-latest)
@@ -265,7 +265,7 @@ jobs:
       - name: Build frontend
         run: |
           corepack enable
-          cd web
+          cd frontend
           pnpm install --frozen-lockfile
           pnpm build
       - name: Install agentic runner

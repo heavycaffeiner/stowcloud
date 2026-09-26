@@ -1,4 +1,4 @@
-// web/src/lib/crypto/zip-listing.test.ts: lists a zip built with zip.js's
+// frontend/src/lib/crypto/zip-listing.test.ts: lists a zip built with zip.js's
 // own writer, encrypted with this module's own e2ee.ts, back out through
 // `listEncryptedArchive`'s range reader, against a counted `fetch` stub
 // standing in for `/api/v1/files/read`. The counting is the point: proving

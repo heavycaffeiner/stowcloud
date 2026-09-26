@@ -3,7 +3,7 @@
 // need retargeting once the real /setup route lands; these tests pin down
 // its current (mock) behavior so that change is visible in a diff.
 //
-// The mock branch is forced here rather than inherited from `web/.env`.
+// The mock branch is forced here rather than inherited from `frontend/.env`.
 // `setup.ts` reads `VITE_API_MOCK` into a module-level const at import time,
 // so these tests used to pass or fail depending on a file nobody edits with
 // tests in mind: flipping `.env` to `0` to point the dev server at a real

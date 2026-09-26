@@ -1,4 +1,4 @@
-// web/src/lib/api/http.ts: real HTTP implementation of the same surface as
+// frontend/src/lib/api/http.ts: real HTTP implementation of the same surface as
 // mock.ts. Talks to the real server. This module is only
 // ever exercised once VITE_API_MOCK is unset/0; it is untested against a
 // live server here (the backend does not exist yet) but the shape mirrors

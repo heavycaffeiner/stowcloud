@@ -2,7 +2,7 @@
 // the query string, and what `mockApi` answers so the dashboard is
 // developable without a server.
 //
-// `web/src/lib/api/http.test.ts` is owned elsewhere; this is its own file.
+// `frontend/src/lib/api/http.test.ts` is owned elsewhere; this is its own file.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { httpApi } from './http'
 import { mockApi } from './mock'

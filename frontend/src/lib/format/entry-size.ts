@@ -1,4 +1,4 @@
-// web/src/lib/format/entry-size.ts: formats file entry sizes, deriving
+// frontend/src/lib/format/entry-size.ts: formats file entry sizes, deriving
 // plaintext size when browsing an end-to-end encrypted share.
 import { formatBytes } from './bytes'
 import { tryPlaintextSize } from '../crypto/e2ee'

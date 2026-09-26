@@ -7,7 +7,7 @@
 // table over one hard-coded language, so a Korean copy edit silently orphans
 // its English and the source language can never be swapped out.
 //
-// `web/tools/i18n-check.mjs` fails the build when a key used at a call site
+// `frontend/tools/i18n-check.mjs` fails the build when a key used at a call site
 // is missing from either catalogue, when a catalogue holds a key nothing
 // uses, or when `{placeholder}` sets disagree between the two languages.
 import en from './en.json'

@@ -39,7 +39,7 @@ jobs:
 
       - name: Build frontend and install browser
         run: |
-          cd web
+          cd frontend
           pnpm install --frozen-lockfile
           pnpm build
           pnpm exec playwright install --with-deps ${{ matrix.project }}
@@ -53,7 +53,7 @@ jobs:
         env:
           SC_TEST_BIN: /tmp/sc-engine-e2e
         run: |
-          cd web
+          cd frontend
           pnpm exec playwright test --project=${{ matrix.project }}
 
       - name: Upload Playwright artifacts
@@ -61,7 +61,7 @@ jobs:
         uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
         with:
           name: playwright-artifacts-${{ matrix.project }}
-          path: web/test-results
+          path: frontend/test-results
 
   agentic-exploration-nightly:
     name: agentic-exploration (nightly lane)
@@ -82,7 +82,7 @@ jobs:
       - name: Build frontend
         run: |
           corepack enable
-          cd web
+          cd frontend
           pnpm install --frozen-lockfile
           pnpm build
       - name: Install agentic runner
