@@ -1,11 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { dropUpload, getShare, ShareNotFoundError, SharePasswordRequiredError, SharePathGoneError, ShareTooLargeError, shareDownloadUrl, shareZipUrl, unlockShare } from '../../../lib/api/share'
+import { getShare, ShareNotFoundError, SharePasswordRequiredError, SharePathGoneError, shareDownloadUrl, shareZipUrl, unlockShare } from '../../../lib/api/share'
 import { useI18n } from '../../../lib/i18n/use-i18n'
 import { useRouteStore } from '../../use-route-store'
-
-export type DropItem = { id: number; file: File; status: 'pending' | 'uploading' | 'done' | 'error'; storedAs: string; failure: 'too_large' | 'failed' | null }
+import { createPublicShareQueue, type DropItem, type PublicShareQueue } from './public-share-queue'
 type PublicShareState = { password: string; unlockError: string | null; unlocking: boolean; queue: DropItem[]; uploading: boolean; pathGone: boolean }
 
 export function usePublicShare() {
@@ -14,11 +13,10 @@ export function usePublicShare() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const path = searchParams.get('path') ?? ''
-  const queueRef = useRef<DropItem[]>([])
-  const nextQueueId = useRef(0)
-  const uploadingRef = useRef(false)
   const [state, setState] = useRouteStore<PublicShareState>({ password: '', unlockError: null, unlocking: false, queue: [], uploading: false, pathGone: false })
-  const { password, unlockError, unlocking, queue, uploading, pathGone } = state
+  const { password, unlockError, unlocking, queue: queuedItems, uploading, pathGone } = state
+  const queueMapRef = useRef(new Map<string, PublicShareQueue>())
+  const activeTokenRef = useRef(token)
   const fileInput = useRef<HTMLInputElement>(null)
   const share = useQuery({ queryKey: ['share', token, path], queryFn: () => getShare(token, path), retry: false, enabled: token.length > 0 })
   const info = share.data
@@ -46,31 +44,22 @@ export function usePublicShare() {
   const childPath = (name: string): string => path ? `${path}/${name}` : name
   const download = (downloadPath: string): void => { window.location.href = shareDownloadUrl(token, downloadPath) }
   const downloadFolder = (): void => { window.location.href = shareZipUrl(token, path) }
-  const runQueue = async (): Promise<void> => {
-    if (uploadingRef.current) return
-    uploadingRef.current = true; setState({ uploading: true })
-    try {
-      let index = 0
-      while (index < queueRef.current.length) {
-        const item = queueRef.current[index++]
-        if (!item || item.status !== 'pending') continue
-        item.status = 'uploading'; setState({ queue: [...queueRef.current] })
-        try { item.storedAs = await dropUpload(token, item.file); item.status = 'done' }
-        catch (error) { item.status = 'error'; item.failure = error instanceof ShareTooLargeError ? 'too_large' : 'failed' }
-        setState({ queue: [...queueRef.current] })
-      }
-    } finally {
-      uploadingRef.current = false; setState({ uploading: false })
-      if (queueRef.current.some((item) => item.status === 'pending')) queueMicrotask(() => void runQueue())
-    }
+  activeTokenRef.current = token
+  let queue = queueMapRef.current.get(token)
+  if (!queue) {
+    queue = createPublicShareQueue({ token, setState: (next) => setState(next), isActive: () => activeTokenRef.current === token })
+    queueMapRef.current.set(token, queue)
   }
+  useEffect(() => {
+    setState({ queue: [...queue.items], uploading: queue.uploading })
+  }, [queue, setState])
   const pickFiles = (event: React.ChangeEvent<HTMLInputElement>): void => {
-    const files = Array.from(event.target.files ?? []); event.target.value = ''; if (!files.length) return
-    const limit = info?.maxUploadBytes ?? null
-    const additions = files.map((file): DropItem => ({ id: nextQueueId.current++, file, status: limit !== null && file.size > limit ? 'error' : 'pending', storedAs: '', failure: limit !== null && file.size > limit ? 'too_large' : null }))
-    queueRef.current = [...queueRef.current, ...additions]; setState({ queue: [...queueRef.current] }); queueMicrotask(() => void runQueue())
+    const files = Array.from(event.target.files ?? [])
+    event.target.value = ''
+    if (!files.length) return
+    queue.add(files, info?.maxUploadBytes ?? null)
   }
-  const retryUpload = (index: number): void => { const item = queueRef.current[index]; if (!item || item.status !== 'error') return; item.status = 'pending'; item.storedAs = ''; item.failure = null; setState({ queue: [...queueRef.current] }); queueMicrotask(() => void runQueue()) }
-  const removeFailedUpload = (index: number): void => { const item = queueRef.current[index]; if (!item || item.status !== 'error') return; queueRef.current = queueRef.current.filter((_, itemIndex) => itemIndex !== index); setState({ queue: [...queueRef.current] }) }
-  return { t, token, path, fileInput, state: { password, unlockError, unlocking, queue, uploading, pathGone }, setState, share, info, needsPassword, retryableError, crumbs, doneCount: queue.filter((item) => item.status === 'done').length, unlock, openFolder, childPath, download, downloadFolder, pickFiles, retryUpload, removeFailedUpload }
+  const retryUpload = (index: number): void => queue.retry(index)
+  const removeFailedUpload = (index: number): void => queue.removeFailed(index)
+  return { t, token, path, fileInput, state: { password, unlockError, unlocking, queue: queuedItems, uploading, pathGone }, setState, share, info, needsPassword, retryableError, crumbs, doneCount: queuedItems.filter((item) => item.status === 'done').length, unlock, openFolder, childPath, download, downloadFolder, pickFiles, retryUpload, removeFailedUpload }
 }

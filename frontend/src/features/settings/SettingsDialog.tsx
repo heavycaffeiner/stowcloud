@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { t } from '../../lib/i18n'
+import { useI18n } from '../../lib/i18n/use-i18n'
 import { Button } from '../../lib/ui/Button'
 import { Dialog } from '../../lib/ui/Dialog'
 interface SettingsDialogProps {
@@ -12,6 +12,7 @@ interface SettingsDialogProps {
 }
 
 export function SettingsDialog({ open, title, onClose, children, actions, dismissible = true }: SettingsDialogProps) {
+  const { t } = useI18n()
   const defaultActions = <Button variant="text" onClick={onClose}>{t('common.close')}</Button>
   return (
     <Dialog open={open} title={title} onClose={onClose} role="dialog" closedby={dismissible ? 'any' : 'none'} className="sc-settings-dialog" actions={actions ?? defaultActions}>

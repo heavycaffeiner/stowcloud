@@ -1,6 +1,4 @@
-import { useCallback, useRef } from 'react'
-import { useStore } from 'zustand'
-import { createStore, type StoreApi } from 'zustand/vanilla'
+import { usePatchState } from '../../lib/store/use-component-state'
 import type { AdminGrant, GrantPermName } from '../../lib/api/client'
 
 export interface GrantManagementState {
@@ -44,11 +42,5 @@ const initialGrantManagementState: GrantManagementState = {
 export type GrantManagementPatch = Partial<GrantManagementState> | ((state: GrantManagementState) => Partial<GrantManagementState>)
 
 export function useGrantManagementState(): readonly [GrantManagementState, (patch: GrantManagementPatch) => void] {
-  const storeRef = useRef<StoreApi<GrantManagementState> | null>(null)
-  if (storeRef.current === null) storeRef.current = createStore(() => initialGrantManagementState)
-  const state = useStore(storeRef.current)
-  const patch = useCallback((next: GrantManagementPatch): void => {
-    storeRef.current!.setState((current) => typeof next === 'function' ? next(current) : next)
-  }, [])
-  return [state, patch]
+  return usePatchState(initialGrantManagementState)
 }

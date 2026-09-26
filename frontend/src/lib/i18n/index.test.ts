@@ -5,6 +5,8 @@ vi.mock('./en.json', () => ({
     'test.items_one': '{count} item',
     'test.items_other': '{count} items',
     'test.job_finished_one': '{kind} job finished. {count} item processed.',
+    'test.greeting': 'Hello {name}!',
+    'test.empty': '',
     'test.job_finished_other': '{kind} job finished. {count} items processed.',
   },
 }))
@@ -14,14 +16,29 @@ vi.mock('./ko.json', () => ({
     'test.items_one': '항목 {count}개',
     'test.items_other': '항목 {count}개',
     'test.job_finished_one': '{kind} 작업 완료. {count}개 항목 처리됨.',
+    'test.greeting': '안녕하세요 {name}!',
+    'test.only_korean': '한국어 fallback',
+    'test.empty': '',
     'test.job_finished_other': '{kind} 작업 완료. {count}개 항목 처리됨.',
   },
 }))
 
-import { formatModifiedDateNs, tp, setLocale } from './index'
+import { formatModifiedDateNs, t, tp, setLocale } from './index'
 
 beforeEach(() => {
   setLocale('en')
+})
+
+describe('translation lookup', () => {
+  it('preserves flat keys, interpolation, raw unknown keys and Korean fallback', () => {
+    expect(t('test.greeting', { name: '<Alice & Bob>' })).toBe('Hello <Alice & Bob>!')
+    expect(t('test.greeting')).toBe('Hello {name}!')
+    expect(t('test.empty')).toBe('')
+    expect(t('test.only_korean')).toBe('한국어 fallback')
+    expect(t('test.unknown')).toBe('test.unknown')
+    setLocale('ko')
+    expect(t('test.greeting', { name: 'Kim' })).toBe('안녕하세요 Kim!')
+  })
 })
 
 describe('tp', () => {

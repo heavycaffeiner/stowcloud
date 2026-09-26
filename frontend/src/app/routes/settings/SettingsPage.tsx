@@ -1,12 +1,13 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import { localeStore } from '../../../lib/i18n/state'
+import { i18n, setLocale } from '../../../lib/i18n/state'
 import { useI18n } from '../../../lib/i18n/use-i18n'
 import { logoutMutation, oidcConfigQuery, sessionQuery } from '../../../lib/query/session'
 import { ui } from '../../../lib/store/ui.store'
 import { useStore } from '../../../lib/store/use-store'
-import { Icon } from '../../../lib/ui/Icon'
 import { useDocumentTitle } from '../../use-document-title'
+import { PageTabs } from '../PageTabs'
 import { AccountPanel, AppearancePanel, ConnectionsPanel, SecurityPanel } from './SettingsPanels'
 import { useSettingsTabs, type SettingsTab } from './use-settings-tabs'
 import '../../../styles/app/routes/settings.css.ts'
@@ -18,7 +19,8 @@ export function SettingsPage() {
   const oidcConfig = useQuery(oidcConfigQuery())
   const logout = useMutation(logoutMutation())
   const theme = useStore(ui, (state) => state.theme)
-  const locale = useStore(localeStore, (state) => state.locale)
+  const { i18n: translation } = useTranslation(undefined, { i18n })
+  const locale = translation.language === 'en' ? 'en' : 'ko'
   const featureConnections = !!session.data?.features.smb || !!session.data?.features.webdav
   const settings = useSettingsTabs(featureConnections)
   const oidcVisible = oidcConfig.data !== undefined && (oidcConfig.data.enabled || !!session.data?.oidc.linked || new URLSearchParams(window.location.search).has('oidc_error'))
@@ -60,14 +62,7 @@ export function SettingsPage() {
   return (
     <section className="sc-settings-page">
       <header><h1>{t('common.settings')}</h1></header>
-      <nav className="sc-settings-page-tabs" aria-label={t('common.settings')}>
-        {settings.visibleTabs.map((item) => (
-          <button key={item} type="button" className="sc-settings-page-tab" aria-current={item === settings.tab ? 'page' : undefined} onClick={() => settings.selectTab(item)}>
-            <Icon name={tabIcon(item)} />
-            {tabLabel(item)}
-          </button>
-        ))}
-      </nav>
+      <PageTabs label={t('common.settings')} items={settings.visibleTabs.map((value) => ({ value, label: tabLabel(value), icon: tabIcon(value) }))} active={settings.tab} onSelect={settings.selectTab} />
 
       {settings.tab === 'account' ? <AccountPanel session={session.data} signOutPending={logout.isPending} onSignOut={() => void signOut()} t={t} /> : null}
       {settings.tab === 'security' ? <SecurityPanel oidcVisible={oidcVisible} t={t} /> : null}
@@ -85,7 +80,7 @@ export function SettingsPage() {
             else restoreValue(group, theme)
           }}
           onLocaleChange={(value, group) => {
-            if (value === 'ko' || value === 'en') localeStore.setLocale(value)
+            if (value === 'ko' || value === 'en') setLocale(value)
             else restoreValue(group, locale)
           }}
           onConcurrencyChange={(value, group) => {

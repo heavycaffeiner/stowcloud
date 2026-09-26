@@ -3,13 +3,13 @@ import type { MutableRefObject, RefObject } from 'react'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import { useStore } from 'zustand'
 import type { SearchDone, SearchHit, SearchProgress } from '../../lib/api/client'
-import { api } from '../../lib/api/client'
-import { EXTENSION_PRESETS, parseExtensions, resolveExtensions } from '../../lib/search/filters'
+import { resolveExtensions } from '../../lib/search/filters'
 import { search, type SearchSnapshot } from '../../lib/store/search.store'
-import { computeWindow, type WindowResult } from '../../lib/virtual/windowing'
-import { initialSearchState, SORT_KEYS, sortHits, toSnapshot, type CategoryId, type SearchPanelState, type SearchStatus } from './search-state'
+import { initialSearchState, toSnapshot, type CategoryId, type SearchPanelState, type SearchStatus } from './search-state'
+import { activeCategoryFor, activeFiltersFor, sortLabelKeyFor, statusFor, viewFor, windowFor } from './search-selectors'
+import { api } from '../../lib/api/client'
+import type { WindowResult } from '../../lib/virtual/windowing'
 const FLUSH_MS = 100
-const ROW_PX = 56
 
 type StateSetter = <K extends keyof SearchPanelState>(key: K, value: SearchPanelState[K] | ((previous: SearchPanelState[K]) => SearchPanelState[K])) => void
 
@@ -120,7 +120,7 @@ export function useSearchController({ scope, resultsContainer, categoriesRef }: 
     const { kind, presets, extQuery } = latestRef.current
     const stopStream = api.searchStream(
       { query, kind: kind === 'any' ? undefined : kind, exts: resolveExtensions(presets, extQuery), scope: scope || undefined },
-      (hit) => {
+      (hit: SearchHit) => {
         if (generation !== generationRef.current) return
         arrivingRef.current.push(hit)
         scheduleFlush()
@@ -202,7 +202,7 @@ export function useSearchController({ scope, resultsContainer, categoriesRef }: 
     search.saveSnapshot(toSnapshot(scope, latestRef.current))
   }, [scope, state.query, state.kind, state.presets, state.extText, state.extQuery, state.sortKey, state.hits, state.running, state.ran, state.failure, state.truncated, state.elapsedMs, state.scanned, state.scrollTop])
 
-  const view = state.running ? state.hits : sortHits(state.hits, state.sortKey)
+  const view = viewFor(state)
   useEffect(() => {
     const restoredScrollTop = restoredScrollTopRef.current
     if (restoredScrollTop <= 0 || view.length === 0 || !resultsContainer.current) return
@@ -247,39 +247,11 @@ export function useSearchController({ scope, resultsContainer, categoriesRef }: 
     set('extQuery', '')
   }, [set])
 
-  const activeCategory: CategoryId = state.kind === 'dir'
-    ? 'dir'
-    : state.kind === 'file' && state.presets.length === 0
-      ? 'file'
-      : state.presets.length === 1 && ['document', 'image', 'video', 'audio', 'archive', 'code'].includes(state.presets[0] ?? '')
-        ? state.presets[0] as CategoryId
-        : 'all'
-  const activeFilters = [
-    ...state.presets.flatMap((id) => {
-      const preset = EXTENSION_PRESETS.find((candidate) => candidate.id === id)
-      return preset ? [preset.labelKey] : []
-    }),
-    ...parseExtensions(state.extQuery)
-  ].join(', ')
-  const sortLabelKey = SORT_KEYS.find(([key]) => key === state.sortKey)?.[1] ?? 'search.sort_relevance'
-  const status: SearchStatus = state.running
-    ? { key: /* i18n */ 'search.searching', values: { count: String(state.hits.length), dirs: String(state.scanned?.dirs ?? '') } }
-    : !state.ran
-      ? { key: '' }
-      : state.truncated
-        ? { key: /* i18n */ 'search.incomplete', values: { count: String(view.length) } }
-        : state.failure === 'stopped'
-          ? { key: /* i18n */ 'search.stopped', values: { count: String(view.length) } }
-          : state.failure === 'busy'
-            ? { key: /* i18n */ 'search.busy' }
-            : state.failure === 'network'
-              ? { key: /* i18n */ 'search.connection_lost', values: { count: String(view.length) } }
-              : state.failure
-                ? { key: /* i18n */ 'search.failed' }
-                : state.elapsedMs !== null
-                  ? { key: /* i18n */ 'search.found_in', values: { count: String(view.length), ms: String(state.elapsedMs) } }
-                  : { key: /* i18n */ 'search.found', values: { count: String(view.length) } }
-  const windowed = computeWindow({ scrollTop: state.scrollTop, viewportHeight: resultsContainer.current?.clientHeight ?? 480, rowHeight: ROW_PX, itemCount: view.length, overscan: 8 })
+  const activeCategory = activeCategoryFor(state)
+  const activeFilters = activeFiltersFor(state)
+  const sortLabelKey = sortLabelKeyFor(state)
+  const status: SearchStatus = statusFor(state, view)
+  const windowed = windowFor(state, view, resultsContainer.current?.clientHeight ?? 480)
 
   return {
     state,

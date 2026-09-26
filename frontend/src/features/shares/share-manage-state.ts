@@ -1,6 +1,4 @@
-import { useCallback, useRef } from 'react'
-import { useStore } from 'zustand'
-import { createStore, type StoreApi } from 'zustand/vanilla'
+import { usePatchState } from '../../lib/store/use-component-state'
 import type { ShareLinkInfo } from '../../lib/api/client'
 
 export interface ShareManageState {
@@ -62,13 +60,7 @@ const initialShareManageState: ShareManageState = {
 export type ShareManagePatch = Partial<ShareManageState> | ((state: ShareManageState) => Partial<ShareManageState>)
 
 export function useShareManageState(): [ShareManageState, (patch: ShareManagePatch) => void] {
-  const storeRef = useRef<StoreApi<ShareManageState> | null>(null)
-  if (storeRef.current === null) storeRef.current = createStore(() => initialShareManageState)
-  const state = useStore(storeRef.current)
-  const patch = useCallback((next: ShareManagePatch) => {
-    storeRef.current!.setState((current) => ({ ...current, ...(typeof next === 'function' ? next(current) : next) }))
-  }, [])
-  return [state, patch]
+  return usePatchState(initialShareManageState)
 }
 
 export interface UnlockShareState {
@@ -81,11 +73,5 @@ const initialUnlockShareState: UnlockShareState = { passphrase: '', unlocking: f
 export type UnlockSharePatch = Partial<UnlockShareState> | ((state: UnlockShareState) => Partial<UnlockShareState>)
 
 export function useUnlockShareState(): [UnlockShareState, (patch: UnlockSharePatch) => void] {
-  const storeRef = useRef<StoreApi<UnlockShareState> | null>(null)
-  if (storeRef.current === null) storeRef.current = createStore(() => initialUnlockShareState)
-  const state = useStore(storeRef.current)
-  const patch = useCallback((next: UnlockSharePatch) => {
-    storeRef.current!.setState((current) => ({ ...current, ...(typeof next === 'function' ? next(current) : next) }))
-  }, [])
-  return [state, patch]
+  return usePatchState(initialUnlockShareState)
 }

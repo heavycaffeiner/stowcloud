@@ -2,17 +2,13 @@ import { useQuery } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { useI18n } from '../../../lib/i18n/use-i18n'
 import { sessionQuery } from '../../../lib/query/session'
-import { Icon } from '../../../lib/ui/Icon'
 import { useDocumentTitle } from '../../use-document-title'
+import { PageTabs, type PageTabItem } from '../PageTabs'
 import { AdminPanels, SectionLoading } from './AdminPanels'
 import { useAdminTab, type AdminTab } from './use-admin-tab'
 import '../../../styles/app/routes/admin/admin.css.ts'
 
-interface AdminTabItem {
-  value: AdminTab
-  label: string
-  icon: string
-}
+type AdminTabItem = PageTabItem<AdminTab>
 
 function adminTabs(t: (key: string) => string): readonly AdminTabItem[] {
   return [
@@ -49,14 +45,7 @@ export function AdminPage() {
   const tabs = adminTabs(t)
   return (
     <AdminFrame>
-      <nav className="sc-settings-page-tabs" aria-label={t('admin.admin_sections')}>
-        {tabs.map((item) => (
-          <button key={item.value} type="button" className="sc-settings-page-tab" aria-current={item.value === tab ? 'page' : undefined} onClick={() => selectTab(item.value)}>
-            <Icon name={item.icon} />
-            {item.label}
-          </button>
-        ))}
-      </nav>
+      <PageTabs label={t('admin.admin_sections')} items={tabs} active={tab} onSelect={selectTab} />
       <AdminPanels
         tab={tab}
         errorMessage={t('common.could_not_load_list')}

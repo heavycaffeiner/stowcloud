@@ -13,8 +13,9 @@ import { cellPos, sectionRows, verticalTarget } from '../../lib/virtual/grid-sec
 import { indicesInRect, type Rect } from './marquee'
 import { isVideoFile } from '../preview/media-utils'
 import { Thumbnail } from '../preview/Thumbnail'
-import { useFileActivation } from './FileRow'
 import { MiddleEllipsis } from './MiddleEllipsis'
+import { useFileActivation } from './use-file-activation'
+import { useFileFocusPreservation } from './use-file-focus-preservation'
 import { Icon } from '../../lib/ui/Icon'
 import '../../styles/features/files/browse-ui.css.ts'
 
@@ -128,19 +129,7 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
   }, [folderWin.end, fileWin.end, columns, folderCount, entries.length, loadingMore, requestMore])
 
   const loadedNames = useMemo(() => entries.map((entry) => entry.name), [entries])
-  const focusSnapshot = useRef<{ names: string[]; focusedName: string | null }>({ names: [], focusedName: null })
-  const focusedName = focused === null ? null : entries[focused]?.name ?? null
-  useEffect(() => {
-    const namesNow = entries.map((entry) => entry.name)
-    const previous = focusSnapshot.current
-    const overlap = Math.min(previous.names.length, namesNow.length)
-    const reordered = overlap > 0 && previous.names.slice(0, overlap).some((name, index) => namesNow[index] !== name)
-    if (reordered && previous.focusedName) {
-      const next = namesNow.indexOf(previous.focusedName)
-      if (next >= 0 && next !== focused) selection.focus(next)
-    }
-    focusSnapshot.current = { names: namesNow, focusedName: reordered && previous.focusedName && namesNow.includes(previous.focusedName) ? previous.focusedName : focusedName }
-  }, [entries, focused, focusedName])
+  const focusedName = useFileFocusPreservation(entries, focused)
 
   const domId = (name: string) => `sc-grid-cell-${encodeURIComponent(name).replace(/%/g, '_')}`
   const scrollIntoView = (index: number) => {

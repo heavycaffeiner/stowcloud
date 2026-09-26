@@ -2,7 +2,8 @@ import { useComponentState } from '../../lib/store/use-component-state'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { ApiError, type AdminUser } from '../../lib/api/client'
 import { describeApiError } from '../../lib/api/error-text'
-import { formatDateNs, t } from '../../lib/i18n'
+import { formatDateNs } from '../../lib/i18n'
+import { useI18n } from '../../lib/i18n/use-i18n'
 import { adminUnlinkOidcMutation, adminUserOidcQuery } from '../../lib/query/admin'
 import { Button } from '../../lib/ui/Button'
 import { Dialog } from '../../lib/ui/Dialog'
@@ -12,6 +13,7 @@ import '../../styles/features/admin/admin.css.ts'
 interface UserOidcDialogProps { user: AdminUser | null; onClose: () => void }
 
 export function UserOidcDialog({ user, onClose }: UserOidcDialogProps) {
+  const { t } = useI18n()
   const query = useQuery(adminUserOidcQuery(user?.id ?? null))
   const unlink = useMutation(adminUnlinkOidcMutation())
   type OidcDialogState = { confirmUnlink: boolean; openFor: number | null }

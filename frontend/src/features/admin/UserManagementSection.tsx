@@ -1,24 +1,26 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { useMemo, useRef, useEffect } from 'react'
+import { useMemo } from 'react'
 import { useComponentState } from '../../lib/store/use-component-state'
 import { formatBytes, bytesToMb, BYTES_PER_MB } from '../../lib/format/bytes'
 import { scorePasswordStrength } from '../../lib/format/password-strength'
-import { t } from '../../lib/i18n'
+import { useI18n } from '../../lib/i18n/use-i18n'
 import { ApiError, type AdminUser } from '../../lib/api/client'
 import { describeApiError } from '../../lib/api/error-text'
 import { adminUserMutation, adminUsersQuery } from '../../lib/query/admin'
 import { Button } from '../../lib/ui/Button'
+import { Dialog } from '../../lib/ui/Dialog'
 import { TextField } from '../../lib/ui/TextField'
 import { VirtualList } from '../../lib/ui/VirtualList'
 import { GrantManagementSection } from './GrantManagementSection'
 import { UserOidcDialog } from './UserOidcDialog'
+import { UserManagementRow } from './UserManagementRow'
 import { Icon } from '../../lib/ui/Icon'
-import { ListItem } from '../../lib/ui/ListItem'
 import '../../styles/features/admin/admin.css.ts'
 
 const MIN_PASSWORD_LEN = 10
 
 export function UserManagementSection() {
+  const { t } = useI18n()
   const usersQuery = useQuery(adminUsersQuery())
   const users = usersQuery.data ?? []
   const activeAdminCount = useMemo(() => users.filter((user) => user.is_admin && !user.disabled).length, [users])
@@ -47,50 +49,10 @@ export function UserManagementSection() {
   const setGrantsTarget = (value: AdminUser | null): void => patchState({ grantsTarget: value })
   const setOidcTarget = (value: AdminUser | null): void => patchState({ oidcTarget: value })
   const togglingId = toggle.isPending && toggle.variables?.kind === 'disable' ? toggle.variables.id : null
-  const deleteDialogRef = useRef<HTMLElement | null>(null)
-  const grantsDialogRef = useRef<HTMLElement | null>(null)
-  const quotaDialogRef = useRef<HTMLElement | null>(null)
-  const passwordDialogRef = useRef<HTMLElement | null>(null)
-  const createDialogRef = useRef<HTMLElement | null>(null)
-  useEffect(() => {
-    const element = createDialogRef.current
-    if (!element) return
-    const close = () => { if (!create.isPending) setCreateOpen(false) }
-    element.addEventListener('close', close)
-    return () => element.removeEventListener('close', close)
-  }, [create.isPending])
-  useEffect(() => {
-    const element = deleteDialogRef.current
-    if (!element) return
-    const close = () => { if (!remove.isPending) setDeleteTarget(null) }
-    element.addEventListener('close', close)
-    return () => element.removeEventListener('close', close)
-  }, [remove.isPending])
-  useEffect(() => {
-    const element = grantsDialogRef.current
-    if (!element) return
-    const close = () => setGrantsTarget(null)
-    element.addEventListener('close', close)
-    return () => element.removeEventListener('close', close)
-  }, [])
-  useEffect(() => {
-    const element = quotaDialogRef.current
-    if (!element) return
-    const close = () => { if (!quota.isPending) setQuotaTarget(null) }
-    element.addEventListener('close', close)
-    return () => element.removeEventListener('close', close)
-  }, [quota.isPending])
-  useEffect(() => {
-    const element = passwordDialogRef.current
-    if (!element) return
-    const close = () => { if (!password.isPending) setPasswordTarget(null) }
-    element.addEventListener('close', close)
-    return () => element.removeEventListener('close', close)
-  }, [password.isPending])
 
-  const createError = createValidation ?? (create.error ? createErrorText(create.error) : null)
-  const deleteError = remove.error ? userDeleteError(remove.error) : null
-  const toggleError = toggle.error ? userToggleError(toggle.error) : null
+  const createError = createValidation ?? (create.error ? createErrorText(create.error, t) : null)
+  const deleteError = remove.error ? userDeleteError(remove.error, t) : null
+  const toggleError = toggle.error ? userToggleError(toggle.error, t) : null
   const quotaError = quotaValidation ?? (quota.error ? describeApiError(quota.error, t('common.could_not_save')) : null)
   const passwordError = passwordValidation ?? (password.error ? describeApiError(password.error, t('password.could_not_change_password_try')) : null)
 
@@ -131,34 +93,47 @@ export function UserManagementSection() {
           itemKey={(user) => user.id}
           estimateSize={80}
           pinnedKeys={[deleteTarget?.id, quotaTarget?.id, passwordTarget?.id, grantsTarget?.id, oidcTarget?.id, togglingId].filter((id): id is number => id != null)}
-          renderItem={(user) => {
-            const locked = lastActiveAdmin(user)
-            return <ListItem
-              headline={<><span className="sc-admin-row-name">{user.display_name || user.name}</span>{user.is_admin ? <span className="sc-admin-chip">{t('common.administrator')}</span> : null}{user.disabled ? <span className="sc-admin-chip sc-admin-chip-muted">{t('user.inactive')}</span> : null}</>}
-              supporting={user.name}
-              trailing={<><mdui-switch checked={!user.disabled} disabled={locked} title={locked ? t('user.last_active_administrator_cannot_deactivated') : undefined} aria-label={t('user.enable_account', { name: user.name })} onChange={() => toggle.mutate({ kind: 'disable', id: user.id, disabled: !user.disabled })} /><button className="sc-admin-chip sc-admin-chip-muted" type="button" onClick={() => { quota.reset(); setQuotaValidation(null); setQuotaInput(user.quota_bytes ? String(bytesToMb(Number(BigInt(user.quota_bytes)))) : ''); setQuotaTarget(user) }}>{quotaLabel(user)}</button><div className="sc-admin-row-actions"><Button variant="text" square ariaLabel={t('common.manage_folders_visible', { name: user.name })} onClick={() => setGrantsTarget(user)}><Icon name="account_tree" /></Button><Button variant="text" square ariaLabel={t('oidc.manage_single_sign_connection', { name: user.name })} onClick={() => setOidcTarget(user)}><Icon name="link" /></Button><Button variant="text" square ariaLabel={t('password.change_password')} onClick={() => { password.reset(); setPasswordValidation(null); setPasswordInput(''); setPasswordConfirm(''); setPasswordTarget(user) }}><Icon name="lock" /></Button><Button variant="text" danger square ariaLabel={t('common.delete_2', { name: user.name })} disabled={locked || togglingId === user.id} onClick={() => { remove.reset(); setDeleteTarget(user) }}><Icon name="delete" /></Button></div></>}
-            />
-          }}
+          renderItem={(user) => <UserManagementRow
+            user={user}
+            t={t}
+            locked={lastActiveAdmin(user)}
+            toggling={togglingId === user.id}
+            quotaLabel={quotaLabel(user, t)}
+            onToggle={() => toggle.mutate({ kind: 'disable', id: user.id, disabled: !user.disabled })}
+            onQuota={() => { quota.reset(); setQuotaValidation(null); setQuotaInput(user.quota_bytes ? String(bytesToMb(Number(BigInt(user.quota_bytes)))) : ''); setQuotaTarget(user) }}
+            onGrants={() => setGrantsTarget(user)}
+            onOidc={() => setOidcTarget(user)}
+            onPassword={() => { password.reset(); setPasswordValidation(null); setPasswordInput(''); setPasswordConfirm(''); setPasswordTarget(user) }}
+            onDelete={() => { remove.reset(); setDeleteTarget(user) }}
+          />}
         />
       )}
-      <mdui-dialog ref={createDialogRef} open={createOpen} headline={t('user.add_user')} close-on-esc close-on-overlay-click><form className="sc-admin-form" onSubmit={(event) => { event.preventDefault(); submitCreate() }}><TextField label={t('user.username')} value={newName} autoComplete="off" autoFocus onValueChange={setNewName} /><TextField type="password" label={t('common.password')} value={newPassword} autoComplete="new-password" onValueChange={setNewPassword} />{newPassword ? <div><mdui-linear-progress value={scorePasswordStrength(newPassword).ratio} aria-label={t('common.password_strength', { level: scorePasswordStrength(newPassword).label })} /><span className="sc-admin-section-field-hint">{scorePasswordStrength(newPassword).label}</span></div> : null}<p className="sc-admin-section-field-hint">{t('user.at_least_characters_turning_smb', { min: MIN_PASSWORD_LEN })}</p>{createError ? <p className="sc-admin-section-error" role="alert">{createError}</p> : null}</form><mdui-button slot="action" variant="text" disabled={create.isPending} onClick={() => setCreateOpen(false)}>{t('common.cancel')}</mdui-button><mdui-button slot="action" variant="filled" loading={create.isPending} onClick={submitCreate}>{t('common.add')}</mdui-button></mdui-dialog>
-      <mdui-dialog ref={deleteDialogRef} open={!!deleteTarget} headline={t('user.delete_user')} close-on-esc close-on-overlay-click><p>{t('user.permanently_deletes_account_including_its', { name: deleteTarget?.name ?? '' })}</p>{deleteError ? <p className="sc-admin-section-error" role="alert">{deleteError}</p> : null}<mdui-button slot="action" variant="text" disabled={remove.isPending} onClick={() => setDeleteTarget(null)}>{t('common.cancel')}</mdui-button><span slot="action" className="sc-danger"><mdui-button variant="filled" loading={remove.isPending} onClick={submitDelete}>{t('common.delete')}</mdui-button></span></mdui-dialog>
-      <mdui-dialog ref={grantsDialogRef} open={!!grantsTarget} headline={grantsTarget ? t('user.folders_visible', { name: grantsTarget.display_name || grantsTarget.name }) : t('common.folder_permissions')} close-on-esc close-on-overlay-click><>{grantsTarget ? <GrantManagementSection principal={{ kind: 'user', id: grantsTarget.id }} label={grantsTarget.display_name || grantsTarget.name} /> : null}</><mdui-button slot="action" variant="text" onClick={() => setGrantsTarget(null)}>{t('common.close')}</mdui-button></mdui-dialog>
+      <Dialog open={createOpen} title={t('user.add_user')} onClose={() => { if (!create.isPending) setCreateOpen(false) }} actions={<><Button variant="text" disabled={create.isPending} onClick={() => setCreateOpen(false)}>{t('common.cancel')}</Button><Button loading={create.isPending} onClick={submitCreate}>{t('common.add')}</Button></>}><form className="sc-admin-form" onSubmit={(event) => { event.preventDefault(); submitCreate() }}><TextField label={t('user.username')} value={newName} autoComplete="off" autoFocus onValueChange={setNewName} /><TextField type="password" label={t('common.password')} value={newPassword} autoComplete="new-password" onValueChange={setNewPassword} />{newPassword ? <div><mdui-linear-progress value={scorePasswordStrength(newPassword).ratio} aria-label={t('common.password_strength', { level: scorePasswordStrength(newPassword).label })} /><span className="sc-admin-section-field-hint">{scorePasswordStrength(newPassword).label}</span></div> : null}<p className="sc-admin-section-field-hint">{t('user.at_least_characters_turning_smb', { min: MIN_PASSWORD_LEN })}</p>{createError ? <p className="sc-admin-section-error" role="alert">{createError}</p> : null}</form></Dialog>
+      <Dialog open={deleteTarget !== null} title={t('user.delete_user')} onClose={() => { if (!remove.isPending) setDeleteTarget(null) }} actions={<><Button variant="text" disabled={remove.isPending} onClick={() => setDeleteTarget(null)}>{t('common.cancel')}</Button><Button danger loading={remove.isPending} onClick={submitDelete}>{t('common.delete')}</Button></>}><p>{t('user.permanently_deletes_account_including_its', { name: deleteTarget?.name ?? '' })}</p>{deleteError ? <p className="sc-admin-section-error" role="alert">{deleteError}</p> : null}</Dialog>
+      <Dialog open={grantsTarget !== null} title={grantsTarget ? t('user.folders_visible', { name: grantsTarget.display_name || grantsTarget.name }) : t('common.folder_permissions')} onClose={() => setGrantsTarget(null)} actions={<Button variant="text" onClick={() => setGrantsTarget(null)}>{t('common.close')}</Button>}>{grantsTarget ? <GrantManagementSection principal={{ kind: 'user', id: grantsTarget.id }} label={grantsTarget.display_name || grantsTarget.name} /> : null}</Dialog>
       <UserOidcDialog user={oidcTarget} onClose={() => setOidcTarget(null)} />
-      <mdui-dialog ref={quotaDialogRef} open={!!quotaTarget} headline={quotaTarget ? t('user.storage_quota', { name: quotaTarget.display_name || quotaTarget.name }) : t('user.storage_quota_2')} close-on-esc close-on-overlay-click><form className="sc-admin-form" onSubmit={(event) => { event.preventDefault(); submitQuota() }}><TextField label={t('user.storage_quota_mb')} placeholder={t('user.empty_means_unlimited')} value={quotaInput} autoFocus onValueChange={setQuotaInput} /><p className="sc-admin-section-field-hint">{quotaTarget ? t('user.currently_using', { used: formatBytes(Number(BigInt(quotaTarget.usage_bytes))) }) : ''}{t('user.empty_means_unlimited_uploads_copies')}</p>{quotaError ? <p className="sc-admin-section-error" role="alert">{quotaError}</p> : null}</form><mdui-button slot="action" variant="text" disabled={quota.isPending} onClick={() => setQuotaTarget(null)}>{t('common.cancel')}</mdui-button><mdui-button slot="action" variant="filled" loading={quota.isPending} onClick={submitQuota}>{t('common.save')}</mdui-button></mdui-dialog>
-      <mdui-dialog ref={passwordDialogRef} open={!!passwordTarget} headline={t('password.change_password')} close-on-esc close-on-overlay-click><form className="sc-admin-form" onSubmit={(event) => { event.preventDefault(); submitPassword() }}><TextField type="password" label={t('password.new_password')} value={passwordInput} autoComplete="new-password" autoFocus onValueChange={setPasswordInput} /><TextField type="password" label={t('password.confirm_new_password')} value={passwordConfirm} autoComplete="new-password" onValueChange={setPasswordConfirm} />{passwordInput ? <div><mdui-linear-progress value={scorePasswordStrength(passwordInput).ratio} aria-label={t('password.new_password_strength', { level: scorePasswordStrength(passwordInput).label })} /><span className="sc-admin-section-field-hint">{scorePasswordStrength(passwordInput).label}</span></div> : null}<p className="sc-admin-section-field-hint">{t('password.must_at_least_characters', { min: MIN_PASSWORD_LEN })}</p>{passwordError ? <p className="sc-admin-section-error" role="alert">{passwordError}</p> : null}</form><mdui-button slot="action" variant="text" disabled={password.isPending} onClick={() => setPasswordTarget(null)}>{t('common.cancel')}</mdui-button><mdui-button slot="action" variant="filled" loading={password.isPending} disabled={!passwordInput || passwordInput !== passwordConfirm} onClick={submitPassword}>{t('common.save')}</mdui-button></mdui-dialog>
+      <Dialog open={quotaTarget !== null} title={quotaTarget ? t('user.storage_quota', { name: quotaTarget.display_name || quotaTarget.name }) : t('user.storage_quota_2')} onClose={() => { if (!quota.isPending) setQuotaTarget(null) }} actions={<><Button variant="text" disabled={quota.isPending} onClick={() => setQuotaTarget(null)}>{t('common.cancel')}</Button><Button loading={quota.isPending} onClick={submitQuota}>{t('common.save')}</Button></>}><form className="sc-admin-form" onSubmit={(event) => { event.preventDefault(); submitQuota() }}><TextField label={t('user.storage_quota_mb')} placeholder={t('user.empty_means_unlimited')} value={quotaInput} autoFocus onValueChange={setQuotaInput} /><p className="sc-admin-section-field-hint">{quotaTarget ? t('user.currently_using', { used: formatBytes(Number(BigInt(quotaTarget.usage_bytes))) }) : ''}{t('user.empty_means_unlimited_uploads_copies')}</p>{quotaError ? <p className="sc-admin-section-error" role="alert">{quotaError}</p> : null}</form></Dialog>
+      <Dialog open={passwordTarget !== null} title={t('password.change_password')} onClose={() => { if (!password.isPending) setPasswordTarget(null) }} actions={<><Button variant="text" disabled={password.isPending} onClick={() => setPasswordTarget(null)}>{t('common.cancel')}</Button><Button loading={password.isPending} disabled={!passwordInput || passwordInput !== passwordConfirm} onClick={submitPassword}>{t('common.save')}</Button></>}>
+        <form className="sc-admin-form" onSubmit={(event) => { event.preventDefault(); submitPassword() }}>
+          <TextField type="password" label={t('password.new_password')} value={passwordInput} autoComplete="new-password" autoFocus onValueChange={setPasswordInput} />
+          <TextField type="password" label={t('password.confirm_new_password')} value={passwordConfirm} autoComplete="new-password" onValueChange={setPasswordConfirm} />
+          {passwordInput ? <div><mdui-linear-progress value={scorePasswordStrength(passwordInput).ratio} aria-label={t('password.new_password_strength', { level: scorePasswordStrength(passwordInput).label })} /><span className="sc-admin-section-field-hint">{scorePasswordStrength(passwordInput).label}</span></div> : null}
+          <p className="sc-admin-section-field-hint">{t('password.must_at_least_characters', { min: MIN_PASSWORD_LEN })}</p>
+          {passwordError ? <p className="sc-admin-section-error" role="alert">{passwordError}</p> : null}
+        </form>
+      </Dialog>
     </section>
   )
 }
 
-function quotaLabel(user: AdminUser): string {
+function quotaLabel(user: AdminUser, t: (key: string, params?: Record<string, string | number>) => string): string {
   const used = formatBytes(Number(BigInt(user.usage_bytes)))
   return user.quota_bytes ? `${used} / ${formatBytes(Number(BigInt(user.quota_bytes)))}` : t('user.used', { used })
 }
-function createErrorText(error: unknown): string {
+function createErrorText(error: unknown, t: (key: string, params?: Record<string, string | number>) => string): string {
   if (error instanceof ApiError && error.code === 'fs.conflict') return t('common.name_already_taken')
   if (error instanceof ApiError && error.code === 'auth.weak_password') return t('user.password_must_at_least_characters', { min: error.reasonNumber('min_length') ?? MIN_PASSWORD_LEN })
   return describeApiError(error, t('user.could_not_create_user'))
 }
-function userToggleError(error: unknown): string { return error instanceof ApiError && error.code === 'admin.last_admin' ? t('user.last_administrator_cannot_deactivated') : describeApiError(error, t('common.could_not_save_change')) }
-function userDeleteError(error: unknown): string { return error instanceof ApiError && error.code === 'admin.last_admin' ? t('user.last_administrator_cannot_deleted') : describeApiError(error, t('common.could_not_delete')) }
+function userToggleError(error: unknown, t: (key: string, params?: Record<string, string | number>) => string): string { return error instanceof ApiError && error.code === 'admin.last_admin' ? t('user.last_administrator_cannot_deactivated') : describeApiError(error, t('common.could_not_save_change')) }
+function userDeleteError(error: unknown, t: (key: string, params?: Record<string, string | number>) => string): string { return error instanceof ApiError && error.code === 'admin.last_admin' ? t('user.last_administrator_cannot_deleted') : describeApiError(error, t('common.could_not_delete')) }

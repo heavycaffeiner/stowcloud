@@ -1,6 +1,4 @@
-import { useCallback, useRef } from 'react'
-import { useStore } from 'zustand'
-import { createStore, type StoreApi } from 'zustand/vanilla'
+import { usePatchState } from '../../lib/store/use-component-state'
 import type { AdminShare, ShareBackend } from '../../lib/api/client'
 
 export interface BackendForm {
@@ -96,11 +94,5 @@ const initialShareManagementState: ShareManagementState = {
 export type ShareManagementPatch = Partial<ShareManagementState> | ((state: ShareManagementState) => Partial<ShareManagementState>)
 
 export function useShareManagementState(): readonly [ShareManagementState, (patch: ShareManagementPatch) => void] {
-  const storeRef = useRef<StoreApi<ShareManagementState> | null>(null)
-  if (storeRef.current === null) storeRef.current = createStore(() => initialShareManagementState)
-  const state = useStore(storeRef.current)
-  const patch = useCallback((next: ShareManagementPatch): void => {
-    storeRef.current!.setState((current) => typeof next === 'function' ? next(current) : next)
-  }, [])
-  return [state, patch]
+  return usePatchState(initialShareManagementState)
 }

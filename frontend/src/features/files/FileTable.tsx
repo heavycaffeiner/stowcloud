@@ -9,7 +9,9 @@ import { view } from '../../lib/store/view.store'
 import { useI18n } from '../../lib/i18n/use-i18n'
 import { computeScaleMapping, computeWindow, documentScrollTop, effectiveViewportHeight, rowIndexToScrollTop } from '../../lib/virtual/windowing'
 import { indicesInRect, type Rect } from './marquee'
-import { FileRow, useFileActivation } from './FileRow'
+import { FileRow } from './FileRow'
+import { useFileActivation } from './use-file-activation'
+import { useFileFocusPreservation } from './use-file-focus-preservation'
 import { FileRowSkeleton } from './FileRowSkeleton'
 import { Icon } from '../../lib/ui/Icon'
 import '../../styles/features/files/browse-ui.css.ts'
@@ -47,14 +49,13 @@ export const FileTable = forwardRef<FileViewHandle, FileTableProps>(function Fil
   const [measure, setMeasure] = useComponentState({ top: 0, scroll: 0, height: 0, width: 0 })
   const viewport = useRef<HTMLDivElement>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
-  const focusSnapshot = useRef<{ names: string[]; focusedName: string | null }>({ names: [], focusedName: null })
   const HEADER_HEIGHT = 40
   const mobileRows = compact && measure.width > 0 && measure.width < 600
   const rowHeight = mobileRows ? 64 : density === 'compact' ? 40 : density === 'spacious' ? 56 : 48
+  const focusedName = useFileFocusPreservation(entries, focused)
   const localScrollTop = measure.scroll
   const win = computeWindow({ scrollTop: localScrollTop, viewportHeight: Math.max(0, measure.height - HEADER_HEIGHT), rowHeight, itemCount: total, overscan: 8 })
   const loadedNames = useMemo(() => entries.map((entry) => entry.name), [entries])
-  const focusedName = focused === null ? null : entries[focused]?.name ?? null
   const domId = (name: string) => `sc-row-${encodeURIComponent(name).replace(/%/g, '_')}`
   const sortLabel = (key: SortKey) => key === 'name' ? t('browse.sort_by_name') : key === 'size' ? t('browse.sort_by_size') : key === 'mtime' ? t('browse.sort_by_modified') : t('browse.sort_by_kind')
   const chooseSort = (key: SortKey) => view.setSort(key, sortKey === key && sortOrder === 'asc' ? 'desc' : 'asc')
@@ -81,17 +82,6 @@ export const FileTable = forwardRef<FileViewHandle, FileTableProps>(function Fil
       resizeObserverRef.current = null
     }
   }, [entries, density, total, compact])
-  useEffect(() => {
-    const namesNow = entries.map((entry) => entry.name)
-    const previous = focusSnapshot.current
-    const overlap = Math.min(previous.names.length, namesNow.length)
-    const reordered = overlap > 0 && previous.names.slice(0, overlap).some((name, index) => namesNow[index] !== name)
-    if (reordered && previous.focusedName) {
-      const next = namesNow.indexOf(previous.focusedName)
-      if (next >= 0 && next !== focused) selection.focus(next)
-    }
-    focusSnapshot.current = { names: namesNow, focusedName: reordered && previous.focusedName && namesNow.includes(previous.focusedName) ? previous.focusedName : focusedName }
-  }, [entries, focused, focusedName])
   useEffect(() => {
     if (!loadingMore && win.end > entries.length) requestMore()
   }, [loadingMore, win.end, entries.length, requestMore])

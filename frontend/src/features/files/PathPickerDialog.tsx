@@ -1,7 +1,7 @@
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useComponentState } from '../../lib/store/use-component-state'
-import { t } from '../../lib/i18n'
+import { useI18n } from '../../lib/i18n/use-i18n'
 import { api } from '../../lib/api/client'
 import { Button } from '../../lib/ui/Button'
 import '../../styles/features/files/path-picker.css.ts'
@@ -24,6 +24,7 @@ function guessStart(start: string | undefined, mode: PathPickerDialogProps['mode
   return cut > 0 ? start.slice(0, cut) : ''
 }
 export function PathPickerDialog({ open, mode, start, token, onclose, onpick }: PathPickerDialogProps) {
+  const { t } = useI18n()
   const [state, setState] = useComponentState({ currentPath: '', initialGuess: '', selected: null as string | null, wasOpen: false })
   const { currentPath, initialGuess, selected, wasOpen } = state
   const body = useRef<HTMLDivElement>(null)
@@ -64,10 +65,7 @@ export function PathPickerDialog({ open, mode, start, token, onclose, onpick }: 
 
   const atRoot = listing.data?.path === ''
   const showError = Boolean(listing.error) && (currentPath !== initialGuess || initialGuess === '')
-  const hereText = useMemo(() => {
-    if (!listing.data) return ''
-    return atRoot ? t('picker.roots') : `${t('picker.here')}: ${listing.data.path}`
-  }, [listing.data, atRoot])
+  const hereText = !listing.data ? '' : atRoot ? t('picker.roots') : `${t('picker.here')}: ${listing.data.path}`
   const title = mode === 'folder' ? t('picker.title_folder') : t('picker.title_file')
   const canConfirm = mode === 'folder' ? Boolean(listing.data && !listing.isError && !atRoot) : selected !== null
 

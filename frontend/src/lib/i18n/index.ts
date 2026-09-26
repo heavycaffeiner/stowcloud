@@ -1,45 +1,11 @@
-// Korean by default plus English, with Intl for dates, relative time and
-// numbers.
-//
-// A call site names a key (`t('nav.files')`); the Korean and English text
-// both live in catalogues, and neither language is privileged in the code.
-// Using the Korean source string as its own key makes `t()` a substitution
-// table over one hard-coded language, so a Korean copy edit silently orphans
-// its English and the source language can never be swapped out.
-//
-// `frontend/tools/i18n-check.mjs` fails the build when a key used at a call site
-// is missing from either catalogue, when a catalogue holds a key nothing
-// uses, or when `{placeholder}` sets disagree between the two languages.
-import en from './en.json'
-import ko from './ko.json'
-import { localeStore, setLocale, type Locale } from './state'
+import { currentLocale, i18n } from './state'
 
-export type { Locale }
-export { setLocale }
+export type { Locale } from './state'
+export { setLocale } from './state'
 
-const CATALOGUE: Record<Locale, Record<string, string>> = { ko, en }
-
-export function currentLocale(): Locale {
-  return localeStore.getState().locale
-}
-
-/**
- * `key` is a dotted catalogue key. `params` substitutes `{name}` holes, which
- * must appear in every language's text for that key.
- *
- * The fallback chain is locale, then ko, then the key itself. For a literal
- * key the checker refuses a build where either fallback would be reached; the
- * last hop only ever fires for a key that reaches `t()` through a variable, a
- * server-sent `reason_key` this build has never heard of, say, which means
- * the client is older than the server and rendering the key is the honest
- * answer.
- */
+/** Resolves a flat catalog key, retaining the raw key for unknown server values. */
 export function t(key: string, params?: Record<string, string | number>): string {
-  let s = CATALOGUE[currentLocale()][key] ?? ko[key as keyof typeof ko] ?? key
-  if (params) {
-    for (const [k, v] of Object.entries(params)) s = s.replaceAll(`{${k}}`, String(v))
-  }
-  return s
+  return i18n.t(key, { ...params, nsSeparator: false })
 }
 
 /**

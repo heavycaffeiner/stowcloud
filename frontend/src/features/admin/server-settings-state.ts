@@ -1,6 +1,4 @@
-import { useCallback, useRef } from 'react'
-import { useStore } from 'zustand'
-import { createStore, type StoreApi } from 'zustand/vanilla'
+import { usePatchState } from '../../lib/store/use-component-state'
 import type { ApplyOutcome } from '../../lib/api/types'
 
 export type ServerSettingsGroup = 'smb' | 'search' | 'thumbnail' | 'archive' | 'network' | 'db' | 'homes' | 'watch' | 'rate' | 'oidc'
@@ -38,11 +36,5 @@ const initialServerSettingsState: ServerSettingsState = {
 }
 
 export function useServerSettingsState(): readonly [ServerSettingsState, (patch: ServerSettingsPatch) => void] {
-  const storeRef = useRef<StoreApi<ServerSettingsState> | null>(null)
-  if (storeRef.current === null) storeRef.current = createStore(() => initialServerSettingsState)
-  const state = useStore(storeRef.current)
-  const patch = useCallback((next: ServerSettingsPatch): void => {
-    storeRef.current!.setState((current) => typeof next === 'function' ? next(current) : next)
-  }, [])
-  return [state, patch]
+  return usePatchState(initialServerSettingsState)
 }

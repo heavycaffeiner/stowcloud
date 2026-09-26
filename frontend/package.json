@@ -58,9 +58,11 @@
     "@zip.js/zip.js": "^2.11.1",
     "client-zip": "^2.5.0",
     "codemirror": "^6.0.2",
+    "i18next": "^26.4.2",
     "mdui": "^2.1.5",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "react-i18next": "^17.0.15",
     "react-router-dom": "^7.18.3",
     "zustand": "^5.0.15"
   }
