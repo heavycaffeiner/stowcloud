@@ -14,8 +14,8 @@ function resultError(result: BatchItemResult, t: Translate): string {
 
 export function TrashOperation({ operation, onClose, t }: { operation: { kind: 'restore' | 'purge'; results: BatchItemResult[] }; onClose: () => void; t: Translate }) {
   return (
-    <section className="sc-trash__operation" role="status" aria-live="polite">
-      <div className="sc-trash__operation-heading">
+    <section className="sc-trash-operation" role="status" aria-live="polite">
+      <div className="sc-trash-operation-heading">
         <h2>{operation.kind === 'restore' ? t('trash.restore') : t('trash.purge')}</h2>
         <button type="button" onClick={onClose}>{t('common.close')}</button>
       </div>
@@ -35,5 +35,5 @@ interface TrashRowProps {
 }
 
 export function TrashRow({ entry, selected, disabled, onToggle, onRestore, onPurge, t }: TrashRowProps) {
-  return <><label className="sc-trash__checkbox"><input type="checkbox" checked={selected} disabled={disabled} aria-label={t('common.select', { name: entry.name })} onChange={onToggle} /></label><span className="sc-trash__name" title={entry.name}>{entry.name}</span>{!entry.is_dir ? <span className="sc-trash__meta">{formatBytes(entry.size)}</span> : null}<span className="sc-trash__meta">{t('trash.deleted', { date: formatDateNs(entry.deleted_at_ns) })}</span><div className="sc-trash__row-actions"><button type="button" className="sc-route-icon-button" disabled={disabled} aria-label={t('trash.restore')} onClick={onRestore}><Icon name="restore" /></button><button type="button" className="sc-route-icon-button sc-route-icon-button--danger" disabled={disabled} aria-label={t('trash.purge')} onClick={onPurge}><Icon name="delete" /></button></div></>
+  return <><label className="sc-trash-checkbox"><input type="checkbox" checked={selected} disabled={disabled} aria-label={t('common.select', { name: entry.name })} onChange={onToggle} /></label><span className="sc-trash-name" title={entry.name}>{entry.name}</span>{!entry.is_dir ? <span className="sc-trash-meta">{formatBytes(entry.size)}</span> : null}<span className="sc-trash-meta">{t('trash.deleted', { date: formatDateNs(entry.deleted_at_ns) })}</span><div className="sc-trash-row-actions"><button type="button" className="sc-route-icon-button" disabled={disabled} aria-label={t('trash.restore')} onClick={onRestore}><Icon name="restore" /></button><button type="button" className="sc-route-icon-button sc-route-icon-button--danger" disabled={disabled} aria-label={t('trash.purge')} onClick={onPurge}><Icon name="delete" /></button></div></>
 }

@@ -12,7 +12,7 @@ import { Icon } from '../../lib/ui/Icon'
 import { Switch } from '../../lib/ui/Switch'
 import { TextField } from '../../lib/ui/TextField'
 import { AdminCard } from './AdminCard'
-import './admin-sections.css'
+import '../../styles/features/admin/admin-sections.css.ts'
 
 export function UploadSettingsSection() {
   const settings = useQuery(adminSettingsQuery())
@@ -124,7 +124,7 @@ function UploadSettingsForm({ serverMin, serverDefault, cacheEnabled, cacheAvail
       </AdminCard>
 
       <AdminCard id="upload-cache-spool" title={t('upload_settings.cache_spool')} subtitle={t('upload_settings.cache_spool_hint')} icon={<Icon name="history" />}>
-        {cacheAvailable === false ? <p className="sc-admin-error" role="alert">{t('upload_settings.cache_spool_unavailable')}</p> : <div className="sc-storage__toggle-row"><Switch checked={cacheDraft === true} label={t('upload_settings.cache_spool_enable')} onChange={(checked) => { setCacheDraft(checked); setCacheTouched(true) }} />{cacheDraft === null ? <p className="sc-admin-note">{t('upload_settings.cache_spool_state_unknown')}</p> : null}</div>}
+        {cacheAvailable === false ? <p className="sc-admin-error" role="alert">{t('upload_settings.cache_spool_unavailable')}</p> : <div className="sc-storage-toggle-row"><Switch checked={cacheDraft === true} label={t('upload_settings.cache_spool_enable')} onChange={(checked) => { setCacheDraft(checked); setCacheTouched(true) }} />{cacheDraft === null ? <p className="sc-admin-note">{t('upload_settings.cache_spool_state_unknown')}</p> : null}</div>}
       </AdminCard>
 
       <AdminCard id="upload-browser-override" title={t('upload_settings.override_browser_only')} subtitle={t('upload_settings.unlike_server_wide_setting_above')} icon={<Icon name="settings" />}>

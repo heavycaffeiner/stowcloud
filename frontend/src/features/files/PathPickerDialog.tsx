@@ -4,7 +4,7 @@ import { useComponentState } from '../../lib/store/use-component-state'
 import { t } from '../../lib/i18n'
 import { api } from '../../lib/api/client'
 import { Button } from '../../lib/ui/Button'
-import './path-picker.css'
+import '../../styles/features/files/path-picker.css.ts'
 import { Icon } from '../../lib/ui/Icon'
 import { VirtualList } from '../../lib/ui/VirtualList'
 
@@ -83,7 +83,7 @@ export function PathPickerDialog({ open, mode, start, token, onclose, onpick }: 
   return (
     <mdui-dialog open={open} headline={title} close-on-esc={false} close-on-overlay-click={false}>
       <div className="sc-picker">
-        <div className="sc-picker__nav">
+        <div className="sc-picker-nav">
           <Button
             variant="text"
             disabled={!listing.data || listing.data.parent === ''}
@@ -91,16 +91,16 @@ export function PathPickerDialog({ open, mode, start, token, onclose, onpick }: 
           >
             {t('picker.up')}
           </Button>
-          <p className="sc-picker__here" aria-live="polite">{hereText}</p>
+          <p className="sc-picker-here" aria-live="polite">{hereText}</p>
         </div>
-        <div ref={body} className="sc-picker__body" tabIndex={-1}>
-          {listing.isPending ? <p className="sc-picker__status">{t('common.loading')}</p> : null}
-          {showError ? <p className="sc-picker__status" role="alert">{t('picker.could_not_list')}</p> : null}
+        <div ref={body} className="sc-picker-body" tabIndex={-1}>
+          {listing.isPending ? <p className="sc-picker-status">{t('common.loading')}</p> : null}
+          {showError ? <p className="sc-picker-status" role="alert">{t('picker.could_not_list')}</p> : null}
           {!listing.isPending && !showError && listing.data ? (
-            listing.data.entries.length === 0 ? <p className="sc-picker__status">{t('picker.empty')}</p> : (
+            listing.data.entries.length === 0 ? <p className="sc-picker-status">{t('picker.empty')}</p> : (
               <VirtualList
                 key={listing.data.path}
-                className="sc-picker__entries"
+                className="sc-picker-entries"
                 aria-label={atRoot ? t('picker.roots') : t('picker.here')}
                 items={listing.data.entries}
                 itemKey={(entry) => entry.path}
@@ -108,7 +108,7 @@ export function PathPickerDialog({ open, mode, start, token, onclose, onpick }: 
                 renderItem={(entry) => entry.is_dir ? (
                       <button
                         type="button"
-                        className="sc-picker__entry sc-focus-ring"
+                        className="sc-picker-entry sc-focus-ring"
                         aria-label={t('picker.open_folder', { name: entry.name })}
                         onClick={() => navigate(entry.path)}
                       >
@@ -118,7 +118,7 @@ export function PathPickerDialog({ open, mode, start, token, onclose, onpick }: 
                     ) : mode === 'file' ? (
                       <button
                         type="button"
-                        className={`sc-picker__entry sc-focus-ring${selected === entry.path ? ' sc-picker__entry--selected' : ''}`}
+                        className={`sc-picker-entry sc-focus-ring${selected === entry.path ? ' sc-picker-entry--selected' : ''}`}
                         aria-pressed={selected === entry.path}
                         onClick={() => setState((value) => ({ ...value, selected: entry.path }))}
                       >
@@ -126,7 +126,7 @@ export function PathPickerDialog({ open, mode, start, token, onclose, onpick }: 
                         <span>{entry.name}</span>
                       </button>
                     ) : (
-                      <span className="sc-picker__entry sc-picker__entry--disabled" aria-disabled="true">
+                      <span className="sc-picker-entry sc-picker-entry--disabled" aria-disabled="true">
                         <Icon name="draft" />
                         <span>{entry.name}</span>
                       </span>
@@ -134,7 +134,7 @@ export function PathPickerDialog({ open, mode, start, token, onclose, onpick }: 
               />
             )
           ) : null}
-          {listing.data?.truncated ? <p className="sc-picker__status" role="status">{t('picker.truncated')}</p> : null}
+          {listing.data?.truncated ? <p className="sc-picker-status" role="status">{t('picker.truncated')}</p> : null}
         </div>
       </div>
       <mdui-button slot="action" variant="text" onClick={onclose}>{t('common.cancel')}</mdui-button>

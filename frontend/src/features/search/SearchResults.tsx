@@ -34,29 +34,29 @@ function getHitIcon(hit: SearchHit): { name: string; color?: string } {
 
 export function SearchResults({ ran, running, view, rows, windowed, activeFilters, onOpen, onScroll, resultsRef, t }: SearchResultsProps) {
   return (
-    <div className="sc-search__results" ref={resultsRef} onScroll={(event) => onScroll(event.currentTarget.scrollTop)} tabIndex={-1}>
+    <div className="sc-search-results" ref={resultsRef} onScroll={(event) => onScroll(event.currentTarget.scrollTop)} tabIndex={-1}>
       {!ran ? (
-        <p className="sc-search__note">{t('search.type_and_press_enter')}</p>
+        <p className="sc-search-note">{t('search.type_and_press_enter')}</p>
       ) : view.length === 0 && !running ? (
-        <p className="sc-search__note">
-          {t('search.no_results')} {activeFilters ? <span className="sc-search__hint">{t('search.filtered_by', { filters: activeFilters })}</span> : null}
+        <p className="sc-search-note">
+          {t('search.no_results')} {activeFilters ? <span className="sc-search-hint">{t('search.filtered_by', { filters: activeFilters })}</span> : null}
         </p>
       ) : (
-        <div className="sc-search__spacer" style={{ height: windowed.totalHeight }}>
-          <ul className="sc-search__rows" style={{ transform: `translate3d(0, ${windowed.padTop}px, 0)` }}>
+        <div className="sc-search-spacer" style={{ height: windowed.totalHeight }}>
+          <ul className="sc-search-rows" style={{ transform: `translate3d(0, ${windowed.padTop}px, 0)` }}>
             {rows.map((hit) => {
               const hitIcon = getHitIcon(hit)
               return (
                 <li key={hit.path}>
-                  <button type="button" className="sc-search__row" onClick={() => onOpen(hit)}>
-                    <span className="sc-search__row-icon" style={{ color: hitIcon.color }}><Icon name={hitIcon.name} size={20} /></span>
-                    <span className="sc-search__text">
-                      <span className="sc-search__name">{hit.entry.name}</span>
-                      <span className="sc-search__folder">{parentOf(hit.path)}</span>
+                  <button type="button" className="sc-search-row" onClick={() => onOpen(hit)}>
+                    <span className="sc-search-row-icon" style={{ color: hitIcon.color }}><Icon name={hitIcon.name} size={20} /></span>
+                    <span className="sc-search-text">
+                      <span className="sc-search-name">{hit.entry.name}</span>
+                      <span className="sc-search-folder">{parentOf(hit.path)}</span>
                     </span>
-                    <span className="sc-search__cell">
-                      {hit.entry.kind !== 'dir' ? <span className="sc-search__size">{formatBytes(hit.entry.size)}</span> : null}
-                      <span className="sc-search__date">{formatModifiedDateNs(hit.entry.mtime_ns)}</span>
+                    <span className="sc-search-cell">
+                      {hit.entry.kind !== 'dir' ? <span className="sc-search-size">{formatBytes(hit.entry.size)}</span> : null}
+                      <span className="sc-search-date">{formatModifiedDateNs(hit.entry.mtime_ns)}</span>
                     </span>
                   </button>
                 </li>

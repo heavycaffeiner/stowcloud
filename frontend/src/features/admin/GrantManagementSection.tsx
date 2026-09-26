@@ -17,7 +17,7 @@ import { ProgressCircular } from '../../lib/ui/ProgressCircular'
 import { Select, type SelectOption } from '../../lib/ui/Select'
 import { TextField } from '../../lib/ui/TextField'
 import { VirtualList } from '../../lib/ui/VirtualList'
-import './admin.css'
+import '../../styles/features/admin/admin.css.ts'
 
 interface GrantManagementSectionProps {
   /** Who these grants belong to: a user id or a group id, never both. */
@@ -197,10 +197,10 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
   return (
     <>
       <section className="sc-admin-section sc-grants">
-        <p className="sc-admin-section__hint">
+        <p className="sc-admin-section-hint">
           <strong>{label}</strong>{t('grant.sees_only_folders_granted_here')}
         </p>
-        {loading ? <ProgressCircular /> : loadError ? <p className="sc-admin-section__error" role="alert">{loadError}</p> : (
+        {loading ? <ProgressCircular /> : loadError ? <p className="sc-admin-section-error" role="alert">{loadError}</p> : (
           <>
             {grants.length === 0 ? (
               <div className="sc-admin-empty">
@@ -222,25 +222,25 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
                       <ListItem
                         headline={
                           <>
-                            <span className="sc-admin-row__name">{grantName}</span>
+                            <span className="sc-admin-row-name">{grantName}</span>
                             {!grant.inherit ? <Chip variant="assist">{t('grant.path_only')}</Chip> : null}
                           </>
                         }
                         supporting={
-                          <span className="sc-admin-grant__supporting">
+                          <span className="sc-admin-grant-supporting">
                             <span>{shareName(grant.share)}{grant.subpath ? ` / ${grant.subpath}` : t('grant.root')}</span>
                             <span>
                               {allowSummary(grant)}
-                              {grant.deny.length > 0 ? <span className="sc-admin-grant__summary-deny"> - {t('grant.denied', { perms: grant.deny.map((permission) => permLabel[permission]).join(', ') })}</span> : null}
+                              {grant.deny.length > 0 ? <span className="sc-admin-grant-summary-deny"> - {t('grant.denied', { perms: grant.deny.map((permission) => permLabel[permission]).join(', ') })}</span> : null}
                             </span>
                             {overlap.length > 0 ? (
-                              <span className="sc-admin-grant__warning">
+                              <span className="sc-admin-grant-warning">
                                 <Icon name="warning" size={14} />
                                 {t('grant.appears_both_allow_deny_so', { perms: overlap.map((permission) => permLabel[permission]).join(', ') })}
                               </span>
                             ) : null}
                             {expanded ? (
-                              <span className="sc-admin-grant__perms">
+                              <span className="sc-admin-grant-perms">
                                 {grant.allow.map((permission) => <Chip key={`allow-${permission}`} variant="filter" selected>{permLabel[permission]}</Chip>)}
                                 {grant.deny.map((permission) => <Chip key={`deny-${permission}`} variant="input">{t('grant.denied', { perms: permLabel[permission] })}</Chip>)}
                               </span>
@@ -248,13 +248,13 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
                           </span>
                         }
                         trailing={
-                          <span className="sc-admin-row__actions">
+                          <span className="sc-admin-row-actions">
                             <IconButton
                               label={expanded ? t('grant.collapse_permission_details') : t('grant.expand_permission_details')}
                               expanded={expanded}
                               onClick={() => toggleExpanded(grant.id)}
                             >
-                              <span className={`sc-admin-grant__chevron${expanded ? ' sc-admin-grant__chevron--open' : ''}`}>
+                              <span className={`sc-admin-grant-chevron${expanded ? ' sc-admin-grant-chevron--open' : ''}`}>
                                 <Icon name="chevron-right" size={18} />
                               </span>
                             </IconButton>
@@ -292,11 +292,11 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
         <form className="sc-admin-form" onSubmit={(event) => { event.preventDefault(); submitAdd() }}>
           <Select label={t('common.share')} options={shareOptions} value={addShareId} required onValueChange={setAddShareId} />
           <TextField label={t('grant.subpath_leave_empty_whole_share')} placeholder={t('grant.e_g_vacation')} value={addSubpath} autoComplete="off" onValueChange={setAddSubpath} />
-          <p className="sc-admin-section__field-hint">{t('grant.left_empty_whole_share_appears')}</p>
+          <p className="sc-admin-section-field-hint">{t('grant.left_empty_whole_share_appears')}</p>
           <PermissionGrid allow={addAllow} deny={addDeny} setAllow={setAddAllow} setDeny={setAddDeny} permLabel={permLabel} t={t} />
           <Switch checked={addInherit} label={t('grant.apply_subfolders')} onChange={setAddInherit} />
           <TextField label={t('grant.display_name_optional')} placeholder={t('grant.defaults_folder_name')} value={addLabel} autoComplete="off" onValueChange={setAddLabel} />
-          {addError ? <p className="sc-admin-section__error" role="alert">{addError}</p> : null}
+          {addError ? <p className="sc-admin-section-error" role="alert">{addError}</p> : null}
         </form>
       </Dialog>
 
@@ -313,19 +313,19 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
       >
         {editTarget ? (
           <form className="sc-admin-form" onSubmit={(event) => { event.preventDefault(); submitEdit() }}>
-            <p className="sc-admin-section__field-hint">
+            <p className="sc-admin-section-field-hint">
               {shareName(editTarget.share)}{editTarget.subpath ? ` / ${editTarget.subpath}` : t('grant.root')}{t('grant.share_path_cannot_changed_grant')}
             </p>
             <PermissionGrid allow={editAllow} deny={editDeny} setAllow={setEditAllow} setDeny={setEditDeny} permLabel={permLabel} t={t} />
             {editAllow.size > 0 && [...editAllow].some((permission) => editDeny.has(permission)) ? (
-              <p className="sc-admin-grant__warning">
+              <p className="sc-admin-grant-warning">
                 <Icon name="warning" size={14} />
                 {t('grant.permission_listed_both_allow_deny')}
               </p>
             ) : null}
             <Switch checked={editInherit} label={t('grant.apply_subfolders')} onChange={setEditInherit} />
             <TextField label={t('grant.display_name_optional')} placeholder={t('grant.defaults_folder_name')} value={editLabel} autoComplete="off" onValueChange={setEditLabel} />
-            {editError ? <p className="sc-admin-section__error" role="alert">{editError}</p> : null}
+            {editError ? <p className="sc-admin-section-error" role="alert">{editError}</p> : null}
           </form>
         ) : null}
       </Dialog>
@@ -345,7 +345,7 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
           {t('grant.access_removed_immediately', { name: deleteTarget?.label || (deleteTarget ? shareName(deleteTarget.share) : '') })}{' '}
           {t('grant.will_not_see_folder_from', { principal: label })}
         </p>
-        {deleteError ? <p className="sc-admin-section__error" role="alert">{deleteError}</p> : null}
+        {deleteError ? <p className="sc-admin-section-error" role="alert">{deleteError}</p> : null}
       </Dialog>
     </>
   )

@@ -15,7 +15,7 @@ export function useBrowseMarquee({ mode, selectedNames, patch, tableRef, gridRef
   const dragFrame = useRef<number | null>(null)
   const marqueeActive = useRef(false)
   const controlSelector = 'button, input, a, [role="menuitem"], [role="menu"]'
-  const contentSelector = `.sc-row, .sc-file-grid__card, ${controlSelector}`
+  const contentSelector = `.sc-row, .sc-file-grid-card, ${controlSelector}`
 
   const updateMarquee = () => {
     const origin = dragOrigin.current

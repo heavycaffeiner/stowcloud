@@ -146,7 +146,7 @@ export function IconButton({
       </mdui-button-icon>
       {shown ? (
         <span
-          className="sc-icon-button__tip sc-icon-button__tip--placed"
+          className="sc-icon-button-tip sc-icon-button-tip--placed"
           role="tooltip"
           aria-hidden="true"
           style={{ left: Math.max(EDGE_MARGIN_PX, Math.min(position.left, window.innerWidth - EDGE_MARGIN_PX)), top: position.top }}

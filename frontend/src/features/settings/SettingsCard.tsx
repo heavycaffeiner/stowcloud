@@ -13,9 +13,9 @@ export function SettingsCard({ title, description, leading, trailing, headingLev
   const heading = `h${headingLevel}` as 'h2' | 'h3' | 'h4' | 'h5' | 'h6'
   return (
     <article className="sc-settings-card">
-      <div className="sc-settings-card__head">
+      <div className="sc-settings-card-head">
         {leading}
-        <div className="sc-settings-card__meta">
+        <div className="sc-settings-card-meta">
           {createElement(heading, null, title)}
           {description}
         </div>

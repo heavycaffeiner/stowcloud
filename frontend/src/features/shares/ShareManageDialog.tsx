@@ -10,7 +10,7 @@ import { TextField } from '../../lib/ui/TextField'
 import { VirtualList } from '../../lib/ui/VirtualList'
 import { formatDateNs } from '../../lib/i18n'
 import { useShareManageController, isDropLink } from './share-manage-controller'
-import './share-manage.css'
+import '../../styles/features/shares/share-manage.css.ts'
 
 export interface ShareManageDialogProps {
   open: boolean
@@ -32,31 +32,31 @@ export function ShareManageDialog({ open, path, targetName, targetIsDir, onClose
     <>
       <Dialog className="sc-share-dialog" open={dialogOpen} title={t('share.share_links', { name: targetName })} onClose={closeIssued} role="dialog" closedby="any" actions={<Button variant="text" onClick={closeIssued}>{t('common.close')}</Button>}>
         {justCreated ? (
-          <div className="sc-share__issued">
-            <p className="sc-share__issued-note">{t('share.link_shown_only_now_cannot')}</p>
-            <div className="sc-share__url-row">
-              <textarea className="sc-share__url" readOnly rows={3} aria-label={t('share.copy_link')} value={justCreated.url ?? ''} />
+          <div className="sc-share-issued">
+            <p className="sc-share-issued-note">{t('share.link_shown_only_now_cannot')}</p>
+            <div className="sc-share-url-row">
+              <textarea className="sc-share-url" readOnly rows={3} aria-label={t('share.copy_link')} value={justCreated.url ?? ''} />
               <IconButton label={t('share.copy_link')} onClick={() => void copyLink(justCreated.url ?? '', -1)}><Icon name="copy" /></IconButton>
             </div>
-            {copiedId === -1 ? <p className="sc-share__copy-feedback" role="status">{t('common.copied')}</p> : null}
-            {copyErrorId === -1 ? <p className="sc-share__copy-feedback sc-share__copy-feedback--error" role="alert">{t('share.copy_failed')}</p> : null}
+            {copiedId === -1 ? <p className="sc-share-copy-feedback" role="status">{t('common.copied')}</p> : null}
+            {copyErrorId === -1 ? <p className="sc-share-copy-feedback sc-share-copy-feedback--error" role="alert">{t('share.copy_failed')}</p> : null}
             <Button variant="text" onClick={acknowledgeIssued}>{t('share.acknowledge_link_saved')}</Button>
           </div>
         ) : null}
-        {sharesQuery.isPending ? <div className="sc-share__loading"><ProgressCircular /></div> : loadError ? <p className="sc-share__error" role="alert">{loadError}</p> : (
+        {sharesQuery.isPending ? <div className="sc-share-loading"><ProgressCircular /></div> : loadError ? <p className="sc-share-error" role="alert">{loadError}</p> : (
           <>
-            {links.length === 0 && !creatingOpen ? <p className="sc-share__empty">{t('share.no_share_links_item')}</p> : null}
+            {links.length === 0 && !creatingOpen ? <p className="sc-share-empty">{t('share.no_share_links_item')}</p> : null}
             <VirtualList
-              className="sc-share__list"
+              className="sc-share-list"
               items={links}
               itemKey={(link) => link.id}
               estimateSize={112}
-              itemProps={() => ({ className: 'sc-share__item' })}
+              itemProps={() => ({ className: 'sc-share-item' })}
               pinnedKeys={editingId === null ? [] : [editingId]}
               renderItem={(link) => (
                 editingId === link.id ? (
-                  <div className="sc-share__edit-form">
-                    <div className="sc-share__perm-row">
+                  <div className="sc-share-edit-form">
+                    <div className="sc-share-perm-row">
                       <Switch checked={editRead} label={t('share.read_view')} onChange={(value) => patch({ editRead: value })} />
                       <Switch checked={editDownload} label={t('common.download')} onChange={(value) => patch({ editDownload: value })} />
                     </div>
@@ -66,17 +66,17 @@ export function ShareManageDialog({ open, path, targetName, targetIsDir, onClose
                     <TextField value={editLabel} label={t('share.label_optional')} onValueChange={(value) => patch({ editLabel: value })} />
                     {link.has_password && !editClearPassword ? <Switch checked={editClearPassword} label={t('share.remove_password')} onChange={(value) => patch({ editClearPassword: value })} /> : null}
                     {!editClearPassword ? <TextField value={editNewPassword} type="password" label={t('share.new_password_optional')} onValueChange={(value) => patch({ editNewPassword: value })} /> : null}
-                    <div className="sc-share__edit-actions"><Button variant="text" onClick={() => patch({ editingId: null })}>{t('common.cancel')}</Button><Button disabled={updateMut.isPending || editExpiryBad} onClick={() => void submitEdit(link)}>{t('common.save')}</Button></div>
+                    <div className="sc-share-edit-actions"><Button variant="text" onClick={() => patch({ editingId: null })}>{t('common.cancel')}</Button><Button disabled={updateMut.isPending || editExpiryBad} onClick={() => void submitEdit(link)}>{t('common.save')}</Button></div>
                   </div>
                 ) : (
-                  <div className="sc-share__item-row">
+                  <div className="sc-share-item-row">
                     <Icon name={link.has_password ? 'lock' : 'link'} size={18} />
-                    <div className="sc-share__item-main">
-                      <span className="sc-share__item-label">{link.label || t('share.no_label')}</span>
-                      <span className="sc-share__item-meta">{isDropLink(link) ? t('share.kind_drop') : `${link.perms.read ? t('common.read') : ''}${link.perms.read && link.perms.download ? ' - ' : ''}${link.perms.download ? t('common.download') : ''} - ${t('share.used_times', { count: link.max_downloads ? `${link.downloads}/${link.max_downloads}` : link.downloads })}`} {link.expires_ns ? `- ${t('share.expires', { date: formatDateNs(link.expires_ns) })}` : `- ${t('share.never_expires')}`}</span>
-                      <span className="sc-share__item-meta">{t('share.created', { date: formatDateNs(link.created_ns) })}</span>
+                    <div className="sc-share-item-main">
+                      <span className="sc-share-item-label">{link.label || t('share.no_label')}</span>
+                      <span className="sc-share-item-meta">{isDropLink(link) ? t('share.kind_drop') : `${link.perms.read ? t('common.read') : ''}${link.perms.read && link.perms.download ? ' - ' : ''}${link.perms.download ? t('common.download') : ''} - ${t('share.used_times', { count: link.max_downloads ? `${link.downloads}/${link.max_downloads}` : link.downloads })}`} {link.expires_ns ? `- ${t('share.expires', { date: formatDateNs(link.expires_ns) })}` : `- ${t('share.never_expires')}`}</span>
+                      <span className="sc-share-item-meta">{t('share.created', { date: formatDateNs(link.created_ns) })}</span>
                     </div>
-                    <div className="sc-share__item-actions">
+                    <div className="sc-share-item-actions">
                       {link.url ? <IconButton label={copiedId === link.id ? t('share.copied') : t('share.copy_link')} onClick={() => void copyLink(link.url ?? '', link.id)}><Icon name={copiedId === link.id ? 'check' : 'copy'} /></IconButton> : null}
                       <IconButton label={t('share.edit')} onClick={() => openEdit(link)}><Icon name="rename" /></IconButton>
                       <IconButton label={t('share.revoke')} onClick={() => patch({ revokeTarget: link })}><Icon name="close" /></IconButton>
@@ -86,17 +86,17 @@ export function ShareManageDialog({ open, path, targetName, targetIsDir, onClose
               )}
             />
             {creatingOpen ? (
-              <div className="sc-share__create-form">
+              <div className="sc-share-create-form">
                 <h3>{t('share.create_new_link')}</h3>
                 <Select label={t('share.kind_label')} options={newKindOptions} value={newKind} onValueChange={(value) => patch({ newKind: value as 'download' | 'drop' })} />
-                {newKind === 'drop' ? <p className="sc-share__hint">{t('share.drop_hint')}</p> : <div className="sc-share__perm-row"><Switch checked={newRead} label={t('share.read_view')} onChange={(value) => patch({ newRead: value })} /><Switch checked={newDownload} label={t('common.download')} onChange={(value) => patch({ newDownload: value })} /></div>}
+                {newKind === 'drop' ? <p className="sc-share-hint">{t('share.drop_hint')}</p> : <div className="sc-share-perm-row"><Switch checked={newRead} label={t('share.read_view')} onChange={(value) => patch({ newRead: value })} /><Switch checked={newDownload} label={t('common.download')} onChange={(value) => patch({ newDownload: value })} /></div>}
                 <Select label={t('share.expiry')} options={newExpiryChoices} value={newExpiry} onValueChange={(value) => patch({ newExpiry: value })} />
                 {newExpiry === 'custom' ? <TextField type="date" label={t('share.expiry_date')} value={newExpiryDate} onValueChange={(value) => patch({ newExpiryDate: value })} error={newExpiryDate && newExpiryBad ? t('share.expiry_date_must_be_in_the_future') : null} /> : null}
                 <TextField value={newPassword} type="password" label={t('share.password_optional')} onValueChange={(value) => patch({ newPassword: value })} />
                 {newKind !== 'drop' ? <TextField value={newMaxDownloads} label={t('share.download_limit_optional')} placeholder={t('share.no_limit')} onValueChange={(value) => patch({ newMaxDownloads: value })} /> : null}
                 <TextField value={newLabel} label={t('share.label_optional')} placeholder={targetName} onValueChange={(value) => patch({ newLabel: value })} />
-                {createError ? <p className="sc-share__error" role="alert">{createError}</p> : null}
-                <div className="sc-share__edit-actions"><Button variant="text" onClick={() => patch({ creatingOpen: false })}>{t('common.cancel')}</Button><Button disabled={createMut.isPending || newExpiryBad || (newKind !== 'drop' && !newRead && !newDownload)} onClick={() => void submitCreate()}>{t('common.create')}</Button></div>
+                {createError ? <p className="sc-share-error" role="alert">{createError}</p> : null}
+                <div className="sc-share-edit-actions"><Button variant="text" onClick={() => patch({ creatingOpen: false })}>{t('common.cancel')}</Button><Button disabled={createMut.isPending || newExpiryBad || (newKind !== 'drop' && !newRead && !newDownload)} onClick={() => void submitCreate()}>{t('common.create')}</Button></div>
               </div>
             ) : <Button variant="tonal" onClick={openCreate} icon={<Icon name="add" size={18} />}>{t('share.create_new_link')}</Button>}
           </>

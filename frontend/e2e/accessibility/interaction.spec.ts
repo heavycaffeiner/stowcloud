@@ -48,7 +48,7 @@ test.describe('Interaction and UX Invariants E2E', () => {
     await expect(page.locator('.sc-shell-header')).toBeVisible();
 
     // Open New Folder dialog
-    const newBtn = page.locator('.sc-nav-drawer__new-btn, button[aria-label*="새로 만들기"], button[aria-label*="New"]').first();
+    const newBtn = page.locator('.sc-nav-drawer-new-btn, button[aria-label*="새로 만들기"], button[aria-label*="New"]').first();
     if (await newBtn.isVisible()) {
       await newBtn.click();
       const newFolderItem = page.locator('.sc-browse-new-menu button[role="menuitem"]').filter({ hasText: /새 폴더|New folder/i }).first();

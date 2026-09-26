@@ -52,7 +52,7 @@ test.describe('Core File Journey Smoke', () => {
     const newFolderDialog = page.locator('.sc-browse-dialog').filter({ hasText: /새 폴더|New Folder/i });
     if (!(await newFolderDialog.isVisible())) {
       // Open via right-click or FAB
-      const contentArea = page.locator('.sc-browse__table-body, .sc-browse__content').first();
+      const contentArea = page.locator('.sc-browse-table-body, .sc-browse-content').first();
       await contentArea.click({ button: 'right', position: { x: 50, y: 50 } });
       const newFolderMenuItem = page.locator('.sc-browse-new-menu button').filter({ hasText: /새 폴더|New folder/i });
       if (await newFolderMenuItem.isVisible()) {
@@ -79,7 +79,7 @@ test.describe('Core File Journey Smoke', () => {
       const filename = fixture.filePath.split('/').pop()!;
       const fileRow = page.locator('.sc-file-table [role="row"], .sc-file-grid [role="gridcell"]').filter({ hasText: filename }).first();
       await expect(fileRow).toBeVisible({ timeout: 10000 });
-      const uploadedFilename = fileRow.locator('.sc-filename, .sc-file-grid__name').first();
+      const uploadedFilename = fileRow.locator('.sc-filename, .sc-file-grid-name').first();
 
       // 6. Download and SHA-256 verification
       // Clear any prior selection

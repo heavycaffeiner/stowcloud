@@ -21,7 +21,7 @@ import { Select } from '../../lib/ui/Select'
 import { Switch } from '../../lib/ui/Switch'
 import { TextField } from '../../lib/ui/TextField'
 import { VirtualList } from '../../lib/ui/VirtualList'
-import './admin-sections.css'
+import '../../styles/features/admin/admin-sections.css.ts'
 
 
 const MIN_VAULT_SIZE = 16
@@ -445,13 +445,13 @@ export function ShareManagementSection() {
         {sharesQuery.isPending ? <ProgressCircular /> : sharesQuery.error ? <p className="sc-admin-error" role="alert">{describeApiError(sharesQuery.error, t('folder_share.could_not_load_share_list'))}</p> : (
           <>
             {shares.length === 0 ? (
-              <div className="sc-shares__empty">
+              <div className="sc-shares-empty">
                 <Icon name="folder-tree" size={28} />
                 <p>{t('folder_share.no_shares_registered_add_folder')}</p>
               </div>
             ) : (
               <VirtualList
-                className="sc-shares__list"
+                className="sc-shares-list"
                 items={shares}
                 itemKey={(share) => share.id}
                 estimateSize={112}
@@ -467,10 +467,10 @@ export function ShareManagementSection() {
                             <code data-testid="share-source">{share.source}</code>
                             {share.broken_reason ? <span className="sc-admin-error">{brokenText(t, share.broken_reason)}</span> : null}
                             {encryptionQuery.data ? (
-                              <span className="sc-shares__enc" data-testid="share-encryption">
+                              <span className="sc-shares-enc" data-testid="share-encryption">
                                 {encryption ? (
                                   <>
-                                    <span className="sc-shares__enc-note"><Icon name="lock" size={14} />{t('encryption.encrypted_note')}</span>
+                                    <span className="sc-shares-enc-note"><Icon name="lock" size={14} />{t('encryption.encrypted_note')}</span>
                                     <Button variant="text" ariaLabel={t('encryption.disable_title', { name: share.name })} onClick={() => openEncryptionDisable(share)}>{t('encryption.disable')}</Button>
                                   </>
                                 ) : share.empty ? (
@@ -479,9 +479,9 @@ export function ShareManagementSection() {
                               </span>
                             ) : null}
                             {encryption ? (
-                              <span className="sc-shares__enc-salt-row">
-                                <span className="sc-shares__enc-salt-label">{t('encryption.salt_label')}</span>
-                                <code className="sc-shares__enc-salt" data-testid="share-encryption-salt">{encryption.salt}</code>
+                              <span className="sc-shares-enc-salt-row">
+                                <span className="sc-shares-enc-salt-label">{t('encryption.salt_label')}</span>
+                                <code className="sc-shares-enc-salt" data-testid="share-encryption-salt">{encryption.salt}</code>
                                 <Button variant="text" ariaLabel={t('encryption.copy_salt', { name: share.name })} onClick={() => void copySalt(encryption.salt, share.name)}>{t('common.copy')}</Button>
                               </span>
                             ) : null}
@@ -489,8 +489,8 @@ export function ShareManagementSection() {
                         )}
                         trailing={(
                           <>
-                            <span className="sc-shares__trash" title={trashTogglingId === share.id ? t('folder_share.applying') : undefined}>
-                              <span className="sc-shares__trash-label">{t('folder_share.use_trash')}</span>
+                            <span className="sc-shares-trash" title={trashTogglingId === share.id ? t('folder_share.applying') : undefined}>
+                              <span className="sc-shares-trash-label">{t('folder_share.use_trash')}</span>
                               <Switch checked={share.trash_enabled} disabled={trashTogglingId === share.id} label={t('folder_share.trash', { name: share.name })} showLabel={false} onChange={(enabled) => void toggleTrash(share, enabled)} />
                             </span>
                             {share.broken_reason ? <Button variant="tonal" loading={retryingId === share.id} onClick={() => void retry(share)}>{t('folder_share.retry')}</Button> : null}
@@ -507,7 +507,7 @@ export function ShareManagementSection() {
             {retryError ? <p className="sc-admin-error" role="alert">{retryError}</p> : null}
             {smbNote ? <p className="sc-admin-note" role="status">{smbNote}</p> : null}
             {encryptionLoadError ? <p className="sc-admin-error" role="alert">{encryptionLoadError}</p> : null}
-            <p className="sc-shares__enc-announce" aria-live="polite">{announcement}</p>
+            <p className="sc-shares-enc-announce" aria-live="polite">{announcement}</p>
             <Button variant="tonal" icon={<Icon name="add" />} onClick={openAdd}>{t('common.add_folder')}</Button>
           </>
         )}

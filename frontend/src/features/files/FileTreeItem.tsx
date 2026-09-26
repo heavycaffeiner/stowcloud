@@ -25,7 +25,7 @@ export function FileTreeItem({ path, name, depth, active, ancestor, expanded, ta
     >
       <button
         type="button"
-        className="sc-tree-row__twisty"
+        className="sc-tree-row-twisty"
         data-tree-toggle
         tabIndex={-1}
         aria-expanded={expanded}
@@ -35,20 +35,20 @@ export function FileTreeItem({ path, name, depth, active, ancestor, expanded, ta
           onToggle(path)
         }}
       >
-        <span className={`sc-tree-row__twisty-icon${expanded ? ' sc-tree-row__twisty-icon--expanded' : ''}`} aria-hidden="true">
+        <span className={`sc-tree-row-twisty-icon${expanded ? ' sc-tree-row-twisty-icon--expanded' : ''}`} aria-hidden="true">
           <Icon name="chevron_right" size={16} />
         </span>
       </button>
       <button
         ref={label}
         type="button"
-        className="sc-tree-row__label"
+        className="sc-tree-row-label"
         data-tree-label
         tabIndex={tabIndex}
         onClick={() => onNavigate(path)}
       >
         <Icon name="folder" />
-        <span className="sc-tree-row__name">{name}</span>
+        <span className="sc-tree-row-name">{name}</span>
       </button>
     </div>
   )

@@ -29,9 +29,9 @@ export function SessionsSection() {
 
   return (
     <div className="sc-sessions">
-      {list.isPending ? <p>{t('common.loading')}</p> : list.isError ? <p className="sc-sessions__error">{t('common.could_not_load_list')}</p> : (
+      {list.isPending ? <p>{t('common.loading')}</p> : list.isError ? <p className="sc-sessions-error">{t('common.could_not_load_list')}</p> : (
         <VirtualList
-          className="sc-sessions__list"
+          className="sc-sessions-list"
           items={list.data ?? []}
           itemKey={(session) => session.id_hash}
           estimateSize={88}
@@ -39,7 +39,7 @@ export function SessionsSection() {
             <>
               <div>
                 <strong>{session.ip_first ?? t('session.unknown_location')}</strong>
-                {session.current ? <span className="sc-sessions__badge">{t('session.current_session')}</span> : null}
+                {session.current ? <span className="sc-sessions-badge">{t('session.current_session')}</span> : null}
                 <p title={session.ua_first ?? undefined}>{session.ua_display ?? t('session.unknown_device')} - {t('session.last_active', { date: formatDateNs(session.last_seen_ns) })}</p>
               </div>
               {!session.current ? <Button variant="text" onClick={() => setRevokeTarget(session)}>{t('session.sign_out_session')}</Button> : null}

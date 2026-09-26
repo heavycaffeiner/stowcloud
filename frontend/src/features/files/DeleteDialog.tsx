@@ -40,7 +40,7 @@ export function DeleteDialog({
         {trashEnabled ? t('delete.they_moved_trash') : t('delete.folder_does_not_use_trash')}
       </p>
       {externalShare ? (
-        <p className="sc-delete-dialog__external-warning">
+        <p className="sc-delete-dialog-external-warning">
           <Icon name="warning" size={16} />
           <span>
             {t('common.shared_with_other_services')}: {t('delete.another_service_may_reading_folder')}

@@ -38,7 +38,7 @@ test.describe('File Download E2E Journeys', () => {
     await page.goto(`${workerApp.baseURL}/b/docs`, { waitUntil: 'domcontentloaded' });
     await expect(page.locator('.sc-shell-header')).toBeVisible();
 
-    const fileItem = page.locator('.sc-filename, .sc-file-grid__name').filter({ hasText: fileName }).first();
+    const fileItem = page.locator('.sc-filename, .sc-file-grid-name').filter({ hasText: fileName }).first();
     await expect(fileItem).toBeVisible({ timeout: 10000 });
 
     // Right-click file to open context menu and download
@@ -65,7 +65,7 @@ test.describe('File Download E2E Journeys', () => {
     await expect(page.locator('.sc-shell-header')).toBeVisible();
 
     // 'sub' is a directory in workerApp.shareDir
-    const folderItem = page.locator('.sc-filename, .sc-file-grid__name').filter({ hasText: 'sub' }).first();
+    const folderItem = page.locator('.sc-filename, .sc-file-grid-name').filter({ hasText: 'sub' }).first();
     await expect(folderItem).toBeVisible({ timeout: 10000 });
 
     await folderItem.click({ button: 'right' });

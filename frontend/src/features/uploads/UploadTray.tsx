@@ -68,34 +68,34 @@ export function UploadTray() {
 
   return (
     <>
-      <div ref={politeRef} className="sc-upload-tray__sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
-      <div ref={assertiveRef} className="sc-upload-tray__sr-only" role="alert" aria-live="assertive" aria-atomic="true"></div>
+      <div ref={politeRef} className="sc-upload-tray-sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div ref={assertiveRef} className="sc-upload-tray-sr-only" role="alert" aria-live="assertive" aria-atomic="true"></div>
       {items.length > 0 ? (
         <section className={open ? 'sc-upload-tray' : 'sc-upload-tray sc-upload-tray--collapsed'} aria-label={t('common.upload')}>
-          <header className="sc-upload-tray__header">
-            <button className="sc-upload-tray__title" type="button" onClick={() => uploads.setOpen(!open)} aria-expanded={open}>
+          <header className="sc-upload-tray-header">
+            <button className="sc-upload-tray-title" type="button" onClick={() => uploads.setOpen(!open)} aria-expanded={open}>
               <Icon name="upload_file" />
               <span>{t('common.upload')}</span>
               <span>{activeCount > 0 ? `(${activeCount})` : failedCount > 0 ? t('upload.failed_count', { count: failedCount }) : t('common.done')}</span>
             </button>
-            <div className="sc-upload-tray__actions">
+            <div className="sc-upload-tray-actions">
               <IconButton label={t('common.clear_finished_items')} onClick={() => uploads.clearFinished()}><Icon name="check" /></IconButton>
               <IconButton label={open ? t('common.collapse') : t('common.expand')} expanded={open} onClick={() => uploads.setOpen(!open)}><Icon name={open ? 'chevron_right' : 'chevron_left'} /></IconButton>
             </div>
           </header>
           {open ? (
-            <div className="sc-upload-tray__scroll">
+            <div className="sc-upload-tray-scroll">
               <VirtualList
-                className="sc-upload-tray__list"
+                className="sc-upload-tray-list"
                 items={items}
                 itemKey={(item) => item.id}
                 estimateSize={120}
-                itemProps={() => ({ className: 'sc-upload-tray__item' })}
+                itemProps={() => ({ className: 'sc-upload-tray-item' })}
                 renderItem={(item) => (
                 <>
-                  <div className="sc-upload-tray__row">
-                    <span className="sc-filename sc-upload-tray__name">{item.name}</span>
-                    <span className="sc-upload-tray__meta">
+                  <div className="sc-upload-tray-row">
+                    <span className="sc-filename sc-upload-tray-name">{item.name}</span>
+                    <span className="sc-upload-tray-meta">
                       {formatBytes(item.sent)} / {formatBytes(item.total)}
                       {item.status === 'uploading' ? ` - ${formatRate(item.rate)} - ${formatEta(item.etaSec)}` : ''}
                       {item.status === 'canceled' ? ` - ${t('upload.canceled')}` : ''}
@@ -103,8 +103,8 @@ export function UploadTray() {
                     </span>
                   </div>
                   <mdui-linear-progress value={item.total > 0 ? Math.min(Math.max(item.sent / item.total, 0), 1) : 0} aria-label={item.name}></mdui-linear-progress>
-                  {item.message ? <p className="sc-upload-tray__message">{t(item.message, item.messageParams)}</p> : null}
-                  <div className="sc-upload-tray__controls">
+                  {item.message ? <p className="sc-upload-tray-message">{t(item.message, item.messageParams)}</p> : null}
+                  <div className="sc-upload-tray-controls">
                     {item.status === 'uploading' ? <IconButton label={t('upload.pause')} onClick={() => pauseUpload(item.id)}><Icon name="pause" /></IconButton> : null}
                     {item.status === 'paused' ? <IconButton label={t('upload.resume')} onClick={() => resumeUpload(item.id)}><Icon name="play_arrow" /></IconButton> : null}
                     {item.status === 'done' || item.status === 'canceled' || item.status === 'error' ? (

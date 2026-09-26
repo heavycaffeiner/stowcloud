@@ -133,7 +133,7 @@ export function TextField({
         onKeyDown={onKeyDown}
       ></mdui-text-field>
       {error ? (
-        <p id={errorId} className="sc-field__error" role="alert">
+        <p id={errorId} className="sc-field-error" role="alert">
           {error}
         </p>
       ) : null}

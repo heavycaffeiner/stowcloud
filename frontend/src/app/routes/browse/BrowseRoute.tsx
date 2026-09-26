@@ -21,8 +21,8 @@ import { useBrowseMenus } from './use-browse-menus'
 import { useBrowsePathSelection, useBrowseRouteFocus } from './use-browse-route-effects'
 import { BrowseSelectionBar } from './BrowseSelectionBar'
 import { BrowseToolbar, BrowseContent, BrowseDialogs } from './BrowseView'
-import '../browse.css'
-import '../../../features/files/browse-ui.css'
+import '../../../styles/app/routes/browse.css.ts'
+import '../../../styles/features/files/browse-ui.css.ts'
 
 export function BrowseRoute() {
   const params = useParams()

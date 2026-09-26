@@ -149,11 +149,11 @@ export function Thumbnail({ entry, dim, fallback, iconSize }: ThumbnailProps) {
     setState({ url: null })
   }
 
-  if (!url) return <span className="sc-thumb__icon"><Icon name={fallback} size={iconSize} /></span>
+  if (!url) return <span className="sc-thumb-icon"><Icon name={fallback} size={iconSize} /></span>
   return (
-    <div className="sc-thumb__wrap">
-      <img className="sc-thumb__img" src={url} alt="" loading="lazy" decoding="async" onError={onError} />
-      {isVid ? <span className="sc-thumb__badge" aria-hidden="true"><Icon name="video" /></span> : null}
+    <div className="sc-thumb-wrap">
+      <img className="sc-thumb-img" src={url} alt="" loading="lazy" decoding="async" onError={onError} />
+      {isVid ? <span className="sc-thumb-badge" aria-hidden="true"><Icon name="video" /></span> : null}
     </div>
   )
 }

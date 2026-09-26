@@ -4,7 +4,9 @@ import { RouterProvider } from 'react-router-dom'
 import { RootProviders } from './app/RootProviders'
 import { router } from './app/router'
 import './lib/ui/mdui'
-import './react-app.css'
+import 'mdui/mdui.css'
+import '@fontsource-variable/google-sans-flex/opsz.css'
+import './styles/global/base.css.ts'
 
 const root = document.getElementById('root')
 if (!root) throw new Error('Missing #root application mount')

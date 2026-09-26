@@ -71,7 +71,7 @@ async function checkGroup(page, selector, axis, edge = 'center') {
 }
 
 async function checkNewCenter(page) {
-  const offsets = await page.locator('.sc-nav-drawer__new-btn').evaluate(button => {
+  const offsets = await page.locator('.sc-nav-drawer-new-btn').evaluate(button => {
     const rect = button.getBoundingClientRect()
     const parts = [...button.children].map(el => el.getBoundingClientRect())
     const left = Math.min(...parts.map(r => r.left))
@@ -85,8 +85,8 @@ async function checkNewCenter(page) {
 
 async function checkDateColumn(page) {
   const geometry = await page.evaluate(() => {
-    const header = document.querySelector('.sc-file-table__header-cell--mtime').getBoundingClientRect()
-    const cells = [...document.querySelectorAll('.sc-row__cell--mtime')].map(el => {
+    const header = document.querySelector('.sc-file-table-header-cell--mtime').getBoundingClientRect()
+    const cells = [...document.querySelectorAll('.sc-row-cell--mtime')].map(el => {
       const rect = el.getBoundingClientRect()
       return { x: rect.x, width: rect.width, text: el.textContent, clipped: el.scrollWidth > el.clientWidth }
     })
@@ -119,21 +119,21 @@ async function dragBetween(page, selector) {
 
 async function checkDragSelection(page) {
   await dragBetween(page, '.sc-row')
-  await page.locator('.sc-browse__selection-close-btn').click()
-  await page.locator('.sc-browse__selection-bar').waitFor({ state: 'hidden' })
+  await page.locator('.sc-browse-selection-close-btn').click()
+  await page.locator('.sc-browse-selection-bar').waitFor({ state: 'hidden' })
 
-  const viewToggle = page.locator('.sc-browse__toolbar-actions > .sc-browse__action-btn').nth(1)
+  const viewToggle = page.locator('.sc-browse-toolbar-actions > .sc-browse-action-btn').nth(1)
   await viewToggle.click()
-  await page.locator('.sc-file-grid__card').first().waitFor()
-  await dragBetween(page, '.sc-file-grid__card')
-  const backgrounds = await page.locator('.sc-file-grid__card[aria-selected="true"]').evaluateAll(cards => cards.map(card => getComputedStyle(card).backgroundColor))
+  await page.locator('.sc-file-grid-card').first().waitFor()
+  await dragBetween(page, '.sc-file-grid-card')
+  const backgrounds = await page.locator('.sc-file-grid-card[aria-selected="true"]').evaluateAll(cards => cards.map(card => getComputedStyle(card).backgroundColor))
   assert.ok(backgrounds.length >= 2, 'Grid drag selection must include multiple cards')
   assert.equal(new Set(backgrounds).size, 1, 'Hovered selected grid card must retain its selected background')
   checks += 1
-  await page.locator('.sc-browse__selection-close-btn').click()
-  await page.locator('.sc-browse__selection-bar').waitFor({ state: 'hidden' })
+  await page.locator('.sc-browse-selection-close-btn').click()
+  await page.locator('.sc-browse-selection-bar').waitFor({ state: 'hidden' })
   await viewToggle.click()
-  await page.locator('.sc-row__cell--mtime').first().waitFor()
+  await page.locator('.sc-row-cell--mtime').first().waitFor()
 }
 
 try {
@@ -149,15 +149,15 @@ try {
     }, locale)
     const page = await context.newPage()
     await page.goto(`${base}b/home`)
-    await page.locator('.sc-row__cell--mtime').first().waitFor()
+    await page.locator('.sc-row-cell--mtime').first().waitFor()
     await checkButtons(page)
     await checkNewCenter(page)
-    await checkGroup(page, '.sc-browse__toolbar-actions', 'y')
-    await checkGroup(page, '.sc-nav-drawer__list', 'x', 'start')
+    await checkGroup(page, '.sc-browse-toolbar-actions', 'y')
+    await checkGroup(page, '.sc-nav-drawer-list', 'x', 'start')
     widths.push(await checkDateColumn(page))
     await checkDragSelection(page)
 
-    await page.locator('.sc-nav-drawer__new-btn').focus()
+    await page.locator('.sc-nav-drawer-new-btn').focus()
     await page.keyboard.press('Enter')
     await page.locator('.sc-browse-new-menu button').first().waitFor()
     await checkButtons(page, '.sc-browse-new-menu')
@@ -169,28 +169,28 @@ try {
     await page.keyboard.press('Escape')
     await page.locator('mdui-dialog[open]').waitFor({ state: 'hidden' })
 
-    await page.locator('.sc-shell-header__menu-btn').click()
+    await page.locator('.sc-shell-header-menu-btn').click()
     await page.locator('.sc-nav-drawer--collapsed').waitFor()
     await checkNewCenter(page)
-    await checkGroup(page, '.sc-nav-drawer__body', 'x')
+    await checkGroup(page, '.sc-nav-drawer-body', 'x')
     await checkButtons(page)
-    await page.locator('.sc-shell-header__menu-btn').click()
+    await page.locator('.sc-shell-header-menu-btn').click()
 
     await page.goto(`${base}settings`)
     await page.locator('.sc-settings-page').waitFor()
     await checkButtons(page)
-    await checkGroup(page, '.sc-settings-page__tabs', 'y')
-    for (const tab of await page.locator('.sc-settings-page__tab').all()) {
+    await checkGroup(page, '.sc-settings-page-tabs', 'y')
+    for (const tab of await page.locator('.sc-settings-page-tab').all()) {
       await tab.click()
       await checkButtons(page)
     }
 
     await page.goto(`${base}b/home`)
-    await page.locator('.sc-row__cell--mtime').first().waitFor()
-    await page.locator('.sc-shell-header__search').click()
-    await page.locator('.sc-search__category-pill').first().waitFor()
+    await page.locator('.sc-row-cell--mtime').first().waitFor()
+    await page.locator('.sc-shell-header-search').click()
+    await page.locator('.sc-search-category-pill').first().waitFor()
     await checkButtons(page, '.sc-search')
-    await checkGroup(page, '.sc-search__categories', 'y')
+    await checkGroup(page, '.sc-search-categories', 'y')
     await page.keyboard.press('Escape')
 
     for (const width of [800, 390]) {
@@ -198,11 +198,11 @@ try {
       await page.locator('.sc-app-shell--compact').waitFor()
       await checkButtons(page)
       await checkGroup(page, '.sc-nav-bar', 'y')
-      await page.locator('.sc-nav-bar__item[aria-haspopup="dialog"]').click()
+      await page.locator('.sc-nav-bar-item[aria-haspopup="dialog"]').click()
       await page.locator('.sc-nav-drawer--overlay').waitFor()
       await checkNewCenter(page)
       await checkButtons(page, '.sc-nav-drawer--overlay')
-      await checkGroup(page, '.sc-nav-drawer__list', 'x', 'start')
+      await checkGroup(page, '.sc-nav-drawer-list', 'x', 'start')
       await page.keyboard.press('Escape')
     }
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'Compact layout must not overflow horizontally')

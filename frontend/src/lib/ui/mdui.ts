@@ -1,4 +1,4 @@
-import './primitives.css'
+import '../../styles/ui/primitives.css.ts'
 import 'mdui/components/avatar.js'
 import 'mdui/components/badge.js'
 import 'mdui/components/button.js'

@@ -2,7 +2,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useI18n } from '../../../lib/i18n/use-i18n'
 import { SearchPanel } from '../../../features/search/SearchPanel'
 import { useDocumentTitle } from '../../use-document-title'
-import '../simple-pages.css'
+import '../../../styles/app/routes/simple-pages.css.ts'
 import { Icon } from '../../../lib/ui/Icon'
 
 export function SearchPage() {
@@ -14,8 +14,8 @@ export function SearchPage() {
 
   return (
     <section className="sc-search-page">
-      <div className="sc-search-page__inner">
-        <header className="sc-search-page__header">
+      <div className="sc-search-page-inner">
+        <header className="sc-search-page-header">
           <button type="button" className="sc-route-back" aria-label={t('common.back')} onClick={() => void navigate(scope ? `/b${scope}` : '/b/')}>
             <Icon name="chevron_left" />
           </button>

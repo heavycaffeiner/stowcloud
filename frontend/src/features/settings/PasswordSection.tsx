@@ -59,15 +59,15 @@ export function PasswordSection() {
       <TextField type="password" label={t('common.current_password')} value={currentPassword} error={currentError} autoComplete="current-password" onValueChange={setCurrentPassword} />
       <TextField type="password" label={t('password.new_password')} value={newPassword} error={newError} autoComplete="new-password" onValueChange={setNewPassword} />
       {newPassword ? (
-        <div className="sc-password-form__strength">
+        <div className="sc-password-form-strength">
           <progress max={1} value={strength.ratio} aria-label={t('password.new_password_strength', { level: strength.label })} />
-          <span className="sc-password-form__strength-label">{strength.label}</span>
+          <span className="sc-password-form-strength-label">{strength.label}</span>
         </div>
       ) : null}
       <TextField type="password" label={t('password.confirm_new_password')} value={confirmPassword} autoComplete="new-password" onValueChange={setConfirmPassword} />
-      {formError ? <p className="sc-password-form__error" role="alert">{formError}</p> : null}
-      {success ? <p className="sc-password-form__success" role="status">{t('password.password_changed')}</p> : null}
-      <div className="sc-password-form__actions">
+      {formError ? <p className="sc-password-form-error" role="alert">{formError}</p> : null}
+      {success ? <p className="sc-password-form-success" role="status">{t('password.password_changed')}</p> : null}
+      <div className="sc-password-form-actions">
         <Button type="submit" disabled={!currentPassword || !newPassword} loading={save.isPending}>{t('password.change_password')}</Button>
       </div>
     </form>

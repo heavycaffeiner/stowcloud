@@ -42,8 +42,8 @@ test.describe('Upload State Machine and Recovery E2E', () => {
       await fileInput.setInputFiles([emptyFixture.filePath, oneByteFixture.filePath]);
 
       // Both should appear in file listing
-      await expect(page.locator('.sc-filename, .sc-file-grid__name').filter({ hasText: emptyName }).first()).toBeVisible({ timeout: 15000 });
-      await expect(page.locator('.sc-filename, .sc-file-grid__name').filter({ hasText: oneByteName }).first()).toBeVisible({ timeout: 15000 });
+      await expect(page.locator('.sc-filename, .sc-file-grid-name').filter({ hasText: emptyName }).first()).toBeVisible({ timeout: 15000 });
+      await expect(page.locator('.sc-filename, .sc-file-grid-name').filter({ hasText: oneByteName }).first()).toBeVisible({ timeout: 15000 });
 
       // Verify on disk
       await expect.poll(() => fs.existsSync(path.join(workerApp.shareDir, emptyName)), { timeout: 10000 }).toBe(true);
@@ -93,7 +93,7 @@ test.describe('Upload State Machine and Recovery E2E', () => {
       }
 
       // Should complete and show file
-      await expect(page.locator('.sc-filename, .sc-file-grid__name').filter({ hasText: fileName }).first()).toBeVisible({ timeout: 30000 });
+      await expect(page.locator('.sc-filename, .sc-file-grid-name').filter({ hasText: fileName }).first()).toBeVisible({ timeout: 30000 });
 
       await assertNoUnexpectedErrors(artifacts);
     } finally {

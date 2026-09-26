@@ -7,7 +7,7 @@ import { useI18n } from '../../lib/i18n/use-i18n'
 import { isVideoFile } from '../preview/media-utils'
 import { Icon } from '../../lib/ui/Icon'
 import { MiddleEllipsis } from './MiddleEllipsis'
-import './browse-ui.css'
+import '../../styles/features/files/browse-ui.css.ts'
 
 const TAP_MAX_MS = 450
 const TAP_MOVE_PX = 12
@@ -127,7 +127,7 @@ export function FileRow({
       onContextMenu={onContextMenu}
     >
       <span
-        className="sc-row__cell sc-row__cell--select sc-touch-target"
+        className="sc-row-cell sc-row-cell--select sc-touch-target"
         role="gridcell"
         onClick={(event) => {
           event.stopPropagation()
@@ -146,32 +146,32 @@ export function FileRow({
         </span>
         <span className="sc-sr-only">{t('common.select', { name: entry.name })}</span>
       </span>
-      <span className="sc-row__cell sc-row__cell--name" role="gridcell">
-        <span className="sc-row__icon-badge" style={{ color: fileIcon.color }}>
+      <span className="sc-row-cell sc-row-cell--name" role="gridcell">
+        <span className="sc-row-icon-badge" style={{ color: fileIcon.color }}>
           <Icon name={fileIcon.name} size={20} />
         </span>
-        <span className="sc-row__name-copy">
+        <span className="sc-row-name-copy">
           <MiddleEllipsis name={entry.name} className="sc-filename" />
-          <span className="sc-row__mobile-meta">
+          <span className="sc-row-mobile-meta">
             {entry.kind === 'dir' ? t('details.folder') : <>{formatEntrySize(entry.size, encrypted)}<span aria-hidden="true"> · </span>{formatModifiedDateNs(entry.mtime_ns)}</>}
           </span>
         </span>
         {entry.confusable ? (
-          <span className="sc-row__badge" title={t('common.look_alike_characters')}>
+          <span className="sc-row-badge" title={t('common.look_alike_characters')}>
             <Icon name="warning" />
           </span>
         ) : null}
       </span>
-      <span className="sc-row__cell sc-row__cell--size" role="gridcell">
+      <span className="sc-row-cell sc-row-cell--size" role="gridcell">
         {entry.kind === 'dir' ? '-' : formatEntrySize(entry.size, encrypted)}
       </span>
-      <span className="sc-row__cell sc-row__cell--mtime" role="gridcell">
+      <span className="sc-row-cell sc-row-cell--mtime" role="gridcell">
         {formatModifiedDateNs(entry.mtime_ns)}
       </span>
-      <span className="sc-row__cell sc-row__cell--actions" role="gridcell">
+      <span className="sc-row-cell sc-row-cell--actions" role="gridcell">
         <button
           type="button"
-          className="sc-row__more-btn sc-icon-button"
+          className="sc-row-more-btn sc-icon-button"
           aria-label={t('browse.more')}
           onClick={(event) => {
             event.stopPropagation()

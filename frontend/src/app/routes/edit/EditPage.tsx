@@ -21,7 +21,7 @@ import { Icon } from '../../../lib/ui/Icon'
 import { IconButton } from '../../../lib/ui/IconButton'
 import { MiddleEllipsis } from '../../../features/files/MiddleEllipsis'
 import { useDocumentTitle } from '../../use-document-title'
-import './editor.css'
+import '../../../styles/app/routes/edit/editor.css.ts'
 
 export function EditPage() {
   const { t } = useI18n()
@@ -95,33 +95,33 @@ export function EditPage() {
     translate: t
   }, blocker)
 
-  if (isDir) return <main className="sc-edit"><p className="sc-edit__error" role="alert">{t('editor.folder_cannot_opened_editor')}</p></main>
+  if (isDir) return <main className="sc-edit"><p className="sc-edit-error" role="alert">{t('editor.folder_cannot_opened_editor')}</p></main>
   const loadError = stat.error ? describeApiError(stat.error, t('editor.could_not_load_file')) : encryption.error ? describeApiError(encryption.error, t('editor.could_not_load_file')) : contentQuery.error ? describeApiError(contentQuery.error, t('editor.could_not_load_file')) : null
   const loading = stat.isPending || (Boolean(entry) && encryption.isPending) || (contentEnabled && contentQuery.isPending)
   void sessionRevision
 
   return (
     <main className="sc-edit">
-      <header className="sc-edit__toolbar">
+      <header className="sc-edit-toolbar">
         <IconButton label={t('editor.go_back')} onClick={() => void navigate(`/b${parentOf(path)}`)}><Icon name="chevron_left" /></IconButton>
-        <span className="sc-edit__file-icon" aria-hidden="true"><Icon name="edit_document" /></span>
-        <div className="sc-edit__identity">
-          <div className="sc-edit__title">
-            <MiddleEllipsis name={filename} className="sc-edit__filename" />
-            {dirty ? <span className="sc-edit__badge sc-edit__badge--dirty" title={t('editor.unsaved_changes')}>{t('editor.unsaved_changes')}</span> : null}
+        <span className="sc-edit-file-icon" aria-hidden="true"><Icon name="edit_document" /></span>
+        <div className="sc-edit-identity">
+          <div className="sc-edit-title">
+            <MiddleEllipsis name={filename} className="sc-edit-filename" />
+            {dirty ? <span className="sc-edit-badge sc-edit-badge--dirty" title={t('editor.unsaved_changes')}>{t('editor.unsaved_changes')}</span> : null}
           </div>
-          <div className="sc-edit__details">
-            <span className="sc-edit__language">{languageName ?? t('editor.plain_text')}</span>
-            {entry ? <span className="sc-edit__meta">{formatBytes(entry.size)}</span> : null}
-            {readOnly && entry ? <span className="sc-edit__badge sc-edit__badge--readonly">{t('common.read_only')}</span> : null}
+          <div className="sc-edit-details">
+            <span className="sc-edit-language">{languageName ?? t('editor.plain_text')}</span>
+            {entry ? <span className="sc-edit-meta">{formatBytes(entry.size)}</span> : null}
+            {readOnly && entry ? <span className="sc-edit-badge sc-edit-badge--readonly">{t('common.read_only')}</span> : null}
           </div>
         </div>
-        <div className="sc-edit__actions"><Button loading={saveMutation.isPending} disabled={!canSave} onClick={() => void saveFlow.save()}>{t('editor.save_ctrl_s')}</Button></div>
+        <div className="sc-edit-actions"><Button loading={saveMutation.isPending} disabled={!canSave} onClick={() => void saveFlow.save()}>{t('editor.save_ctrl_s')}</Button></div>
       </header>
-      <div className="sc-edit__body">
-        {locked ? <div className="sc-edit__locked" role="status"><p>{t('encryption.unlock_hint')}</p><Button onClick={() => actions.setUnlockRequested(true)}>{t('encryption.unlock')}</Button></div> : loading ? <div className="sc-edit__loading"><mdui-circular-progress></mdui-circular-progress></div> : loadError ? <p className="sc-edit__error" role="alert">{loadError}</p> : <CodeEditor ref={editorRef} value={content} filename={filename} readOnly={readOnly} maxBytes={MAX_ENCRYPTABLE_BYTES} onChange={actions.setDraft} onLimit={() => actions.setSnackbar(t('editor.file_too_large_to_edit'))} onSave={() => void saveFlow.save()} onLanguageChange={actions.setLanguage} />}
+      <div className="sc-edit-body">
+        {locked ? <div className="sc-edit-locked" role="status"><p>{t('encryption.unlock_hint')}</p><Button onClick={() => actions.setUnlockRequested(true)}>{t('encryption.unlock')}</Button></div> : loading ? <div className="sc-edit-loading"><mdui-circular-progress></mdui-circular-progress></div> : loadError ? <p className="sc-edit-error" role="alert">{loadError}</p> : <CodeEditor ref={editorRef} value={content} filename={filename} readOnly={readOnly} maxBytes={MAX_ENCRYPTABLE_BYTES} onChange={actions.setDraft} onLimit={() => actions.setSnackbar(t('editor.file_too_large_to_edit'))} onSave={() => void saveFlow.save()} onLanguageChange={actions.setLanguage} />}
       </div>
-      {saveError ? <p className="sc-edit__error" role="alert">{saveError}</p> : null}
+      {saveError ? <p className="sc-edit-error" role="alert">{saveError}</p> : null}
       <EditConflictDialog open={conflictOpen} name={filename} weak={conflictWeak} onClose={() => { actions.setConflict(false); focusEditor() }} onReload={() => void saveFlow.reloadAfterConflict()} onOverwrite={() => void saveFlow.overwriteAfterConflict()} />
       <UnlockShareDialog open={Boolean(locked && unlockRequested)} salt={share?.salt ?? ''} verifier={share?.verifier ?? ''} onUnlock={actions.completeUnlock} onClose={() => { if (dirty) actions.setUnlockRequested(false); else void navigate(`/b${parentOf(path)}`) }} />
       <mdui-dialog open={leaveDialogOpen} headline={t('editor.unsaved_changes')} close-on-overlay-click={false} close-on-esc={false}>

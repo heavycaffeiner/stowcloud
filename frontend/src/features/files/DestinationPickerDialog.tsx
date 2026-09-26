@@ -65,8 +65,8 @@ export function DestinationPickerDialog({
       }
     >
       <div className="sc-dest">
-        <p className="sc-dest__prompt">{t('dest.choose_destination_folder', { count: sources.length })}</p>
-        <div className="sc-dest__tree">
+        <p className="sc-dest-prompt">{t('dest.choose_destination_folder', { count: sources.length })}</p>
+        <div className="sc-dest-tree">
           <FileTreeList
             roots={roots}
             currentPath={selected ?? ''}
@@ -74,7 +74,7 @@ export function DestinationPickerDialog({
             aria-label={t('dest.destination_folder')}
           />
         </div>
-        <p className={`sc-dest__status${isWarn ? ' sc-dest__status--warn' : ''}`} aria-live="polite">
+        <p className={`sc-dest-status${isWarn ? ' sc-dest-status--warn' : ''}`} aria-live="polite">
           {problem === 'into_itself'
             ? t('dest.cannot_move_folder_into_itself')
             : problem === 'same_folder'

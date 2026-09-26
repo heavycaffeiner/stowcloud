@@ -79,7 +79,7 @@ export function Button({
         {square
           ? squareIcon !== null && squareIcon !== undefined ? <span slot="icon">{squareIcon}</span> : null
           : icon ? <span slot="icon">{icon}</span> : null}
-        {!square ? (loading ? <span className="sc-button__loading-label">{t('button.working')}</span> : children) : null}
+        {!square ? (loading ? <span className="sc-button-loading-label">{t('button.working')}</span> : children) : null}
         {!square && endIcon ? <span slot="end-icon">{endIcon}</span> : null}
       </mdui-button>
     </span>

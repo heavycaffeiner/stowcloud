@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { Dialog } from '../../lib/ui/Dialog'
-import './browse-ui.css'
+import '../../styles/features/files/browse-ui.css.ts'
 
 export interface BrowseDialogProps {
   open: boolean
@@ -19,7 +19,7 @@ export function BrowseDialog({ open, title, onClose, children, actions }: Browse
       actions={actions}
       className="sc-browse-dialog"
     >
-      <div className="sc-browse-dialog__body">{children}</div>
+      <div className="sc-browse-dialog-body">{children}</div>
     </Dialog>
   )
 }

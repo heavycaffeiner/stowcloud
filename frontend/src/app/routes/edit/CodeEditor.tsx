@@ -188,8 +188,8 @@ export const CodeEditor = forwardRef(function CodeEditor(
 
   return (
     <div ref={hostRef} className="sc-code-editor">
-      {failed ? <p className="sc-code-editor__status sc-code-editor__status--error">{t('editor.could_not_load_editor_check')}</p> : null}
-      {!failed && !ready ? <p className="sc-code-editor__status">{t('editor.loading_editor')}</p> : null}
+      {failed ? <p className="sc-code-editor-status sc-code-editor-status--error">{t('editor.could_not_load_editor_check')}</p> : null}
+      {!failed && !ready ? <p className="sc-code-editor-status">{t('editor.loading_editor')}</p> : null}
     </div>
   )
 })

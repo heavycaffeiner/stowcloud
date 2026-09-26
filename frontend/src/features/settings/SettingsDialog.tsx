@@ -15,7 +15,7 @@ export function SettingsDialog({ open, title, onClose, children, actions, dismis
   const defaultActions = <Button variant="text" onClick={onClose}>{t('common.close')}</Button>
   return (
     <Dialog open={open} title={title} onClose={onClose} role="dialog" closedby={dismissible ? 'any' : 'none'} className="sc-settings-dialog" actions={actions ?? defaultActions}>
-      <div className="sc-settings-dialog__body">{children}</div>
+      <div className="sc-settings-dialog-body">{children}</div>
     </Dialog>
   )
 }

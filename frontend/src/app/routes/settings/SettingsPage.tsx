@@ -9,7 +9,7 @@ import { Icon } from '../../../lib/ui/Icon'
 import { useDocumentTitle } from '../../use-document-title'
 import { AccountPanel, AppearancePanel, ConnectionsPanel, SecurityPanel } from './SettingsPanels'
 import { useSettingsTabs, type SettingsTab } from './use-settings-tabs'
-import '../settings.css'
+import '../../../styles/app/routes/settings.css.ts'
 
 export function SettingsPage() {
   const { t } = useI18n()
@@ -60,9 +60,9 @@ export function SettingsPage() {
   return (
     <section className="sc-settings-page">
       <header><h1>{t('common.settings')}</h1></header>
-      <nav className="sc-settings-page__tabs" aria-label={t('common.settings')}>
+      <nav className="sc-settings-page-tabs" aria-label={t('common.settings')}>
         {settings.visibleTabs.map((item) => (
-          <button key={item} type="button" className="sc-settings-page__tab" aria-current={item === settings.tab ? 'page' : undefined} onClick={() => settings.selectTab(item)}>
+          <button key={item} type="button" className="sc-settings-page-tab" aria-current={item === settings.tab ? 'page' : undefined} onClick={() => settings.selectTab(item)}>
             <Icon name={tabIcon(item)} />
             {tabLabel(item)}
           </button>

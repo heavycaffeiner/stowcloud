@@ -22,11 +22,11 @@ type AccountPanelProps = {
 
 export function AccountPanel({ session, signOutPending, onSignOut, t }: AccountPanelProps) {
   return (
-    <div className="sc-settings-page__grid">
+    <div className="sc-settings-page-grid">
       <SettingsCard
-        leading={<div className="sc-settings__avatar">{((session?.user.display_name || session?.user.name || 'U')[0] ?? 'U').toUpperCase()}</div>}
+        leading={<div className="sc-settings-avatar">{((session?.user.display_name || session?.user.name || 'U')[0] ?? 'U').toUpperCase()}</div>}
         title={t('settings.account')}
-        description={<><p className="sc-settings__account-name">{session?.user.display_name || session?.user.name}</p>{session?.user.display_name && session.user.name && session.user.display_name !== session.user.name ? <p className="sc-settings__username">@{session.user.name}</p> : null}</>}
+        description={<><p className="sc-settings-account-name">{session?.user.display_name || session?.user.name}</p>{session?.user.display_name && session.user.name && session.user.display_name !== session.user.name ? <p className="sc-settings-username">@{session.user.name}</p> : null}</>}
         trailing={<span className="sc-settings-badge">{session?.user.is_admin ? t('common.administrator') : t('common.user_2')}</span>}
       >
         <div className="sc-settings-row">
@@ -47,22 +47,22 @@ type SecurityPanelProps = {
 export function SecurityPanel({ oidcVisible, t }: SecurityPanelProps) {
   return (
     <Suspense fallback={<p>{t('common.loading')}</p>}>
-      <div className="sc-settings-page__grid">
-        <SettingsCard leading={<div className="sc-settings__card-icon"><Icon name="lock" size={20} /></div>} title={t('common.password')} description={<p className="sc-settings-card__hint">{t('settings.at_least_10_characters_changing')}</p>}>
+      <div className="sc-settings-page-grid">
+        <SettingsCard leading={<div className="sc-settings-card-icon"><Icon name="lock" size={20} /></div>} title={t('common.password')} description={<p className="sc-settings-card-hint">{t('settings.at_least_10_characters_changing')}</p>}>
           <PasswordSection />
         </SettingsCard>
-        <SettingsCard leading={<div className="sc-settings__card-icon"><Icon name="lock" size={20} /></div>} title={t('settings.two_factor_authentication')} description={<p className="sc-settings-card__hint">{t('settings.asks_6_digit_code_from')}</p>}>
+        <SettingsCard leading={<div className="sc-settings-card-icon"><Icon name="lock" size={20} /></div>} title={t('settings.two_factor_authentication')} description={<p className="sc-settings-card-hint">{t('settings.asks_6_digit_code_from')}</p>}>
           <TotpSection />
         </SettingsCard>
         {oidcVisible ? (
-          <SettingsCard leading={<div className="sc-settings__card-icon"><Icon name="admin" size={20} /></div>} title={t('settings.single_sign_on')} description={<p className="sc-settings-card__hint">{t('settings.sign_your_organisations_identity_provider')}</p>}>
+          <SettingsCard leading={<div className="sc-settings-card-icon"><Icon name="admin" size={20} /></div>} title={t('settings.single_sign_on')} description={<p className="sc-settings-card-hint">{t('settings.sign_your_organisations_identity_provider')}</p>}>
             <OidcSection />
           </SettingsCard>
         ) : null}
-        <SettingsCard leading={<div className="sc-settings__card-icon"><Icon name="lock" size={20} /></div>} title={t('settings.app_passwords')} description={<p className="sc-settings-card__hint">{t('settings.use_one_where_your_account')}</p>}>
+        <SettingsCard leading={<div className="sc-settings-card-icon"><Icon name="lock" size={20} /></div>} title={t('settings.app_passwords')} description={<p className="sc-settings-card-hint">{t('settings.use_one_where_your_account')}</p>}>
           <AppPasswordsSection />
         </SettingsCard>
-        <SettingsCard leading={<div className="sc-settings__card-icon"><Icon name="recent" size={20} /></div>} title={t('settings.active_sessions')} description={<p className="sc-settings-card__hint">{t('settings.devices_currently_signed_account_sign')}</p>}>
+        <SettingsCard leading={<div className="sc-settings-card-icon"><Icon name="recent" size={20} /></div>} title={t('settings.active_sessions')} description={<p className="sc-settings-card-hint">{t('settings.devices_currently_signed_account_sign')}</p>}>
           <SessionsSection />
         </SettingsCard>
       </div>
@@ -78,14 +78,14 @@ type ConnectionsPanelProps = {
 export function ConnectionsPanel({ session, t }: ConnectionsPanelProps) {
   return (
     <Suspense fallback={<p>{t('common.loading')}</p>}>
-      <div className="sc-settings-page__grid">
+      <div className="sc-settings-page-grid">
         {session?.features.smb ? (
-          <SettingsCard leading={<div className="sc-settings__card-icon"><Icon name="folder-tree" size={20} /></div>} title={t('admin.server_smb')} description={<p className="sc-settings-card__hint">{t('settings.mount_as_network_drive_file')}</p>}>
+          <SettingsCard leading={<div className="sc-settings-card-icon"><Icon name="folder-tree" size={20} /></div>} title={t('admin.server_smb')} description={<p className="sc-settings-card-hint">{t('settings.mount_as_network_drive_file')}</p>}>
             <SmbSection />
           </SettingsCard>
         ) : null}
         {session?.features.webdav ? (
-          <SettingsCard leading={<div className="sc-settings__card-icon"><Icon name="link" size={20} /></div>} title={t('settings.connections')} description={<p className="sc-settings-card__hint">{t('webdav.connect_from_your_os_file_manager')}</p>}>
+          <SettingsCard leading={<div className="sc-settings-card-icon"><Icon name="link" size={20} /></div>} title={t('settings.connections')} description={<p className="sc-settings-card-hint">{t('webdav.connect_from_your_os_file_manager')}</p>}>
             <WebdavSection />
           </SettingsCard>
         ) : null}
@@ -108,8 +108,8 @@ type AppearancePanelProps = {
 
 export function AppearancePanel({ theme, locale, concurrency, concurrencyChoices, concurrencySaveFailed, onThemeChange, onLocaleChange, onConcurrencyChange, t }: AppearancePanelProps) {
   return (
-    <div className="sc-settings-page__grid">
-      <SettingsCard leading={<div className="sc-settings__card-icon"><Icon name="settings" size={20} /></div>} title={t('settings.theme')} description={<p className="sc-settings-card__hint">{t('settings.choosing_system_follows_your_device')}</p>}>
+    <div className="sc-settings-page-grid">
+      <SettingsCard leading={<div className="sc-settings-card-icon"><Icon name="settings" size={20} /></div>} title={t('settings.theme')} description={<p className="sc-settings-card-hint">{t('settings.choosing_system_follows_your_device')}</p>}>
         <div className="sc-settings-row sc-settings-row--segmented">
           <mdui-segmented-button-group selects="single" aria-label={t('settings.theme')} value={theme} onChange={(event) => {
             const group = event.currentTarget as HTMLElement & { value: string | string[] }
@@ -121,7 +121,7 @@ export function AppearancePanel({ theme, locale, concurrency, concurrencyChoices
           </mdui-segmented-button-group>
         </div>
       </SettingsCard>
-      <SettingsCard leading={<div className="sc-settings__card-icon"><Icon name="info" size={20} /></div>} title={t('settings.language')} description={<p className="sc-settings-card__hint">{t('settings.language_choice_stays_this_browser')}</p>}>
+      <SettingsCard leading={<div className="sc-settings-card-icon"><Icon name="info" size={20} /></div>} title={t('settings.language')} description={<p className="sc-settings-card-hint">{t('settings.language_choice_stays_this_browser')}</p>}>
         <div className="sc-settings-row sc-settings-row--segmented">
           <mdui-segmented-button-group selects="single" aria-label={t('settings.language')} value={locale} onChange={(event) => {
             const group = event.currentTarget as HTMLElement & { value: string | string[] }
@@ -132,7 +132,7 @@ export function AppearancePanel({ theme, locale, concurrency, concurrencyChoices
           </mdui-segmented-button-group>
         </div>
       </SettingsCard>
-      <SettingsCard leading={<div className="sc-settings__card-icon"><Icon name="upload" size={20} /></div>} title={t('settings.upload_concurrency')} description={<p className="sc-settings-card__hint">{t('settings.upload_concurrency_hint')}</p>}>
+      <SettingsCard leading={<div className="sc-settings-card-icon"><Icon name="upload" size={20} /></div>} title={t('settings.upload_concurrency')} description={<p className="sc-settings-card-hint">{t('settings.upload_concurrency_hint')}</p>}>
         <div className="sc-settings-row sc-settings-row--segmented">
           <mdui-segmented-button-group selects="single" aria-label={t('settings.upload_concurrency')} value={String(concurrency)} onChange={(event) => {
             const group = event.currentTarget as HTMLElement & { value: string | string[] }

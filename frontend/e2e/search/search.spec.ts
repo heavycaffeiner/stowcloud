@@ -29,11 +29,11 @@ test.describe('Search E2E and Permission Invariant', () => {
     await expect(page.locator('.sc-shell-header')).toBeVisible();
 
     // Click search trigger in shell header or press shortcut '/'
-    const searchTrigger = page.locator('.sc-shell-header__search, button[aria-label*="검색"], button[aria-label*="Search"]').first();
+    const searchTrigger = page.locator('.sc-shell-header-search, button[aria-label*="검색"], button[aria-label*="Search"]').first();
     await searchTrigger.click();
 
     // Search sheet or panel opens
-    const searchInput = page.locator('input[type="search"], .sc-search__input, mdui-text-field[type="search"] input').first();
+    const searchInput = page.locator('input[type="search"], .sc-search-input, mdui-text-field[type="search"] input').first();
     await expect(searchInput).toBeVisible({ timeout: 5000 });
 
     // Type query

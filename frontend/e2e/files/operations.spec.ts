@@ -29,17 +29,17 @@ test.describe('File Operations Journeys', () => {
     await expect(viewToggle).toBeVisible();
 
     // Verify list view elements
-    await expect(page.locator('.sc-browse__table, [role="table"], [role="grid"]').first()).toBeVisible();
+    await expect(page.locator('.sc-browse-table, [role="table"], [role="grid"]').first()).toBeVisible();
     await expect(page.locator('.sc-filename').filter({ hasText: 'a.txt' })).toBeVisible();
 
     // Toggle to grid
     await viewToggle.click();
     await expect(page.locator('.sc-file-grid, .sc-grid').first()).toBeVisible({ timeout: 5000 });
-    await expect(page.locator('.sc-filename, .sc-file-grid__name').filter({ hasText: 'a.txt' }).first()).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('.sc-filename, .sc-file-grid-name').filter({ hasText: 'a.txt' }).first()).toBeVisible({ timeout: 5000 });
 
     // Toggle back to list
     await viewToggle.click();
-    await expect(page.locator('.sc-browse__table, [role="table"], [role="grid"]').first()).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('.sc-browse-table, [role="table"], [role="grid"]').first()).toBeVisible({ timeout: 5000 });
 
     await assertNoUnexpectedErrors(artifacts);
   });
@@ -54,7 +54,7 @@ test.describe('File Operations Journeys', () => {
     await expect(page.locator('.sc-shell-header')).toBeVisible();
 
     const folderName = namespace('folder');
-    const newBtn = page.locator('.sc-nav-drawer__new-btn, button[aria-label*="새로 만들기"], button[aria-label*="New"]').first();
+    const newBtn = page.locator('.sc-nav-drawer-new-btn, button[aria-label*="새로 만들기"], button[aria-label*="New"]').first();
     await expect(newBtn).toBeVisible({ timeout: 5000 });
     await newBtn.click();
 

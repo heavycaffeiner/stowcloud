@@ -12,7 +12,7 @@ import { SecondaryPageState } from '../secondary/SecondaryPageState'
 import { TrashOperation, TrashRow } from './TrashView'
 import { useTrashActions } from './use-trash-actions'
 import { useTrashSelection } from './use-trash-selection'
-import '../simple-pages.css'
+import '../../../styles/app/routes/simple-pages.css.ts'
 
 export function TrashPage() {
   const { t } = useI18n()
@@ -34,20 +34,20 @@ export function TrashPage() {
       <mdui-button slot="action" variant="text" onClick={() => setState({ purgeOpen: false })}>{t('common.cancel')}</mdui-button>
       <mdui-button slot="action" variant="filled" onClick={() => void confirmPurge()}>{t('common.delete')}</mdui-button>
     </mdui-dialog>}>
-      {entries.length > 0 ? <div className="sc-trash__toolbar">
-        <label className="sc-trash__select-all">
+      {entries.length > 0 ? <div className="sc-trash-toolbar">
+        <label className="sc-trash-select-all">
           <input type="checkbox" checked={allSelected} ref={(element) => { if (element) element.indeterminate = partiallySelected }} onChange={() => allSelected ? selection.clear() : selection.all(entries.map((entry) => entry.id))} />
           {t('trash.select_all', { selected: selected.size, total: entries.length })}
         </label>
-        <div className="sc-trash__toolbar-actions">
+        <div className="sc-trash-toolbar-actions">
           <Button variant="text" disabled={selected.size === 0 || busy} loading={restorePending} onClick={() => void restoreItems([...selected])}>{t('trash.restore')}</Button>
           <Button variant="text" danger disabled={selected.size === 0 || busy} loading={purgePending} onClick={() => requestPurge(null)}>{t('trash.purge')}</Button>
         </div>
       </div> : null}
-      {notice ? <p className="sc-trash__notice" role="status" aria-live="polite">{notice} <button type="button" onClick={() => setState({ notice: null })}>{t('common.close')}</button></p> : null}
+      {notice ? <p className="sc-trash-notice" role="status" aria-live="polite">{notice} <button type="button" onClick={() => setState({ notice: null })}>{t('common.close')}</button></p> : null}
       {operation ? <TrashOperation operation={operation} onClose={() => setState({ operation: null })} t={t} /> : null}
       <SecondaryPageState loading={trash.isPending} loadingLabel={t('common.loading')} error={trash.error} errorText={describeApiError(trash.error, t('trash.could_not_load_trash'))} empty={!trash.isPending && entries.length === 0} emptyText={t('trash.trash_empty')}>
-        {entries.length > 0 ? <VirtualList className="sc-trash__list" items={entries} itemKey={(entry) => entry.id} estimateSize={61} itemProps={() => ({ className: 'sc-trash__row' })} pinnedKeys={purgeOpen && purgeSingle !== null ? [purgeSingle] : undefined} renderItem={(entry) => <TrashRow entry={entry} selected={selected.has(entry.id)} disabled={busy} onToggle={() => selection.toggle(entry.id)} onRestore={() => void restoreItems([entry.id])} onPurge={() => requestPurge(entry.id)} t={t} />} /> : null}
+        {entries.length > 0 ? <VirtualList className="sc-trash-list" items={entries} itemKey={(entry) => entry.id} estimateSize={61} itemProps={() => ({ className: 'sc-trash-row' })} pinnedKeys={purgeOpen && purgeSingle !== null ? [purgeSingle] : undefined} renderItem={(entry) => <TrashRow entry={entry} selected={selected.has(entry.id)} disabled={busy} onToggle={() => selection.toggle(entry.id)} onRestore={() => void restoreItems([entry.id])} onPurge={() => requestPurge(entry.id)} t={t} />} /> : null}
       </SecondaryPageState>
     </SecondaryPageShell>
   )

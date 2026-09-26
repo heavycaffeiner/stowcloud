@@ -27,7 +27,7 @@ export function NavigationBar({ items, active, onselect }: NavigationBarProps) {
           <button
             key={item.id}
             type="button"
-            className={selected ? 'sc-nav-bar__item is-active' : 'sc-nav-bar__item'}
+            className={selected ? 'sc-nav-bar-item is-active' : 'sc-nav-bar-item'}
             aria-current={selected && !item.popup ? 'page' : undefined}
             aria-haspopup={item.popup}
             aria-expanded={item.popup ? item.expanded : undefined}
@@ -37,8 +37,8 @@ export function NavigationBar({ items, active, onselect }: NavigationBarProps) {
               onselect(item.id)
             }}
           >
-            <span className="sc-nav-bar__icon"><Icon name={item.icon} /></span>
-            <span className="sc-nav-bar__label">{item.label}</span>
+            <span className="sc-nav-bar-icon"><Icon name={item.icon} /></span>
+            <span className="sc-nav-bar-label">{item.label}</span>
           </button>
         )
       })}

@@ -349,7 +349,7 @@ try {
     const focused = await evalJs(client, pageId, [
       "() => {",
       "  const code = document.querySelector('[data-testid=\"webdav-base-url\"]');",
-      "  const row = code ? code.closest('.sc-webdav__token-row') : null;",
+      "  const row = code ? code.closest('.sc-webdav-token-row') : null;",
       "  const button = row ? row.querySelector('mdui-button') : null;",
       "  if (button) button.focus();",
       "  return button !== null && document.activeElement === button;",
@@ -361,7 +361,7 @@ try {
     if (focused) {
       await client.callTool('press_key', { pageId, key: 'Enter' })
       announcement = await evalJs(client, pageId,
-        "() => document.querySelector('.sc-webdav__announce')?.textContent ?? ''")
+        "() => document.querySelector('.sc-webdav-announce')?.textContent ?? ''")
     }
     check('activating the copy button with Enter announces the result via aria-live',
       announcement.trim().length > 0, `announcement: ${JSON.stringify(announcement)}`)

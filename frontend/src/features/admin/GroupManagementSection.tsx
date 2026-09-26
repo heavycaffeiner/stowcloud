@@ -14,7 +14,7 @@ import { TextField } from '../../lib/ui/TextField'
 import { VirtualList } from '../../lib/ui/VirtualList'
 import { ListItem } from '../../lib/ui/ListItem'
 import { GrantManagementSection } from './GrantManagementSection'
-import './admin.css'
+import '../../styles/features/admin/admin.css.ts'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
 
@@ -153,13 +153,13 @@ export function GroupManagementSection() {
 
   return (
     <section className="sc-admin-section sc-group-mgmt">
-      <div className="sc-admin-section__header">
-        <p className="sc-admin-section__hint">{t('group.create_group_grant_folder_permissions')}</p>
+      <div className="sc-admin-section-header">
+        <p className="sc-admin-section-hint">{t('group.create_group_grant_folder_permissions')}</p>
         <Button icon={<Icon name="add" />} onClick={openCreate}>{t('group.add_group')}</Button>
       </div>
 
       {loading ? <ProgressCircular /> : groupsQuery.error || usersQuery.error ? (
-        <p className="sc-admin-section__error" role="alert">{describeApiError(groupsQuery.error ?? usersQuery.error, t('group.could_not_load_group_list'))}</p>
+        <p className="sc-admin-section-error" role="alert">{describeApiError(groupsQuery.error ?? usersQuery.error, t('group.could_not_load_group_list'))}</p>
       ) : groups.length === 0 ? (
         <div className="sc-admin-empty">
           <Icon name="account_tree" />
@@ -174,8 +174,8 @@ export function GroupManagementSection() {
           pinnedKeys={[renameTarget?.id, deleteTarget?.id, membersTargetId, grantsTarget?.id].filter((id): id is number => id != null)}
           renderItem={(group) => (
             <ListItem
-              headline={<><span className="sc-admin-row__name">{group.name}</span><span className="sc-admin-chip">{tp('group.members', group.members.length)}</span></>}
-              trailing={<div className="sc-admin-row__actions">
+              headline={<><span className="sc-admin-row-name">{group.name}</span><span className="sc-admin-chip">{tp('group.members', group.members.length)}</span></>}
+              trailing={<div className="sc-admin-row-actions">
                 <Button variant="text" square ariaLabel={t('group.manage_members', { name: group.name })} onClick={() => openMembers(group)}><Icon name="settings" /></Button>
                 <Button variant="text" square ariaLabel={t('common.manage_folders_visible', { name: group.name })} onClick={() => openGrants(group)}><Icon name="account_tree" /></Button>
                 <Button variant="text" square ariaLabel={t('group.rename', { name: group.name })} onClick={() => openRename(group)}><Icon name="rename" /></Button>
@@ -194,7 +194,7 @@ export function GroupManagementSection() {
       }>
         <form className="sc-admin-form" onSubmit={(event) => { event.preventDefault(); submitCreate() }}>
           <TextField label={t('group.group_name')} value={newName} autoComplete="off" autoFocus onValueChange={setNewName} />
-          {createError ? <p className="sc-admin-section__error" role="alert">{createError}</p> : null}
+          {createError ? <p className="sc-admin-section-error" role="alert">{createError}</p> : null}
         </form>
       </Dialog>
 
@@ -206,7 +206,7 @@ export function GroupManagementSection() {
       }>
         <form className="sc-admin-form" onSubmit={(event) => { event.preventDefault(); submitRename() }}>
           <TextField label={t('group.group_name')} value={renameName} autoComplete="off" autoFocus onValueChange={setRenameName} />
-          {renameError ? <p className="sc-admin-section__error" role="alert">{renameError}</p> : null}
+          {renameError ? <p className="sc-admin-section-error" role="alert">{renameError}</p> : null}
         </form>
       </Dialog>
 
@@ -217,7 +217,7 @@ export function GroupManagementSection() {
         </>
       }>
         <p>{t('group.permanently_deletes_group_its_member', { name: deleteTarget?.name ?? '' })}</p>
-        {deleteError ? <p className="sc-admin-section__error" role="alert">{deleteError}</p> : null}
+        {deleteError ? <p className="sc-admin-section-error" role="alert">{deleteError}</p> : null}
       </Dialog>
 
       <Dialog open={!!membersTarget} title={membersTarget ? t('group.members_2', { name: membersTarget.name }) : t('group.members_3')} onClose={closeMembers} actions={<Button variant="text" onClick={closeMembers}>{t('common.close')}</Button>}>
@@ -237,10 +237,10 @@ export function GroupManagementSection() {
                     </span>
                 )}
               />
-            ) : <p className="sc-admin-section__field-hint">{t('group.no_members_yet')}</p>}
+            ) : <p className="sc-admin-section-field-hint">{t('group.no_members_yet')}</p>}
 
             {availableUsers.length ? (
-              <div className="sc-admin-form__row">
+              <div className="sc-admin-form-row">
                 <Select
                   ariaLabel={t('group.add_member')}
                   value={addMemberId}
@@ -251,7 +251,7 @@ export function GroupManagementSection() {
               </div>
             ) : null}
 
-            {memberError ? <p className="sc-admin-section__error" role="alert">{memberError}</p> : null}
+            {memberError ? <p className="sc-admin-section-error" role="alert">{memberError}</p> : null}
           </div>
         ) : null}
       </Dialog>

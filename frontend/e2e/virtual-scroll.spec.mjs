@@ -47,7 +47,7 @@ try {
 
   for (const [width, height] of VIEWPORTS) {
     for (const mode of ['list', 'grid']) {
-      const cell = mode === 'grid' ? '.sc-file-grid__card' : '.sc-row'
+      const cell = mode === 'grid' ? '.sc-file-grid-card' : '.sc-row'
       const scroller = mode === 'grid' ? '.sc-file-grid' : '.sc-file-table'
       const context = await browser.newContext({ viewport: { width, height }, reducedMotion: 'reduce' })
       await context.addInitScript(view => {

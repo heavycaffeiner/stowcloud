@@ -41,7 +41,7 @@ test.describe('File Upload E2E Journeys', () => {
       await fileInput.setInputFiles(fixture.filePath);
 
       // Verify file appears in UI
-      const uploadedItem = page.locator('.sc-filename, .sc-file-grid__name').filter({ hasText: fileName }).first();
+      const uploadedItem = page.locator('.sc-filename, .sc-file-grid-name').filter({ hasText: fileName }).first();
       await expect(uploadedItem).toBeVisible({ timeout: 15000 });
 
       // Verify on durable server disk
@@ -75,7 +75,7 @@ test.describe('File Upload E2E Journeys', () => {
       const fileInput = page.locator('input[type="file"][multiple]');
       await fileInput.setInputFiles(fixture.filePath);
 
-      const uploadedItem = page.locator('.sc-filename, .sc-file-grid__name').filter({ hasText: fileName }).first();
+      const uploadedItem = page.locator('.sc-filename, .sc-file-grid-name').filter({ hasText: fileName }).first();
       await expect(uploadedItem).toBeVisible({ timeout: 30000 });
 
       const serverFilePath = path.join(workerApp.shareDir, fileName);

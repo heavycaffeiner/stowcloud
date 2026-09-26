@@ -35,7 +35,7 @@ test.describe('File Trash and Restore E2E Journeys', () => {
     await page.goto(`${workerApp.baseURL}/b/docs`, { waitUntil: 'domcontentloaded' });
     await expect(page.locator('.sc-shell-header')).toBeVisible();
 
-    const fileItem = page.locator('.sc-filename, .sc-file-grid__name').filter({ hasText: fileName }).first();
+    const fileItem = page.locator('.sc-filename, .sc-file-grid-name').filter({ hasText: fileName }).first();
     await expect(fileItem).toBeVisible({ timeout: 10000 });
 
     // 2. Delete file via context menu
@@ -58,7 +58,7 @@ test.describe('File Trash and Restore E2E Journeys', () => {
     await expect(page.locator('.sc-shell-header')).toBeVisible();
 
     // Check if trash view displays the deleted item
-    const trashedItem = page.locator('.sc-filename, .sc-file-grid__name').filter({ hasText: fileName }).first();
+    const trashedItem = page.locator('.sc-filename, .sc-file-grid-name').filter({ hasText: fileName }).first();
     if (await trashedItem.isVisible({ timeout: 5000 })) {
       // Restore the item
       await trashedItem.click({ button: 'right' });

@@ -47,8 +47,8 @@ afterEach(async () => {
 })
 
 describe.each([
-  ['list', FileTable, '.sc-row', '.sc-row__cell--select', '.sc-row__more-btn'],
-  ['grid', FileGrid, '.sc-file-grid__card', '.sc-file-grid__check', '.sc-file-grid__kebab']
+  ['list', FileTable, '.sc-row', '.sc-row-cell--select', '.sc-row-more-btn'],
+  ['grid', FileGrid, '.sc-file-grid-card', '.sc-file-grid-check', '.sc-file-grid-kebab']
 ] as const)('%s file activation', (_name, View, entrySelector, checkSelector, menuSelector) => {
   function renderView(initialEntries: Entry[] = [documents, pictures]) {
     const opened: { path: string; selected: string[] }[] = []

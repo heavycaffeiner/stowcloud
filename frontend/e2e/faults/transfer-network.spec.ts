@@ -49,7 +49,7 @@ test.describe('Network Transport Fault Invariants', () => {
       const uploadStartedAt = Date.now();
       await fileInput.setInputFiles(fixture.filePath);
 
-      const uploaded = page.locator('.sc-browse__content .sc-filename, .sc-file-grid__name').filter({ hasText: fileName }).first();
+      const uploaded = page.locator('.sc-browse-content .sc-filename, .sc-file-grid-name').filter({ hasText: fileName }).first();
       await expect(uploaded).toBeVisible({ timeout: 20000 });
       expect(Date.now() - uploadStartedAt).toBeGreaterThan(1000);
     } finally {
@@ -95,7 +95,7 @@ test.describe('Network Transport Fault Invariants', () => {
       await delayPromise;
 
       // Upload retries after temporary outage and completes
-      const uploaded = page.locator('.sc-browse__content .sc-filename, .sc-file-grid__name').filter({ hasText: fileName }).first();
+      const uploaded = page.locator('.sc-browse-content .sc-filename, .sc-file-grid-name').filter({ hasText: fileName }).first();
       await expect(uploaded).toBeVisible({ timeout: 25000 });
 
       await expect.poll(() => fs.existsSync(path.join(workerApp.shareDir, fileName)), { timeout: 10000 }).toBe(true);

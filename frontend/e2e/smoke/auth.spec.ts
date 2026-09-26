@@ -21,7 +21,7 @@ test.describe('Authentication UI Smoke', () => {
     await passwordInput.fill('wrong-password');
     await submitButton.click();
 
-    const alert = page.locator('.sc-auth-card__error[role="alert"]');
+    const alert = page.locator('.sc-auth-card-error[role="alert"]');
     await expect(alert).toBeVisible({ timeout: 5000 });
     // 2. Correct credentials
     await usernameInput.fill(admin.name);
@@ -35,8 +35,8 @@ test.describe('Authentication UI Smoke', () => {
     await expect(page.locator('.sc-shell-header')).toBeVisible({ timeout: 10000 });
 
     // 4. Sign out flow
-    await page.locator('.sc-shell-header__avatar-btn').click();
-    const accountMenu = page.locator('.sc-shell-header__account-menu');
+    await page.locator('.sc-shell-header-avatar-btn').click();
+    const accountMenu = page.locator('.sc-shell-header-account-menu');
     await expect(accountMenu).toBeVisible();
 
     const signOutButton = accountMenu.locator('button[role="menuitem"]').last();

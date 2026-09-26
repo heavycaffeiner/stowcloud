@@ -14,7 +14,7 @@ import { Button } from '../../lib/ui/Button'
 import { IconButton } from '../../lib/ui/IconButton'
 import { Icon } from '../../lib/ui/Icon'
 import { getEntryIcon } from './FileRow'
-import './browse-ui.css'
+import '../../styles/features/files/browse-ui.css.ts'
 
 interface DetailsPanelProps {
   path: string
@@ -133,28 +133,28 @@ export function DetailsPanel({
 
   return (
     <aside ref={panel} className={`sc-details${compact ? ' sc-details--sheet' : ''}`} role={compact ? 'dialog' : 'complementary'} aria-modal={compact ? 'true' : undefined} aria-label={t('details.title')}>
-      <header className="sc-details__head">
-        <span className="sc-details__head-icon" aria-hidden="true" style={{ color: heroIcon.color }}>
+      <header className="sc-details-head">
+        <span className="sc-details-head-icon" aria-hidden="true" style={{ color: heroIcon.color }}>
           <Icon name={heroIcon.name} size={20} />
         </span>
-        <h2 className="sc-details__title"><bdi>{title}</bdi></h2>
+        <h2 className="sc-details-title"><bdi>{title}</bdi></h2>
         <IconButton label={t('common.close')} onClick={onClose}>
           <Icon name="close" />
         </IconButton>
       </header>
 
-      <div className="sc-details__summary">
-        <span className="sc-details__summary-icon" aria-hidden="true" style={{ color: heroIcon.color }}>
+      <div className="sc-details-summary">
+        <span className="sc-details-summary-icon" aria-hidden="true" style={{ color: heroIcon.color }}>
           <Icon name={heroIcon.name} size={24} />
         </span>
         <div>
-          <div className="sc-details__summary-title"><bdi>{title}</bdi></div>
-          <div className="sc-details__summary-desc">{heroDesc}</div>
+          <div className="sc-details-summary-title"><bdi>{title}</bdi></div>
+          <div className="sc-details-summary-desc">{heroDesc}</div>
         </div>
       </div>
 
       {(one || many) ? (
-        <div className="sc-details__actions">
+        <div className="sc-details-actions">
           {onDownload ? (
             <Button icon={<Icon name="download" size={18} />} onClick={onDownload}>{t('common.download')}</Button>
           ) : null}
@@ -167,11 +167,11 @@ export function DetailsPanel({
         </div>
       ) : null}
 
-      {one?.confusable ? <p className="sc-details__warning"><Icon name="warning" size={16} /><span>{t('common.look_alike_characters')}</span></p> : null}
+      {one?.confusable ? <p className="sc-details-warning"><Icon name="warning" size={16} /><span>{t('common.look_alike_characters')}</span></p> : null}
 
-      <div className="sc-details__section-heading">{t('details.title')}</div>
+      <div className="sc-details-section-heading">{t('details.title')}</div>
 
-      <dl className="sc-details__fields">
+      <dl className="sc-details-fields">
         {fields.map((field) => (
           <div key={field.label}>
             <dt>{field.label}</dt>

@@ -12,7 +12,7 @@ import { NavigationDrawer, type NavItem, type RootItem } from '../features/accou
 import { SearchSheet } from '../features/search/SearchSheet'
 import { Icon } from '../lib/ui/Icon'
 import { UploadTray } from '../features/uploads/UploadTray'
-import './shell.css'
+import '../styles/app/shell.css.ts'
 import { useRouteStore } from './use-route-store'
 import {
   browsePathFromUrl,
@@ -160,18 +160,18 @@ export function AppShell() {
   if (screen === 'login') return <Navigate to="/login" replace />
   if (screen === 'first-run') return <Navigate to="/setup" replace />
   if (screen !== 'browser') {
-    return <div className="sc-app-shell__boot" role="status" aria-label={t('nav.checking_your_session')}><mdui-circular-progress></mdui-circular-progress></div>
+    return <div className="sc-app-shell-boot" role="status" aria-label={t('nav.checking_your_session')}><mdui-circular-progress></mdui-circular-progress></div>
   }
 
   return (
     <>
       <div className={compact ? 'sc-app-shell sc-app-shell--compact' : 'sc-app-shell'}>
         <header className="sc-shell-header">
-          <div className="sc-shell-header__left">
+          <div className="sc-shell-header-left">
             {!compact ? (
               <button
                 type="button"
-                className="sc-shell-header__menu-btn sc-icon-button"
+                className="sc-shell-header-menu-btn sc-icon-button"
                 aria-label={t('nav.toggle_sidebar')}
                 onClick={() => ui.toggleSidebar()}
               >
@@ -180,36 +180,36 @@ export function AppShell() {
             ) : null}
             <button
               type="button"
-              className="sc-shell-header__brand-btn"
+              className="sc-shell-header-brand-btn"
               onClick={() => navigateTo('files', browseHref(browseTarget()))}
             >
-              <span className="sc-shell-header__brand">Stowcloud</span>
+              <span className="sc-shell-header-brand">Stowcloud</span>
             </button>
           </div>
 
-          <div className="sc-shell-header__center">
+          <div className="sc-shell-header-center">
             <button
-              className="sc-shell-header__search sc-focus-ring"
+              className="sc-shell-header-search sc-focus-ring"
               type="button"
               onClick={openSearch}
               aria-label={t('common.search')}
             >
-              <span className="sc-shell-header__search-icon"><Icon name="search" size={18} /></span>
-              <span className="sc-shell-header__search-placeholder">{t('common.search')}</span>
-              <span className="sc-shell-header__search-hints">
-                <kbd className="sc-shell-header__shortcut">/</kbd>
-                <span className="sc-shell-header__filter-icon" aria-hidden="true">
+              <span className="sc-shell-header-search-icon"><Icon name="search" size={18} /></span>
+              <span className="sc-shell-header-search-placeholder">{t('common.search')}</span>
+              <span className="sc-shell-header-search-hints">
+                <kbd className="sc-shell-header-shortcut">/</kbd>
+                <span className="sc-shell-header-filter-icon" aria-hidden="true">
                   <Icon name="tune" size={16} />
                 </span>
               </span>
             </button>
           </div>
 
-          <div className="sc-shell-header__right">
+          <div className="sc-shell-header-right">
             {!compact ? (
               <button
                 type="button"
-                className="sc-shell-header__icon-btn sc-icon-button"
+                className="sc-shell-header-icon-btn sc-icon-button"
                 aria-label={t('nav.help')}
                 onClick={() => window.open('https://github.com/heavycaffeiner/Stowcloud', '_blank', 'noopener,noreferrer')}
               >
@@ -219,27 +219,27 @@ export function AppShell() {
             {!compact ? (
               <button
                 type="button"
-                className="sc-shell-header__icon-btn sc-icon-button"
+                className="sc-shell-header-icon-btn sc-icon-button"
                 aria-label={t('common.settings')}
                 onClick={() => navigateTo('settings', '/settings')}
               >
                 <Icon name="settings" size={20} />
               </button>
             ) : null}
-            <div className="sc-shell-header__account-wrap" ref={accountMenuRef}>
+            <div className="sc-shell-header-account-wrap" ref={accountMenuRef}>
               <button
                 type="button"
-                className="sc-shell-header__avatar-btn"
+                className="sc-shell-header-avatar-btn"
                 aria-label={session.data?.user.display_name || session.data?.user.name || 'User'}
                 aria-haspopup="menu"
                 aria-expanded={accountMenuOpen}
                 onClick={() => setShell((current) => ({ accountMenuOpen: !current.accountMenuOpen }))}
               >
-                <span className="sc-shell-header__avatar">{userInitial}</span>
+                <span className="sc-shell-header-avatar">{userInitial}</span>
               </button>
               {accountMenuOpen ? (
-                <div className="sc-shell-header__account-menu" role="menu">
-                  <div className="sc-shell-header__account-name">
+                <div className="sc-shell-header-account-menu" role="menu">
+                  <div className="sc-shell-header-account-name">
                     {session.data?.user.display_name || session.data?.user.name}
                   </div>
                   <button type="button" role="menuitem" onClick={() => { setShell({ accountMenuOpen: false }); navigateTo('settings', '/settings') }}>
@@ -272,7 +272,7 @@ export function AppShell() {
             />
           ) : null}
 
-          <main className={`sc-app-shell__main${!compact && sidebarCollapsed ? ' sc-app-shell__main--collapsed' : !compact ? ' sc-app-shell__main--drawer' : ''}`}>
+          <main className={`sc-app-shell-main${!compact && sidebarCollapsed ? ' sc-app-shell-main--collapsed' : !compact ? ' sc-app-shell-main--drawer' : ''}`}>
             <Outlet />
           </main>
         </div>

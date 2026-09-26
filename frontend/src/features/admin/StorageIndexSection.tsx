@@ -14,7 +14,7 @@ import { Switch } from '../../lib/ui/Switch'
 import { ProgressCircular } from '../../lib/ui/ProgressCircular'
 import { VirtualList } from '../../lib/ui/VirtualList'
 import { AdminCard } from './AdminCard'
-import './admin-sections.css'
+import '../../styles/features/admin/admin-sections.css.ts'
 
 const ACCURACY: Record<string, string> = { measured: 'storage.accuracy_counted_everything', modelled: 'storage.accuracy_counted_a_sample' }
 /* i18n */ 'storage.accuracy_counted_everything'
@@ -58,7 +58,7 @@ export function StorageIndexSection() {
             estimateSize={48}
             renderItem={(item) => 'db_bytes' in item ? (
               <>
-                <div className="sc-storage__item-label">
+                <div className="sc-storage-item-label">
                   <Icon name="database" size={18} />
                   <span>{t('storage.file_database')}</span>
                 </div>
@@ -66,7 +66,7 @@ export function StorageIndexSection() {
               </>
             ) : (
               <>
-                <div className="sc-storage__item-label">
+                <div className="sc-storage-item-label">
                   <Icon name="folder" size={18} />
                   <span className="sc-filename">{item.label}</span>
                 </div>
@@ -78,9 +78,9 @@ export function StorageIndexSection() {
       </AdminCard>
 
       <AdminCard id="storage-index" title={t('storage.search_index')} subtitle={t('storage.what_the_index_is_for')} icon={<Icon name="search" />}>
-        <div className="sc-storage__status-row">
-          <span className="sc-storage__status-label">{t('storage.index_status')}</span>
-          <span className={`sc-storage__status-badge ${status.data?.enabled ? 'sc-storage__status-badge--on' : ''}`}>
+        <div className="sc-storage-status-row">
+          <span className="sc-storage-status-label">{t('storage.index_status')}</span>
+          <span className={`sc-storage-status-badge ${status.data?.enabled ? 'sc-storage-status-badge--on' : ''}`}>
             {status.isPending ? <ProgressCircular size={16} /> : statusText}
           </span>
         </div>
@@ -93,7 +93,7 @@ export function StorageIndexSection() {
           <ProgressCircular />
         ) : (
           <>
-            <div className="sc-storage__toggle-row">
+            <div className="sc-storage-toggle-row">
               <Switch checked={nameEnabled} label={t('storage.enable_name_index')} onChange={(checked) => toggle.mutate(checked)} />
               {toggle.isPending ? <span className="sc-admin-note">{t('common.saving')}</span> : null}
             </div>

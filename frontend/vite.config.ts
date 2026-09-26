@@ -2,6 +2,7 @@ import { createRequire } from 'node:module'
 import { fileURLToPath, URL } from 'node:url'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vitest/config'
+import { vanillaExtractPlugin } from '@vanilla-extract/vite-plugin'
 
 const require = createRequire(import.meta.url)
 const reactRouterRequire = createRequire(require.resolve('react-router-dom'))
@@ -13,7 +14,7 @@ declare const process: { env: Record<string, string | undefined> }
 
 export default defineConfig({
   base: '/',
-  plugins: [react()],
+  plugins: [vanillaExtractPlugin({ identifiers: 'debug' }), react()],
   resolve: {
     alias: [
       { find: 'react-router/dom', replacement: reactRouterDomProduction },

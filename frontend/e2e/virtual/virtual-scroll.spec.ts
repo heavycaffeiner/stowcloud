@@ -65,7 +65,7 @@ test.describe('Virtual Scrolling Invariants', () => {
     });
 
     await page.goto(`${viteBase}b/home/bench`, { waitUntil: 'domcontentloaded' });
-    const card = page.locator('.sc-file-grid__card').first();
+    const card = page.locator('.sc-file-grid-card').first();
     await card.waitFor();
     const beforeText = await card.textContent();
 
@@ -81,8 +81,8 @@ test.describe('Virtual Scrolling Invariants', () => {
     await settlePromise;
 
     const offset = await page.locator('.sc-file-grid').evaluate((el) => el.scrollTop);
-    const afterText = await page.locator('.sc-file-grid__card').first().textContent();
-    const renderedCount = await page.locator('.sc-file-grid__card').count();
+    const afterText = await page.locator('.sc-file-grid-card').first().textContent();
+    const renderedCount = await page.locator('.sc-file-grid-card').count();
 
     expect(offset).toBeGreaterThan(0);
     expect(afterText).not.toBe(beforeText);

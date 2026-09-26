@@ -13,8 +13,8 @@ export interface SecondaryPageShellProps extends PropsWithChildren {
 export function SecondaryPageShell({ title, refreshLabel, onRefresh, className, overlay, children }: SecondaryPageShellProps) {
   return (
     <section className={className ? `sc-secondary-page ${className}` : 'sc-secondary-page'}>
-      <div className="sc-secondary-page__inner">
-        <header className="sc-secondary-page__header">
+      <div className="sc-secondary-page-inner">
+        <header className="sc-secondary-page-header">
           <h1>{title}</h1>
           <button type="button" className="sc-route-icon-button" aria-label={refreshLabel} onClick={onRefresh}><Icon name="refresh" /></button>
         </header>

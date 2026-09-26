@@ -43,7 +43,7 @@ test.describe('HTTP Transfer Fault Injection', () => {
       const fileInput = page.locator('input[type="file"][multiple]');
       await fileInput.setInputFiles(fixture.filePath);
 
-      const uploaded = page.locator('.sc-filename, .sc-file-grid__name').filter({ hasText: fileName }).first();
+      const uploaded = page.locator('.sc-filename, .sc-file-grid-name').filter({ hasText: fileName }).first();
       await expect(uploaded).toBeVisible({ timeout: 15000 });
     } finally {
       fixture.cleanup();
@@ -71,7 +71,7 @@ test.describe('HTTP Transfer Fault Injection', () => {
       const fileInput = page.locator('input[type="file"][multiple]');
       await fileInput.setInputFiles(fixture.filePath);
 
-      const uploaded = page.locator('.sc-filename, .sc-file-grid__name').filter({ hasText: fileName }).first();
+      const uploaded = page.locator('.sc-filename, .sc-file-grid-name').filter({ hasText: fileName }).first();
       await expect(uploaded).toBeVisible({ timeout: 15000 });
     } finally {
       fixture.cleanup();
@@ -105,11 +105,11 @@ test.describe('HTTP Transfer Fault Injection', () => {
       const fileInput = page.locator('input[type="file"][multiple]');
       await fileInput.setInputFiles(fixture.filePath);
       await injected;
-      const item = page.locator('.sc-upload-tray__item').filter({
-        has: page.locator('.sc-upload-tray__name', { hasText: fileName }),
+      const item = page.locator('.sc-upload-tray-item').filter({
+        has: page.locator('.sc-upload-tray-name', { hasText: fileName }),
       });
       await expect(item).toBeVisible();
-      await expect(item.locator('.sc-upload-tray__message')).toBeVisible();
+      await expect(item.locator('.sc-upload-tray-message')).toBeVisible();
     } finally {
       await page.context().unroute('**/api/v1/uploads/**', intercept);
       fixture.cleanup();
@@ -143,11 +143,11 @@ test.describe('HTTP Transfer Fault Injection', () => {
       const fileInput = page.locator('input[type="file"][multiple]');
       await fileInput.setInputFiles(fixture.filePath);
       await injected;
-      const item = page.locator('.sc-upload-tray__item').filter({
-        has: page.locator('.sc-upload-tray__name', { hasText: fileName }),
+      const item = page.locator('.sc-upload-tray-item').filter({
+        has: page.locator('.sc-upload-tray-name', { hasText: fileName }),
       });
       await expect(item).toBeVisible();
-      await expect(item.locator('.sc-upload-tray__message')).toBeVisible();
+      await expect(item.locator('.sc-upload-tray-message')).toBeVisible();
     } finally {
       await page.context().unroute('**/api/v1/uploads/**', intercept);
       fixture.cleanup();
@@ -172,7 +172,7 @@ test.describe('HTTP Transfer Fault Injection', () => {
       const fileInput = page.locator('input[type="file"][multiple]');
       await fileInput.setInputFiles(fixture.filePath);
 
-      const uploaded = page.locator('.sc-filename, .sc-file-grid__name').filter({ hasText: fileName }).first();
+      const uploaded = page.locator('.sc-filename, .sc-file-grid-name').filter({ hasText: fileName }).first();
       await expect(uploaded).toBeVisible({ timeout: 20000 });
     } finally {
       fixture.cleanup();

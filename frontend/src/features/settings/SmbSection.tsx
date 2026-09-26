@@ -104,15 +104,15 @@ export function SmbSection() {
 
   return (
     <div className="sc-smb">
-      <p className="sc-smb__note">{t('smb.smb_reachable_only_from_local')}</p>
-      <p className="sc-smb__state">{stateLine}</p>
-      <div className="sc-smb__row"><Switch checked={enabled} label={t('smb.allow_smb_access')} onChange={(checked) => openToggle(optOut, checked)} /></div>
-      <div className="sc-smb__row"><Switch checked={optOut} label={t('smb.do_not_store_smb_credentials')} onChange={(checked) => openToggle(checked, checked ? false : enabled)} /></div>
-      <div className="sc-smb__actions">
+      <p className="sc-smb-note">{t('smb.smb_reachable_only_from_local')}</p>
+      <p className="sc-smb-state">{stateLine}</p>
+      <div className="sc-smb-row"><Switch checked={enabled} label={t('smb.allow_smb_access')} onChange={(checked) => openToggle(optOut, checked)} /></div>
+      <div className="sc-smb-row"><Switch checked={optOut} label={t('smb.do_not_store_smb_credentials')} onChange={(checked) => openToggle(checked, checked ? false : enabled)} /></div>
+      <div className="sc-smb-actions">
         <Button variant={credential === 'dedicated' ? 'outlined' : 'filled'} onClick={openSet}>{credential === 'dedicated' ? t('smb.change_separate_password') : t('smb.set_separate_password')}</Button>
         {credential === 'dedicated' ? <Button variant="text" onClick={openClear}>{t('smb.remove_separate_password')}</Button> : null}
       </div>
-      <p className="sc-smb__announce" aria-live="polite">{announcement}</p>
+      <p className="sc-smb-announce" aria-live="polite">{announcement}</p>
       <SettingsDialog open={dialog === 'toggle'} title={confirmingOptOut ? t('smb.confirm_opt_out_title') : t('smb.confirm_setting_title')} onClose={() => { setCurrentPassword(''); setError(null); setDialog(null) }} actions={<><Button variant="text" onClick={() => { setCurrentPassword(''); setError(null); setDialog(null) }}>{t('common.cancel')}</Button><Button onClick={confirmToggle} disabled={!currentPassword} loading={settings.isPending}>{confirmingOptOut ? t('smb.confirm_opt_out') : t('common.save')}</Button></>}>
         <p>{confirmingOptOut ? t('smb.confirm_opt_out_warning') : t('smb.confirm_setting_hint')}</p><TextField type="password" label={t('common.current_password')} value={currentPassword} error={error} onValueChange={setCurrentPassword} />
       </SettingsDialog>

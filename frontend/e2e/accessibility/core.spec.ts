@@ -46,10 +46,10 @@ test.describe('Accessibility Scans and Accessible Names', () => {
     expect(results.violations).toEqual([]);
 
     // 2. Critical icon controls have accessible names
-    const searchBtn = page.locator('.sc-shell-header__search, button[aria-label*="검색"], button[aria-label*="Search"]').first();
+    const searchBtn = page.locator('.sc-shell-header-search, button[aria-label*="검색"], button[aria-label*="Search"]').first();
     await expect(searchBtn).toHaveAttribute('aria-label', /.+/);
 
-    const refreshBtn = page.locator('.sc-browse__action-btn[aria-label*="새로고침"], .sc-browse__action-btn[aria-label*="Refresh"]').first();
+    const refreshBtn = page.locator('.sc-browse-action-btn[aria-label*="새로고침"], .sc-browse-action-btn[aria-label*="Refresh"]').first();
     if (await refreshBtn.isVisible()) {
       await expect(refreshBtn).toHaveAttribute('aria-label', /.+/);
     }

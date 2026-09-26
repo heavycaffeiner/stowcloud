@@ -8,7 +8,7 @@ import { sessionQuery } from '../../lib/query/session'
 import { useI18n } from '../../lib/i18n/use-i18n'
 import { FileTreeItem } from './FileTreeItem'
 import { VirtualList } from '../../lib/ui/VirtualList'
-import './browse-ui.css'
+import '../../styles/features/files/browse-ui.css.ts'
 
 export interface FileTreeProps {
   currentPath: string
@@ -234,7 +234,7 @@ export function FileTreeList({ roots, currentPath, onNavigate, rowSize = 40, 'ar
   }
 
   return (
-    <div ref={container} className="sc-file-tree__list">
+    <div ref={container} className="sc-file-tree-list">
       {model.branches.map((path) => <DirectoryBranch key={path} path={path} currentPath={currentPath} onChange={updateDirectory} />)}
       <VirtualList
         role="tree"
@@ -287,7 +287,7 @@ export function FileTreeList({ roots, currentPath, onNavigate, rowSize = 40, 'ar
         ) : row.kind === 'more' ? (
           <button
             type="button"
-            className="sc-tree-row__more"
+            className="sc-tree-row-more"
             style={{ paddingInlineStart: row.depth * 16 + 8 }}
             data-tree-more
             tabIndex={focusedKey === row.key ? 0 : -1}
@@ -304,7 +304,7 @@ export function FileTreeList({ roots, currentPath, onNavigate, rowSize = 40, 'ar
           </button>
         ) : (
           <p
-            className={`sc-tree-row__status${row.status === 'error' ? ' sc-tree-row__status--error' : ''}`}
+            className={`sc-tree-row-status${row.status === 'error' ? ' sc-tree-row-status--error' : ''}`}
             style={{ paddingInlineStart: row.depth * 16 + 8 }}
             role={row.status === 'error' ? 'alert' : row.status === 'loading' ? 'status' : undefined}
           >
@@ -350,7 +350,7 @@ export function FileTree({ currentPath, onNavigate, overlay = false, onClose }: 
   if (!overlay) return <nav className="sc-file-tree" aria-label={t('tree.folder_tree')}>{tree}</nav>
   return (
     <dialog ref={dialog} className="sc-file-tree sc-file-tree--overlay" aria-label={t('tree.folder_tree')} onClick={(event) => { if (event.target === event.currentTarget) onClose?.() }} onCancel={(event) => { event.preventDefault(); onClose?.() }} onClose={(event) => { if (!event.currentTarget.open && wasOpen.current) onClose?.() }}>
-      <div className="sc-file-tree__overlay-header"><button type="button" onClick={onClose} aria-label={t('tree.close_folder_tree')}>×</button></div>
+      <div className="sc-file-tree-overlay-header"><button type="button" onClick={onClose} aria-label={t('tree.close_folder_tree')}>×</button></div>
       <nav aria-label={t('tree.folder_tree')}>{tree}</nav>
     </dialog>
   )
