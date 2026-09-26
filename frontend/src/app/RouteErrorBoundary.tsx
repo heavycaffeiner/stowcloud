@@ -1,5 +1,5 @@
 import { isRouteErrorResponse, useNavigate, useRouteError } from 'react-router-dom'
-import { useI18n } from '../lib/i18n/use-i18n'
+import { useI18n } from '../hooks/use-i18n'
 
 export function RouteErrorBoundary() {
   const error = useRouteError()

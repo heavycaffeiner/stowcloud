@@ -2,7 +2,7 @@ import { useCallback, useLayoutEffect, useMemo, useRef } from 'react'
 import type { HTMLAttributes, KeyboardEvent, ReactNode } from 'react'
 import { defaultRangeExtractor, elementScroll, observeElementOffset, observeElementRect, useVirtualizer } from '@tanstack/react-virtual'
 import type { Range, Rect, Virtualizer } from '@tanstack/react-virtual'
-import { useComponentState } from '../store/use-component-state'
+import { useComponentState } from '../../hooks/use-component-state'
 
 type ItemKey = string | number
 type ListVirtualizer = Virtualizer<HTMLElement, HTMLLIElement>

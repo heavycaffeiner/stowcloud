@@ -3,9 +3,9 @@ import type { PropsWithChildren } from 'react'
 import { I18nextProvider, useTranslation } from 'react-i18next'
 import { queryClient } from '../lib/query/client'
 import { i18n } from '../lib/i18n/state'
-import { useStore } from '../lib/store/use-store'
+import { useStore } from '../hooks/use-store'
 import { ui } from '../lib/store/ui.store'
-import { useMduiBootstrap, useMduiLocale, useMduiTheme } from './shell/use-root-providers'
+import { useMduiBootstrap, useMduiLocale, useMduiTheme } from './hooks/use-root-providers'
 
 export function RootProviders({ children }: PropsWithChildren) {
   const theme = useStore(ui, (state) => state.theme)

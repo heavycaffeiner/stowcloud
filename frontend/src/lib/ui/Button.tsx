@@ -1,6 +1,6 @@
 import type { MouseEventHandler, PropsWithChildren, ReactNode } from 'react'
 import { useEffect, useRef } from 'react'
-import { useI18n } from '../i18n/use-i18n'
+import { useI18n } from '../../hooks/use-i18n'
 
 interface ButtonElement extends HTMLElement {
   updateComplete?: Promise<unknown>

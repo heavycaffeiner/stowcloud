@@ -1,4 +1,4 @@
-import { useI18n } from '../i18n/use-i18n'
+import { useI18n } from '../../hooks/use-i18n'
 import { Icon } from './Icon'
 
 export interface NavigationBarItem {

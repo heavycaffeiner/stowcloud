@@ -1,4 +1,4 @@
-import '../lib/ui/mdui'
+import '../lib/ui/logic/mdui'
 if (!('ResizeObserver' in globalThis)) {
   class TestResizeObserver {
     observe(): void {}

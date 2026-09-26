@@ -1,7 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import type { Ref } from 'react'
-import { useComponentState } from '../../../lib/store/use-component-state'
-import { useI18n } from '../../../lib/i18n/use-i18n'
+import { useComponentState } from '../../../hooks/use-component-state'
+import { useI18n } from '../../../hooks/use-i18n'
 import type { EditorView } from '@codemirror/view'
 import type { LanguageSupport } from '@codemirror/language'
 

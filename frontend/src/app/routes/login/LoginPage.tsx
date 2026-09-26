@@ -1,8 +1,8 @@
 import { Link } from 'react-router-dom'
 import { Button } from '../../../lib/ui/Button'
 import { TextField } from '../../../lib/ui/TextField'
-import { useDocumentTitle } from '../../use-document-title'
-import { useLoginFlow } from './use-login-flow'
+import { useDocumentTitle } from '../../hooks/use-document-title'
+import { useLoginFlow } from './hooks/use-login-flow'
 import '../../../styles/app/routes/auth.css.ts'
 
 const SOURCE_URL = 'https://github.com/heavycaffeiner/stowcloud'

@@ -1,4 +1,4 @@
-import { useI18n } from '../../lib/i18n/use-i18n'
+import { useI18n } from '../../hooks/use-i18n'
 import { Button } from '../../lib/ui/Button'
 import { Switch } from '../../lib/ui/Switch'
 import { Dialog } from '../../lib/ui/Dialog'
@@ -9,7 +9,7 @@ import { Select } from '../../lib/ui/Select'
 import { TextField } from '../../lib/ui/TextField'
 import { VirtualList } from '../../lib/ui/VirtualList'
 import { formatDateNs } from '../../lib/i18n'
-import { useShareManageController, isDropLink } from './share-manage-controller'
+import { useShareManageController, isDropLink } from './hooks/share-manage-controller'
 import '../../styles/features/shares/share-manage.css.ts'
 
 export interface ShareManageDialogProps {

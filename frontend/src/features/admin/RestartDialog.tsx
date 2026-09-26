@@ -1,14 +1,14 @@
 import { useEffect, useRef } from 'react'
-import { useComponentState } from '../../lib/store/use-component-state'
+import { useComponentState } from '../../hooks/use-component-state'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { describeApiError } from '../../lib/api/error-text'
 import type { ApplyOutcome } from '../../lib/api/types'
-import { useI18n } from '../../lib/i18n/use-i18n'
+import { useI18n } from '../../hooks/use-i18n'
 import { adminRestartMutation, systemHealthQuery } from '../../lib/query/admin'
 import { Button } from '../../lib/ui/Button'
 import { Dialog } from '../../lib/ui/Dialog'
 import { ProgressCircular } from '../../lib/ui/ProgressCircular'
-import { nextRestartWaitStep } from './restart-wait'
+import { nextRestartWaitStep } from './logic/restart-wait'
 import '../../styles/features/admin/restart-dialog.css.ts'
 
 const POLL_INTERVAL_MS = 200

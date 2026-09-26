@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
-import { useI18n } from '../../lib/i18n/use-i18n'
+import { useI18n } from '../../hooks/use-i18n'
 import { Icon } from '../../lib/ui/Icon'
 import { IconButton } from '../../lib/ui/IconButton'
 import { SearchPanel } from './SearchPanel'

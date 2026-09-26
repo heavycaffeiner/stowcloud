@@ -1,11 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
-import { useI18n } from '../../../lib/i18n/use-i18n'
+import { useI18n } from '../../../hooks/use-i18n'
 import { sessionQuery } from '../../../lib/query/session'
-import { useDocumentTitle } from '../../use-document-title'
+import { useDocumentTitle } from '../../hooks/use-document-title'
 import { PageTabs, type PageTabItem } from '../PageTabs'
 import { AdminPanels, SectionLoading } from './AdminPanels'
-import { useAdminTab, type AdminTab } from './use-admin-tab'
+import { useAdminTab, type AdminTab } from './hooks/use-admin-tab'
 import '../../../styles/app/routes/admin/admin.css.ts'
 
 type AdminTabItem = PageTabItem<AdminTab>

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import type { SettingsSnapshot } from '../../lib/api/types'
-import type { ServerSettingsGroup } from './server-settings-state'
+import type { ServerSettingsGroup } from './hooks/server-settings-state'
 import { ServerSettingsCard } from './ServerSettingsCard'
 type Translator = (key: string, params?: Record<string, string | number>) => string
 type Values = Record<string, unknown>

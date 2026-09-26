@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { render, waitFor } from '../../../test/test-utils'
 import { createRef } from 'react'
 import { CodeEditor, type CodeEditorHandle } from './CodeEditor'
-vi.mock('../../../lib/i18n/use-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
+vi.mock('../../../hooks/use-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
 
 describe('CodeEditor', () => {
   it('loads CodeMirror and exposes focus', async () => {

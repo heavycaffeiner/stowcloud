@@ -1,5 +1,5 @@
 import type { Entry } from '../../../lib/api/client'
-import type { RowAction } from '../../../features/files/row-actions'
+import type { RowAction } from '../../../features/files/logic/row-actions'
 import { formatBytes } from '../../../lib/format/bytes'
 import { Icon } from '../../../lib/ui/Icon'
 

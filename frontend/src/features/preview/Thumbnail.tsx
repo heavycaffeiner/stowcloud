@@ -1,11 +1,11 @@
 import { useEffect } from 'react'
 import { api, type Entry } from '../../lib/api/client'
-import { isVideoFile, mimeTypeOf } from './media-utils'
+import { isVideoFile, mimeTypeOf } from './logic/media-utils'
 import { registerMediaSource, releaseMediaSource, swReady } from '../../lib/crypto/download-sw'
 import { decryptDownload, isUnlocked } from '../../lib/crypto/e2ee'
 import { encryptionForLabel, shareLabelOf } from '../../lib/crypto/encrypted-shares'
 import type { IconName } from '../../lib/icons'
-import { useComponentState } from '../../lib/store/use-component-state'
+import { useComponentState } from '../../hooks/use-component-state'
 import { Icon } from '../../lib/ui/Icon'
 
 const CACHE = new Map<string, string>()

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { Component, lazy, Suspense } from 'react'
-import type { AdminTab } from './use-admin-tab'
+import type { AdminTab } from './hooks/use-admin-tab'
 
 // Keep each admin section lazy so inactive tabs do not load their query graphs.
 const UserManagementSection = lazy(async () => {

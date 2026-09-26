@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { useI18n } from '../../../lib/i18n/use-i18n'
+import { useI18n } from '../../../hooks/use-i18n'
 import { Button } from '../../../lib/ui/Button'
 
 export interface EditConflictDialogProps {

@@ -3,8 +3,8 @@ import { Button } from '../../../lib/ui/Button'
 import { TextField } from '../../../lib/ui/TextField'
 import { VirtualList } from '../../../lib/ui/VirtualList'
 import { formatBytes } from '../../../lib/format/bytes'
-import { useDocumentTitle } from '../../use-document-title'
-import { usePublicShare } from './use-public-share'
+import { useDocumentTitle } from '../../hooks/use-document-title'
+import { usePublicShare } from './hooks/use-public-share'
 import '../../../styles/app/routes/public-share.css.ts'
 
 export function PublicSharePage() {

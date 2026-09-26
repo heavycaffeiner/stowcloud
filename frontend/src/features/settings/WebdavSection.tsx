@@ -1,5 +1,5 @@
-import { useComponentState } from '../../lib/store/use-component-state'
-import { useI18n } from '../../lib/i18n/use-i18n'
+import { useComponentState } from '../../hooks/use-component-state'
+import { useI18n } from '../../hooks/use-i18n'
 import { Button } from '../../lib/ui/Button'
 
 export function WebdavSection() {

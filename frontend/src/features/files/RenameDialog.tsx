@@ -2,8 +2,8 @@ import { useEffect } from 'react'
 import { Button } from '../../lib/ui/Button'
 import { TextField } from '../../lib/ui/TextField'
 import { BrowseDialog } from './browse-dialog'
-import { useI18n } from '../../lib/i18n/use-i18n'
-import { useComponentState } from '../../lib/store/use-component-state'
+import { useI18n } from '../../hooks/use-i18n'
+import { useComponentState } from '../../hooks/use-component-state'
 export function RenameDialog({ open, currentName, onClose, onRename }: { open: boolean; currentName: string; onClose: () => void; onRename: (name: string) => void }) {
   const { t } = useI18n()
   const [form, setForm] = useComponentState({ name: '', submitted: false })

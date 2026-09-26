@@ -1,7 +1,7 @@
 import type { MouseEventHandler, ReactNode } from 'react'
 import { useEffect, useRef } from 'react'
 import { Icon } from './Icon'
-import { useComponentState } from '../store/use-component-state'
+import { useComponentState } from '../../hooks/use-component-state'
 
 interface IconButtonElement extends HTMLElement {
   updateComplete?: Promise<unknown>

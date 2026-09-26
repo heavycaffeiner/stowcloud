@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { useI18n } from '../i18n/use-i18n'
+import { useI18n } from '../../hooks/use-i18n'
 
 interface ProgressElement extends HTMLElement {
   updateComplete?: Promise<unknown>
