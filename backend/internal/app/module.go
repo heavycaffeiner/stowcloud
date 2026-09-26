@@ -55,10 +55,6 @@ func Module(config ModuleConfig) fx.Option {
 			return listener.New(listener.Config{
 				DataDir: config.DataDir, Address: config.Address, Pinned: config.Pinned,
 				Plain: config.Plain, Logger: config.Logger,
-				Hosts: func() (app, content []string) {
-					hosts := engine.Settings.Hosts()
-					return hosts.App, hosts.Content
-				},
 			}, engine.Settings, router, admission, controller)
 		}),
 		fx.Invoke(func(lifecycle fx.Lifecycle, runtime *listener.Runtime) {
