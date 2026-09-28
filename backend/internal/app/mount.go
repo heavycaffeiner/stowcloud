@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/gin-gonic/gin"
 
 	featuretransfer "github.com/heavycaffeiner/stowcloud/backend/internal/feature/directtransfer"
@@ -20,22 +21,14 @@ import (
 	featureoidc "github.com/heavycaffeiner/stowcloud/backend/internal/feature/oidc"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/smb/agent"
 	accounthttp "github.com/heavycaffeiner/stowcloud/backend/internal/http/api/account"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/adminlogs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/adminsettings"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/adminshares"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/adminsmb"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/adminstorage"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/directtransfer"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/encryption"
 	filehttp "github.com/heavycaffeiner/stowcloud/backend/internal/http/api/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/jobs"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/links"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/oidc"
 	previewhttp "github.com/heavycaffeiner/stowcloud/backend/internal/http/api/preview"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/setup"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/smbaccount"
-	trashhttp "github.com/heavycaffeiner/stowcloud/backend/internal/http/api/trash"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/uploads"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/dav"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/emergency"
@@ -50,43 +43,57 @@ import (
 //
 // Hanami owns engine construction and listener generations. Stowcloud owns
 // route topology, product middleware, and protocol adapters.
-func (e *Engine) Mount(app *gin.Engine) error {
-	if app == nil {
+func (e *Engine) Mount(router *gin.Engine) error {
+	if router == nil {
 		return fmt.Errorf("mounting routes: Gin engine is nil")
 	}
-	e.publicLinks = e.newPublicLinks()
-	table := server.Table()
-	handlers := e.handlers()
 	periodic := e.tasks()
 	if err := runtimetasks.Validate(periodic); err != nil {
 		return fmt.Errorf("mounting routes: %w", err)
 	}
-	if err := server.Bind(app, server.Binding{
-		Routes: table, Roots: []string{server.Base}, Chain: middleware.Chain(),
-		Handlers: handlers, Deps: e.deps(),
-		BeforeAnnounce: func(router *gin.Engine) {
-			emergency.Mount(router, emergency.Deps{
-				Auth: emergency.NewAuthenticator(e.Auth, e.clk().Nanos), State: e.State, Settings: e.Settings,
-				Page: spa.Page(), DataDir: e.dataDir, Reason: func() string { return "" },
-				ClientAddr:     emergency.ClientAddr(e.trustedProxies),
-				TrustedProxies: e.trustedProxies,
-			})
-		},
-		AfterAnnounce: func(router *gin.Engine) {
-			e.publicLinks.Declare(router, publiclinks.PublicLinkPrefix)
-			e.declarePublicLinkAliases(router)
-		},
-	}); err != nil {
+	e.publicLinks = e.newPublicLinks()
+	if err := e.mountNative(router); err != nil {
 		return err
 	}
-	dav.Mount(app, dav.Deps{Core: e.Core, State: e.State, Locks: e.davLocks, Clock: e.clk(), Logger: e.log(), InfinityEntries: 10_000})
-	e.publicLinks.Mount(app)
-	e.mountNCTagged(app)
-	if err := spa.Install(app); err != nil {
+	dav.Mount(router, dav.Deps{Core: e.Core, State: e.State, Locks: e.davLocks, Clock: e.clk(), Logger: e.log(), InfinityEntries: 10_000})
+	e.publicLinks.Mount(router)
+	e.mountNCTagged(router)
+	if err := spa.Install(router); err != nil {
 		return err
 	}
 	e.startTasks(periodic)
 	return nil
+}
+
+func (e *Engine) mountNative(router *gin.Engine) error {
+	handlers := e.handlers()
+	var typed huma.API
+	handlers["admin.openapi"] = func(c *gin.Context) {
+		if _, ok := handler.Admin(c, e.Auth); !ok {
+			return
+		}
+		c.JSON(http.StatusOK, typed.OpenAPI())
+	}
+	return server.Bind(router, server.Binding{
+		Routes: server.Table(), Roots: []string{server.Base}, Chain: middleware.Chain(),
+		Handlers: handlers, HumaNames: humaNames, Deps: e.deps(),
+		MountHuma: func(app *gin.Engine) error {
+			var err error
+			typed, err = e.mountHuma(app)
+			return err
+		},
+		BeforeAnnounce: func(app *gin.Engine) {
+			emergency.Mount(app, emergency.Deps{
+				Auth: emergency.NewAuthenticator(e.Auth, e.clk().Nanos), State: e.State, Settings: e.Settings,
+				Page: spa.Page(), DataDir: e.dataDir, Reason: func() string { return "" },
+				ClientAddr: emergency.ClientAddr(e.trustedProxies), TrustedProxies: e.trustedProxies,
+			})
+		},
+		AfterAnnounce: func(app *gin.Engine) {
+			e.publicLinks.Declare(app, publiclinks.PublicLinkPrefix)
+			e.declarePublicLinkAliases(app)
+		},
+	})
 }
 func (e *Engine) newPublicLinks() *publiclinks.Public {
 	return publiclinks.NewPublic(publiclinks.PublicDeps{
@@ -151,25 +158,6 @@ func (e *Engine) handlers() server.Handlers {
 		}, Fail: handler.Fail, Refuse: handler.Refuse, Decode: filehttp.Decode,
 	})
 
-	nativeLinks := links.NewNative(links.NativeDeps{
-		Core: e.Core, Auth: e.Auth, Owner: handler.Owner, Admin: admin,
-		Resolve: resolve, Now: e.now, Decode: filehttp.Decode,
-		VpathOf: func(l core.Link) string {
-			vp, err := e.Core.VpathFor(l.Owner, l.Share, l.Path)
-			if err != nil {
-				return ""
-			}
-			return vp.String()
-		},
-		Fail: handler.Fail, Refuse: handler.Refuse, NotFound: handler.NotFound, WriteJSON: func(c *gin.Context, status int, v any) { c.JSON(status, v) },
-	})
-	for name, h := range map[string]gin.HandlerFunc{
-		"links.list": nativeLinks.List, "admin.links.list": nativeLinks.AdminList,
-		"links.create": nativeLinks.Create, "links.update": nativeLinks.Update,
-		"links.delete": nativeLinks.Delete,
-	} {
-		out[name] = h
-	}
 	filesHandler := filehttp.NewHandler(filehttp.Deps{
 		Core: e.Core, Archives: e.Archives, Gate: e.archiveGate,
 		Owner: handler.Owner, Resolve: resolve, OpenClaim: openClaim,
@@ -233,12 +221,6 @@ func (e *Engine) handlers() server.Handlers {
 	}) {
 		out[name] = h
 	}
-	for name, h := range adminshares.NewHandlers(adminshares.Deps{
-		Core: e.Core, Auth: e.Auth, MarkSearchIncomplete: e.searchController.MarkIncomplete,
-		WatchShare: e.watchShare, UnwatchShare: e.unwatchShare, Logger: e.logger,
-	}) {
-		out[name] = h
-	}
 	transfer := directtransfer.NewHandler(directtransfer.Deps{
 		State: e.State, Owner: handler.Owner, Resolve: resolve,
 		ShareEncrypted: e.Core.ShareEncrypted, GuardLock: e.guardDavLock,
@@ -277,17 +259,6 @@ func (e *Engine) handlers() server.Handlers {
 	}) {
 		out[name] = h
 	}
-	for name, h := range jobs.NewHandlers(jobs.Deps{Core: e.Core, State: e.State, Owner: handler.Owner, StartJobs: e.Core.StartJobs, NowNs: e.now}) {
-		out[name] = h
-	}
-	for name, h := range adminlogs.NewHandlers(adminlogs.Deps{Logs: e.Logs, Auth: e.Auth, Admin: admin, Fail: handler.FailKnown, Refuse: handler.Refuse}) {
-		out[name] = h
-	}
-	trashHandler := trashhttp.NewHandler(trashhttp.Deps{Core: e.Core, Owner: handler.Owner, Resolve: resolve, Decode: filehttp.Decode, Fail: handler.Fail, Refuse: handler.Refuse})
-	out["trash.list"], out["trash.restore"], out["trash.purge"] = trashHandler.List, trashHandler.Restore, trashHandler.Purge
-	for name, h := range smbaccount.NewHandlers(smbaccount.Deps{Auth: e.Auth}) {
-		out[name] = h
-	}
 	for name, h := range adminsmb.NewHandlers(adminsmb.Deps{Auth: e.Auth, Apply: func(ctx context.Context) (agent.Report, bool, error) {
 		p := e.smbPublisherOf()
 		if p == nil {
@@ -296,12 +267,6 @@ func (e *Engine) handlers() server.Handlers {
 		r, err := p.Publish(ctx)
 		return r, true, err
 	}, Logger: e.log()}) {
-		out[name] = h
-	}
-	for name, h := range encryption.NewHandlers(encryption.Deps{Core: e.Core, Auth: e.Auth}) {
-		out[name] = h
-	}
-	for name, h := range adminstorage.NewHandlers(adminstorage.Deps{Core: e.Core, Auth: e.Auth, State: e.State}) {
 		out[name] = h
 	}
 	for name, h := range setup.NewHandlers(setup.Deps{

@@ -30,6 +30,8 @@ type Preflight struct {
 	Protocols []middleware.ProtocolPaths
 	// Handlers are the functions bound to the routes, by name.
 	Handlers Handlers
+	// HumaNames are routes mounted by the typed API instead of Gin handlers.
+	HumaNames []string
 }
 
 // Check runs every startup check and reports all of them at once.
@@ -43,7 +45,17 @@ func Check(p Preflight) error {
 	if err := route.Validate(p.Routes); err != nil {
 		problems = append(problems, err.Error())
 	}
-	if err := checkHandlers(p.Routes, p.Handlers); err != nil {
+	handlers := make(Handlers, len(p.Handlers)+len(p.HumaNames))
+	for name, handler := range p.Handlers {
+		handlers[name] = handler
+	}
+	for _, name := range p.HumaNames {
+		if _, exists := handlers[name]; exists {
+			problems = append(problems, fmt.Sprintf("the route %s has more than one transport binding", name))
+		}
+		handlers[name] = nil
+	}
+	if err := checkHandlers(p.Routes, handlers); err != nil {
 		problems = append(problems, err.Error())
 	}
 

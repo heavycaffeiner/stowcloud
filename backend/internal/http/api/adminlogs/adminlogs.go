@@ -4,16 +4,18 @@
 package adminlogs
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 
-	"github.com/gin-gonic/gin"
+	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/logbook"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/humabridge"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 )
 
@@ -25,115 +27,128 @@ const (
 // Deps contains the log services and narrow composition callbacks required by
 // the administrator log routes.
 type Deps struct {
-	Logs   *logbook.Sink
-	Auth   *auth.Service
-	Admin  func(*gin.Context) (int64, bool)
-	Fail   func(*gin.Context, error)
-	Refuse func(*gin.Context, apierr.Classified)
+	Logs *logbook.Sink
+	Auth *auth.Service
 }
 
-// NewHandlers returns route-name to handler bindings for administrator logs.
-func NewHandlers(d Deps) map[string]gin.HandlerFunc {
+// Register adds typed administrator log operations. Paths are relative to the
+// caller's API mount.
+func Register(api huma.API, d Deps) {
 	h := &handlers{d: d}
-	return map[string]gin.HandlerFunc{
-		"admin.logs.list":     h.list,
-		"admin.logs.timeline": h.timeline,
-	}
+	huma.Register(api, huma.Operation{
+		OperationID: "admin.logs.list",
+		Method:      http.MethodGet,
+		Path:        "/admin/logs",
+		Summary:     "List administrator logs",
+	}, h.listHuma)
+	huma.Register(api, huma.Operation{
+		OperationID: "admin.logs.timeline",
+		Method:      http.MethodGet,
+		Path:        "/admin/logs/timeline",
+		Summary:     "Summarize administrator logs",
+	}, h.timelineHuma)
 }
 
-type handlers struct{ d Deps }
-
-func (h *handlers) list(c *gin.Context) {
-	if _, ok := h.d.Admin(c); !ok {
-		return
-	}
-	if h.d.Logs == nil {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
-		return
-	}
-	q, ok := logQueryOf(c)
-	if !ok {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Malformed})
-		return
-	}
-	page, err := h.d.Logs.Query(c.Request.Context(), q)
-	if err != nil {
-		if errors.Is(err, logbook.ErrBadCursor) {
-			h.d.Refuse(c, apierr.Classified{Class: apierr.Malformed})
-			return
-		}
-		h.d.Fail(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, handler.LogPageOf(page, h.d.Logs.Stats()))
+type logInput struct {
+	Since     string `query:"since"`
+	Until     string `query:"until"`
+	Level     string `query:"level"`
+	Text      string `query:"text"`
+	Subsystem string `query:"subsystem"`
+	RequestID string `query:"request_id"`
+	Limit     string `query:"limit"`
+	Cursor    string `query:"cursor"`
 }
 
-func (h *handlers) timeline(c *gin.Context) {
-	if _, ok := h.d.Admin(c); !ok {
-		return
-	}
+type timelineInput struct {
+	Since     string `query:"since"`
+	Until     string `query:"until"`
+	Level     string `query:"level"`
+	Text      string `query:"text"`
+	Subsystem string `query:"subsystem"`
+	RequestID string `query:"request_id"`
+	Limit     string `query:"limit"`
+	Cursor    string `query:"cursor"`
+	BucketNS  string `query:"bucket_ns"`
+}
+
+type logPageOutput struct{ Body handler.LogPageView }
+type timelineOutput struct{ Body handler.LogsTimelineView }
+
+func (h *handlers) listHuma(ctx context.Context, in *logInput) (*logPageOutput, error) {
 	if h.d.Logs == nil {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
-		return
+		return nil, humabridge.Refusal(apierr.Classified{Class: apierr.SubsystemUnavailable})
 	}
-	q, ok := logQueryOf(c)
+	q, ok := logQueryInput(in.Since, in.Until, in.Level, in.Text, in.Subsystem, in.RequestID, in.Limit, in.Cursor)
 	if !ok {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Malformed})
-		return
+		return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Malformed})
 	}
-	width, ok := bucketNsOf(c)
-	if !ok {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Malformed})
-		return
-	}
-	server, widthNs, truncated, err := h.d.Logs.Counts(c.Request.Context(), q, width)
+	page, err := h.d.Logs.Query(ctx, q)
 	if err != nil {
 		if errors.Is(err, logbook.ErrBadCursor) {
-			h.d.Refuse(c, apierr.Classified{Class: apierr.Malformed})
-			return
+			return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Malformed})
 		}
-		h.d.Fail(c, err)
-		return
+		return nil, humabridge.Failure(ctx, err)
+	}
+	return &logPageOutput{Body: handler.LogPageOf(page, h.d.Logs.Stats())}, nil
+}
+
+func (h *handlers) timelineHuma(ctx context.Context, in *timelineInput) (*timelineOutput, error) {
+	if h.d.Logs == nil {
+		return nil, humabridge.Refusal(apierr.Classified{Class: apierr.SubsystemUnavailable})
+	}
+	q, ok := logQueryInput(in.Since, in.Until, in.Level, in.Text, in.Subsystem, in.RequestID, in.Limit, in.Cursor)
+	if !ok {
+		return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Malformed})
+	}
+	width, ok := bucketInput(in.BucketNS)
+	if !ok {
+		return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Malformed})
+	}
+	server, widthNS, truncated, err := h.d.Logs.Counts(ctx, q, width)
+	if err != nil {
+		if errors.Is(err, logbook.ErrBadCursor) {
+			return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Malformed})
+		}
+		return nil, humabridge.Failure(ctx, err)
 	}
 	var audit []auth.AuditBucket
 	if len(server) > 0 {
 		var auditTruncated bool
-		audit, auditTruncated, err = h.d.Auth.AuditCounts(c.Request.Context(), auth.AuditFilter{SinceNs: q.Since, UntilNs: q.Until}, server[0].StartNs, widthNs, len(server))
+		audit, auditTruncated, err = h.d.Auth.AuditCounts(ctx,
+			auth.AuditFilter{SinceNs: q.Since, UntilNs: q.Until},
+			server[0].StartNs, widthNS, len(server))
 		if err != nil {
-			h.d.Fail(c, err)
-			return
+			return nil, humabridge.Failure(ctx, err)
 		}
 		truncated = truncated || auditTruncated
 	}
-	c.JSON(http.StatusOK, handler.LogsTimelineOf(server, audit, widthNs, truncated))
+	return &timelineOutput{Body: handler.LogsTimelineOf(server, audit, widthNS, truncated)}, nil
 }
 
-func logQueryOf(c *gin.Context) (logbook.Query, bool) {
-	q := logbook.Query{Text: c.Query("text"), Subsystem: c.Query("subsystem"), RequestID: c.Query("request_id"), Cursor: c.Query("cursor"), Limit: logsPageDefault}
-	if raw := c.Query("since"); raw != "" {
-		v, err := strconv.ParseInt(raw, 10, 64)
+func logQueryInput(since, until, level, text, subsystem, requestID, limit, cursor string) (logbook.Query, bool) {
+	q := logbook.Query{Text: text, Subsystem: subsystem, RequestID: requestID, Cursor: cursor, Limit: logsPageDefault}
+	if since != "" {
+		v, err := strconv.ParseInt(since, 10, 64)
 		if err != nil {
 			return logbook.Query{}, false
 		}
 		q.Since = v
 	}
-	if raw := c.Query("until"); raw != "" {
-		v, err := strconv.ParseInt(raw, 10, 64)
+	if until != "" {
+		v, err := strconv.ParseInt(until, 10, 64)
 		if err != nil {
 			return logbook.Query{}, false
 		}
 		q.Until = v
 	}
-	if raw := c.Query("level"); raw != "" {
-		for _, level := range strings.Split(raw, ",") {
-			level = strings.TrimSpace(level)
-			if level != "" {
-				q.Levels = append(q.Levels, level)
-			}
+	for _, item := range strings.Split(level, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			q.Levels = append(q.Levels, item)
 		}
 	}
-	if raw := c.Query("limit"); raw != "" {
-		n, err := strconv.Atoi(raw)
+	if limit != "" {
+		n, err := strconv.Atoi(limit)
 		if err != nil || n < 1 || n > logsPageCeiling {
 			return logbook.Query{}, false
 		}
@@ -142,14 +157,12 @@ func logQueryOf(c *gin.Context) (logbook.Query, bool) {
 	return q, true
 }
 
-func bucketNsOf(c *gin.Context) (int64, bool) {
-	raw := c.Query("bucket_ns")
+func bucketInput(raw string) (int64, bool) {
 	if raw == "" {
 		return 0, true
 	}
 	v, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil || v <= 0 {
-		return 0, false
-	}
-	return v, true
+	return v, err == nil && v > 0
 }
+
+type handlers struct{ d Deps }

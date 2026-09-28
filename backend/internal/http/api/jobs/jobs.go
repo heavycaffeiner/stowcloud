@@ -5,17 +5,16 @@ package jobs
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"strconv"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/gin-gonic/gin"
 
 	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/humabridge"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
 )
 
@@ -31,157 +30,165 @@ type Deps struct {
 	NowNs     func() int64
 }
 
-// NewHandlers returns route-name to handler bindings for operation routes.
-func NewHandlers(d Deps) map[string]gin.HandlerFunc {
+// ListInput is the typed request for listing the caller's jobs.
+type ListInput struct{}
+
+// ListOutput preserves the native array response shape.
+type ListOutput struct {
+	Body []handler.OperationView
+}
+
+type operationInput struct {
+	ID string `path:"id"`
+}
+
+type operationOutput struct {
+	Body handler.OperationView
+}
+
+type noContentOutput struct {
+	Status int `status:"204"`
+}
+
+// Register mounts the six conventional jobs operations below the API prefix.
+func Register(api huma.API, d Deps) {
 	h := &handlers{d: d}
-	return map[string]gin.HandlerFunc{
-		"jobs.list":   h.list,
-		"jobs.get":    h.get,
-		"jobs.cancel": h.cancel,
-		"jobs.retry":  h.retry,
-		"jobs.pause":  h.pause,
-		"jobs.resume": h.resume,
-	}
+	huma.Register[ListInput, ListOutput](api, huma.Operation{
+		OperationID: "jobs.list", Method: http.MethodGet, Path: "/jobs",
+	}, h.listHuma)
+	huma.Register[operationInput, operationOutput](api, huma.Operation{
+		OperationID: "jobs.get", Method: http.MethodGet, Path: "/jobs/{id}",
+	}, h.getHuma)
+	huma.Register[operationInput, noContentOutput](api, huma.Operation{
+		OperationID: "jobs.cancel", Method: http.MethodPost, Path: "/jobs/{id}/cancel",
+	}, h.cancelHuma)
+	huma.Register[operationInput, noContentOutput](api, huma.Operation{
+		OperationID: "jobs.retry", Method: http.MethodPost, Path: "/jobs/{id}/retry",
+	}, h.retryHuma)
+	huma.Register[operationInput, noContentOutput](api, huma.Operation{
+		OperationID: "jobs.pause", Method: http.MethodPost, Path: "/jobs/{id}/pause",
+	}, h.pauseHuma)
+	huma.Register[operationInput, noContentOutput](api, huma.Operation{
+		OperationID: "jobs.resume", Method: http.MethodPost, Path: "/jobs/{id}/resume",
+	}, h.resumeHuma)
 }
 
 type handlers struct{ d Deps }
 
-func (h *handlers) list(c *gin.Context) {
-	owner, ok := h.owner(c)
-	if !ok {
-		return
-	}
-	ops, err := h.d.Core.ListOperations(c.Request.Context(), owner, jobsPageSize)
-	if err != nil {
-		h.fail(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, handler.OperationsOf(ops))
-}
-
-func (h *handlers) get(c *gin.Context) {
-	owner, ok := h.owner(c)
-	if !ok {
-		return
-	}
-	id, ok := operationID(c)
-	if !ok {
-		h.notFound(c)
-		return
-	}
-	op, err := h.d.Core.Operation(c.Request.Context(), owner, id)
-	if err != nil {
-		h.fail(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, handler.OperationOf(op))
-}
-
-func (h *handlers) cancel(c *gin.Context) {
-	owner, ok := h.owner(c)
-	if !ok {
-		return
-	}
-	id, ok := operationID(c)
-	if !ok {
-		h.notFound(c)
-		return
-	}
-	if err := h.d.Core.CancelOperation(c.Request.Context(), owner, id); err != nil {
-		h.fail(c, err)
-		return
-	}
-	c.Status(http.StatusNoContent)
-}
-
-func (h *handlers) retry(c *gin.Context) {
-	owner, ok := h.owner(c)
-	if !ok {
-		return
-	}
-	id, ok := operationID(c)
-	if !ok {
-		h.notFound(c)
-		return
-	}
-	op, err := h.d.Core.Operation(c.Request.Context(), owner, id)
-	if err != nil {
-		h.fail(c, err)
-		return
-	}
-	if op.State != state.OpFailed && op.State != state.OpInterrupted {
-		h.refuse(c, apierr.Classified{Class: apierr.Unprocessable})
-		return
-	}
-	if err := h.d.State.ResumeOp(c.Request.Context(), int64(id), h.d.NowNs()); err != nil {
-		h.fail(c, err)
-		return
-	}
-	h.d.StartJobs()
-	c.Status(http.StatusNoContent)
-}
-
-func (h *handlers) pause(c *gin.Context)  { h.pauseResume(c, true) }
-func (h *handlers) resume(c *gin.Context) { h.pauseResume(c, false) }
-
-func (h *handlers) pauseResume(c *gin.Context, pause bool) {
-	owner, ok := h.owner(c)
-	if !ok {
-		return
-	}
-	id, ok := operationID(c)
-	if !ok {
-		h.notFound(c)
-		return
-	}
-	if _, err := h.d.Core.Operation(c.Request.Context(), owner, id); err != nil {
-		h.fail(c, err)
-		return
-	}
-	var err error
-	if pause {
-		err = h.d.State.PauseOp(c.Request.Context(), int64(id))
-	} else {
-		err = h.d.State.ResumeOp(c.Request.Context(), int64(id), h.d.NowNs())
-	}
-	if err != nil {
-		h.fail(c, err)
-		return
-	}
-	h.d.StartJobs()
-	c.Status(http.StatusNoContent)
-}
-
-func (h *handlers) owner(c *gin.Context) (core.UserID, bool) {
+func (h *handlers) listHuma(ctx context.Context, _ *ListInput) (*ListOutput, error) {
+	c := humabridge.Gin(ctx)
 	owner, ok := h.d.Owner(c)
 	if !ok {
-		h.refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		return nil, humabridge.Refusal(apierr.Classified{Class: apierr.AuthRequired})
 	}
-	return owner, ok
+	ops, err := h.d.Core.ListOperations(ctx, owner, jobsPageSize)
+	if err != nil {
+		return nil, humabridge.Failure(ctx, err)
+	}
+	return &ListOutput{Body: handler.OperationsOf(ops)}, nil
 }
 
-func operationID(c *gin.Context) (core.OperationID, bool) {
-	n, err := strconv.ParseInt(c.Param("id"), 10, 64)
+func parseOperationInput(id string) (core.OperationID, bool) {
+	n, err := strconv.ParseInt(id, 10, 64)
 	if err != nil || n <= 0 {
 		return 0, false
 	}
 	return core.OperationID(n), true
 }
 
-func (h *handlers) notFound(c *gin.Context) { h.fail(c, core.ErrNotFound) }
-
-func (h *handlers) fail(c *gin.Context, err error) {
-	var full *upload.CacheFullError
-	if errors.As(err, &full) && full.RetryAfterSeconds > 0 {
-		c.Header("Retry-After", strconv.Itoa(full.RetryAfterSeconds))
+func (h *handlers) operationOwner(ctx context.Context) (core.UserID, error) {
+	c := humabridge.Gin(ctx)
+	owner, ok := h.d.Owner(c)
+	if !ok {
+		return 0, humabridge.Refusal(apierr.Classified{Class: apierr.AuthRequired})
 	}
-	middleware.SetCause(c, err)
-	h.refuse(c, apierr.Classify(err, apierr.VisibilityKnown))
+	return owner, nil
 }
 
-func (h *handlers) refuse(c *gin.Context, class apierr.Classified) {
-	status, body := apierr.REST(class)
-	c.JSON(status, body)
+func (h *handlers) getHuma(ctx context.Context, in *operationInput) (*operationOutput, error) {
+	owner, err := h.operationOwner(ctx)
+	if err != nil {
+		return nil, err
+	}
+	id, ok := parseOperationInput(in.ID)
+	if !ok {
+		return nil, humabridge.Failure(ctx, core.ErrNotFound)
+	}
+	op, err := h.d.Core.Operation(ctx, owner, id)
+	if err != nil {
+		return nil, humabridge.Failure(ctx, err)
+	}
+	return &operationOutput{Body: handler.OperationOf(op)}, nil
+}
+
+func (h *handlers) cancelHuma(ctx context.Context, in *operationInput) (*noContentOutput, error) {
+	owner, err := h.operationOwner(ctx)
+	if err != nil {
+		return nil, err
+	}
+	id, ok := parseOperationInput(in.ID)
+	if !ok {
+		return nil, humabridge.Failure(ctx, core.ErrNotFound)
+	}
+	if err := h.d.Core.CancelOperation(ctx, owner, id); err != nil {
+		return nil, humabridge.Failure(ctx, err)
+	}
+	return &noContentOutput{Status: http.StatusNoContent}, nil
+}
+
+func (h *handlers) retryHuma(ctx context.Context, in *operationInput) (*noContentOutput, error) {
+	owner, err := h.operationOwner(ctx)
+	if err != nil {
+		return nil, err
+	}
+	id, ok := parseOperationInput(in.ID)
+	if !ok {
+		return nil, humabridge.Failure(ctx, core.ErrNotFound)
+	}
+	op, err := h.d.Core.Operation(ctx, owner, id)
+	if err != nil {
+		return nil, humabridge.Failure(ctx, err)
+	}
+	if op.State != state.OpFailed && op.State != state.OpInterrupted {
+		return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Unprocessable})
+	}
+	if err := h.d.State.ResumeOp(ctx, int64(id), h.d.NowNs()); err != nil {
+		return nil, humabridge.Failure(ctx, err)
+	}
+	h.d.StartJobs()
+	return &noContentOutput{Status: http.StatusNoContent}, nil
+}
+
+func (h *handlers) pauseHuma(ctx context.Context, in *operationInput) (*noContentOutput, error) {
+	return h.pauseResumeHuma(ctx, in, true)
+}
+
+func (h *handlers) resumeHuma(ctx context.Context, in *operationInput) (*noContentOutput, error) {
+	return h.pauseResumeHuma(ctx, in, false)
+}
+
+func (h *handlers) pauseResumeHuma(ctx context.Context, in *operationInput, pause bool) (*noContentOutput, error) {
+	owner, err := h.operationOwner(ctx)
+	if err != nil {
+		return nil, err
+	}
+	id, ok := parseOperationInput(in.ID)
+	if !ok {
+		return nil, humabridge.Failure(ctx, core.ErrNotFound)
+	}
+	if _, err := h.d.Core.Operation(ctx, owner, id); err != nil {
+		return nil, humabridge.Failure(ctx, err)
+	}
+	if pause {
+		err = h.d.State.PauseOp(ctx, int64(id))
+	} else {
+		err = h.d.State.ResumeOp(ctx, int64(id), h.d.NowNs())
+	}
+	if err != nil {
+		return nil, humabridge.Failure(ctx, err)
+	}
+	h.d.StartJobs()
+	return &noContentOutput{Status: http.StatusNoContent}, nil
 }
 
 var _ interface {

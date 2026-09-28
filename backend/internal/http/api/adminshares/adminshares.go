@@ -6,20 +6,20 @@ package adminshares
 // Host paths and credentials are never rendered by the projections below.
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
 
-	"github.com/gin-gonic/gin"
+	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
 	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/humabridge"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/route"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/objstore"
@@ -30,98 +30,301 @@ import (
 // grant routes. Runtime hooks are post-commit side effects of registration.
 type Deps struct {
 	Core                 *core.Core
-	Auth                 *auth.Service
 	MarkSearchIncomplete func()
 	WatchShare           func(core.ShareDef)
 	UnwatchShare         func(core.ShareDef)
 	Logger               *slog.Logger
 }
 
-// NewHandlers builds administrator share and grant routes.
-func NewHandlers(d Deps) map[string]gin.HandlerFunc {
-	if d.Logger == nil {
-		d.Logger = slog.Default()
-	}
+// Register adds typed administrator share and grant operations. Paths are
+// relative to the caller's API mount. Authorization is supplied by the
+// application middleware before Huma validates an operation input.
+func Register(api huma.API, d Deps) {
 	h := &handlers{d: d}
-	return map[string]gin.HandlerFunc{
-		"admin.shares.list": h.sharesList, "admin.shares.create": h.sharesCreate,
-		"admin.shares.update": h.sharesUpdate, "admin.shares.retry": h.sharesRetry,
-		"admin.shares.delete": h.sharesDelete, "admin.grants.list": h.grantsList,
-		"admin.grants.create": h.grantsCreate, "admin.grants.update": h.grantsUpdate,
-		"admin.grants.delete": h.grantsDelete,
-	}
+	huma.Register[sharesListInput, sharesListOutput](api, huma.Operation{
+		OperationID: "admin.shares.list", Method: http.MethodGet, Path: "/admin/shares",
+	}, h.sharesListHuma)
+	huma.Register[sharesCreateInput, shareCreatedOutput](api, huma.Operation{
+		OperationID: "admin.shares.create", Method: http.MethodPost, Path: "/admin/shares",
+	}, h.sharesCreateHuma)
+	huma.Register[shareUpdateInput, shareOutput](api, huma.Operation{
+		OperationID: "admin.shares.update", Method: http.MethodPatch, Path: "/admin/shares/{id}",
+	}, h.sharesUpdateHuma)
+	huma.Register[sharePathInput, shareOutput](api, huma.Operation{
+		OperationID: "admin.shares.retry", Method: http.MethodPost, Path: "/admin/shares/{id}/retry",
+	}, h.sharesRetryHuma)
+	huma.Register[sharePathInput, noContentOutput](api, huma.Operation{
+		OperationID: "admin.shares.delete", Method: http.MethodDelete, Path: "/admin/shares/{id}",
+	}, h.sharesDeleteHuma)
+	huma.Register[grantsListInput, grantsListOutput](api, huma.Operation{
+		OperationID: "admin.grants.list", Method: http.MethodGet, Path: "/admin/grants",
+	}, h.grantsListHuma)
+	huma.Register[grantCreateInput, grantCreatedOutput](api, huma.Operation{
+		OperationID: "admin.grants.create", Method: http.MethodPost, Path: "/admin/grants",
+	}, h.grantsCreateHuma)
+	huma.Register[grantUpdateInput, grantOutput](api, huma.Operation{
+		OperationID: "admin.grants.update", Method: http.MethodPatch, Path: "/admin/grants/{id}",
+	}, h.grantsUpdateHuma)
+	huma.Register[grantPathInput, noContentOutput](api, huma.Operation{
+		OperationID: "admin.grants.delete", Method: http.MethodDelete, Path: "/admin/grants/{id}",
+	}, h.grantsDeleteHuma)
 }
 
 type handlers struct{ d Deps }
 
-func (h *handlers) admin(c *gin.Context) (int64, bool) {
-	v, ok := c.Get(string(middleware.KeyCredential))
-	if !ok {
-		refuse(c, apierr.Classified{Class: apierr.AuthRequired})
-		return 0, false
-	}
-	p, ok := v.(middleware.Principal)
-	if !ok || p.UserID == 0 {
-		refuse(c, apierr.Classified{Class: apierr.AuthRequired})
-		return 0, false
-	}
-	is, err := h.d.Auth.IsAdmin(c.Request.Context(), p.UserID)
-	if err != nil {
-		fail(c, err)
-		return 0, false
-	}
-	if !is {
-		refuse(c, apierr.Classified{Class: apierr.Denied})
-		return 0, false
-	}
-	return p.UserID, true
+// Typed Huma request and response models preserve native JSON shapes. IDs and
+// numeric query values remain strings because the native API accepts decimal
+// JSON strings and treats invalid values as zero or not-found.
+type sharesListInput struct{}
+type sharesListOutput struct{ Body []handler.ShareView }
+
+type sharesCreateInput struct {
+	_    struct{} `json:"-" additionalProperties:"false"`
+	Body createShareRequest
+}
+type shareCreatedOutput struct {
+	Body   handler.ShareView
+	Status int `status:"201"`
 }
 
-func decode(c *gin.Context, v any) bool {
-	if err := middleware.DecodeJSON(middleware.LimitBody(c.Request.Body, route.BodyJSON), v); err != nil {
-		refuse(c, apierr.Classified{Class: apierr.Malformed})
-		return false
+type sharePathInput struct {
+	ID string `path:"id"`
+}
+type shareUpdateInput struct {
+	_    struct{} `json:"-" additionalProperties:"false"`
+	ID   string   `path:"id"`
+	Body updateShareRequest
+}
+type shareOutput struct{ Body handler.ShareView }
+
+type grantsListInput struct {
+	User  string `query:"user"`
+	Group string `query:"group"`
+	Share string `query:"share"`
+}
+type grantsListOutput struct{ Body []handler.GrantView }
+type grantCreateInput struct {
+	_    struct{} `json:"-" additionalProperties:"false"`
+	Body grantRequest
+}
+type grantCreatedOutput struct {
+	Body   handler.GrantView
+	Status int `status:"201"`
+}
+type grantPathInput struct {
+	ID string `path:"id"`
+}
+type grantUpdateInput struct {
+	_    struct{} `json:"-" additionalProperties:"false"`
+	ID   string   `path:"id"`
+	Body updateGrantRequest
+}
+type grantOutput struct{ Body handler.GrantView }
+type noContentOutput struct {
+	Status int `status:"204"`
+}
+
+func humaShareID(raw string) (core.ShareID, bool) {
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || n <= 0 {
+		return 0, false
 	}
-	return true
-}
-func json(c *gin.Context, status int, v any) { c.JSON(status, v) }
-func notFound(c *gin.Context)                { fail(c, core.ErrNotFound) }
-func refuse(c *gin.Context, class apierr.Classified) {
-	status, body := apierr.REST(class)
-	json(c, status, body)
-}
-func fail(c *gin.Context, err error) {
-	if errors.Is(err, core.ErrNotFound) {
-		refuse(c, apierr.Classified{Class: apierr.NotFound})
-		return
+	narrowed, err := num.Narrow[uint32](n)
+	if err != nil {
+		return 0, false
 	}
-	middleware.SetCause(c, err)
-	refuse(c, apierr.Classify(err, apierr.VisibilityKnown))
+	return core.ShareID(narrowed), true
 }
-func pathID(c *gin.Context) (int64, bool) {
-	n, err := strconv.ParseInt(c.Param("id"), 10, 64)
+
+func humaGrantID(raw string) (int64, bool) {
+	n, err := strconv.ParseInt(raw, 10, 64)
 	return n, err == nil && n > 0
 }
+
+func (h *handlers) adminUser(ctx context.Context) (int64, error) {
+	c := humabridge.Gin(ctx)
+	v, ok := c.Get(string(middleware.KeyCredential))
+	p, valid := v.(middleware.Principal)
+	if !ok || !valid || p.UserID == 0 {
+		return 0, humabridge.Refusal(apierr.Classified{Class: apierr.AuthRequired})
+	}
+	return p.UserID, nil
+}
+
+func (h *handlers) sharesListHuma(ctx context.Context, _ *sharesListInput) (*sharesListOutput, error) {
+	empty := func(id core.ShareID) bool { return h.d.Core.ShareEmpty(ctx, id) }
+	return &sharesListOutput{Body: handler.SharesOf(h.d.Core.Shares(), empty)}, nil
+}
+
+func (h *handlers) sharesCreateHuma(ctx context.Context, in *sharesCreateInput) (*shareCreatedOutput, error) {
+	admin, err := h.adminUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	spec, err := shareSpecOf(in.Body)
+	if err != nil {
+		return nil, humabridge.Failure(ctx, err)
+	}
+	share, err := h.d.Core.CreateShare(ctx, spec)
+	if err != nil {
+		if errors.Is(err, core.ErrUnprocessable) {
+			return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Unprocessable, Key: "admin.share_backend_unknown"})
+		}
+		return nil, humabridge.Failure(ctx, err)
+	}
+	if h.d.MarkSearchIncomplete != nil {
+		h.d.MarkSearchIncomplete()
+	}
+	if h.d.WatchShare != nil {
+		h.d.WatchShare(share)
+	}
+	if err := h.grantShareToContext(ctx, admin, share); err != nil {
+		if h.d.Logger == nil {
+			h.d.Logger = slog.Default()
+		}
+		h.d.Logger.Warn("the new share was registered without a grant for its creator", "share", int64(share.ID), "error", err)
+	}
+	return &shareCreatedOutput{Body: handler.ShareOf(share), Status: http.StatusCreated}, nil
+}
+
+func (h *handlers) grantShareToContext(ctx context.Context, user int64, share core.ShareDef) error {
+	_, err := h.d.Core.CreateGrant(ctx, core.GrantSpec{
+		User: &user, Share: share.ID,
+		Allow:   acl.Read | acl.Write | acl.Create | acl.Delete | acl.Rename | acl.Move | acl.Share | acl.Download,
+		Inherit: true, Label: share.Name,
+	})
+	return err
+}
+
+func (h *handlers) sharesUpdateHuma(ctx context.Context, in *shareUpdateInput) (*shareOutput, error) {
+	id, ok := humaShareID(in.ID)
+	if !ok {
+		return nil, humabridge.Failure(ctx, core.ErrNotFound)
+	}
+	req := in.Body
+	if req.Name == nil && req.Host == nil && req.TrashEnabled == nil && req.Backend == nil && req.S3 == nil && req.Veracrypt == nil {
+		return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Malformed})
+	}
+	patch := core.SharePatch{Name: req.Name, Host: req.Host, TrashEnabled: req.TrashEnabled, Backend: req.Backend}
+	if req.S3 != nil || req.Veracrypt != nil {
+		current, found := h.d.Core.Share(id)
+		if !found {
+			return nil, humabridge.Failure(ctx, core.ErrNotFound)
+		}
+		if err := applyShareBackendPatch(&patch, current, req.S3, req.Veracrypt); err != nil {
+			return nil, humabridge.Failure(ctx, err)
+		}
+	}
+	share, err := h.d.Core.UpdateShare(ctx, id, patch)
+	if err != nil {
+		if errors.Is(err, core.ErrUnprocessable) {
+			return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Unprocessable, Key: "admin.share_backend_immutable"})
+		}
+		return nil, humabridge.Failure(ctx, err)
+	}
+	if h.d.MarkSearchIncomplete != nil {
+		h.d.MarkSearchIncomplete()
+	}
+	if h.d.WatchShare != nil {
+		h.d.WatchShare(share)
+	}
+	return &shareOutput{Body: handler.ShareOf(share)}, nil
+}
+
+func (h *handlers) sharesRetryHuma(ctx context.Context, in *sharePathInput) (*shareOutput, error) {
+	id, ok := humaShareID(in.ID)
+	if !ok {
+		return nil, humabridge.Failure(ctx, core.ErrNotFound)
+	}
+	share, err := h.d.Core.RetryShare(ctx, id)
+	if err != nil {
+		return nil, humabridge.Failure(ctx, err)
+	}
+	return &shareOutput{Body: handler.ShareOf(share)}, nil
+}
+
+func (h *handlers) sharesDeleteHuma(ctx context.Context, in *sharePathInput) (*noContentOutput, error) {
+	id, ok := humaShareID(in.ID)
+	if !ok {
+		return nil, humabridge.Failure(ctx, core.ErrNotFound)
+	}
+	share, found := h.d.Core.Share(id)
+	if !found {
+		return nil, humabridge.Failure(ctx, core.ErrNotFound)
+	}
+	if err := h.d.Core.DeleteShare(ctx, id); err != nil {
+		return nil, humabridge.Failure(ctx, err)
+	}
+	if h.d.UnwatchShare != nil {
+		h.d.UnwatchShare(share)
+	}
+	return &noContentOutput{Status: http.StatusNoContent}, nil
+}
+
+func (h *handlers) grantsListHuma(ctx context.Context, in *grantsListInput) (*grantsListOutput, error) {
+	rows, err := h.d.Core.ListGrants(ctx, core.GrantFilter{
+		User: queryInt(in.User), Group: queryInt(in.Group), Share: queryInt(in.Share),
+	})
+	if err != nil {
+		return nil, humabridge.Failure(ctx, err)
+	}
+	return &grantsListOutput{Body: handler.GrantsOf(rows)}, nil
+}
+
+func (h *handlers) grantsCreateHuma(ctx context.Context, in *grantCreateInput) (*grantCreatedOutput, error) {
+	spec, ok := grantSpecOf(in.Body)
+	if !ok {
+		return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Unprocessable})
+	}
+	if spec.Label == "" && spec.Subpath == "" {
+		if def, found := h.d.Core.Share(spec.Share); found {
+			spec.Label = def.Name
+		}
+	}
+	grant, err := h.d.Core.CreateGrant(ctx, spec)
+	if err != nil {
+		return nil, humabridge.Failure(ctx, err)
+	}
+	return &grantCreatedOutput{Body: handler.GrantOf(grant), Status: http.StatusCreated}, nil
+}
+
+func (h *handlers) grantsUpdateHuma(ctx context.Context, in *grantUpdateInput) (*grantOutput, error) {
+	id, ok := humaGrantID(in.ID)
+	if !ok {
+		return nil, humabridge.Failure(ctx, core.ErrNotFound)
+	}
+	allow, ok := permsOf(in.Body.Allow)
+	if !ok {
+		return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Unprocessable})
+	}
+	deny, ok := permsOf(in.Body.Deny)
+	if !ok {
+		return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Unprocessable})
+	}
+	grant, err := h.d.Core.UpdateGrant(ctx, id, allow, deny, in.Body.Inherit, in.Body.Label)
+	if err != nil {
+		return nil, humabridge.Failure(ctx, err)
+	}
+	return &grantOutput{Body: handler.GrantOf(grant)}, nil
+}
+
+func (h *handlers) grantsDeleteHuma(ctx context.Context, in *grantPathInput) (*noContentOutput, error) {
+	id, ok := humaGrantID(in.ID)
+	if !ok {
+		return nil, humabridge.Failure(ctx, core.ErrNotFound)
+	}
+	if err := h.d.Core.DeleteGrant(ctx, id); err != nil {
+		return nil, humabridge.Failure(ctx, err)
+	}
+	return &noContentOutput{Status: http.StatusNoContent}, nil
+}
+
 func queryInt(raw string) int64 {
 	n, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil || n < 0 {
 		return 0
 	}
 	return n
-}
-
-// adminSharesList answers every registered share.
-//
-// Including the broken ones. A share whose disk never came back is still
-// registered, and dropping it from this listing is what once made an
-// unreachable share indistinguishable from a deleted one.
-func (h *handlers) sharesList(c *gin.Context) {
-	if _, ok := h.admin(c); !ok {
-		return
-	}
-	ctx := c.Request.Context()
-	empty := func(id core.ShareID) bool { return h.d.Core.ShareEmpty(ctx, id) }
-	json(c, http.StatusOK, handler.SharesOf(h.d.Core.Shares(), empty))
 }
 
 // createShareRequest registers a share, of whichever backend Backend names.
@@ -173,42 +376,6 @@ type shareVeracryptRequest struct {
 	// create and patch: absent means the container carries none, and
 	// vault.ParseConfig is what actually bounds it.
 	PIM *uint32 `json:"pim"`
-}
-
-// adminSharesCreate registers one.
-func (h *handlers) sharesCreate(c *gin.Context) {
-	admin, ok := h.admin(c)
-	if !ok {
-		return
-	}
-	var req createShareRequest
-	if !decode(c, &req) {
-		return
-	}
-	spec, verr := shareSpecOf(req)
-	if verr != nil {
-		fail(c, verr)
-		return
-	}
-	share, err := h.d.Core.CreateShare(c.Request.Context(), spec)
-	if err != nil {
-		if errors.Is(err, core.ErrUnprocessable) {
-			refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "admin.share_backend_unknown"})
-			return
-		}
-		fail(c, err)
-		return
-	}
-	if h.d.MarkSearchIncomplete != nil {
-		h.d.MarkSearchIncomplete()
-	}
-	if h.d.WatchShare != nil {
-		h.d.WatchShare(share)
-	}
-	if err := h.grantShareTo(c, admin, share); err != nil {
-		h.d.Logger.Warn("the new share was registered without a grant for its creator", "share", int64(share.ID), "error", err)
-	}
-	json(c, http.StatusCreated, handler.ShareOf(share))
 }
 
 // unprocessable names a refusal about the request's own content, carrying
@@ -357,19 +524,6 @@ func marshalAndSealVault(cfg vault.Config, plain string) ([]byte, secret.Secret,
 	return b, secret.New([]byte(plain)), nil
 }
 
-// grantShareTo gives one account full access to one share.
-//
-// The same permission set setup writes, and the share's own name as the
-// label, so the two paths produce grants a reader cannot tell apart.
-func (h *handlers) grantShareTo(c *gin.Context, user int64, share core.ShareDef) error {
-	_, err := h.d.Core.CreateGrant(c.Request.Context(), core.GrantSpec{
-		User: &user, Share: share.ID,
-		Allow:   acl.Read | acl.Write | acl.Create | acl.Delete | acl.Rename | acl.Move | acl.Share | acl.Download,
-		Inherit: true, Label: share.Name,
-	})
-	return err
-}
-
 // updateShareRequest carries only what changes. Pointers separate an absent
 // field from a cleared one, which is the difference between leaving the trash
 // alone and turning it off.
@@ -393,54 +547,6 @@ type updateShareRequest struct {
 	// Veracrypt patches a veracrypt share's own fields. Refused unless the
 	// share's current backend is veracrypt.
 	Veracrypt *shareVeracryptRequest `json:"veracrypt"`
-}
-
-// adminSharesUpdate changes one.
-func (h *handlers) sharesUpdate(c *gin.Context) {
-	if _, ok := h.admin(c); !ok {
-		return
-	}
-	id, ok := shareIDOf(c)
-	if !ok {
-		notFound(c)
-		return
-	}
-	var req updateShareRequest
-	if !decode(c, &req) {
-		return
-	}
-	if req.Name == nil && req.Host == nil && req.TrashEnabled == nil && req.Backend == nil && req.S3 == nil && req.Veracrypt == nil {
-		refuse(c, apierr.Classified{Class: apierr.Malformed})
-		return
-	}
-	patch := core.SharePatch{Name: req.Name, Host: req.Host, TrashEnabled: req.TrashEnabled, Backend: req.Backend}
-	if req.S3 != nil || req.Veracrypt != nil {
-		current, found := h.d.Core.Share(id)
-		if !found {
-			notFound(c)
-			return
-		}
-		if err := applyShareBackendPatch(&patch, current, req.S3, req.Veracrypt); err != nil {
-			fail(c, err)
-			return
-		}
-	}
-	share, err := h.d.Core.UpdateShare(c.Request.Context(), id, patch)
-	if err != nil {
-		if errors.Is(err, core.ErrUnprocessable) {
-			refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "admin.share_backend_immutable"})
-			return
-		}
-		fail(c, err)
-		return
-	}
-	if h.d.MarkSearchIncomplete != nil {
-		h.d.MarkSearchIncomplete()
-	}
-	if h.d.WatchShare != nil {
-		h.d.WatchShare(share)
-	}
-	json(c, http.StatusOK, handler.ShareOf(share))
 }
 
 // applyShareBackendPatch validates the request's s3 and veracrypt objects
@@ -557,89 +663,6 @@ func applyVeracryptPatch(cfg *vault.Config, req *shareVeracryptRequest) (string,
 	return *req.Password, nil
 }
 
-// adminSharesRetry re-opens a share whose backing was unavailable.
-//
-// A separate route rather than something the listing does on its own: opening
-// a dead mount can block, and a listing that retried every broken share would
-// take as long as the slowest one every time an administrator looked at the
-// screen.
-func (h *handlers) sharesRetry(c *gin.Context) {
-	if _, ok := h.admin(c); !ok {
-		return
-	}
-	id, ok := shareIDOf(c)
-	if !ok {
-		notFound(c)
-		return
-	}
-	share, err := h.d.Core.RetryShare(c.Request.Context(), id)
-	if err != nil {
-		fail(c, err)
-		return
-	}
-	json(c, http.StatusOK, handler.ShareOf(share))
-}
-
-// adminSharesDelete unregisters one.
-//
-// The stored files are not touched. Unregistering is an administrative act
-// about what this deployment serves; deleting the data would make a mistyped
-// id destroy a directory nobody meant to name.
-func (h *handlers) sharesDelete(c *gin.Context) {
-	if _, ok := h.admin(c); !ok {
-		return
-	}
-	id, ok := shareIDOf(c)
-	if !ok {
-		notFound(c)
-		return
-	}
-	share, found := h.d.Core.Share(id)
-	if !found {
-		notFound(c)
-		return
-	}
-	if err := h.d.Core.DeleteShare(c.Request.Context(), id); err != nil {
-		fail(c, err)
-		return
-	}
-	if h.d.UnwatchShare != nil {
-		h.d.UnwatchShare(share)
-	}
-	c.Status(http.StatusNoContent)
-}
-
-// shareIDOf reads the path's share id.
-//
-// A share id is narrower than the decimal a path can carry, so the value is
-// narrowed rather than converted: a converted id past the width wraps onto a
-// different share, which turns a mistyped number into a delete of something
-// nobody named.
-func shareIDOf(c *gin.Context) (core.ShareID, bool) {
-	raw, ok := pathID(c)
-	if !ok {
-		return 0, false
-	}
-	narrowed, err := num.Narrow[uint32](raw)
-	if err != nil {
-		return 0, false
-	}
-	return core.ShareID(narrowed), true
-}
-
-// adminGrantsList answers the grants, optionally for one subject or share.
-func (h *handlers) grantsList(c *gin.Context) {
-	if _, ok := h.admin(c); !ok {
-		return
-	}
-	rows, err := h.d.Core.ListGrants(c.Request.Context(), core.GrantFilter{User: queryInt(c.Query("user")), Group: queryInt(c.Query("group")), Share: queryInt(c.Query("share"))})
-	if err != nil {
-		fail(c, err)
-		return
-	}
-	json(c, http.StatusOK, handler.GrantsOf(rows))
-}
-
 // grantRequest is one permission assignment.
 type grantRequest struct {
 	// Exactly one of these names the subject. A grant to both would be two
@@ -658,33 +681,6 @@ type grantRequest struct {
 
 	Inherit bool   `json:"inherit"`
 	Label   string `json:"label"`
-}
-
-// adminGrantsCreate adds one.
-func (h *handlers) grantsCreate(c *gin.Context) {
-	if _, ok := h.admin(c); !ok {
-		return
-	}
-	var req grantRequest
-	if !decode(c, &req) {
-		return
-	}
-	spec, ok := grantSpecOf(req)
-	if !ok {
-		refuse(c, apierr.Classified{Class: apierr.Unprocessable})
-		return
-	}
-	if spec.Label == "" && spec.Subpath == "" {
-		if def, found := h.d.Core.Share(spec.Share); found {
-			spec.Label = def.Name
-		}
-	}
-	grant, err := h.d.Core.CreateGrant(c.Request.Context(), spec)
-	if err != nil {
-		fail(c, err)
-		return
-	}
-	json(c, http.StatusCreated, handler.GrantOf(grant))
 }
 
 // grantSpecOf validates a request into a spec.
@@ -769,53 +765,4 @@ type updateGrantRequest struct {
 	Deny    []string `json:"deny"`
 	Inherit bool     `json:"inherit"`
 	Label   string   `json:"label"`
-}
-
-// adminGrantsUpdate changes one.
-func (h *handlers) grantsUpdate(c *gin.Context) {
-	if _, ok := h.admin(c); !ok {
-		return
-	}
-	id, ok := pathID(c)
-	if !ok {
-		notFound(c)
-		return
-	}
-	var req updateGrantRequest
-	if !decode(c, &req) {
-		return
-	}
-	allow, ok := permsOf(req.Allow)
-	if !ok {
-		refuse(c, apierr.Classified{Class: apierr.Unprocessable})
-		return
-	}
-	deny, ok := permsOf(req.Deny)
-	if !ok {
-		refuse(c, apierr.Classified{Class: apierr.Unprocessable})
-		return
-	}
-	grant, err := h.d.Core.UpdateGrant(c.Request.Context(), id, allow, deny, req.Inherit, req.Label)
-	if err != nil {
-		fail(c, err)
-		return
-	}
-	json(c, http.StatusOK, handler.GrantOf(grant))
-}
-
-// adminGrantsDelete revokes one.
-func (h *handlers) grantsDelete(c *gin.Context) {
-	if _, ok := h.admin(c); !ok {
-		return
-	}
-	id, ok := pathID(c)
-	if !ok {
-		notFound(c)
-		return
-	}
-	if err := h.d.Core.DeleteGrant(c.Request.Context(), id); err != nil {
-		fail(c, err)
-		return
-	}
-	c.Status(http.StatusNoContent)
 }

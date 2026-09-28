@@ -106,6 +106,37 @@ func TestNoAdminRouteAnswersAnOrdinaryAccount(t *testing.T) {
 	}
 }
 
+// The generated specification covers only the typed native operations and is
+// available through the existing administrator-owned route.
+func TestTheAdminOpenAPIDescribesTypedRoutes(t *testing.T) {
+	t.Parallel()
+	base, adminCookie, _, plainCookie, _ := adminEngine(t)
+
+	if status, body := withCookie(t, http.MethodGet, base+"/api/v1/admin/openapi", plainCookie); status != http.StatusForbidden {
+		t.Fatalf("an ordinary account read the specification: %d %s", status, body)
+	}
+	status, body := withCookie(t, http.MethodGet, base+"/api/v1/admin/openapi", adminCookie)
+	if status != http.StatusOK {
+		t.Fatalf("the specification answered %d: %s", status, body)
+	}
+	var doc struct {
+		Paths map[string]json.RawMessage `json:"paths"`
+	}
+	if err := json.Unmarshal(body, &doc); err != nil {
+		t.Fatalf("the specification does not parse: %v\n%s", err, body)
+	}
+	for _, path := range []string{"/jobs", "/trash", "/admin/shares", "/links", "/encryption", "/account/smb"} {
+		if _, ok := doc.Paths[path]; !ok {
+			t.Errorf("the specification omits %s", path)
+		}
+	}
+	for _, path := range []string{"/files/read", "/uploads", "/events"} {
+		if _, ok := doc.Paths[path]; ok {
+			t.Errorf("the typed specification includes protocol route %s", path)
+		}
+	}
+}
+
 // concretePath fills a route's parameters with a value that parses, so the
 // request reaches the handler's own checks rather than stopping at the router.
 func concretePath(pattern string) string {

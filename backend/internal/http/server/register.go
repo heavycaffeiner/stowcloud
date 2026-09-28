@@ -95,11 +95,13 @@ func GinPath(path string) string {
 // the handlers and service-backed middleware dependencies without making the
 // transport import the application package.
 type Binding struct {
-	Routes   []route.Route
-	Roots    []string
-	Chain    []middleware.Step
-	Handlers Handlers
-	Deps     middleware.Deps
+	Routes    []route.Route
+	Roots     []string
+	Chain     []middleware.Step
+	Handlers  Handlers
+	HumaNames []string
+	MountHuma func(*gin.Engine) error
+	Deps      middleware.Deps
 
 	// BeforeAnnounce installs product routes that must precede route metadata.
 	BeforeAnnounce func(*gin.Engine)
@@ -115,9 +117,12 @@ func Bind(app *gin.Engine, b Binding) error {
 	}
 	if err := Check(Preflight{
 		Routes: b.Routes, Roots: b.Roots, Chain: b.Chain,
-		Handlers: b.Handlers,
+		Handlers: b.Handlers, HumaNames: b.HumaNames,
 	}); err != nil {
 		return fmt.Errorf("the assembly is not servable: %w", err)
+	}
+	if len(b.HumaNames) > 0 && b.MountHuma == nil {
+		return fmt.Errorf("mounting routes: Huma operations have no registrar")
 	}
 	if b.BeforeAnnounce != nil {
 		b.BeforeAnnounce(app)
@@ -129,8 +134,32 @@ func Bind(app *gin.Engine, b Binding) error {
 	if err := middleware.Mount(app, b.Chain, b.Deps, nil); err != nil {
 		return fmt.Errorf("mounting the chain: %w", err)
 	}
-	if err := Register(app, b.Routes, b.Handlers); err != nil {
+	huma := make(map[string]bool, len(b.HumaNames))
+	for _, name := range b.HumaNames {
+		huma[name] = true
+	}
+	native := make([]route.Route, 0, len(b.Routes)-len(huma))
+	for _, r := range b.Routes {
+		if !huma[r.Name] {
+			native = append(native, r)
+		}
+	}
+	if err := Register(app, native, b.Handlers); err != nil {
 		return fmt.Errorf("registering routes: %w", err)
+	}
+	if b.MountHuma != nil {
+		if err := b.MountHuma(app); err != nil {
+			return fmt.Errorf("registering Huma routes: %w", err)
+		}
+		mounted := make(map[string]bool)
+		for _, info := range app.Routes() {
+			mounted[info.Method+" "+info.Path] = true
+		}
+		for _, r := range b.Routes {
+			if huma[r.Name] && !mounted[r.Method+" "+GinPath(r.Path)] {
+				return fmt.Errorf("the Huma route %s (%s %s) was not mounted", r.Name, r.Method, r.Path)
+			}
+		}
 	}
 	return nil
 }

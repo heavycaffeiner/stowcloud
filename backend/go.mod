@@ -3,10 +3,12 @@ module github.com/heavycaffeiner/stowcloud/backend
 go 1.27.1
 
 require (
+	github.com/danielgtaylor/huma/v2 v2.39.1
 	github.com/gin-gonic/gin v1.12.0
 	github.com/gogs/chardet v0.0.0-20211120154057-b7413eaefb8f
 	github.com/gorilla/websocket v1.5.3
 	github.com/heavycaffeiner/hanami v0.2.0
+	github.com/heavycaffeiner/hanami/api v0.0.0-20260922101327-74f07f1dcba8
 	github.com/heavycaffeiner/hanami/gin v0.2.0
 	github.com/stowcloud/durablefs v0.1.0
 	github.com/stowcloud/namesearch v0.1.0

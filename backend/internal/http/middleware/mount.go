@@ -441,6 +441,12 @@ func RequirementOf(c *gin.Context) (route.Requirement, bool) {
 	return m.req, ok
 }
 
+// RouteNameOf reports the matched route's stable product name.
+func RouteNameOf(c *gin.Context) (string, bool) {
+	m, ok := metaOf(c)
+	return m.name, ok
+}
+
 func metaOf(c *gin.Context) (routeMeta, bool) {
 	v, ok := c.Get(string(routeRequirementKey))
 	if !ok {

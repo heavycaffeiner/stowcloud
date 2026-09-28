@@ -15,5 +15,5 @@
     "noEmit": true,
     "types": ["vite/client", "vitest/globals", "node", "mdui/jsx.en.d.ts"]
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "tests", "vite.config.ts"]
 }

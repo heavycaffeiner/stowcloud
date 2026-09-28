@@ -50,7 +50,7 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
-    include: ['src/**/*.{test,spec}.{js,ts,tsx}', 'tools/**/*.{test,spec}.{js,ts,tsx}'],
+    include: ['tests/**/*.{test,spec}.{js,ts,tsx}', 'tools/**/*.{test,spec}.{js,ts,tsx}'],
     globals: false
   },
   server: {

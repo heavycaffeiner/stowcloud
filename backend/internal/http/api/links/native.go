@@ -8,12 +8,14 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/gin-gonic/gin"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
 	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/humabridge"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 )
@@ -23,57 +25,117 @@ type NativeDeps struct {
 	Auth interface {
 		ListUsers(context.Context) ([]auth.UserRow, error)
 	}
-	Owner     func(*gin.Context) (core.UserID, bool)
-	Admin     func(*gin.Context) (int64, bool)
-	Resolve   func(core.UserID, string, acl.Perms) (core.Resolved, error)
-	VpathOf   func(core.Link) string
-	Now       func() int64
-	Decode    func(*gin.Context, any) error
-	Fail      func(*gin.Context, error)
-	Refuse    func(*gin.Context, apierr.Classified)
-	NotFound  func(*gin.Context)
-	WriteJSON func(*gin.Context, int, any)
+	Owner   func(*gin.Context) (core.UserID, bool)
+	Resolve func(core.UserID, string, acl.Perms) (core.Resolved, error)
+	VpathOf func(core.Link) string
+	Now     func() int64
 }
 
 type Native struct{ d NativeDeps }
 
 func NewNative(d NativeDeps) *Native { return &Native{d: d} }
 
-func (h *Native) List(c *gin.Context) {
-	owner, ok := h.d.Owner(c)
+type listInput struct {
+	Path string `query:"path"`
+}
+
+type listOutput struct {
+	Body []handler.LinkView
+}
+
+type adminListInput struct{}
+
+type adminListOutput struct {
+	Body []handler.OwnedLinkView
+}
+
+type createInput struct {
+	Body createLinkRequest
+}
+
+type createOutput struct {
+	Body   handler.MintedLinkView
+	Status int `status:"201"`
+}
+
+type linkIDInput struct {
+	ID string `path:"id"`
+}
+
+type updateInput struct {
+	ID   string `path:"id"`
+	Body updateLinkRequest
+}
+
+type updateOutput struct {
+	Body handler.LinkView
+}
+
+type deleteOutput struct {
+	Status int `status:"204"`
+}
+
+// Register mounts the authenticated link operations below the API prefix.
+func Register(api huma.API, d NativeDeps) {
+	h := NewNative(d)
+	huma.Register[listInput, listOutput](api, huma.Operation{
+		OperationID: "links.list", Method: http.MethodGet, Path: "/links",
+	}, h.listHuma)
+	huma.Register[createInput, createOutput](api, huma.Operation{
+		OperationID: "links.create", Method: http.MethodPost, Path: "/links",
+	}, h.createHuma)
+	huma.Register[updateInput, updateOutput](api, huma.Operation{
+		OperationID: "links.update", Method: http.MethodPatch, Path: "/links/{id}",
+	}, h.updateHuma)
+	huma.Register[linkIDInput, deleteOutput](api, huma.Operation{
+		OperationID: "links.delete", Method: http.MethodDelete, Path: "/links/{id}",
+	}, h.deleteHuma)
+	huma.Register[adminListInput, adminListOutput](api, huma.Operation{
+		OperationID: "admin.links.list", Method: http.MethodGet, Path: "/admin/links",
+	}, h.adminListHuma)
+}
+
+func (h *Native) humaOwner(ctx context.Context) (core.UserID, error) {
+	owner, ok := h.d.Owner(humabridge.Gin(ctx))
 	if !ok {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
-		return
+		return 0, humabridge.Refusal(apierr.Classified{Class: apierr.AuthRequired})
+	}
+	return owner, nil
+}
+
+func parseLinkID(raw string) (int64, bool) {
+	n, err := strconv.ParseInt(raw, 10, 64)
+	return n, err == nil && n > 0
+}
+
+func (h *Native) listHuma(ctx context.Context, in *listInput) (*listOutput, error) {
+	owner, err := h.humaOwner(ctx)
+	if err != nil {
+		return nil, err
 	}
 	var at *core.Resolved
-	if raw := c.Query("path"); raw != "" {
-		r, err := h.d.Resolve(owner, raw, acl.Read)
-		if err != nil {
-			h.d.Fail(c, err)
-			return
+	if in.Path != "" {
+		r, rerr := h.d.Resolve(owner, in.Path, acl.Read)
+		if rerr != nil {
+			return nil, humabridge.Failure(ctx, rerr)
 		}
 		at = &r
 	}
-	links, err := h.d.Core.ListLinks(c.Request.Context(), owner, at)
+	links, err := h.d.Core.ListLinks(ctx, owner, at)
 	if err != nil {
-		h.d.Fail(c, err)
-		return
+		return nil, humabridge.Failure(ctx, err)
 	}
-	h.d.WriteJSON(c, http.StatusOK, handler.LinksOf(links, h.d.VpathOf, h.d.Now()))
+	return &listOutput{Body: handler.LinksOf(links, h.d.VpathOf, h.d.Now())}, nil
 }
 
-func (h *Native) AdminList(c *gin.Context) {
-	if _, ok := h.d.Admin(c); !ok {
-		return
-	}
-	links, err := h.d.Core.ListAllLinks(c.Request.Context())
+func (h *Native) adminListHuma(ctx context.Context, _ *adminListInput) (*adminListOutput, error) {
+	links, err := h.d.Core.ListAllLinks(ctx)
 	if err != nil {
-		h.d.Fail(c, err)
-		return
+		return nil, humabridge.Failure(ctx, err)
 	}
 	names := map[int64]string{}
 	if h.d.Auth != nil {
-		if rows, uerr := h.d.Auth.ListUsers(c.Request.Context()); uerr == nil {
+		if rows, uerr := h.d.Auth.ListUsers(ctx); uerr == nil {
 			for _, row := range rows {
 				display := row.Display
 				if display == "" {
@@ -83,7 +145,78 @@ func (h *Native) AdminList(c *gin.Context) {
 			}
 		}
 	}
-	h.d.WriteJSON(c, http.StatusOK, handler.OwnedLinksOf(links, names, h.d.VpathOf, h.d.Now()))
+	return &adminListOutput{Body: handler.OwnedLinksOf(links, names, h.d.VpathOf, h.d.Now())}, nil
+}
+
+func (h *Native) createHuma(ctx context.Context, in *createInput) (*createOutput, error) {
+	owner, err := h.humaOwner(ctx)
+	if err != nil {
+		return nil, err
+	}
+	r, err := h.d.Resolve(owner, in.Body.Path, acl.Share)
+	if err != nil {
+		return nil, humabridge.Failure(ctx, err)
+	}
+	expires, ok := optionalNumber[int64](in.Body.Expires, 0)
+	if !ok {
+		return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Malformed})
+	}
+	maxDown, ok := optionalNumber[int32](in.Body.MaxDown, unlimitedDownloads)
+	if !ok {
+		return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Malformed})
+	}
+	perms, ok := linkPerms(in.Body.Perms)
+	if !ok {
+		return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Unprocessable})
+	}
+	link, token, err := h.d.Core.CreateLink(ctx, r, core.LinkSpec{
+		Perms: perms, Password: in.Body.Password, Expires: expires, MaxDown: maxDown,
+		Label: in.Body.Label, Note: in.Body.Note,
+	})
+	if err != nil {
+		return nil, humabridge.Failure(ctx, err)
+	}
+	view, ok := handler.MintedLinkOf(link, h.d.VpathOf(link), h.d.Now())
+	if !ok {
+		return nil, humabridge.Failure(ctx, core.ErrNotFound)
+	}
+	view.Token = string(token.Reveal())
+	return &createOutput{Body: view, Status: http.StatusCreated}, nil
+}
+
+func (h *Native) updateHuma(ctx context.Context, in *updateInput) (*updateOutput, error) {
+	owner, err := h.humaOwner(ctx)
+	if err != nil {
+		return nil, err
+	}
+	id, ok := parseLinkID(in.ID)
+	if !ok {
+		return nil, humabridge.Failure(ctx, core.ErrNotFound)
+	}
+	patch, ok := linkPatchOf(in.Body)
+	if !ok {
+		return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Malformed})
+	}
+	link, err := h.d.Core.UpdateLink(ctx, owner, id, patch)
+	if err != nil {
+		return nil, humabridge.Failure(ctx, err)
+	}
+	return &updateOutput{Body: handler.LinkOf(link, h.d.VpathOf(link), h.d.Now())}, nil
+}
+
+func (h *Native) deleteHuma(ctx context.Context, in *linkIDInput) (*deleteOutput, error) {
+	owner, err := h.humaOwner(ctx)
+	if err != nil {
+		return nil, err
+	}
+	id, ok := parseLinkID(in.ID)
+	if !ok {
+		return nil, humabridge.Failure(ctx, core.ErrNotFound)
+	}
+	if err := h.d.Core.DeleteLink(ctx, owner, id); err != nil {
+		return nil, humabridge.Failure(ctx, err)
+	}
+	return &deleteOutput{Status: http.StatusNoContent}, nil
 }
 
 type createLinkRequest struct {
@@ -98,69 +231,6 @@ type createLinkRequest struct {
 
 const unlimitedDownloads = -1
 
-func (h *Native) Create(c *gin.Context) {
-	owner, ok := h.d.Owner(c)
-	if !ok {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
-		return
-	}
-	var req createLinkRequest
-	if err := h.d.Decode(c, &req); err != nil {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Malformed})
-		return
-	}
-	r, err := h.d.Resolve(owner, req.Path, acl.Share)
-	if err != nil {
-		h.d.Fail(c, err)
-		return
-	}
-	expires, ok := optionalNumber[int64](req.Expires, 0)
-	if !ok {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Malformed})
-		return
-	}
-	maxDown, ok := optionalNumber[int32](req.MaxDown, unlimitedDownloads)
-	if !ok {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Malformed})
-		return
-	}
-	perms, ok := linkPerms(req.Perms)
-	if !ok {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
-		return
-	}
-	link, token, err := h.d.Core.CreateLink(c.Request.Context(), r, core.LinkSpec{Perms: perms, Password: req.Password, Expires: expires, MaxDown: maxDown, Label: req.Label, Note: req.Note})
-	if err != nil {
-		h.d.Fail(c, err)
-		return
-	}
-	view, ok := handler.MintedLinkOf(link, h.d.VpathOf(link), h.d.Now())
-	if !ok {
-		h.d.Fail(c, core.ErrNotFound)
-		return
-	}
-	view.Token = string(token.Reveal())
-	h.d.WriteJSON(c, http.StatusCreated, view)
-}
-
-func (h *Native) Delete(c *gin.Context) {
-	owner, ok := h.d.Owner(c)
-	if !ok {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
-		return
-	}
-	id, ok := pathID(c)
-	if !ok {
-		h.d.NotFound(c)
-		return
-	}
-	if err := h.d.Core.DeleteLink(c.Request.Context(), owner, id); err != nil {
-		h.d.Fail(c, err)
-		return
-	}
-	c.Status(http.StatusNoContent)
-}
-
 type updateLinkRequest struct {
 	Password json.RawMessage `json:"password,omitempty"`
 	Expires  json.RawMessage `json:"expires_ns,omitempty"`
@@ -170,39 +240,6 @@ type updateLinkRequest struct {
 	Note     *string         `json:"note,omitempty"`
 }
 
-func (h *Native) Update(c *gin.Context) {
-	owner, ok := h.d.Owner(c)
-	if !ok {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
-		return
-	}
-	id, ok := pathID(c)
-	if !ok {
-		h.d.NotFound(c)
-		return
-	}
-	var req updateLinkRequest
-	if err := h.d.Decode(c, &req); err != nil {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Malformed})
-		return
-	}
-	patch, ok := linkPatchOf(req)
-	if !ok {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Malformed})
-		return
-	}
-	link, err := h.d.Core.UpdateLink(c.Request.Context(), owner, id, patch)
-	if err != nil {
-		h.d.Fail(c, err)
-		return
-	}
-	h.d.WriteJSON(c, http.StatusOK, handler.LinkOf(link, h.d.VpathOf(link), h.d.Now()))
-}
-
-func pathID(c *gin.Context) (int64, bool) {
-	n, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	return n, err == nil && n > 0
-}
 func linkPerms(names []string) (acl.Perms, bool) {
 	if len(names) == 0 {
 		return acl.Read | acl.Download, true
@@ -218,6 +255,7 @@ func linkPerms(names []string) (acl.Perms, bool) {
 	p &= acl.Read | acl.Download | acl.Create
 	return p, p != 0
 }
+
 func tristate[T any](raw json.RawMessage) (**T, bool) {
 	if len(raw) == 0 {
 		return nil, true
@@ -233,6 +271,7 @@ func tristate[T any](raw json.RawMessage) (**T, bool) {
 	set := &value
 	return &set, true
 }
+
 func optionalNumber[T int64 | int32](raw json.RawMessage, absent T) (T, bool) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return absent, true
@@ -243,6 +282,7 @@ func optionalNumber[T int64 | int32](raw json.RawMessage, absent T) (T, bool) {
 	}
 	return **got, true
 }
+
 func tristateNumber[T int64 | int32](raw json.RawMessage) (**T, bool) {
 	if len(raw) == 0 {
 		return nil, true
@@ -266,6 +306,7 @@ func tristateNumber[T int64 | int32](raw json.RawMessage) (**T, bool) {
 	}
 	return tristate[T](raw)
 }
+
 func linkPatchOf(req updateLinkRequest) (core.LinkPatch, bool) {
 	patch := core.LinkPatch{Label: req.Label, Note: req.Note}
 	if len(req.Perms) > 0 {
