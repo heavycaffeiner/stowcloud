@@ -308,7 +308,7 @@ export const test = base.extend({
       },
       assertClean: () => {
         if (pageErrors.length > 0) {
-          throw new Error(`Unexpected page errors: ${pageErrors.map((e) => e.message).join('; ')}`)
+          throw new Error(`Unexpected page errors: ${pageErrors.map((e) => e.stack ?? e.message).join('; ')}`)
         }
         if (consoleErrors.length > 0) {
           throw new Error(`Unexpected console errors: ${consoleErrors.join('; ')}`)
