@@ -153,7 +153,7 @@ export function FileRow({
             ) : (
               <>
                 {formatEntrySize(entry.size, encrypted)}
-                <span aria-hidden="true"> · </span>
+                <span aria-hidden="true">, </span>
                 {formatModifiedDateNs(entry.mtime_ns)}
               </>
             )}
