@@ -1,6 +1,6 @@
-# Full generated matrix fixtures are not committed; CI provisions that matrix
-# from the pinned VeraCrypt console. The small hash_sha512.hc golden fixture is
-# checked in and is used by the adapter integration test.
+# The rest of the generated matrix is not committed and no test reads it. The
+# small hash_sha512.hc golden fixture is checked in and is used by the adapter
+# integration test.
 *.hc
 !hash_sha512.hc
 
