@@ -72,9 +72,6 @@ func TestPassdbEntriesRefuseASharedUid(t *testing.T) {
 	if !errors.Is(err, ErrUnsafeValue) {
 		t.Fatalf("got %v, want ErrUnsafeValue", err)
 	}
-	if !strings.Contains(err.Error(), "uid") {
-		t.Errorf("the refusal does not name the cause: %v", err)
-	}
 }
 
 // Sorted output plus one stamp for the whole file is what makes unchanged

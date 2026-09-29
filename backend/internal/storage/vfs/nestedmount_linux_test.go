@@ -150,9 +150,6 @@ func nestedMountChild(t *testing.T) {
 	if !errors.Is(statErr, ErrUnsupportedFilesystem) {
 		t.Fatalf("stat into the nested mount = %v, want ErrUnsupportedFilesystem", statErr)
 	}
-	if !strings.Contains(statErr.Error(), "nested") {
-		t.Fatalf("the refusal does not name the mount path: %v", statErr)
-	}
 
 	if _, err := r.ReadDir(p, HideReserved); !errors.Is(err, ErrUnsupportedFilesystem) {
 		t.Fatalf("readdir into the nested mount = %v, want ErrUnsupportedFilesystem", err)

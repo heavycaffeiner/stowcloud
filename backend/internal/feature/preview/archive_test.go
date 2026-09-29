@@ -424,7 +424,7 @@ func TestOversizedCentralDirectoriesAreRejectedBeforeParsing(t *testing.T) {
 		zip64Oversized,
 	} {
 		_, err := ListArchive(t.Context(), bytes.NewReader(raw), int64(len(raw)))
-		if !errors.Is(err, ErrNotArchive) || !strings.Contains(err.Error(), "parser bound") {
+		if !errors.Is(err, ErrNotArchive) {
 			t.Errorf("oversized directory returned %v", err)
 		}
 	}

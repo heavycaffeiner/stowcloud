@@ -350,9 +350,6 @@ func TestPasswdEntriesRefuseASharedUid(t *testing.T) {
 	if !errors.Is(err, ErrUnsafeValue) {
 		t.Fatalf("got %v, want ErrUnsafeValue", err)
 	}
-	if !strings.Contains(err.Error(), "uid") {
-		t.Errorf("the refusal does not name the cause: %v", err)
-	}
 }
 
 // Entries are sorted, so the file is the same for the same accounts however

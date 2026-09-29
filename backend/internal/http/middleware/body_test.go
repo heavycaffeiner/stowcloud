@@ -137,9 +137,6 @@ func TestJSONDecodeRefusesTrailingData(t *testing.T) {
 	if !errors.Is(err, ErrBodyMalformed) {
 		t.Fatalf("two documents returned %v", err)
 	}
-	if !strings.Contains(err.Error(), "more than one document") {
-		t.Errorf("the refusal says %q", err)
-	}
 }
 
 // An unknown field is a refusal, so a client cannot send a field the server

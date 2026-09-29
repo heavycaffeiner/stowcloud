@@ -86,8 +86,8 @@ func TestPreconditionErrorCarriesAnEmptyTokenForAMissingTarget(t *testing.T) {
 	if !IsPrecondition(err) {
 		t.Fatal("IsPrecondition is false for a *PreconditionError with no token")
 	}
-	if !strings.Contains(err.Error(), ErrPrecondition.Error()) {
-		t.Fatalf("Error() = %q, want it to carry the sentinel's own text", err.Error())
+	if !errors.Is(err, ErrPrecondition) {
+		t.Fatalf("%v does not match ErrPrecondition", err)
 	}
 }
 

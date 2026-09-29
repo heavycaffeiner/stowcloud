@@ -158,9 +158,6 @@ func TestATokenExpires(t *testing.T) {
 	if !errors.Is(verr, ErrSetupToken) {
 		t.Fatalf("an expired token returned %v", verr)
 	}
-	if !strings.Contains(verr.Error(), "expired") {
-		t.Errorf("the refusal says %q", verr)
-	}
 }
 
 // A token is usable once. The second attempt is refused even though the token

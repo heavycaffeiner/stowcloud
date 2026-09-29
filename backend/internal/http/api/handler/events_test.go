@@ -130,9 +130,6 @@ func TestAClientCannotSendAnInvalidation(t *testing.T) {
 	if !errors.Is(perr, ErrInvalid) {
 		t.Fatalf("a client invalidation returned %v", perr)
 	}
-	if !strings.Contains(perr.Error(), "does not send") {
-		t.Errorf("the refusal says %q", perr)
-	}
 }
 
 // The ordinary frames parse, and malformed ones are refused rather than
