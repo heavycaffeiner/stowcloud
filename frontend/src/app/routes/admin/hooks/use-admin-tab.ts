@@ -21,7 +21,11 @@ export function useAdminTab(): { tab: AdminTab; selectTab: (next: AdminTab) => v
 
   useEffect(() => {
     if (!isAdminTab(seenHash.current)) {
-      window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}#users`)
+      window.history.replaceState(
+        window.history.state,
+        '',
+        `${window.location.pathname}${window.location.search}#users`
+      )
       seenHash.current = 'users'
       setState({ tab: 'users' })
     }
@@ -33,7 +37,11 @@ export function useAdminTab(): { tab: AdminTab; selectTab: (next: AdminTab) => v
         setState({ tab: hash })
         return
       }
-      window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}#users`)
+      window.history.replaceState(
+        window.history.state,
+        '',
+        `${window.location.pathname}${window.location.search}#users`
+      )
       seenHash.current = 'users'
       setState({ tab: 'users' })
     }
@@ -46,7 +54,11 @@ export function useAdminTab(): { tab: AdminTab; selectTab: (next: AdminTab) => v
     if (next === state.tab) return
     setState({ tab: next })
     seenHash.current = next
-    window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}#${next}`)
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `${window.location.pathname}${window.location.search}#${next}`
+    )
   }
 
   return { tab: state.tab, selectTab }

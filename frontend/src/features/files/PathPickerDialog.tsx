@@ -25,7 +25,12 @@ function guessStart(start: string | undefined, mode: PathPickerDialogProps['mode
 }
 export function PathPickerDialog({ open, mode, start, token, onclose, onpick }: PathPickerDialogProps) {
   const { t } = useI18n()
-  const [state, setState] = useComponentState({ currentPath: '', initialGuess: '', selected: null as string | null, wasOpen: false })
+  const [state, setState] = useComponentState({
+    currentPath: '',
+    initialGuess: '',
+    selected: null as string | null,
+    wasOpen: false
+  })
   const { currentPath, initialGuess, selected, wasOpen } = state
   const body = useRef<HTMLDivElement>(null)
   const focusAfterNavigation = useRef(false)
@@ -35,13 +40,13 @@ export function PathPickerDialog({ open, mode, start, token, onclose, onpick }: 
       const guess = guessStart(start, mode)
       setState({ currentPath: guess, initialGuess: guess, selected: null, wasOpen: true })
     } else {
-      setState((value) => value.wasOpen === open ? value : { ...value, wasOpen: open })
+      setState((value) => (value.wasOpen === open ? value : { ...value, wasOpen: open }))
     }
   }, [open, wasOpen, start, mode, setState])
 
   const listing = useQuery({
     queryKey: ['host-fs', token ?? null, currentPath],
-    queryFn: () => token ? api.browseSetupPath(token, currentPath) : api.browseHostPath(currentPath),
+    queryFn: () => (token ? api.browseSetupPath(token, currentPath) : api.browseHostPath(currentPath)),
     enabled: open,
     retry: false,
     placeholderData: (previous) => previous
@@ -89,13 +94,21 @@ export function PathPickerDialog({ open, mode, start, token, onclose, onpick }: 
           >
             {t('picker.up')}
           </Button>
-          <p className="sc-picker-here" aria-live="polite">{hereText}</p>
+          <p className="sc-picker-here" aria-live="polite">
+            {hereText}
+          </p>
         </div>
         <div ref={body} className="sc-picker-body" tabIndex={-1}>
           {listing.isPending ? <p className="sc-picker-status">{t('common.loading')}</p> : null}
-          {showError ? <p className="sc-picker-status" role="alert">{t('picker.could_not_list')}</p> : null}
+          {showError ? (
+            <p className="sc-picker-status" role="alert">
+              {t('picker.could_not_list')}
+            </p>
+          ) : null}
           {!listing.isPending && !showError && listing.data ? (
-            listing.data.entries.length === 0 ? <p className="sc-picker-status">{t('picker.empty')}</p> : (
+            listing.data.entries.length === 0 ? (
+              <p className="sc-picker-status">{t('picker.empty')}</p>
+            ) : (
               <VirtualList
                 key={listing.data.path}
                 className="sc-picker-entries"
@@ -103,40 +116,50 @@ export function PathPickerDialog({ open, mode, start, token, onclose, onpick }: 
                 items={listing.data.entries}
                 itemKey={(entry) => entry.path}
                 estimateSize={40}
-                renderItem={(entry) => entry.is_dir ? (
-                      <button
-                        type="button"
-                        className="sc-picker-entry sc-focus-ring"
-                        aria-label={t('picker.open_folder', { name: entry.name })}
-                        onClick={() => navigate(entry.path)}
-                      >
-                        <Icon name="folder" />
-                        <span>{entry.name}</span>
-                      </button>
-                    ) : mode === 'file' ? (
-                      <button
-                        type="button"
-                        className={`sc-picker-entry sc-focus-ring${selected === entry.path ? ' sc-picker-entry-selected' : ''}`}
-                        aria-pressed={selected === entry.path}
-                        onClick={() => setState((value) => ({ ...value, selected: entry.path }))}
-                      >
-                        <Icon name="draft" />
-                        <span>{entry.name}</span>
-                      </button>
-                    ) : (
-                      <span className="sc-picker-entry sc-picker-entry-disabled" aria-disabled="true">
-                        <Icon name="draft" />
-                        <span>{entry.name}</span>
-                      </span>
-                    )}
+                renderItem={(entry) =>
+                  entry.is_dir ? (
+                    <button
+                      type="button"
+                      className="sc-picker-entry sc-focus-ring"
+                      aria-label={t('picker.open_folder', { name: entry.name })}
+                      onClick={() => navigate(entry.path)}
+                    >
+                      <Icon name="folder" />
+                      <span>{entry.name}</span>
+                    </button>
+                  ) : mode === 'file' ? (
+                    <button
+                      type="button"
+                      className={`sc-picker-entry sc-focus-ring${selected === entry.path ? ' sc-picker-entry-selected' : ''}`}
+                      aria-pressed={selected === entry.path}
+                      onClick={() => setState((value) => ({ ...value, selected: entry.path }))}
+                    >
+                      <Icon name="draft" />
+                      <span>{entry.name}</span>
+                    </button>
+                  ) : (
+                    <span className="sc-picker-entry sc-picker-entry-disabled" aria-disabled="true">
+                      <Icon name="draft" />
+                      <span>{entry.name}</span>
+                    </span>
+                  )
+                }
               />
             )
           ) : null}
-          {listing.data?.truncated ? <p className="sc-picker-status" role="status">{t('picker.truncated')}</p> : null}
+          {listing.data?.truncated ? (
+            <p className="sc-picker-status" role="status">
+              {t('picker.truncated')}
+            </p>
+          ) : null}
         </div>
       </div>
-      <mdui-button slot="action" variant="text" onClick={onclose}>{t('common.cancel')}</mdui-button>
-      <mdui-button slot="action" variant="filled" disabled={!canConfirm} onClick={confirm}>{t('picker.choose')}</mdui-button>
+      <mdui-button slot="action" variant="text" onClick={onclose}>
+        {t('common.cancel')}
+      </mdui-button>
+      <mdui-button slot="action" variant="filled" disabled={!canConfirm} onClick={confirm}>
+        {t('picker.choose')}
+      </mdui-button>
     </mdui-dialog>
   )
 }

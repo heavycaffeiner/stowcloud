@@ -70,12 +70,25 @@ export function DetailsPanel({
   const one = selected.length === 1 ? selected[0] : null
   const many = selected.length > 1
   const location = path.startsWith('/') ? path : `/${path}`
-  const targets = selected.length === 0 ? (path === '/' ? [] : [path]) : selected.filter((entry) => entry.kind === 'dir').map((entry) => joinPath(path, entry.name))
+  const targets =
+    selected.length === 0
+      ? path === '/'
+        ? []
+        : [path]
+      : selected.filter((entry) => entry.kind === 'dir').map((entry) => joinPath(path, entry.name))
   const base = many ? selected.filter((entry) => entry.kind !== 'dir').reduce((sum, entry) => sum + entry.size, 0) : 0
   const queries = useQueries({ queries: targets.map((target) => folderSizeQuery(target)) })
-  const measured = queries.some((query) => query.isError) ? 'failed' : queries.some((query) => query.isPending) ? 'measuring' : targets.length || base ? 'done' : 'idle'
+  const measured = queries.some((query) => query.isError)
+    ? 'failed'
+    : queries.some((query) => query.isPending)
+      ? 'measuring'
+      : targets.length || base
+        ? 'done'
+        : 'idle'
   const bytes = base + queries.reduce((sum, query) => sum + (query.data?.bytes ?? 0), 0)
-  const files = (many ? selected.filter((entry) => entry.kind !== 'dir').length : 0) + queries.reduce((sum, query) => sum + (query.data?.files ?? 0), 0)
+  const files =
+    (many ? selected.filter((entry) => entry.kind !== 'dir').length : 0) +
+    queries.reduce((sum, query) => sum + (query.data?.files ?? 0), 0)
 
   useEffect(() => {
     if (!compact || !panel.current) return
@@ -88,7 +101,11 @@ export function DetailsPanel({
         return
       }
       if (event.key !== 'Tab' || !panel.current) return
-      const focusable = [...panel.current.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter((element) => !element.hasAttribute('disabled'))
+      const focusable = [
+        ...panel.current.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        )
+      ].filter((element) => !element.hasAttribute('disabled'))
       if (focusable.length === 0) return
       const first = focusable[0]
       const last = focusable[focusable.length - 1]
@@ -108,36 +125,72 @@ export function DetailsPanel({
   }, [compact])
 
   const permissionSummary = (entry: Entry) => {
-    const granted = [entry.perms.download && t('common.download'), entry.perms.rename && t('details.perm_rename'), entry.perms.move && t('details.perm_move'), entry.perms.delete && t('details.perm_delete'), entry.perms.share && t('details.perm_share')].filter(Boolean)
+    const granted = [
+      entry.perms.download && t('common.download'),
+      entry.perms.rename && t('details.perm_rename'),
+      entry.perms.move && t('details.perm_move'),
+      entry.perms.delete && t('details.perm_delete'),
+      entry.perms.share && t('details.perm_share')
+    ].filter(Boolean)
     return granted.length > 0 ? granted.join(', ') : t('details.perm_read_only')
   }
 
   const fields = useMemo(() => {
-    if (many) return [{ label: t('details.items'), value: String(selected.length) }, { label: t('details.location'), value: location }]
+    if (many)
+      return [
+        { label: t('details.items'), value: String(selected.length) },
+        { label: t('details.location'), value: location }
+      ]
     if (one) {
       return [
         { label: t('details.type'), value: one.kind === 'dir' ? t('details.folder') : kindDescription(one) },
-        ...(one.kind !== 'dir' ? [{ label: t('details.size'), value: `${formatEntrySize(one.size, encrypted)} (${one.size.toLocaleString()} 바이트)` }] : []),
+        ...(one.kind !== 'dir'
+          ? [
+              {
+                label: t('details.size'),
+                value: `${formatEntrySize(one.size, encrypted)} (${one.size.toLocaleString()} 바이트)`
+              }
+            ]
+          : []),
         { label: t('details.modified'), value: formatModifiedDateNs(one.mtime_ns) },
         { label: t('details.location'), value: joinPath(location, one.name) },
         ...(one.link ? [{ label: t('details.symlink_target'), value: one.link.target }] : []),
         { label: t('details.permissions'), value: permissionSummary(one) }
       ]
     }
-    return [{ label: t('details.type'), value: t('details.folder') }, { label: t('grid.folders'), value: String(dirs) }, { label: t('grid.files'), value: String(Math.max(0, total - dirs)) }, { label: t('details.location'), value: location }]
+    return [
+      { label: t('details.type'), value: t('details.folder') },
+      { label: t('grid.folders'), value: String(dirs) },
+      { label: t('grid.files'), value: String(Math.max(0, total - dirs)) },
+      { label: t('details.location'), value: location }
+    ]
   }, [many, one, selected.length, location, encrypted, dirs, total, t])
 
-  const title = many ? t('details.multiple_selected', { count: selected.length }) : one?.name ?? (path.split('/').filter(Boolean).at(-1) ?? t('nav.files'))
-  const heroIcon = one ? getEntryIcon(one) : many ? { name: 'check', color: 'var(--sc-icon-color)' } : { name: 'folder', color: 'var(--sc-icon-color)' }
+  const title = many
+    ? t('details.multiple_selected', { count: selected.length })
+    : (one?.name ?? path.split('/').filter(Boolean).at(-1) ?? t('nav.files'))
+  const heroIcon = one
+    ? getEntryIcon(one)
+    : many
+      ? { name: 'check', color: 'var(--sc-icon-color)' }
+      : { name: 'folder', color: 'var(--sc-icon-color)' }
   const heroDesc = one ? kindDescription(one) : many ? formatBytes(bytes) : t('details.folder')
 
   return (
-    <aside ref={panel} className={`sc-details${compact ? ' sc-details-sheet' : ''}`} role={compact ? 'dialog' : 'complementary'} aria-modal={compact ? 'true' : undefined} aria-label={t('details.title')}>
+    <aside
+      ref={panel}
+      className={`sc-details${compact ? ' sc-details-sheet' : ''}`}
+      role={compact ? 'dialog' : 'complementary'}
+      aria-modal={compact ? 'true' : undefined}
+      aria-label={t('details.title')}
+    >
       <header className="sc-details-head">
         <span className="sc-details-head-icon" aria-hidden="true" style={{ color: heroIcon.color }}>
           <Icon name={heroIcon.name} size={20} />
         </span>
-        <h2 className="sc-details-title"><bdi>{title}</bdi></h2>
+        <h2 className="sc-details-title">
+          <bdi>{title}</bdi>
+        </h2>
         <IconButton label={t('common.close')} onClick={onClose}>
           <Icon name="close" />
         </IconButton>
@@ -148,26 +201,39 @@ export function DetailsPanel({
           <Icon name={heroIcon.name} size={24} />
         </span>
         <div>
-          <div className="sc-details-summary-title"><bdi>{title}</bdi></div>
+          <div className="sc-details-summary-title">
+            <bdi>{title}</bdi>
+          </div>
           <div className="sc-details-summary-desc">{heroDesc}</div>
         </div>
       </div>
 
-      {(one || many) ? (
+      {one || many ? (
         <div className="sc-details-actions">
           {onDownload ? (
-            <Button icon={<Icon name="download" size={18} />} onClick={onDownload}>{t('common.download')}</Button>
+            <Button icon={<Icon name="download" size={18} />} onClick={onDownload}>
+              {t('common.download')}
+            </Button>
           ) : null}
           {onShare && one ? (
-            <IconButton label={t('details.perm_share')} onClick={onShare}><Icon name="link" /></IconButton>
+            <IconButton label={t('details.perm_share')} onClick={onShare}>
+              <Icon name="link" />
+            </IconButton>
           ) : null}
           {onContextMenu && one ? (
-            <IconButton label={t('browse.more')} onClick={onContextMenu}><Icon name="more-vert" /></IconButton>
+            <IconButton label={t('browse.more')} onClick={onContextMenu}>
+              <Icon name="more-vert" />
+            </IconButton>
           ) : null}
         </div>
       ) : null}
 
-      {one?.confusable ? <p className="sc-details-warning"><Icon name="warning" size={16} /><span>{t('common.look_alike_characters')}</span></p> : null}
+      {one?.confusable ? (
+        <p className="sc-details-warning">
+          <Icon name="warning" size={16} />
+          <span>{t('common.look_alike_characters')}</span>
+        </p>
+      ) : null}
 
       <div className="sc-details-section-heading">{t('details.title')}</div>
 
@@ -175,7 +241,9 @@ export function DetailsPanel({
         {fields.map((field) => (
           <div key={field.label}>
             <dt>{field.label}</dt>
-            <dd><bdi>{field.value}</bdi></dd>
+            <dd>
+              <bdi>{field.value}</bdi>
+            </dd>
           </div>
         ))}
         {measured !== 'idle' ? (
@@ -183,9 +251,20 @@ export function DetailsPanel({
             <dt>{many ? t('details.download_size') : t('details.total_size')}</dt>
             <dd>
               {measured === 'done' ? (
-                <>{formatBytes(bytes)} <small>{t('details.size_file_count', { count: files })}</small></>
+                <>
+                  {formatBytes(bytes)} <small>{t('details.size_file_count', { count: files })}</small>
+                </>
               ) : measured === 'failed' ? (
-                <><small role="alert">{queries.some((query) => query.error instanceof ApiError && query.error.code === 'fs.denied') ? t('details.size_hidden_by_permissions') : t('details.could_not_measure')}</small><Button variant="text" onClick={() => queries.forEach((query) => void query.refetch())}>{t('common.retry')}</Button></>
+                <>
+                  <small role="alert">
+                    {queries.some((query) => query.error instanceof ApiError && query.error.code === 'fs.denied')
+                      ? t('details.size_hidden_by_permissions')
+                      : t('details.could_not_measure')}
+                  </small>
+                  <Button variant="text" onClick={() => queries.forEach((query) => void query.refetch())}>
+                    {t('common.retry')}
+                  </Button>
+                </>
               ) : (
                 <small role="status">{t('details.measuring')}</small>
               )}

@@ -84,7 +84,6 @@ export async function startOidcLogin(returnTo?: string | null): Promise<void> {
   }
 }
 
-
 /**
  * §5-2 table B: the callback never answers with JSON, because a person
  * arrives at it in a browser. It redirects to `/login` or `/settings/security`

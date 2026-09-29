@@ -20,5 +20,4 @@ describe('TextField', () => {
 
     expect(screen.getByRole('alert').textContent).toBe('Name is required')
   })
-
 })

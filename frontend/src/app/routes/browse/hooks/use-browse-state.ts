@@ -15,9 +15,19 @@ export function useBrowseState(): [BrowseState, BrowseActions] {
   const [state, patch] = useRouteStore<BrowseState>(initialBrowseState)
   const patchRef = useRef(patch)
   patchRef.current = patch
-  const closeContextMenus = useCallback(() => patchRef.current({ contextMenu: null, blankMenu: null, menuTrigger: null }), [])
-  const closeMenus = useCallback(() => patchRef.current({ newMenuOpen: false, overflowOpen: false, typeMenuOpen: false, dateMenuOpen: false }), [])
+  const closeContextMenus = useCallback(
+    () => patchRef.current({ contextMenu: null, blankMenu: null, menuTrigger: null }),
+    []
+  )
+  const closeMenus = useCallback(
+    () => patchRef.current({ newMenuOpen: false, overflowOpen: false, typeMenuOpen: false, dateMenuOpen: false }),
+    []
+  )
   const setSnackbar = useCallback((message: string | null) => patchRef.current({ snackbar: message }), [])
-  const openConflict = useCallback((name: string, retry: BrowseState['conflictRetry']) => patchRef.current({ conflictName: name, conflictRetry: retry, conflictOpen: true }), [])
+  const openConflict = useCallback(
+    (name: string, retry: BrowseState['conflictRetry']) =>
+      patchRef.current({ conflictName: name, conflictRetry: retry, conflictOpen: true }),
+    []
+  )
   return [state, { patch, closeContextMenus, closeMenus, setSnackbar, openConflict }]
 }

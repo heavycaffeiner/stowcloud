@@ -28,13 +28,25 @@ describe('createInitialAdmin (mock)', () => {
 
   it('rejects a blank installation token', async () => {
     await expect(
-      createInitialAdmin({ token: '   ', username: 'root', password: 'longenoughpw', app_hosts: ['localhost'], trusted_proxies: [] })
+      createInitialAdmin({
+        token: '   ',
+        username: 'root',
+        password: 'longenoughpw',
+        app_hosts: ['localhost'],
+        trusted_proxies: []
+      })
     ).rejects.toMatchObject({ code: 'setup.invalid_token' })
   })
 
   it('accepts a token and lets that exact account log in afterwards', async () => {
     await mockApi.logout()
-    await createInitialAdmin({ token: 'DEV-TOKEN', username: 'root', password: 'longenoughpw', app_hosts: ['localhost'], trusted_proxies: [] })
+    await createInitialAdmin({
+      token: 'DEV-TOKEN',
+      username: 'root',
+      password: 'longenoughpw',
+      app_hosts: ['localhost'],
+      trusted_proxies: []
+    })
 
     const result = await mockApi.login('root', 'longenoughpw')
     expect(result.required).toBeUndefined()
@@ -42,7 +54,13 @@ describe('createInitialAdmin (mock)', () => {
 
   it('does not let a different password through for the created account', async () => {
     await mockApi.logout()
-    await createInitialAdmin({ token: 'DEV-TOKEN', username: 'root2', password: 'longenoughpw', app_hosts: ['localhost'], trusted_proxies: [] })
+    await createInitialAdmin({
+      token: 'DEV-TOKEN',
+      username: 'root2',
+      password: 'longenoughpw',
+      app_hosts: ['localhost'],
+      trusted_proxies: []
+    })
 
     await expect(mockApi.login('root2', 'wrong-password')).rejects.toMatchObject({
       code: 'auth.invalid_credentials'
@@ -66,9 +84,7 @@ describe('createInitialAdmin (HTTP)', () => {
   })
 
   it('preserves field findings when the server rejects setup validation', async () => {
-    const findings = [
-      { section: 'network', field: 'app_hosts', reason: 'host.invalid', blocking: true }
-    ]
+    const findings = [{ section: 'network', field: 'app_hosts', reason: 'host.invalid', blocking: true }]
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -112,4 +128,3 @@ describe('createInitialAdmin (HTTP)', () => {
     expect(result).toEqual({ warnings: [], share_failed: true })
   })
 })
-

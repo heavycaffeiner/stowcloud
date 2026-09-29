@@ -25,7 +25,15 @@ import {
   type ResumeKeyContext,
   type ResumeRecord
 } from './idb'
-import { setCsrfToken, UploadHttpError, DirectUploadUnsupportedError, transport, type CreatedSession, type DirectPart, type DirectReservation } from './transport'
+import {
+  setCsrfToken,
+  UploadHttpError,
+  DirectUploadUnsupportedError,
+  transport,
+  type CreatedSession,
+  type DirectPart,
+  type DirectReservation
+} from './transport'
 import { classifyFailure } from './retry'
 
 const PROGRESS_HZ_MS = 100 // at most 10 Hz
@@ -155,7 +163,6 @@ let directCapability = false
 let serverChunkDefault = CHUNK_SIZE_DEFAULT
 let chunkSizeOverride: number | null = null
 
-
 function releasePreparedItem(item: AddItem, id: string): void {
   if (item.encrypted) post({ t: 'released', id })
 }
@@ -168,7 +175,6 @@ function releasePreparedFile(f: FileState): void {
 function post(evt: Evt): void {
   ;(self as unknown as { postMessage(m: unknown): void }).postMessage(evt)
 }
-
 
 let creatingSessions = 0
 const pendingSessionCreations: (() => void)[] = []
@@ -371,7 +377,6 @@ function ensureCleanupRecovery(): Promise<void> {
   return run
 }
 
-
 function recordFor(item: AddItem, key: string, sessionId: string, chunkSize: number): ResumeRecord | undefined {
   const context = resumeContextOf(item)
   if (!context || !item.sourceIdentity || !item.ciphertextIdentity) return undefined
@@ -415,11 +420,22 @@ async function cancelDirectReservation(id: string, reservation: DirectReservatio
 
 async function tryDirectUpload(item: AddItem, id: string): Promise<boolean> {
   if (item.file.size === 0) return false
-  if (!directCapability || !transport.reserveDirect || !transport.directPart || !transport.uploadDirectPart || !transport.completeDirect) return false
+  if (
+    !directCapability ||
+    !transport.reserveDirect ||
+    !transport.directPart ||
+    !transport.uploadDirectPart ||
+    !transport.completeDirect
+  )
+    return false
   const path = `${item.dest}/${item.relativePath ?? item.file.name}`.replace(/\/{2,}/g, '/').replace(/^\/+/, '')
   let reservation: DirectReservation
   try {
-    reservation = await transport.reserveDirect({ path, size: item.file.size, ...(item.ciphertextIdentity ? { checksum: item.ciphertextIdentity } : {}) })
+    reservation = await transport.reserveDirect({
+      path,
+      size: item.file.size,
+      ...(item.ciphertextIdentity ? { checksum: item.ciphertextIdentity } : {})
+    })
   } catch (error) {
     if (error instanceof DirectUploadUnsupportedError) return false
     throw error
@@ -427,7 +443,8 @@ async function tryDirectUpload(item: AddItem, id: string): Promise<boolean> {
   directReservations.set(id, reservation)
   const abort = new AbortController()
   directAborts.set(id, abort)
-  if (reservation.size !== item.file.size || reservation.partSize <= 0) throw new UploadHttpError(502, 'direct upload reservation was inconsistent')
+  if (reservation.size !== item.file.size || reservation.partSize <= 0)
+    throw new UploadHttpError(502, 'direct upload reservation was inconsistent')
   if (item.file.size > reservation.partSize * 10000) {
     await cleanupSession(reservation.id, undefined, true)
     directReservations.delete(id)
@@ -461,7 +478,14 @@ async function tryDirectUpload(item: AddItem, id: string): Promise<boolean> {
         return true
       }
     }
-    post({ t: 'progress', id, sent: Math.min(item.file.size, offset + size), total: item.file.size, rate: 0, etaSec: 0 })
+    post({
+      t: 'progress',
+      id,
+      sent: Math.min(item.file.size, offset + size),
+      total: item.file.size,
+      rate: 0,
+      etaSec: 0
+    })
   }
   if (pendingControls.get(id) === 'canceled') {
     pendingControls.delete(id)
@@ -469,10 +493,18 @@ async function tryDirectUpload(item: AddItem, id: string): Promise<boolean> {
     return true
   }
   const final = await transport.completeDirect(reservation.id, completed)
-  if (final.state !== 'complete' && final.state !== 'completed') throw new UploadHttpError(502, 'direct upload did not complete')
+  if (final.state !== 'complete' && final.state !== 'completed')
+    throw new UploadHttpError(502, 'direct upload did not complete')
   directReservations.delete(id)
   directAborts.delete(id)
-  post({ t: 'done', id, dest: item.dest, name: item.relativePath ? item.relativePath.split('/').pop()! : item.file.name, size: item.file.size, mtimeNs: String(BigInt(item.file.lastModified) * 1_000_000n) })
+  post({
+    t: 'done',
+    id,
+    dest: item.dest,
+    name: item.relativePath ? item.relativePath.split('/').pop()! : item.file.name,
+    size: item.file.size,
+    mtimeNs: String(BigInt(item.file.lastModified) * 1_000_000n)
+  })
   return true
 }
 
@@ -504,16 +536,15 @@ async function addFile(item: AddItem): Promise<void> {
     }
     const context = resumeContextOf(item)
     const source = sourceDetails(item)
-    const key = context
-      ? resumeKey(source.name, source.size, source.lastModified, context)
-      : undefined
+    const key = context ? resumeKey(source.name, source.size, source.lastModified, context) : undefined
 
     await acquireSessionSlot()
     let sessionId = ''
     let resumeOffset = 0
-    let chunkSize = chunkSizeOverride !== null && validChunkSizeOverride(chunkSizeOverride, serverChunkMin)
-      ? chunkSizeOverride
-      : serverChunkDefault
+    let chunkSize =
+      chunkSizeOverride !== null && validChunkSizeOverride(chunkSizeOverride, serverChunkMin)
+        ? chunkSizeOverride
+        : serverChunkDefault
     let resumeRecord: ResumeRecord | undefined
     try {
       if (pendingControls.get(id) === 'canceled') {
@@ -705,7 +736,12 @@ async function publicationError(f: FileState, err: unknown): Promise<void> {
   if (f.status === 'canceled' || (err instanceof DOMException && err.name === 'AbortError')) return
   f.status = 'error'
   await discardErroredFile(f)
-  post({ t: 'error', id: f.id, code: 'upload.publication_uncertain', message: /* i18n */ 'upload.upload_failed_out_retries' })
+  post({
+    t: 'error',
+    id: f.id,
+    code: 'upload.publication_uncertain',
+    message: /* i18n */ 'upload.upload_failed_out_retries'
+  })
   releasePreparedFile(f)
 }
 
@@ -788,7 +824,12 @@ async function sendChunk(task: ChunkDescriptor & { fileId: string; generation: n
     })
 
     const current = files.get(task.fileId)
-    if (!current || current.generation !== task.generation || current.status === 'canceled' || current.status === 'error') {
+    if (
+      !current ||
+      current.generation !== task.generation ||
+      current.status === 'canceled' ||
+      current.status === 'error'
+    ) {
       scheduler.complete(task.fileId, task.index, task.generation)
       return
     }
@@ -822,7 +863,12 @@ async function sendChunk(task: ChunkDescriptor & { fileId: string; generation: n
       if (next === null) {
         f.status = 'error'
         await discardErroredFile(f)
-        post({ t: 'error', id: f.id, code: 'upload.chunk_too_large', message: /* i18n */ 'upload.proxy_rejected_even_smallest_chunk' })
+        post({
+          t: 'error',
+          id: f.id,
+          code: 'upload.chunk_too_large',
+          message: /* i18n */ 'upload.proxy_rejected_even_smallest_chunk'
+        })
         releasePreparedFile(f)
       } else {
         f.chunkSize = next
@@ -842,7 +888,13 @@ async function sendChunk(task: ChunkDescriptor & { fileId: string; generation: n
         f.lastPostAt = Date.now()
         f.rate = 0
         scheduler.removeFile(f.id)
-        scheduler.addFile({ id: f.id, totalSize: f.file.size, chunkSize: next, resumeOffset: f.baseSentBytes, generation: f.generation })
+        scheduler.addFile({
+          id: f.id,
+          totalSize: f.file.size,
+          chunkSize: next,
+          resumeOffset: f.baseSentBytes,
+          generation: f.generation
+        })
       }
       return
     }
@@ -867,10 +919,23 @@ async function sendChunk(task: ChunkDescriptor & { fileId: string; generation: n
     }
 
     chunkRetries.set(key, tries + 1)
-    post({ t: 'error', id: f.id, code: 'upload.retry', message: /* i18n */ 'upload.retrying', retryIn: verdict.afterMs })
+    post({
+      t: 'error',
+      id: f.id,
+      code: 'upload.retry',
+      message: /* i18n */ 'upload.retrying',
+      retryIn: verdict.afterMs
+    })
     setTimeout(() => {
       const latest = files.get(f.id)
-      if (!latest || latest.generation !== task.generation || latest.status === 'canceled' || latest.status === 'error' || latest.status === 'done') return
+      if (
+        !latest ||
+        latest.generation !== task.generation ||
+        latest.status === 'canceled' ||
+        latest.status === 'error' ||
+        latest.status === 'done'
+      )
+        return
       // Keep retry ownership in the scheduler while paused. Resume will
       // unpause it and pump the same failed chunk exactly once.
       scheduler.requeue(task.fileId, task, task.generation)

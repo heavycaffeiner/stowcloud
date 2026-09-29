@@ -2,7 +2,12 @@ import { useEffect, useMemo } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import type { PermsReq, ShareLinkInfo } from '../../../lib/api/client'
 import { describeApiError } from '../../../lib/api/error-text'
-import { shareCreateMutation, shareDeleteMutation, shareLinksQuery, shareUpdateMutation } from '../../../lib/query/shares'
+import {
+  shareCreateMutation,
+  shareDeleteMutation,
+  shareLinksQuery,
+  shareUpdateMutation
+} from '../../../lib/query/shares'
 import type { SelectOption } from '../../../lib/ui/Select'
 import { useShareManageState } from './share-manage-state'
 
@@ -73,7 +78,6 @@ export const editExpiryOptions = (t: (key: string) => string): SelectOption[] =>
   { value: 'custom', text: t('share.pick_a_date') }
 ]
 
-
 export function useShareManageController(
   open: boolean,
   path: string,
@@ -82,7 +86,28 @@ export function useShareManageController(
   closeParent: () => void
 ) {
   const [state, patch] = useShareManageState()
-  const { newKind, newRead, newDownload, newPassword, newExpiry, newExpiryDate, newMaxDownloads, newLabel, createValidation, justCreated, issuedAcknowledged, editRead, editDownload, editClearPassword, editNewPassword, editExpiry, editExpiryDate, editMaxDownloads, editLabel, revokeTarget } = state
+  const {
+    newKind,
+    newRead,
+    newDownload,
+    newPassword,
+    newExpiry,
+    newExpiryDate,
+    newMaxDownloads,
+    newLabel,
+    createValidation,
+    justCreated,
+    issuedAcknowledged,
+    editRead,
+    editDownload,
+    editClearPassword,
+    editNewPassword,
+    editExpiry,
+    editExpiryDate,
+    editMaxDownloads,
+    editLabel,
+    revokeTarget
+  } = state
   const sharesQuery = useQuery(shareLinksQuery(path, open))
   const createMut = useMutation(shareCreateMutation())
   const updateMut = useMutation(shareUpdateMutation())
@@ -90,7 +115,9 @@ export function useShareManageController(
   const links = sharesQuery.data ?? []
   const newExpiryBad = expiryUnusable(newExpiry, newExpiryDate)
   const editExpiryBad = expiryUnusable(editExpiry, editExpiryDate)
-  const createError = createValidation ?? (createMut.error ? describeApiError(createMut.error, t('share.could_not_create_share_link')) : null)
+  const createError =
+    createValidation ??
+    (createMut.error ? describeApiError(createMut.error, t('share.could_not_create_share_link')) : null)
   const loadError = sharesQuery.error
     ? describeApiError(sharesQuery.error, t('share.could_not_load_share_links'))
     : updateMut.error
@@ -98,19 +125,44 @@ export function useShareManageController(
       : deleteMut.error
         ? describeApiError(deleteMut.error, t('share.could_not_revoke_share_link'))
         : null
-  const newKindOptions = useMemo<SelectOption[]>(() => targetIsDir
-    ? [{ value: 'download', text: t('share.kind_download') }, { value: 'drop', text: t('share.kind_drop') }]
-    : [{ value: 'download', text: t('share.kind_download') }], [t, targetIsDir])
+  const newKindOptions = useMemo<SelectOption[]>(
+    () =>
+      targetIsDir
+        ? [
+            { value: 'download', text: t('share.kind_download') },
+            { value: 'drop', text: t('share.kind_drop') }
+          ]
+        : [{ value: 'download', text: t('share.kind_download') }],
+    [t, targetIsDir]
+  )
   const newExpiryChoices = useMemo(() => newExpiryOptions(t), [t])
   const editExpiryChoices = useMemo(() => editExpiryOptions(t), [t])
 
   useEffect(() => {
     patch({ dialogOpen: open })
-    if (open) patch({ justCreated: null, issuedAcknowledged: false, copyErrorId: null, creatingOpen: false, editingId: null, revokeTarget: null })
+    if (open)
+      patch({
+        justCreated: null,
+        issuedAcknowledged: false,
+        copyErrorId: null,
+        creatingOpen: false,
+        editingId: null,
+        revokeTarget: null
+      })
   }, [open, patch])
 
   function resetCreateForm(): void {
-    patch({ newKind: 'download', newRead: true, newDownload: true, newPassword: '', newExpiry: '30d', newExpiryDate: '', newMaxDownloads: '', newLabel: '', createValidation: null })
+    patch({
+      newKind: 'download',
+      newRead: true,
+      newDownload: true,
+      newPassword: '',
+      newExpiry: '30d',
+      newExpiryDate: '',
+      newMaxDownloads: '',
+      newLabel: '',
+      createValidation: null
+    })
     createMut.reset()
   }
 
@@ -129,8 +181,21 @@ export function useShareManageController(
       return
     }
     try {
-      const created = await createMut.mutateAsync({ path, perms, password: newPassword.trim() || undefined, expires_ns: expiryToNs(newExpiry, newExpiryDate), max_downloads: maxDownloads, label: newLabel.trim() || undefined })
-      patch({ justCreated: created, issuedAcknowledged: false, copyErrorId: null, copiedId: null, creatingOpen: false })
+      const created = await createMut.mutateAsync({
+        path,
+        perms,
+        password: newPassword.trim() || undefined,
+        expires_ns: expiryToNs(newExpiry, newExpiryDate),
+        max_downloads: maxDownloads,
+        label: newLabel.trim() || undefined
+      })
+      patch({
+        justCreated: created,
+        issuedAcknowledged: false,
+        copyErrorId: null,
+        copiedId: null,
+        creatingOpen: false
+      })
     } catch {
       // The mutation error is rendered beside the form.
     }
@@ -140,7 +205,10 @@ export function useShareManageController(
     patch({ copyErrorId: null })
     if (await copyText(text)) {
       patch({ copiedId: id })
-      window.setTimeout(() => patch((current) => ({ copiedId: current.copiedId === id ? null : current.copiedId })), 2000)
+      window.setTimeout(
+        () => patch((current) => ({ copiedId: current.copiedId === id ? null : current.copiedId })),
+        2000
+      )
     } else {
       patch({ copiedId: null, copyErrorId: id })
     }
@@ -160,7 +228,17 @@ export function useShareManageController(
   }
 
   function openEdit(link: ShareLinkInfo): void {
-    patch({ editingId: link.id, editRead: link.perms.read, editDownload: link.perms.download, editClearPassword: false, editNewPassword: '', editExpiry: 'keep', editExpiryDate: '', editMaxDownloads: link.max_downloads === null ? '' : String(link.max_downloads), editLabel: link.label ?? '' })
+    patch({
+      editingId: link.id,
+      editRead: link.perms.read,
+      editDownload: link.perms.download,
+      editClearPassword: false,
+      editNewPassword: '',
+      editExpiry: 'keep',
+      editExpiryDate: '',
+      editMaxDownloads: link.max_downloads === null ? '' : String(link.max_downloads),
+      editLabel: link.label ?? ''
+    })
     updateMut.reset()
   }
 
@@ -168,7 +246,16 @@ export function useShareManageController(
     const maxDownloads = editMaxDownloads.trim() ? Number(editMaxDownloads.trim()) : null
     if (maxDownloads !== null && (!Number.isInteger(maxDownloads) || maxDownloads <= 0)) return
     try {
-      await updateMut.mutateAsync({ id: link.id, patch: { perms: { read: editRead, download: editDownload, create: link.perms.create }, password: editClearPassword ? null : editNewPassword.trim() || undefined, expires_ns: editExpiry === 'keep' ? undefined : (expiryToNs(editExpiry, editExpiryDate) ?? null), max_downloads: maxDownloads, label: editLabel.trim() || null } })
+      await updateMut.mutateAsync({
+        id: link.id,
+        patch: {
+          perms: { read: editRead, download: editDownload, create: link.perms.create },
+          password: editClearPassword ? null : editNewPassword.trim() || undefined,
+          expires_ns: editExpiry === 'keep' ? undefined : (expiryToNs(editExpiry, editExpiryDate) ?? null),
+          max_downloads: maxDownloads,
+          label: editLabel.trim() || null
+        }
+      })
       patch({ editingId: null })
     } catch {
       // The mutation error is rendered in the shared error banner.
@@ -187,5 +274,29 @@ export function useShareManageController(
     }
   }
 
-  return { state, links, sharesQuery, createMut, updateMut, deleteMut, newKindOptions, newExpiryChoices, editExpiryChoices, newExpiryBad, editExpiryBad, createError, loadError, patch, resetCreateForm, openCreate, submitCreate, copyLink, acknowledgeIssued, closeIssued, openEdit, submitEdit, confirmRevoke }
+  return {
+    state,
+    links,
+    sharesQuery,
+    createMut,
+    updateMut,
+    deleteMut,
+    newKindOptions,
+    newExpiryChoices,
+    editExpiryChoices,
+    newExpiryBad,
+    editExpiryBad,
+    createError,
+    loadError,
+    patch,
+    resetCreateForm,
+    openCreate,
+    submitCreate,
+    copyLink,
+    acknowledgeIssued,
+    closeIssued,
+    openEdit,
+    submitEdit,
+    confirmRevoke
+  }
 }

@@ -100,7 +100,13 @@ async function mockCreateAdmin(req: SetupCreateAdminReq): Promise<SetupResult> {
   if (req.app_hosts.length > 0 && !req.app_hosts.some((h) => h.toLowerCase() === self.toLowerCase())) {
     return {
       warnings: [
-        { section: 'network', field: 'app_hosts', reason: 'settings.would_lock_you_out', args: { host: self }, blocking: false }
+        {
+          section: 'network',
+          field: 'app_hosts',
+          reason: 'settings.would_lock_you_out',
+          args: { host: self },
+          blocking: false
+        }
       ]
     }
   }

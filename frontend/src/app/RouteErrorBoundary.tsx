@@ -17,8 +17,12 @@ export function RouteErrorBoundary() {
         <h1>Stowcloud</h1>
         <p>{message}</p>
         <div className="sc-error-page-actions">
-          <mdui-button variant="filled" onClick={() => window.location.reload()}>{t('common.retry')}</mdui-button>
-          <mdui-button variant="text" onClick={() => void navigate('/b/', { replace: true })}>{t('common.back')}</mdui-button>
+          <mdui-button variant="filled" onClick={() => window.location.reload()}>
+            {t('common.retry')}
+          </mdui-button>
+          <mdui-button variant="text" onClick={() => void navigate('/b/', { replace: true })}>
+            {t('common.back')}
+          </mdui-button>
         </div>
       </section>
     </main>

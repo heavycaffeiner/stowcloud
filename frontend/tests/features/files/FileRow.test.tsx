@@ -13,7 +13,16 @@ const documents: Entry = {
   mtime_ns: '0',
   etag: 'documents',
   etag_weak: false,
-  perms: { read: true, write: false, create: false, delete: false, rename: false, move: false, share: false, download: false }
+  perms: {
+    read: true,
+    write: false,
+    create: false,
+    delete: false,
+    rename: false,
+    move: false,
+    share: false,
+    download: false
+  }
 }
 const pictures: Entry = { ...documents, name: 'Pictures', path: '/home/Pictures' }
 
@@ -60,7 +69,9 @@ describe.each([
     const onContextMenu = vi.fn()
     const requestMore = vi.fn()
     const props = { loading: false, loadingMore: false, requestMore, perms: documents.perms, onOpen, onContextMenu }
-    const result = render(<View {...props} entries={initialEntries} total={initialEntries.length} dirs={initialEntries.length} />)
+    const result = render(
+      <View {...props} entries={initialEntries} total={initialEntries.length} dirs={initialEntries.length} />
+    )
     return {
       ...result,
       opened,
@@ -119,21 +130,24 @@ describe.each([
     expect(view.opened.map((entry) => entry.path)).toEqual([documents.path, nested.path, deeper.path])
   })
 
-  it.each(['cancelled', 'moved', 'held'] as const)('does not open after a %s touch gesture, then accepts the next tap', (gesture) => {
-    const view = renderView()
-    const [row] = view.entries()
+  it.each(['cancelled', 'moved', 'held'] as const)(
+    'does not open after a %s touch gesture, then accepts the next tap',
+    (gesture) => {
+      const view = renderView()
+      const [row] = view.entries()
 
-    pointer(row, 'pointerdown', { pointerType: 'touch' })
-    if (gesture === 'cancelled') pointer(row, 'pointercancel', { pointerType: 'touch' })
-    if (gesture === 'moved') pointer(row, 'pointermove', { pointerType: 'touch', clientX: 60 })
-    if (gesture === 'held') vi.advanceTimersByTime(500)
-    pointer(row, 'pointerup', { pointerType: 'touch' })
-    pointer(row, 'click', { pointerType: 'touch', detail: 1 })
-    expect(view.opened).toEqual([])
+      pointer(row, 'pointerdown', { pointerType: 'touch' })
+      if (gesture === 'cancelled') pointer(row, 'pointercancel', { pointerType: 'touch' })
+      if (gesture === 'moved') pointer(row, 'pointermove', { pointerType: 'touch', clientX: 60 })
+      if (gesture === 'held') vi.advanceTimersByTime(500)
+      pointer(row, 'pointerup', { pointerType: 'touch' })
+      pointer(row, 'click', { pointerType: 'touch', detail: 1 })
+      expect(view.opened).toEqual([])
 
-    tap(row, { pointerType: 'touch', pointerId: 2 })
-    expect(view.opened.map((entry) => entry.path)).toEqual([documents.path])
-  })
+      tap(row, { pointerType: 'touch', pointerId: 2 })
+      expect(view.opened.map((entry) => entry.path)).toEqual([documents.path])
+    }
+  )
 
   it('keeps selection and more-actions independent from touch activation', () => {
     const view = renderView()

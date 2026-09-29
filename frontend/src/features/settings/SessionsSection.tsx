@@ -29,7 +29,11 @@ export function SessionsSection() {
 
   return (
     <div className="sc-sessions">
-      {list.isPending ? <p>{t('common.loading')}</p> : list.isError ? <p className="sc-sessions-error">{t('common.could_not_load_list')}</p> : (
+      {list.isPending ? (
+        <p>{t('common.loading')}</p>
+      ) : list.isError ? (
+        <p className="sc-sessions-error">{t('common.could_not_load_list')}</p>
+      ) : (
         <VirtualList
           className="sc-sessions-list"
           items={list.data ?? []}
@@ -40,15 +44,40 @@ export function SessionsSection() {
               <div>
                 <strong>{session.ip_first ?? t('session.unknown_location')}</strong>
                 {session.current ? <span className="sc-sessions-badge">{t('session.current_session')}</span> : null}
-                <p title={session.ua_first ?? undefined}>{session.ua_display ?? t('session.unknown_device')} - {t('session.last_active', { date: formatDateNs(session.last_seen_ns) })}</p>
+                <p title={session.ua_first ?? undefined}>
+                  {session.ua_display ?? t('session.unknown_device')} -{' '}
+                  {t('session.last_active', { date: formatDateNs(session.last_seen_ns) })}
+                </p>
               </div>
-              {!session.current ? <Button variant="text" onClick={() => setRevokeTarget(session)}>{t('session.sign_out_session')}</Button> : null}
+              {!session.current ? (
+                <Button variant="text" onClick={() => setRevokeTarget(session)}>
+                  {t('session.sign_out_session')}
+                </Button>
+              ) : null}
             </>
           )}
         />
       )}
-      <SettingsDialog open={!!revokeTarget} title={t('session.sign_out_session_2')} onClose={() => setRevokeTarget(null)} actions={<><Button variant="text" onClick={() => setRevokeTarget(null)}>{t('common.cancel')}</Button><Button onClick={confirmRevoke} loading={revoke.isPending}>{t('common.sign_out')}</Button></>}>
-        <p>{t('session.device_signed_out_immediately', { where: revokeTarget?.ip_first ?? t('session.unknown_location') })}</p>
+      <SettingsDialog
+        open={!!revokeTarget}
+        title={t('session.sign_out_session_2')}
+        onClose={() => setRevokeTarget(null)}
+        actions={
+          <>
+            <Button variant="text" onClick={() => setRevokeTarget(null)}>
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={confirmRevoke} loading={revoke.isPending}>
+              {t('common.sign_out')}
+            </Button>
+          </>
+        }
+      >
+        <p>
+          {t('session.device_signed_out_immediately', {
+            where: revokeTarget?.ip_first ?? t('session.unknown_location')
+          })}
+        </p>
       </SettingsDialog>
     </div>
   )

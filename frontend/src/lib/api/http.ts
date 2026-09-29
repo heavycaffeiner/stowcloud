@@ -204,9 +204,17 @@ function decimalWire(raw: unknown, field: string): number {
 }
 
 function directPartFromWire(raw: unknown): DirectUploadCompletedPart {
-  if (raw === null || typeof raw !== 'object') throw new ApiError(502, { code: 'server.malformed_response', message: 'The server returned an invalid upload part' })
+  if (raw === null || typeof raw !== 'object')
+    throw new ApiError(502, {
+      code: 'server.malformed_response',
+      message: 'The server returned an invalid upload part'
+    })
   const w = raw as Record<string, unknown>
-  if (typeof w.etag !== 'string' || w.etag.length === 0) throw new ApiError(502, { code: 'server.malformed_response', message: 'The server returned an invalid upload part' })
+  if (typeof w.etag !== 'string' || w.etag.length === 0)
+    throw new ApiError(502, {
+      code: 'server.malformed_response',
+      message: 'The server returned an invalid upload part'
+    })
   return {
     part_number: decimalWire(w.part_number, 'part number'),
     size: decimalWire(w.size, 'part size'),
@@ -217,10 +225,17 @@ function directPartFromWire(raw: unknown): DirectUploadCompletedPart {
 }
 
 function directReservationFromWire(raw: unknown): DirectUploadReservation {
-  if (raw === null || typeof raw !== 'object') throw new ApiError(502, { code: 'server.malformed_response', message: 'The server returned an invalid upload reservation' })
+  if (raw === null || typeof raw !== 'object')
+    throw new ApiError(502, {
+      code: 'server.malformed_response',
+      message: 'The server returned an invalid upload reservation'
+    })
   const w = raw as Record<string, unknown>
   if (typeof w.id !== 'string' || typeof w.state !== 'string' || typeof w.expires_at !== 'string') {
-    throw new ApiError(502, { code: 'server.malformed_response', message: 'The server returned an invalid upload reservation' })
+    throw new ApiError(502, {
+      code: 'server.malformed_response',
+      message: 'The server returned an invalid upload reservation'
+    })
   }
   return {
     id: w.id,
@@ -235,22 +250,29 @@ function directReservationFromWire(raw: unknown): DirectUploadReservation {
 }
 
 function directUnsupported(error: ApiError): boolean {
-  return error.status === 501 || (error.status === 422 && (error.code === 'unsupported' || error.code === 'direct_uploads.unsupported' || error.code === 'request_failed'))
+  return (
+    error.status === 501 ||
+    (error.status === 422 &&
+      (error.code === 'unsupported' || error.code === 'direct_uploads.unsupported' || error.code === 'request_failed'))
+  )
 }
 
 async function directUploadCreate(req: DirectUploadCreateReq): Promise<DirectUploadReservation> {
   try {
-    const value = directReservationFromWire(await request<unknown>('/direct-uploads', {
-      method: 'POST',
-      body: JSON.stringify({
-        path: req.path,
-        size: req.size,
-        ...(req.checksum !== undefined ? { checksum: req.checksum } : {}),
-        ...(req.if_match !== undefined ? { if_match: req.if_match } : {}),
-        ...(req.conflict !== undefined ? { conflict: req.conflict } : {})
+    const value = directReservationFromWire(
+      await request<unknown>('/direct-uploads', {
+        method: 'POST',
+        body: JSON.stringify({
+          path: req.path,
+          size: req.size,
+          ...(req.checksum !== undefined ? { checksum: req.checksum } : {}),
+          ...(req.if_match !== undefined ? { if_match: req.if_match } : {}),
+          ...(req.conflict !== undefined ? { conflict: req.conflict } : {})
+        })
       })
-    }))
-    if (!value.capability) throw new ApiError(501, { code: 'direct_uploads.unsupported', message: 'direct upload is not supported' })
+    )
+    if (!value.capability)
+      throw new ApiError(501, { code: 'direct_uploads.unsupported', message: 'direct upload is not supported' })
     return value
   } catch (error) {
     if (error instanceof ApiError && directUnsupported(error)) {
@@ -269,9 +291,14 @@ async function directUploadPart(id: string, partNumber: string): Promise<DirectU
     method: 'POST',
     body: JSON.stringify({ part_number: partNumber })
   })
-  if (typeof w.url !== 'string' || typeof w.headers !== 'object' || w.headers === null) throw new ApiError(502, { code: 'server.malformed_response', message: 'The server returned an invalid upload URL' })
+  if (typeof w.url !== 'string' || typeof w.headers !== 'object' || w.headers === null)
+    throw new ApiError(502, {
+      code: 'server.malformed_response',
+      message: 'The server returned an invalid upload URL'
+    })
   const headers: Record<string, string> = {}
-  for (const [key, value] of Object.entries(w.headers as Record<string, unknown>)) if (typeof value === 'string') headers[key] = value
+  for (const [key, value] of Object.entries(w.headers as Record<string, unknown>))
+    if (typeof value === 'string') headers[key] = value
   return {
     part_number: decimalWire(w.part_number, 'part number'),
     url: w.url,
@@ -281,10 +308,12 @@ async function directUploadPart(id: string, partNumber: string): Promise<DirectU
 }
 
 async function directUploadComplete(id: string, req: DirectUploadCompleteReq): Promise<DirectUploadCompleteResult> {
-  return directReservationFromWire(await request<unknown>(`/direct-uploads/${encodeURIComponent(id)}/complete`, {
-    method: 'POST',
-    body: JSON.stringify(req)
-  }))
+  return directReservationFromWire(
+    await request<unknown>(`/direct-uploads/${encodeURIComponent(id)}/complete`, {
+      method: 'POST',
+      body: JSON.stringify(req)
+    })
+  )
 }
 
 async function directUploadCancel(id: string): Promise<void> {
@@ -508,9 +537,7 @@ async function stat(path: string): Promise<Entry> {
 }
 
 async function mkdir(path: string): Promise<Entry> {
-  return entryFromWire(
-    await request<WireEntry>('/files/mkdir', { method: 'POST', body: JSON.stringify({ path }) })
-  )
+  return entryFromWire(await request<WireEntry>('/files/mkdir', { method: 'POST', body: JSON.stringify({ path }) }))
 }
 
 async function rename(path: string, newName: string): Promise<Entry> {
@@ -631,7 +658,6 @@ async function move(req: MoveReq): Promise<BatchResult> {
   }
   return { results }
 }
-
 
 /**
  * What a move would do, asked before it is committed.
@@ -907,9 +933,7 @@ async function jobCancel(id: string): Promise<void> {
 
 async function trashList(): Promise<TrashEntry[]> {
   const rows =
-    await request<Array<{ id: string; name: string; is_dir?: boolean; size: string; deleted_at_ns: string }>>(
-      '/trash'
-    )
+    await request<Array<{ id: string; name: string; is_dir?: boolean; size: string; deleted_at_ns: string }>>('/trash')
   return (rows ?? []).map((w) => ({
     id: w.id,
     name: w.name,
@@ -1017,9 +1041,7 @@ async function shareUpdate(id: number, patch: ShareLinkPatchReq): Promise<ShareL
     ...patch,
     perms: patch.perms ? permNamesOf(patch.perms as Perms) : undefined
   }
-  return linkFromWire(
-    await request<WireLink>(`/links/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
-  )
+  return linkFromWire(await request<WireLink>(`/links/${id}`, { method: 'PATCH', body: JSON.stringify(body) }))
 }
 
 async function shareDelete(id: number): Promise<void> {
@@ -1329,10 +1351,7 @@ async function updateSmbSettings(currentPassword: string, optOut: boolean, enabl
  * been turned back on, because a credential that is never published is not
  * what the request asked for.
  */
-async function setSmbPassword(
-  currentPassword: string,
-  smbPassword: string
-): Promise<{ smb_toggles_cleared: boolean }> {
+async function setSmbPassword(currentPassword: string, smbPassword: string): Promise<{ smb_toggles_cleared: boolean }> {
   return request('/account/smb/password', {
     method: 'POST',
     body: JSON.stringify({ current: currentPassword, new: smbPassword })
@@ -1346,9 +1365,7 @@ async function setSmbPassword(
  * TOTP-enrolled, OIDC-linked or opted out, which is the case where clearing
  * the separate password means losing SMB access altogether.
  */
-async function clearSmbPassword(
-  currentPassword: string
-): Promise<{ reverted_to_account_password: boolean }> {
+async function clearSmbPassword(currentPassword: string): Promise<{ reverted_to_account_password: boolean }> {
   return request('/account/smb/password', {
     method: 'DELETE',
     body: JSON.stringify({ current: currentPassword })
@@ -1849,9 +1866,10 @@ interface WireGrant {
 function grantFromWire(w: WireGrant): AdminGrant {
   return {
     id: decimalWire(w.id, 'grant id'),
-    principal: w.group !== undefined
-      ? { kind: 'group', id: decimalWire(w.group, 'grant group id') }
-      : { kind: 'user', id: decimalWire(w.user, 'grant user id') },
+    principal:
+      w.group !== undefined
+        ? { kind: 'group', id: decimalWire(w.group, 'grant group id') }
+        : { kind: 'user', id: decimalWire(w.user, 'grant user id') },
     share: decimalWire(w.share, 'grant share id'),
     subpath: w.subpath ?? '',
     allow: w.allow ?? [],
@@ -1866,7 +1884,9 @@ function grantFromWire(w: WireGrant): AdminGrant {
 
 /** `opts.userId`/`opts.groupId` narrow to one principal's grants, used by the
  *  per-user grant editor; omitted, this is the whole grant table. */
-async function adminListGrants(opts: { userId?: number; groupId?: number; share?: number } = {}): Promise<AdminGrant[]> {
+async function adminListGrants(
+  opts: { userId?: number; groupId?: number; share?: number } = {}
+): Promise<AdminGrant[]> {
   const rows = await request<WireGrant[]>(
     `/admin/grants${qs({ user: opts.userId, group: opts.groupId, share: opts.share })}`
   )
@@ -1919,7 +1939,11 @@ interface WireGroup {
 }
 
 function groupFromWire(w: WireGroup): AdminGroup {
-  return { id: decimalWire(w.id, 'group id'), name: w.name, members: (w.members ?? []).map((member) => decimalWire(member, 'group member id')) }
+  return {
+    id: decimalWire(w.id, 'group id'),
+    name: w.name,
+    members: (w.members ?? []).map((member) => decimalWire(member, 'group member id'))
+  }
 }
 
 async function adminListGroups(): Promise<AdminGroup[]> {
@@ -2127,7 +2151,16 @@ function toSearchHit(raw: RawSearchHit): SearchHit {
       // about and nothing here may be used for a conditional write.
       etag: '',
       etag_weak: true,
-      perms: { read: true, write: false, create: false, delete: false, rename: false, move: false, share: false, download: false },
+      perms: {
+        read: true,
+        write: false,
+        create: false,
+        delete: false,
+        rename: false,
+        move: false,
+        share: false,
+        download: false
+      },
       // No numeric fid in the wire shape (see this file's header comment on
       // `RawSearchHit`), left `undefined` rather than guessed, same as a
       // plain `list`/`stat` result with no allocated fileid. A download

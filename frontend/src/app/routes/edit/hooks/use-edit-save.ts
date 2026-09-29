@@ -20,7 +20,10 @@ export interface EditSaveOptions {
   baselineEtag: string | null
   queryClient: QueryClient
   mutation: SaveMutation
-  actions: Pick<EditActions, 'setSaveError' | 'setConflict' | 'markBaseline' | 'clearDraftIf' | 'setSnackbar' | 'setLeaveDialog' | 'clearDraft'>
+  actions: Pick<
+    EditActions,
+    'setSaveError' | 'setConflict' | 'markBaseline' | 'clearDraftIf' | 'setSnackbar' | 'setLeaveDialog' | 'clearDraft'
+  >
   focus: () => void
   translate: (key: string) => string
 }
@@ -35,7 +38,22 @@ export interface EditSaveFlow {
 
 type Blocker = { state: string; proceed?: () => void }
 
-export function useEditSave({ path, entry, unlocked, canSave, content, baselineEtag, queryClient, mutation, actions, focus, translate }: EditSaveOptions, blocker: Blocker): EditSaveFlow {
+export function useEditSave(
+  {
+    path,
+    entry,
+    unlocked,
+    canSave,
+    content,
+    baselineEtag,
+    queryClient,
+    mutation,
+    actions,
+    focus,
+    translate
+  }: EditSaveOptions,
+  blocker: Blocker
+): EditSaveFlow {
   const save = useCallback(async (): Promise<boolean> => {
     if (!canSave || !entry) return false
     actions.setSaveError(null)
@@ -99,7 +117,7 @@ export function useEditSave({ path, entry, unlocked, canSave, content, baselineE
   }, [actions, blocker])
 
   const saveAndLeave = useCallback(async () => {
-    if (await save() && blocker.state === 'blocked') {
+    if ((await save()) && blocker.state === 'blocked') {
       actions.setLeaveDialog(false)
       blocker.proceed?.()
     }

@@ -36,11 +36,23 @@ export type SetupActions = {
 }
 
 const initialState: SetupState = {
-  token: '', username: '', password: '', passwordConfirm: '',
+  token: '',
+  username: '',
+  password: '',
+  passwordConfirm: '',
   appHosts: typeof location === 'undefined' ? '' : location.hostname,
-  trustedProxies: '', shareName: '', sharePath: '', accountCreated: false,
-  doneButLoginFailed: false, shareFailed: false, shareRetryError: null,
-  errorMessage: null, warnings: [], pickerOpen: false, pickerAuthenticated: false, step: 1
+  trustedProxies: '',
+  shareName: '',
+  sharePath: '',
+  accountCreated: false,
+  doneButLoginFailed: false,
+  shareFailed: false,
+  shareRetryError: null,
+  errorMessage: null,
+  warnings: [],
+  pickerOpen: false,
+  pickerAuthenticated: false,
+  step: 1
 }
 
 export function useSetupState(): { state: SetupState; actions: SetupActions } {

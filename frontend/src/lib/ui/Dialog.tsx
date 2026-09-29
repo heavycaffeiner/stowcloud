@@ -14,7 +14,12 @@ export interface DialogProps {
   ariaLabel?: string
 }
 
-type DialogElement = HTMLElement & { open: boolean; show?: () => void; close?: () => void; updateComplete?: Promise<unknown> }
+type DialogElement = HTMLElement & {
+  open: boolean
+  show?: () => void
+  close?: () => void
+  updateComplete?: Promise<unknown>
+}
 
 function focusFallback(): void {
   document.querySelector<HTMLElement>('[role="grid"][tabindex="0"], [role="tree"][tabindex="0"]')?.focus()
@@ -78,7 +83,8 @@ export function Dialog({
         const target = opener.current
         opener.current = null
         queueMicrotask(() => {
-          if (target?.isConnected && !target.hasAttribute('disabled') && !target.hasAttribute('aria-hidden')) target.focus()
+          if (target?.isConnected && !target.hasAttribute('disabled') && !target.hasAttribute('aria-hidden'))
+            target.focus()
           else focusFallback()
         })
       }

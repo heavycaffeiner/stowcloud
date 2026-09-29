@@ -169,6 +169,9 @@ export function documentScrollTop(windowScrollY: number, viewportDocumentTop: nu
  * `visualViewport.height` is preferred whenever it exists; `innerHeight` is
  * the fallback for engines (or the jsdom test environment) that lack it.
  */
-export function effectiveViewportHeight(visualViewportHeight: number | undefined | null, windowInnerHeight: number): number {
+export function effectiveViewportHeight(
+  visualViewportHeight: number | undefined | null,
+  windowInnerHeight: number
+): number {
   return visualViewportHeight ?? windowInnerHeight
 }

@@ -5,13 +5,29 @@ import { useStore } from 'zustand'
 import type { SearchDone, SearchHit, SearchProgress } from '../../../lib/api/client'
 import { resolveExtensions } from '../../../lib/search/filters'
 import { search, type SearchSnapshot } from '../../../lib/store/search.store'
-import { initialSearchState, toSnapshot, type CategoryId, type SearchPanelState, type SearchStatus } from '../logic/search-state'
-import { activeCategoryFor, activeFiltersFor, sortLabelKeyFor, statusFor, viewFor, windowFor } from '../logic/search-selectors'
+import {
+  initialSearchState,
+  toSnapshot,
+  type CategoryId,
+  type SearchPanelState,
+  type SearchStatus
+} from '../logic/search-state'
+import {
+  activeCategoryFor,
+  activeFiltersFor,
+  sortLabelKeyFor,
+  statusFor,
+  viewFor,
+  windowFor
+} from '../logic/search-selectors'
 import { api } from '../../../lib/api/client'
 import type { WindowResult } from '../../../lib/virtual/windowing'
 const FLUSH_MS = 100
 
-type StateSetter = <K extends keyof SearchPanelState>(key: K, value: SearchPanelState[K] | ((previous: SearchPanelState[K]) => SearchPanelState[K])) => void
+type StateSetter = <K extends keyof SearchPanelState>(
+  key: K,
+  value: SearchPanelState[K] | ((previous: SearchPanelState[K]) => SearchPanelState[K])
+) => void
 
 export interface SearchControllerOptions {
   readonly scope: string
@@ -44,19 +60,27 @@ function restoredSnapshot(scope: string): SearchSnapshot | null {
   return snapshot?.scope === scope ? snapshot : null
 }
 
-export function useSearchController({ scope, resultsContainer, categoriesRef }: SearchControllerOptions): SearchController {
+export function useSearchController({
+  scope,
+  resultsContainer,
+  categoriesRef
+}: SearchControllerOptions): SearchController {
   const restored = useMemo(() => restoredSnapshot(scope), [scope])
   const storeRef = useRef<StoreApi<SearchPanelState> | null>(null)
   if (storeRef.current === null) storeRef.current = createStore(() => initialSearchState(restored))
   const store = storeRef.current
   const state = useStore(store)
-  const set: StateSetter = useCallback((key, value) => {
-    store.setState((current) => ({
-      [key]: typeof value === 'function'
-        ? (value as (previous: SearchPanelState[typeof key]) => SearchPanelState[typeof key])(current[key])
-        : value
-    }))
-  }, [store])
+  const set: StateSetter = useCallback(
+    (key, value) => {
+      store.setState((current) => ({
+        [key]:
+          typeof value === 'function'
+            ? (value as (previous: SearchPanelState[typeof key]) => SearchPanelState[typeof key])(current[key])
+            : value
+      }))
+    },
+    [store]
+  )
   const inputRef = useRef<HTMLInputElement | null>(null)
   const cancelRef = useRef<(() => void) | null>(null)
   const arrivingRef = useRef<SearchHit[]>([])
@@ -119,7 +143,12 @@ export function useSearchController({ scope, resultsContainer, categoriesRef }: 
     set('running', true)
     const { kind, presets, extQuery } = latestRef.current
     const stopStream = api.searchStream(
-      { query, kind: kind === 'any' ? undefined : kind, exts: resolveExtensions(presets, extQuery), scope: scope || undefined },
+      {
+        query,
+        kind: kind === 'any' ? undefined : kind,
+        exts: resolveExtensions(presets, extQuery),
+        scope: scope || undefined
+      },
       (hit: SearchHit) => {
         if (generation !== generationRef.current) return
         arrivingRef.current.push(hit)
@@ -200,7 +229,23 @@ export function useSearchController({ scope, resultsContainer, categoriesRef }: 
 
   useEffect(() => {
     search.saveSnapshot(toSnapshot(scope, latestRef.current))
-  }, [scope, state.query, state.kind, state.presets, state.extText, state.extQuery, state.sortKey, state.hits, state.running, state.ran, state.failure, state.truncated, state.elapsedMs, state.scanned, state.scrollTop])
+  }, [
+    scope,
+    state.query,
+    state.kind,
+    state.presets,
+    state.extText,
+    state.extQuery,
+    state.sortKey,
+    state.hits,
+    state.running,
+    state.ran,
+    state.failure,
+    state.truncated,
+    state.elapsedMs,
+    state.scanned,
+    state.scrollTop
+  ])
 
   const view = viewFor(state)
   useEffect(() => {
@@ -215,37 +260,45 @@ export function useSearchController({ scope, resultsContainer, categoriesRef }: 
     return () => cancelAnimationFrame(frame)
   }, [resultsContainer, set, view.length])
 
-  useEffect(() => () => {
-    generationRef.current += 1
-    cancelStream()
-    flush()
-    const current = latestRef.current
-    search.saveSnapshot(toSnapshot(scope, current, {
-      hits: current.hits,
-      running: false,
-      failure: current.running ? 'stopped' : current.failure
-    }))
-    if (flushTimerRef.current !== null) clearTimeout(flushTimerRef.current)
-    flushTimerRef.current = null
-  }, [cancelStream, flush, scope])
+  useEffect(
+    () => () => {
+      generationRef.current += 1
+      cancelStream()
+      flush()
+      const current = latestRef.current
+      search.saveSnapshot(
+        toSnapshot(scope, current, {
+          hits: current.hits,
+          running: false,
+          failure: current.running ? 'stopped' : current.failure
+        })
+      )
+      if (flushTimerRef.current !== null) clearTimeout(flushTimerRef.current)
+      flushTimerRef.current = null
+    },
+    [cancelStream, flush, scope]
+  )
 
-  const selectCategory = useCallback((id: CategoryId): void => {
-    if (id === 'all') {
-      set('kind', 'any')
-      set('presets', [])
-    } else if (id === 'dir') {
-      set('kind', 'dir')
-      set('presets', [])
-    } else if (id === 'file') {
-      set('kind', 'file')
-      set('presets', [])
-    } else {
-      set('kind', 'file')
-      set('presets', [id])
-    }
-    set('extText', '')
-    set('extQuery', '')
-  }, [set])
+  const selectCategory = useCallback(
+    (id: CategoryId): void => {
+      if (id === 'all') {
+        set('kind', 'any')
+        set('presets', [])
+      } else if (id === 'dir') {
+        set('kind', 'dir')
+        set('presets', [])
+      } else if (id === 'file') {
+        set('kind', 'file')
+        set('presets', [])
+      } else {
+        set('kind', 'file')
+        set('presets', [id])
+      }
+      set('extText', '')
+      set('extQuery', '')
+    },
+    [set]
+  )
 
   const activeCategory = activeCategoryFor(state)
   const activeFilters = activeFiltersFor(state)

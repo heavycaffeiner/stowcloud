@@ -14,7 +14,7 @@ const POLL_MS = 1000
 const TERMINAL: readonly JobState[] = ['done', 'error', 'cancelled', 'interrupted']
 
 function isTerminal(status: JobStatus | undefined): boolean {
-	return status !== undefined && TERMINAL.includes(status.state)
+  return status !== undefined && TERMINAL.includes(status.state)
 }
 
 /** Every non-terminal job this account owns. Polled while any of them is

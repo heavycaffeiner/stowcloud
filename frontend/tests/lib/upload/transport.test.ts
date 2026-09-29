@@ -8,21 +8,15 @@ describe('mockTransport.patchChunk', () => {
       dest: '/test',
       filename: 'file.bin',
       totalSize: 1000,
-      chunkSize: 1000,
+      chunkSize: 1000
     })
 
     const progressReports: number[] = []
     const blob = new Blob([new Uint8Array(1000)])
 
-    const res = await mockTransport.patchChunk(
-      session.id,
-      0,
-      blob,
-      undefined,
-      (bytes) => {
-        progressReports.push(bytes)
-      },
-    )
+    const res = await mockTransport.patchChunk(session.id, 0, blob, undefined, (bytes) => {
+      progressReports.push(bytes)
+    })
 
     expect(res.offset).toBe(1000)
     expect(progressReports.length).toBeGreaterThan(0)
@@ -49,7 +43,7 @@ describe('HttpTransport.patchChunk with XMLHttpRequest', () => {
       upload = {
         set onprogress(handler: typeof uploadProgressHandler) {
           uploadProgressHandler = handler
-        },
+        }
       }
       status = 200
       open = vi.fn()
@@ -80,15 +74,9 @@ describe('HttpTransport.patchChunk with XMLHttpRequest', () => {
     const blob = new Blob([new Uint8Array(500)])
     const transport: Transport = new HttpTransport()
 
-    const result = await transport.patchChunk(
-      'sess-1',
-      0,
-      blob,
-      undefined,
-      (bytes) => {
-        progress.push(bytes)
-      },
-    )
+    const result = await transport.patchChunk('sess-1', 0, blob, undefined, (bytes) => {
+      progress.push(bytes)
+    })
 
     expect(sendCalled).toBe(true)
     expect(progress).toEqual([250, 500])

@@ -87,9 +87,7 @@ describe('indicesInRect over a list', () => {
 
 describe('indicesInRect over a grid', () => {
   it('offsets by the section start, so the answer indexes the whole listing', () => {
-    expect(indicesInRect({ left: 0, top: 500, right: 9999, bottom: 600 }, grid)).toEqual([
-      1000, 1001, 1002, 1003
-    ])
+    expect(indicesInRect({ left: 0, top: 500, right: 9999, bottom: 600 }, grid)).toEqual([1000, 1001, 1002, 1003])
   })
 
   it('takes only the columns the rectangle reaches', () => {

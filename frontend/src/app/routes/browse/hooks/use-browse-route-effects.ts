@@ -35,7 +35,7 @@ export function useBrowseRouteFocus({
   navigate,
   tableRef,
   gridRef,
-  fetchNextPage,
+  fetchNextPage
 }: BrowseRouteFocusOptions): void {
   useEffect(() => {
     if (!focusName || isPending) return
@@ -47,5 +47,17 @@ export function useBrowseRouteFocus({
     } else if (hasNextPage && !isFetchingNextPage) {
       void fetchNextPage()
     }
-  }, [focusName, isPending, hasNextPage, isFetchingNextPage, mode, pathname, search, navigate, tableRef, gridRef, fetchNextPage])
+  }, [
+    focusName,
+    isPending,
+    hasNextPage,
+    isFetchingNextPage,
+    mode,
+    pathname,
+    search,
+    navigate,
+    tableRef,
+    gridRef,
+    fetchNextPage
+  ])
 }

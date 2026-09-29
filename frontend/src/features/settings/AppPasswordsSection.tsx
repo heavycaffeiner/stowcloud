@@ -17,9 +17,42 @@ export function AppPasswordsSection() {
   const create = useMutation(createAppPasswordMutation())
   const revoke = useMutation(revokeAppPasswordMutation())
   const wipe = useMutation(revokeAppPasswordMutation())
-  type AppPasswordState = { createOpen: boolean; newName: string; newCurrent: string; newReadOnly: boolean; issuedToken: string | null; issuedAcknowledged: boolean; tokenCopyState: 'idle' | 'copied' | 'failed'; revokeTarget: AppPasswordInfo | null; wipeTarget: AppPasswordInfo | null; actionError: string | null }
-  const [state, setState] = useComponentState<AppPasswordState>({ createOpen: false, newName: '', newCurrent: '', newReadOnly: false, issuedToken: null, issuedAcknowledged: false, tokenCopyState: 'idle', revokeTarget: null, wipeTarget: null, actionError: null })
-  const { createOpen, newName, newCurrent, newReadOnly, issuedToken, issuedAcknowledged, tokenCopyState, revokeTarget, wipeTarget, actionError } = state
+  type AppPasswordState = {
+    createOpen: boolean
+    newName: string
+    newCurrent: string
+    newReadOnly: boolean
+    issuedToken: string | null
+    issuedAcknowledged: boolean
+    tokenCopyState: 'idle' | 'copied' | 'failed'
+    revokeTarget: AppPasswordInfo | null
+    wipeTarget: AppPasswordInfo | null
+    actionError: string | null
+  }
+  const [state, setState] = useComponentState<AppPasswordState>({
+    createOpen: false,
+    newName: '',
+    newCurrent: '',
+    newReadOnly: false,
+    issuedToken: null,
+    issuedAcknowledged: false,
+    tokenCopyState: 'idle',
+    revokeTarget: null,
+    wipeTarget: null,
+    actionError: null
+  })
+  const {
+    createOpen,
+    newName,
+    newCurrent,
+    newReadOnly,
+    issuedToken,
+    issuedAcknowledged,
+    tokenCopyState,
+    revokeTarget,
+    wipeTarget,
+    actionError
+  } = state
   const patchState = (patch: Partial<AppPasswordState>): void => setState((current) => ({ ...current, ...patch }))
   const setCreateOpen = (value: boolean): void => patchState({ createOpen: value })
   const setNewName = (value: string): void => patchState({ newName: value })
@@ -36,14 +69,28 @@ export function AppPasswordsSection() {
     return item.expires_ns ? Number(item.expires_ns) / 1e6 <= Date.now() : false
   }
   function openCreate(): void {
-    setNewName(''); setNewCurrent(''); setNewReadOnly(false); create.reset(); setActionError(null); setCreateOpen(true)
+    setNewName('')
+    setNewCurrent('')
+    setNewReadOnly(false)
+    create.reset()
+    setActionError(null)
+    setCreateOpen(true)
   }
   function confirmCreate(): void {
     if (!newName.trim() || !newCurrent) return
-    create.mutate({ name: newName.trim(), currentPassword: newCurrent, scope: newReadOnly ? { readOnly: true } : undefined }, {
-      onSuccess: (result) => { setCreateOpen(false); setIssuedToken(result.token); setIssuedAcknowledged(false); setTokenCopyState('idle'); void list.refetch() },
-      onError: (error) => setActionError(describeApiError(error, t('app_password.could_not_create_app_password')))
-    })
+    create.mutate(
+      { name: newName.trim(), currentPassword: newCurrent, scope: newReadOnly ? { readOnly: true } : undefined },
+      {
+        onSuccess: (result) => {
+          setCreateOpen(false)
+          setIssuedToken(result.token)
+          setIssuedAcknowledged(false)
+          setTokenCopyState('idle')
+          void list.refetch()
+        },
+        onError: (error) => setActionError(describeApiError(error, t('app_password.could_not_create_app_password')))
+      }
+    )
   }
   function closeIssued(): void {
     if (issuedToken && !issuedAcknowledged) return
@@ -55,22 +102,55 @@ export function AppPasswordsSection() {
   }
   async function copyToken(): Promise<void> {
     if (!issuedToken) return
-    try { await navigator.clipboard.writeText(issuedToken); setTokenCopyState('copied') } catch { setTokenCopyState('failed') }
+    try {
+      await navigator.clipboard.writeText(issuedToken)
+      setTokenCopyState('copied')
+    } catch {
+      setTokenCopyState('failed')
+    }
   }
   function confirmRevoke(): void {
     if (!revokeTarget) return
     setActionError(null)
-    revoke.mutate({ id: revokeTarget.id, wipe: false }, { onSuccess: () => setRevokeTarget(null), onError: (error) => { if (error instanceof ApiError && error.status === 404) { setRevokeTarget(null); void list.refetch() } else setActionError(describeApiError(error, t('common.could_not_save_change'))) } })
+    revoke.mutate(
+      { id: revokeTarget.id, wipe: false },
+      {
+        onSuccess: () => setRevokeTarget(null),
+        onError: (error) => {
+          if (error instanceof ApiError && error.status === 404) {
+            setRevokeTarget(null)
+            void list.refetch()
+          } else setActionError(describeApiError(error, t('common.could_not_save_change')))
+        }
+      }
+    )
   }
   function confirmWipe(): void {
     if (!wipeTarget) return
     setActionError(null)
-    wipe.mutate({ id: wipeTarget.id, wipe: true }, { onSuccess: () => setWipeTarget(null), onError: (error) => { if (error instanceof ApiError && error.status === 404) { setWipeTarget(null); void list.refetch() } else setActionError(describeApiError(error, t('common.could_not_save_change'))) } })
+    wipe.mutate(
+      { id: wipeTarget.id, wipe: true },
+      {
+        onSuccess: () => setWipeTarget(null),
+        onError: (error) => {
+          if (error instanceof ApiError && error.status === 404) {
+            setWipeTarget(null)
+            void list.refetch()
+          } else setActionError(describeApiError(error, t('common.could_not_save_change')))
+        }
+      }
+    )
   }
 
   return (
     <div className="sc-app-passwords">
-      {list.isPending ? <p>{t('common.loading')}</p> : list.isError ? <p className="sc-app-passwords-error">{t('common.could_not_load_list')}</p> : (list.data ?? []).length === 0 ? <p className="sc-app-passwords-empty">{t('app_password.no_app_passwords_issued_yet')}</p> : (
+      {list.isPending ? (
+        <p>{t('common.loading')}</p>
+      ) : list.isError ? (
+        <p className="sc-app-passwords-error">{t('common.could_not_load_list')}</p>
+      ) : (list.data ?? []).length === 0 ? (
+        <p className="sc-app-passwords-empty">{t('app_password.no_app_passwords_issued_yet')}</p>
+      ) : (
         <VirtualList
           className="sc-app-passwords-list"
           items={list.data ?? []}
@@ -81,28 +161,151 @@ export function AppPasswordsSection() {
               <div>
                 <strong className="sc-app-passwords-name">{item.name}</strong>
                 {item.read_only ? <span className="sc-settings-badge">{t('common.read_only')}</span> : null}
-                <p>{t('app_password.issued', { date: formatDateNs(item.created_ns) })} - {item.last_used_ns ? t('app_password.last_used', { date: formatDateNs(item.last_used_ns) }) : t('app_password.never_used')}{isExpired(item) ? ` - ${t('app_password.expired')}` : item.expires_ns ? ` - ${t('app_password.expires', { date: formatDateNs(item.expires_ns) })}` : ''}</p>
+                <p>
+                  {t('app_password.issued', { date: formatDateNs(item.created_ns) })} -{' '}
+                  {item.last_used_ns
+                    ? t('app_password.last_used', { date: formatDateNs(item.last_used_ns) })
+                    : t('app_password.never_used')}
+                  {isExpired(item)
+                    ? ` - ${t('app_password.expired')}`
+                    : item.expires_ns
+                      ? ` - ${t('app_password.expires', { date: formatDateNs(item.expires_ns) })}`
+                      : ''}
+                </p>
               </div>
               <div className="sc-settings-card-buttons">
-                {!isExpired(item) ? <Button variant="text" ariaLabel={t('app_password.wipe', { name: item.name })} onClick={() => { setActionError(null); setWipeTarget(item) }}>{t('app_password.wipe_2')}</Button> : null}
-                <Button variant="text" ariaLabel={t('app_password.revoke', { name: item.name })} onClick={() => { setActionError(null); setRevokeTarget(item) }}>{t('app_password.revoke_2')}</Button>
+                {!isExpired(item) ? (
+                  <Button
+                    variant="text"
+                    ariaLabel={t('app_password.wipe', { name: item.name })}
+                    onClick={() => {
+                      setActionError(null)
+                      setWipeTarget(item)
+                    }}
+                  >
+                    {t('app_password.wipe_2')}
+                  </Button>
+                ) : null}
+                <Button
+                  variant="text"
+                  ariaLabel={t('app_password.revoke', { name: item.name })}
+                  onClick={() => {
+                    setActionError(null)
+                    setRevokeTarget(item)
+                  }}
+                >
+                  {t('app_password.revoke_2')}
+                </Button>
               </div>
             </>
           )}
         />
       )}
-      <div className="sc-app-passwords-actions"><Button variant="outlined" onClick={openCreate}>{t('app_password.new_app_password')}</Button></div>
-      <SettingsDialog open={createOpen} title={t('app_password.new_app_password')} onClose={() => setCreateOpen(false)} actions={<><Button variant="text" onClick={() => setCreateOpen(false)}>{t('common.cancel')}</Button><Button onClick={confirmCreate} disabled={!newName.trim() || !newCurrent} loading={create.isPending}>{t('common.create')}</Button></>}>
-        {actionError ? <p className="sc-app-passwords-error" role="alert">{actionError}</p> : null}<p>{t('app_password.use_one_where_your_account')}</p><TextField label={t('common.name')} placeholder={t('app_password.e_g_rclone_backup')} value={newName} onValueChange={setNewName} /><TextField type="password" label={t('common.current_password')} autoComplete="current-password" value={newCurrent} onValueChange={setNewCurrent} /><Switch checked={newReadOnly} label={t('app_password.read_only_download_only_no')} onChange={setNewReadOnly} /><p>{t('app_password.read_only_recommended_anywhere_only')}</p>
+      <div className="sc-app-passwords-actions">
+        <Button variant="outlined" onClick={openCreate}>
+          {t('app_password.new_app_password')}
+        </Button>
+      </div>
+      <SettingsDialog
+        open={createOpen}
+        title={t('app_password.new_app_password')}
+        onClose={() => setCreateOpen(false)}
+        actions={
+          <>
+            <Button variant="text" onClick={() => setCreateOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={confirmCreate} disabled={!newName.trim() || !newCurrent} loading={create.isPending}>
+              {t('common.create')}
+            </Button>
+          </>
+        }
+      >
+        {actionError ? (
+          <p className="sc-app-passwords-error" role="alert">
+            {actionError}
+          </p>
+        ) : null}
+        <p>{t('app_password.use_one_where_your_account')}</p>
+        <TextField
+          label={t('common.name')}
+          placeholder={t('app_password.e_g_rclone_backup')}
+          value={newName}
+          onValueChange={setNewName}
+        />
+        <TextField
+          type="password"
+          label={t('common.current_password')}
+          autoComplete="current-password"
+          value={newCurrent}
+          onValueChange={setNewCurrent}
+        />
+        <Switch checked={newReadOnly} label={t('app_password.read_only_download_only_no')} onChange={setNewReadOnly} />
+        <p>{t('app_password.read_only_recommended_anywhere_only')}</p>
       </SettingsDialog>
-      <SettingsDialog open={!!issuedToken} title={t('app_password.app_password_issued')} onClose={closeIssued} dismissible={false} actions={<Button onClick={acknowledgeIssued}>{t('app_password.acknowledge_saved')}</Button>}>
-        <p>{t('app_password.once_you_close_cannot_shown')}</p><div className="sc-token-row"><input readOnly value={issuedToken ?? ''} aria-label={t('app_password.app_password_issued')} /><Button variant="text" onClick={() => void copyToken()}>{tokenCopyState === 'copied' ? t('common.copied') : t('common.copy')}</Button></div>{tokenCopyState === 'failed' ? <p className="sc-app-passwords-copy-feedback" role="alert">{t('app_password.copy_failed')}</p> : null}
+      <SettingsDialog
+        open={!!issuedToken}
+        title={t('app_password.app_password_issued')}
+        onClose={closeIssued}
+        dismissible={false}
+        actions={<Button onClick={acknowledgeIssued}>{t('app_password.acknowledge_saved')}</Button>}
+      >
+        <p>{t('app_password.once_you_close_cannot_shown')}</p>
+        <div className="sc-token-row">
+          <input readOnly value={issuedToken ?? ''} aria-label={t('app_password.app_password_issued')} />
+          <Button variant="text" onClick={() => void copyToken()}>
+            {tokenCopyState === 'copied' ? t('common.copied') : t('common.copy')}
+          </Button>
+        </div>
+        {tokenCopyState === 'failed' ? (
+          <p className="sc-app-passwords-copy-feedback" role="alert">
+            {t('app_password.copy_failed')}
+          </p>
+        ) : null}
       </SettingsDialog>
-      <SettingsDialog open={!!revokeTarget} title={t('app_password.revoke_app_password')} onClose={() => setRevokeTarget(null)} actions={<><Button variant="text" onClick={() => setRevokeTarget(null)}>{t('common.cancel')}</Button><Button onClick={confirmRevoke} loading={revoke.isPending}>{t('app_password.revoke_2')}</Button></>}>
-        <p>{t('app_password.everything_using_disconnected_at_once', { name: revokeTarget?.name ?? '' })}</p>{actionError ? <p className="sc-app-passwords-error" role="alert">{actionError}</p> : null}
+      <SettingsDialog
+        open={!!revokeTarget}
+        title={t('app_password.revoke_app_password')}
+        onClose={() => setRevokeTarget(null)}
+        actions={
+          <>
+            <Button variant="text" onClick={() => setRevokeTarget(null)}>
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={confirmRevoke} loading={revoke.isPending}>
+              {t('app_password.revoke_2')}
+            </Button>
+          </>
+        }
+      >
+        <p>{t('app_password.everything_using_disconnected_at_once', { name: revokeTarget?.name ?? '' })}</p>
+        {actionError ? (
+          <p className="sc-app-passwords-error" role="alert">
+            {actionError}
+          </p>
+        ) : null}
       </SettingsDialog>
-      <SettingsDialog open={!!wipeTarget} title={t('app_password.wipe_device')} onClose={() => setWipeTarget(null)} actions={<><Button variant="text" onClick={() => setWipeTarget(null)}>{t('common.cancel')}</Button><Button onClick={confirmWipe} loading={wipe.isPending}>{t('app_password.wipe_2')}</Button></>}>
-        <p>{t('app_password.next_time_that_device_erase', { name: wipeTarget?.name ?? '' })}</p>{actionError ? <p className="sc-app-passwords-error" role="alert">{actionError}</p> : null}
+      <SettingsDialog
+        open={!!wipeTarget}
+        title={t('app_password.wipe_device')}
+        onClose={() => setWipeTarget(null)}
+        actions={
+          <>
+            <Button variant="text" onClick={() => setWipeTarget(null)}>
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={confirmWipe} loading={wipe.isPending}>
+              {t('app_password.wipe_2')}
+            </Button>
+          </>
+        }
+      >
+        <p>{t('app_password.next_time_that_device_erase', { name: wipeTarget?.name ?? '' })}</p>
+        {actionError ? (
+          <p className="sc-app-passwords-error" role="alert">
+            {actionError}
+          </p>
+        ) : null}
       </SettingsDialog>
     </div>
   )

@@ -25,9 +25,54 @@ export function UserManagementSection() {
   const users = usersQuery.data ?? []
   const activeAdminCount = useMemo(() => users.filter((user) => user.is_admin && !user.disabled).length, [users])
   const lastActiveAdmin = (user: AdminUser) => user.is_admin && !user.disabled && activeAdminCount <= 1
-  type UserState = { createOpen: boolean; newName: string; newPassword: string; createValidation: string | null; deleteTarget: AdminUser | null; quotaTarget: AdminUser | null; quotaInput: string; quotaValidation: string | null; passwordTarget: AdminUser | null; passwordInput: string; passwordConfirm: string; passwordValidation: string | null; grantsTarget: AdminUser | null; oidcTarget: AdminUser | null }
-  const [state, setState] = useComponentState<UserState>({ createOpen: false, newName: '', newPassword: '', createValidation: null, deleteTarget: null, quotaTarget: null, quotaInput: '', quotaValidation: null, passwordTarget: null, passwordInput: '', passwordConfirm: '', passwordValidation: null, grantsTarget: null, oidcTarget: null })
-  const { createOpen, newName, newPassword, createValidation, deleteTarget, quotaTarget, quotaInput, quotaValidation, passwordTarget, passwordInput, passwordConfirm, passwordValidation, grantsTarget, oidcTarget } = state
+  type UserState = {
+    createOpen: boolean
+    newName: string
+    newPassword: string
+    createValidation: string | null
+    deleteTarget: AdminUser | null
+    quotaTarget: AdminUser | null
+    quotaInput: string
+    quotaValidation: string | null
+    passwordTarget: AdminUser | null
+    passwordInput: string
+    passwordConfirm: string
+    passwordValidation: string | null
+    grantsTarget: AdminUser | null
+    oidcTarget: AdminUser | null
+  }
+  const [state, setState] = useComponentState<UserState>({
+    createOpen: false,
+    newName: '',
+    newPassword: '',
+    createValidation: null,
+    deleteTarget: null,
+    quotaTarget: null,
+    quotaInput: '',
+    quotaValidation: null,
+    passwordTarget: null,
+    passwordInput: '',
+    passwordConfirm: '',
+    passwordValidation: null,
+    grantsTarget: null,
+    oidcTarget: null
+  })
+  const {
+    createOpen,
+    newName,
+    newPassword,
+    createValidation,
+    deleteTarget,
+    quotaTarget,
+    quotaInput,
+    quotaValidation,
+    passwordTarget,
+    passwordInput,
+    passwordConfirm,
+    passwordValidation,
+    grantsTarget,
+    oidcTarget
+  } = state
   const create = useMutation(adminUserMutation())
   const remove = useMutation(adminUserMutation())
   const quota = useMutation(adminUserMutation())
@@ -54,13 +99,26 @@ export function UserManagementSection() {
   const deleteError = remove.error ? userDeleteError(remove.error, t) : null
   const toggleError = toggle.error ? userToggleError(toggle.error, t) : null
   const quotaError = quotaValidation ?? (quota.error ? describeApiError(quota.error, t('common.could_not_save')) : null)
-  const passwordError = passwordValidation ?? (password.error ? describeApiError(password.error, t('password.could_not_change_password_try')) : null)
+  const passwordError =
+    passwordValidation ??
+    (password.error ? describeApiError(password.error, t('password.could_not_change_password_try')) : null)
 
   function submitCreate(): void {
     setCreateValidation(null)
-    if (newPassword.length < MIN_PASSWORD_LEN) { setCreateValidation(t('user.password_must_at_least_characters', { min: MIN_PASSWORD_LEN })); return }
+    if (newPassword.length < MIN_PASSWORD_LEN) {
+      setCreateValidation(t('user.password_must_at_least_characters', { min: MIN_PASSWORD_LEN }))
+      return
+    }
     if (!newName.trim()) return
-    create.mutate({ kind: 'create', name: newName.trim(), password: newPassword }, { onSuccess: (created) => { setCreateOpen(false); setGrantsTarget(created as AdminUser) } })
+    create.mutate(
+      { kind: 'create', name: newName.trim(), password: newPassword },
+      {
+        onSuccess: (created) => {
+          setCreateOpen(false)
+          setGrantsTarget(created as AdminUser)
+        }
+      }
+    )
   }
   function submitDelete(): void {
     if (!deleteTarget) return
@@ -70,56 +128,320 @@ export function UserManagementSection() {
     if (!quotaTarget) return
     setQuotaValidation(null)
     const value = quotaInput.trim()
-    if (!value) { quota.mutate({ kind: 'quota', id: quotaTarget.id, quotaBytes: null }, { onSuccess: () => setQuotaTarget(null) }); return }
+    if (!value) {
+      quota.mutate({ kind: 'quota', id: quotaTarget.id, quotaBytes: null }, { onSuccess: () => setQuotaTarget(null) })
+      return
+    }
     const mb = Number(value)
-    if (!Number.isFinite(mb) || mb <= 0) { setQuotaValidation(t('user.enter_number_greater_than_0')); return }
-    quota.mutate({ kind: 'quota', id: quotaTarget.id, quotaBytes: Math.round(mb * BYTES_PER_MB) }, { onSuccess: () => setQuotaTarget(null) })
+    if (!Number.isFinite(mb) || mb <= 0) {
+      setQuotaValidation(t('user.enter_number_greater_than_0'))
+      return
+    }
+    quota.mutate(
+      { kind: 'quota', id: quotaTarget.id, quotaBytes: Math.round(mb * BYTES_PER_MB) },
+      { onSuccess: () => setQuotaTarget(null) }
+    )
   }
   function submitPassword(): void {
     if (!passwordTarget) return
     setPasswordValidation(null)
-    if (passwordInput.length < MIN_PASSWORD_LEN) { setPasswordValidation(t('user.password_must_at_least_characters', { min: MIN_PASSWORD_LEN })); return }
-    if (passwordInput !== passwordConfirm) { setPasswordValidation(t('password.new_passwords_do_not_match')); return }
-    password.mutate({ kind: 'password', id: passwordTarget.id, password: passwordInput }, { onSuccess: () => setPasswordTarget(null) })
+    if (passwordInput.length < MIN_PASSWORD_LEN) {
+      setPasswordValidation(t('user.password_must_at_least_characters', { min: MIN_PASSWORD_LEN }))
+      return
+    }
+    if (passwordInput !== passwordConfirm) {
+      setPasswordValidation(t('password.new_passwords_do_not_match'))
+      return
+    }
+    password.mutate(
+      { kind: 'password', id: passwordTarget.id, password: passwordInput },
+      { onSuccess: () => setPasswordTarget(null) }
+    )
   }
   return (
     <section className="sc-admin-section sc-user-mgmt">
-      <div className="sc-admin-section-header"><p className="sc-admin-section-hint">{t('user.create_accounts_suspend_or_re')}</p><Button icon={<Icon name="add" />} onClick={() => { create.reset(); setCreateValidation(null); setNewName(''); setNewPassword(''); setCreateOpen(true) }}>{t('user.add_user')}</Button></div>
-      {toggleError ? <p className="sc-admin-section-error" role="alert">{toggleError}</p> : null}
-      {usersQuery.isPending ? <mdui-circular-progress /> : usersQuery.error ? <p className="sc-admin-section-error" role="alert">{describeApiError(usersQuery.error, t('user.could_not_load_user_list'))}</p> : (
+      <div className="sc-admin-section-header">
+        <p className="sc-admin-section-hint">{t('user.create_accounts_suspend_or_re')}</p>
+        <Button
+          icon={<Icon name="add" />}
+          onClick={() => {
+            create.reset()
+            setCreateValidation(null)
+            setNewName('')
+            setNewPassword('')
+            setCreateOpen(true)
+          }}
+        >
+          {t('user.add_user')}
+        </Button>
+      </div>
+      {toggleError ? (
+        <p className="sc-admin-section-error" role="alert">
+          {toggleError}
+        </p>
+      ) : null}
+      {usersQuery.isPending ? (
+        <mdui-circular-progress />
+      ) : usersQuery.error ? (
+        <p className="sc-admin-section-error" role="alert">
+          {describeApiError(usersQuery.error, t('user.could_not_load_user_list'))}
+        </p>
+      ) : (
         <VirtualList
           className="sc-admin-list"
           items={users}
           itemKey={(user) => user.id}
           estimateSize={80}
-          pinnedKeys={[deleteTarget?.id, quotaTarget?.id, passwordTarget?.id, grantsTarget?.id, oidcTarget?.id, togglingId].filter((id): id is number => id != null)}
-          renderItem={(user) => <UserManagementRow
-            user={user}
-            t={t}
-            locked={lastActiveAdmin(user)}
-            toggling={togglingId === user.id}
-            quotaLabel={quotaLabel(user, t)}
-            onToggle={() => toggle.mutate({ kind: 'disable', id: user.id, disabled: !user.disabled })}
-            onQuota={() => { quota.reset(); setQuotaValidation(null); setQuotaInput(user.quota_bytes ? String(bytesToMb(Number(BigInt(user.quota_bytes)))) : ''); setQuotaTarget(user) }}
-            onGrants={() => setGrantsTarget(user)}
-            onOidc={() => setOidcTarget(user)}
-            onPassword={() => { password.reset(); setPasswordValidation(null); setPasswordInput(''); setPasswordConfirm(''); setPasswordTarget(user) }}
-            onDelete={() => { remove.reset(); setDeleteTarget(user) }}
-          />}
+          pinnedKeys={[
+            deleteTarget?.id,
+            quotaTarget?.id,
+            passwordTarget?.id,
+            grantsTarget?.id,
+            oidcTarget?.id,
+            togglingId
+          ].filter((id): id is number => id != null)}
+          renderItem={(user) => (
+            <UserManagementRow
+              user={user}
+              t={t}
+              locked={lastActiveAdmin(user)}
+              toggling={togglingId === user.id}
+              quotaLabel={quotaLabel(user, t)}
+              onToggle={() => toggle.mutate({ kind: 'disable', id: user.id, disabled: !user.disabled })}
+              onQuota={() => {
+                quota.reset()
+                setQuotaValidation(null)
+                setQuotaInput(user.quota_bytes ? String(bytesToMb(Number(BigInt(user.quota_bytes)))) : '')
+                setQuotaTarget(user)
+              }}
+              onGrants={() => setGrantsTarget(user)}
+              onOidc={() => setOidcTarget(user)}
+              onPassword={() => {
+                password.reset()
+                setPasswordValidation(null)
+                setPasswordInput('')
+                setPasswordConfirm('')
+                setPasswordTarget(user)
+              }}
+              onDelete={() => {
+                remove.reset()
+                setDeleteTarget(user)
+              }}
+            />
+          )}
         />
       )}
-      <Dialog open={createOpen} title={t('user.add_user')} onClose={() => { if (!create.isPending) setCreateOpen(false) }} actions={<><Button variant="text" disabled={create.isPending} onClick={() => setCreateOpen(false)}>{t('common.cancel')}</Button><Button loading={create.isPending} onClick={submitCreate}>{t('common.add')}</Button></>}><form className="sc-admin-form" onSubmit={(event) => { event.preventDefault(); submitCreate() }}><TextField label={t('user.username')} value={newName} autoComplete="off" autoFocus onValueChange={setNewName} /><TextField type="password" label={t('common.password')} value={newPassword} autoComplete="new-password" onValueChange={setNewPassword} />{newPassword ? <div><mdui-linear-progress value={scorePasswordStrength(newPassword).ratio} aria-label={t('common.password_strength', { level: scorePasswordStrength(newPassword).label })} /><span className="sc-admin-section-field-hint">{scorePasswordStrength(newPassword).label}</span></div> : null}<p className="sc-admin-section-field-hint">{t('user.at_least_characters_turning_smb', { min: MIN_PASSWORD_LEN })}</p>{createError ? <p className="sc-admin-section-error" role="alert">{createError}</p> : null}</form></Dialog>
-      <Dialog open={deleteTarget !== null} title={t('user.delete_user')} onClose={() => { if (!remove.isPending) setDeleteTarget(null) }} actions={<><Button variant="text" disabled={remove.isPending} onClick={() => setDeleteTarget(null)}>{t('common.cancel')}</Button><Button danger loading={remove.isPending} onClick={submitDelete}>{t('common.delete')}</Button></>}><p>{t('user.permanently_deletes_account_including_its', { name: deleteTarget?.name ?? '' })}</p>{deleteError ? <p className="sc-admin-section-error" role="alert">{deleteError}</p> : null}</Dialog>
-      <Dialog open={grantsTarget !== null} title={grantsTarget ? t('user.folders_visible', { name: grantsTarget.display_name || grantsTarget.name }) : t('common.folder_permissions')} onClose={() => setGrantsTarget(null)} actions={<Button variant="text" onClick={() => setGrantsTarget(null)}>{t('common.close')}</Button>}>{grantsTarget ? <GrantManagementSection principal={{ kind: 'user', id: grantsTarget.id }} label={grantsTarget.display_name || grantsTarget.name} /> : null}</Dialog>
+      <Dialog
+        open={createOpen}
+        title={t('user.add_user')}
+        onClose={() => {
+          if (!create.isPending) setCreateOpen(false)
+        }}
+        actions={
+          <>
+            <Button variant="text" disabled={create.isPending} onClick={() => setCreateOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button loading={create.isPending} onClick={submitCreate}>
+              {t('common.add')}
+            </Button>
+          </>
+        }
+      >
+        <form
+          className="sc-admin-form"
+          onSubmit={(event) => {
+            event.preventDefault()
+            submitCreate()
+          }}
+        >
+          <TextField
+            label={t('user.username')}
+            value={newName}
+            autoComplete="off"
+            autoFocus
+            onValueChange={setNewName}
+          />
+          <TextField
+            type="password"
+            label={t('common.password')}
+            value={newPassword}
+            autoComplete="new-password"
+            onValueChange={setNewPassword}
+          />
+          {newPassword ? (
+            <div>
+              <mdui-linear-progress
+                value={scorePasswordStrength(newPassword).ratio}
+                aria-label={t('common.password_strength', { level: scorePasswordStrength(newPassword).label })}
+              />
+              <span className="sc-admin-section-field-hint">{scorePasswordStrength(newPassword).label}</span>
+            </div>
+          ) : null}
+          <p className="sc-admin-section-field-hint">
+            {t('user.at_least_characters_turning_smb', { min: MIN_PASSWORD_LEN })}
+          </p>
+          {createError ? (
+            <p className="sc-admin-section-error" role="alert">
+              {createError}
+            </p>
+          ) : null}
+        </form>
+      </Dialog>
+      <Dialog
+        open={deleteTarget !== null}
+        title={t('user.delete_user')}
+        onClose={() => {
+          if (!remove.isPending) setDeleteTarget(null)
+        }}
+        actions={
+          <>
+            <Button variant="text" disabled={remove.isPending} onClick={() => setDeleteTarget(null)}>
+              {t('common.cancel')}
+            </Button>
+            <Button danger loading={remove.isPending} onClick={submitDelete}>
+              {t('common.delete')}
+            </Button>
+          </>
+        }
+      >
+        <p>{t('user.permanently_deletes_account_including_its', { name: deleteTarget?.name ?? '' })}</p>
+        {deleteError ? (
+          <p className="sc-admin-section-error" role="alert">
+            {deleteError}
+          </p>
+        ) : null}
+      </Dialog>
+      <Dialog
+        open={grantsTarget !== null}
+        title={
+          grantsTarget
+            ? t('user.folders_visible', { name: grantsTarget.display_name || grantsTarget.name })
+            : t('common.folder_permissions')
+        }
+        onClose={() => setGrantsTarget(null)}
+        actions={
+          <Button variant="text" onClick={() => setGrantsTarget(null)}>
+            {t('common.close')}
+          </Button>
+        }
+      >
+        {grantsTarget ? (
+          <GrantManagementSection
+            principal={{ kind: 'user', id: grantsTarget.id }}
+            label={grantsTarget.display_name || grantsTarget.name}
+          />
+        ) : null}
+      </Dialog>
       <UserOidcDialog user={oidcTarget} onClose={() => setOidcTarget(null)} />
-      <Dialog open={quotaTarget !== null} title={quotaTarget ? t('user.storage_quota', { name: quotaTarget.display_name || quotaTarget.name }) : t('user.storage_quota_2')} onClose={() => { if (!quota.isPending) setQuotaTarget(null) }} actions={<><Button variant="text" disabled={quota.isPending} onClick={() => setQuotaTarget(null)}>{t('common.cancel')}</Button><Button loading={quota.isPending} onClick={submitQuota}>{t('common.save')}</Button></>}><form className="sc-admin-form" onSubmit={(event) => { event.preventDefault(); submitQuota() }}><TextField label={t('user.storage_quota_mb')} placeholder={t('user.empty_means_unlimited')} value={quotaInput} autoFocus onValueChange={setQuotaInput} /><p className="sc-admin-section-field-hint">{quotaTarget ? t('user.currently_using', { used: formatBytes(Number(BigInt(quotaTarget.usage_bytes))) }) : ''}{t('user.empty_means_unlimited_uploads_copies')}</p>{quotaError ? <p className="sc-admin-section-error" role="alert">{quotaError}</p> : null}</form></Dialog>
-      <Dialog open={passwordTarget !== null} title={t('password.change_password')} onClose={() => { if (!password.isPending) setPasswordTarget(null) }} actions={<><Button variant="text" disabled={password.isPending} onClick={() => setPasswordTarget(null)}>{t('common.cancel')}</Button><Button loading={password.isPending} disabled={!passwordInput || passwordInput !== passwordConfirm} onClick={submitPassword}>{t('common.save')}</Button></>}>
-        <form className="sc-admin-form" onSubmit={(event) => { event.preventDefault(); submitPassword() }}>
-          <TextField type="password" label={t('password.new_password')} value={passwordInput} autoComplete="new-password" autoFocus onValueChange={setPasswordInput} />
-          <TextField type="password" label={t('password.confirm_new_password')} value={passwordConfirm} autoComplete="new-password" onValueChange={setPasswordConfirm} />
-          {passwordInput ? <div><mdui-linear-progress value={scorePasswordStrength(passwordInput).ratio} aria-label={t('password.new_password_strength', { level: scorePasswordStrength(passwordInput).label })} /><span className="sc-admin-section-field-hint">{scorePasswordStrength(passwordInput).label}</span></div> : null}
-          <p className="sc-admin-section-field-hint">{t('password.must_at_least_characters', { min: MIN_PASSWORD_LEN })}</p>
-          {passwordError ? <p className="sc-admin-section-error" role="alert">{passwordError}</p> : null}
+      <Dialog
+        open={quotaTarget !== null}
+        title={
+          quotaTarget
+            ? t('user.storage_quota', { name: quotaTarget.display_name || quotaTarget.name })
+            : t('user.storage_quota_2')
+        }
+        onClose={() => {
+          if (!quota.isPending) setQuotaTarget(null)
+        }}
+        actions={
+          <>
+            <Button variant="text" disabled={quota.isPending} onClick={() => setQuotaTarget(null)}>
+              {t('common.cancel')}
+            </Button>
+            <Button loading={quota.isPending} onClick={submitQuota}>
+              {t('common.save')}
+            </Button>
+          </>
+        }
+      >
+        <form
+          className="sc-admin-form"
+          onSubmit={(event) => {
+            event.preventDefault()
+            submitQuota()
+          }}
+        >
+          <TextField
+            label={t('user.storage_quota_mb')}
+            placeholder={t('user.empty_means_unlimited')}
+            value={quotaInput}
+            autoFocus
+            onValueChange={setQuotaInput}
+          />
+          <p className="sc-admin-section-field-hint">
+            {quotaTarget
+              ? t('user.currently_using', { used: formatBytes(Number(BigInt(quotaTarget.usage_bytes))) })
+              : ''}
+            {t('user.empty_means_unlimited_uploads_copies')}
+          </p>
+          {quotaError ? (
+            <p className="sc-admin-section-error" role="alert">
+              {quotaError}
+            </p>
+          ) : null}
+        </form>
+      </Dialog>
+      <Dialog
+        open={passwordTarget !== null}
+        title={t('password.change_password')}
+        onClose={() => {
+          if (!password.isPending) setPasswordTarget(null)
+        }}
+        actions={
+          <>
+            <Button variant="text" disabled={password.isPending} onClick={() => setPasswordTarget(null)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              loading={password.isPending}
+              disabled={!passwordInput || passwordInput !== passwordConfirm}
+              onClick={submitPassword}
+            >
+              {t('common.save')}
+            </Button>
+          </>
+        }
+      >
+        <form
+          className="sc-admin-form"
+          onSubmit={(event) => {
+            event.preventDefault()
+            submitPassword()
+          }}
+        >
+          <TextField
+            type="password"
+            label={t('password.new_password')}
+            value={passwordInput}
+            autoComplete="new-password"
+            autoFocus
+            onValueChange={setPasswordInput}
+          />
+          <TextField
+            type="password"
+            label={t('password.confirm_new_password')}
+            value={passwordConfirm}
+            autoComplete="new-password"
+            onValueChange={setPasswordConfirm}
+          />
+          {passwordInput ? (
+            <div>
+              <mdui-linear-progress
+                value={scorePasswordStrength(passwordInput).ratio}
+                aria-label={t('password.new_password_strength', { level: scorePasswordStrength(passwordInput).label })}
+              />
+              <span className="sc-admin-section-field-hint">{scorePasswordStrength(passwordInput).label}</span>
+            </div>
+          ) : null}
+          <p className="sc-admin-section-field-hint">
+            {t('password.must_at_least_characters', { min: MIN_PASSWORD_LEN })}
+          </p>
+          {passwordError ? (
+            <p className="sc-admin-section-error" role="alert">
+              {passwordError}
+            </p>
+          ) : null}
         </form>
       </Dialog>
     </section>
@@ -132,8 +454,17 @@ function quotaLabel(user: AdminUser, t: (key: string, params?: Record<string, st
 }
 function createErrorText(error: unknown, t: (key: string, params?: Record<string, string | number>) => string): string {
   if (error instanceof ApiError && error.code === 'fs.conflict') return t('common.name_already_taken')
-  if (error instanceof ApiError && error.code === 'auth.weak_password') return t('user.password_must_at_least_characters', { min: error.reasonNumber('min_length') ?? MIN_PASSWORD_LEN })
+  if (error instanceof ApiError && error.code === 'auth.weak_password')
+    return t('user.password_must_at_least_characters', { min: error.reasonNumber('min_length') ?? MIN_PASSWORD_LEN })
   return describeApiError(error, t('user.could_not_create_user'))
 }
-function userToggleError(error: unknown, t: (key: string, params?: Record<string, string | number>) => string): string { return error instanceof ApiError && error.code === 'admin.last_admin' ? t('user.last_administrator_cannot_deactivated') : describeApiError(error, t('common.could_not_save_change')) }
-function userDeleteError(error: unknown, t: (key: string, params?: Record<string, string | number>) => string): string { return error instanceof ApiError && error.code === 'admin.last_admin' ? t('user.last_administrator_cannot_deleted') : describeApiError(error, t('common.could_not_delete')) }
+function userToggleError(error: unknown, t: (key: string, params?: Record<string, string | number>) => string): string {
+  return error instanceof ApiError && error.code === 'admin.last_admin'
+    ? t('user.last_administrator_cannot_deactivated')
+    : describeApiError(error, t('common.could_not_save_change'))
+}
+function userDeleteError(error: unknown, t: (key: string, params?: Record<string, string | number>) => string): string {
+  return error instanceof ApiError && error.code === 'admin.last_admin'
+    ? t('user.last_administrator_cannot_deleted')
+    : describeApiError(error, t('common.could_not_delete'))
+}

@@ -63,7 +63,9 @@ interface WebkitEntry {
   createReader(): { readEntries(cb: (e: WebkitEntry[]) => void, err: (e: unknown) => void): void }
 }
 
-function readAllEntries(reader: { readEntries(cb: (e: WebkitEntry[]) => void, err: (e: unknown) => void): void }): Promise<WebkitEntry[]> {
+function readAllEntries(reader: {
+  readEntries(cb: (e: WebkitEntry[]) => void, err: (e: unknown) => void): void
+}): Promise<WebkitEntry[]> {
   return new Promise((resolve, reject) => {
     const all: WebkitEntry[] = []
     const next = () => {
@@ -100,7 +102,9 @@ export async function pickedFilesFromDataTransfer(dt: DataTransfer): Promise<Pic
   for (const item of items) {
     if (item.kind !== 'file') continue
 
-    const withFsa = item as DataTransferItem & { getAsFileSystemHandle?: () => Promise<FsaFileHandle | FsaDirectoryHandle> }
+    const withFsa = item as DataTransferItem & {
+      getAsFileSystemHandle?: () => Promise<FsaFileHandle | FsaDirectoryHandle>
+    }
     if (typeof withFsa.getAsFileSystemHandle === 'function') {
       const handle = await withFsa.getAsFileSystemHandle()
       if (handle) {

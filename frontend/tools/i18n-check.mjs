@@ -21,7 +21,8 @@ const I18N = join(SRC, 'lib', 'i18n')
 const LOCALES = ['ko', 'en']
 
 /** Fixtures, tests, API samples, and catalogue implementation carry no UI copy. */
-const SKIP = /(?:^|[\\/])(?:__tests__[\\/]|.*\.(?:test|spec)\.(?:ts|tsx)$|mock(?:-seed)?\.ts$|api[\\/]share\.ts$|lib[\\/]i18n(?:[\\/]|$))/
+const SKIP =
+  /(?:^|[\\/])(?:__tests__[\\/]|.*\.(?:test|spec)\.(?:ts|tsx)$|mock(?:-seed)?\.ts$|api[\\/]share\.ts$|lib[\\/]i18n(?:[\\/]|$))/
 
 function walk(dir, out = []) {
   for (const name of readdirSync(dir)) {
@@ -70,7 +71,11 @@ for (const file of walk(SRC)) {
 }
 
 const catalogue = Object.fromEntries(LOCALES.map((l) => [l, JSON.parse(readFileSync(join(I18N, `${l}.json`), 'utf8'))]))
-const holes = (s) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join()
+const holes = (s) =>
+  [...s.matchAll(/\{(\w+)\}/g)]
+    .map((m) => m[1])
+    .sort()
+    .join()
 
 const malformed = []
 const missing = []
@@ -85,9 +90,12 @@ for (const [key, where] of used) {
   for (const l of LOCALES) if (!(key in catalogue[l])) missing.push(`  ${where}  ${key}  [${l}]`)
   const present = LOCALES.filter((l) => key in catalogue[l])
   if (present.length === LOCALES.length && new Set(present.map((l) => holes(catalogue[l][key]))).size > 1)
-    mismatched.push(`  ${where}  ${key}  ` + present.map((l) => `${l}: ${JSON.stringify(catalogue[l][key])}`).join(' | '))
+    mismatched.push(
+      `  ${where}  ${key}  ` + present.map((l) => `${l}: ${JSON.stringify(catalogue[l][key])}`).join(' | ')
+    )
 }
-for (const l of LOCALES) for (const key of Object.keys(catalogue[l])) if (!used.has(key)) orphaned.push(`  ${key}  [${l}]`)
+for (const l of LOCALES)
+  for (const key of Object.keys(catalogue[l])) if (!used.has(key)) orphaned.push(`  ${key}  [${l}]`)
 
 const report = (title, lines) => {
   if (lines.length === 0) return

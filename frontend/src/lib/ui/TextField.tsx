@@ -8,7 +8,12 @@ interface TextFieldElement extends HTMLElement {
   removeAttribute(name: string): void
 }
 
-function syncTextFieldAria(element: TextFieldElement | null, label: string | undefined, invalid: boolean, describedBy: string | undefined): void {
+function syncTextFieldAria(
+  element: TextFieldElement | null,
+  label: string | undefined,
+  invalid: boolean,
+  describedBy: string | undefined
+): void {
   if (!element) return
   const apply = () => {
     const control = element.shadowRoot?.querySelector<HTMLElement>('[part="input"]')
@@ -47,7 +52,6 @@ export interface TextFieldProps {
   onKeyDown?: KeyboardEventHandler<HTMLElement>
 }
 
-
 export function TextField({
   value = '',
   helper,
@@ -72,7 +76,9 @@ export function TextField({
   const generatedId = useId()
   const errorId = `${generatedId}-error`
   const describedBy = [ariaDescribedby, error ? errorId : null].filter(Boolean).join(' ') || undefined
-  useEffect(() => { syncTextFieldAria(ref.current, label, Boolean(error), describedBy) }, [label, error, describedBy])
+  useEffect(() => {
+    syncTextFieldAria(ref.current, label, Boolean(error), describedBy)
+  }, [label, error, describedBy])
 
   useEffect(() => {
     const element = ref.current

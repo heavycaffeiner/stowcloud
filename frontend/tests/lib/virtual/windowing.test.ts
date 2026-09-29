@@ -18,7 +18,13 @@ describe('computeWindow', () => {
   })
 
   it('stays bounded regardless of itemCount (100k rows)', () => {
-    const w = computeWindow({ scrollTop: 500_000, viewportHeight: 800, rowHeight: 48, itemCount: 100_000, overscan: 8 })
+    const w = computeWindow({
+      scrollTop: 500_000,
+      viewportHeight: 800,
+      rowHeight: 48,
+      itemCount: 100_000,
+      overscan: 8
+    })
     // visible rows = ceil(800/48) = 17, + overscan*2 = 16 → 33 max
     expect(w.count).toBeLessThanOrEqual(33)
     expect(w.count).toBeGreaterThan(0)
@@ -85,7 +91,13 @@ describe('computeWindow', () => {
     })
 
     it('maps scrollTop 0 to row 0', () => {
-      const w = computeWindow({ scrollTop: 0, viewportHeight: 800, rowHeight: ROW_HEIGHT, itemCount: ITEM_COUNT, overscan: 0 })
+      const w = computeWindow({
+        scrollTop: 0,
+        viewportHeight: 800,
+        rowHeight: ROW_HEIGHT,
+        itemCount: ITEM_COUNT,
+        overscan: 0
+      })
       expect(w.start).toBe(0)
       expect(w.padTop).toBe(0)
     })

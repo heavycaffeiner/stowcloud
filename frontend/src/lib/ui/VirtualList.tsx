@@ -1,6 +1,12 @@
 import { useCallback, useLayoutEffect, useMemo, useRef } from 'react'
 import type { HTMLAttributes, KeyboardEvent, ReactNode } from 'react'
-import { defaultRangeExtractor, elementScroll, observeElementOffset, observeElementRect, useVirtualizer } from '@tanstack/react-virtual'
+import {
+  defaultRangeExtractor,
+  elementScroll,
+  observeElementOffset,
+  observeElementRect,
+  useVirtualizer
+} from '@tanstack/react-virtual'
 import type { Range, Rect, Virtualizer } from '@tanstack/react-virtual'
 import { useComponentState } from '../../hooks/use-component-state'
 
@@ -20,7 +26,11 @@ const SMALL_LIST_LIMIT = 40
 const EMPTY_KEYS: readonly ItemKey[] = []
 
 function composedParent(element: Element): Element | null {
-  return element.assignedSlot ?? element.parentElement ?? (element.getRootNode() instanceof ShadowRoot ? (element.getRootNode() as ShadowRoot).host : null)
+  return (
+    element.assignedSlot ??
+    element.parentElement ??
+    (element.getRootNode() instanceof ShadowRoot ? (element.getRootNode() as ShadowRoot).host : null)
+  )
 }
 
 function documentScroller(element: HTMLElement): boolean {
@@ -28,14 +38,20 @@ function documentScroller(element: HTMLElement): boolean {
 }
 
 function scrollOffset(element: HTMLElement): number {
-  return documentScroller(element) ? element.ownerDocument.defaultView?.scrollY ?? 0 : element.scrollTop
+  return documentScroller(element) ? (element.ownerDocument.defaultView?.scrollY ?? 0) : element.scrollTop
 }
 
 // A growing overflow:auto wrapper is not a scroll owner. Follow slots as well as
 // parents so a light-DOM list can use the scrolling body inside an MDUI dialog.
 function scrollOwner(list: HTMLUListElement): HTMLElement {
   for (let element: Element | null = list; element; element = composedParent(element)) {
-    if (element instanceof HTMLElement && !documentScroller(element) && /^(auto|scroll|overlay)$/.test(getComputedStyle(element).overflowY) && element.scrollHeight > element.clientHeight + 1) return element
+    if (
+      element instanceof HTMLElement &&
+      !documentScroller(element) &&
+      /^(auto|scroll|overlay)$/.test(getComputedStyle(element).overflowY) &&
+      element.scrollHeight > element.clientHeight + 1
+    )
+      return element
   }
   return (list.ownerDocument.scrollingElement ?? list.ownerDocument.documentElement) as HTMLElement
 }
@@ -55,7 +71,10 @@ function observeRect(instance: ListVirtualizer, callback: (rect: Rect) => void):
   }
 }
 
-function observeOffset(instance: ListVirtualizer, callback: (offset: number, scrolling: boolean) => void): (() => void) | void {
+function observeOffset(
+  instance: ListVirtualizer,
+  callback: (offset: number, scrolling: boolean) => void
+): (() => void) | void {
   const element = instance.scrollElement
   if (!element) return
   if (!documentScroller(element)) {
@@ -86,7 +105,11 @@ function observeOffset(instance: ListVirtualizer, callback: (offset: number, scr
 
 const scrollTo: ListVirtualizer['options']['scrollToFn'] = (offset, options, instance) => {
   const element = instance.scrollElement
-  if (element && documentScroller(element)) element.ownerDocument.defaultView?.scrollTo({ top: offset + (options.adjustments ?? 0), behavior: options.behavior })
+  if (element && documentScroller(element))
+    element.ownerDocument.defaultView?.scrollTo({
+      top: offset + (options.adjustments ?? 0),
+      behavior: options.behavior
+    })
   else elementScroll(offset, options, instance)
 }
 
@@ -115,12 +138,25 @@ function nearestList(target: Element): Element | null {
 function tabStops(row: HTMLElement): HTMLElement[] {
   const result: HTMLElement[] = []
   const visit = (element: Element) => {
-    if (!(element instanceof HTMLElement) || element.hidden || element.hasAttribute('inert') || element.matches(':disabled, [disabled]') || getComputedStyle(element).visibility === 'hidden' || element.getClientRects().length === 0) return
+    if (
+      !(element instanceof HTMLElement) ||
+      element.hidden ||
+      element.hasAttribute('inert') ||
+      element.matches(':disabled, [disabled]') ||
+      getComputedStyle(element).visibility === 'hidden' ||
+      element.getClientRects().length === 0
+    )
+      return
     if (element.tabIndex >= 0) {
       result.push(element)
       if (element.shadowRoot) return
     }
-    const children = element instanceof HTMLSlotElement ? element.assignedElements({ flatten: true }) : element.shadowRoot ? Array.from(element.shadowRoot.children) : Array.from(element.children)
+    const children =
+      element instanceof HTMLSlotElement
+        ? element.assignedElements({ flatten: true })
+        : element.shadowRoot
+          ? Array.from(element.shadowRoot.children)
+          : Array.from(element.children)
     for (const child of children) visit(child)
   }
   visit(row)
@@ -132,28 +168,64 @@ function focusedWithin(stop: HTMLElement, active: Element | null): boolean {
   return false
 }
 
-function positionProps(props: HTMLAttributes<HTMLLIElement> | undefined, index: number, count: number): HTMLAttributes<HTMLLIElement> {
+function positionProps(
+  props: HTMLAttributes<HTMLLIElement> | undefined,
+  index: number,
+  count: number
+): HTMLAttributes<HTMLLIElement> {
   const role = props?.role
-  if (role && !['listitem', 'option', 'treeitem', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'radio'].includes(role)) return props ?? {}
+  if (
+    role &&
+    !['listitem', 'option', 'treeitem', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'radio'].includes(role)
+  )
+    return props ?? {}
   return { 'aria-posinset': index + 1, 'aria-setsize': count, ...props }
 }
 
-export function VirtualList<T>({ items, itemKey, estimateSize, renderItem, itemProps, pinnedKeys = EMPTY_KEYS, style, onKeyDown, onFocusCapture, onBlurCapture, tabIndex, ...listProps }: VirtualListProps<T>) {
+export function VirtualList<T>({
+  items,
+  itemKey,
+  estimateSize,
+  renderItem,
+  itemProps,
+  pinnedKeys = EMPTY_KEYS,
+  style,
+  onKeyDown,
+  onFocusCapture,
+  onBlurCapture,
+  tabIndex,
+  ...listProps
+}: VirtualListProps<T>) {
   // Keep the same ul/li tree across the threshold, so a growing or shrinking
   // list does not remount a focused control. Disabled instances have no scroll
   // subscriptions, row measurements or full-data key indexes.
   const windowed = items.length > SMALL_LIST_LIMIT
   const listRef = useRef<HTMLUListElement>(null)
-  const [interaction, setInteraction] = useComponentState({ layout: { owner: null as HTMLElement | null, visible: false, margin: 0, gap: 0, top: 0, bottom: 0, left: 0, right: 0, borders: 0 }, focusedKey: null as ItemKey | null, focusRequest: null as { key: ItemKey; backwards: boolean } | null })
+  const [interaction, setInteraction] = useComponentState({
+    layout: {
+      owner: null as HTMLElement | null,
+      visible: false,
+      margin: 0,
+      gap: 0,
+      top: 0,
+      bottom: 0,
+      left: 0,
+      right: 0,
+      borders: 0
+    },
+    focusedKey: null as ItemKey | null,
+    focusRequest: null as { key: ItemKey; backwards: boolean } | null
+  })
   const { layout, focusedKey, focusRequest } = interaction
   const keyed = useMemo(() => {
     const keys: ItemKey[] = []
     const indices = new Map<ItemKey, number>()
-    if (windowed) for (let index = 0; index < items.length; index++) {
-      const key = itemKey(items[index], index)
-      keys.push(key)
-      indices.set(key, index)
-    }
+    if (windowed)
+      for (let index = 0; index < items.length; index++) {
+        const key = itemKey(items[index], index)
+        keys.push(key)
+        indices.set(key, index)
+      }
     return { keys, indices }
   }, [items, itemKey, windowed])
   const activeWindowing = windowed && layout.visible
@@ -174,13 +246,20 @@ export function VirtualList<T>({ items, itemKey, estimateSize, renderItem, itemP
     }
     return indices
   }, [items.length, keyed, pinnedKeys, focusedKey, focusRequest])
-  const rangeExtractor = useCallback((range: Range) => Array.from(new Set([...defaultRangeExtractor(range), ...retained])).sort((a, b) => a - b), [retained])
+  const rangeExtractor = useCallback(
+    (range: Range) => Array.from(new Set([...defaultRangeExtractor(range), ...retained])).sort((a, b) => a - b),
+    [retained]
+  )
   const getScrollElement = useCallback(() => layout.owner, [layout.owner])
   const captureAnchor = useRef<(() => void) | null>(null)
-  const observeListOffset = useCallback((instance: ListVirtualizer, callback: (offset: number, scrolling: boolean) => void) => observeOffset(instance, (offset, scrolling) => {
-    callback(offset, scrolling)
-    captureAnchor.current?.()
-  }), [])
+  const observeListOffset = useCallback(
+    (instance: ListVirtualizer, callback: (offset: number, scrolling: boolean) => void) =>
+      observeOffset(instance, (offset, scrolling) => {
+        callback(offset, scrolling)
+        captureAnchor.current?.()
+      }),
+    []
+  )
   const virtualizer = useVirtualizer<HTMLElement, HTMLLIElement>({
     count: activeWindowing ? items.length : 0,
     enabled: activeWindowing,
@@ -196,9 +275,9 @@ export function VirtualList<T>({ items, itemKey, estimateSize, renderItem, itemP
     observeElementRect: observeRect,
     observeElementOffset: observeListOffset,
     scrollToFn: scrollTo,
-    initialOffset: () => layout.owner ? scrollOffset(layout.owner) : 0,
+    initialOffset: () => (layout.owner ? scrollOffset(layout.owner) : 0),
     initialRect: { width: 0, height: 600 },
-    useFlushSync: false,
+    useFlushSync: false
   })
   const anchor = useRef<{ keys: readonly ItemKey[]; key: ItemKey; offset: number } | null>(null)
 
@@ -211,19 +290,46 @@ export function VirtualList<T>({ items, itemKey, estimateSize, renderItem, itemP
       const owner = scrollOwner(list)
       const css = getComputedStyle(list)
       const px = (value: string) => Number.parseFloat(value) || 0
-      const margin = owner === list ? 0 : list.getBoundingClientRect().top + list.clientTop + scrollOffset(owner) - (documentScroller(owner) ? 0 : owner.getBoundingClientRect().top + owner.clientTop)
-      const next = { owner, visible: list.getClientRects().length > 0, margin, gap: px(css.rowGap), top: px(css.paddingTop), bottom: px(css.paddingBottom), left: px(css.paddingLeft), right: px(css.paddingRight), borders: px(css.borderTopWidth) + px(css.borderBottomWidth) }
-      setInteraction((previous) => ({ ...previous, layout: Object.keys(next).every((key) => previous.layout[key as keyof typeof next] === next[key as keyof typeof next]) ? previous.layout : next }))
+      const margin =
+        owner === list
+          ? 0
+          : list.getBoundingClientRect().top +
+            list.clientTop +
+            scrollOffset(owner) -
+            (documentScroller(owner) ? 0 : owner.getBoundingClientRect().top + owner.clientTop)
+      const next = {
+        owner,
+        visible: list.getClientRects().length > 0,
+        margin,
+        gap: px(css.rowGap),
+        top: px(css.paddingTop),
+        bottom: px(css.paddingBottom),
+        left: px(css.paddingLeft),
+        right: px(css.paddingRight),
+        borders: px(css.borderTopWidth) + px(css.borderBottomWidth)
+      }
+      setInteraction((previous) => ({
+        ...previous,
+        layout: Object.keys(next).every(
+          (key) => previous.layout[key as keyof typeof next] === next[key as keyof typeof next]
+        )
+          ? previous.layout
+          : next
+      }))
     }
-    const schedule = () => { if (!frame) frame = requestAnimationFrame(update) }
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(update)
+    }
     const observer = new ResizeObserver(schedule)
     const mutations = new MutationObserver(schedule)
     for (let element: Element | null = list; element; element = composedParent(element)) {
       observer.observe(element)
-      for (let sibling = element.previousElementSibling; sibling; sibling = sibling.previousElementSibling) observer.observe(sibling)
+      for (let sibling = element.previousElementSibling; sibling; sibling = sibling.previousElementSibling)
+        observer.observe(sibling)
       // Do not observe row descendants: their own measurement observers handle
       // updates without rescanning ancestry or every data record on scroll.
-      if (element !== list) mutations.observe(element, { attributes: true, attributeFilter: ['class', 'style', 'open'], childList: true })
+      if (element !== list)
+        mutations.observe(element, { attributes: true, attributeFilter: ['class', 'style', 'open'], childList: true })
       element.addEventListener('slotchange', schedule)
     }
     const win = list.ownerDocument.defaultView!
@@ -233,7 +339,8 @@ export function VirtualList<T>({ items, itemKey, estimateSize, renderItem, itemP
       cancelAnimationFrame(frame)
       observer.disconnect()
       mutations.disconnect()
-      for (let element: Element | null = list; element; element = composedParent(element)) element.removeEventListener('slotchange', schedule)
+      for (let element: Element | null = list; element; element = composedParent(element))
+        element.removeEventListener('slotchange', schedule)
       win.removeEventListener('resize', schedule)
     }
   }, [windowed, style, listProps.className])
@@ -253,9 +360,10 @@ export function VirtualList<T>({ items, itemKey, estimateSize, renderItem, itemP
       if (row) virtualizer.scrollToOffset(row.start + previous.offset)
     }
     captureAnchor.current = () => {
-      const offset = layout.owner ? scrollOffset(layout.owner) : virtualizer.scrollOffset ?? 0
+      const offset = layout.owner ? scrollOffset(layout.owner) : (virtualizer.scrollOffset ?? 0)
       const first = virtualizer.getVirtualItemForOffset(offset)
-      if (first && offset >= layout.margin) anchor.current = { keys: keyed.keys, key: first.key as ItemKey, offset: offset - first.start }
+      if (first && offset >= layout.margin)
+        anchor.current = { keys: keyed.keys, key: first.key as ItemKey, offset: offset - first.start }
       else anchor.current = null
     }
     captureAnchor.current()
@@ -278,17 +386,31 @@ export function VirtualList<T>({ items, itemKey, estimateSize, renderItem, itemP
   })
 
   const requestFocus = (index: number, backwards: boolean) => {
-    if (index >= 0 && index < items.length) setInteraction((previous) => ({ ...previous, focusRequest: { key: keyed.keys[index], backwards } }))
+    if (index >= 0 && index < items.length)
+      setInteraction((previous) => ({ ...previous, focusRequest: { key: keyed.keys[index], backwards } }))
   }
   const handleKeyDown = (event: KeyboardEvent<HTMLUListElement>) => {
     onKeyDown?.(event)
-    if (!windowed || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || !(event.target instanceof Element) || nearestList(event.target) !== listRef.current) return
+    if (
+      !windowed ||
+      event.defaultPrevented ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey ||
+      !(event.target instanceof Element) ||
+      nearestList(event.target) !== listRef.current
+    )
+      return
     const list = listRef.current!
     const row = ownRow(list, event.target)
     const index = row ? Number(row.dataset.index) : -1
     if (event.key === 'Tab') {
       // Composite widgets own their roving tab stop and must allow Tab to exit.
-      if (listProps.role && ['tree', 'listbox', 'menu', 'menubar', 'radiogroup', 'tablist', 'grid'].includes(listProps.role)) return
+      if (
+        listProps.role &&
+        ['tree', 'listbox', 'menu', 'menubar', 'radiogroup', 'tablist', 'grid'].includes(listProps.role)
+      )
+        return
       const backwards = event.shiftKey
       if (!row && (backwards || event.target !== list)) return
       if (row) {
@@ -301,51 +423,97 @@ export function VirtualList<T>({ items, itemKey, estimateSize, renderItem, itemP
       event.preventDefault()
       requestFocus(next, backwards)
     } else if (event.target === row || event.target === list) {
-      const next = event.key === 'ArrowDown' ? index + 1 : event.key === 'ArrowUp' ? index - 1 : event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : null
+      const next =
+        event.key === 'ArrowDown'
+          ? index + 1
+          : event.key === 'ArrowUp'
+            ? index - 1
+            : event.key === 'Home'
+              ? 0
+              : event.key === 'End'
+                ? items.length - 1
+                : null
       if (next !== null) {
         event.preventDefault()
         requestFocus(next, false)
       }
     }
   }
-  const rows = activeWindowing ? virtualizer.getVirtualItems() : windowed ? [] : items.map((item, index) => ({ index, key: itemKey(item, index), start: 0 }))
+  const rows = activeWindowing
+    ? virtualizer.getVirtualItems()
+    : windowed
+      ? []
+      : items.map((item, index) => ({ index, key: itemKey(item, index), start: 0 }))
 
-  return <ul
-    {...listProps}
-    ref={listRef}
-    data-sc-virtual-list=""
-    tabIndex={tabIndex ?? (activeWindowing && !listProps.role ? 0 : undefined)}
-    style={activeWindowing ? { ...style, position: 'relative', boxSizing: 'border-box', height: virtualizer.getTotalSize() + layout.borders, flexShrink: 0, overflowAnchor: 'none' } : style}
-    onKeyDown={handleKeyDown}
-    onFocusCapture={(event) => {
-      onFocusCapture?.(event)
-      const row = ownRow(event.currentTarget, event.target)
-      if (row) {
-        const index = Number(row.dataset.index)
-        setInteraction((previous) => ({ ...previous, focusedKey: itemKey(items[index], index) }))
+  return (
+    <ul
+      {...listProps}
+      ref={listRef}
+      data-sc-virtual-list=""
+      tabIndex={tabIndex ?? (activeWindowing && !listProps.role ? 0 : undefined)}
+      style={
+        activeWindowing
+          ? {
+              ...style,
+              position: 'relative',
+              boxSizing: 'border-box',
+              height: virtualizer.getTotalSize() + layout.borders,
+              flexShrink: 0,
+              overflowAnchor: 'none'
+            }
+          : style
       }
-    }}
-    onBlurCapture={(event) => {
-      onBlurCapture?.(event)
-      const list = event.currentTarget
-      queueMicrotask(() => {
-        if (listRef.current !== list) return
-        const row = ownRow(list, activeElement(list.ownerDocument))
-        const index = row ? Number(row.dataset.index) : -1
-        setInteraction((previous) => ({ ...previous, focusedKey: index >= 0 && index < items.length ? itemKey(items[index], index) : null }))
-      })
-    }}
-  >{rows.map((row) => {
-    const item = items[row.index]
-    const suppliedProps = itemProps?.(item, row.index)
-    const props = activeWindowing ? positionProps(suppliedProps, row.index, items.length) : suppliedProps ?? {}
-    return <li
-      {...props}
-      key={row.key}
-      ref={activeWindowing ? virtualizer.measureElement : undefined}
-      data-index={row.index}
-      tabIndex={props.tabIndex ?? (activeWindowing ? -1 : undefined)}
-      style={activeWindowing ? { ...props.style, position: 'absolute', top: row.start - layout.margin, left: layout.left, right: layout.right, width: 'auto' } : props.style}
-    >{renderItem(item, row.index)}</li>
-  })}</ul>
+      onKeyDown={handleKeyDown}
+      onFocusCapture={(event) => {
+        onFocusCapture?.(event)
+        const row = ownRow(event.currentTarget, event.target)
+        if (row) {
+          const index = Number(row.dataset.index)
+          setInteraction((previous) => ({ ...previous, focusedKey: itemKey(items[index], index) }))
+        }
+      }}
+      onBlurCapture={(event) => {
+        onBlurCapture?.(event)
+        const list = event.currentTarget
+        queueMicrotask(() => {
+          if (listRef.current !== list) return
+          const row = ownRow(list, activeElement(list.ownerDocument))
+          const index = row ? Number(row.dataset.index) : -1
+          setInteraction((previous) => ({
+            ...previous,
+            focusedKey: index >= 0 && index < items.length ? itemKey(items[index], index) : null
+          }))
+        })
+      }}
+    >
+      {rows.map((row) => {
+        const item = items[row.index]
+        const suppliedProps = itemProps?.(item, row.index)
+        const props = activeWindowing ? positionProps(suppliedProps, row.index, items.length) : (suppliedProps ?? {})
+        return (
+          <li
+            {...props}
+            key={row.key}
+            ref={activeWindowing ? virtualizer.measureElement : undefined}
+            data-index={row.index}
+            tabIndex={props.tabIndex ?? (activeWindowing ? -1 : undefined)}
+            style={
+              activeWindowing
+                ? {
+                    ...props.style,
+                    position: 'absolute',
+                    top: row.start - layout.margin,
+                    left: layout.left,
+                    right: layout.right,
+                    width: 'auto'
+                  }
+                : props.style
+            }
+          >
+            {renderItem(item, row.index)}
+          </li>
+        )
+      })}
+    </ul>
+  )
 }

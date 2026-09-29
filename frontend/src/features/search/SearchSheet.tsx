@@ -36,10 +36,28 @@ export function SearchSheet({ open, scope = '', onclose }: SearchSheetProps) {
   }, [open])
 
   if (!open) return null
-  const trailing: ReactNode = <IconButton label={t('search.close')} onClick={onclose}><Icon name="close" /></IconButton>
+  const trailing: ReactNode = (
+    <IconButton label={t('search.close')} onClick={onclose}>
+      <Icon name="close" />
+    </IconButton>
+  )
   return (
-    <dialog ref={dialogRef} className="sc-search-sheet" aria-label={t('search.title')} onClick={(event) => { if (event.target === event.currentTarget) onclose() }} onCancel={(event) => { event.preventDefault(); onclose() }} onClose={onclose}>
-      <div className="sc-search-sheet-body"><SearchPanel ref={panelRef} scope={scope} autofocus onnavigated={onclose} trailing={trailing} /></div>
+    <dialog
+      ref={dialogRef}
+      className="sc-search-sheet"
+      aria-label={t('search.title')}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onclose()
+      }}
+      onCancel={(event) => {
+        event.preventDefault()
+        onclose()
+      }}
+      onClose={onclose}
+    >
+      <div className="sc-search-sheet-body">
+        <SearchPanel ref={panelRef} scope={scope} autofocus onnavigated={onclose} trailing={trailing} />
+      </div>
     </dialog>
   )
 }

@@ -62,10 +62,7 @@ describe('encrypted upload preparation', () => {
   it('retains only one prepared ciphertext until the worker releases it', async () => {
     workerMessages.length = 0
     const completion = addFiles(
-      [
-        new File(['first'], 'first.txt', { lastModified: 1 }),
-        new File(['second'], 'second.txt', { lastModified: 2 })
-      ],
+      [new File(['first'], 'first.txt', { lastModified: 1 }), new File(['second'], 'second.txt', { lastModified: 2 })],
       '/Encrypted'
     )
 

@@ -11,7 +11,13 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { createServer } from 'vite'
 
-const VIEWPORTS = [[1920, 1080], [1440, 900], [1280, 720], [800, 600], [390, 844]]
+const VIEWPORTS = [
+  [1920, 1080],
+  [1440, 900],
+  [1280, 720],
+  [800, 600],
+  [390, 844]
+]
 const WHEEL_STEPS = 60
 const WHEEL_DELTA = 800
 
@@ -37,7 +43,7 @@ async function wheelTo(page, width, height) {
 // The scroll owner is whichever element actually overflows. Asserting on it
 // rather than on a class name keeps this honest if the layout moves again.
 async function scrollOffset(page, selector) {
-  return page.locator(selector).evaluate(element => element.scrollTop)
+  return page.locator(selector).evaluate((element) => element.scrollTop)
 }
 
 try {
@@ -50,7 +56,7 @@ try {
       const cell = mode === 'grid' ? '.sc-file-grid-card' : '.sc-row'
       const scroller = mode === 'grid' ? '.sc-file-grid' : '.sc-file-table'
       const context = await browser.newContext({ viewport: { width, height }, reducedMotion: 'reduce' })
-      await context.addInitScript(view => {
+      await context.addInitScript((view) => {
         localStorage.setItem('sc.locale', 'en')
         localStorage.setItem('sc.view', view)
       }, mode)

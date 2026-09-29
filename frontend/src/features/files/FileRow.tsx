@@ -25,13 +25,61 @@ export function getEntryIcon(entry: Entry): { name: string; color?: string } {
   if (['mp3', 'flac', 'wav', 'aac', 'ogg', 'm4a', 'opus', 'wma'].includes(ext)) {
     return { name: 'audio-file', color: 'var(--sc-icon-color)' }
   }
-  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'heic', 'avif'].includes(ext) || entry.preview?.available) {
+  if (
+    ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'heic', 'avif'].includes(ext) ||
+    entry.preview?.available
+  ) {
     return { name: 'image', color: 'var(--sc-icon-color)' }
   }
-  if (['js', 'ts', 'tsx', 'jsx', 'go', 'rs', 'py', 'java', 'c', 'cpp', 'h', 'cs', 'rb', 'php', 'sh', 'sql', 'json', 'yaml', 'yml', 'toml', 'xml', 'html', 'css'].includes(ext)) {
+  if (
+    [
+      'js',
+      'ts',
+      'tsx',
+      'jsx',
+      'go',
+      'rs',
+      'py',
+      'java',
+      'c',
+      'cpp',
+      'h',
+      'cs',
+      'rb',
+      'php',
+      'sh',
+      'sql',
+      'json',
+      'yaml',
+      'yml',
+      'toml',
+      'xml',
+      'html',
+      'css'
+    ].includes(ext)
+  ) {
     return { name: 'code', color: 'var(--sc-icon-color)' }
   }
-  if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'md', 'rtf', 'odt', 'ods', 'odp', 'hwp', 'hwpx', 'csv'].includes(ext)) {
+  if (
+    [
+      'pdf',
+      'doc',
+      'docx',
+      'xls',
+      'xlsx',
+      'ppt',
+      'pptx',
+      'txt',
+      'md',
+      'rtf',
+      'odt',
+      'ods',
+      'odp',
+      'hwp',
+      'hwpx',
+      'csv'
+    ].includes(ext)
+  ) {
     return { name: 'description', color: 'var(--sc-icon-color)' }
   }
   return { name: 'draft', color: 'var(--sc-icon-color)' }
@@ -100,7 +148,15 @@ export function FileRow({
         <span className="sc-row-name-copy">
           <MiddleEllipsis name={entry.name} className="sc-filename" />
           <span className="sc-row-mobile-meta">
-            {entry.kind === 'dir' ? t('details.folder') : <>{formatEntrySize(entry.size, encrypted)}<span aria-hidden="true"> · </span>{formatModifiedDateNs(entry.mtime_ns)}</>}
+            {entry.kind === 'dir' ? (
+              t('details.folder')
+            ) : (
+              <>
+                {formatEntrySize(entry.size, encrypted)}
+                <span aria-hidden="true"> · </span>
+                {formatModifiedDateNs(entry.mtime_ns)}
+              </>
+            )}
           </span>
         </span>
         {entry.confusable ? (

@@ -10,7 +10,15 @@ export interface ListItemProps {
   supporting?: ReactNode
 }
 
-export function ListItem({ selected = false, onClick, onclick, leading, trailing, headline, supporting }: ListItemProps) {
+export function ListItem({
+  selected = false,
+  onClick,
+  onclick,
+  leading,
+  trailing,
+  headline,
+  supporting
+}: ListItemProps) {
   const action = onClick ?? onclick
   return (
     <div
@@ -18,7 +26,16 @@ export function ListItem({ selected = false, onClick, onclick, leading, trailing
       onClick={action}
       role={action ? 'button' : 'presentation'}
       tabIndex={action ? 0 : undefined}
-      onKeyDown={action ? (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); action(event as unknown as React.MouseEvent<HTMLDivElement>) } } : undefined}
+      onKeyDown={
+        action
+          ? (event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                action(event as unknown as React.MouseEvent<HTMLDivElement>)
+              }
+            }
+          : undefined
+      }
     >
       {leading ? <span className="sc-list-item-leading">{leading}</span> : null}
       <span className="sc-list-item-text">

@@ -3,7 +3,15 @@ import { isEditableFileName } from '../../../../src/features/files/logic/editabl
 
 describe('isEditableFileName', () => {
   it('accepts common source, configuration, data, and documentation formats', () => {
-    for (const name of ['main.rs', 'schema.graphql', 'infra.tfvars', 'notes.rst', 'Dockerfile.dev', '.env.production', 'CMakeLists.txt']) {
+    for (const name of [
+      'main.rs',
+      'schema.graphql',
+      'infra.tfvars',
+      'notes.rst',
+      'Dockerfile.dev',
+      '.env.production',
+      'CMakeLists.txt'
+    ]) {
       expect(isEditableFileName(name), name).toBe(true)
     }
   })

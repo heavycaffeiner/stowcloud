@@ -6,7 +6,12 @@ interface ButtonElement extends HTMLElement {
   updateComplete?: Promise<unknown>
 }
 
-function syncButtonAria(element: ButtonElement | null, ariaLabel: string | undefined, pressed: boolean | undefined, loading: boolean): void {
+function syncButtonAria(
+  element: ButtonElement | null,
+  ariaLabel: string | undefined,
+  pressed: boolean | undefined,
+  loading: boolean
+): void {
   if (!element) return
   const apply = () => {
     const control = element.shadowRoot?.querySelector<HTMLElement>('[part="button"]')
@@ -57,7 +62,9 @@ export function Button({
 }: ButtonProps) {
   const { t } = useI18n()
   const ref = useRef<ButtonElement | null>(null)
-  useEffect(() => { syncButtonAria(ref.current, ariaLabel, pressed, loading) }, [ariaLabel, pressed, loading])
+  useEffect(() => {
+    syncButtonAria(ref.current, ariaLabel, pressed, loading)
+  }, [ariaLabel, pressed, loading])
   const squareIcon = square ? (icon ?? children) : null
   return (
     <span className={`sc-button-wrap${danger ? ' sc-danger' : ''}`}>
@@ -76,10 +83,14 @@ export function Button({
         aria-busy={loading ? 'true' : undefined}
         onClick={onClick}
       >
-        {square
-          ? squareIcon !== null && squareIcon !== undefined ? <span slot="icon">{squareIcon}</span> : null
-          : icon ? <span slot="icon">{icon}</span> : null}
-        {!square ? (loading ? <span className="sc-button-loading-label">{t('button.working')}</span> : children) : null}
+        {square ? (
+          squareIcon !== null && squareIcon !== undefined ? (
+            <span slot="icon">{squareIcon}</span>
+          ) : null
+        ) : icon ? (
+          <span slot="icon">{icon}</span>
+        ) : null}
+        {!square ? loading ? <span className="sc-button-loading-label">{t('button.working')}</span> : children : null}
         {!square && endIcon ? <span slot="end-icon">{endIcon}</span> : null}
       </mdui-button>
     </span>

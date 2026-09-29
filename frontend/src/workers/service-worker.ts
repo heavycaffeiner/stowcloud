@@ -85,7 +85,8 @@ function textResponse(status: number, message: string): Response {
  *  can still claim it after an attacker's guess is refused. */
 export function handleDownload(id: string, clientId: string): Response {
   const pending = pendingDownloads.get(id)
-  if (!pending) return textResponse(410, 'This download link has already been used, or the page that started it reloaded first.')
+  if (!pending)
+    return textResponse(410, 'This download link has already been used, or the page that started it reloaded first.')
   if (pending.clientId !== clientId) return textResponse(403, 'This download link belongs to a different page.')
   pendingDownloads.delete(id)
   const headers = new Headers({
@@ -192,7 +193,11 @@ export function mediaSuccessResponseInit(reply: MediaReplySuccess, hadRangeHeade
 
 const MEDIA_REPLY_TIMEOUT_MS = 10_000
 
-async function requestMediaFromClient(client: Client, token: string, range: ParsedRange | null): Promise<MediaReply | null> {
+async function requestMediaFromClient(
+  client: Client,
+  token: string,
+  range: ParsedRange | null
+): Promise<MediaReply | null> {
   const channel = new MessageChannel()
   return new Promise<MediaReply | null>((resolve) => {
     const timer = setTimeout(() => resolve(null), MEDIA_REPLY_TIMEOUT_MS)
@@ -226,7 +231,9 @@ worker.addEventListener('fetch', (event: FetchEvent) => {
     return
   }
   if (url.pathname.startsWith(MEDIA_PREFIX)) {
-    event.respondWith(handleMedia(url.pathname.slice(MEDIA_PREFIX.length), event.request.headers.get('Range'), event.clientId))
+    event.respondWith(
+      handleMedia(url.pathname.slice(MEDIA_PREFIX.length), event.request.headers.get('Range'), event.clientId)
+    )
   }
   // Every other request is not this worker's concern: falls through to the
   // network exactly as if this worker did not exist.

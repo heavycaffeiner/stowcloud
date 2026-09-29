@@ -105,10 +105,15 @@ for (const theme of ['light', 'dark']) {
   await meetingRow.waitFor()
   await meetingRow.locator('.sc-row-cell-select').click()
   await page.waitForTimeout(300)
-  const shareBtn = page.locator('.sc-browse-selection-action-btn[title*="share" i], .sc-browse-selection-action-btn[title*="공유" i]').first()
+  const shareBtn = page
+    .locator('.sc-browse-selection-action-btn[title*="share" i], .sc-browse-selection-action-btn[title*="공유" i]')
+    .first()
   await shareBtn.click()
   await page.locator('.sc-share-dialog[open]').waitFor()
-  const createBtn = page.locator('.sc-share-dialog[open] mdui-button').filter({ hasText: /Create/ }).first()
+  const createBtn = page
+    .locator('.sc-share-dialog[open] mdui-button')
+    .filter({ hasText: /Create/ })
+    .first()
   if (await createBtn.isVisible()) {
     await createBtn.click()
     await page.waitForTimeout(400)

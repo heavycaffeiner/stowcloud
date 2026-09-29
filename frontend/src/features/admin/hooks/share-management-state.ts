@@ -91,7 +91,8 @@ const initialShareManagementState: ShareManagementState = {
   pathPickerCounter: 0
 }
 
-export type ShareManagementPatch = Partial<ShareManagementState> | ((state: ShareManagementState) => Partial<ShareManagementState>)
+export type ShareManagementPatch =
+  Partial<ShareManagementState> | ((state: ShareManagementState) => Partial<ShareManagementState>)
 
 export function useShareManagementState(): readonly [ShareManagementState, (patch: ShareManagementPatch) => void] {
   return usePatchState(initialShareManagementState)

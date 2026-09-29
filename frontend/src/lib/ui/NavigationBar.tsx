@@ -37,7 +37,9 @@ export function NavigationBar({ items, active, onselect }: NavigationBarProps) {
               onselect(item.id)
             }}
           >
-            <span className="sc-nav-bar-icon"><Icon name={item.icon} /></span>
+            <span className="sc-nav-bar-icon">
+              <Icon name={item.icon} />
+            </span>
             <span className="sc-nav-bar-label">{item.label}</span>
           </button>
         )

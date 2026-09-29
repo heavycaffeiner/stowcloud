@@ -4,7 +4,7 @@ import { selection } from '../../../lib/store/selection.store'
 
 export function useFileFocusPreservation(entries: readonly Entry[], focused: number | null) {
   const focusSnapshot = useRef<{ names: string[]; focusedName: string | null }>({ names: [], focusedName: null })
-  const focusedName = focused === null ? null : entries[focused]?.name ?? null
+  const focusedName = focused === null ? null : (entries[focused]?.name ?? null)
 
   useEffect(() => {
     const namesNow = entries.map((entry) => entry.name)
@@ -15,7 +15,13 @@ export function useFileFocusPreservation(entries: readonly Entry[], focused: num
       const next = namesNow.indexOf(previous.focusedName)
       if (next >= 0 && next !== focused) selection.focus(next)
     }
-    focusSnapshot.current = { names: namesNow, focusedName: reordered && previous.focusedName && namesNow.includes(previous.focusedName) ? previous.focusedName : focusedName }
+    focusSnapshot.current = {
+      names: namesNow,
+      focusedName:
+        reordered && previous.focusedName && namesNow.includes(previous.focusedName)
+          ? previous.focusedName
+          : focusedName
+    }
   }, [entries, focused, focusedName])
 
   return focusedName

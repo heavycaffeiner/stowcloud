@@ -19,7 +19,12 @@ export type TrashState = {
 export function useTrashActions(t: Translate, selected: ReadonlySet<string>) {
   const restore = useMutation(trashRestoreMutation())
   const purge = useMutation(trashPurgeMutation())
-  const [state, setState] = useRouteStore<TrashState>({ purgeOpen: false, purgeSingle: null, operation: null, notice: null })
+  const [state, setState] = useRouteStore<TrashState>({
+    purgeOpen: false,
+    purgeSingle: null,
+    operation: null,
+    notice: null
+  })
   const purgeDialogRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
@@ -45,7 +50,10 @@ export function useTrashActions(t: Translate, selected: ReadonlySet<string>) {
     if (ids.length === 0) return
     try {
       const response = await restore.mutateAsync(ids)
-      setState({ operation: { kind: 'restore', results: response.results }, notice: summarize(response.results, t('trash.restored')) })
+      setState({
+        operation: { kind: 'restore', results: response.results },
+        notice: summarize(response.results, t('trash.restored'))
+      })
       applyResults(ids, response.results)
     } catch (error) {
       setState({ notice: describeApiError(error, t('trash.could_not_restore')) })
@@ -63,7 +71,10 @@ export function useTrashActions(t: Translate, selected: ReadonlySet<string>) {
     if (ids.length === 0) return
     try {
       const response = await purge.mutateAsync(ids)
-      setState({ operation: { kind: 'purge', results: response.results }, notice: summarize(response.results, t('trash.deleted_permanently')) })
+      setState({
+        operation: { kind: 'purge', results: response.results },
+        notice: summarize(response.results, t('trash.deleted_permanently'))
+      })
       applyResults(ids, response.results)
     } catch (error) {
       setState({ notice: describeApiError(error, t('trash.could_not_delete_permanently')) })
@@ -79,6 +90,6 @@ export function useTrashActions(t: Translate, selected: ReadonlySet<string>) {
     purgePending: purge.isPending,
     restoreItems,
     requestPurge,
-    confirmPurge,
+    confirmPurge
   }
 }

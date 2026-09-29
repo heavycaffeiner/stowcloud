@@ -39,7 +39,8 @@ const initialGrantManagementState: GrantManagementState = {
   deleteTarget: null
 }
 
-export type GrantManagementPatch = Partial<GrantManagementState> | ((state: GrantManagementState) => Partial<GrantManagementState>)
+export type GrantManagementPatch =
+  Partial<GrantManagementState> | ((state: GrantManagementState) => Partial<GrantManagementState>)
 
 export function useGrantManagementState(): readonly [GrantManagementState, (patch: GrantManagementPatch) => void] {
   return usePatchState(initialGrantManagementState)

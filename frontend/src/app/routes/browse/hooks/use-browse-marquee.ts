@@ -8,7 +8,19 @@ import type { BrowseState } from '../logic/types'
 
 type Patch = (patch: Partial<BrowseState> | ((state: BrowseState) => Partial<BrowseState>)) => void
 
-export function useBrowseMarquee({ mode, selectedNames, patch, tableRef, gridRef }: { mode: 'list' | 'grid'; selectedNames: ReadonlySet<string>; patch: Patch; tableRef: React.RefObject<FileViewHandle | null>; gridRef: React.RefObject<FileGridHandle | null> }) {
+export function useBrowseMarquee({
+  mode,
+  selectedNames,
+  patch,
+  tableRef,
+  gridRef
+}: {
+  mode: 'list' | 'grid'
+  selectedNames: ReadonlySet<string>
+  patch: Patch
+  tableRef: React.RefObject<FileViewHandle | null>
+  gridRef: React.RefObject<FileGridHandle | null>
+}) {
   const dragOrigin = useRef<{ x: number; y: number } | null>(null)
   const dragPointer = useRef({ x: 0, y: 0 })
   const dragBase = useRef<string[]>([])
@@ -56,7 +68,11 @@ export function useBrowseMarquee({ mode, selectedNames, patch, tableRef, gridRef
     const origin = dragOrigin.current
     if (!origin) return
     dragPointer.current = { x: event.clientX, y: event.clientY }
-    if (!marqueeActive.current && !movedFar(origin.x - window.scrollX, origin.y - window.scrollY, event.clientX, event.clientY)) return
+    if (
+      !marqueeActive.current &&
+      !movedFar(origin.x - window.scrollX, origin.y - window.scrollY, event.clientX, event.clientY)
+    )
+      return
     if (!marqueeActive.current) {
       marqueeActive.current = true
       window.getSelection()?.removeAllRanges()
@@ -101,7 +117,12 @@ export function useBrowseMarquee({ mode, selectedNames, patch, tableRef, gridRef
   const openBlankMenu = (event: ReactMouseEvent) => {
     event.preventDefault()
     selection.clear()
-    patch({ contextEntry: null, contextMenu: null, menuTrigger: event.currentTarget as HTMLElement, blankMenu: { x: event.clientX, y: event.clientY } })
+    patch({
+      contextEntry: null,
+      contextMenu: null,
+      menuTrigger: event.currentTarget as HTMLElement,
+      blankMenu: { x: event.clientX, y: event.clientY }
+    })
   }
 
   return { onPointerDown, onEmptyAreaClick, openBlankMenu }

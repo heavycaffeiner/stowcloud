@@ -54,12 +54,7 @@ export function cleanupKey(sessionId: string): string {
 /** Stable key for one source and transfer target. Content identities remain
  * fields on the record and are checked before adoption, so a same-metadata
  * file cannot resume a different byte stream. */
-export function resumeKey(
-  name: string,
-  size: number,
-  lastModified: number,
-  context: ResumeKeyContext
-): string {
+export function resumeKey(name: string, size: number, lastModified: number, context: ResumeKeyContext): string {
   return `v3:${JSON.stringify([
     context.accountId,
     context.sessionContext,

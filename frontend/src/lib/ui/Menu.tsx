@@ -32,7 +32,8 @@ export function Menu({ open, onClose, compact = false, x, y, align = 'start', ch
       const target = opener.current
       opener.current = null
       queueMicrotask(() => {
-        if (target?.isConnected && !target.hasAttribute('disabled') && !target.hasAttribute('aria-hidden')) target.focus()
+        if (target?.isConnected && !target.hasAttribute('disabled') && !target.hasAttribute('aria-hidden'))
+          target.focus()
       })
     }
   }, [compact, open])
@@ -55,7 +56,8 @@ export function Menu({ open, onClose, compact = false, x, y, align = 'start', ch
       const target = opener.current
       opener.current = null
       queueMicrotask(() => {
-        if (target?.isConnected && !target.hasAttribute('disabled') && !target.hasAttribute('aria-hidden')) target.focus()
+        if (target?.isConnected && !target.hasAttribute('disabled') && !target.hasAttribute('aria-hidden'))
+          target.focus()
       })
     }
   }, [compact, open])
@@ -88,8 +90,18 @@ export function Menu({ open, onClose, compact = false, x, y, align = 'start', ch
     return (
       <>
         <div className="sc-sheet-scrim" onClick={close} aria-hidden="true" />
-        <dialog ref={dialogRef} className="sc-sheet" aria-label={t('common.main_menu')} onCancel={(event) => { event.preventDefault(); close() }}>
-          <div className="sc-sheet-handle-wrap" aria-hidden="true"><div className="sc-sheet-handle" /></div>
+        <dialog
+          ref={dialogRef}
+          className="sc-sheet"
+          aria-label={t('common.main_menu')}
+          onCancel={(event) => {
+            event.preventDefault()
+            close()
+          }}
+        >
+          <div className="sc-sheet-handle-wrap" aria-hidden="true">
+            <div className="sc-sheet-handle" />
+          </div>
           <div className="sc-sheet-content">{children}</div>
         </dialog>
       </>
@@ -99,7 +111,13 @@ export function Menu({ open, onClose, compact = false, x, y, align = 'start', ch
     <div
       ref={rootRef}
       className="sc-menu-shell"
-      style={{ position: 'fixed', left, right, top, maxHeight: top === undefined ? undefined : `calc(100vh - ${top}px - 8px)` }}
+      style={{
+        position: 'fixed',
+        left,
+        right,
+        top,
+        maxHeight: top === undefined ? undefined : `calc(100vh - ${top}px - 8px)`
+      }}
     >
       <mdui-menu>{children}</mdui-menu>
     </div>

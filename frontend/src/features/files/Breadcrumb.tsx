@@ -27,18 +27,19 @@ export function Breadcrumb({ crumbs, onNavigate }: BreadcrumbProps) {
   useEffect(() => {
     if (!menu.open) return
     let cancelled = false
-    const menuElement = menuRef.current?.closest('mdui-menu') as (HTMLElement & { updateComplete?: Promise<boolean> }) | null
+    const menuElement = menuRef.current?.closest('mdui-menu') as
+      (HTMLElement & { updateComplete?: Promise<boolean> }) | null
     void Promise.resolve(menuElement?.updateComplete).then(() => {
       if (!cancelled) menuRef.current?.querySelector<HTMLButtonElement>('button')?.focus()
     })
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [menu.open])
 
   const shouldCollapse = crumbs.length > (compact ? 2 : 4)
   const collapsedCrumbs = shouldCollapse ? crumbs.slice(compact ? 0 : 1, compact ? -1 : -2) : []
-  const visibleCrumbs = shouldCollapse
-    ? compact ? crumbs.slice(-1) : [crumbs[0], ...crumbs.slice(-2)]
-    : crumbs
+  const visibleCrumbs = shouldCollapse ? (compact ? crumbs.slice(-1) : [crumbs[0], ...crumbs.slice(-2)]) : crumbs
   const collapsedLabel = collapsedCrumbs.map((crumb) => crumb.label).join(' / ')
 
   const openCollapsedMenu = (event: ReactMouseEvent<HTMLButtonElement>) => {
@@ -66,10 +67,14 @@ export function Breadcrumb({ crumbs, onNavigate }: BreadcrumbProps) {
                 >
                   …
                 </button>
-                <span className="sc-breadcrumb-sep" aria-hidden="true">/</span>
+                <span className="sc-breadcrumb-sep" aria-hidden="true">
+                  /
+                </span>
               </li>
             )}
-            <li className={`sc-breadcrumb-item sc-breadcrumb-item-${index === visibleCrumbs.length - 1 ? 'current' : index === 0 ? 'root' : index === visibleCrumbs.length - 2 ? 'parent' : 'ancestor'}`}>
+            <li
+              className={`sc-breadcrumb-item sc-breadcrumb-item-${index === visibleCrumbs.length - 1 ? 'current' : index === 0 ? 'root' : index === visibleCrumbs.length - 2 ? 'parent' : 'ancestor'}`}
+            >
               {index < visibleCrumbs.length - 1 ? (
                 <>
                   <button
@@ -80,14 +85,12 @@ export function Breadcrumb({ crumbs, onNavigate }: BreadcrumbProps) {
                   >
                     <span className="sc-breadcrumb-label">{crumb.label}</span>
                   </button>
-                  <span className="sc-breadcrumb-sep" aria-hidden="true">/</span>
+                  <span className="sc-breadcrumb-sep" aria-hidden="true">
+                    /
+                  </span>
                 </>
               ) : (
-                <span
-                  className="sc-breadcrumb-current"
-                  aria-current="page"
-                  title={crumb.label}
-                >
+                <span className="sc-breadcrumb-current" aria-current="page" title={crumb.label}>
                   <span className="sc-breadcrumb-label">{crumb.label}</span>
                 </span>
               )}
@@ -97,8 +100,20 @@ export function Breadcrumb({ crumbs, onNavigate }: BreadcrumbProps) {
       </ol>
 
       {shouldCollapse && (
-        <Menu compact={compact} open={menu.open} onClose={() => setMenu((state) => ({ ...state, open: false }))} x={menu.pos.x} y={menu.pos.y}>
-          <div ref={menuRef} id={menuId} className="sc-browse-new-menu sc-breadcrumb-menu" role="menu" aria-label={t('breadcrumb.path')}>
+        <Menu
+          compact={compact}
+          open={menu.open}
+          onClose={() => setMenu((state) => ({ ...state, open: false }))}
+          x={menu.pos.x}
+          y={menu.pos.y}
+        >
+          <div
+            ref={menuRef}
+            id={menuId}
+            className="sc-browse-new-menu sc-breadcrumb-menu"
+            role="menu"
+            aria-label={t('breadcrumb.path')}
+          >
             {collapsedCrumbs.map((c) => (
               <button
                 key={c.path}

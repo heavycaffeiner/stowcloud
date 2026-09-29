@@ -44,7 +44,10 @@ function extractVideoFrame(src: string): Promise<string> {
       video.removeAttribute('src')
       video.load()
     }
-    const timer = window.setTimeout(() => { cleanup(); reject(new Error('timeout')) }, 8000)
+    const timer = window.setTimeout(() => {
+      cleanup()
+      reject(new Error('timeout'))
+    }, 8000)
     video.onloadedmetadata = () => {
       const seek = Math.min(1, video.duration > 1 ? 0.5 : video.duration * 0.1)
       video.currentTime = Math.max(0.1, seek)
@@ -72,7 +75,11 @@ function extractVideoFrame(src: string): Promise<string> {
         reject(error)
       }
     }
-    video.onerror = () => { window.clearTimeout(timer); cleanup(); reject(new Error('video load error')) }
+    video.onerror = () => {
+      window.clearTimeout(timer)
+      cleanup()
+      reject(new Error('video load error'))
+    }
   })
 }
 
@@ -103,17 +110,30 @@ export function Thumbnail({ entry, dim, fallback, iconSize }: ThumbnailProps) {
     }
     if (isVid) {
       const source = api.contentUrl(entry)
-      if (source) void extractVideoFrame(source).then((next) => {
-        if (!cancelled) { cachePut(key, next); setState({ url: next }) }
-      }).catch(() => { if (!cancelled) setState({ url: null }) })
-      return () => { cancelled = true }
+      if (source)
+        void extractVideoFrame(source)
+          .then((next) => {
+            if (!cancelled) {
+              cachePut(key, next)
+              setState({ url: next })
+            }
+          })
+          .catch(() => {
+            if (!cancelled) setState({ url: null })
+          })
+      return () => {
+        cancelled = true
+      }
     }
     void (async () => {
       const encryption = await encryptionForLabel(shareLabelOf(entry.path)).catch(() => null)
       if (cancelled) return
       if (!encryption) {
         const next = api.thumbUrl(entry, dim)
-        if (next) { cachePut(key, next); setState({ url: next }) }
+        if (next) {
+          cachePut(key, next)
+          setState({ url: next })
+        }
         return
       }
       if (!isUnlocked(encryption.salt) || entry.size > ENCRYPTED_THUMB_MAX_BYTES) return
@@ -149,11 +169,20 @@ export function Thumbnail({ entry, dim, fallback, iconSize }: ThumbnailProps) {
     setState({ url: null })
   }
 
-  if (!url) return <span className="sc-thumb-icon"><Icon name={fallback} size={iconSize} /></span>
+  if (!url)
+    return (
+      <span className="sc-thumb-icon">
+        <Icon name={fallback} size={iconSize} />
+      </span>
+    )
   return (
     <div className="sc-thumb-wrap">
       <img className="sc-thumb-img" src={url} alt="" loading="lazy" decoding="async" onError={onError} />
-      {isVid ? <span className="sc-thumb-badge" aria-hidden="true"><Icon name="video" /></span> : null}
+      {isVid ? (
+        <span className="sc-thumb-badge" aria-hidden="true">
+          <Icon name="video" />
+        </span>
+      ) : null}
     </div>
   )
 }

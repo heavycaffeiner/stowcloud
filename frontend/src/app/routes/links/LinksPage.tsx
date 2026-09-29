@@ -21,7 +21,7 @@ export function LinksPage() {
   const own = useQuery({ ...shareLinksQuery(undefined), enabled: session.data !== undefined && !isAdmin })
   const all = useQuery({ ...adminLinksQuery(), enabled: isAdmin })
   const management = useLinkManagement(session.data?.user.id, t)
-  const rows: LinkRow[] = isAdmin ? all.data ?? [] : own.data ?? []
+  const rows: LinkRow[] = isAdmin ? (all.data ?? []) : (own.data ?? [])
   const activeQuery = isAdmin ? all : own
   const loading = session.isPending || activeQuery.isPending
   useDocumentTitle(t('links.title_stowcloud'))
@@ -32,17 +32,55 @@ export function LinksPage() {
       title={t('nav.links')}
       refreshLabel={t('common.refresh')}
       onRefresh={() => void activeQuery.refetch()}
-      overlay={management.managing ? <ShareManageDialog open path={normalizePath(management.managing.path)} targetName={baseName(management.managing.path) || management.managing.path} targetIsDir={management.managingTarget?.kind === 'dir'} onclose={() => management.setState({ managing: null, managingTarget: null })} /> : null}
+      overlay={
+        management.managing ? (
+          <ShareManageDialog
+            open
+            path={normalizePath(management.managing.path)}
+            targetName={baseName(management.managing.path) || management.managing.path}
+            targetIsDir={management.managingTarget?.kind === 'dir'}
+            onclose={() => management.setState({ managing: null, managingTarget: null })}
+          />
+        ) : null
+      }
     >
-      <SecondaryPageState loading={loading} loadingLabel={t('common.loading')} error={activeQuery.error} errorText={describeApiError(activeQuery.error, t('links.could_not_load'))} empty={!loading && rows.length === 0} emptyText={t('links.empty')}>
-        {rows.length > 0 ? <VirtualList className="sc-secondary-page-list sc-links-list" items={rows} itemKey={(link) => link.id} estimateSize={80} pinnedKeys={management.managing ? [management.managing.id] : undefined} renderItem={(link) => {
-          const mine = management.isMine(link)
-          const path = normalizePath(link.path)
-          return <>
-            <LinkListRow link={link} mine={mine} resolving={management.resolvingPath === path} targetSummary={management.targetSummary(link)} onOpen={() => void management.openManagement(link)} />
-            {management.targetErrorPath === path && management.targetError ? <p className="sc-links-target-error" role="alert">{management.targetError}</p> : null}
-          </>
-        }} /> : null}
+      <SecondaryPageState
+        loading={loading}
+        loadingLabel={t('common.loading')}
+        error={activeQuery.error}
+        errorText={describeApiError(activeQuery.error, t('links.could_not_load'))}
+        empty={!loading && rows.length === 0}
+        emptyText={t('links.empty')}
+      >
+        {rows.length > 0 ? (
+          <VirtualList
+            className="sc-secondary-page-list sc-links-list"
+            items={rows}
+            itemKey={(link) => link.id}
+            estimateSize={80}
+            pinnedKeys={management.managing ? [management.managing.id] : undefined}
+            renderItem={(link) => {
+              const mine = management.isMine(link)
+              const path = normalizePath(link.path)
+              return (
+                <>
+                  <LinkListRow
+                    link={link}
+                    mine={mine}
+                    resolving={management.resolvingPath === path}
+                    targetSummary={management.targetSummary(link)}
+                    onOpen={() => void management.openManagement(link)}
+                  />
+                  {management.targetErrorPath === path && management.targetError ? (
+                    <p className="sc-links-target-error" role="alert">
+                      {management.targetError}
+                    </p>
+                  ) : null}
+                </>
+              )
+            }}
+          />
+        ) : null}
       </SecondaryPageState>
     </SecondaryPageShell>
   )

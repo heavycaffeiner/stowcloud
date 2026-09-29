@@ -3,16 +3,7 @@
 export type Kind = 'file' | 'dir' | 'symlink' | 'other'
 
 /** The eight permission names, in the order the server emits them. */
-export const PERM_NAMES = [
-  'read',
-  'write',
-  'create',
-  'delete',
-  'rename',
-  'move',
-  'share',
-  'download'
-] as const
+export const PERM_NAMES = ['read', 'write', 'create', 'delete', 'rename', 'move', 'share', 'download'] as const
 
 /** Widens the wire's granted-names array into the object the app reads.
  *
@@ -839,13 +830,13 @@ export interface ClientLimits {
 }
 
 export interface Features {
-	webdav: boolean
-	smb: boolean
-	preview: boolean
-	trash: boolean
-	shares: boolean
-	direct_uploads: boolean
-	search: 'walk' | 'name' | 'name+content'
+  webdav: boolean
+  smb: boolean
+  preview: boolean
+  trash: boolean
+  shares: boolean
+  direct_uploads: boolean
+  search: 'walk' | 'name' | 'name+content'
 }
 
 /** The caller's own OIDC link, from `GET /api/auth/session`'s `oidc` object
@@ -1200,12 +1191,40 @@ export type JobState = 'queued' | 'running' | 'paused' | 'retrying' | 'done' | '
 export type JobKindWire = 'copy' | 'move' | 'delete' | 'archive' | 'index_build'
 
 export type DirectUploadState = 'pending' | 'completing' | 'complete' | 'completed' | 'cancelled' | 'expired'
-export interface DirectUploadCompletedPart { part_number: number; size: number; etag: string; checksum?: string; state?: string }
-export interface DirectUploadCreateReq { path: string; size: string; checksum?: string; if_match?: string; conflict?: string }
-export interface DirectUploadCompleteReq { parts: DirectUploadCompletedPart[] }
-export interface DirectUploadReservation { id: string; state: DirectUploadState; size: number; checksum?: string; part_size: number; expires_at: string; parts: DirectUploadCompletedPart[]; capability: boolean }
+export interface DirectUploadCompletedPart {
+  part_number: number
+  size: number
+  etag: string
+  checksum?: string
+  state?: string
+}
+export interface DirectUploadCreateReq {
+  path: string
+  size: string
+  checksum?: string
+  if_match?: string
+  conflict?: string
+}
+export interface DirectUploadCompleteReq {
+  parts: DirectUploadCompletedPart[]
+}
+export interface DirectUploadReservation {
+  id: string
+  state: DirectUploadState
+  size: number
+  checksum?: string
+  part_size: number
+  expires_at: string
+  parts: DirectUploadCompletedPart[]
+  capability: boolean
+}
 export type DirectUploadStatus = DirectUploadReservation
-export interface DirectUploadPartURL { part_number: number; url: string; headers: Record<string, string>; expires_at?: string }
+export interface DirectUploadPartURL {
+  part_number: number
+  url: string
+  headers: Record<string, string>
+  expires_at?: string
+}
 export type DirectUploadCompleteResult = DirectUploadReservation
 export type JobAction = 'retry' | 'pause' | 'resume'
 
@@ -1267,8 +1286,7 @@ export type ServerMsg =
   // No etag on the frame: the hub sends the path that changed and the client
   // re-reads it, because the token it would carry is one directory read old
   // by the time it arrives.
-  | { t: 'inval'; path: string }
-  | { t: 'pong' }
+  { t: 'inval'; path: string } | { t: 'pong' }
 
 export type ClientMsg = { t: 'sub'; paths: string[] } | { t: 'unsub'; paths: string[] } | { t: 'ping' }
 

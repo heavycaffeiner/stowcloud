@@ -17,14 +17,18 @@ let checks = 0
 async function settle(page) {
   await page.evaluate(async () => {
     await document.fonts.ready
-    await Promise.all([...document.querySelectorAll('mdui-button, mdui-button-icon, mdui-segmented-button')].map(el => el.updateComplete))
-    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    await Promise.all(
+      [...document.querySelectorAll('mdui-button, mdui-button-icon, mdui-segmented-button')].map(
+        (el) => el.updateComplete
+      )
+    )
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
   })
 }
 
 async function checkButtons(page, scope = 'body') {
   await settle(page)
-  const result = await page.locator(scope).evaluateAll(roots => {
+  const result = await page.locator(scope).evaluateAll((roots) => {
     const errors = []
     let count = 0
     for (const root of roots) {
@@ -37,17 +41,23 @@ async function checkButtons(page, scope = 'body') {
             const range = document.createRange()
             range.selectNodeContents(node)
             parts.push(range.getBoundingClientRect())
-          } else if (node instanceof Element && node.checkVisibility() && !node.matches('.sc-sr-only, [slot="icon"]:empty')) {
+          } else if (
+            node instanceof Element &&
+            node.checkVisibility() &&
+            !node.matches('.sc-sr-only, [slot="icon"]:empty')
+          ) {
             parts.push(node.getBoundingClientRect())
           }
         }
-        const visible = parts.filter(part => part.width > 0 && part.height > 0)
+        const visible = parts.filter((part) => part.width > 0 && part.height > 0)
         const vertical = getComputedStyle(button).flexDirection === 'column'
         const target = vertical ? rect.x + rect.width / 2 : rect.y + rect.height / 2
         for (const part of visible) {
           const center = vertical ? part.x + part.width / 2 : part.y + part.height / 2
           if (Math.abs(center - target) > 1) {
-            errors.push(`${button.tagName}.${button.className} ${button.textContent.trim().slice(0, 40)}: ${vertical ? 'x' : 'y'} offset ${(center - target).toFixed(2)}px`)
+            errors.push(
+              `${button.tagName}.${button.className} ${button.textContent.trim().slice(0, 40)}: ${vertical ? 'x' : 'y'} offset ${(center - target).toFixed(2)}px`
+            )
           }
         }
         count += 1
@@ -61,32 +71,53 @@ async function checkButtons(page, scope = 'body') {
 }
 
 async function checkGroup(page, selector, axis, edge = 'center') {
-  const groups = await page.locator(selector).evaluateAll((elements, { axis, edge }) => elements.map(group => {
-    const children = [...group.children].filter(el => el.checkVisibility()).map(el => el.getBoundingClientRect()).filter(r => r.width && r.height)
-    return children.map(r => axis === 'y' ? r.y + r.height / 2 : edge === 'start' ? r.x : edge === 'end' ? r.right : r.x + r.width / 2)
-  }).filter(values => values.length > 1), { axis, edge })
+  const groups = await page.locator(selector).evaluateAll(
+    (elements, { axis, edge }) =>
+      elements
+        .map((group) => {
+          const children = [...group.children]
+            .filter((el) => el.checkVisibility())
+            .map((el) => el.getBoundingClientRect())
+            .filter((r) => r.width && r.height)
+          return children.map((r) =>
+            axis === 'y' ? r.y + r.height / 2 : edge === 'start' ? r.x : edge === 'end' ? r.right : r.x + r.width / 2
+          )
+        })
+        .filter((values) => values.length > 1),
+    { axis, edge }
+  )
   assert.ok(groups.length > 0, `No populated group exercised: ${selector}`)
-  for (const values of groups) assert.ok(Math.max(...values) - Math.min(...values) <= 1, `${selector}: ${axis} ${edge} positions ${values.join(', ')}`)
+  for (const values of groups)
+    assert.ok(
+      Math.max(...values) - Math.min(...values) <= 1,
+      `${selector}: ${axis} ${edge} positions ${values.join(', ')}`
+    )
   checks += groups.length
 }
 
 async function checkNewCenter(page) {
-  const offsets = await page.locator('.sc-nav-drawer-new-btn').evaluate(button => {
+  const offsets = await page.locator('.sc-nav-drawer-new-btn').evaluate((button) => {
     const rect = button.getBoundingClientRect()
-    const parts = [...button.children].map(el => el.getBoundingClientRect())
-    const left = Math.min(...parts.map(r => r.left))
-    const right = Math.max(...parts.map(r => r.right))
-    return { x: (left + right) / 2 - rect.x - rect.width / 2, y: parts.map(r => r.y + r.height / 2 - rect.y - rect.height / 2) }
+    const parts = [...button.children].map((el) => el.getBoundingClientRect())
+    const left = Math.min(...parts.map((r) => r.left))
+    const right = Math.max(...parts.map((r) => r.right))
+    return {
+      x: (left + right) / 2 - rect.x - rect.width / 2,
+      y: parts.map((r) => r.y + r.height / 2 - rect.y - rect.height / 2)
+    }
   })
   assert.ok(Math.abs(offsets.x) <= 1, `New content horizontal offset: ${offsets.x}px`)
-  assert.ok(offsets.y.every(offset => Math.abs(offset) <= 1), `New content vertical offsets: ${offsets.y}`)
+  assert.ok(
+    offsets.y.every((offset) => Math.abs(offset) <= 1),
+    `New content vertical offsets: ${offsets.y}`
+  )
   checks += 1
 }
 
 async function checkDateColumn(page) {
   const geometry = await page.evaluate(() => {
     const header = document.querySelector('.sc-file-table-header-cell-mtime').getBoundingClientRect()
-    const cells = [...document.querySelectorAll('.sc-row-cell-mtime')].map(el => {
+    const cells = [...document.querySelectorAll('.sc-row-cell-mtime')].map((el) => {
       const rect = el.getBoundingClientRect()
       return { x: rect.x, width: rect.width, text: el.textContent, clipped: el.scrollWidth > el.clientWidth }
     })
@@ -95,7 +126,10 @@ async function checkDateColumn(page) {
   assert.ok(geometry.cells.length > 1, 'Date column needs multiple rows')
   for (const cell of geometry.cells) {
     assert.match(cell.text, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/)
-    assert.ok(Math.abs(cell.x - geometry.header.x) <= 1 && Math.abs(cell.width - geometry.header.width) <= 1, 'Date cells must share header position and width')
+    assert.ok(
+      Math.abs(cell.x - geometry.header.x) <= 1 && Math.abs(cell.width - geometry.header.width) <= 1,
+      'Date cells must share header position and width'
+    )
     assert.equal(cell.clipped, false, 'Date text must fit without clipping')
   }
   checks += geometry.cells.length
@@ -104,7 +138,7 @@ async function checkDateColumn(page) {
 
 async function dragBetween(page, selector) {
   const items = page.locator(selector)
-  assert.ok(await items.count() >= 2, `${selector}: drag selection needs two items`)
+  assert.ok((await items.count()) >= 2, `${selector}: drag selection needs two items`)
   const [first, second] = await Promise.all([items.nth(0).boundingBox(), items.nth(1).boundingBox()])
   assert.ok(first && second, `${selector}: drag selection items must be visible`)
   await page.mouse.move(first.x + first.width / 2, first.y + first.height / 2)
@@ -112,7 +146,9 @@ async function dragBetween(page, selector) {
   await page.mouse.move(second.x + second.width / 2, second.y + second.height / 2, { steps: 5 })
   await page.mouse.up()
   await settle(page)
-  const selected = await items.evaluateAll(elements => elements.filter(element => element.getAttribute('aria-selected') === 'true').length)
+  const selected = await items.evaluateAll(
+    (elements) => elements.filter((element) => element.getAttribute('aria-selected') === 'true').length
+  )
   assert.ok(selected >= 2, `${selector}: drag selection must persist after pointerup`)
   checks += 1
 }
@@ -126,7 +162,9 @@ async function checkDragSelection(page) {
   await viewToggle.click()
   await page.locator('.sc-file-grid-card').first().waitFor()
   await dragBetween(page, '.sc-file-grid-card')
-  const backgrounds = await page.locator('.sc-file-grid-card[aria-selected="true"]').evaluateAll(cards => cards.map(card => getComputedStyle(card).backgroundColor))
+  const backgrounds = await page
+    .locator('.sc-file-grid-card[aria-selected="true"]')
+    .evaluateAll((cards) => cards.map((card) => getComputedStyle(card).backgroundColor))
   assert.ok(backgrounds.length >= 2, 'Grid drag selection must include multiple cards')
   assert.equal(new Set(backgrounds).size, 1, 'Hovered selected grid card must retain its selected background')
   checks += 1
@@ -143,7 +181,7 @@ try {
   const widths = []
   for (const locale of ['en', 'ko']) {
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' })
-    await context.addInitScript(locale => {
+    await context.addInitScript((locale) => {
       localStorage.setItem('sc.locale', locale)
       localStorage.setItem('sc.theme', 'light')
     }, locale)
@@ -205,7 +243,11 @@ try {
       await checkGroup(page, '.sc-nav-drawer-list', 'x', 'start')
       await page.keyboard.press('Escape')
     }
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'Compact layout must not overflow horizontally')
+    assert.equal(
+      await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+      false,
+      'Compact layout must not overflow horizontally'
+    )
     await context.close()
   }
   assert.equal(widths[0], widths[1], 'Date column width must not depend on language')

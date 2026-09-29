@@ -26,10 +26,14 @@ export function useBrowseListing(path: string, filterType: BrowseFilterType, fil
   const measured = useQueries({
     queries: (selected.length
       ? selected.filter((entry) => entry.kind === 'dir').map((entry) => joinPath(path, entry.name))
-      : path === '/' ? [] : [path]
+      : path === '/'
+        ? []
+        : [path]
     ).map((currentPath) => folderSizeQuery(currentPath))
   })
-  const selectionBytes = selected.reduce((sum, entry) => sum + (entry.kind === 'dir' ? 0 : entry.size), 0) + measured.reduce((sum, query) => sum + (query.data?.bytes ?? 0), 0)
+  const selectionBytes =
+    selected.reduce((sum, entry) => sum + (entry.kind === 'dir' ? 0 : entry.size), 0) +
+    measured.reduce((sum, query) => sum + (query.data?.bytes ?? 0), 0)
   const filteredEntries = useMemo(() => {
     const now = Date.now()
     return entries.filter((entry) => matchesBrowseType(entry, filterType) && matchesBrowseDate(entry, filterDate, now))
@@ -53,6 +57,6 @@ export function useBrowseListing(path: string, filterType: BrowseFilterType, fil
     selectionBytes,
     canCreate: directory.perms.create,
     sortKey,
-    sortOrder,
+    sortOrder
   }
 }

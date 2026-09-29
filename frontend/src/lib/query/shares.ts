@@ -17,7 +17,10 @@ function invalidateShareLinks(): void {
 }
 
 export function shareCreateMutation() {
-  return mutationOptions({ mutationFn: (req: ShareLinkCreateReq) => api.shareCreate(req), onSuccess: invalidateShareLinks })
+  return mutationOptions({
+    mutationFn: (req: ShareLinkCreateReq) => api.shareCreate(req),
+    onSuccess: invalidateShareLinks
+  })
 }
 
 export function shareUpdateMutation() {

@@ -112,8 +112,8 @@ const CODE_KEYS: Record<string, string> = {
   'fs.no_space': /* i18n */ 'error.quota_exceeded',
   'fs.share_unavailable': /* i18n */ 'error.share_broken',
   'link.expired': /* i18n */ 'error.fs_gone',
-  'internal': /* i18n */ 'error.internal',
-  'not_implemented': /* i18n */ 'error.not_implemented'
+  internal: /* i18n */ 'error.internal',
+  not_implemented: /* i18n */ 'error.not_implemented'
 }
 
 /** The reason keys worth naming on their own. `fs.invalid_name` arrives under

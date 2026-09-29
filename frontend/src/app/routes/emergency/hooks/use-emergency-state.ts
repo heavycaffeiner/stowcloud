@@ -41,11 +41,27 @@ export type EmergencyActions = {
 }
 
 const initialState: EmergencyState = {
-  step: 'loading', reason: '', username: '', password: '', code: '', busy: false,
-  errorMessage: null, sections: [], section: 'network', selectedSection: 'network',
-  sectionLoading: false, documentText: '{}', baselineDocument: '{}', listen: '', appHosts: [],
-  warnings: [], warningSection: null, restarting: null, sectionOutcome: null,
-  pendingSection: null, sectionDialogOpen: false
+  step: 'loading',
+  reason: '',
+  username: '',
+  password: '',
+  code: '',
+  busy: false,
+  errorMessage: null,
+  sections: [],
+  section: 'network',
+  selectedSection: 'network',
+  sectionLoading: false,
+  documentText: '{}',
+  baselineDocument: '{}',
+  listen: '',
+  appHosts: [],
+  warnings: [],
+  warningSection: null,
+  restarting: null,
+  sectionOutcome: null,
+  pendingSection: null,
+  sectionDialogOpen: false
 }
 
 function storedDocument(settings: EmergencySettings, name: string): string {
@@ -54,19 +70,31 @@ function storedDocument(settings: EmergencySettings, name: string): string {
 
 export function useEmergencyState(): { state: EmergencyState; actions: EmergencyActions } {
   const [state, patch] = useRouteStore<EmergencyState>(initialState)
-  const actions = useMemo<EmergencyActions>(() => ({
-    patch,
-    setStep: (step) => patch({ step }),
-    setUsername: (username) => patch({ username }),
-    setPassword: (password) => patch({ password }),
-    setCode: (code) => patch({ code }),
-    setDocumentText: (documentText) => patch({ documentText }),
-    setSelectedSection: (selectedSection) => patch({ selectedSection }),
-    applyMetadata: (settings) => patch({ sections: settings.sections, listen: settings.listen, appHosts: settings.app_hosts }),
-    adoptSection: (name, settings) => {
-      const documentText = storedDocument(settings, name)
-      patch({ section: name, selectedSection: name, documentText, baselineDocument: documentText, sectionOutcome: null, warnings: [], warningSection: null })
-    }
-  }), [patch])
+  const actions = useMemo<EmergencyActions>(
+    () => ({
+      patch,
+      setStep: (step) => patch({ step }),
+      setUsername: (username) => patch({ username }),
+      setPassword: (password) => patch({ password }),
+      setCode: (code) => patch({ code }),
+      setDocumentText: (documentText) => patch({ documentText }),
+      setSelectedSection: (selectedSection) => patch({ selectedSection }),
+      applyMetadata: (settings) =>
+        patch({ sections: settings.sections, listen: settings.listen, appHosts: settings.app_hosts }),
+      adoptSection: (name, settings) => {
+        const documentText = storedDocument(settings, name)
+        patch({
+          section: name,
+          selectedSection: name,
+          documentText,
+          baselineDocument: documentText,
+          sectionOutcome: null,
+          warnings: [],
+          warningSection: null
+        })
+      }
+    }),
+    [patch]
+  )
   return { state, actions }
 }

@@ -17,7 +17,13 @@ export function PageTabs<T extends string>({ label, items, active, onSelect }: P
   return (
     <nav className="sc-settings-page-tabs" aria-label={label}>
       {items.map((item) => (
-        <button key={item.value} type="button" className="sc-settings-page-tab" aria-current={item.value === active ? 'page' : undefined} onClick={() => onSelect(item.value)}>
+        <button
+          key={item.value}
+          type="button"
+          className="sc-settings-page-tab"
+          aria-current={item.value === active ? 'page' : undefined}
+          onClick={() => onSelect(item.value)}
+        >
           <Icon name={item.icon} />
           {item.label}
         </button>

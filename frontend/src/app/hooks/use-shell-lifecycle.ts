@@ -96,7 +96,10 @@ export function useShellKeyboardShortcuts(screen: string, openSearch: () => void
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (screen !== 'browser') return
-      const isInput = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || (event.target instanceof HTMLElement && event.target.isContentEditable)
+      const isInput =
+        event.target instanceof HTMLInputElement ||
+        event.target instanceof HTMLTextAreaElement ||
+        (event.target instanceof HTMLElement && event.target.isContentEditable)
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
         openSearch()
@@ -116,7 +119,8 @@ export function useTrayGeometry(trayStackRef: RefObject<HTMLDivElement | null>, 
     const element = trayStackRef.current
     if (!element) return
     const publish = (): void => {
-      const top = element.offsetHeight > 0 ? `${window.innerHeight - element.getBoundingClientRect().top + 12}px` : '0px'
+      const top =
+        element.offsetHeight > 0 ? `${window.innerHeight - element.getBoundingClientRect().top + 12}px` : '0px'
       document.documentElement.style.setProperty('--sc-tray-stack-top', top)
     }
     const observer = new ResizeObserver(publish)

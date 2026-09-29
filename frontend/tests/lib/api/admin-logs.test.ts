@@ -27,9 +27,9 @@ afterEach(() => {
 
 describe('httpApi.adminListLogs query', () => {
   it('sends every filter under the name the route gives it', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      jsonResponse(200, { records: [], cursor: '', stored_bytes: '0', segments: 0 })
-    )
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(200, { records: [], cursor: '', stored_bytes: '0', segments: 0 }))
     vi.stubGlobal('fetch', fetchMock)
 
     await httpApi.adminListLogs({
@@ -58,9 +58,9 @@ describe('httpApi.adminListLogs query', () => {
   // A bound sent as a rounded number is a different instant. These values are
   // past 2^53, so this is what proves nothing on the path parsed them.
   it('sends the time bounds digit for digit rather than through a number', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      jsonResponse(200, { records: [], cursor: '', stored_bytes: '0', segments: 0 })
-    )
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(200, { records: [], cursor: '', stored_bytes: '0', segments: 0 }))
     vi.stubGlobal('fetch', fetchMock)
 
     const since = '1788490917438300001'
@@ -71,9 +71,9 @@ describe('httpApi.adminListLogs query', () => {
   })
 
   it('omits an unset filter and an empty level set', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      jsonResponse(200, { records: [], cursor: '', stored_bytes: '0', segments: 0 })
-    )
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(200, { records: [], cursor: '', stored_bytes: '0', segments: 0 }))
     vi.stubGlobal('fetch', fetchMock)
 
     await httpApi.adminListLogs({ levels: [] })
@@ -119,9 +119,7 @@ describe('httpApi.adminListLogs query', () => {
   it('reads a null record list as an empty page', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(
-        jsonResponse(200, { records: null, cursor: '', stored_bytes: '0', segments: 0 })
-      )
+      vi.fn().mockResolvedValue(jsonResponse(200, { records: null, cursor: '', stored_bytes: '0', segments: 0 }))
     )
 
     const res = await httpApi.adminListLogs()
@@ -255,9 +253,7 @@ describe('httpApi.adminLogsTimeline query', () => {
   })
 
   it('omits an unset filter and an empty level set', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(jsonResponse(200, { bucket_ns: '0', buckets: [], truncated: false }))
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { bucket_ns: '0', buckets: [], truncated: false }))
     vi.stubGlobal('fetch', fetchMock)
 
     await httpApi.adminLogsTimeline({ levels: [] })

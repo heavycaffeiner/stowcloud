@@ -20,7 +20,12 @@ describe('CodeEditor', () => {
   it('loads syntax highlighting for the file type', async () => {
     const onLanguageChange = vi.fn()
     const { container } = render(
-      <CodeEditor value={'const answer = \"yes\"'} filename="example.ts" onChange={vi.fn()} onLanguageChange={onLanguageChange} />
+      <CodeEditor
+        value={'const answer = \"yes\"'}
+        filename="example.ts"
+        onChange={vi.fn()}
+        onLanguageChange={onLanguageChange}
+      />
     )
 
     await waitFor(() => expect(onLanguageChange).toHaveBeenCalledWith('TypeScript'), { timeout: 5000 })
@@ -28,5 +33,4 @@ describe('CodeEditor', () => {
     expect(tokens).toContain('const')
     expect(tokens).toContain('\"yes\"')
   })
-
 })

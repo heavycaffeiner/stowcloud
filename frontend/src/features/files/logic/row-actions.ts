@@ -67,18 +67,54 @@ export function rowActions(targets: Entry[], h: RowActionHandlers, canCreateHere
     // The editor reads the source bytes and therefore needs Read. Restricting
     // the action to known text formats also prevents a save from rewriting
     // binary bytes that the browser decoded with replacement characters.
-    { key: 'edit', label: t('browse.open_text_editor'), icon: icons['edit-document'], show: one && targets[0].kind !== 'dir' && targets[0].perms.read && isEditableFileName(targets[0].name), run: h.openInEditor },
+    {
+      key: 'edit',
+      label: t('browse.open_text_editor'),
+      icon: icons['edit-document'],
+      show: one && targets[0].kind !== 'dir' && targets[0].perms.read && isEditableFileName(targets[0].name),
+      run: h.openInEditor
+    },
     // File and folder downloads both resolve Read and Download at the source.
-    { key: 'download', label: t('common.download'), icon: icons.download, show: everyCan((e) => e.perms.read && e.perms.download), run: h.download },
-    { key: 'share', label: t('browse.manage_share_links'), icon: icons.link, show: one && everyCan((e) => e.perms.share), run: h.share },
-    { key: 'rename', label: t('common.rename'), icon: icons.rename, show: one && everyCan((e) => e.perms.rename), run: h.rename },
+    {
+      key: 'download',
+      label: t('common.download'),
+      icon: icons.download,
+      show: everyCan((e) => e.perms.read && e.perms.download),
+      run: h.download
+    },
+    {
+      key: 'share',
+      label: t('browse.manage_share_links'),
+      icon: icons.link,
+      show: one && everyCan((e) => e.perms.share),
+      run: h.share
+    },
+    {
+      key: 'rename',
+      label: t('common.rename'),
+      icon: icons.rename,
+      show: one && everyCan((e) => e.perms.rename),
+      run: h.rename
+    },
     // The destination picker hides each mode independently. A selection may
     // use either mode, but it must have one mode in common across all sources.
     { key: 'transfer', label: t('dest.move_or_copy'), icon: icons.move, show: canCopy || canMove, run: h.transfer },
     // Duplicate is always a copy into the folder currently on screen, so it
     // needs the copy source pair as well as Create at that destination.
-    { key: 'duplicate', label: t('browse.duplicate'), icon: icons.copy, show: canCreateHere && everyCan((e) => e.perms.read && e.perms.download), run: h.duplicate },
-    { key: 'delete', label: t('common.delete'), icon: icons.delete, show: everyCan((e) => e.perms.delete), run: h.remove }
+    {
+      key: 'duplicate',
+      label: t('browse.duplicate'),
+      icon: icons.copy,
+      show: canCreateHere && everyCan((e) => e.perms.read && e.perms.download),
+      run: h.duplicate
+    },
+    {
+      key: 'delete',
+      label: t('common.delete'),
+      icon: icons.delete,
+      show: everyCan((e) => e.perms.delete),
+      run: h.remove
+    }
   ]
     .filter((a) => a.show)
     .map(({ key, label, icon, run }) => ({ key, label, icon, run }))

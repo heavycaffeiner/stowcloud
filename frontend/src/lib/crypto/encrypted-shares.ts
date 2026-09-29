@@ -47,10 +47,7 @@ export function encryptedShares(): Promise<ShareEncryption[]> {
     // layer was never initialised, and answering "no share is encrypted" to
     // that question is how plaintext reaches an encrypted share.
     const fetch = source
-    cache =
-      fetch === null
-        ? Promise.reject(new Error('the encrypted-share source is not installed'))
-        : fetch()
+    cache = fetch === null ? Promise.reject(new Error('the encrypted-share source is not installed')) : fetch()
     // Not cached: the next caller tries again rather than reusing a
     // permanently-rejected promise for a transient failure.
     cache.catch(() => {

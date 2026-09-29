@@ -40,13 +40,7 @@ export function cellPos(index: number, dirs: number, columns: number): CellPos {
  * at the one place a user is most likely to notice. A move that leaves the
  * grid entirely stays put.
  */
-export function verticalTarget(
-  index: number,
-  dir: 1 | -1,
-  dirs: number,
-  total: number,
-  columns: number
-): number {
+export function verticalTarget(index: number, dir: 1 | -1, dirs: number, total: number, columns: number): number {
   if (total <= 0 || columns <= 0) return 0
   const from = Math.min(Math.max(index, 0), total - 1)
   const files = total - dirs

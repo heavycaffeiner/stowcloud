@@ -46,7 +46,6 @@ export interface LogFilters {
   readonly until: string
 }
 
-
 /** One page of records per request, per stream. Small enough that the first
  *  screen is quick with many operators on one server, large enough that
  *  load-more is not a treadmill. */
@@ -186,11 +185,7 @@ export const TARGET_BUCKETS = 48
  * All BigInt: the span between two real timestamps is past 2^53, so dividing
  * it as a number picks the step for a window that is not the one asked for.
  */
-export function pureBucketNs(
-  sinceNs?: string,
-  untilNs?: string,
-  target = TARGET_BUCKETS
-): string | undefined {
+export function pureBucketNs(sinceNs?: string, untilNs?: string, target = TARGET_BUCKETS): string | undefined {
   if (sinceNs === undefined || untilNs === undefined) return undefined
   const span = BigInt(untilNs) - BigInt(sinceNs)
   if (span <= 0n) return undefined
@@ -429,11 +424,7 @@ export function pureTimelineView(
  * reason to scan what is already held. That keeps appending linear in the
  * page rather than quadratic over the accumulation.
  */
-export function pureAppendPage<T>(
-  held: readonly T[],
-  incoming: readonly T[],
-  maxRecords = MAX_RECORDS
-): readonly T[] {
+export function pureAppendPage<T>(held: readonly T[], incoming: readonly T[], maxRecords = MAX_RECORDS): readonly T[] {
   if (held.length === 0) return incoming.slice(0, maxRecords)
   const combined = held.concat(incoming)
   return combined.length <= maxRecords ? combined : combined.slice(0, maxRecords)
@@ -552,4 +543,3 @@ export function pureActorLabel(row: AuditRow, users: readonly AdminUser[]): Acto
   if (local !== '') return { kind: 'name', name: local }
   return { kind: 'id', id: row.actor }
 }
-

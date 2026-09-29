@@ -53,7 +53,12 @@ export function AppShell() {
     setupPending: definitiveFailure && setup.isPending,
     setupRequired: setup.data === true
   })
-  const [shell, setShell] = useRouteStore<ShellState>({ lastBrowsePath: null, mobileDrawerOpen: false, folderSelectorOpen: false, accountMenuOpen: false })
+  const [shell, setShell] = useRouteStore<ShellState>({
+    lastBrowsePath: null,
+    mobileDrawerOpen: false,
+    folderSelectorOpen: false,
+    accountMenuOpen: false
+  })
   const { lastBrowsePath, mobileDrawerOpen, folderSelectorOpen, accountMenuOpen } = shell
   const trayStackRef = useRef<HTMLDivElement | null>(null)
   const accountMenuRef = useRef<HTMLDivElement | null>(null)
@@ -77,20 +82,35 @@ export function AppShell() {
     })
   }
 
-  const roots = useMemo<RootItem[]>(() => (session.data?.roots ?? []).map((root) => ({ id: root.label, label: root.label, icon: 'folder', brokenReason: root.broken_reason })), [session.data?.roots])
+  const roots = useMemo<RootItem[]>(
+    () =>
+      (session.data?.roots ?? []).map((root) => ({
+        id: root.label,
+        label: root.label,
+        icon: 'folder',
+        brokenReason: root.broken_reason
+      })),
+    [session.data?.roots]
+  )
   const rootItems = roots
   const browsePath = browsePathFromUrl(location.pathname)
   const browseTarget = (): string => {
     const rootLabels = new Set(rootItems.map((item) => item.id))
-    const valid = (path: string | null): path is string => path === '/' || (!!path && rootLabels.has(path.split('/').filter(Boolean)[0] ?? ''))
+    const valid = (path: string | null): path is string =>
+      path === '/' || (!!path && rootLabels.has(path.split('/').filter(Boolean)[0] ?? ''))
     if (valid(browsePath)) return browsePath
     const previous = lastBrowsePath?.split('?')[0] ?? null
     if (valid(previous)) return previous
     return rootItems.length > 0 ? `/${rootItems[0].id}` : '/'
   }
 
-  const browseHref = (path: string): string => path === '/' ? '/b' : `/b${path}`
-  const browseScope = browsePath && browsePath !== '/' ? browsePath : lastBrowsePath?.split('?')[0] && lastBrowsePath?.split('?')[0] !== '/' ? lastBrowsePath.split('?')[0] : ''
+  const browseHref = (path: string): string => (path === '/' ? '/b' : `/b${path}`)
+  const browseScope =
+    browsePath && browsePath !== '/'
+      ? browsePath
+      : lastBrowsePath?.split('?')[0] && lastBrowsePath?.split('?')[0] !== '/'
+        ? lastBrowsePath.split('?')[0]
+        : ''
   const activeRoot = browsePath?.split('/').filter(Boolean)[0] ?? ''
 
   const openSearch = (): void => {
@@ -111,18 +131,39 @@ export function AppShell() {
       { id: 'links', label: t('nav.links'), icon: 'link', href: '/links' },
       { id: 'settings', label: t('common.settings'), icon: 'settings', href: '/settings' }
     ]
-    if (session.data?.user.is_admin) items.push({ id: 'admin', label: t('nav.admin'), icon: 'admin_panel_settings', href: '/admin' })
+    if (session.data?.user.is_admin)
+      items.push({ id: 'admin', label: t('nav.admin'), icon: 'admin_panel_settings', href: '/admin' })
     return items
   }, [browseTarget, session.data?.user.is_admin, t, location.pathname, location.search, lastBrowsePath])
 
-  const activeNav = location.pathname.startsWith('/settings') ? 'settings' : location.pathname.startsWith('/admin') ? 'admin' : location.pathname.startsWith('/recent') ? 'recent' : location.pathname.startsWith('/trash') ? 'trash' : location.pathname.startsWith('/links') ? 'links' : 'files'
+  const activeNav = location.pathname.startsWith('/settings')
+    ? 'settings'
+    : location.pathname.startsWith('/admin')
+      ? 'admin'
+      : location.pathname.startsWith('/recent')
+        ? 'recent'
+        : location.pathname.startsWith('/trash')
+          ? 'trash'
+          : location.pathname.startsWith('/links')
+            ? 'links'
+            : 'files'
 
-  const compactItems = useMemo<NavigationBarItem[]>(() => [
-    { id: 'files', label: t('nav.files'), icon: 'folder', href: browseHref(browseTarget()) },
-    { id: 'recent', label: t('nav.recent'), icon: 'history', href: '/recent' },
-    { id: 'links', label: t('nav.links'), icon: 'link', href: '/links' },
-    { id: 'more', label: t('nav.more'), icon: 'menu', popup: 'dialog', expanded: mobileDrawerOpen, controls: 'sc-shell-drawer' }
-  ], [mobileDrawerOpen, browseTarget, t, location.pathname, lastBrowsePath])
+  const compactItems = useMemo<NavigationBarItem[]>(
+    () => [
+      { id: 'files', label: t('nav.files'), icon: 'folder', href: browseHref(browseTarget()) },
+      { id: 'recent', label: t('nav.recent'), icon: 'history', href: '/recent' },
+      { id: 'links', label: t('nav.links'), icon: 'link', href: '/links' },
+      {
+        id: 'more',
+        label: t('nav.more'),
+        icon: 'menu',
+        popup: 'dialog',
+        expanded: mobileDrawerOpen,
+        controls: 'sc-shell-drawer'
+      }
+    ],
+    [mobileDrawerOpen, browseTarget, t, location.pathname, lastBrowsePath]
+  )
 
   const compactActive = ['trash', 'settings', 'admin'].includes(activeNav) ? 'more' : activeNav
 
@@ -151,9 +192,11 @@ export function AppShell() {
     // The sidebar sits on the left, so its menu anchors its left edge. Taking
     // the right edge instead placed the menu off-screen once the rail was
     // collapsed and that edge was only a few dozen pixels in.
-    window.dispatchEvent(new CustomEvent<NewActionAnchor>('stowcloud:new', {
-      detail: rect ? { x: rect.left, y: rect.bottom + 4, align: 'start' } : undefined
-    }))
+    window.dispatchEvent(
+      new CustomEvent<NewActionAnchor>('stowcloud:new', {
+        detail: rect ? { x: rect.left, y: rect.bottom + 4, align: 'start' } : undefined
+      })
+    )
   }
 
   const userInitial = (session.data?.user.display_name || session.data?.user.name || 'S').slice(0, 1).toUpperCase()
@@ -166,14 +209,20 @@ export function AppShell() {
           <h1>{t('session.connection_error')}</h1>
           <p>{t('session.connection_error_hint')}</p>
           <div className="sc-error-page-actions">
-            <mdui-button variant="filled" onClick={() => void session.refetch()}>{t('common.retry')}</mdui-button>
+            <mdui-button variant="filled" onClick={() => void session.refetch()}>
+              {t('common.retry')}
+            </mdui-button>
           </div>
         </section>
       </main>
     )
   }
   if (screen !== 'browser') {
-    return <div className="sc-app-shell-boot" role="status" aria-label={t('nav.checking_your_session')}><mdui-circular-progress></mdui-circular-progress></div>
+    return (
+      <div className="sc-app-shell-boot" role="status" aria-label={t('nav.checking_your_session')}>
+        <mdui-circular-progress></mdui-circular-progress>
+      </div>
+    )
   }
 
   return (
@@ -207,7 +256,9 @@ export function AppShell() {
               onClick={openSearch}
               aria-label={t('common.search')}
             >
-              <span className="sc-shell-header-search-icon"><Icon name="search" size={18} /></span>
+              <span className="sc-shell-header-search-icon">
+                <Icon name="search" size={18} />
+              </span>
               <span className="sc-shell-header-search-placeholder">{t('common.search')}</span>
               <span className="sc-shell-header-search-hints">
                 <kbd className="sc-shell-header-shortcut">/</kbd>
@@ -224,7 +275,9 @@ export function AppShell() {
                 type="button"
                 className="sc-shell-header-icon-btn sc-icon-button"
                 aria-label={t('nav.help')}
-                onClick={() => window.open('https://github.com/heavycaffeiner/Stowcloud', '_blank', 'noopener,noreferrer')}
+                onClick={() =>
+                  window.open('https://github.com/heavycaffeiner/Stowcloud', '_blank', 'noopener,noreferrer')
+                }
               >
                 <Icon name="help" size={20} />
               </button>
@@ -255,7 +308,14 @@ export function AppShell() {
                   <div className="sc-shell-header-account-name">
                     {session.data?.user.display_name || session.data?.user.name}
                   </div>
-                  <button type="button" role="menuitem" onClick={() => { setShell({ accountMenuOpen: false }); navigateTo('settings', '/settings') }}>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setShell({ accountMenuOpen: false })
+                      navigateTo('settings', '/settings')
+                    }}
+                  >
                     <Icon name="settings" size={18} />
                     {t('common.settings')}
                   </button>
@@ -285,7 +345,9 @@ export function AppShell() {
             />
           ) : null}
 
-          <main className={`sc-app-shell-main${!compact && sidebarCollapsed ? ' sc-app-shell-main-collapsed' : !compact ? ' sc-app-shell-main-drawer' : ''}`}>
+          <main
+            className={`sc-app-shell-main${!compact && sidebarCollapsed ? ' sc-app-shell-main-collapsed' : !compact ? ' sc-app-shell-main-drawer' : ''}`}
+          >
             <Outlet />
           </main>
         </div>
@@ -333,10 +395,14 @@ export function AppShell() {
               navigateTo(item.id, item.href)
             }}
             onsearch={openSearch}
-            onNew={activeNav === 'files' ? (trigger) => {
-              setShell({ mobileDrawerOpen: false })
-              triggerNewAction(trigger)
-            } : undefined}
+            onNew={
+              activeNav === 'files'
+                ? (trigger) => {
+                    setShell({ mobileDrawerOpen: false })
+                    triggerNewAction(trigger)
+                  }
+                : undefined
+            }
           />
         ) : null}
       </div>

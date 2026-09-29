@@ -7,7 +7,12 @@ interface IconButtonElement extends HTMLElement {
   updateComplete?: Promise<unknown>
 }
 
-function syncIconButtonAria(element: IconButtonElement | null, label: string, expanded: boolean | undefined, selected: boolean | undefined): void {
+function syncIconButtonAria(
+  element: IconButtonElement | null,
+  label: string,
+  expanded: boolean | undefined,
+  selected: boolean | undefined
+): void {
   if (!element) return
   const apply = () => {
     const control = element.shadowRoot?.querySelector<HTMLElement>('[part="button"]')
@@ -46,7 +51,9 @@ export function IconButton({
   onClick
 }: IconButtonProps) {
   const buttonRef = useRef<IconButtonElement | null>(null)
-  useEffect(() => { syncIconButtonAria(buttonRef.current, label, expanded, selected) }, [label, expanded, selected])
+  useEffect(() => {
+    syncIconButtonAria(buttonRef.current, label, expanded, selected)
+  }, [label, expanded, selected])
 
   const wrapperRef = useRef<HTMLSpanElement>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -67,7 +74,10 @@ export function IconButton({
     const button = wrapperRef.current?.querySelector<HTMLElement>('mdui-button-icon')
     const rect = button?.getBoundingClientRect()
     if (!rect) return
-    setTooltip((state) => ({ ...state, position: { left: rect.left + rect.width / 2, top: rect.bottom + EDGE_MARGIN_PX } }))
+    setTooltip((state) => ({
+      ...state,
+      position: { left: rect.left + rect.width / 2, top: rect.bottom + EDGE_MARGIN_PX }
+    }))
   }
   const show = (delay: number) => {
     if (disabled) return
@@ -149,7 +159,10 @@ export function IconButton({
           className="sc-icon-button-tip sc-icon-button-tip-placed"
           role="tooltip"
           aria-hidden="true"
-          style={{ left: Math.max(EDGE_MARGIN_PX, Math.min(position.left, window.innerWidth - EDGE_MARGIN_PX)), top: position.top }}
+          style={{
+            left: Math.max(EDGE_MARGIN_PX, Math.min(position.left, window.innerWidth - EDGE_MARGIN_PX)),
+            top: position.top
+          }}
         >
           {label}
         </span>

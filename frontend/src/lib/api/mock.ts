@@ -2,13 +2,7 @@
 // VITE_API_MOCK=1 (see client.ts). Implements listing sessions + cursor
 // pagination exactly like the real server so the browse screen never has to
 // know which backend it's talking to.
-import {
-  BENCH_COUNT,
-  BENCH_DIR,
-  STATIC_SEED,
-  benchEntryAt,
-  compareEntries
-} from './mock-seed'
+import { BENCH_COUNT, BENCH_DIR, STATIC_SEED, benchEntryAt, compareEntries } from './mock-seed'
 import { baseName, joinPath, normalizePath, parentOf } from './path-utils'
 import { CHUNK_SIZE_MIN } from '../upload/chunk-planner'
 import {
@@ -332,7 +326,11 @@ async function rename(path: string, newName: string): Promise<Entry> {
   const existing = resolveDirEntries(parent).find((e) => e.name === oldName)
   if (!existing) throw new ApiError(404, { code: 'fs.not_found', message: 'not found', detail: { path: n } })
   if (resolveDirEntries(parent).some((e) => e.name === newName)) {
-    throw new ApiError(409, { code: 'fs.conflict', message: 'destination already exists', detail: { path: joinPath(parent, newName) } })
+    throw new ApiError(409, {
+      code: 'fs.conflict',
+      message: 'destination already exists',
+      detail: { path: joinPath(parent, newName) }
+    })
   }
   const renamed: Entry = { ...existing, name: newName, etag: randomId('e') }
   removeEntry(parent, oldName)
@@ -513,7 +511,7 @@ async function jobStatus(id: string): Promise<JobStatus> {
       errors: [],
       results: [],
       attempting: [],
-      pending: [],
+      pending: []
     }
   }
   const job = mockJobs.get(id)
@@ -545,7 +543,6 @@ async function jobCancel(id: string): Promise<void> {
   // `makeMockJob`): there is never anything still running to cancel.
   throw new ApiError(404, { code: 'fs.not_found', message: 'not found', detail: { id } })
 }
-
 
 // ── trash (mirrors `go/internal/core/trash` closely enough to drive the
 // UI in dev mode: an id is opaque, restoring back to an occupied name
@@ -999,7 +996,12 @@ async function session(): Promise<SessionInfo> {
     },
     roots: orderedMockRoots(),
     csrf: 'mock-csrf-token',
-    limits: { chunk_size: mockAuthState.chunkDefault, chunk_min: mockAuthState.chunkMin, max_file_size: null, parallel: 4 },
+    limits: {
+      chunk_size: mockAuthState.chunkDefault,
+      chunk_min: mockAuthState.chunkMin,
+      max_file_size: null,
+      parallel: 4
+    },
     features: {
       webdav: true,
       smb: false,
@@ -1120,7 +1122,14 @@ const pwTs = (days: number) => String(BigInt(Date.now() - days * 86_400_000) * 1
 
 let mockAppPasswords: AppPasswordInfo[] = [
   { id: 1, name: '노트북 동기화', created_ns: pwTs(90), last_used_ns: pwTs(1), expires_ns: null },
-  { id: 2, name: '백업 스크립트 (읽기 전용)', created_ns: pwTs(45), last_used_ns: pwTs(7), expires_ns: null, read_only: true },
+  {
+    id: 2,
+    name: '백업 스크립트 (읽기 전용)',
+    created_ns: pwTs(45),
+    last_used_ns: pwTs(7),
+    expires_ns: null,
+    read_only: true
+  },
   { id: 3, name: 'iPhone', created_ns: pwTs(3), last_used_ns: null, expires_ns: pwTs(-60) }
 ]
 let nextAppPasswordId = 4
@@ -1145,7 +1154,8 @@ let mockSessions: ActiveSession[] = [
     last_seen_ns: String(BigInt(Date.now() - 3_600_000) * 1_000_000n),
     absolute_expiry_ns: String(BigInt(Date.now() + 26 * 24 * 3600 * 1000) * 1_000_000n),
     ip_first: '192.0.2.44',
-    ua_first: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Mobile/15E148 Safari/604.1',
+    ua_first:
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Mobile/15E148 Safari/604.1',
     ua_display: 'iOS - Safari',
     current: false
   },
@@ -1155,7 +1165,8 @@ let mockSessions: ActiveSession[] = [
     last_seen_ns: String(BigInt(Date.now() - 9 * 86_400_000) * 1_000_000n),
     absolute_expiry_ns: String(BigInt(Date.now() + 10 * 24 * 3600 * 1000) * 1_000_000n),
     ip_first: '203.0.113.7',
-    ua_first: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+    ua_first:
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
     ua_display: 'Windows - Chrome',
     current: false
   }
@@ -1261,7 +1272,14 @@ async function createScopedAppPassword(name: string): Promise<{ id: number; toke
   await delay(50)
   const id = nextAppPasswordId++
   mockAppPasswords = [
-    { id, name, created_ns: String(BigInt(Date.now()) * 1_000_000n), last_used_ns: null, expires_ns: null, read_only: true },
+    {
+      id,
+      name,
+      created_ns: String(BigInt(Date.now()) * 1_000_000n),
+      last_used_ns: null,
+      expires_ns: null,
+      read_only: true
+    },
     ...mockAppPasswords
   ]
   return { id, token: `stow_mock-ro-${id}-${randomId('tok')}` }
@@ -1320,10 +1338,7 @@ async function updateSmbSettings(currentPassword: string, optOut: boolean, enabl
   mockAuthState.smbEnabled = enabled
 }
 
-async function setSmbPassword(
-  currentPassword: string,
-  smbPassword: string
-): Promise<{ smb_toggles_cleared: boolean }> {
+async function setSmbPassword(currentPassword: string, smbPassword: string): Promise<{ smb_toggles_cleared: boolean }> {
   await delay(60)
   if (currentPassword !== mockAuthState.password) {
     throw new ApiError(401, { code: 'auth.invalid_credentials', message: 'invalid credentials' })
@@ -1342,9 +1357,7 @@ async function setSmbPassword(
   return { smb_toggles_cleared: cleared }
 }
 
-async function clearSmbPassword(
-  currentPassword: string
-): Promise<{ reverted_to_account_password: boolean }> {
+async function clearSmbPassword(currentPassword: string): Promise<{ reverted_to_account_password: boolean }> {
   await delay(60)
   if (currentPassword !== mockAuthState.password) {
     throw new ApiError(401, { code: 'auth.invalid_credentials', message: 'invalid credentials' })
@@ -1354,8 +1367,7 @@ async function clearSmbPassword(
   }
   mockAuthState.smbDedicated = false
   return {
-    reverted_to_account_password:
-      !mockAuthState.totpEnabled && !mockAuthState.oidcLinked && !mockAuthState.smbOptOut
+    reverted_to_account_password: !mockAuthState.totpEnabled && !mockAuthState.oidcLinked && !mockAuthState.smbOptOut
   }
 }
 
@@ -1363,9 +1375,7 @@ async function adminStorage(): Promise<StorageReport> {
   await delay(20)
   return {
     db_bytes: 12_582_912,
-    shares: [
-      { label: 'home', free_bytes: 400_000_000_000, total_bytes: 500_000_000_000 }
-    ]
+    shares: [{ label: 'home', free_bytes: 400_000_000_000, total_bytes: 500_000_000_000 }]
   }
 }
 
@@ -1838,7 +1848,6 @@ async function adminSetOidcSettings(req: OidcSettingsReq & { client_secret?: str
   return outcome(false)
 }
 
-
 // ── admin: self-restart ──
 //
 // Simulates the real shape: the socket drops for a bounded stretch (the
@@ -1935,12 +1944,7 @@ async function adminBuildIndex(): Promise<JobStatus> {
 // quota, a long display name against none at all -- needs a row that shows it
 // and a row beside it that does not, or the design gate has nothing to compare
 // and the screen goes unaudited. One account cannot misalign with anything.
-const seedUser = (
-  id: number,
-  name: string,
-  display_name: string,
-  extra: Partial<AdminUser> = {}
-): AdminUser => ({
+const seedUser = (id: number, name: string, display_name: string, extra: Partial<AdminUser> = {}): AdminUser => ({
   id,
   name,
   display_name,
@@ -1965,7 +1969,11 @@ let mockUsers: AdminUser[] = [
   seedUser(3, 'minjun', '박민준', { totp_enabled: true, usage_bytes: '104857600' }),
   seedUser(4, 'seoyeon', '이서연 (프로젝트 관리)', { quota_bytes: '53687091200', usage_bytes: '48318382080' }),
   seedUser(5, 'contractor', '', { disabled: true, smb_enabled: false }),
-  seedUser(6, 'backup-svc', '백업 서비스 계정', { disabled: true, quota_bytes: '1073741824', usage_bytes: '1073741824' })
+  seedUser(6, 'backup-svc', '백업 서비스 계정', {
+    disabled: true,
+    quota_bytes: '1073741824',
+    usage_bytes: '1073741824'
+  })
 ]
 let nextUserId = 7
 
@@ -2103,12 +2111,60 @@ async function adminDeleteUser(id: number): Promise<void> {
 // content in the seeded tree, and the two that carry none are the ones whose
 // encryption may still be turned on.
 let mockShares: AdminShare[] = [
-  { id: 1_000_001, name: 'Documents', host: '/srv/documents', backend: 'local', source: '/srv/documents', trash_enabled: false, empty: false },
-  { id: 1_000_002, name: 'Photos', host: '/srv/photos', backend: 'local', source: '/srv/photos', trash_enabled: true, empty: false },
-  { id: 1_000_003, name: 'Videos', host: '/srv/videos', backend: 'local', source: '/srv/videos', trash_enabled: false, empty: false },
-  { id: 1_000_004, name: 'Music', host: '/srv/music', backend: 'local', source: '/srv/music', trash_enabled: false, empty: false },
-  { id: 1_000_005, name: 'Team', host: '', backend: 's3', source: 's3://team/shared at https://s3.example.com:9000', trash_enabled: false, empty: true },
-  { id: 1_000_006, name: 'Archive', host: '', backend: 'veracrypt', source: '/srv/vaults/archive.hc', trash_enabled: true, empty: true }
+  {
+    id: 1_000_001,
+    name: 'Documents',
+    host: '/srv/documents',
+    backend: 'local',
+    source: '/srv/documents',
+    trash_enabled: false,
+    empty: false
+  },
+  {
+    id: 1_000_002,
+    name: 'Photos',
+    host: '/srv/photos',
+    backend: 'local',
+    source: '/srv/photos',
+    trash_enabled: true,
+    empty: false
+  },
+  {
+    id: 1_000_003,
+    name: 'Videos',
+    host: '/srv/videos',
+    backend: 'local',
+    source: '/srv/videos',
+    trash_enabled: false,
+    empty: false
+  },
+  {
+    id: 1_000_004,
+    name: 'Music',
+    host: '/srv/music',
+    backend: 'local',
+    source: '/srv/music',
+    trash_enabled: false,
+    empty: false
+  },
+  {
+    id: 1_000_005,
+    name: 'Team',
+    host: '',
+    backend: 's3',
+    source: 's3://team/shared at https://s3.example.com:9000',
+    trash_enabled: false,
+    empty: true
+  },
+  {
+    id: 1_000_006,
+    name: 'Archive',
+    host: '',
+    backend: 'veracrypt',
+    source: '/srv/vaults/archive.hc',
+    trash_enabled: true,
+    empty: true
+  }
 ]
 let nextShareId = 1_000_007 // mirrors `go/internal/core`'s share id base, past the seeded ones
 
@@ -2140,10 +2196,50 @@ function mockShareSource(
 const grantTs = (days: number) => String(BigInt(Date.now() - days * 86_400_000) * 1_000_000n)
 
 let mockGrants: AdminGrant[] = [
-  { id: 1, principal: { kind: 'user', id: 2 }, share: 1, subpath: '', allow: ['read', 'download'], deny: [], inherit: true, label: null, created_ns: grantTs(30) },
-  { id: 2, principal: { kind: 'user', id: 3 }, share: 2, subpath: '2026', allow: ['read', 'write', 'create'], deny: ['delete'], inherit: false, label: null, created_ns: grantTs(12) },
-  { id: 3, principal: { kind: 'group', id: 1 }, share: 1_000_001, subpath: '', allow: ALL_GRANT_PERMS, deny: [], inherit: true, label: '팀 공용 폴더 (전체 권한)', created_ns: grantTs(5) },
-  { id: 4, principal: { kind: 'group', id: 2 }, share: 1_000_002, subpath: '2025/분기보고', allow: ['read'], deny: [], inherit: false, label: null, created_ns: grantTs(2) }
+  {
+    id: 1,
+    principal: { kind: 'user', id: 2 },
+    share: 1,
+    subpath: '',
+    allow: ['read', 'download'],
+    deny: [],
+    inherit: true,
+    label: null,
+    created_ns: grantTs(30)
+  },
+  {
+    id: 2,
+    principal: { kind: 'user', id: 3 },
+    share: 2,
+    subpath: '2026',
+    allow: ['read', 'write', 'create'],
+    deny: ['delete'],
+    inherit: false,
+    label: null,
+    created_ns: grantTs(12)
+  },
+  {
+    id: 3,
+    principal: { kind: 'group', id: 1 },
+    share: 1_000_001,
+    subpath: '',
+    allow: ALL_GRANT_PERMS,
+    deny: [],
+    inherit: true,
+    label: '팀 공용 폴더 (전체 권한)',
+    created_ns: grantTs(5)
+  },
+  {
+    id: 4,
+    principal: { kind: 'group', id: 2 },
+    share: 1_000_002,
+    subpath: '2025/분기보고',
+    allow: ['read'],
+    deny: [],
+    inherit: false,
+    label: null,
+    created_ns: grantTs(2)
+  }
 ]
 let nextGrantId = 5
 
@@ -2242,7 +2338,9 @@ async function adminRetryShare(id: number): Promise<AdminShare> {
   return healed
 }
 
-async function adminListGrants(opts: { userId?: number; groupId?: number; share?: number } = {}): Promise<AdminGrant[]> {
+async function adminListGrants(
+  opts: { userId?: number; groupId?: number; share?: number } = {}
+): Promise<AdminGrant[]> {
   await delay(20)
   return mockGrants.filter((g) => {
     if (opts.userId !== undefined && !(g.principal.kind === 'user' && g.principal.id === opts.userId)) return false
@@ -2278,7 +2376,7 @@ async function adminCreateGrant(req: CreateGrantReq): Promise<AdminGrant> {
     allow: req.allow,
     deny: req.deny,
     inherit: req.inherit,
-    label: req.label ?? (req.subpath === '' ? share.name : req.subpath.split('/').pop() ?? share.name),
+    label: req.label ?? (req.subpath === '' ? share.name : (req.subpath.split('/').pop() ?? share.name)),
     created_ns: String(BigInt(Date.now()) * 1_000_000n)
   }
   mockGrants = [...mockGrants, grant]
@@ -2483,7 +2581,12 @@ async function adminListAudit(query: AuditQuery = {}): Promise<AuditPage> {
     rowid: r.rowid,
     ts_ns: r.ts_ns.toString(),
     actor: r.actor,
-    actor_name: r.actor === null ? null : mockUsers.find((u) => u.id === r.actor)?.display_name ?? mockUsers.find((u) => u.id === r.actor)?.name ?? null,
+    actor_name:
+      r.actor === null
+        ? null
+        : (mockUsers.find((u) => u.id === r.actor)?.display_name ??
+          mockUsers.find((u) => u.id === r.actor)?.name ??
+          null),
     event: r.event,
     target: r.target,
     ip: r.ip,
@@ -2592,7 +2695,7 @@ async function adminListLogs(query: AdminLogQuery = {}): Promise<AdminLogPage> {
   // The cursor is an offset into the filtered walk, and opaque to the caller
   // by contract. An unreadable one starts at the front rather than refusing,
   // same as the listing cursor does.
-  const start = query.cursor ? (Number.parseInt(query.cursor, 10) || 0) : 0
+  const start = query.cursor ? Number.parseInt(query.cursor, 10) || 0 : 0
   const slice = matched.slice(start, start + limit)
   const end = start + slice.length
   return {
@@ -2768,7 +2871,6 @@ async function shareDelete(id: number): Promise<void> {
   }
   mockShareLinks = mockShareLinks.filter((l) => l.id !== id)
 }
-
 
 // ── share links, administrator overview: mirrors `GET /api/v1/admin/links`
 // (`backend/internal/http/api/handler/links.go`'s `OwnedLinkView`), every link on the
@@ -3067,7 +3169,14 @@ async function shareEncryptionList(): Promise<{ shares: ShareEncryption[] }> {
   for (const share of mockShares) {
     const row = mockShareEncryption[share.id]
     if (!row) continue
-    shares.push({ share: share.id, labels: [share.name], scheme: row.scheme, salt: row.salt, verifier: row.verifier, createdNs: row.createdNs })
+    shares.push({
+      share: share.id,
+      labels: [share.name],
+      scheme: row.scheme,
+      salt: row.salt,
+      verifier: row.verifier,
+      createdNs: row.createdNs
+    })
   }
   return { shares }
 }
@@ -3096,9 +3205,7 @@ async function adminEnableShareEncryption(
   }
   const verifier = decodeBase64(req.verifier)
   const validVerifier =
-    verifier !== undefined &&
-    verifier.length === 67 &&
-    RCLONE_CRYPT_VERIFIER_MAGIC.every((b, i) => verifier[i] === b)
+    verifier !== undefined && verifier.length === 67 && RCLONE_CRYPT_VERIFIER_MAGIC.every((b, i) => verifier[i] === b)
   if (!validVerifier) {
     throw new ApiError(422, {
       code: 'unprocessable',
@@ -3223,9 +3330,18 @@ export const mockApi = {
   browseSetupPath,
   adminIndexStatus,
   setRootOrder,
-  jobRetry: async (id: string): Promise<void> => { await delay(10); throw new ApiError(404, { code: 'fs.not_found', message: 'not found', detail: { id } }) },
-  jobPause: async (id: string): Promise<void> => { await delay(10); throw new ApiError(404, { code: 'fs.not_found', message: 'not found', detail: { id } }) },
-  jobResume: async (id: string): Promise<void> => { await delay(10); throw new ApiError(404, { code: 'fs.not_found', message: 'not found', detail: { id } }) },
+  jobRetry: async (id: string): Promise<void> => {
+    await delay(10)
+    throw new ApiError(404, { code: 'fs.not_found', message: 'not found', detail: { id } })
+  },
+  jobPause: async (id: string): Promise<void> => {
+    await delay(10)
+    throw new ApiError(404, { code: 'fs.not_found', message: 'not found', detail: { id } })
+  },
+  jobResume: async (id: string): Promise<void> => {
+    await delay(10)
+    throw new ApiError(404, { code: 'fs.not_found', message: 'not found', detail: { id } })
+  },
   /** Called by the upload worker (via the browse UI) once a mock upload finalizes. */
   registerUploadedEntry(destDir: string, entry: Entry): void {
     addOverlayEntry(destDir, entry)

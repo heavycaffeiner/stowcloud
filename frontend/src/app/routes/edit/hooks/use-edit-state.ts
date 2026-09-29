@@ -59,34 +59,49 @@ function clearSealed(sealedDraft: SealedDraft | null): void {
 
 export function useEditState(): { state: EditState; actions: EditActions } {
   const [state, patch] = useRouteStore(initialEditState)
-  const actions = useMemo<EditActions>(() => ({
-    patch,
-    beginPath: (path) => patch((current) => {
-      clearSealed(current.sealedDraft)
-      return { loadedPath: path, baselineEtag: null, awaitingBaseline: true, draft: null, sealedDraft: null, languageName: null }
+  const actions = useMemo<EditActions>(
+    () => ({
+      patch,
+      beginPath: (path) =>
+        patch((current) => {
+          clearSealed(current.sealedDraft)
+          return {
+            loadedPath: path,
+            baselineEtag: null,
+            awaitingBaseline: true,
+            draft: null,
+            sealedDraft: null,
+            languageName: null
+          }
+        }),
+      setDraft: (draft) => patch({ draft }),
+      clearDraftIf: (draft) => patch((current) => (current.draft === draft ? { draft: null } : {})),
+      setLanguage: (languageName) => patch({ languageName }),
+      markBaseline: (baselineEtag) => patch({ baselineEtag, awaitingBaseline: false }),
+      sealDraft: (sealedDraft) =>
+        patch((current) => {
+          clearSealed(current.sealedDraft)
+          return { sealedDraft, draft: null }
+        }),
+      restoreDraft: (draft) =>
+        patch((current) => {
+          clearSealed(current.sealedDraft)
+          return { draft, sealedDraft: null }
+        }),
+      clearDraft: () =>
+        patch((current) => {
+          clearSealed(current.sealedDraft)
+          return { draft: null, sealedDraft: null }
+        }),
+      setUnlockRequested: (unlockRequested) => patch({ unlockRequested }),
+      completeUnlock: () =>
+        patch((current) => ({ unlockRequested: false, sessionRevision: current.sessionRevision + 1 })),
+      setConflict: (conflictOpen, conflictWeak = false) => patch({ conflictOpen, conflictWeak }),
+      setLeaveDialog: (leaveDialogOpen) => patch({ leaveDialogOpen }),
+      setSaveError: (saveError) => patch({ saveError }),
+      setSnackbar: (snackbar) => patch({ snackbar })
     }),
-    setDraft: (draft) => patch({ draft }),
-    clearDraftIf: (draft) => patch((current) => current.draft === draft ? { draft: null } : {}),
-    setLanguage: (languageName) => patch({ languageName }),
-    markBaseline: (baselineEtag) => patch({ baselineEtag, awaitingBaseline: false }),
-    sealDraft: (sealedDraft) => patch((current) => {
-      clearSealed(current.sealedDraft)
-      return { sealedDraft, draft: null }
-    }),
-    restoreDraft: (draft) => patch((current) => {
-      clearSealed(current.sealedDraft)
-      return { draft, sealedDraft: null }
-    }),
-    clearDraft: () => patch((current) => {
-      clearSealed(current.sealedDraft)
-      return { draft: null, sealedDraft: null }
-    }),
-    setUnlockRequested: (unlockRequested) => patch({ unlockRequested }),
-    completeUnlock: () => patch((current) => ({ unlockRequested: false, sessionRevision: current.sessionRevision + 1 })),
-    setConflict: (conflictOpen, conflictWeak = false) => patch({ conflictOpen, conflictWeak }),
-    setLeaveDialog: (leaveDialogOpen) => patch({ leaveDialogOpen }),
-    setSaveError: (saveError) => patch({ saveError }),
-    setSnackbar: (snackbar) => patch({ snackbar })
-  }), [patch])
+    [patch]
+  )
   return { state, actions }
 }

@@ -22,7 +22,8 @@ const preferenceListeners = new Set<() => void>()
 export function subscribeUploadPreferences(listener: () => void): () => void {
   preferenceListeners.add(listener)
   const onStorage = (event: StorageEvent): void => {
-    if (event.key === null || event.key === CHUNK_SIZE_STORAGE_KEY || event.key === UPLOAD_CONCURRENCY_STORAGE_KEY) listener()
+    if (event.key === null || event.key === CHUNK_SIZE_STORAGE_KEY || event.key === UPLOAD_CONCURRENCY_STORAGE_KEY)
+      listener()
   }
   if (typeof window !== 'undefined') window.addEventListener('storage', onStorage)
   return () => {
@@ -93,11 +94,7 @@ export interface ChunkDescriptor {
 }
 
 /** Splits [resumeOffset, totalSize) into fixed-size chunks (last one may be shorter). */
-export function planChunkOffsets(
-  totalSize: number,
-  chunkSize: number,
-  resumeOffset = 0
-): ChunkDescriptor[] {
+export function planChunkOffsets(totalSize: number, chunkSize: number, resumeOffset = 0): ChunkDescriptor[] {
   if (chunkSize <= 0) throw new RangeError('chunkSize must be > 0')
   if (resumeOffset >= totalSize) return []
 
@@ -159,7 +156,6 @@ export class ChunkScheduler {
   setMaxInflight(maxInflight: number): void {
     this.#maxInflight = Math.max(1, maxInflight)
   }
-
 
   get totalInflight(): number {
     let n = 0

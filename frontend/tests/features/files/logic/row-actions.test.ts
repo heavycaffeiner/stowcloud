@@ -64,14 +64,7 @@ describe('rowActions', () => {
   })
 
   it('drops the editor for a folder but keeps the rest', () => {
-    expect(keys([entry('sub', 'dir')])).toEqual([
-      'download',
-      'share',
-      'rename',
-      'transfer',
-      'duplicate',
-      'delete'
-    ])
+    expect(keys([entry('sub', 'dir')])).toEqual(['download', 'share', 'rename', 'transfer', 'duplicate', 'delete'])
   })
 
   // Rule 1: an action that can only mean one thing at a time needs exactly one
@@ -84,12 +77,7 @@ describe('rowActions', () => {
       'duplicate',
       'delete'
     ])
-    expect(keys([entry('a.txt', 'file'), entry('sub', 'dir')])).toEqual([
-      'download',
-      'transfer',
-      'duplicate',
-      'delete'
-    ])
+    expect(keys([entry('a.txt', 'file'), entry('sub', 'dir')])).toEqual(['download', 'transfer', 'duplicate', 'delete'])
   })
 
   // Rule 2: a permission-gated action needs every target to carry it.
@@ -128,12 +116,7 @@ describe('rowActions', () => {
       share: false
     }
     // The folder still accepts new files here, so a duplicate is real.
-    expect(keys([entry('a.txt', 'file', readOnly)])).toEqual([
-      'edit',
-      'download',
-      'transfer',
-      'duplicate'
-    ])
+    expect(keys([entry('a.txt', 'file', readOnly)])).toEqual(['edit', 'download', 'transfer', 'duplicate'])
   })
 
   // A duplicate lands in the folder on screen. Without the create right there

@@ -16,7 +16,17 @@ export interface EditBaselineOptions {
   actions: Pick<EditActions, 'beginPath' | 'markBaseline'>
 }
 
-export function useEditBaseline({ path, loadedPath, awaitingBaseline, entryPath, etag, content, unlocked, queryClient, actions }: EditBaselineOptions): void {
+export function useEditBaseline({
+  path,
+  loadedPath,
+  awaitingBaseline,
+  entryPath,
+  etag,
+  content,
+  unlocked,
+  queryClient,
+  actions
+}: EditBaselineOptions): void {
   useEffect(() => {
     if (path === loadedPath) return
     actions.beginPath(path)

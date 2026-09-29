@@ -22,12 +22,30 @@ vi.mock('../../../src/lib/api/client', () => ({
 
 const encryptionForLabel = vi.fn()
 vi.mock('../../../src/lib/crypto/encrypted-shares', async () => {
-  const actual = await vi.importActual<typeof import('../../../src/lib/crypto/encrypted-shares')>('../../../src/lib/crypto/encrypted-shares')
+  const actual = await vi.importActual<typeof import('../../../src/lib/crypto/encrypted-shares')>(
+    '../../../src/lib/crypto/encrypted-shares'
+  )
   return { ...actual, encryptionForLabel: (label: string) => encryptionForLabel(label) }
 })
 
-import { deriveKeys, encryptForUpload, FileTooLargeError, generateSalt, lock, LockedSessionError, makeVerifier, MAX_ENCRYPTABLE_BYTES, unlock } from '../../../src/lib/crypto/e2ee'
-import { downloadEncryptedFile, downloadEncryptedFolder, registerMediaSource, releaseMediaSource, streamToDownload } from '../../../src/lib/crypto/download-sw'
+import {
+  deriveKeys,
+  encryptForUpload,
+  FileTooLargeError,
+  generateSalt,
+  lock,
+  LockedSessionError,
+  makeVerifier,
+  MAX_ENCRYPTABLE_BYTES,
+  unlock
+} from '../../../src/lib/crypto/e2ee'
+import {
+  downloadEncryptedFile,
+  downloadEncryptedFolder,
+  registerMediaSource,
+  releaseMediaSource,
+  streamToDownload
+} from '../../../src/lib/crypto/download-sw'
 
 function makeEntry(overrides: Partial<Entry> & { path: string; size: number }): Entry {
   return {
@@ -37,7 +55,16 @@ function makeEntry(overrides: Partial<Entry> & { path: string; size: number }): 
     mtime_ns: '0',
     etag: 'e',
     etag_weak: false,
-    perms: { read: true, write: true, create: true, delete: true, rename: true, move: true, share: true, download: true },
+    perms: {
+      read: true,
+      write: true,
+      create: true,
+      delete: true,
+      rename: true,
+      move: true,
+      share: true,
+      download: true
+    },
     ...overrides
   }
 }
@@ -130,7 +157,9 @@ describe('streamToDownload (no Service Worker in this environment: buffered fall
 
   it('buffers the stream into a Blob and clicks a hidden download anchor', async () => {
     const capture = stubBlobUrlCapture()
-    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {})
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function (this: HTMLAnchorElement) {})
 
     await streamToDownload('report.txt', streamOf([1, 2, 3]))
 
@@ -216,23 +245,36 @@ describe('downloadEncryptedFolder', () => {
 
     list.mockImplementation(async (path: string) => {
       if (path === '/vault/folder') {
-        return { entries: [entryA, subDir], cursor: null, total: 2, dirs: 1, dir_etag: 'e', dir_etag_weak: false, dir_perms: [] }
+        return {
+          entries: [entryA, subDir],
+          cursor: null,
+          total: 2,
+          dirs: 1,
+          dir_etag: 'e',
+          dir_etag_weak: false,
+          dir_perms: []
+        }
       }
       if (path === '/vault/folder/sub') {
-        return { entries: [entryB], cursor: null, total: 1, dirs: 0, dir_etag: 'e', dir_etag_weak: false, dir_perms: [] }
+        return {
+          entries: [entryB],
+          cursor: null,
+          total: 1,
+          dirs: 0,
+          dir_etag: 'e',
+          dir_etag_weak: false,
+          dir_perms: []
+        }
       }
       throw new Error(`unexpected list(${path})`)
     })
 
-    vi.stubGlobal(
-      'fetch',
-      (async (url: RequestInfo | URL) => {
-        const s = String(url)
-        if (s.includes(entryA.content!)) return fakeResponse(cipherA)
-        if (s.includes(entryB.content!)) return fakeResponse(cipherB)
-        throw new Error(`unexpected fetch ${s}`)
-      }) as unknown as typeof fetch
-    )
+    vi.stubGlobal('fetch', (async (url: RequestInfo | URL) => {
+      const s = String(url)
+      if (s.includes(entryA.content!)) return fakeResponse(cipherA)
+      if (s.includes(entryB.content!)) return fakeResponse(cipherB)
+      throw new Error(`unexpected fetch ${s}`)
+    }) as unknown as typeof fetch)
 
     const capture = stubBlobUrlCapture()
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {})
@@ -265,19 +307,24 @@ describe('downloadEncryptedFolder', () => {
 
     list.mockImplementation(async (path: string) => {
       if (path === '/vault/folder') {
-        return { entries: [entryGood, entryEvil], cursor: null, total: 2, dirs: 0, dir_etag: 'e', dir_etag_weak: false, dir_perms: [] }
+        return {
+          entries: [entryGood, entryEvil],
+          cursor: null,
+          total: 2,
+          dirs: 0,
+          dir_etag: 'e',
+          dir_etag_weak: false,
+          dir_perms: []
+        }
       }
       throw new Error(`unexpected list(${path})`)
     })
 
-    vi.stubGlobal(
-      'fetch',
-      (async (url: RequestInfo | URL) => {
-        const s = String(url)
-        if (s.includes(entryGood.content!)) return fakeResponse(cipherGood)
-        throw new Error(`unexpected fetch ${s}`)
-      }) as unknown as typeof fetch
-    )
+    vi.stubGlobal('fetch', (async (url: RequestInfo | URL) => {
+      const s = String(url)
+      if (s.includes(entryGood.content!)) return fakeResponse(cipherGood)
+      throw new Error(`unexpected fetch ${s}`)
+    }) as unknown as typeof fetch)
 
     const capture = stubBlobUrlCapture()
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {})
@@ -307,7 +354,9 @@ describe('the media Range responder (a fake navigator.serviceWorker)', () => {
       }
     })
     Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true })
-    return { deliver: (data: unknown, port: MessagePort) => listener!({ data, ports: [port] } as unknown as MessageEvent) }
+    return {
+      deliver: (data: unknown, port: MessagePort) => listener!({ data, ports: [port] } as unknown as MessageEvent)
+    }
   }
 
   /** A `MessagePort` stand-in whose `reply` resolves with whatever the
@@ -318,7 +367,10 @@ describe('the media Range responder (a fake navigator.serviceWorker)', () => {
     return { port: { postMessage: (msg: unknown) => resolve(msg) } as unknown as MessagePort, reply: promise }
   }
 
-  async function freshModules(): Promise<{ e2ee: typeof import('../../../src/lib/crypto/e2ee'); downloadSw: typeof import('../../../src/lib/crypto/download-sw') }> {
+  async function freshModules(): Promise<{
+    e2ee: typeof import('../../../src/lib/crypto/e2ee')
+    downloadSw: typeof import('../../../src/lib/crypto/download-sw')
+  }> {
     vi.resetModules()
     const e2ee = await import('../../../src/lib/crypto/e2ee')
     const downloadSw = await import('../../../src/lib/crypto/download-sw')
@@ -367,7 +419,8 @@ describe('the media Range responder (a fake navigator.serviceWorker)', () => {
       if (done) break
       parts.push(value)
     }
-    const merged = parts.length === 1 ? parts[0] : parts.reduce((acc, p) => Uint8Array.from([...acc, ...p]), new Uint8Array())
+    const merged =
+      parts.length === 1 ? parts[0] : parts.reduce((acc, p) => Uint8Array.from([...acc, ...p]), new Uint8Array())
     expect(Array.from(merged)).toEqual(Array.from(original.subarray(65500, 65601)))
   })
 

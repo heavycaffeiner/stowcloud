@@ -56,12 +56,16 @@ export function NavigationDrawer({
   const { t } = useI18n()
   const dialogRef = useRef<HTMLDialogElement | null>(null)
   const orderMutation = useMutation(setRootOrderMutation())
-  const [orderState, setOrderState] = useComponentState<{ reordering: boolean; pendingOrder: RootItem[] | null; error: string | null }>({ reordering: false, pendingOrder: null, error: null })
+  const [orderState, setOrderState] = useComponentState<{
+    reordering: boolean
+    pendingOrder: RootItem[] | null
+    error: string | null
+  }>({ reordering: false, pendingOrder: null, error: null })
   const { reordering, pendingOrder, error: orderError } = orderState
   const displayRoots = pendingOrder ?? items
 
   useEffect(() => {
-    setOrderState((state) => state.pendingOrder === null ? state : { ...state, pendingOrder: null })
+    setOrderState((state) => (state.pendingOrder === null ? state : { ...state, pendingOrder: null }))
   }, [items, setOrderState])
 
   useEffect(() => {
@@ -106,12 +110,19 @@ export function NavigationDrawer({
     const next = [...displayRoots]
     ;[next[index], next[target]] = [next[target], next[index]]
     setOrderState({ reordering: true, pendingOrder: next, error: null })
-    orderMutation.mutate(next.map((root) => root.id), {
-      onError: (error) => {
-        setOrderState({ reordering: false, pendingOrder: null, error: describeApiError(error, t('nav.could_not_save_order')) })
-      },
-      onSettled: () => setOrderState((state) => ({ ...state, reordering: false }))
-    })
+    orderMutation.mutate(
+      next.map((root) => root.id),
+      {
+        onError: (error) => {
+          setOrderState({
+            reordering: false,
+            pendingOrder: null,
+            error: describeApiError(error, t('nav.could_not_save_order'))
+          })
+        },
+        onSettled: () => setOrderState((state) => ({ ...state, reordering: false }))
+      }
+    )
   }
 
   const fileNavItems = destinations.filter((item) => ['recent', 'trash', 'links'].includes(item.id))
@@ -136,7 +147,9 @@ export function NavigationDrawer({
             <Icon name="close" />
           </button>
           <span className="sc-nav-drawer-app-name">{folderSelectorOnly ? t('nav.browse_folders') : 'Stowcloud'}</span>
-          <span className="sc-nav-drawer-user-avatar" aria-hidden="true">{userInitial}</span>
+          <span className="sc-nav-drawer-user-avatar" aria-hidden="true">
+            {userInitial}
+          </span>
         </div>
       ) : null}
 
@@ -175,7 +188,9 @@ export function NavigationDrawer({
                       title={collapsed ? item.label : undefined}
                       onClick={() => selectDestination(item)}
                     >
-                      <span className="sc-nav-drawer-item-icon"><Icon name={item.icon} size={20} /></span>
+                      <span className="sc-nav-drawer-item-icon">
+                        <Icon name={item.icon} size={20} />
+                      </span>
                       {!collapsed ? <span className="sc-nav-drawer-item-label">{item.label}</span> : null}
                     </button>
                   </li>
@@ -185,7 +200,7 @@ export function NavigationDrawer({
           </>
         ) : null}
 
-        {(folderSelectorOnly || (!collapsed && displayRoots.length > 0)) ? (
+        {folderSelectorOnly || (!collapsed && displayRoots.length > 0) ? (
           <div className="sc-nav-drawer-roots-section">
             <div className="sc-nav-drawer-section-header">
               <span className="sc-nav-drawer-section-title">{t('nav.folders')}</span>
@@ -207,47 +222,61 @@ export function NavigationDrawer({
                   items={displayRoots}
                   itemKey={(root) => root.id}
                   estimateSize={reordering ? 48 : overlay ? 48 : 40}
-                  renderItem={(root, index) => reordering ? (
-                    <div className="sc-nav-drawer-subitem sc-nav-drawer-subitem-reorder">
-                      <span className="sc-nav-drawer-item-icon"><Icon name={root.icon ?? 'folder'} size={18} /></span>
-                      <span className="sc-nav-drawer-subitem-label sc-filename">{root.label}</span>
-                      <span className="sc-nav-drawer-reorder-actions">
-                        <IconButton
-                          label={t('nav.move_up', { name: root.label })}
-                          disabled={index === 0}
-                          onClick={() => moveRoot(index, -1)}
-                        >
-                          <span className="sc-nav-drawer-reorder-chevron sc-nav-drawer-reorder-chevron-up">
-                            <Icon name="chevron_right" size={16} />
-                          </span>
-                        </IconButton>
-                        <IconButton
-                          label={t('nav.move_down', { name: root.label })}
-                          disabled={index === displayRoots.length - 1}
-                          onClick={() => moveRoot(index, 1)}
-                        >
-                          <span className="sc-nav-drawer-reorder-chevron sc-nav-drawer-reorder-chevron-down">
-                            <Icon name="chevron_right" size={16} />
-                          </span>
-                        </IconButton>
-                      </span>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      className={active === root.id ? 'sc-nav-drawer-subitem sc-nav-drawer-subitem-active' : 'sc-nav-drawer-subitem'}
-                      aria-current={active === root.id ? 'location' : undefined}
-                      onClick={() => {
-                        onselect?.(root)
-                        closeOverlay()
-                      }}
-                    >
-                      <span className="sc-nav-drawer-item-icon"><Icon name={root.icon ?? 'folder'} size={18} /></span>
-                      <span className="sc-nav-drawer-subitem-label sc-filename">{root.label}</span>
-                    </button>
-                  )}
+                  renderItem={(root, index) =>
+                    reordering ? (
+                      <div className="sc-nav-drawer-subitem sc-nav-drawer-subitem-reorder">
+                        <span className="sc-nav-drawer-item-icon">
+                          <Icon name={root.icon ?? 'folder'} size={18} />
+                        </span>
+                        <span className="sc-nav-drawer-subitem-label sc-filename">{root.label}</span>
+                        <span className="sc-nav-drawer-reorder-actions">
+                          <IconButton
+                            label={t('nav.move_up', { name: root.label })}
+                            disabled={index === 0}
+                            onClick={() => moveRoot(index, -1)}
+                          >
+                            <span className="sc-nav-drawer-reorder-chevron sc-nav-drawer-reorder-chevron-up">
+                              <Icon name="chevron_right" size={16} />
+                            </span>
+                          </IconButton>
+                          <IconButton
+                            label={t('nav.move_down', { name: root.label })}
+                            disabled={index === displayRoots.length - 1}
+                            onClick={() => moveRoot(index, 1)}
+                          >
+                            <span className="sc-nav-drawer-reorder-chevron sc-nav-drawer-reorder-chevron-down">
+                              <Icon name="chevron_right" size={16} />
+                            </span>
+                          </IconButton>
+                        </span>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        className={
+                          active === root.id
+                            ? 'sc-nav-drawer-subitem sc-nav-drawer-subitem-active'
+                            : 'sc-nav-drawer-subitem'
+                        }
+                        aria-current={active === root.id ? 'location' : undefined}
+                        onClick={() => {
+                          onselect?.(root)
+                          closeOverlay()
+                        }}
+                      >
+                        <span className="sc-nav-drawer-item-icon">
+                          <Icon name={root.icon ?? 'folder'} size={18} />
+                        </span>
+                        <span className="sc-nav-drawer-subitem-label sc-filename">{root.label}</span>
+                      </button>
+                    )
+                  }
                 />
-                {orderError ? <p className="sc-nav-drawer-reorder-error" role="alert">{orderError}</p> : null}
+                {orderError ? (
+                  <p className="sc-nav-drawer-reorder-error" role="alert">
+                    {orderError}
+                  </p>
+                ) : null}
               </li>
             </ul>
           </div>
@@ -270,8 +299,14 @@ export function NavigationDrawer({
                       title={collapsed ? item.label : undefined}
                       onClick={() => selectDestination(item)}
                     >
-                      <span className="sc-nav-drawer-item-icon"><Icon name={item.icon} size={20} /></span>
-                      {!collapsed ? <span className="sc-nav-drawer-item-label">{item.id === 'admin' ? t('nav.admin') : item.label}</span> : null}
+                      <span className="sc-nav-drawer-item-icon">
+                        <Icon name={item.icon} size={20} />
+                      </span>
+                      {!collapsed ? (
+                        <span className="sc-nav-drawer-item-label">
+                          {item.id === 'admin' ? t('nav.admin') : item.label}
+                        </span>
+                      ) : null}
                     </button>
                   </li>
                 )
@@ -284,7 +319,11 @@ export function NavigationDrawer({
   )
 
   if (!overlay) {
-    return <nav className={drawerClass} aria-label={t('common.main_menu')}>{content}</nav>
+    return (
+      <nav className={drawerClass} aria-label={t('common.main_menu')}>
+        {content}
+      </nav>
+    )
   }
 
   return (
@@ -300,7 +339,9 @@ export function NavigationDrawer({
         event.preventDefault()
         onclose?.()
       }}
-      onClose={() => { if (!dialogRef.current?.open) onclose?.() }}
+      onClose={() => {
+        if (!dialogRef.current?.open) onclose?.()
+      }}
     >
       {content}
     </dialog>

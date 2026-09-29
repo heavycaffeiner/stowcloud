@@ -10,13 +10,22 @@ export interface SecondaryPageShellProps extends PropsWithChildren {
 }
 
 /** Shared frame for secondary routes with one consistent, keyboard-accessible heading and refresh action. */
-export function SecondaryPageShell({ title, refreshLabel, onRefresh, className, overlay, children }: SecondaryPageShellProps) {
+export function SecondaryPageShell({
+  title,
+  refreshLabel,
+  onRefresh,
+  className,
+  overlay,
+  children
+}: SecondaryPageShellProps) {
   return (
     <section className={className ? `sc-secondary-page ${className}` : 'sc-secondary-page'}>
       <div className="sc-secondary-page-inner">
         <header className="sc-secondary-page-header">
           <h1>{title}</h1>
-          <button type="button" className="sc-route-icon-button" aria-label={refreshLabel} onClick={onRefresh}><Icon name="refresh" /></button>
+          <button type="button" className="sc-route-icon-button" aria-label={refreshLabel} onClick={onRefresh}>
+            <Icon name="refresh" />
+          </button>
         </header>
         {children}
       </div>

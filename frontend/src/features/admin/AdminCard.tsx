@@ -19,7 +19,9 @@ export function AdminCard({ id, title, subtitle, icon, headingLevel = 'h3', body
       <div className="sc-admin-card-head">
         <div className="sc-admin-card-icon">{icon}</div>
         <div className="sc-admin-card-meta">
-          <Heading className="sc-admin-card-title" id={headingId}>{title}</Heading>
+          <Heading className="sc-admin-card-title" id={headingId}>
+            {title}
+          </Heading>
           {subtitle ? <p className="sc-admin-card-subtitle">{subtitle}</p> : null}
         </div>
       </div>

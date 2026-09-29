@@ -47,7 +47,9 @@ describe('downloadPath', () => {
     download.mockResolvedValue(ticket)
 
     let clicked: HTMLAnchorElement | null = null
-    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement
+    ) {
       clicked = this
     })
 
@@ -80,7 +82,9 @@ describe('downloadPath', () => {
 
   it('routes an encrypted path through downloadEncryptedFile instead of minting a ticket', async () => {
     shareEncryptionList.mockResolvedValue({
-      shares: [{ share: 1, labels: ['home'], scheme: 'rclone-crypt-v1', salt: 's'.repeat(22), verifier: 'v', createdNs: 0 }]
+      shares: [
+        { share: 1, labels: ['home'], scheme: 'rclone-crypt-v1', salt: 's'.repeat(22), verifier: 'v', createdNs: 0 }
+      ]
     })
     const entry = { name: 'report.pdf', path: '/home/report.pdf', kind: 'file', size: 10, content: 'claim' }
     stat.mockResolvedValue(entry)

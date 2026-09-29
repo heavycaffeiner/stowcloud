@@ -9,22 +9,30 @@ describe('which screen the app is on', () => {
   })
 
   it('waits while the session is still being checked', () => {
-    expect(screenOf({ hasSession: false, sessionFailed: false, setupPending: false, setupRequired: false })).toBe('loading')
+    expect(screenOf({ hasSession: false, sessionFailed: false, setupPending: false, setupRequired: false })).toBe(
+      'loading'
+    )
   })
 
   // The session route answers the same 401 whether the session expired or the
   // server has never had an account, so the follow-up question decides. Landing
   // on login first would flash a sign-in form at somebody with no account.
   it('keeps waiting while the first-run question is still out', () => {
-    expect(screenOf({ hasSession: false, sessionFailed: true, setupPending: true, setupRequired: false })).toBe('loading')
+    expect(screenOf({ hasSession: false, sessionFailed: true, setupPending: true, setupRequired: false })).toBe(
+      'loading'
+    )
   })
 
   it('offers the create-administrator screen on a server with no account', () => {
-    expect(screenOf({ hasSession: false, sessionFailed: true, setupPending: false, setupRequired: true })).toBe('first-run')
+    expect(screenOf({ hasSession: false, sessionFailed: true, setupPending: false, setupRequired: true })).toBe(
+      'first-run'
+    )
   })
 
   it('offers login on a server that has one', () => {
-    expect(screenOf({ hasSession: false, sessionFailed: true, setupPending: false, setupRequired: false })).toBe('login')
+    expect(screenOf({ hasSession: false, sessionFailed: true, setupPending: false, setupRequired: false })).toBe(
+      'login'
+    )
   })
 })
 

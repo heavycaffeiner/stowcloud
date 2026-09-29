@@ -14,7 +14,17 @@ export interface FileTreeItemProps {
   onToggle: (path: string) => void
 }
 
-export function FileTreeItem({ path, name, depth, active, ancestor, expanded, tabIndex, onNavigate, onToggle }: FileTreeItemProps) {
+export function FileTreeItem({
+  path,
+  name,
+  depth,
+  active,
+  ancestor,
+  expanded,
+  tabIndex,
+  onNavigate,
+  onToggle
+}: FileTreeItemProps) {
   const { t } = useI18n()
   const label = useRef<HTMLButtonElement>(null)
 
@@ -35,7 +45,10 @@ export function FileTreeItem({ path, name, depth, active, ancestor, expanded, ta
           onToggle(path)
         }}
       >
-        <span className={`sc-tree-row-twisty-icon${expanded ? ' sc-tree-row-twisty-icon-expanded' : ''}`} aria-hidden="true">
+        <span
+          className={`sc-tree-row-twisty-icon${expanded ? ' sc-tree-row-twisty-icon-expanded' : ''}`}
+          aria-hidden="true"
+        >
           <Icon name="chevron_right" size={16} />
         </span>
       </button>

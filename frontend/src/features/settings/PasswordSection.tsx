@@ -13,9 +13,33 @@ import { TextField } from '../../lib/ui/TextField'
 export function PasswordSection() {
   const { t } = useI18n()
   const save = useMutation(changePasswordMutation())
-  type PasswordState = { current: string; next: string; confirm: string; currentError: string | null; nextError: string | null; formError: string | null; success: boolean }
-  const [state, setState] = useComponentState<PasswordState>({ current: '', next: '', confirm: '', currentError: null, nextError: null, formError: null, success: false })
-  const { current: currentPassword, next: newPassword, confirm: confirmPassword, currentError, nextError: newError, formError, success } = state
+  type PasswordState = {
+    current: string
+    next: string
+    confirm: string
+    currentError: string | null
+    nextError: string | null
+    formError: string | null
+    success: boolean
+  }
+  const [state, setState] = useComponentState<PasswordState>({
+    current: '',
+    next: '',
+    confirm: '',
+    currentError: null,
+    nextError: null,
+    formError: null,
+    success: false
+  })
+  const {
+    current: currentPassword,
+    next: newPassword,
+    confirm: confirmPassword,
+    currentError,
+    nextError: newError,
+    formError,
+    success
+  } = state
   const patchState = (patch: Partial<PasswordState>): void => setState((current) => ({ ...current, ...patch }))
   const setCurrentPassword = (value: string): void => patchState({ current: value })
   const setNewPassword = (value: string): void => patchState({ next: value })
@@ -40,7 +64,11 @@ export function PasswordSection() {
     setSuccess(false)
     const problem = validatePasswordChange(newPassword, confirmPassword, 10)
     if (problem) {
-      setNewError(problem.kind === 'too_short' ? t('password.must_at_least_characters', { min: problem.min }) : t('password.new_passwords_do_not_match'))
+      setNewError(
+        problem.kind === 'too_short'
+          ? t('password.must_at_least_characters', { min: problem.min })
+          : t('password.new_passwords_do_not_match')
+      )
       return
     }
     try {
@@ -48,27 +76,63 @@ export function PasswordSection() {
       setSuccess(true)
       reset()
     } catch (error) {
-      if (error instanceof ApiError && error.code === 'auth.invalid_credentials') setCurrentError(t('password.current_password_incorrect'))
-      else if (error instanceof ApiError && error.code === 'auth.weak_password') setNewError(t('password.must_at_least_characters', { min: error.reasonNumber('min_length') ?? 10 }))
+      if (error instanceof ApiError && error.code === 'auth.invalid_credentials')
+        setCurrentError(t('password.current_password_incorrect'))
+      else if (error instanceof ApiError && error.code === 'auth.weak_password')
+        setNewError(t('password.must_at_least_characters', { min: error.reasonNumber('min_length') ?? 10 }))
       else setFormError(describeApiError(error, t('password.could_not_change_password_try')))
     }
   }
 
   return (
     <form className="sc-password-form" onSubmit={submit}>
-      <TextField type="password" label={t('common.current_password')} value={currentPassword} error={currentError} autoComplete="current-password" onValueChange={setCurrentPassword} />
-      <TextField type="password" label={t('password.new_password')} value={newPassword} error={newError} autoComplete="new-password" onValueChange={setNewPassword} />
+      <TextField
+        type="password"
+        label={t('common.current_password')}
+        value={currentPassword}
+        error={currentError}
+        autoComplete="current-password"
+        onValueChange={setCurrentPassword}
+      />
+      <TextField
+        type="password"
+        label={t('password.new_password')}
+        value={newPassword}
+        error={newError}
+        autoComplete="new-password"
+        onValueChange={setNewPassword}
+      />
       {newPassword ? (
         <div className="sc-password-form-strength">
-          <progress max={1} value={strength.ratio} aria-label={t('password.new_password_strength', { level: strength.label })} />
+          <progress
+            max={1}
+            value={strength.ratio}
+            aria-label={t('password.new_password_strength', { level: strength.label })}
+          />
           <span className="sc-password-form-strength-label">{strength.label}</span>
         </div>
       ) : null}
-      <TextField type="password" label={t('password.confirm_new_password')} value={confirmPassword} autoComplete="new-password" onValueChange={setConfirmPassword} />
-      {formError ? <p className="sc-password-form-error" role="alert">{formError}</p> : null}
-      {success ? <p className="sc-password-form-success" role="status">{t('password.password_changed')}</p> : null}
+      <TextField
+        type="password"
+        label={t('password.confirm_new_password')}
+        value={confirmPassword}
+        autoComplete="new-password"
+        onValueChange={setConfirmPassword}
+      />
+      {formError ? (
+        <p className="sc-password-form-error" role="alert">
+          {formError}
+        </p>
+      ) : null}
+      {success ? (
+        <p className="sc-password-form-success" role="status">
+          {t('password.password_changed')}
+        </p>
+      ) : null}
       <div className="sc-password-form-actions">
-        <Button type="submit" disabled={!currentPassword || !newPassword} loading={save.isPending}>{t('password.change_password')}</Button>
+        <Button type="submit" disabled={!currentPassword || !newPassword} loading={save.isPending}>
+          {t('password.change_password')}
+        </Button>
       </div>
     </form>
   )

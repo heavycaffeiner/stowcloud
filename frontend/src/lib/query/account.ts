@@ -64,7 +64,15 @@ export interface AppPasswordScope {
 
 export function createAppPasswordMutation() {
   return mutationOptions({
-    mutationFn: ({ name, currentPassword, scope }: { name: string; currentPassword: string; scope?: AppPasswordScope }) =>
+    mutationFn: ({
+      name,
+      currentPassword,
+      scope
+    }: {
+      name: string
+      currentPassword: string
+      scope?: AppPasswordScope
+    }) =>
       scope ? api.createScopedAppPassword(name, currentPassword, scope) : api.createAppPassword(name, currentPassword),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.appPasswords() })
   })
@@ -72,7 +80,8 @@ export function createAppPasswordMutation() {
 
 export function revokeAppPasswordMutation() {
   return mutationOptions({
-    mutationFn: ({ id, wipe }: { id: number; wipe: boolean }) => (wipe ? api.wipeAppPassword(id) : api.revokeAppPassword(id)),
+    mutationFn: ({ id, wipe }: { id: number; wipe: boolean }) =>
+      wipe ? api.wipeAppPassword(id) : api.revokeAppPassword(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.appPasswords() })
   })
 }
@@ -86,8 +95,15 @@ export function revokeSessionMutation() {
 
 export function smbSettingsMutation() {
   return mutationOptions({
-    mutationFn: ({ currentPassword, optOut, enabled }: { currentPassword: string; optOut: boolean; enabled: boolean }) =>
-      api.updateSmbSettings(currentPassword, optOut, enabled),
+    mutationFn: ({
+      currentPassword,
+      optOut,
+      enabled
+    }: {
+      currentPassword: string
+      optOut: boolean
+      enabled: boolean
+    }) => api.updateSmbSettings(currentPassword, optOut, enabled),
     onSuccess: invalidateSession
   })
 }
@@ -113,7 +129,8 @@ export function smbPasswordMutation() {
 
 export function oidcLinkStartMutation() {
   return mutationOptions({
-    mutationFn: ({ password, returnTo }: { password: string; returnTo?: string }) => api.oidcLinkStart(password, returnTo)
+    mutationFn: ({ password, returnTo }: { password: string; returnTo?: string }) =>
+      api.oidcLinkStart(password, returnTo)
   })
 }
 

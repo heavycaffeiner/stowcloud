@@ -3,7 +3,17 @@ import type { Dispatch, SetStateAction } from 'react'
 import { useShareManagementState, type BackendForm, emptyBackendForm } from './hooks/share-management-state'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useI18n } from '../../hooks/use-i18n'
-import { api, ApiError, type AdminShare, type CreateShareReq, type ShareBackend, type ShareS3Config, type ShareVeracryptConfig, type SMBOutcome, type UpdateShareReq } from '../../lib/api/client'
+import {
+  api,
+  ApiError,
+  type AdminShare,
+  type CreateShareReq,
+  type ShareBackend,
+  type ShareS3Config,
+  type ShareVeracryptConfig,
+  type SMBOutcome,
+  type UpdateShareReq
+} from '../../lib/api/client'
 import { describeApiError } from '../../lib/api/error-text'
 import { smbOutcomeText } from '../../lib/api/smb-text'
 import { adminShareMutation, adminSharesQuery } from '../../lib/query/admin'
@@ -21,7 +31,6 @@ import { Select } from '../../lib/ui/Select'
 import { TextField } from '../../lib/ui/TextField'
 import '../../styles/features/admin/admin-sections.css.ts'
 
-
 const MIN_VAULT_SIZE = 16
 const MAX_VAULT_SIZE = 1 << 20
 const MAX_VAULT_PIM = 10000
@@ -32,8 +41,6 @@ function backendLabel(t: Translator, backend: ShareBackend): string {
   if (backend === 'veracrypt') return t('folder_share.backend_veracrypt')
   return t('folder_share.backend_local')
 }
-
-
 
 function errorText(error: unknown, fallback: string, t: Translator): string {
   if (error instanceof ApiError && error.code === 'fs.not_found') return t('common.share_no_longer_exists')
@@ -52,9 +59,12 @@ function validateBackend(t: Translator, backend: ShareBackend, form: BackendForm
   }
   if (!form.vaultContainer.trim()) return t('folder_share.enter_container_path')
   if (!form.vaultPassword) return t('folder_share.enter_password')
-  if (form.vaultCreate && !(Number(form.vaultSizeMiB) >= MIN_VAULT_SIZE)) return t('folder_share.size_at_least', { min: String(MIN_VAULT_SIZE) })
-  if (form.vaultCreate && Number(form.vaultSizeMiB) > MAX_VAULT_SIZE) return t('folder_share.size_at_most', { max: String(MAX_VAULT_SIZE) })
-  if (form.vaultPIM !== '' && !(Number(form.vaultPIM) >= 0 && Number(form.vaultPIM) <= MAX_VAULT_PIM)) return t('folder_share.pim_at_most', { max: String(MAX_VAULT_PIM) })
+  if (form.vaultCreate && !(Number(form.vaultSizeMiB) >= MIN_VAULT_SIZE))
+    return t('folder_share.size_at_least', { min: String(MIN_VAULT_SIZE) })
+  if (form.vaultCreate && Number(form.vaultSizeMiB) > MAX_VAULT_SIZE)
+    return t('folder_share.size_at_most', { max: String(MAX_VAULT_SIZE) })
+  if (form.vaultPIM !== '' && !(Number(form.vaultPIM) >= 0 && Number(form.vaultPIM) <= MAX_VAULT_PIM))
+    return t('folder_share.pim_at_most', { max: String(MAX_VAULT_PIM) })
   return null
 }
 
@@ -109,16 +119,51 @@ interface S3FieldsProps {
 
 function S3Fields({ form, setForm, creating }: S3FieldsProps) {
   const { t } = useI18n()
-  const update = (key: keyof BackendForm, value: string | boolean) => setForm((current) => ({ ...current, [key]: value }))
+  const update = (key: keyof BackendForm, value: string | boolean) =>
+    setForm((current) => ({ ...current, [key]: value }))
   return (
     <>
-      <TextField label={t('folder_share.s3_endpoint')} placeholder={t('folder_share.e_g_s3_endpoint')} value={form.s3Endpoint} onValueChange={(value) => update('s3Endpoint', value)} autoComplete="off" />
+      <TextField
+        label={t('folder_share.s3_endpoint')}
+        placeholder={t('folder_share.e_g_s3_endpoint')}
+        value={form.s3Endpoint}
+        onValueChange={(value) => update('s3Endpoint', value)}
+        autoComplete="off"
+      />
       <p className="sc-admin-hint">{t('folder_share.s3_endpoint_scheme_hint')}</p>
-      <TextField label={t('folder_share.s3_bucket')} placeholder={t('folder_share.e_g_s3_bucket')} value={form.s3Bucket} onValueChange={(value) => update('s3Bucket', value)} autoComplete="off" />
-      <TextField label={t('folder_share.s3_region')} value={form.s3Region} onValueChange={(value) => update('s3Region', value)} autoComplete="off" />
-      <TextField label={t('folder_share.s3_prefix')} placeholder={t('folder_share.e_g_s3_prefix')} value={form.s3Prefix} onValueChange={(value) => update('s3Prefix', value)} autoComplete="off" />
-      <TextField label={t('folder_share.s3_access_key')} value={form.s3AccessKey} onValueChange={(value) => update('s3AccessKey', value)} autoComplete="off" />
-      <TextField label={t('folder_share.s3_secret_key')} value={form.s3SecretKey} onValueChange={(value) => update('s3SecretKey', value)} type="password" autoComplete="off" />
+      <TextField
+        label={t('folder_share.s3_bucket')}
+        placeholder={t('folder_share.e_g_s3_bucket')}
+        value={form.s3Bucket}
+        onValueChange={(value) => update('s3Bucket', value)}
+        autoComplete="off"
+      />
+      <TextField
+        label={t('folder_share.s3_region')}
+        value={form.s3Region}
+        onValueChange={(value) => update('s3Region', value)}
+        autoComplete="off"
+      />
+      <TextField
+        label={t('folder_share.s3_prefix')}
+        placeholder={t('folder_share.e_g_s3_prefix')}
+        value={form.s3Prefix}
+        onValueChange={(value) => update('s3Prefix', value)}
+        autoComplete="off"
+      />
+      <TextField
+        label={t('folder_share.s3_access_key')}
+        value={form.s3AccessKey}
+        onValueChange={(value) => update('s3AccessKey', value)}
+        autoComplete="off"
+      />
+      <TextField
+        label={t('folder_share.s3_secret_key')}
+        value={form.s3SecretKey}
+        onValueChange={(value) => update('s3SecretKey', value)}
+        type="password"
+        autoComplete="off"
+      />
       {!creating ? <p className="sc-admin-hint">{t('folder_share.keep_stored_credential')}</p> : null}
       <Switch
         checked={form.s3PathStyle}
@@ -139,22 +184,63 @@ interface VaultFieldsProps {
 
 function VaultFields({ form, setForm, creating, openPathPicker }: VaultFieldsProps) {
   const { t } = useI18n()
-  const update = (key: keyof BackendForm, value: string | boolean) => setForm((current) => ({ ...current, [key]: value }))
+  const update = (key: keyof BackendForm, value: string | boolean) =>
+    setForm((current) => ({ ...current, [key]: value }))
   return (
     <>
       <div className="sc-path-row">
-        <TextField label={t('folder_share.vault_container')} placeholder={t('folder_share.e_g_vault_container')} value={form.vaultContainer} onValueChange={(value) => update('vaultContainer', value)} autoComplete="off" />
-        <Button variant="outlined" icon={<Icon name="file" />} onClick={() => openPathPicker(form.vaultContainer, (path) => update('vaultContainer', path))}>{t('picker.browse_file')}</Button>
+        <TextField
+          label={t('folder_share.vault_container')}
+          placeholder={t('folder_share.e_g_vault_container')}
+          value={form.vaultContainer}
+          onValueChange={(value) => update('vaultContainer', value)}
+          autoComplete="off"
+        />
+        <Button
+          variant="outlined"
+          icon={<Icon name="file" />}
+          onClick={() => openPathPicker(form.vaultContainer, (path) => update('vaultContainer', path))}
+        >
+          {t('picker.browse_file')}
+        </Button>
       </div>
-      <TextField label={t('folder_share.vault_pim')} value={form.vaultPIM} onValueChange={(value) => update('vaultPIM', value)} type="number" min={0} max={MAX_VAULT_PIM} />
+      <TextField
+        label={t('folder_share.vault_pim')}
+        value={form.vaultPIM}
+        onValueChange={(value) => update('vaultPIM', value)}
+        type="number"
+        min={0}
+        max={MAX_VAULT_PIM}
+      />
       <p className="sc-admin-hint">{t('folder_share.vault_pim_hint')}</p>
-      <TextField label={t('folder_share.vault_password')} value={form.vaultPassword} onValueChange={(value) => update('vaultPassword', value)} type="password" autoComplete="off" />
+      <TextField
+        label={t('folder_share.vault_password')}
+        value={form.vaultPassword}
+        onValueChange={(value) => update('vaultPassword', value)}
+        type="password"
+        autoComplete="off"
+      />
       {creating ? (
         <>
-          <Switch checked={form.vaultCreate} label={t('folder_share.vault_create')} onChange={(checked) => update('vaultCreate', checked)} />
-          {form.vaultCreate ? <TextField label={t('folder_share.vault_size')} value={form.vaultSizeMiB} onValueChange={(value) => update('vaultSizeMiB', value)} type="number" min={MIN_VAULT_SIZE} max={MAX_VAULT_SIZE} /> : null}
+          <Switch
+            checked={form.vaultCreate}
+            label={t('folder_share.vault_create')}
+            onChange={(checked) => update('vaultCreate', checked)}
+          />
+          {form.vaultCreate ? (
+            <TextField
+              label={t('folder_share.vault_size')}
+              value={form.vaultSizeMiB}
+              onValueChange={(value) => update('vaultSizeMiB', value)}
+              type="number"
+              min={MIN_VAULT_SIZE}
+              max={MAX_VAULT_SIZE}
+            />
+          ) : null}
         </>
-      ) : <p className="sc-admin-hint">{t('folder_share.keep_stored_credential')}</p>}
+      ) : (
+        <p className="sc-admin-hint">{t('folder_share.keep_stored_credential')}</p>
+      )}
       <p className="sc-admin-hint">{t('folder_share.vault_hint')}</p>
     </>
   )
@@ -171,8 +257,16 @@ function LocalPathField({ value, onChange, openPathPicker, placeholder }: LocalP
   const { t } = useI18n()
   return (
     <div className="sc-path-row">
-      <TextField label={t('folder_share.server_path')} placeholder={placeholder} value={value} onValueChange={onChange} autoComplete="off" />
-      <Button variant="outlined" icon={<Icon name="folder" />} onClick={() => openPathPicker(value, onChange)}>{t('picker.browse_folder')}</Button>
+      <TextField
+        label={t('folder_share.server_path')}
+        placeholder={placeholder}
+        value={value}
+        onValueChange={onChange}
+        autoComplete="off"
+      />
+      <Button variant="outlined" icon={<Icon name="folder" />} onClick={() => openPathPicker(value, onChange)}>
+        {t('picker.browse_folder')}
+      </Button>
     </div>
   )
 }
@@ -183,7 +277,10 @@ export function ShareManagementSection() {
   const sharesQuery = useQuery(adminSharesQuery())
   const shares = sharesQuery.data ?? []
   const encryptionQuery = useQuery({ queryKey: ['share-encryption'], queryFn: () => api.shareEncryptionList() })
-  const encryptedByShare = useMemo(() => new Map((encryptionQuery.data?.shares ?? []).map((entry) => [entry.share, entry])), [encryptionQuery.data])
+  const encryptedByShare = useMemo(
+    () => new Map((encryptionQuery.data?.shares ?? []).map((entry) => [entry.share, entry])),
+    [encryptionQuery.data]
+  )
 
   const addMutation = useMutation(adminShareMutation())
   const editMutation = useMutation(adminShareMutation())
@@ -192,17 +289,41 @@ export function ShareManagementSection() {
   const retryMutation = useMutation(adminShareMutation())
 
   const [state, patchState] = useShareManagementState()
-  const { smbNote, pathPicker, addOpen, addName, addBackend, addForm, addValidation, editTarget, editName, editForm, editValidation, deleteTarget, encEnableTarget, encPassphrase, encPassphraseConfirm, encGenerating, encGenerateError, encDisableTarget, encDisableError, announcement, pathPickerCounter } = state
+  const {
+    smbNote,
+    pathPicker,
+    addOpen,
+    addName,
+    addBackend,
+    addForm,
+    addValidation,
+    editTarget,
+    editName,
+    editForm,
+    editValidation,
+    deleteTarget,
+    encEnableTarget,
+    encPassphrase,
+    encPassphraseConfirm,
+    encGenerating,
+    encGenerateError,
+    encDisableTarget,
+    encDisableError,
+    announcement,
+    pathPickerCounter
+  } = state
   const setSmbNote = (value: string | null): void => patchState({ smbNote: value })
   const setPathPicker = (value: typeof state.pathPicker): void => patchState({ pathPicker: value })
   const setAddOpen = (value: boolean): void => patchState({ addOpen: value })
   const setAddName = (value: string): void => patchState({ addName: value })
   const setAddBackend = (value: ShareBackend): void => patchState({ addBackend: value })
-  const setAddForm: Dispatch<SetStateAction<BackendForm>> = (value) => patchState((current) => ({ addForm: typeof value === 'function' ? value(current.addForm) : value }))
+  const setAddForm: Dispatch<SetStateAction<BackendForm>> = (value) =>
+    patchState((current) => ({ addForm: typeof value === 'function' ? value(current.addForm) : value }))
   const setAddValidation = (value: string | null): void => patchState({ addValidation: value })
   const setEditTarget = (value: AdminShare | null): void => patchState({ editTarget: value })
   const setEditName = (value: string): void => patchState({ editName: value })
-  const setEditForm: Dispatch<SetStateAction<BackendForm>> = (value) => patchState((current) => ({ editForm: typeof value === 'function' ? value(current.editForm) : value }))
+  const setEditForm: Dispatch<SetStateAction<BackendForm>> = (value) =>
+    patchState((current) => ({ editForm: typeof value === 'function' ? value(current.editForm) : value }))
   const setEditValidation = (value: string | null): void => patchState({ editValidation: value })
   const setDeleteTarget = (value: AdminShare | null): void => patchState({ deleteTarget: value })
   const setEncEnableTarget = (value: AdminShare | null): void => patchState({ encEnableTarget: value })
@@ -213,17 +334,30 @@ export function ShareManagementSection() {
   const setEncDisableTarget = (value: AdminShare | null): void => patchState({ encDisableTarget: value })
   const setEncDisableError = (value: string | null): void => patchState({ encDisableError: value })
   const setAnnouncement = (value: string): void => patchState({ announcement: value })
-  const setPathPickerCounter = (value: number | ((current: number) => number)): void => patchState((current) => ({ pathPickerCounter: typeof value === 'function' ? value(current.pathPickerCounter) : value }))
+  const setPathPickerCounter = (value: number | ((current: number) => number)): void =>
+    patchState((current) => ({
+      pathPickerCounter: typeof value === 'function' ? value(current.pathPickerCounter) : value
+    }))
 
-  const addError = addValidation ?? (addMutation.error ? errorText(addMutation.error, t('common.could_not_add_folder'), t) : null)
-  const editError = editValidation ?? (editMutation.error ? errorText(editMutation.error, t('common.could_not_save_change'), t) : null)
+  const addError =
+    addValidation ?? (addMutation.error ? errorText(addMutation.error, t('common.could_not_add_folder'), t) : null)
+  const editError =
+    editValidation ?? (editMutation.error ? errorText(editMutation.error, t('common.could_not_save_change'), t) : null)
   const deleteError = deleteMutation.error ? errorText(deleteMutation.error, t('common.could_not_remove'), t) : null
-  const trashError = trashMutation.error ? errorText(trashMutation.error, t('folder_share.could_not_change_trash_setting'), t) : null
-  const retryError = retryMutation.error ? errorText(retryMutation.error, t('folder_share.the_folder_is_still_unavailable'), t) : null
-  const encryptionLoadError = encryptionQuery.error ? describeApiError(encryptionQuery.error, t('encryption.could_not_load_status')) : null
+  const trashError = trashMutation.error
+    ? errorText(trashMutation.error, t('folder_share.could_not_change_trash_setting'), t)
+    : null
+  const retryError = retryMutation.error
+    ? errorText(retryMutation.error, t('folder_share.the_folder_is_still_unavailable'), t)
+    : null
+  const encryptionLoadError = encryptionQuery.error
+    ? describeApiError(encryptionQuery.error, t('encryption.could_not_load_status'))
+    : null
   const encryptionEnableError = encGenerateError
-  const trashTogglingId = trashMutation.isPending && trashMutation.variables?.kind === 'update' ? trashMutation.variables.id : null
-  const retryingId = retryMutation.isPending && retryMutation.variables?.kind === 'retry' ? retryMutation.variables.id : null
+  const trashTogglingId =
+    trashMutation.isPending && trashMutation.variables?.kind === 'update' ? trashMutation.variables.id : null
+  const retryingId =
+    retryMutation.isPending && retryMutation.variables?.kind === 'retry' ? retryMutation.variables.id : null
   const passphraseMismatch = encPassphraseConfirm.length > 0 && encPassphrase !== encPassphraseConfirm
 
   const openPathPicker = (mode: 'folder' | 'file', start: string, apply: (path: string) => void) => {
@@ -244,13 +378,21 @@ export function ShareManagementSection() {
     setAddForm(emptyBackendForm())
     setAddOpen(true)
   }
-  const closeAdd = () => { if (!addMutation.isPending) setAddOpen(false) }
+  const closeAdd = () => {
+    if (!addMutation.isPending) setAddOpen(false)
+  }
 
   const submitAdd = async () => {
     setAddValidation(null)
-    if (!addName.trim()) { setAddValidation(t('folder_share.enter_name')); return }
+    if (!addName.trim()) {
+      setAddValidation(t('folder_share.enter_name'))
+      return
+    }
     const validation = validateBackend(t, addBackend, addForm)
-    if (validation) { setAddValidation(validation); return }
+    if (validation) {
+      setAddValidation(validation)
+      return
+    }
     const request: CreateShareReq = { name: addName.trim(), backend: addBackend }
     if (addBackend === 'local') request.host = addForm.hostPath.trim()
     else if (addBackend === 's3') request.s3 = s3Of(addForm)
@@ -271,15 +413,24 @@ export function ShareManagementSection() {
     setEditName(share.name)
     setEditForm({ ...emptyBackendForm(), hostPath: share.host, s3Region: '' })
   }
-  const closeEdit = () => { if (!editMutation.isPending) setEditTarget(null) }
+  const closeEdit = () => {
+    if (!editMutation.isPending) setEditTarget(null)
+  }
 
   const submitEdit = async () => {
     if (!editTarget) return
     setEditValidation(null)
-    if (!editName.trim()) { setEditValidation(t('folder_share.enter_name')); return }
-    if (editTarget.backend === 'local' && !editForm.hostPath.trim()) { setEditValidation(t('folder_share.enter_server_path')); return }
+    if (!editName.trim()) {
+      setEditValidation(t('folder_share.enter_name'))
+      return
+    }
+    if (editTarget.backend === 'local' && !editForm.hostPath.trim()) {
+      setEditValidation(t('folder_share.enter_server_path'))
+      return
+    }
     const patch: UpdateShareReq = { name: editName.trim() }
-    if (editTarget.backend === 'local' && editForm.hostPath.trim() !== editTarget.host) patch.host = editForm.hostPath.trim()
+    if (editTarget.backend === 'local' && editForm.hostPath.trim() !== editTarget.host)
+      patch.host = editForm.hostPath.trim()
     if (editTarget.backend === 's3') {
       const config = s3PatchOf(editForm)
       if (config) patch.s3 = config
@@ -299,7 +450,11 @@ export function ShareManagementSection() {
   const toggleTrash = async (share: AdminShare, enabled: boolean) => {
     trashMutation.reset()
     try {
-      const result = await trashMutation.mutateAsync({ kind: 'update', id: share.id, patch: { trash_enabled: enabled } })
+      const result = await trashMutation.mutateAsync({
+        kind: 'update',
+        id: share.id,
+        patch: { trash_enabled: enabled }
+      })
       noteSMB(result)
     } catch {
       return
@@ -365,7 +520,11 @@ export function ShareManagementSection() {
       setEncPassphrase('')
       setEncPassphraseConfirm('')
     } catch (error) {
-      setEncGenerateError(error instanceof ApiError ? describeApiError(error, t('encryption.could_not_enable')) : t('encryption.could_not_create_key'))
+      setEncGenerateError(
+        error instanceof ApiError
+          ? describeApiError(error, t('encryption.could_not_enable'))
+          : t('encryption.could_not_create_key')
+      )
     } finally {
       setEncGenerating(false)
       if (keys) clean(keys.dataKey)
@@ -412,15 +571,31 @@ export function ShareManagementSection() {
     { value: 's3', text: t('folder_share.backend_s3') },
     { value: 'veracrypt', text: t('folder_share.backend_veracrypt') }
   ]
-  const renderBackendFields = (backend: ShareBackend, form: BackendForm, setForm: Dispatch<SetStateAction<BackendForm>>, creating: boolean) => backend === 's3' ? (
-    <S3Fields form={form} setForm={setForm} creating={creating} />
-  ) : (
-    <VaultFields form={form} setForm={setForm} creating={creating} openPathPicker={(start, apply) => openPathPicker('file', start, apply)} />
-  )
+  const renderBackendFields = (
+    backend: ShareBackend,
+    form: BackendForm,
+    setForm: Dispatch<SetStateAction<BackendForm>>,
+    creating: boolean
+  ) =>
+    backend === 's3' ? (
+      <S3Fields form={form} setForm={setForm} creating={creating} />
+    ) : (
+      <VaultFields
+        form={form}
+        setForm={setForm}
+        creating={creating}
+        openPathPicker={(start, apply) => openPathPicker('file', start, apply)}
+      />
+    )
 
   const renderLocalFields = (form: BackendForm, setForm: Dispatch<SetStateAction<BackendForm>>, creating: boolean) => (
     <>
-      <LocalPathField value={form.hostPath} onChange={(value) => setForm((current) => ({ ...current, hostPath: value }))} openPathPicker={(start, apply) => openPathPicker('folder', start, apply)} placeholder={creating ? t('folder_share.e_g_srv_photos') : undefined} />
+      <LocalPathField
+        value={form.hostPath}
+        onChange={(value) => setForm((current) => ({ ...current, hostPath: value }))}
+        openPathPicker={(start, apply) => openPathPicker('folder', start, apply)}
+        placeholder={creating ? t('folder_share.e_g_srv_photos') : undefined}
+      />
       {creating ? <p className="sc-admin-hint">{t('folder_share.enter_path_folder_already_exists')}</p> : null}
     </>
   )
@@ -429,14 +604,27 @@ export function ShareManagementSection() {
       <section className="sc-admin-section sc-shares">
         <h2>{t('folder_share.folder_shares')}</h2>
         <p className="sc-admin-hint">{t('folder_share.registers_real_folder_on_server')}</p>
-        {sharesQuery.isPending ? <ProgressCircular /> : sharesQuery.error ? <p className="sc-admin-error" role="alert">{describeApiError(sharesQuery.error, t('folder_share.could_not_load_share_list'))}</p> : (
+        {sharesQuery.isPending ? (
+          <ProgressCircular />
+        ) : sharesQuery.error ? (
+          <p className="sc-admin-error" role="alert">
+            {describeApiError(sharesQuery.error, t('folder_share.could_not_load_share_list'))}
+          </p>
+        ) : (
           <>
             <ShareManagementList
               t={t}
               shares={shares}
               encryptionByShare={encryptedByShare}
               encryptionLoaded={Boolean(encryptionQuery.data)}
-              pinnedKeys={[editTarget?.id, deleteTarget?.id, encEnableTarget?.id, encDisableTarget?.id, trashTogglingId, retryingId].filter((id): id is number => id != null)}
+              pinnedKeys={[
+                editTarget?.id,
+                deleteTarget?.id,
+                encEnableTarget?.id,
+                encDisableTarget?.id,
+                trashTogglingId,
+                retryingId
+              ].filter((id): id is number => id != null)}
               trashTogglingId={trashTogglingId}
               retryingId={retryingId}
               trashError={trashError}
@@ -449,85 +637,228 @@ export function ShareManagementSection() {
               onEdit={openEdit}
               onDelete={openDelete}
             />
-            {smbNote ? <p className="sc-admin-note" role="status">{smbNote}</p> : null}
-            {encryptionLoadError ? <p className="sc-admin-error" role="alert">{encryptionLoadError}</p> : null}
-            <p className="sc-shares-enc-announce" aria-live="polite">{announcement}</p>
-            <Button variant="tonal" icon={<Icon name="add" />} onClick={openAdd}>{t('common.add_folder')}</Button>
+            {smbNote ? (
+              <p className="sc-admin-note" role="status">
+                {smbNote}
+              </p>
+            ) : null}
+            {encryptionLoadError ? (
+              <p className="sc-admin-error" role="alert">
+                {encryptionLoadError}
+              </p>
+            ) : null}
+            <p className="sc-shares-enc-announce" aria-live="polite">
+              {announcement}
+            </p>
+            <Button variant="tonal" icon={<Icon name="add" />} onClick={openAdd}>
+              {t('common.add_folder')}
+            </Button>
           </>
         )}
       </section>
 
-      <Dialog open={addOpen} title={t('common.add_folder')} onClose={closeAdd} actions={(
-        <>
-          <Button variant="text" disabled={addMutation.isPending} onClick={closeAdd}>{t('common.cancel')}</Button>
-          <Button loading={addMutation.isPending} onClick={() => void submitAdd()}>{t('common.add')}</Button>
-        </>
-      )}>
-        <form className="sc-admin-form" onSubmit={(event) => { event.preventDefault(); void submitAdd() }}>
-          <TextField label={t('common.name')} placeholder={t('folder_share.e_g_photos')} value={addName} onValueChange={setAddName} autoComplete="off" />
-          <Select label={t('folder_share.backend')} options={backendOptions} value={addBackend} testid="share-backend-select" onValueChange={(value) => setAddBackend(value as ShareBackend)} />
-          {addBackend === 'local' ? renderLocalFields(addForm, setAddForm, true) : renderBackendFields(addBackend, addForm, setAddForm, true)}
-          {addError ? <p className="sc-admin-error" role="alert">{addError}</p> : null}
+      <Dialog
+        open={addOpen}
+        title={t('common.add_folder')}
+        onClose={closeAdd}
+        actions={
+          <>
+            <Button variant="text" disabled={addMutation.isPending} onClick={closeAdd}>
+              {t('common.cancel')}
+            </Button>
+            <Button loading={addMutation.isPending} onClick={() => void submitAdd()}>
+              {t('common.add')}
+            </Button>
+          </>
+        }
+      >
+        <form
+          className="sc-admin-form"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void submitAdd()
+          }}
+        >
+          <TextField
+            label={t('common.name')}
+            placeholder={t('folder_share.e_g_photos')}
+            value={addName}
+            onValueChange={setAddName}
+            autoComplete="off"
+          />
+          <Select
+            label={t('folder_share.backend')}
+            options={backendOptions}
+            value={addBackend}
+            testid="share-backend-select"
+            onValueChange={(value) => setAddBackend(value as ShareBackend)}
+          />
+          {addBackend === 'local'
+            ? renderLocalFields(addForm, setAddForm, true)
+            : renderBackendFields(addBackend, addForm, setAddForm, true)}
+          {addError ? (
+            <p className="sc-admin-error" role="alert">
+              {addError}
+            </p>
+          ) : null}
         </form>
       </Dialog>
 
-      <Dialog open={editTarget !== null} title={t('folder_share.edit_folder')} onClose={closeEdit} actions={(
-        <>
-          <Button variant="text" disabled={editMutation.isPending} onClick={closeEdit}>{t('common.cancel')}</Button>
-          <Button loading={editMutation.isPending} onClick={() => void submitEdit()}>{t('common.save')}</Button>
-        </>
-      )}>
+      <Dialog
+        open={editTarget !== null}
+        title={t('folder_share.edit_folder')}
+        onClose={closeEdit}
+        actions={
+          <>
+            <Button variant="text" disabled={editMutation.isPending} onClick={closeEdit}>
+              {t('common.cancel')}
+            </Button>
+            <Button loading={editMutation.isPending} onClick={() => void submitEdit()}>
+              {t('common.save')}
+            </Button>
+          </>
+        }
+      >
         {editTarget ? (
-          <form className="sc-admin-form" onSubmit={(event) => { event.preventDefault(); void submitEdit() }}>
+          <form
+            className="sc-admin-form"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void submitEdit()
+            }}
+          >
             <TextField label={t('common.name')} value={editName} onValueChange={setEditName} autoComplete="off" />
-            <p className="sc-admin-hint">{t('folder_share.backend_fixed', { backend: backendLabel(t, editTarget.backend) })}</p>
-            {editTarget.backend === 'local' ? renderLocalFields(editForm, setEditForm, false) : (
+            <p className="sc-admin-hint">
+              {t('folder_share.backend_fixed', { backend: backendLabel(t, editTarget.backend) })}
+            </p>
+            {editTarget.backend === 'local' ? (
+              renderLocalFields(editForm, setEditForm, false)
+            ) : (
               <>
-                <p className="sc-admin-hint" data-testid="edit-share-source">{t('folder_share.current_location', { source: editTarget.source })}</p>
+                <p className="sc-admin-hint" data-testid="edit-share-source">
+                  {t('folder_share.current_location', { source: editTarget.source })}
+                </p>
                 {renderBackendFields(editTarget.backend, editForm, setEditForm, false)}
               </>
             )}
-            {editError ? <p className="sc-admin-error" role="alert">{editError}</p> : null}
+            {editError ? (
+              <p className="sc-admin-error" role="alert">
+                {editError}
+              </p>
+            ) : null}
           </form>
         ) : null}
       </Dialog>
 
-      <Dialog open={deleteTarget !== null} title={t('folder_share.remove_share')} onClose={() => { if (!deleteMutation.isPending) setDeleteTarget(null) }} actions={(
-        <>
-          <Button variant="text" disabled={deleteMutation.isPending} onClick={() => setDeleteTarget(null)}>{t('common.cancel')}</Button>
-          <Button danger loading={deleteMutation.isPending} onClick={() => void confirmDelete()}>{t('common.remove_2')}</Button>
-        </>
-      )}>
-        {deleteTarget ? <><p>{t('folder_share.removes_every_user_permission_granted', { name: deleteTarget.name })}</p>{deleteError ? <p className="sc-admin-error" role="alert">{deleteError}</p> : null}</> : null}
+      <Dialog
+        open={deleteTarget !== null}
+        title={t('folder_share.remove_share')}
+        onClose={() => {
+          if (!deleteMutation.isPending) setDeleteTarget(null)
+        }}
+        actions={
+          <>
+            <Button variant="text" disabled={deleteMutation.isPending} onClick={() => setDeleteTarget(null)}>
+              {t('common.cancel')}
+            </Button>
+            <Button danger loading={deleteMutation.isPending} onClick={() => void confirmDelete()}>
+              {t('common.remove_2')}
+            </Button>
+          </>
+        }
+      >
+        {deleteTarget ? (
+          <>
+            <p>{t('folder_share.removes_every_user_permission_granted', { name: deleteTarget.name })}</p>
+            {deleteError ? (
+              <p className="sc-admin-error" role="alert">
+                {deleteError}
+              </p>
+            ) : null}
+          </>
+        ) : null}
       </Dialog>
 
-      <Dialog open={encEnableTarget !== null} title={t('encryption.enable_title', { name: encEnableTarget?.name ?? '' })} onClose={closeEncryptionEnable} actions={(
-        <>
-          <Button variant="text" disabled={encGenerating} onClick={closeEncryptionEnable}>{t('common.cancel')}</Button>
-          <Button loading={encGenerating} disabled={!encPassphrase || !encPassphraseConfirm || passphraseMismatch} onClick={() => void enableEncryption()}>{t('encryption.enable')}</Button>
-        </>
-      )}>
+      <Dialog
+        open={encEnableTarget !== null}
+        title={t('encryption.enable_title', { name: encEnableTarget?.name ?? '' })}
+        onClose={closeEncryptionEnable}
+        actions={
+          <>
+            <Button variant="text" disabled={encGenerating} onClick={closeEncryptionEnable}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              loading={encGenerating}
+              disabled={!encPassphrase || !encPassphraseConfirm || passphraseMismatch}
+              onClick={() => void enableEncryption()}
+            >
+              {t('encryption.enable')}
+            </Button>
+          </>
+        }
+      >
         {encEnableTarget ? (
           <div className="sc-admin-form">
             <p>{t('encryption.enable_hint')}</p>
             <p className="sc-admin-warning">{t('encryption.passphrase_warning')}</p>
             <p className="sc-admin-hint">{t('encryption.verifier_note')}</p>
-            <form onSubmit={(event) => { event.preventDefault(); void enableEncryption() }}>
-              <TextField type="password" label={t('encryption.passphrase')} value={encPassphrase} onValueChange={setEncPassphrase} autoComplete="new-password" />
-              <TextField type="password" label={t('encryption.confirm_passphrase')} value={encPassphraseConfirm} onValueChange={setEncPassphraseConfirm} error={passphraseMismatch ? t('encryption.passphrases_do_not_match') : null} autoComplete="new-password" />
-              {encryptionEnableError ? <p className="sc-admin-error" role="alert">{encryptionEnableError}</p> : null}
+            <form
+              onSubmit={(event) => {
+                event.preventDefault()
+                void enableEncryption()
+              }}
+            >
+              <TextField
+                type="password"
+                label={t('encryption.passphrase')}
+                value={encPassphrase}
+                onValueChange={setEncPassphrase}
+                autoComplete="new-password"
+              />
+              <TextField
+                type="password"
+                label={t('encryption.confirm_passphrase')}
+                value={encPassphraseConfirm}
+                onValueChange={setEncPassphraseConfirm}
+                error={passphraseMismatch ? t('encryption.passphrases_do_not_match') : null}
+                autoComplete="new-password"
+              />
+              {encryptionEnableError ? (
+                <p className="sc-admin-error" role="alert">
+                  {encryptionEnableError}
+                </p>
+              ) : null}
             </form>
           </div>
         ) : null}
       </Dialog>
 
-      <Dialog open={encDisableTarget !== null} title={t('encryption.disable_title', { name: encDisableTarget?.name ?? '' })} onClose={closeEncryptionDisable} actions={(
-        <>
-          <Button variant="text" disabled={disableEncryptionMutation.isPending} onClick={closeEncryptionDisable}>{t('common.cancel')}</Button>
-          <Button loading={disableEncryptionMutation.isPending} onClick={() => void disableEncryption()}>{t('encryption.disable')}</Button>
-        </>
-      )}>
-        {encDisableTarget ? <><p>{t('encryption.disable_hint')}</p>{encDisableError ? <p className="sc-admin-error" role="alert">{encDisableError}</p> : null}</> : null}
+      <Dialog
+        open={encDisableTarget !== null}
+        title={t('encryption.disable_title', { name: encDisableTarget?.name ?? '' })}
+        onClose={closeEncryptionDisable}
+        actions={
+          <>
+            <Button variant="text" disabled={disableEncryptionMutation.isPending} onClick={closeEncryptionDisable}>
+              {t('common.cancel')}
+            </Button>
+            <Button loading={disableEncryptionMutation.isPending} onClick={() => void disableEncryption()}>
+              {t('encryption.disable')}
+            </Button>
+          </>
+        }
+      >
+        {encDisableTarget ? (
+          <>
+            <p>{t('encryption.disable_hint')}</p>
+            {encDisableError ? (
+              <p className="sc-admin-error" role="alert">
+                {encDisableError}
+              </p>
+            ) : null}
+          </>
+        ) : null}
       </Dialog>
 
       <PathPickerDialog
@@ -536,9 +867,11 @@ export function ShareManagementSection() {
         mode={pathPicker?.mode ?? 'folder'}
         start={pathPicker?.start ?? ''}
         onclose={() => setPathPicker(null)}
-        onpick={(path) => { pathPicker?.apply(path); setPathPicker(null) }}
+        onpick={(path) => {
+          pathPicker?.apply(path)
+          setPathPicker(null)
+        }}
       />
     </>
   )
 }
-

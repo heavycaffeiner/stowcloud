@@ -54,7 +54,7 @@ export function initialSearchState(snapshot: SearchSnapshot | null): SearchPanel
     hits: snapshot?.hits ?? [],
     running: snapshot?.running ?? false,
     ran: snapshot?.ran ?? false,
-    failure: snapshot?.running ? 'stopped' : snapshot?.failure ?? null,
+    failure: snapshot?.running ? 'stopped' : (snapshot?.failure ?? null),
     truncated: snapshot?.truncated ?? false,
     elapsedMs: snapshot?.elapsedMs ?? null,
     scanned: snapshot?.scanned ?? null,
@@ -63,7 +63,11 @@ export function initialSearchState(snapshot: SearchSnapshot | null): SearchPanel
   }
 }
 
-export function toSnapshot(scope: string, state: SearchPanelState, overrides: Partial<SearchSnapshot> = {}): SearchSnapshot {
+export function toSnapshot(
+  scope: string,
+  state: SearchPanelState,
+  overrides: Partial<SearchSnapshot> = {}
+): SearchSnapshot {
   return {
     scope,
     query: state.query,
@@ -89,11 +93,12 @@ export function sortHits(list: readonly SearchHit[], key: SortKey): readonly Sea
   const result = [...list]
   if (key === 'name') result.sort((a, b) => a.entry.name.localeCompare(b.entry.name))
   else if (key === 'size') result.sort((a, b) => b.entry.size - a.entry.size)
-  else result.sort((a, b) => {
-    const left = BigInt(b.entry.mtime_ns || '0')
-    const right = BigInt(a.entry.mtime_ns || '0')
-    return left === right ? 0 : left > right ? 1 : -1
-  })
+  else
+    result.sort((a, b) => {
+      const left = BigInt(b.entry.mtime_ns || '0')
+      const right = BigInt(a.entry.mtime_ns || '0')
+      return left === right ? 0 : left > right ? 1 : -1
+    })
   return result
 }
 export interface SearchStatus {

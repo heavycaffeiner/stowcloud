@@ -15,8 +15,14 @@ export const router = createBrowserRouter([
       { index: true, element: <Navigate to="/b/" replace /> },
       { path: 'login', lazy: async () => ({ Component: (await import('./routes/login/LoginPage')).LoginPage }) },
       { path: 'setup', lazy: async () => ({ Component: (await import('./routes/setup/SetupPage')).SetupPage }) },
-      { path: 'emergency', lazy: async () => ({ Component: (await import('./routes/emergency/EmergencyPage')).EmergencyPage }) },
-      { path: 's/:token', lazy: async () => ({ Component: (await import('./routes/public-share/PublicSharePage')).PublicSharePage }) },
+      {
+        path: 'emergency',
+        lazy: async () => ({ Component: (await import('./routes/emergency/EmergencyPage')).EmergencyPage })
+      },
+      {
+        path: 's/:token',
+        lazy: async () => ({ Component: (await import('./routes/public-share/PublicSharePage')).PublicSharePage })
+      },
       {
         lazy: async () => ({ Component: (await import('./AppShell')).AppShell }),
         children: [
@@ -24,14 +30,22 @@ export const router = createBrowserRouter([
           { path: 'edit/*', lazy: async () => ({ Component: (await import('./routes/edit/EditPage')).EditPage }) },
           { path: 'links', lazy: async () => ({ Component: (await import('./routes/links/LinksPage')).LinksPage }) },
           { path: 'trash', lazy: async () => ({ Component: (await import('./routes/trash/TrashPage')).TrashPage }) },
-          { path: 'recent', lazy: async () => ({ Component: (await import('./routes/recent/RecentPage')).RecentPage }) },
-          { path: 'search', lazy: async () => ({ Component: (await import('./routes/search/SearchPage')).SearchPage }) },
+          {
+            path: 'recent',
+            lazy: async () => ({ Component: (await import('./routes/recent/RecentPage')).RecentPage })
+          },
+          {
+            path: 'search',
+            lazy: async () => ({ Component: (await import('./routes/search/SearchPage')).SearchPage })
+          },
           { path: 'settings/security', element: <SettingsSecurityRedirect /> },
-          { path: 'settings', lazy: async () => ({ Component: (await import('./routes/settings/SettingsPage')).SettingsPage }) },
+          {
+            path: 'settings',
+            lazy: async () => ({ Component: (await import('./routes/settings/SettingsPage')).SettingsPage })
+          },
           { path: 'admin', lazy: async () => ({ Component: (await import('./routes/admin/AdminPage')).AdminPage }) }
         ]
       }
     ]
   }
 ])
-

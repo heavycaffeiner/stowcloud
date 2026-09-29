@@ -1,6 +1,12 @@
 import { dropUpload, ShareTooLargeError } from '../../../../lib/api/share'
 
-export type DropItem = { id: number; file: File; status: 'pending' | 'uploading' | 'done' | 'error'; storedAs: string; failure: 'too_large' | 'failed' | null }
+export type DropItem = {
+  id: number
+  file: File
+  status: 'pending' | 'uploading' | 'done' | 'error'
+  storedAs: string
+  failure: 'too_large' | 'failed' | null
+}
 
 type QueueState = {
   queue: DropItem[]
@@ -26,7 +32,9 @@ export function createPublicShareQueue({ token, setState, isActive = () => true 
   let uploading = false
   let nextId = 0
 
-  const publish = (): void => { if (isActive()) setState({ queue: [...items], uploading }) }
+  const publish = (): void => {
+    if (isActive()) setState({ queue: [...items], uploading })
+  }
   const run = async (): Promise<void> => {
     if (uploading) return
     uploading = true
@@ -54,7 +62,13 @@ export function createPublicShareQueue({ token, setState, isActive = () => true 
   const add = (files: readonly File[], limit: number | null): void => {
     for (const file of files) {
       const tooLarge = limit !== null && file.size > limit
-      items.push({ id: nextId++, file, status: tooLarge ? 'error' : 'pending', storedAs: '', failure: tooLarge ? 'too_large' : null })
+      items.push({
+        id: nextId++,
+        file,
+        status: tooLarge ? 'error' : 'pending',
+        storedAs: '',
+        failure: tooLarge ? 'too_large' : null
+      })
     }
     publish()
     queueMicrotask(() => void run())
@@ -73,5 +87,15 @@ export function createPublicShareQueue({ token, setState, isActive = () => true 
     items.splice(index, 1)
     publish()
   }
-  return { add, retry, removeFailed, get items(): readonly DropItem[] { return items }, get uploading(): boolean { return uploading } } satisfies PublicShareQueue
+  return {
+    add,
+    retry,
+    removeFailed,
+    get items(): readonly DropItem[] {
+      return items
+    },
+    get uploading(): boolean {
+      return uploading
+    }
+  } satisfies PublicShareQueue
 }

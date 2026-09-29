@@ -12,14 +12,35 @@ function resultError(result: BatchItemResult, t: Translate): string {
   return key ? t(key.key, key.params) : t('error.internal')
 }
 
-export function TrashOperation({ operation, onClose, t }: { operation: { kind: 'restore' | 'purge'; results: BatchItemResult[] }; onClose: () => void; t: Translate }) {
+export function TrashOperation({
+  operation,
+  onClose,
+  t
+}: {
+  operation: { kind: 'restore' | 'purge'; results: BatchItemResult[] }
+  onClose: () => void
+  t: Translate
+}) {
   return (
     <section className="sc-trash-operation" role="status" aria-live="polite">
       <div className="sc-trash-operation-heading">
         <h2>{operation.kind === 'restore' ? t('trash.restore') : t('trash.purge')}</h2>
-        <button type="button" onClick={onClose}>{t('common.close')}</button>
+        <button type="button" onClick={onClose}>
+          {t('common.close')}
+        </button>
       </div>
-      <VirtualList items={operation.results} itemKey={(result) => result.path} estimateSize={20} itemProps={(result) => ({ className: result.ok ? undefined : 'error' })} renderItem={(result) => <><span>{result.path}</span><span>{result.ok ? t('common.done') : resultError(result, t)}</span></>} />
+      <VirtualList
+        items={operation.results}
+        itemKey={(result) => result.path}
+        estimateSize={20}
+        itemProps={(result) => ({ className: result.ok ? undefined : 'error' })}
+        renderItem={(result) => (
+          <>
+            <span>{result.path}</span>
+            <span>{result.ok ? t('common.done') : resultError(result, t)}</span>
+          </>
+        )}
+      />
     </section>
   )
 }
@@ -35,5 +56,42 @@ interface TrashRowProps {
 }
 
 export function TrashRow({ entry, selected, disabled, onToggle, onRestore, onPurge, t }: TrashRowProps) {
-  return <><label className="sc-trash-checkbox"><input type="checkbox" checked={selected} disabled={disabled} aria-label={t('common.select', { name: entry.name })} onChange={onToggle} /></label><span className="sc-trash-name" title={entry.name}>{entry.name}</span>{!entry.is_dir ? <span className="sc-trash-meta">{formatBytes(entry.size)}</span> : null}<span className="sc-trash-meta">{t('trash.deleted', { date: formatDateNs(entry.deleted_at_ns) })}</span><div className="sc-trash-row-actions"><button type="button" className="sc-route-icon-button" disabled={disabled} aria-label={t('trash.restore')} onClick={onRestore}><Icon name="restore" /></button><button type="button" className="sc-route-icon-button sc-route-icon-button-danger" disabled={disabled} aria-label={t('trash.purge')} onClick={onPurge}><Icon name="delete" /></button></div></>
+  return (
+    <>
+      <label className="sc-trash-checkbox">
+        <input
+          type="checkbox"
+          checked={selected}
+          disabled={disabled}
+          aria-label={t('common.select', { name: entry.name })}
+          onChange={onToggle}
+        />
+      </label>
+      <span className="sc-trash-name" title={entry.name}>
+        {entry.name}
+      </span>
+      {!entry.is_dir ? <span className="sc-trash-meta">{formatBytes(entry.size)}</span> : null}
+      <span className="sc-trash-meta">{t('trash.deleted', { date: formatDateNs(entry.deleted_at_ns) })}</span>
+      <div className="sc-trash-row-actions">
+        <button
+          type="button"
+          className="sc-route-icon-button"
+          disabled={disabled}
+          aria-label={t('trash.restore')}
+          onClick={onRestore}
+        >
+          <Icon name="restore" />
+        </button>
+        <button
+          type="button"
+          className="sc-route-icon-button sc-route-icon-button-danger"
+          disabled={disabled}
+          aria-label={t('trash.purge')}
+          onClick={onPurge}
+        >
+          <Icon name="delete" />
+        </button>
+      </div>
+    </>
+  )
 }

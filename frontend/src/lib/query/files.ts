@@ -5,14 +5,7 @@
 // LRU is now just `pages`, and "load more" is `fetchNextPage`.
 import { infiniteQueryOptions, mutationOptions, queryOptions } from '@tanstack/react-query'
 import { api } from '../api/client'
-import {
-  permsFromNames,
-  type Entry,
-  type ListResponse,
-  type MoveReq,
-  type OnConflict,
-  type Perms
-} from '../api/types'
+import { permsFromNames, type Entry, type ListResponse, type MoveReq, type OnConflict, type Perms } from '../api/types'
 import { isWithin, parentOf } from '../api/path-utils'
 import { encryptionForLabel, shareLabelOf } from '../crypto/encrypted-shares'
 import { queryClient } from './client'
@@ -163,7 +156,8 @@ function invalidateEntries(paths: Iterable<string>): void {
 
 export function mkdirMutation() {
   return mutationOptions({
-    mutationFn: ({ parent, name }: { parent: string; name: string }) => api.mkdir(`${parent === '/' ? '' : parent}/${name}`),
+    mutationFn: ({ parent, name }: { parent: string; name: string }) =>
+      api.mkdir(`${parent === '/' ? '' : parent}/${name}`),
     onSuccess: (_entry, { parent }) => invalidateDirs([parent])
   })
 }
@@ -246,5 +240,7 @@ export function trashPurgeMutation() {
 /** Both of these mint a one-shot ticket the browser then navigates to; they
  *  change nothing, so nothing is invalidated. */
 export function archiveTicketMutation() {
-  return mutationOptions({ mutationFn: ({ paths, name }: { paths: string[]; name?: string }) => api.archive(paths, name) })
+  return mutationOptions({
+    mutationFn: ({ paths, name }: { paths: string[]; name?: string }) => api.archive(paths, name)
+  })
 }

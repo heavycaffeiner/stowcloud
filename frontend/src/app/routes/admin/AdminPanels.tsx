@@ -40,13 +40,23 @@ class SectionErrorBoundary extends Component<{ children: ReactNode; message: str
   }
 
   render() {
-    if (this.state.error) return <p className="sc-admin-page-error" role="alert">{this.props.message}</p>
+    if (this.state.error)
+      return (
+        <p className="sc-admin-page-error" role="alert">
+          {this.props.message}
+        </p>
+      )
     return this.props.children
   }
 }
 
 export function SectionLoading({ label }: { label: string }) {
-  return <div className="sc-admin-loading" role="status" aria-live="polite"><mdui-circular-progress></mdui-circular-progress><span>{label}</span></div>
+  return (
+    <div className="sc-admin-loading" role="status" aria-live="polite">
+      <mdui-circular-progress></mdui-circular-progress>
+      <span>{label}</span>
+    </div>
+  )
 }
 
 interface AdminPanelsProps {
@@ -62,11 +72,39 @@ export function AdminPanels({ tab, errorMessage, loadingLabel, usersLabel, group
     <div className="sc-admin-inner">
       <SectionErrorBoundary key={tab} message={errorMessage}>
         <Suspense fallback={<SectionLoading label={loadingLabel} />}>
-          {tab === 'users' ? <><section className="sc-admin-page-section sc-settings-card"><h2>{usersLabel}</h2><UserManagementSection /></section><section className="sc-admin-page-section sc-settings-card"><h2>{groupsLabel}</h2><GroupManagementSection /></section></> : null}
-          {tab === 'shares' ? <section className="sc-admin-page-section sc-settings-card"><ShareManagementSection /></section> : null}
-          {tab === 'storage' ? <section className="sc-admin-page-section"><StorageIndexSection /><UploadSettingsSection /></section> : null}
-          {tab === 'server' ? <section className="sc-admin-page-section"><ServerSettingsSection /></section> : null}
-          {tab === 'logs' ? <section className="sc-admin-page-section sc-settings-card"><LogsSection /></section> : null}
+          {tab === 'users' ? (
+            <>
+              <section className="sc-admin-page-section sc-settings-card">
+                <h2>{usersLabel}</h2>
+                <UserManagementSection />
+              </section>
+              <section className="sc-admin-page-section sc-settings-card">
+                <h2>{groupsLabel}</h2>
+                <GroupManagementSection />
+              </section>
+            </>
+          ) : null}
+          {tab === 'shares' ? (
+            <section className="sc-admin-page-section sc-settings-card">
+              <ShareManagementSection />
+            </section>
+          ) : null}
+          {tab === 'storage' ? (
+            <section className="sc-admin-page-section">
+              <StorageIndexSection />
+              <UploadSettingsSection />
+            </section>
+          ) : null}
+          {tab === 'server' ? (
+            <section className="sc-admin-page-section">
+              <ServerSettingsSection />
+            </section>
+          ) : null}
+          {tab === 'logs' ? (
+            <section className="sc-admin-page-section sc-settings-card">
+              <LogsSection />
+            </section>
+          ) : null}
         </Suspense>
       </SectionErrorBoundary>
     </div>

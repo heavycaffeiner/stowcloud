@@ -30,7 +30,6 @@ describe('classifyFailure', () => {
     expect(classifyFailure(403, 0)).toEqual({ kind: 'give-up', reason: 'denied' })
   })
 
-
   it('gives up when the session is gone, with nothing to resume from', () => {
     expect(classifyFailure(404, 0)).toEqual({ kind: 'give-up', reason: 'session-gone' })
     expect(classifyFailure(410, 0)).toEqual({ kind: 'give-up', reason: 'session-gone' })

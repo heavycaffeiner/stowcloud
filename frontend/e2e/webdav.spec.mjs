@@ -48,7 +48,14 @@ const EXIT_MCP_UNAVAILABLE = 2
 const MCP_PACKAGE = 'chrome-devtools-mcp@1.8.0'
 const HANDSHAKE_TIMEOUT_MS = 30000
 const CALL_TIMEOUT_MS = 30000
-const REQUIRED_TOOLS = ['list_pages', 'navigate_page', 'take_snapshot', 'evaluate_script', 'press_key', 'list_console_messages']
+const REQUIRED_TOOLS = [
+  'list_pages',
+  'navigate_page',
+  'take_snapshot',
+  'evaluate_script',
+  'press_key',
+  'list_console_messages'
+]
 
 let failures = 0
 function check(name, ok, detail = '') {
@@ -104,8 +111,14 @@ class McpClient {
         reject(new Error(`${method} timed out after ${CALL_TIMEOUT_MS}ms`))
       }, CALL_TIMEOUT_MS)
       this.pending.set(id, {
-        resolve: (v) => { clearTimeout(timer); resolve(v) },
-        reject: (e) => { clearTimeout(timer); reject(e) }
+        resolve: (v) => {
+          clearTimeout(timer)
+          resolve(v)
+        },
+        reject: (e) => {
+          clearTimeout(timer)
+          reject(e)
+        }
       })
       this.proc.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n')
     })
@@ -158,8 +171,7 @@ async function evalJs(client, pageId, fn, waitForStableDom = true) {
 async function waitForTestId(client, pageId, testId, timeoutMs = 10_000) {
   const deadline = Date.now() + timeoutMs
   for (;;) {
-    const present = await evalJs(client, pageId,
-      `() => document.querySelector('[data-testid="${testId}"]') !== null`)
+    const present = await evalJs(client, pageId, `() => document.querySelector('[data-testid="${testId}"]') !== null`)
     if (present === true) return true
     if (Date.now() >= deadline) return false
     await new Promise((resolve) => setTimeout(resolve, 200))
@@ -194,8 +206,11 @@ async function api(client, pageId, method, path, body, csrf) {
  *  endpoints, the same request shapes, the same `Sc-Csrf` header name. */
 async function setupAndLogIn(client, pageId) {
   const setupState = await api(client, pageId, 'GET', '/api/v1/system/setup')
-  check('the setup question answers the field the client reads',
-    typeof setupState.body?.required === 'boolean', JSON.stringify(setupState.body))
+  check(
+    'the setup question answers the field the client reads',
+    typeof setupState.body?.required === 'boolean',
+    JSON.stringify(setupState.body)
+  )
 
   if (setupState.body?.required && TOKEN) {
     const created = await api(client, pageId, 'POST', '/api/v1/system/setup', {
@@ -205,13 +220,19 @@ async function setupAndLogIn(client, pageId) {
       app_hosts: [new URL(BASE).hostname],
       trusted_proxies: []
     })
-    check('the administrator is created', created.status === 200 || created.status === 201,
-      `status ${created.status} ${JSON.stringify(created.body).slice(0, 160)}`)
+    check(
+      'the administrator is created',
+      created.status === 200 || created.status === 201,
+      `status ${created.status} ${JSON.stringify(created.body).slice(0, 160)}`
+    )
   }
 
   const login = await api(client, pageId, 'POST', '/api/v1/auth/login', { login: USER, password: PASSWORD })
-  check('signing in succeeds on the path the client calls', login.status === 200,
-    `status ${login.status} ${JSON.stringify(login.body)}`)
+  check(
+    'signing in succeeds on the path the client calls',
+    login.status === 200,
+    `status ${login.status} ${JSON.stringify(login.body)}`
+  )
 
   const session = await api(client, pageId, 'GET', '/api/v1/auth/session')
   check('the session is established', session.status === 200, `status ${session.status}`)
@@ -234,8 +255,9 @@ async function launchMcp() {
 
   const earlyExit = new Promise((_, reject) => {
     proc.once('exit', (code, signal) => {
-      reject(new McpUnavailable(
-        `chrome-devtools-mcp exited before the handshake finished (code ${code}, signal ${signal})`))
+      reject(
+        new McpUnavailable(`chrome-devtools-mcp exited before the handshake finished (code ${code}, signal ${signal})`)
+      )
     })
   })
   earlyExit.catch(() => {})
@@ -243,7 +265,9 @@ async function launchMcp() {
   let timeoutTimer
   const timeout = new Promise((_, reject) => {
     timeoutTimer = setTimeout(() => {
-      reject(new McpUnavailable(`chrome-devtools-mcp did not complete the MCP handshake within ${HANDSHAKE_TIMEOUT_MS}ms`))
+      reject(
+        new McpUnavailable(`chrome-devtools-mcp did not complete the MCP handshake within ${HANDSHAKE_TIMEOUT_MS}ms`)
+      )
     }, HANDSHAKE_TIMEOUT_MS)
   })
   timeout.catch(() => {})
@@ -276,11 +300,23 @@ async function teardown(mcp) {
   if (!mcp?.proc || mcp.proc.exitCode !== null) return
   await new Promise((resolve) => {
     const timer = setTimeout(() => {
-      try { mcp.proc.kill('SIGKILL') } catch { /* already gone */ }
+      try {
+        mcp.proc.kill('SIGKILL')
+      } catch {
+        /* already gone */
+      }
       resolve()
     }, 3000)
-    mcp.proc.once('exit', () => { clearTimeout(timer); resolve() })
-    try { mcp.proc.kill('SIGTERM') } catch { clearTimeout(timer); resolve() }
+    mcp.proc.once('exit', () => {
+      clearTimeout(timer)
+      resolve()
+    })
+    try {
+      mcp.proc.kill('SIGTERM')
+    } catch {
+      clearTimeout(timer)
+      resolve()
+    }
   })
 }
 
@@ -318,14 +354,23 @@ try {
     check('the webdav guide section (data-testid=webdav-guide) is present', guidePresent === true)
 
     const snapshot = await client.callTool('take_snapshot', { pageId })
-    check('the settings page produced an accessibility snapshot', snapshot.includes('RootWebArea'),
-      snapshot.slice(0, 200))
+    check(
+      'the settings page produced an accessibility snapshot',
+      snapshot.includes('RootWebArea'),
+      snapshot.slice(0, 200)
+    )
 
     const origin = await evalJs(client, pageId, '() => location.origin')
-    const baseUrlText = await evalJs(client, pageId,
-      "() => document.querySelector('[data-testid=\"webdav-base-url\"]')?.textContent ?? null")
-    check('the base URL element (data-testid=webdav-base-url) is the page origin plus /dav',
-      baseUrlText === `${origin}/dav`, `got ${JSON.stringify(baseUrlText)}, wanted ${JSON.stringify(origin + '/dav')}`)
+    const baseUrlText = await evalJs(
+      client,
+      pageId,
+      '() => document.querySelector(\'[data-testid="webdav-base-url"]\')?.textContent ?? null'
+    )
+    check(
+      'the base URL element (data-testid=webdav-base-url) is the page origin plus /dav',
+      baseUrlText === `${origin}/dav`,
+      `got ${JSON.stringify(baseUrlText)}, wanted ${JSON.stringify(origin + '/dav')}`
+    )
 
     // Both catalogues, not just English: the app renders whichever locale the
     // session settled on, and Korean is the fallback, so asserting against
@@ -335,36 +380,58 @@ try {
     const catalogue = (name) =>
       JSON.parse(readFileSync(new URL(`../src/lib/i18n/${name}.json`, import.meta.url), 'utf8'))
     const locales = { en: catalogue('en'), ko: catalogue('ko') }
-    const headingKeys = ['webdav.macos_heading', 'webdav.windows_heading', 'webdav.linux_heading', 'webdav.generic_heading']
-    const guideText = await evalJs(client, pageId,
-      "() => document.querySelector('[data-testid=\"webdav-guide\"]')?.textContent ?? ''")
+    const headingKeys = [
+      'webdav.macos_heading',
+      'webdav.windows_heading',
+      'webdav.linux_heading',
+      'webdav.generic_heading'
+    ]
+    const guideText = await evalJs(
+      client,
+      pageId,
+      "() => document.querySelector('[data-testid=\"webdav-guide\"]')?.textContent ?? ''"
+    )
     for (const key of headingKeys) {
-      const spellings = Object.values(locales).map((c) => c[key]).filter((v) => typeof v === 'string' && v.length > 0)
-      check(`the guide names the client family ${key}`,
+      const spellings = Object.values(locales)
+        .map((c) => c[key])
+        .filter((v) => typeof v === 'string' && v.length > 0)
+      check(
+        `the guide names the client family ${key}`,
         spellings.length > 0 && spellings.some((s) => guideText.includes(s)),
-        spellings.length > 0 ? `looked for any of ${JSON.stringify(spellings)}` : `no catalogue has ${key}`)
+        spellings.length > 0 ? `looked for any of ${JSON.stringify(spellings)}` : `no catalogue has ${key}`
+      )
     }
 
     console.log('the base URL copy button, from the keyboard')
-    const focused = await evalJs(client, pageId, [
-      "() => {",
-      "  const code = document.querySelector('[data-testid=\"webdav-base-url\"]');",
-      "  const row = code ? code.closest('.sc-webdav-token-row') : null;",
-      "  const button = row ? row.querySelector('mdui-button') : null;",
-      "  if (button) button.focus();",
-      "  return button !== null && document.activeElement === button;",
-      "}"
-    ].join('\n'))
+    const focused = await evalJs(
+      client,
+      pageId,
+      [
+        '() => {',
+        '  const code = document.querySelector(\'[data-testid="webdav-base-url"]\');',
+        "  const row = code ? code.closest('.sc-webdav-token-row') : null;",
+        "  const button = row ? row.querySelector('mdui-button') : null;",
+        '  if (button) button.focus();',
+        '  return button !== null && document.activeElement === button;',
+        '}'
+      ].join('\n')
+    )
     check('the base URL copy button can receive keyboard focus', focused === true)
 
     let announcement = ''
     if (focused) {
       await client.callTool('press_key', { pageId, key: 'Enter' })
-      announcement = await evalJs(client, pageId,
-        "() => document.querySelector('.sc-webdav-announce')?.textContent ?? ''")
+      announcement = await evalJs(
+        client,
+        pageId,
+        "() => document.querySelector('.sc-webdav-announce')?.textContent ?? ''"
+      )
     }
-    check('activating the copy button with Enter announces the result via aria-live',
-      announcement.trim().length > 0, `announcement: ${JSON.stringify(announcement)}`)
+    check(
+      'activating the copy button with Enter announces the result via aria-live',
+      announcement.trim().length > 0,
+      `announcement: ${JSON.stringify(announcement)}`
+    )
 
     console.log('console health on the settings page')
     const consoleText = await client.callTool('list_console_messages', { pageId })
@@ -374,8 +441,11 @@ try {
     // into the same console channel here, distinguished by their own text
     // rather than by a separate pageerror-style event.
     const violations = errorLines.filter((line) => /Content Security Policy/i.test(line) || /\bUncaught\b/.test(line))
-    check('nothing was blocked by the content policy and nothing threw uncaught',
-      violations.length === 0, violations.join(' | '))
+    check(
+      'nothing was blocked by the content policy and nothing threw uncaught',
+      violations.length === 0,
+      violations.join(' | ')
+    )
   }
 } finally {
   await teardown(mcp)

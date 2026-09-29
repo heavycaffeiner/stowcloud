@@ -106,9 +106,9 @@ describe('startOidcLogin', () => {
         })
       )
     )
-    await expect(
-      captureNavigation(() => startOidcLogin())
-    ).resolves.toBe('https://idp.example.test/authorize?state=abc')
+    await expect(captureNavigation(() => startOidcLogin())).resolves.toBe(
+      'https://idp.example.test/authorize?state=abc'
+    )
   })
 
   it('does not navigate when the response has no valid authorization URL', async () => {

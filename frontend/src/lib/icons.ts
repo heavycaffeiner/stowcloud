@@ -112,7 +112,7 @@ export {
   iconDescription,
   iconAudioFile,
   iconCode,
-  iconArrowDropDown,
+  iconArrowDropDown
 }
 
 /** Runtime lookup. Keys are the names the old inline icon set used. */
@@ -204,6 +204,6 @@ export const icons = {
   code: iconCode,
   'arrow-drop-down': iconArrowDropDown,
   arrow_drop_down: iconArrowDropDown
- } satisfies Record<string, IconifyIcon>
+} satisfies Record<string, IconifyIcon>
 
 export type IconName = keyof typeof icons

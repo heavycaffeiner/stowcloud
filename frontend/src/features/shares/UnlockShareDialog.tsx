@@ -22,11 +22,19 @@ export function UnlockShareDialog({ open, salt, verifier, onUnlock, onClose }: U
   useEffect(() => {
     if (!open) return
     patch({ passphrase: '', error: null })
-    queueMicrotask(() => (dialogRef.current as unknown as { querySelector?: (s: string) => HTMLElement | null })?.querySelector?.('mdui-text-field')?.focus())
+    queueMicrotask(() =>
+      (dialogRef.current as unknown as { querySelector?: (s: string) => HTMLElement | null })
+        ?.querySelector?.('mdui-text-field')
+        ?.focus()
+    )
   }, [open, patch])
 
   useEffect(() => {
-    const dialog = dialogRef.current as unknown as { open?: boolean; addEventListener: typeof window.addEventListener; removeEventListener: typeof window.removeEventListener } | null
+    const dialog = dialogRef.current as unknown as {
+      open?: boolean
+      addEventListener: typeof window.addEventListener
+      removeEventListener: typeof window.removeEventListener
+    } | null
     if (!dialog) return
     dialog.open = open
     const close = () => {
@@ -44,20 +52,51 @@ export function UnlockShareDialog({ open, salt, verifier, onUnlock, onClose }: U
       patch({ passphrase: '' })
       onUnlock()
     } catch (err) {
-      patch({ error: err instanceof WrongPassphraseError ? t('common.incorrect_password') : t('encryption.could_not_unlock') })
+      patch({
+        error: err instanceof WrongPassphraseError ? t('common.incorrect_password') : t('encryption.could_not_unlock')
+      })
     } finally {
       patch({ unlocking: false })
     }
   }
 
   return (
-    <mdui-dialog ref={dialogRef} headline={t('encryption.unlock_title')} close-on-overlay-click={false} close-on-esc={false}>
+    <mdui-dialog
+      ref={dialogRef}
+      headline={t('encryption.unlock_title')}
+      close-on-overlay-click={false}
+      close-on-esc={false}
+    >
       <p>{t('encryption.unlock_hint')}</p>
-      <form onSubmit={(event) => { event.preventDefault(); void submit() }}>
-        <TextField type="password" label={t('encryption.passphrase')} value={passphrase} error={error} autoComplete="current-password" autoFocus={open} disabled={unlocking} onValueChange={(value) => patch({ passphrase: value })} />
+      <form
+        onSubmit={(event) => {
+          event.preventDefault()
+          void submit()
+        }}
+      >
+        <TextField
+          type="password"
+          label={t('encryption.passphrase')}
+          value={passphrase}
+          error={error}
+          autoComplete="current-password"
+          autoFocus={open}
+          disabled={unlocking}
+          onValueChange={(value) => patch({ passphrase: value })}
+        />
       </form>
-      <mdui-button slot="action" variant="text" disabled={unlocking} onClick={onClose}>{t('common.cancel')}</mdui-button>
-      <mdui-button slot="action" variant="filled" loading={unlocking} disabled={!passphrase || unlocking} onClick={() => void submit()}>{t('encryption.unlock')}</mdui-button>
+      <mdui-button slot="action" variant="text" disabled={unlocking} onClick={onClose}>
+        {t('common.cancel')}
+      </mdui-button>
+      <mdui-button
+        slot="action"
+        variant="filled"
+        loading={unlocking}
+        disabled={!passphrase || unlocking}
+        onClick={() => void submit()}
+      >
+        {t('encryption.unlock')}
+      </mdui-button>
     </mdui-dialog>
   )
 }

@@ -2,7 +2,12 @@ import { useEffect, type RefObject } from 'react'
 import type { NavigateFunction } from 'react-router-dom'
 import { emergencyDoor } from '../../../../lib/api/emergency'
 
-type StateSetter = (patch: { sectionDialogOpen?: boolean; reason?: string; step?: 'loading' | 'setup' | 'credentials' | 'totp' | 'editing'; errorMessage?: string }) => void
+type StateSetter = (patch: {
+  sectionDialogOpen?: boolean
+  reason?: string
+  step?: 'loading' | 'setup' | 'credentials' | 'totp' | 'editing'
+  errorMessage?: string
+}) => void
 
 export function useEmergencyLifecycle({
   sectionDialogRef,
@@ -25,14 +30,18 @@ export function useEmergencyLifecycle({
 
   useEffect(() => {
     let cancelled = false
-    void emergencyDoor().then((door) => {
-      if (cancelled) return
-      setState({ reason: door.reason, step: door.setup_required ? 'setup' : 'credentials' })
-    }).catch((error: unknown) => {
-      if (cancelled) return
-      setState({ errorMessage: messageFor(error), step: 'credentials' })
-    })
-    return () => { cancelled = true }
+    void emergencyDoor()
+      .then((door) => {
+        if (cancelled) return
+        setState({ reason: door.reason, step: door.setup_required ? 'setup' : 'credentials' })
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return
+        setState({ errorMessage: messageFor(error), step: 'credentials' })
+      })
+    return () => {
+      cancelled = true
+    }
   }, [messageFor, setState])
 
   useEffect(() => {

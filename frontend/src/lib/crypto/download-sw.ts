@@ -123,7 +123,11 @@ function clickHiddenDownloadAnchor(url: string, filename: string): void {
  * and it needs the same ceiling `encryptForUpload`/`decryptDownload` do for
  * the same reason.
  */
-export async function streamToDownload(filename: string, stream: ReadableStream<Uint8Array>, size?: number): Promise<void> {
+export async function streamToDownload(
+  filename: string,
+  stream: ReadableStream<Uint8Array>,
+  size?: number
+): Promise<void> {
   const reg = await swReady()
   if (!reg || !reg.active || !supportsTransferableStreams()) {
     await fallbackBufferedDownload(filename, stream, size)
@@ -140,7 +144,11 @@ export async function streamToDownload(filename: string, stream: ReadableStream<
  *  a `Blob` built by hand in this tab is exactly the whole-buffer situation
  *  `MAX_ENCRYPTABLE_BYTES` already exists to bound, so this path reuses it
  *  rather than inventing a second ceiling. */
-async function fallbackBufferedDownload(filename: string, stream: ReadableStream<Uint8Array>, size?: number): Promise<void> {
+async function fallbackBufferedDownload(
+  filename: string,
+  stream: ReadableStream<Uint8Array>,
+  size?: number
+): Promise<void> {
   if (size !== undefined && size > MAX_ENCRYPTABLE_BYTES) {
     const err = new FileTooLargeError(size)
     await stream.cancel(err).catch(() => {})
@@ -313,7 +321,8 @@ async function nonceForToken(token: string, entry: Entry): Promise<Uint8Array> {
   const cached = nonceCache.get(token)
   if (cached) return cached
   const res = await fetch(api.contentUrl(entry), { credentials: 'include', headers: { Range: 'bytes=0-31' } })
-  if (!res.ok || !res.body) throw new Error(`could not read the rclone-crypt header for ${entry.path}: HTTP ${res.status}`)
+  if (!res.ok || !res.body)
+    throw new Error(`could not read the rclone-crypt header for ${entry.path}: HTTP ${res.status}`)
   const header = new Uint8Array(await res.arrayBuffer())
   if (header.length < 32 || !equalBytes(header.subarray(0, 8), RCLONE_CRYPT_MAGIC)) {
     throw new Error(`${entry.path} is not an rclone-crypt file: missing or wrong 8-byte header`)
@@ -342,7 +351,10 @@ async function resolveMediaRange(req: MediaRangeRequest): Promise<MediaReply> {
     }
 
     const start = req.suffixLength !== undefined ? Math.max(0, plaintextSize - req.suffixLength) : (req.start ?? 0)
-    const end = Math.min(req.suffixLength !== undefined ? plaintextSize - 1 : (req.end ?? plaintextSize - 1), plaintextSize - 1)
+    const end = Math.min(
+      req.suffixLength !== undefined ? plaintextSize - 1 : (req.end ?? plaintextSize - 1),
+      plaintextSize - 1
+    )
     if (start < 0 || start > end) return { ok: false, reason: 'unsatisfiable-range' }
 
     const nonce0 = await nonceForToken(req.token, entry)

@@ -10,12 +10,25 @@ export interface EditSessionLockOptions {
   dirty: boolean
   draft: string | null
   sealedDraft: SealedDraft | null
-  actions: Pick<EditActions, 'sealDraft' | 'restoreDraft' | 'setDraft' | 'setUnlockRequested' | 'setConflict' | 'setLeaveDialog' | 'setSnackbar'>
+  actions: Pick<
+    EditActions,
+    'sealDraft' | 'restoreDraft' | 'setDraft' | 'setUnlockRequested' | 'setConflict' | 'setLeaveDialog' | 'setSnackbar'
+  >
   removeContent: (path: string) => void
   translate: (key: string) => string
 }
 
-export function useEditSessionLock({ path, entryPath, shareSalt, dirty, draft, sealedDraft, actions, removeContent, translate }: EditSessionLockOptions): void {
+export function useEditSessionLock({
+  path,
+  entryPath,
+  shareSalt,
+  dirty,
+  draft,
+  sealedDraft,
+  actions,
+  removeContent,
+  translate
+}: EditSessionLockOptions): void {
   useEffect(() => {
     const beforeLock = (event: Event) => {
       const salt = (event as CustomEvent<{ salt?: string }>).detail?.salt

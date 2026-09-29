@@ -7,7 +7,13 @@ import { selection } from '../../lib/store/selection.store'
 import { ui } from '../../lib/store/ui.store'
 import { view } from '../../lib/store/view.store'
 import { useI18n } from '../../hooks/use-i18n'
-import { computeScaleMapping, computeWindow, documentScrollTop, effectiveViewportHeight, rowIndexToScrollTop } from '../../lib/virtual/windowing'
+import {
+  computeScaleMapping,
+  computeWindow,
+  documentScrollTop,
+  effectiveViewportHeight,
+  rowIndexToScrollTop
+} from '../../lib/virtual/windowing'
 import { indicesInRect, type Rect } from './logic/marquee'
 import { FileRow } from './FileRow'
 import { useFileActivation } from './hooks/use-file-activation'
@@ -38,7 +44,22 @@ export interface FileTableProps {
   encrypted?: boolean
 }
 
-export const FileTable = forwardRef<FileViewHandle, FileTableProps>(function FileTable({ entries, total, loading, loadingMore, requestMore, onOpen, onContextMenu, onRename, onDelete, onSearchFocus, encrypted = false }, ref) {
+export const FileTable = forwardRef<FileViewHandle, FileTableProps>(function FileTable(
+  {
+    entries,
+    total,
+    loading,
+    loadingMore,
+    requestMore,
+    onOpen,
+    onContextMenu,
+    onRename,
+    onDelete,
+    onSearchFocus,
+    encrypted = false
+  },
+  ref
+) {
   const { t } = useI18n()
   const compact = useStore(ui, (state) => state.compact)
   const density = useStore(view, (state) => state.density)
@@ -54,10 +75,23 @@ export const FileTable = forwardRef<FileViewHandle, FileTableProps>(function Fil
   const rowHeight = mobileRows ? 64 : density === 'compact' ? 40 : density === 'spacious' ? 56 : 48
   const focusedName = useFileFocusPreservation(entries, focused)
   const localScrollTop = measure.scroll
-  const win = computeWindow({ scrollTop: localScrollTop, viewportHeight: Math.max(0, measure.height - HEADER_HEIGHT), rowHeight, itemCount: total, overscan: 8 })
+  const win = computeWindow({
+    scrollTop: localScrollTop,
+    viewportHeight: Math.max(0, measure.height - HEADER_HEIGHT),
+    rowHeight,
+    itemCount: total,
+    overscan: 8
+  })
   const loadedNames = useMemo(() => entries.map((entry) => entry.name), [entries])
   const domId = (name: string) => `sc-row-${encodeURIComponent(name).replace(/%/g, '_')}`
-  const sortLabel = (key: SortKey) => key === 'name' ? t('browse.sort_by_name') : key === 'size' ? t('browse.sort_by_size') : key === 'mtime' ? t('browse.sort_by_modified') : t('browse.sort_by_kind')
+  const sortLabel = (key: SortKey) =>
+    key === 'name'
+      ? t('browse.sort_by_name')
+      : key === 'size'
+        ? t('browse.sort_by_size')
+        : key === 'mtime'
+          ? t('browse.sort_by_modified')
+          : t('browse.sort_by_kind')
   const chooseSort = (key: SortKey) => view.setSort(key, sortKey === key && sortOrder === 'asc' ? 'desc' : 'asc')
 
   const update = () => {
@@ -101,31 +135,53 @@ export const FileTable = forwardRef<FileViewHandle, FileTableProps>(function Fil
     const element = entry ? document.getElementById(domId(entry.name)) : null
     if (!entry || !element) return
     const box = element.getBoundingClientRect()
-    onContextMenu(entry, new window.MouseEvent('contextmenu', { clientX: Math.round(box.left + box.width / 2), clientY: Math.round(box.top + box.height / 2) }) as unknown as ReactMouseEvent)
+    onContextMenu(
+      entry,
+      new window.MouseEvent('contextmenu', {
+        clientX: Math.round(box.left + box.width / 2),
+        clientY: Math.round(box.top + box.height / 2)
+      }) as unknown as ReactMouseEvent
+    )
   }
-  useImperativeHandle(ref, () => ({
-    focusEntry(name) {
-      const index = entries.findIndex((entry) => entry.name === name)
-      if (index < 0) return false
-      selection.only(name, index)
-      viewport.current?.focus()
-      scrollIntoView(index)
-      return true
-    },
-    entriesInRect(rect) {
-      const box = viewport.current?.getBoundingClientRect()
-      if (!box) return []
-      return indicesInRect(rect, { top: box.top + window.scrollY + HEADER_HEIGHT - (viewport.current?.scrollTop ?? 0), left: box.left + window.scrollX, rowHeight, cellHeight: rowHeight, columnPitch: 0, cellWidth: box.width, columns: 1, startIndex: 0, count: total }).map((index) => entries[index]).filter((entry): entry is Entry => Boolean(entry))
-    },
-    scrollBounds() {
-      if (!viewport.current) return { top: 0, height: window.innerHeight }
-      const box = viewport.current.getBoundingClientRect()
-      return { top: box.top, height: box.height }
-    },
-    scrollBy(delta) {
-      if (viewport.current) viewport.current.scrollTop += delta
-    }
-  }), [entries, total, rowHeight, measure])
+  useImperativeHandle(
+    ref,
+    () => ({
+      focusEntry(name) {
+        const index = entries.findIndex((entry) => entry.name === name)
+        if (index < 0) return false
+        selection.only(name, index)
+        viewport.current?.focus()
+        scrollIntoView(index)
+        return true
+      },
+      entriesInRect(rect) {
+        const box = viewport.current?.getBoundingClientRect()
+        if (!box) return []
+        return indicesInRect(rect, {
+          top: box.top + window.scrollY + HEADER_HEIGHT - (viewport.current?.scrollTop ?? 0),
+          left: box.left + window.scrollX,
+          rowHeight,
+          cellHeight: rowHeight,
+          columnPitch: 0,
+          cellWidth: box.width,
+          columns: 1,
+          startIndex: 0,
+          count: total
+        })
+          .map((index) => entries[index])
+          .filter((entry): entry is Entry => Boolean(entry))
+      },
+      scrollBounds() {
+        if (!viewport.current) return { top: 0, height: window.innerHeight }
+        const box = viewport.current.getBoundingClientRect()
+        return { top: box.top, height: box.height }
+      },
+      scrollBy(delta) {
+        if (viewport.current) viewport.current.scrollTop += delta
+      }
+    }),
+    [entries, total, rowHeight, measure]
+  )
 
   const moveFocus = (delta: number, extend: boolean) => {
     const next = focused === null ? (delta < 0 ? total - 1 : 0) : Math.min(Math.max(focused + delta, 0), total - 1)
@@ -143,45 +199,155 @@ export const FileTable = forwardRef<FileViewHandle, FileTableProps>(function Fil
   const keyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     activation.cancel()
     if (!total) return
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); moveFocus(event.key === 'ArrowDown' ? (focused === null ? 0 : 1) : -1, event.shiftKey); return }
-    if (event.key === ' ') { event.preventDefault(); if (focused !== null && entries[focused]) selection.toggle(entries[focused].name, focused); return }
-    if ((event.key === 'a' || event.key === 'A') && (event.ctrlKey || event.metaKey)) { event.preventDefault(); selection.all(loadedNames); return }
-    if (event.key === 'Enter' && focused !== null && entries[focused]) { onOpen(entries[focused]); return }
-    if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) { event.preventDefault(); openMenuForFocused(); return }
-    if (event.key === 'F2') { event.preventDefault(); onRename?.(); return }
-    if (event.key === 'Delete') { event.preventDefault(); onDelete?.(); return }
-    if (event.key === '/') { event.preventDefault(); onSearchFocus?.(); return }
-    if (event.key === 'Escape' && names.size) { event.preventDefault(); selection.clear() }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      moveFocus(event.key === 'ArrowDown' ? (focused === null ? 0 : 1) : -1, event.shiftKey)
+      return
+    }
+    if (event.key === ' ') {
+      event.preventDefault()
+      if (focused !== null && entries[focused]) selection.toggle(entries[focused].name, focused)
+      return
+    }
+    if ((event.key === 'a' || event.key === 'A') && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault()
+      selection.all(loadedNames)
+      return
+    }
+    if (event.key === 'Enter' && focused !== null && entries[focused]) {
+      onOpen(entries[focused])
+      return
+    }
+    if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
+      event.preventDefault()
+      openMenuForFocused()
+      return
+    }
+    if (event.key === 'F2') {
+      event.preventDefault()
+      onRename?.()
+      return
+    }
+    if (event.key === 'Delete') {
+      event.preventDefault()
+      onDelete?.()
+      return
+    }
+    if (event.key === '/') {
+      event.preventDefault()
+      onSearchFocus?.()
+      return
+    }
+    if (event.key === 'Escape' && names.size) {
+      event.preventDefault()
+      selection.clear()
+    }
   }
-  const rows = Array.from({ length: Math.max(0, win.end - win.start) }, (_, offset) => { const index = win.start + offset; return { index, entry: entries[index] } })
+  const rows = Array.from({ length: Math.max(0, win.end - win.start) }, (_, offset) => {
+    const index = win.start + offset
+    return { index, entry: entries[index] }
+  })
   const active = focusedName && rows.some((row) => row.entry?.name === focusedName) ? domId(focusedName) : undefined
 
-  return <div ref={viewport} className={`sc-file-table sc-file-table-contained${mobileRows ? ' sc-file-table-mobile-rows' : ''}${names.size ? ' sc-file-table-reserve-selection' : ''}`} style={{ touchAction: 'manipulation' }} data-density={density} role="grid" aria-multiselectable="true" aria-rowcount={total + 1} aria-label={t('table.file_list')} aria-activedescendant={active} aria-busy={loadingMore} tabIndex={0} onKeyDown={keyDown} onPointerDown={(event) => { if (!(event.target as HTMLElement).closest('[aria-selected]')) activation.cancel() }} onContextMenu={activation.cancel}>
-    {total === 0 && !loading ? <p className="sc-file-table-empty">{t('common.folder_empty')}</p> : <>
-      <div className="sc-file-table-header" role="row" aria-rowindex={1}>
-        <button
-          type="button"
-          className="sc-file-table-header-cell sc-file-table-header-cell-select sc-touch-target"
-          role="columnheader"
-          aria-label={t('browse.select_all')}
-          onClick={() => {
-            if (names.size === entries.length && entries.length > 0) selection.clear()
-            else selection.all(loadedNames)
-          }}
-        >
-          <span className={`sc-custom-checkbox${names.size > 0 && names.size === entries.length ? ' sc-custom-checkbox-checked' : names.size > 0 ? ' sc-custom-checkbox-indeterminate' : ''}`} aria-hidden="true">
-            {names.size > 0 && names.size === entries.length ? <Icon name="check" size={13} /> : names.size > 0 ? <span className="sc-custom-checkbox-bar" /> : null}
-          </span>
-        </button>
-        {(['name', 'size', 'mtime'] as const).map((key) => <span key={key} className={`sc-file-table-header-cell sc-file-table-header-cell-${key}`} role="columnheader" aria-sort={sortKey === key ? sortOrder === 'asc' ? 'ascending' : 'descending' : 'none'}>
-          <button type="button" className={`sc-file-table-header-button${sortKey === key ? ' sc-file-table-header-button-active' : ''}`} onClick={() => chooseSort(key)} aria-label={`${sortLabel(key)}${sortKey === key ? `, ${sortOrder === 'asc' ? t('browse.sort_ascending') : t('browse.sort_descending')}` : ''}`}>
-            <span>{sortLabel(key)}</span>
-            {sortKey === key ? <span className="sc-file-table-header-sort" aria-hidden="true">{sortOrder === 'asc' ? '↑' : '↓'}</span> : null}
-          </button>
-        </span>)}
-        <span className="sc-file-table-header-cell sc-file-table-header-cell-actions" role="columnheader" />
-      </div>
-      <div className="sc-file-table-spacer" style={{ height: win.totalHeight }}><div className="sc-file-table-window" style={{ transform: `translate3d(0,${win.padTop}px,0)` }}>{rows.map(({ index, entry }) => entry ? <FileRow key={entry.path} entry={entry} rowIndex={index + 2} selected={names.has(entry.name)} focused={focusedName === entry.name} domId={domId(entry.name)} encrypted={encrypted} {...activation.handlers(entry, index)} onCancelActivation={activation.cancel} onContextMenu={(event) => { activation.cancel(); event.preventDefault(); event.stopPropagation(); onContextMenu(entry, event) }} onToggleCheck={() => selection.toggle(entry.name, index)} /> : <FileRowSkeleton key={`skeleton-${index}`} rowIndex={index + 2} />)}</div></div>
-    </>}
-  </div>
+  return (
+    <div
+      ref={viewport}
+      className={`sc-file-table sc-file-table-contained${mobileRows ? ' sc-file-table-mobile-rows' : ''}${names.size ? ' sc-file-table-reserve-selection' : ''}`}
+      style={{ touchAction: 'manipulation' }}
+      data-density={density}
+      role="grid"
+      aria-multiselectable="true"
+      aria-rowcount={total + 1}
+      aria-label={t('table.file_list')}
+      aria-activedescendant={active}
+      aria-busy={loadingMore}
+      tabIndex={0}
+      onKeyDown={keyDown}
+      onPointerDown={(event) => {
+        if (!(event.target as HTMLElement).closest('[aria-selected]')) activation.cancel()
+      }}
+      onContextMenu={activation.cancel}
+    >
+      {total === 0 && !loading ? (
+        <p className="sc-file-table-empty">{t('common.folder_empty')}</p>
+      ) : (
+        <>
+          <div className="sc-file-table-header" role="row" aria-rowindex={1}>
+            <button
+              type="button"
+              className="sc-file-table-header-cell sc-file-table-header-cell-select sc-touch-target"
+              role="columnheader"
+              aria-label={t('browse.select_all')}
+              onClick={() => {
+                if (names.size === entries.length && entries.length > 0) selection.clear()
+                else selection.all(loadedNames)
+              }}
+            >
+              <span
+                className={`sc-custom-checkbox${names.size > 0 && names.size === entries.length ? ' sc-custom-checkbox-checked' : names.size > 0 ? ' sc-custom-checkbox-indeterminate' : ''}`}
+                aria-hidden="true"
+              >
+                {names.size > 0 && names.size === entries.length ? (
+                  <Icon name="check" size={13} />
+                ) : names.size > 0 ? (
+                  <span className="sc-custom-checkbox-bar" />
+                ) : null}
+              </span>
+            </button>
+            {(['name', 'size', 'mtime'] as const).map((key) => (
+              <span
+                key={key}
+                className={`sc-file-table-header-cell sc-file-table-header-cell-${key}`}
+                role="columnheader"
+                aria-sort={sortKey === key ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}
+              >
+                <button
+                  type="button"
+                  className={`sc-file-table-header-button${sortKey === key ? ' sc-file-table-header-button-active' : ''}`}
+                  onClick={() => chooseSort(key)}
+                  aria-label={`${sortLabel(key)}${sortKey === key ? `, ${sortOrder === 'asc' ? t('browse.sort_ascending') : t('browse.sort_descending')}` : ''}`}
+                >
+                  <span>{sortLabel(key)}</span>
+                  {sortKey === key ? (
+                    <span className="sc-file-table-header-sort" aria-hidden="true">
+                      {sortOrder === 'asc' ? '↑' : '↓'}
+                    </span>
+                  ) : null}
+                </button>
+              </span>
+            ))}
+            <span className="sc-file-table-header-cell sc-file-table-header-cell-actions" role="columnheader" />
+          </div>
+          <div className="sc-file-table-spacer" style={{ height: win.totalHeight }}>
+            <div className="sc-file-table-window" style={{ transform: `translate3d(0,${win.padTop}px,0)` }}>
+              {rows.map(({ index, entry }) =>
+                entry ? (
+                  <FileRow
+                    key={entry.path}
+                    entry={entry}
+                    rowIndex={index + 2}
+                    selected={names.has(entry.name)}
+                    focused={focusedName === entry.name}
+                    domId={domId(entry.name)}
+                    encrypted={encrypted}
+                    {...activation.handlers(entry, index)}
+                    onCancelActivation={activation.cancel}
+                    onContextMenu={(event) => {
+                      activation.cancel()
+                      event.preventDefault()
+                      event.stopPropagation()
+                      onContextMenu(entry, event)
+                    }}
+                    onToggleCheck={() => selection.toggle(entry.name, index)}
+                  />
+                ) : (
+                  <FileRowSkeleton key={`skeleton-${index}`} rowIndex={index + 2} />
+                )
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
 })

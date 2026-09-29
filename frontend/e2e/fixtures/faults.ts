@@ -1,72 +1,72 @@
-import type { Page, Route } from '@playwright/test';
+import type { Page, Route } from '@playwright/test'
 
 export class FaultsFixture {
-  private page: Page;
+  private page: Page
 
   constructor(page: Page) {
-    this.page = page;
+    this.page = page
   }
 
   async failRequests(
     pattern: string | RegExp,
     status: number,
     options?: {
-      body?: string | object;
-      headers?: Record<string, string>;
-      times?: number;
-    },
+      body?: string | object
+      headers?: Record<string, string>
+      times?: number
+    }
   ): Promise<() => Promise<void>> {
-    let remaining = options?.times;
+    let remaining = options?.times
     const handler = async (route: Route) => {
       if (remaining !== undefined) {
         if (remaining <= 0) {
-          await route.continue();
-          return;
+          await route.continue()
+          return
         }
-        remaining--;
+        remaining--
       }
 
       const bodyStr =
         typeof options?.body === 'object'
           ? JSON.stringify(options.body)
-          : options?.body ?? `Fault injected: status ${status}`;
+          : (options?.body ?? `Fault injected: status ${status}`)
 
       await route.fulfill({
         status,
         headers: {
           'Content-Type': 'application/json',
-          ...(options?.headers || {}),
+          ...(options?.headers || {})
         },
-        body: bodyStr,
-      });
-    };
+        body: bodyStr
+      })
+    }
 
-    await this.page.route(pattern, handler);
+    await this.page.route(pattern, handler)
     return async () => {
-      await this.page.unroute(pattern, handler);
-    };
+      await this.page.unroute(pattern, handler)
+    }
   }
 
   async abortRequests(
     pattern: string | RegExp,
     errorCode: 'failed' | 'aborted' | 'timedout' | 'connectionreset' = 'connectionreset',
-    times?: number,
+    times?: number
   ): Promise<() => Promise<void>> {
-    let remaining = times;
+    let remaining = times
     const handler = async (route: Route) => {
       if (remaining !== undefined) {
         if (remaining <= 0) {
-          await route.continue();
-          return;
+          await route.continue()
+          return
         }
-        remaining--;
+        remaining--
       }
-      await route.abort(errorCode);
-    };
+      await route.abort(errorCode)
+    }
 
-    await this.page.route(pattern, handler);
+    await this.page.route(pattern, handler)
     return async () => {
-      await this.page.unroute(pattern, handler);
-    };
+      await this.page.unroute(pattern, handler)
+    }
   }
 }

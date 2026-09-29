@@ -40,7 +40,14 @@ describe('shareLabelOf', () => {
 
 describe('encryptedShares (fetch-once cache)', () => {
   it('fetches the set once and reuses it for concurrent and later calls', async () => {
-    const row = { share: 1, labels: ['vault'], scheme: 'rclone-crypt-v1', salt: 'x'.repeat(22), verifier: 'abc', createdNs: 1 }
+    const row = {
+      share: 1,
+      labels: ['vault'],
+      scheme: 'rclone-crypt-v1',
+      salt: 'x'.repeat(22),
+      verifier: 'abc',
+      createdNs: 1
+    }
     shareEncryptionList.mockResolvedValue({ shares: [row] })
 
     const [a, b] = await Promise.all([encryptedShares(), encryptedShares()])
@@ -71,7 +78,14 @@ describe('encryptedShares (fetch-once cache)', () => {
 
 describe('encryptionForLabel', () => {
   it('finds the row whose labels include the given label', async () => {
-    const row = { share: 7, labels: ['team-a', 'team-a-drop'], scheme: 'rclone-crypt-v1', salt: 'x'.repeat(22), verifier: 'abc', createdNs: 1 }
+    const row = {
+      share: 7,
+      labels: ['team-a', 'team-a-drop'],
+      scheme: 'rclone-crypt-v1',
+      salt: 'x'.repeat(22),
+      verifier: 'abc',
+      createdNs: 1
+    }
     shareEncryptionList.mockResolvedValue({ shares: [row] })
 
     expect(await encryptionForLabel('team-a-drop')).toEqual(row)

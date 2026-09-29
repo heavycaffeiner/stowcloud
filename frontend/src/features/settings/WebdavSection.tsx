@@ -11,8 +11,26 @@ export function WebdavSection() {
   const baseUrl = origin ? `${origin}/dav` : ''
   const davUrl = baseUrl.replace(/^http/, 'dav')
   const netUseCommand = baseUrl ? `net use Z: ${baseUrl} /user:USERNAME` : ''
-  const rcloneRemote = baseUrl ? ['[stowcloud]', 'type = webdav', `url = ${baseUrl}/SHARE`, 'vendor = other', 'user = ACCOUNT', 'pass = OBSCURED_APP_PASSWORD'].join('\n') : ''
-  const rcloneCrypt = ['[stowcloud-crypt]', 'type = crypt', 'remote = stowcloud:', 'filename_encryption = off', 'directory_name_encryption = false', 'suffix = none', 'password = OBSCURED_PASSPHRASE', 'password2 = OBSCURED_SALT'].join('\n')
+  const rcloneRemote = baseUrl
+    ? [
+        '[stowcloud]',
+        'type = webdav',
+        `url = ${baseUrl}/SHARE`,
+        'vendor = other',
+        'user = ACCOUNT',
+        'pass = OBSCURED_APP_PASSWORD'
+      ].join('\n')
+    : ''
+  const rcloneCrypt = [
+    '[stowcloud-crypt]',
+    'type = crypt',
+    'remote = stowcloud:',
+    'filename_encryption = off',
+    'directory_name_encryption = false',
+    'suffix = none',
+    'password = OBSCURED_PASSPHRASE',
+    'password2 = OBSCURED_SALT'
+  ].join('\n')
   const rcloneMount = 'rclone mount stowcloud: /mnt/stowcloud'
   const rcloneMountCrypt = 'rclone mount stowcloud-crypt: /mnt/stowcloud'
 
@@ -28,8 +46,19 @@ export function WebdavSection() {
 
   const token = (value: string, name: string, pre = false) => (
     <div className="sc-webdav-token-row">
-      {pre ? <pre className="sc-webdav-token">{value}</pre> : <code className="sc-webdav-token" data-testid={name === t('webdav.server_address') ? 'webdav-base-url' : undefined}>{value}</code>}
-      <Button variant="text" ariaLabel={t('common.copy_named', { name })} onClick={() => void copy(value, name)}>{t('common.copy')}</Button>
+      {pre ? (
+        <pre className="sc-webdav-token">{value}</pre>
+      ) : (
+        <code
+          className="sc-webdav-token"
+          data-testid={name === t('webdav.server_address') ? 'webdav-base-url' : undefined}
+        >
+          {value}
+        </code>
+      )}
+      <Button variant="text" ariaLabel={t('common.copy_named', { name })} onClick={() => void copy(value, name)}>
+        {t('common.copy')}
+      </Button>
     </div>
   )
 
@@ -42,17 +71,28 @@ export function WebdavSection() {
       <p className="sc-webdav-credentials">{t('webdav.credentials_note')}</p>
       <section className="sc-webdav-os">
         <h3>{t('webdav.macos_heading')}</h3>
-        <ol><li>{t('webdav.macos_step_open_connect')}</li><li>{t('webdav.macos_step_enter_url')}</li><li>{t('webdav.macos_step_credentials')}</li></ol>
+        <ol>
+          <li>{t('webdav.macos_step_open_connect')}</li>
+          <li>{t('webdav.macos_step_enter_url')}</li>
+          <li>{t('webdav.macos_step_credentials')}</li>
+        </ol>
       </section>
       <section className="sc-webdav-os">
         <h3>{t('webdav.windows_heading')}</h3>
-        <ol><li>{t('webdav.windows_step_open')}</li><li>{t('webdav.windows_step_enter_url')}</li><li>{t('webdav.windows_step_credentials')}</li></ol>
+        <ol>
+          <li>{t('webdav.windows_step_open')}</li>
+          <li>{t('webdav.windows_step_enter_url')}</li>
+          <li>{t('webdav.windows_step_credentials')}</li>
+        </ol>
         <p>{t('webdav.windows_net_use_hint')}</p>
         {token(netUseCommand, t('webdav.net_use_command_label'))}
       </section>
       <section className="sc-webdav-os">
         <h3>{t('webdav.linux_heading')}</h3>
-        <ol><li>{t('webdav.linux_step_open')}</li><li>{t('webdav.linux_step_enter_url')}</li></ol>
+        <ol>
+          <li>{t('webdav.linux_step_open')}</li>
+          <li>{t('webdav.linux_step_enter_url')}</li>
+        </ol>
         {token(davUrl, t('webdav.dav_url_label'))}
       </section>
       <section className="sc-webdav-os">
@@ -72,7 +112,9 @@ export function WebdavSection() {
         <p>{t('webdav.rclone_crypt_warning')}</p>
       </section>
       <p className="sc-webdav-nfc-note">{t('webdav.nfc_note')}</p>
-      <p className="sc-webdav-announce" aria-live="polite">{announcement}</p>
+      <p className="sc-webdav-announce" aria-live="polite">
+        {announcement}
+      </p>
     </div>
   )
 }

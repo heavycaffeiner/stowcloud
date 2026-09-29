@@ -34,7 +34,8 @@ if (typeof Range.prototype.getBoundingClientRect !== 'function') {
 
 function normalizeMediaQuery(query: MediaQueryList): MediaQueryList {
   const addEventListener = typeof query.addEventListener === 'function' ? query.addEventListener.bind(query) : undefined
-  const removeEventListener = typeof query.removeEventListener === 'function' ? query.removeEventListener.bind(query) : undefined
+  const removeEventListener =
+    typeof query.removeEventListener === 'function' ? query.removeEventListener.bind(query) : undefined
   return Object.assign(query, {
     addListener(listener: (event: MediaQueryListEvent) => void): void {
       addEventListener?.('change', listener)
@@ -46,16 +47,19 @@ function normalizeMediaQuery(query: MediaQueryList): MediaQueryList {
 }
 
 if (typeof globalThis.matchMedia !== 'function') {
-  globalThis.matchMedia = (media: string) => normalizeMediaQuery({
-    matches: false,
-    media,
-    onchange: null,
-    addListener(): void {},
-    removeListener(): void {},
-    addEventListener(): void {},
-    removeEventListener(): void {},
-    dispatchEvent(): boolean { return false }
-  } as MediaQueryList)
+  globalThis.matchMedia = (media: string) =>
+    normalizeMediaQuery({
+      matches: false,
+      media,
+      onchange: null,
+      addListener(): void {},
+      removeListener(): void {},
+      addEventListener(): void {},
+      removeEventListener(): void {},
+      dispatchEvent(): boolean {
+        return false
+      }
+    } as MediaQueryList)
 } else {
   const nativeMatchMedia = globalThis.matchMedia.bind(globalThis)
   globalThis.matchMedia = (media: string) => normalizeMediaQuery(nativeMatchMedia(media))
@@ -88,12 +92,7 @@ export function createTestQueryClient(): QueryClient {
 
 export function renderWithProviders(
   element: ReactElement,
-  {
-    initialEntries = ['/'],
-    initialIndex,
-    queryClient = createTestQueryClient(),
-    ...options
-  }: RenderAppOptions = {}
+  { initialEntries = ['/'], initialIndex, queryClient = createTestQueryClient(), ...options }: RenderAppOptions = {}
 ) {
   function Wrapper({ children }: PropsWithChildren) {
     return (

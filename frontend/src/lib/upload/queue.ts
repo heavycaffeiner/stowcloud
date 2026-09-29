@@ -13,7 +13,14 @@ import { queryClient } from '../query/client'
 import { invalidateDirs } from '../query/files'
 import { keys } from '../query/keys'
 import { uploads } from '../store/upload.store'
-import { CHUNK_SIZE_MIN, loadStoredChunkSize, loadStoredConcurrency, storeChunkSize, storeConcurrency, subscribeUploadPreferences } from './chunk-planner'
+import {
+  CHUNK_SIZE_MIN,
+  loadStoredChunkSize,
+  loadStoredConcurrency,
+  storeChunkSize,
+  storeConcurrency,
+  subscribeUploadPreferences
+} from './chunk-planner'
 import type { AddItem, Cmd, Evt } from './worker'
 
 let worker: Worker | null = null
@@ -64,8 +71,7 @@ export function handle(evt: Evt): void {
       // reports afterwards. Taking the status from it would undo what the
       // person just asked for; the bytes are still true and still recorded.
       const current = uploads.statusOf(evt.id)
-      const status =
-        current === 'paused' || current === 'canceled' || current === 'error' ? current : 'uploading'
+      const status = current === 'paused' || current === 'canceled' || current === 'error' ? current : 'uploading'
       uploads.patch(evt.id, { sent: evt.sent, total: evt.total, rate: evt.rate, etaSec: evt.etaSec, status })
       break
     }
@@ -82,7 +88,16 @@ export function handle(evt: Evt): void {
         // Locally minted for a row this client just created, so never exact.
         etag: Math.random().toString(16).slice(2),
         etag_weak: true,
-        perms: { read: true, write: true, create: false, delete: true, rename: true, move: true, share: true, download: true },
+        perms: {
+          read: true,
+          write: true,
+          create: false,
+          delete: true,
+          rename: true,
+          move: true,
+          share: true,
+          download: true
+        },
         id: undefined
       })
       // What makes the new file appear wherever it was uploaded to, in every
@@ -188,7 +203,6 @@ function acquireEncryptedPermit(id: string): Promise<boolean> {
   encryptedPermitWaiters.push({ id, resolve })
   return promise
 }
-
 
 function releaseEncryptedPermit(id: string): void {
   if (encryptedPermitOwner !== id) return
@@ -386,7 +400,7 @@ async function toAddItem(
       ...(prepared.contextIdentity.accountId ? { accountId: prepared.contextIdentity.accountId } : {}),
       ...(prepared.contextIdentity.sessionContext ? { sessionContext: prepared.contextIdentity.sessionContext } : {}),
       ...(prepared.sourceIdentity ? { sourceIdentity: prepared.sourceIdentity } : {}),
-      ...(ciphertextIdentity ? { ciphertextIdentity } : {}),
+      ...(ciphertextIdentity ? { ciphertextIdentity } : {})
     }
   } catch (err) {
     releaseEncryptedPermit(state.id)
@@ -405,7 +419,10 @@ export async function addFiles(files: FileList | readonly File[], dest: string):
   }
 }
 
-export async function addEntries(entries: readonly { file: File; relativePath: string }[], dest: string): Promise<void> {
+export async function addEntries(
+  entries: readonly { file: File; relativePath: string }[],
+  dest: string
+): Promise<void> {
   const context = contextForSession()
   for (const entry of entries) {
     const item = await toAddItem(entry.file, dest, entry.relativePath, context)

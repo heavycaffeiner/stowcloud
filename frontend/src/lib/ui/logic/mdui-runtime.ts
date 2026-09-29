@@ -13,7 +13,6 @@ loadLocale((locale) => {
   return localeModules.ko()
 })
 
-
 import { setColorScheme } from 'mdui/functions/setColorScheme.js'
 
 export function initMdui(): void {

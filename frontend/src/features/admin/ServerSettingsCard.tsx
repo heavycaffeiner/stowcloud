@@ -10,5 +10,16 @@ export interface ServerSettingsCardProps {
 }
 
 export function ServerSettingsCard({ id, title, subtitle, children }: ServerSettingsCardProps) {
-  return <AdminCard id={id} title={title} subtitle={subtitle} icon={<Icon name="settings" />} headingLevel="h4" bodyClassName="sc-server-settings-form">{children}</AdminCard>
+  return (
+    <AdminCard
+      id={id}
+      title={title}
+      subtitle={subtitle}
+      icon={<Icon name="settings" />}
+      headingLevel="h4"
+      bodyClassName="sc-server-settings-form"
+    >
+      {children}
+    </AdminCard>
+  )
 }

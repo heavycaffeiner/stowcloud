@@ -1,7 +1,8 @@
 import { usePatchState } from '../../../hooks/use-component-state'
 import type { ApplyOutcome } from '../../../lib/api/types'
 
-export type ServerSettingsGroup = 'smb' | 'search' | 'thumbnail' | 'archive' | 'network' | 'db' | 'homes' | 'watch' | 'rate' | 'oidc'
+export type ServerSettingsGroup =
+  'smb' | 'search' | 'thumbnail' | 'archive' | 'network' | 'db' | 'homes' | 'watch' | 'rate' | 'oidc'
 export type ServerSettingsValues = Record<string, unknown>
 export type ServerPathPicker = { mode: 'folder' | 'file'; key: string } | null
 
@@ -18,14 +19,32 @@ export interface ServerSettingsState {
   announcement: string
 }
 
-export type ServerSettingsPatch = Partial<ServerSettingsState> | ((state: ServerSettingsState) => Partial<ServerSettingsState>)
+export type ServerSettingsPatch =
+  Partial<ServerSettingsState> | ((state: ServerSettingsState) => Partial<ServerSettingsState>)
 
-export const SERVER_SETTINGS_GROUPS: readonly ServerSettingsGroup[] = ['smb', 'search', 'thumbnail', 'archive', 'network', 'db', 'homes', 'watch', 'rate', 'oidc']
+export const SERVER_SETTINGS_GROUPS: readonly ServerSettingsGroup[] = [
+  'smb',
+  'search',
+  'thumbnail',
+  'archive',
+  'network',
+  'db',
+  'homes',
+  'watch',
+  'rate',
+  'oidc'
+]
 
 const initialServerSettingsState: ServerSettingsState = {
   values: {},
-  baselines: Object.fromEntries(SERVER_SETTINGS_GROUPS.map((group) => [group, null])) as Record<ServerSettingsGroup, string | null>,
-  hydrated: Object.fromEntries(SERVER_SETTINGS_GROUPS.map((group) => [group, false])) as Record<ServerSettingsGroup, boolean>,
+  baselines: Object.fromEntries(SERVER_SETTINGS_GROUPS.map((group) => [group, null])) as Record<
+    ServerSettingsGroup,
+    string | null
+  >,
+  hydrated: Object.fromEntries(SERVER_SETTINGS_GROUPS.map((group) => [group, false])) as Record<
+    ServerSettingsGroup,
+    boolean
+  >,
   activeGroup: null,
   validationError: null,
   outcome: null,

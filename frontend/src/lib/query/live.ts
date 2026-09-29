@@ -91,7 +91,8 @@ export function startLiveInvalidation(): () => void {
     window.clearInterval(pingTimer)
     pingTimer = 0
     if (stopped) return
-    backoffIndex = Date.now() - connectedAt >= CONNECTED_RESET_MS ? 0 : Math.min(backoffIndex + 1, BACKOFF_MS.length - 1)
+    backoffIndex =
+      Date.now() - connectedAt >= CONNECTED_RESET_MS ? 0 : Math.min(backoffIndex + 1, BACKOFF_MS.length - 1)
     reconnectTimer = window.setTimeout(open, BACKOFF_MS[backoffIndex])
   }
 

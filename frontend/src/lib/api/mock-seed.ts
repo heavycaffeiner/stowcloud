@@ -7,8 +7,21 @@ import type { Entry, Kind } from './types'
 
 const EXTENSIONS = ['jpg', 'png', 'pdf', 'docx', 'mp4', 'mp3', 'txt', 'zip', 'csv', 'log']
 const WORDS = [
-  '보고서', '휴가사진', '회의록', '견적서', '스크린샷', 'invoice', 'backup', 'draft',
-  'presentation', 'notes', '계약서', '영수증', 'photo', 'export', 'render'
+  '보고서',
+  '휴가사진',
+  '회의록',
+  '견적서',
+  '스크린샷',
+  'invoice',
+  'backup',
+  'draft',
+  'presentation',
+  'notes',
+  '계약서',
+  '영수증',
+  'photo',
+  'export',
+  'render'
 ]
 
 // Small mixing hash: deterministic per index, good enough distribution for fixture data.
@@ -50,7 +63,16 @@ export function benchEntryAt(index: number): Entry {
     // The real server derives a file's token from metadata, which cannot be
     // exact, so the mock says the same thing rather than promising more.
     etag_weak: true,
-    perms: { read: true, write: true, create: isDir, delete: true, rename: true, move: true, share: true, download: true },
+    perms: {
+      read: true,
+      write: true,
+      create: isDir,
+      delete: true,
+      rename: true,
+      move: true,
+      share: true,
+      download: true
+    },
     // `100_000 +` keeps `/bench`'s ids well clear of `STATIC_SEED`'s
     // low fixed range (see `fileEntry`/`dirEntry` below) and of
     // `mock.ts`'s runtime-allocated range (`newMockFileId`, `1_000_000+`).
@@ -66,7 +88,12 @@ export function benchEntryAt(index: number): Entry {
 // milliseconds. Reusing one instance is what makes it a one-time cost.
 const NAME_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
 
-export function compareEntries(a: Entry, b: Entry, sort: 'name' | 'size' | 'mtime' | 'kind', order: 'asc' | 'desc'): number {
+export function compareEntries(
+  a: Entry,
+  b: Entry,
+  sort: 'name' | 'size' | 'mtime' | 'kind',
+  order: 'asc' | 'desc'
+): number {
   // Folders first, whichever way the direction toggle runs: same rule as
   // `sc-core::ops::list`. Reversing the order reorders within a group; it
   // does not interleave the two.
@@ -109,7 +136,16 @@ function fileEntry(name: string, size: number, daysAgo: number, extra: Partial<E
     mtime_ns: mtimeNs.toString(),
     etag: Math.random().toString(16).slice(2, 10),
     etag_weak: true,
-    perms: { read: true, write: true, create: false, delete: true, rename: true, move: true, share: true, download: true },
+    perms: {
+      read: true,
+      write: true,
+      create: false,
+      delete: true,
+      rename: true,
+      move: true,
+      share: true,
+      download: true
+    },
     id: nextSeedId++,
     ...extra
   }
@@ -125,7 +161,16 @@ function dirEntry(name: string, daysAgo: number, extra: Partial<Entry> = {}): En
     mtime_ns: mtimeNs.toString(),
     etag: Math.random().toString(16).slice(2, 10),
     etag_weak: true,
-    perms: { read: true, write: true, create: true, delete: true, rename: true, move: true, share: true, download: true },
+    perms: {
+      read: true,
+      write: true,
+      create: true,
+      delete: true,
+      rename: true,
+      move: true,
+      share: true,
+      download: true
+    },
     id: nextSeedId++,
     ...extra
   }

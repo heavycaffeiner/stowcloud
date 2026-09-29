@@ -5,7 +5,14 @@ import { batchErrorKey } from '../../lib/api/error-text'
 import { useComponentState } from '../../hooks/use-component-state'
 import { useI18n } from '../../hooks/use-i18n'
 import { queryClient } from '../../lib/query/client'
-import { jobCancelMutation, jobListQuery, jobPauseMutation, jobQuery, jobResumeMutation, jobRetryMutation } from '../../lib/query/jobs'
+import {
+  jobCancelMutation,
+  jobListQuery,
+  jobPauseMutation,
+  jobQuery,
+  jobResumeMutation,
+  jobRetryMutation
+} from '../../lib/query/jobs'
 import { jobTray } from '../../lib/store/jobs.store'
 import { useStore } from '../../hooks/use-store'
 import { Icon } from '../../lib/ui/Icon'
@@ -37,14 +44,50 @@ function kindLabel(kind: JobRow['kind'], t: (key: string, params?: Record<string
 
 function rowFor(id: string, status: JobStatus | undefined, error: boolean): JobRow {
   if (!status || error) {
-    return { id, kind: 'copy', done: 0, total: 0, status: error ? 'error' : 'running', message: error ? /* i18n */ 'job.could_not_check_job_status' : undefined, attempting: [], pending: [], attempt: 0, maxAttempts: 0, nextRunNs: '0' }
+    return {
+      id,
+      kind: 'copy',
+      done: 0,
+      total: 0,
+      status: error ? 'error' : 'running',
+      message: error ? /* i18n */ 'job.could_not_check_job_status' : undefined,
+      attempting: [],
+      pending: [],
+      attempt: 0,
+      maxAttempts: 0,
+      nextRunNs: '0'
+    }
   }
   const kind = frontendKind(status.kind)
   if (status.state === 'error') {
     const first = batchErrorKey(status.results.find((result) => !result.ok)?.error)
-    return { id, kind, done: status.done, total: status.total, status: 'error', message: first?.key, messageParams: first?.params, attempting: status.attempting, pending: status.pending, attempt: status.attempt, maxAttempts: status.max_attempts, nextRunNs: status.next_run_ns }
+    return {
+      id,
+      kind,
+      done: status.done,
+      total: status.total,
+      status: 'error',
+      message: first?.key,
+      messageParams: first?.params,
+      attempting: status.attempting,
+      pending: status.pending,
+      attempt: status.attempt,
+      maxAttempts: status.max_attempts,
+      nextRunNs: status.next_run_ns
+    }
   }
-  return { id, kind, done: status.done, total: status.total, status: status.state, attempting: status.attempting, pending: status.pending, attempt: status.attempt, maxAttempts: status.max_attempts, nextRunNs: status.next_run_ns }
+  return {
+    id,
+    kind,
+    done: status.done,
+    total: status.total,
+    status: status.state,
+    attempting: status.attempting,
+    pending: status.pending,
+    attempt: status.attempt,
+    maxAttempts: status.max_attempts,
+    nextRunNs: status.next_run_ns
+  }
 }
 
 function jobProgressValue(item: JobRow): number | undefined {
@@ -53,12 +96,13 @@ function jobProgressValue(item: JobRow): number | undefined {
   return Math.min(Math.max(item.done / item.total, 0), 1)
 }
 
-
 function useJobTray() {
   const { t, tp } = useI18n()
   const ids = useStore(jobTray, (state) => state.ids)
   const open = useStore(jobTray, (state) => state.open)
-  const [trayState, setTrayState] = useComponentState<{ expandedJobs: ReadonlySet<string> }>({ expandedJobs: new Set() })
+  const [trayState, setTrayState] = useComponentState<{ expandedJobs: ReadonlySet<string> }>({
+    expandedJobs: new Set()
+  })
   const { expandedJobs } = trayState
   const cancel = useMutation(jobCancelMutation())
   const retry = useMutation(jobRetryMutation())
@@ -66,7 +110,10 @@ function useJobTray() {
   const resume = useMutation(jobResumeMutation())
   const list = useQuery(jobListQuery())
   const statuses = useQueries({ queries: ids.map((id) => jobQuery(id)) })
-  const rows = useMemo(() => ids.map((id, index) => rowFor(id, statuses[index]?.data, statuses[index]?.isError === true)), [ids, statuses])
+  const rows = useMemo(
+    () => ids.map((id, index) => rowFor(id, statuses[index]?.data, statuses[index]?.isError === true)),
+    [ids, statuses]
+  )
   const previous = useRef(new Map<string, JobState>())
   const politeRef = useRef<HTMLDivElement | null>(null)
   const assertiveRef = useRef<HTMLDivElement | null>(null)
@@ -87,7 +134,9 @@ function useJobTray() {
     const element = (target === 'polite' ? politeRef : assertiveRef).current
     if (!element) return
     element.textContent = ''
-    window.setTimeout(() => { element.textContent = text }, 0)
+    window.setTimeout(() => {
+      element.textContent = text
+    }, 0)
   }
 
   useEffect(() => {
@@ -98,13 +147,24 @@ function useJobTray() {
       if (prior !== undefined && prior !== item.status) {
         void queryClient.invalidateQueries({ queryKey: ['path'] })
         const label = kindLabel(item.kind, t)
-        if (item.status === 'done') announce('polite', tp('job.job_finished_items_processed', item.total > 0 ? item.total : item.done, { kind: label }))
-        else if (item.status === 'cancelled') announce('polite', tp('job.job_cancelled_items_completed', item.done, { kind: label }))
+        if (item.status === 'done')
+          announce(
+            'polite',
+            tp('job.job_finished_items_processed', item.total > 0 ? item.total : item.done, { kind: label })
+          )
+        else if (item.status === 'cancelled')
+          announce('polite', tp('job.job_cancelled_items_completed', item.done, { kind: label }))
         else if (item.status === 'interrupted') {
           const left = item.attempting.length + item.pending.length
-          announce('assertive', `${tp('job.job_was_interrupted_by_server', item.done, { kind: label })}${left > 0 ? ` ${t('job.left', { count: left })}` : ''}`)
+          announce(
+            'assertive',
+            `${tp('job.job_was_interrupted_by_server', item.done, { kind: label })}${left > 0 ? ` ${t('job.left', { count: left })}` : ''}`
+          )
         } else if (item.status === 'error') {
-          announce('assertive', `${t('job.job_failed', { kind: label })} ${item.message ? t(item.message, item.messageParams) : ''}`.trim())
+          announce(
+            'assertive',
+            `${t('job.job_failed', { kind: label })} ${item.message ? t(item.message, item.messageParams) : ''}`.trim()
+          )
         }
       }
       previous.current.set(item.id, item.status)
@@ -113,31 +173,94 @@ function useJobTray() {
   }, [rows, t, tp])
 
   const activeCount = rows.filter((row) => ['queued', 'running', 'paused', 'retrying'].includes(row.status)).length
-  const clearFinished = (): void => jobTray.forget(...rows.filter((row) => !['queued', 'running', 'paused', 'retrying'].includes(row.status)).map((row) => row.id))
+  const clearFinished = (): void =>
+    jobTray.forget(
+      ...rows.filter((row) => !['queued', 'running', 'paused', 'retrying'].includes(row.status)).map((row) => row.id)
+    )
 
-  return { t, rows, open, expandedJobs, setTrayState, cancel, retry, pause, resume, list, politeRef, assertiveRef, activeCount, clearFinished }
+  return {
+    t,
+    rows,
+    open,
+    expandedJobs,
+    setTrayState,
+    cancel,
+    retry,
+    pause,
+    resume,
+    list,
+    politeRef,
+    assertiveRef,
+    activeCount,
+    clearFinished
+  }
 }
 
 export function JobTray() {
-  const { t, rows, open, expandedJobs, setTrayState, cancel, retry, pause, resume, list, politeRef, assertiveRef, activeCount, clearFinished } = useJobTray()
+  const {
+    t,
+    rows,
+    open,
+    expandedJobs,
+    setTrayState,
+    cancel,
+    retry,
+    pause,
+    resume,
+    list,
+    politeRef,
+    assertiveRef,
+    activeCount,
+    clearFinished
+  } = useJobTray()
 
   if (rows.length === 0 && !list.isError) {
-    return <><div ref={politeRef} className="sc-job-tray-sr-only" role="status" aria-live="polite" aria-atomic="true"></div><div ref={assertiveRef} className="sc-job-tray-sr-only" role="alert" aria-live="assertive" aria-atomic="true"></div></>
+    return (
+      <>
+        <div ref={politeRef} className="sc-job-tray-sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+        <div
+          ref={assertiveRef}
+          className="sc-job-tray-sr-only"
+          role="alert"
+          aria-live="assertive"
+          aria-atomic="true"
+        ></div>
+      </>
+    )
   }
   return (
     <>
       <div ref={politeRef} className="sc-job-tray-sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
-      <div ref={assertiveRef} className="sc-job-tray-sr-only" role="alert" aria-live="assertive" aria-atomic="true"></div>
+      <div
+        ref={assertiveRef}
+        className="sc-job-tray-sr-only"
+        role="alert"
+        aria-live="assertive"
+        aria-atomic="true"
+      ></div>
       <section className={open ? 'sc-job-tray' : 'sc-job-tray sc-job-tray-collapsed'} aria-label={t('job.jobs')}>
         <header className="sc-job-tray-header">
-          <button className="sc-job-tray-title" type="button" onClick={() => jobTray.setOpen(!open)} aria-expanded={open}>
+          <button
+            className="sc-job-tray-title"
+            type="button"
+            onClick={() => jobTray.setOpen(!open)}
+            aria-expanded={open}
+          >
             <Icon name="refresh" />
             <span>{t('job.jobs')}</span>
             <span>{activeCount > 0 ? `(${activeCount})` : t('common.done')}</span>
           </button>
           <div className="sc-job-tray-actions">
-            <IconButton label={t('common.clear_finished_items')} onClick={clearFinished}><Icon name="check" /></IconButton>
-            <IconButton label={open ? t('common.collapse') : t('common.expand')} expanded={open} onClick={() => jobTray.setOpen(!open)}><Icon name={open ? 'chevron_right' : 'chevron_left'} /></IconButton>
+            <IconButton label={t('common.clear_finished_items')} onClick={clearFinished}>
+              <Icon name="check" />
+            </IconButton>
+            <IconButton
+              label={open ? t('common.collapse') : t('common.expand')}
+              expanded={open}
+              onClick={() => jobTray.setOpen(!open)}
+            >
+              <Icon name={open ? 'chevron_right' : 'chevron_left'} />
+            </IconButton>
           </div>
         </header>
         {list.isError ? <p className="sc-job-tray-stale">{t('job.server_unreachable_so_may_not')}</p> : null}
@@ -150,60 +273,123 @@ export function JobTray() {
               estimateSize={128}
               itemProps={() => ({ className: 'sc-job-tray-item' })}
               renderItem={(item) => {
-              const label = kindLabel(item.kind, t)
-              const outstandingCount = item.attempting.length + item.pending.length
-              return (
-                <>
-                  <div className="sc-job-tray-row"><span className="sc-job-tray-name"><Icon name={item.kind === 'delete' ? 'delete' : item.kind === 'copy' ? 'content_copy' : 'search'} />{label}</span><span className="sc-job-tray-meta">{item.done} / {item.total || '?'}</span></div>
-                  <mdui-linear-progress value={jobProgressValue(item)} aria-label={t('job.job', { kind: label })}></mdui-linear-progress>
-                  {item.status === 'queued' ? <p className="sc-job-tray-message">{t('job.queued')}</p> : null}
-                  {item.status === 'paused' ? <p className="sc-job-tray-message">{t('job.paused')}</p> : null}
-                  {item.status === 'retrying' ? <p className="sc-job-tray-message">{t('job.retrying', { attempt: item.attempt, max: item.maxAttempts || '?' })}</p> : null}
-                  {item.status === 'error' && item.message ? <p className="sc-job-tray-message">{t(item.message, item.messageParams)}</p> : null}
-                  {item.status === 'cancelled' ? <p className="sc-job-tray-message">{t('job.cancelled_completed', { count: item.done })}</p> : null}
-                  {item.status === 'interrupted' ? <p className="sc-job-tray-message">{t('job.interrupted_by_server_restart_completed', { count: item.done })}</p> : null}
-                  {outstandingCount > 0 ? (
-                    <details
-                      className="sc-job-tray-outstanding"
-                      open={expandedJobs.has(item.id)}
-                      onToggle={(event) => {
-                        const expanded = event.currentTarget.open
-                        setTrayState((state) => {
-                          if (state.expandedJobs.has(item.id) === expanded) return state
-                          const next = new Set(state.expandedJobs)
-                          if (expanded) next.add(item.id)
-                          else next.delete(item.id)
-                          return { expandedJobs: next }
-                        })
-                      }}
-                    >
-                      <summary>{t('job.items_left', { count: outstandingCount })}</summary>
-                      {expandedJobs.has(item.id) ? (
-                        <div className="sc-job-tray-outstanding-scroll">
-                          <VirtualList
-                            items={[...item.attempting, ...item.pending]}
-                            itemKey={(path, index) => `${index < item.attempting.length ? 'attempting' : 'pending'}-${path}`}
-                            estimateSize={32}
-                            renderItem={(path, index) => (
-                              <>
-                                {index < item.attempting.length
-                                  ? <span className="sc-job-tray-tag sc-job-tray-tag-check">{t('job.needs_checking')}</span>
-                                  : <span className="sc-job-tray-tag">{t('job.not_started')}</span>}
-                                {path}
-                              </>
-                            )}
-                          />
-                        </div>
-                      ) : null}
-                      {item.attempting.length > 0 ? <p className="sc-job-tray-message">{t('job.server_stopped_mid_item_anything')}</p> : null}
-                      <p className="sc-job-tray-message">{t('job.anything_marked_not_started_untouched')}</p>
-                    </details>
-                  ) : null}
-                  <div className="sc-job-tray-controls">
-                    {item.status === 'running' ? <><IconButton label={t('job.pause_job')} onClick={() => pause.mutate(item.id)}><Icon name="pause" /></IconButton><IconButton label={t('job.cancel_job')} onClick={() => cancel.mutate(item.id)}><Icon name="close" /></IconButton></> : item.status === 'queued' || item.status === 'retrying' ? <IconButton label={t('job.cancel_job')} onClick={() => cancel.mutate(item.id)}><Icon name="close" /></IconButton> : item.status === 'paused' ? <><IconButton label={t('job.resume_job')} onClick={() => resume.mutate(item.id)}><Icon name="play_arrow" /></IconButton><IconButton label={t('job.cancel_job')} onClick={() => cancel.mutate(item.id)}><Icon name="close" /></IconButton></> : item.status === 'error' || item.status === 'interrupted' ? <IconButton label={t('job.retry_job')} onClick={() => retry.mutate(item.id)}><Icon name="refresh" /></IconButton> : <IconButton label={t('common.clear')} onClick={() => jobTray.forget(item.id)}><Icon name="close" /></IconButton>}
-                  </div>
-                </>
-              )
+                const label = kindLabel(item.kind, t)
+                const outstandingCount = item.attempting.length + item.pending.length
+                return (
+                  <>
+                    <div className="sc-job-tray-row">
+                      <span className="sc-job-tray-name">
+                        <Icon
+                          name={item.kind === 'delete' ? 'delete' : item.kind === 'copy' ? 'content_copy' : 'search'}
+                        />
+                        {label}
+                      </span>
+                      <span className="sc-job-tray-meta">
+                        {item.done} / {item.total || '?'}
+                      </span>
+                    </div>
+                    <mdui-linear-progress
+                      value={jobProgressValue(item)}
+                      aria-label={t('job.job', { kind: label })}
+                    ></mdui-linear-progress>
+                    {item.status === 'queued' ? <p className="sc-job-tray-message">{t('job.queued')}</p> : null}
+                    {item.status === 'paused' ? <p className="sc-job-tray-message">{t('job.paused')}</p> : null}
+                    {item.status === 'retrying' ? (
+                      <p className="sc-job-tray-message">
+                        {t('job.retrying', { attempt: item.attempt, max: item.maxAttempts || '?' })}
+                      </p>
+                    ) : null}
+                    {item.status === 'error' && item.message ? (
+                      <p className="sc-job-tray-message">{t(item.message, item.messageParams)}</p>
+                    ) : null}
+                    {item.status === 'cancelled' ? (
+                      <p className="sc-job-tray-message">{t('job.cancelled_completed', { count: item.done })}</p>
+                    ) : null}
+                    {item.status === 'interrupted' ? (
+                      <p className="sc-job-tray-message">
+                        {t('job.interrupted_by_server_restart_completed', { count: item.done })}
+                      </p>
+                    ) : null}
+                    {outstandingCount > 0 ? (
+                      <details
+                        className="sc-job-tray-outstanding"
+                        open={expandedJobs.has(item.id)}
+                        onToggle={(event) => {
+                          const expanded = event.currentTarget.open
+                          setTrayState((state) => {
+                            if (state.expandedJobs.has(item.id) === expanded) return state
+                            const next = new Set(state.expandedJobs)
+                            if (expanded) next.add(item.id)
+                            else next.delete(item.id)
+                            return { expandedJobs: next }
+                          })
+                        }}
+                      >
+                        <summary>{t('job.items_left', { count: outstandingCount })}</summary>
+                        {expandedJobs.has(item.id) ? (
+                          <div className="sc-job-tray-outstanding-scroll">
+                            <VirtualList
+                              items={[...item.attempting, ...item.pending]}
+                              itemKey={(path, index) =>
+                                `${index < item.attempting.length ? 'attempting' : 'pending'}-${path}`
+                              }
+                              estimateSize={32}
+                              renderItem={(path, index) => (
+                                <>
+                                  {index < item.attempting.length ? (
+                                    <span className="sc-job-tray-tag sc-job-tray-tag-check">
+                                      {t('job.needs_checking')}
+                                    </span>
+                                  ) : (
+                                    <span className="sc-job-tray-tag">{t('job.not_started')}</span>
+                                  )}
+                                  {path}
+                                </>
+                              )}
+                            />
+                          </div>
+                        ) : null}
+                        {item.attempting.length > 0 ? (
+                          <p className="sc-job-tray-message">{t('job.server_stopped_mid_item_anything')}</p>
+                        ) : null}
+                        <p className="sc-job-tray-message">{t('job.anything_marked_not_started_untouched')}</p>
+                      </details>
+                    ) : null}
+                    <div className="sc-job-tray-controls">
+                      {item.status === 'running' ? (
+                        <>
+                          <IconButton label={t('job.pause_job')} onClick={() => pause.mutate(item.id)}>
+                            <Icon name="pause" />
+                          </IconButton>
+                          <IconButton label={t('job.cancel_job')} onClick={() => cancel.mutate(item.id)}>
+                            <Icon name="close" />
+                          </IconButton>
+                        </>
+                      ) : item.status === 'queued' || item.status === 'retrying' ? (
+                        <IconButton label={t('job.cancel_job')} onClick={() => cancel.mutate(item.id)}>
+                          <Icon name="close" />
+                        </IconButton>
+                      ) : item.status === 'paused' ? (
+                        <>
+                          <IconButton label={t('job.resume_job')} onClick={() => resume.mutate(item.id)}>
+                            <Icon name="play_arrow" />
+                          </IconButton>
+                          <IconButton label={t('job.cancel_job')} onClick={() => cancel.mutate(item.id)}>
+                            <Icon name="close" />
+                          </IconButton>
+                        </>
+                      ) : item.status === 'error' || item.status === 'interrupted' ? (
+                        <IconButton label={t('job.retry_job')} onClick={() => retry.mutate(item.id)}>
+                          <Icon name="refresh" />
+                        </IconButton>
+                      ) : (
+                        <IconButton label={t('common.clear')} onClick={() => jobTray.forget(item.id)}>
+                          <Icon name="close" />
+                        </IconButton>
+                      )}
+                    </div>
+                  </>
+                )
               }}
             />
           </div>

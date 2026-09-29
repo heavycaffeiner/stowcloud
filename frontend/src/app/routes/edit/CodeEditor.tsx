@@ -68,12 +68,16 @@ export const CodeEditor = forwardRef(function CodeEditor(
   const [status, setStatus] = useComponentState({ ready: false, failed: false })
   const { ready, failed } = status
 
-  useImperativeHandle(ref, () => ({
-    focus: () => {
-      viewRef.current?.focus()
-      hostRef.current?.querySelector<HTMLElement>('.cm-content')?.focus()
-    }
-  }), [])
+  useImperativeHandle(
+    ref,
+    () => ({
+      focus: () => {
+        viewRef.current?.focus()
+        hostRef.current?.querySelector<HTMLElement>('.cm-content')?.focus()
+      }
+    }),
+    []
+  )
 
   useEffect(() => {
     let disposed = false
@@ -105,17 +109,52 @@ export const CodeEditor = forwardRef(function CodeEditor(
           }
         }
         if (disposed || !hostRef.current) return
-        latestProps.current.onLanguageChange?.(languageExt ? desc?.name ?? null : null)
+        latestProps.current.onLanguageChange?.(languageExt ? (desc?.name ?? null) : null)
         const syntaxTheme = languageMod.HighlightStyle.define([
-          { tag: [highlightMod.tags.keyword, highlightMod.tags.modifier, highlightMod.tags.operatorKeyword], color: 'var(--sc-code-keyword)' },
-          { tag: [highlightMod.tags.string, highlightMod.tags.regexp, highlightMod.tags.special(highlightMod.tags.string)], color: 'var(--sc-code-string)' },
-          { tag: [highlightMod.tags.number, highlightMod.tags.bool, highlightMod.tags.null], color: 'var(--sc-code-number)' },
-          { tag: [highlightMod.tags.typeName, highlightMod.tags.className, highlightMod.tags.namespace], color: 'var(--sc-code-type)' },
-          { tag: [highlightMod.tags.definition(highlightMod.tags.variableName), highlightMod.tags.function(highlightMod.tags.variableName), highlightMod.tags.labelName], color: 'var(--sc-code-definition)' },
-          { tag: [highlightMod.tags.comment, highlightMod.tags.lineComment, highlightMod.tags.blockComment], color: 'var(--sc-code-comment)', fontStyle: 'italic' },
-          { tag: [highlightMod.tags.heading, highlightMod.tags.strong], color: 'var(--sc-code-heading)', fontWeight: '700' },
+          {
+            tag: [highlightMod.tags.keyword, highlightMod.tags.modifier, highlightMod.tags.operatorKeyword],
+            color: 'var(--sc-code-keyword)'
+          },
+          {
+            tag: [
+              highlightMod.tags.string,
+              highlightMod.tags.regexp,
+              highlightMod.tags.special(highlightMod.tags.string)
+            ],
+            color: 'var(--sc-code-string)'
+          },
+          {
+            tag: [highlightMod.tags.number, highlightMod.tags.bool, highlightMod.tags.null],
+            color: 'var(--sc-code-number)'
+          },
+          {
+            tag: [highlightMod.tags.typeName, highlightMod.tags.className, highlightMod.tags.namespace],
+            color: 'var(--sc-code-type)'
+          },
+          {
+            tag: [
+              highlightMod.tags.definition(highlightMod.tags.variableName),
+              highlightMod.tags.function(highlightMod.tags.variableName),
+              highlightMod.tags.labelName
+            ],
+            color: 'var(--sc-code-definition)'
+          },
+          {
+            tag: [highlightMod.tags.comment, highlightMod.tags.lineComment, highlightMod.tags.blockComment],
+            color: 'var(--sc-code-comment)',
+            fontStyle: 'italic'
+          },
+          {
+            tag: [highlightMod.tags.heading, highlightMod.tags.strong],
+            color: 'var(--sc-code-heading)',
+            fontWeight: '700'
+          },
           { tag: highlightMod.tags.emphasis, fontStyle: 'italic' },
-          { tag: [highlightMod.tags.link, highlightMod.tags.url], color: 'var(--sc-code-link)', textDecoration: 'underline' },
+          {
+            tag: [highlightMod.tags.link, highlightMod.tags.url],
+            color: 'var(--sc-code-link)',
+            textDecoration: 'underline'
+          },
           { tag: highlightMod.tags.invalid, color: 'var(--sc-code-invalid)' }
         ])
         const byteLimitFilter = EditorState.transactionFilter.of((tr) => {
@@ -128,10 +167,16 @@ export const CodeEditor = forwardRef(function CodeEditor(
           if (tr.isUserEvent('input')) latestProps.current.onLimit?.()
           return { changes: [] }
         })
-        const saveKeymap = keymap.of([{
-          key: 'Mod-s', preventDefault: true,
-          run: () => { latestProps.current.onSave?.(); return true }
-        }])
+        const saveKeymap = keymap.of([
+          {
+            key: 'Mod-s',
+            preventDefault: true,
+            run: () => {
+              latestProps.current.onSave?.()
+              return true
+            }
+          }
+        ])
         const updateListener = EditorView.updateListener.of((update) => {
           if (!update.docChanged) return
           const next = update.state.doc.toString()
@@ -154,14 +199,29 @@ export const CodeEditor = forwardRef(function CodeEditor(
               byteLimitFilter,
               updateListener,
               EditorView.theme({
-                '&': { height: '100%', fontSize: '0.875rem', backgroundColor: 'transparent', color: 'var(--sc-code-foreground)' },
+                '&': {
+                  height: '100%',
+                  fontSize: '0.875rem',
+                  backgroundColor: 'transparent',
+                  color: 'var(--sc-code-foreground)'
+                },
                 '&.cm-focused': { outline: 'none' },
-                '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', lineHeight: '1.65' },
+                '.cm-scroller': {
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                  lineHeight: '1.65'
+                },
                 '.cm-content': { padding: '12px 0', caretColor: 'var(--sc-code-caret)' },
                 '.cm-line': { padding: '0 18px 0 10px' },
-                '.cm-gutters': { backgroundColor: 'var(--sc-code-gutter)', color: 'var(--sc-code-gutter-text)', border: 'none', paddingLeft: '8px' },
+                '.cm-gutters': {
+                  backgroundColor: 'var(--sc-code-gutter)',
+                  color: 'var(--sc-code-gutter-text)',
+                  border: 'none',
+                  paddingLeft: '8px'
+                },
                 '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: 'var(--sc-code-active-line)' },
-                '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': { backgroundColor: 'var(--sc-code-selection) !important' }
+                '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
+                  backgroundColor: 'var(--sc-code-selection) !important'
+                }
               })
             ]
           })
@@ -188,7 +248,9 @@ export const CodeEditor = forwardRef(function CodeEditor(
 
   return (
     <div ref={hostRef} className="sc-code-editor">
-      {failed ? <p className="sc-code-editor-status sc-code-editor-status-error">{t('editor.could_not_load_editor_check')}</p> : null}
+      {failed ? (
+        <p className="sc-code-editor-status sc-code-editor-status-error">{t('editor.could_not_load_editor_check')}</p>
+      ) : null}
       {!failed && !ready ? <p className="sc-code-editor-status">{t('editor.loading_editor')}</p> : null}
     </div>
   )

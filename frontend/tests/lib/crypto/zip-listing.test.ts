@@ -17,7 +17,15 @@ vi.mock('../../../src/lib/api/client', () => ({
   api: { contentUrl: (entry: { content?: string }) => contentUrl(entry) }
 }))
 
-import { deriveKeys, encryptForUpload, generateSalt, lock, LockedSessionError, makeVerifier, unlock } from '../../../src/lib/crypto/e2ee'
+import {
+  deriveKeys,
+  encryptForUpload,
+  generateSalt,
+  lock,
+  LockedSessionError,
+  makeVerifier,
+  unlock
+} from '../../../src/lib/crypto/e2ee'
 import { listEncryptedArchive } from '../../../src/lib/crypto/zip-listing'
 
 function makeEntry(overrides: Partial<Entry> & { path: string; size: number }): Entry {
@@ -28,7 +36,16 @@ function makeEntry(overrides: Partial<Entry> & { path: string; size: number }): 
     mtime_ns: '0',
     etag: 'e',
     etag_weak: false,
-    perms: { read: true, write: true, create: true, delete: true, rename: true, move: true, share: true, download: true },
+    perms: {
+      read: true,
+      write: true,
+      create: true,
+      delete: true,
+      rename: true,
+      move: true,
+      share: true,
+      download: true
+    },
     ...overrides
   }
 }

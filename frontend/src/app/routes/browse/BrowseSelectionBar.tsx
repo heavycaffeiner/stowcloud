@@ -29,7 +29,7 @@ const actionIcons: Record<string, Parameters<typeof Icon>[0]['name']> = {
   rename: 'rename',
   transfer: 'move',
   duplicate: 'copy',
-  delete: 'delete',
+  delete: 'delete'
 }
 
 export function BrowseSelectionBar({ state, actions, t }: BrowseSelectionBarProps) {
@@ -37,7 +37,12 @@ export function BrowseSelectionBar({ state, actions, t }: BrowseSelectionBarProp
   return (
     <div className="sc-browse-selection-bar">
       <div className="sc-browse-selection-bar-inner">
-        <button type="button" className="sc-browse-selection-close-btn sc-icon-button" aria-label={t('browse.clear_selection')} onClick={actions.onClear}>
+        <button
+          type="button"
+          className="sc-browse-selection-close-btn sc-icon-button"
+          aria-label={t('browse.clear_selection')}
+          onClick={actions.onClear}
+        >
           <Icon name="close" size={16} />
         </button>
         <span className="sc-browse-selection-count">
@@ -45,11 +50,24 @@ export function BrowseSelectionBar({ state, actions, t }: BrowseSelectionBarProp
         </span>
         <span className="sc-browse-selection-divider" aria-hidden="true" />
         <div className="sc-browse-selection-actions">
-          <button type="button" className="sc-browse-selection-action-btn sc-icon-button" aria-label={details ? t('details.hide') : t('details.show')} title={details ? t('details.hide') : t('details.show')} onClick={actions.onToggleDetails}>
+          <button
+            type="button"
+            className="sc-browse-selection-action-btn sc-icon-button"
+            aria-label={details ? t('details.hide') : t('details.show')}
+            title={details ? t('details.hide') : t('details.show')}
+            onClick={actions.onToggleDetails}
+          >
             <Icon name="info" size={18} />
           </button>
           {actions.actions.map((action) => (
-            <button key={action.key} type="button" className="sc-browse-selection-action-btn sc-icon-button" aria-label={action.label} title={action.label} onClick={action.run}>
+            <button
+              key={action.key}
+              type="button"
+              className="sc-browse-selection-action-btn sc-icon-button"
+              aria-label={action.label}
+              title={action.label}
+              onClick={action.run}
+            >
               <Icon name={actionIcons[action.key] ?? 'more-vert'} size={18} />
             </button>
           ))}

@@ -32,9 +32,9 @@ for (const [label, file] of [
 const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
 const html = readFileSync(indexHtmlPath, 'utf8')
 const records = Object.entries(manifest)
-const byFile = new Map(records
-  .filter(([, value]) => typeof value.file === 'string')
-  .map(([key, value]) => [value.file, { key, ...value }]))
+const byFile = new Map(
+  records.filter(([, value]) => typeof value.file === 'string').map(([key, value]) => [value.file, { key, ...value }])
+)
 
 function relativeAsset(value) {
   return value.replace(/^\//, '').replace(/^\.\//, '')
@@ -95,24 +95,30 @@ if (initialFiles.size === 0) {
 // the source pathname stable even as chunk names and hashes change.
 const publicRecord = records.find(([key, record]) => {
   const normalizedKey = key.replaceAll('\\\\', '/')
-  return normalizedKey.endsWith('/PublicSharePage.tsx') || normalizedKey.endsWith('/PublicSharePage.ts') ||
-    normalizedKey.endsWith('/PublicSharePage.jsx') || normalizedKey.endsWith('/PublicSharePage.js') ||
+  return (
+    normalizedKey.endsWith('/PublicSharePage.tsx') ||
+    normalizedKey.endsWith('/PublicSharePage.ts') ||
+    normalizedKey.endsWith('/PublicSharePage.jsx') ||
+    normalizedKey.endsWith('/PublicSharePage.js') ||
     `${normalizedKey} ${record.src ?? ''} ${record.name ?? ''}`.toLowerCase().includes('public-share')
+  )
 })
 
 // If React routes are in the single app entry, the public share page has no
 // marginal chunk. When a future build splits it, follow its manifest imports
 // and dynamic imports so the budget covers exactly the route's reachable code.
-const publicFiles = publicRecord
-  ? addRecordClosure(publicRecord[0], new Set(), new Set(), true)
-  : new Set(initialFiles)
+const publicFiles = publicRecord ? addRecordClosure(publicRecord[0], new Set(), new Set(), true) : new Set(initialFiles)
 const marginalFiles = [...publicFiles].filter((file) => !initialFiles.has(file) && file.endsWith('.js'))
-const initialBytes = [...initialFiles].filter((file) => file.endsWith('.js')).reduce((sum, file) => sum + gzipSize(file), 0)
+const initialBytes = [...initialFiles]
+  .filter((file) => file.endsWith('.js'))
+  .reduce((sum, file) => sum + gzipSize(file), 0)
 const shareBytes = marginalFiles.reduce((sum, file) => sum + gzipSize(file), 0)
 
 function report(name, actual, budget) {
   const ok = actual <= budget
-  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}: ${(actual / 1024).toFixed(1)} KiB (budget ${(budget / 1024).toFixed(0)} KiB)`)
+  console.log(
+    `${ok ? 'PASS' : 'FAIL'}  ${name}: ${(actual / 1024).toFixed(1)} KiB (budget ${(budget / 1024).toFixed(0)} KiB)`
+  )
   return ok
 }
 

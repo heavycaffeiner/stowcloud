@@ -42,7 +42,6 @@ function record(over: Partial<AdminLogRecord> = {}): AdminLogRecord {
   }
 }
 
-
 function auditRow(over: Partial<AuditRow> = {}): AuditRow {
   return {
     rowid: 1,
@@ -57,7 +56,6 @@ function auditRow(over: Partial<AuditRow> = {}): AuditRow {
     ...over
   }
 }
-
 
 function user(over: Partial<AdminUser> = {}): AdminUser {
   return { id: 1, name: 'hyun', display_name: 'Hyun Woo', ...over } as AdminUser
@@ -299,12 +297,7 @@ describe('pureTimelineView', () => {
 
   it('orders series by severity and keeps the audit half last', () => {
     const view = pureTimelineView(twoBuckets)!
-    expect(view.series.map((s) => s.key)).toEqual([
-      'server.INFO',
-      'server.ERROR',
-      'audit.ok',
-      'audit.failed'
-    ])
+    expect(view.series.map((s) => s.key)).toEqual(['server.INFO', 'server.ERROR', 'audit.ok', 'audit.failed'])
   })
 
   it('leaves out a series with no events anywhere in the window', () => {
@@ -320,9 +313,7 @@ describe('pureTimelineView', () => {
   })
 
   it('places a level this build has not heard of rather than dropping it', () => {
-    const view = pureTimelineView(
-      timeline({ buckets: [{ start_ns: t0, server: { TRACE: 3, INFO: 1 }, audit: {} }] })
-    )!
+    const view = pureTimelineView(timeline({ buckets: [{ start_ns: t0, server: { TRACE: 3, INFO: 1 }, audit: {} }] }))!
     expect(view.series.map((s) => s.name)).toEqual(['INFO', 'TRACE'])
     expect(view.total).toBe(4)
   })
@@ -342,7 +333,12 @@ describe('pureTimelineView', () => {
 
   it('keeps every empty bucket as a bucket so the plot has no holes', () => {
     const view = pureTimelineView(
-      timeline({ buckets: [{ start_ns: t0, server: {}, audit: {} }, { start_ns: t1, server: { INFO: 1 }, audit: {} }] })
+      timeline({
+        buckets: [
+          { start_ns: t0, server: {}, audit: {} },
+          { start_ns: t1, server: { INFO: 1 }, audit: {} }
+        ]
+      })
     )!
     expect(view.bars).toHaveLength(2)
     expect(view.bars[0].total).toBe(0)
@@ -369,12 +365,7 @@ describe('pureInterleave', () => {
     const records = [record({ ts_ns: ns(base + 300n), msg: 'a' }), record({ ts_ns: ns(base + 100n), msg: 'b' })]
     const rows = [auditRow({ rowid: 9, ts_ns: ns(base + 200n) }), auditRow({ rowid: 8, ts_ns: ns(base) })]
     const merged = pureInterleave(records, rows)
-    expect(merged.map((m) => m.tsNs)).toEqual([
-      ns(base + 300n),
-      ns(base + 200n),
-      ns(base + 100n),
-      ns(base)
-    ])
+    expect(merged.map((m) => m.tsNs)).toEqual([ns(base + 300n), ns(base + 200n), ns(base + 100n), ns(base)])
     expect(merged.map((m) => m.source)).toEqual(['server', 'audit', 'server', 'audit'])
   })
 
@@ -416,9 +407,7 @@ describe('pureInterleave', () => {
 
   it('caps the merged list at the newest end', () => {
     const records = Array.from({ length: 5 }, (_, i) => record({ ts_ns: ns(base + BigInt(10 - i)) }))
-    const rows = Array.from({ length: 5 }, (_, i) =>
-      auditRow({ rowid: 5 - i, ts_ns: ns(base + BigInt(5 - i)) })
-    )
+    const rows = Array.from({ length: 5 }, (_, i) => auditRow({ rowid: 5 - i, ts_ns: ns(base + BigInt(5 - i)) }))
     const merged = pureInterleave(records, rows, 4)
     expect(merged).toHaveLength(4)
     expect(merged.map((m) => m.tsNs)).toEqual([ns(base + 10n), ns(base + 9n), ns(base + 8n), ns(base + 7n)])
@@ -496,4 +485,3 @@ describe('pure page accumulation', () => {
     expect(pureRecordKey(r, 0)).not.toBe(pureRecordKey(r, 1))
   })
 })
-

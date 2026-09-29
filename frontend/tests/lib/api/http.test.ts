@@ -9,8 +9,6 @@ import { t } from '../../../src/lib/i18n'
 import { batchErrorKey, describeApiError } from '../../../src/lib/api/error-text'
 import { invalidateEncryptedShares, setEncryptedSharesSource } from '../../../src/lib/crypto/encrypted-shares'
 
-
-
 /** A 204, which carries no body: the Response constructor refuses one. */
 function noContent(): Response {
   return new Response(null, { status: 204 })
@@ -43,10 +41,7 @@ describe('httpApi job wrappers', () => {
   // go rather than failing the whole selection.
 
   it('del() deletes each path and reports per item', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(noContent())
-      .mockResolvedValueOnce(noContent())
+    const fetchMock = vi.fn().mockResolvedValueOnce(noContent()).mockResolvedValueOnce(noContent())
     vi.stubGlobal('fetch', fetchMock)
 
     const result = await httpApi.delete(['/a', '/b'])
@@ -115,19 +110,18 @@ describe('httpApi job wrappers', () => {
   })
 
   it('move() preserves its destination and copy/skip outcome', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(200, { path: '/b/a (2)', copied: true, skipped: false }))
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(200, { path: '/b/a (2)', copied: true, skipped: false }))
     vi.stubGlobal('fetch', fetchMock)
 
     const result = await httpApi.move({ paths: ['/a'], dest: '/b', on_conflict: 'rename' })
 
-    expect(result.results).toEqual([
-      { path: '/a', ok: true, destination: '/b/a (2)', copied: true, skipped: false }
-    ])
+    expect(result.results).toEqual([{ path: '/a', ok: true, destination: '/b/a (2)', copied: true, skipped: false }])
     const [url, init] = fetchMock.mock.calls[0]
     expect(String(url)).toContain('/files/move')
     expect(JSON.parse(init.body as string)).toMatchObject({ from: '/a', to: '/b/a', on_conflict: 'rename' })
   })
-
 
   // The server has no dry run. Answering with nothing rather than guessing is
   // what keeps the picker's notice honest: it shows one only when it has one.
@@ -145,7 +139,9 @@ describe('httpApi job wrappers', () => {
     const ticket = { token: 't', name: 'a.zip', url: '/api/v1/files/archive/fetch?token=t' }
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify(ticket), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(ticket), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      )
     vi.stubGlobal('fetch', fetchMock)
 
     const got = await httpApi.archive(['/home/a.txt'], 'a.zip')
@@ -161,7 +157,9 @@ describe('httpApi job wrappers', () => {
     const ticket = { token: 't', name: 'a.txt', url: '/api/v1/files/download/fetch?token=t' }
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify(ticket), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(ticket), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      )
     vi.stubGlobal('fetch', fetchMock)
 
     const got = await httpApi.download('/home/a.txt')
@@ -219,9 +217,19 @@ describe('writeFile', () => {
     // asking whether the share is encrypted costs no request here. Pinning
     // the write to `calls[0]` keeps this case about the write rather than
     // about how that set happens to be fetched.
-    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(200, {
-      name: 'a.txt', path: 's/a.txt', kind: 'file', is_dir: false, size: '5', mtime_ns: '0', etag: 'e', etag_weak: false, perms: []
-    }))
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse(200, {
+        name: 'a.txt',
+        path: 's/a.txt',
+        kind: 'file',
+        is_dir: false,
+        size: '5',
+        mtime_ns: '0',
+        etag: 'e',
+        etag_weak: false,
+        perms: []
+      })
+    )
     vi.stubGlobal('fetch', fetchMock)
 
     await httpApi.writeFile('/s/a.txt', 'hello')
@@ -252,9 +260,11 @@ describe('the wire entry widening', () => {
   }
 
   async function listOnce(entry: Record<string, unknown>) {
-    const fetchMock = vi.fn().mockResolvedValueOnce(
-      jsonResponse(200, { entries: [entry], dirs: 0, total: 1, dir_etag: 'd', dir_etag_weak: false })
-    )
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse(200, { entries: [entry], dirs: 0, total: 1, dir_etag: 'd', dir_etag_weak: false })
+      )
     vi.stubGlobal('fetch', fetchMock)
     const page = await httpApi.list('/Files', {})
     return page.entries[0]
@@ -288,7 +298,9 @@ describe('the wire entry widening', () => {
   })
 
   it('rejects an unsafe size rather than rounding it', async () => {
-    await expect(listOnce({ ...wireEntry, size: '9007199254740993' })).rejects.toMatchObject({ code: 'server.malformed_response' })
+    await expect(listOnce({ ...wireEntry, size: '9007199254740993' })).rejects.toMatchObject({
+      code: 'server.malformed_response'
+    })
   })
 })
 
@@ -455,10 +467,7 @@ describe('the wire widener', () => {
   // itself, which renders as a broken image.
   it('leaves an absent reference absent', async () => {
     const { content, thumb, preview, btime_ns, ...bare } = wireEntry
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(jsonResponse(200, { ...bare, kind: 'dir', is_dir: true }))
-    )
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { ...bare, kind: 'dir', is_dir: true })))
 
     const got = await httpApi.stat('/media')
 
@@ -483,10 +492,7 @@ describe('error-text mappings for fs.denied and batch errors', () => {
 // which answers count as the process being down.
 describe('the health probe', () => {
   it('passes a real answer through whatever status carried it', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(jsonResponse(503, { status: 'degraded', reasons: ['smb_agent'] }))
-    )
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(503, { status: 'degraded', reasons: ['smb_agent'] })))
 
     const got = await httpApi.systemHealth()
 
@@ -503,10 +509,7 @@ describe('the health probe', () => {
   })
 
   it('rejects a body it cannot read, which is what a proxy answers mid-restart', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(new Response('<html>502 Bad Gateway</html>', { status: 502 }))
-    )
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('<html>502 Bad Gateway</html>', { status: 502 })))
 
     await expect(httpApi.systemHealth()).rejects.toBeInstanceOf(ApiError)
   })

@@ -8,8 +8,12 @@ export function FileRowSkeleton({ rowIndex }: { rowIndex: number }) {
         <span className="sc-row-skeleton-bar sc-row-skeleton-bar-icon" />
         <span className="sc-row-skeleton-bar sc-row-skeleton-bar-name" />
       </span>
-      <span className="sc-row-skeleton-cell sc-row-skeleton-cell-size" role="gridcell"><span className="sc-row-skeleton-bar sc-row-skeleton-bar-size" /></span>
-      <span className="sc-row-skeleton-cell sc-row-skeleton-cell-mtime" role="gridcell"><span className="sc-row-skeleton-bar sc-row-skeleton-bar-mtime" /></span>
+      <span className="sc-row-skeleton-cell sc-row-skeleton-cell-size" role="gridcell">
+        <span className="sc-row-skeleton-bar sc-row-skeleton-bar-size" />
+      </span>
+      <span className="sc-row-skeleton-cell sc-row-skeleton-cell-mtime" role="gridcell">
+        <span className="sc-row-skeleton-bar sc-row-skeleton-bar-mtime" />
+      </span>
     </div>
   )
 }

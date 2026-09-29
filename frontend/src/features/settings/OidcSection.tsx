@@ -17,8 +17,20 @@ export function OidcSection() {
   const config = useQuery(oidcConfigQuery())
   const link = useMutation(oidcLinkStartMutation())
   const unlink = useMutation(oidcUnlinkMutation())
-  type OidcState = { dialog: 'connect' | 'disconnect' | null; connectPassword: string; disconnectPassword: string; connectError: string | null; disconnectError: string | null }
-  const [state, setState] = useComponentState<OidcState>({ dialog: null, connectPassword: '', disconnectPassword: '', connectError: null, disconnectError: null })
+  type OidcState = {
+    dialog: 'connect' | 'disconnect' | null
+    connectPassword: string
+    disconnectPassword: string
+    connectError: string | null
+    disconnectError: string | null
+  }
+  const [state, setState] = useComponentState<OidcState>({
+    dialog: null,
+    connectPassword: '',
+    disconnectPassword: '',
+    connectError: null,
+    disconnectError: null
+  })
   const { dialog, connectPassword, disconnectPassword, connectError, disconnectError } = state
   const patchState = (patch: Partial<OidcState>): void => setState((current) => ({ ...current, ...patch }))
   const setDialog = (value: OidcState['dialog']): void => patchState({ dialog: value })
@@ -48,10 +60,15 @@ export function OidcSection() {
     setDialog('connect')
   }
   function confirmConnect(): void {
-    link.mutate({ password: connectPassword, returnTo: window.location.pathname }, {
-      onSuccess: (result) => { window.location.href = result.authorize_url },
-      onError: (value) => setConnectError(describe(value, t('oidc.could_not_start_connection_try')))
-    })
+    link.mutate(
+      { password: connectPassword, returnTo: window.location.pathname },
+      {
+        onSuccess: (result) => {
+          window.location.href = result.authorize_url
+        },
+        onError: (value) => setConnectError(describe(value, t('oidc.could_not_start_connection_try')))
+      }
+    )
   }
   function openDisconnect(): void {
     setDisconnectPassword('')
@@ -61,29 +78,126 @@ export function OidcSection() {
   }
   function confirmDisconnect(): void {
     unlink.mutate(disconnectPassword, {
-      onSuccess: () => { setDialog(null); void session.refetch() },
+      onSuccess: () => {
+        setDialog(null)
+        void session.refetch()
+      },
       onError: (value) => setDisconnectError(describe(value, t('oidc.could_not_disconnect_try_again')))
     })
   }
 
   return (
     <div className="sc-oidc">
-      {flowError ? <p className="sc-oidc-error" role="alert">{flowError}</p> : null}
+      {flowError ? (
+        <p className="sc-oidc-error" role="alert">
+          {flowError}
+        </p>
+      ) : null}
       <div className="sc-oidc-status">
-        <span className={linked ? 'sc-oidc-badge sc-oidc-badge-on' : 'sc-oidc-badge'}>{linked ? t('oidc.connected') : t('oidc.not_connected')}</span>
-        {linked ? <Button variant="outlined" onClick={openDisconnect}>{t('oidc.disconnect')}</Button> : configured ? <Button onClick={openConnect}>{t('oidc.connect_provider', { provider: providerLabel })}</Button> : null}
+        <span className={linked ? 'sc-oidc-badge sc-oidc-badge-on' : 'sc-oidc-badge'}>
+          {linked ? t('oidc.connected') : t('oidc.not_connected')}
+        </span>
+        {linked ? (
+          <Button variant="outlined" onClick={openDisconnect}>
+            {t('oidc.disconnect')}
+          </Button>
+        ) : configured ? (
+          <Button onClick={openConnect}>{t('oidc.connect_provider', { provider: providerLabel })}</Button>
+        ) : null}
       </div>
       {linked ? (
         <>
-          <p className="sc-oidc-detail">{session.data?.oidc.subject_hint ? t('oidc.identity', { subject: session.data.oidc.subject_hint }) : null}{session.data?.oidc.linked_ns ? ` ${t('oidc.connected_on', { date: formatDateNs(session.data.oidc.linked_ns) })}` : null}</p>
+          <p className="sc-oidc-detail">
+            {session.data?.oidc.subject_hint ? t('oidc.identity', { subject: session.data.oidc.subject_hint }) : null}
+            {session.data?.oidc.linked_ns
+              ? ` ${t('oidc.connected_on', { date: formatDateNs(session.data.oidc.linked_ns) })}`
+              : null}
+          </p>
           {!configured ? <p className="sc-oidc-detail">{t('oidc.single_sign_currently_switched_off')}</p> : null}
         </>
-      ) : configured ? <p className="sc-oidc-detail">{t('oidc.connect_sign_instead_your_account', { provider: providerLabel })}</p> : null}
-      <SettingsDialog open={dialog === 'connect'} title={t('oidc.connect_provider', { provider: providerLabel })} onClose={() => { if (!link.isPending) { setConnectPassword(''); setConnectError(null); setDialog(null) } }} actions={<><Button variant="text" onClick={() => { setConnectPassword(''); setConnectError(null); setDialog(null) }} disabled={link.isPending}>{t('common.cancel')}</Button><Button onClick={confirmConnect} disabled={!connectPassword} loading={link.isPending}>{t('common.continue')}</Button></>}>
-        <p>{t('oidc.after_you_confirm_password_taken')}</p><p className="sc-oidc-warning">{t('oidc.connecting_closes_smb_access_account')}</p><TextField type="password" label={t('common.current_password')} value={connectPassword} error={connectError} autoComplete="current-password" onValueChange={setConnectPassword} />
+      ) : configured ? (
+        <p className="sc-oidc-detail">{t('oidc.connect_sign_instead_your_account', { provider: providerLabel })}</p>
+      ) : null}
+      <SettingsDialog
+        open={dialog === 'connect'}
+        title={t('oidc.connect_provider', { provider: providerLabel })}
+        onClose={() => {
+          if (!link.isPending) {
+            setConnectPassword('')
+            setConnectError(null)
+            setDialog(null)
+          }
+        }}
+        actions={
+          <>
+            <Button
+              variant="text"
+              onClick={() => {
+                setConnectPassword('')
+                setConnectError(null)
+                setDialog(null)
+              }}
+              disabled={link.isPending}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={confirmConnect} disabled={!connectPassword} loading={link.isPending}>
+              {t('common.continue')}
+            </Button>
+          </>
+        }
+      >
+        <p>{t('oidc.after_you_confirm_password_taken')}</p>
+        <p className="sc-oidc-warning">{t('oidc.connecting_closes_smb_access_account')}</p>
+        <TextField
+          type="password"
+          label={t('common.current_password')}
+          value={connectPassword}
+          error={connectError}
+          autoComplete="current-password"
+          onValueChange={setConnectPassword}
+        />
       </SettingsDialog>
-      <SettingsDialog open={dialog === 'disconnect'} title={t('oidc.disconnect_single_sign')} onClose={() => { if (!unlink.isPending) { setDisconnectPassword(''); setDisconnectError(null); setDialog(null) } }} actions={<><Button variant="text" onClick={() => { setDisconnectPassword(''); setDisconnectError(null); setDialog(null) }} disabled={unlink.isPending}>{t('common.cancel')}</Button><Button onClick={confirmDisconnect} disabled={!disconnectPassword} loading={unlink.isPending}>{t('oidc.disconnect')}</Button></>}>
-        <p>{t('oidc.you_sign_your_account_password')}</p><p className="sc-oidc-warning">{t('oidc.every_session_opened_through_signed')}</p>{smbDedicated ? <p className="sc-oidc-detail">{t('smb.dedicated_will_be_replaced')}</p> : null}<TextField type="password" label={t('common.current_password')} value={disconnectPassword} error={disconnectError} autoComplete="current-password" onValueChange={setDisconnectPassword} />
+      <SettingsDialog
+        open={dialog === 'disconnect'}
+        title={t('oidc.disconnect_single_sign')}
+        onClose={() => {
+          if (!unlink.isPending) {
+            setDisconnectPassword('')
+            setDisconnectError(null)
+            setDialog(null)
+          }
+        }}
+        actions={
+          <>
+            <Button
+              variant="text"
+              onClick={() => {
+                setDisconnectPassword('')
+                setDisconnectError(null)
+                setDialog(null)
+              }}
+              disabled={unlink.isPending}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={confirmDisconnect} disabled={!disconnectPassword} loading={unlink.isPending}>
+              {t('oidc.disconnect')}
+            </Button>
+          </>
+        }
+      >
+        <p>{t('oidc.you_sign_your_account_password')}</p>
+        <p className="sc-oidc-warning">{t('oidc.every_session_opened_through_signed')}</p>
+        {smbDedicated ? <p className="sc-oidc-detail">{t('smb.dedicated_will_be_replaced')}</p> : null}
+        <TextField
+          type="password"
+          label={t('common.current_password')}
+          value={disconnectPassword}
+          error={disconnectError}
+          autoComplete="current-password"
+          onValueChange={setDisconnectPassword}
+        />
       </SettingsDialog>
     </div>
   )

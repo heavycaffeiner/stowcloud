@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { EXTENSION_PRESETS, MAX_EXTS, extensionOf, parseExtensions, resolveExtensions } from '../../../src/lib/search/filters'
+import {
+  EXTENSION_PRESETS,
+  MAX_EXTS,
+  extensionOf,
+  parseExtensions,
+  resolveExtensions
+} from '../../../src/lib/search/filters'
 
 describe('the typed extension list', () => {
   it('accepts the separators people actually use', () => {

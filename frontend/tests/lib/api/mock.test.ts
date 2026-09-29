@@ -128,7 +128,9 @@ describe('mockApi admin user management', () => {
 
   it('refuses a name already in use, case-insensitively', async () => {
     await mockApi.adminCreateUser('dupe-check', 'correct horse battery')
-    await expect(mockApi.adminCreateUser('DUPE-CHECK', 'another password')).rejects.toMatchObject({ code: 'fs.conflict' })
+    await expect(mockApi.adminCreateUser('DUPE-CHECK', 'another password')).rejects.toMatchObject({
+      code: 'fs.conflict'
+    })
   })
 
   it('disables and re-enables a non-admin account', async () => {
@@ -320,7 +322,9 @@ describe('mockApi admin grant management', () => {
       deny: [],
       inherit: true
     })
-    await expect(mockApi.adminUpdateGrant(created.id, { allow: [] })).rejects.toMatchObject({ code: 'fs.invalid_name' })
+    await expect(mockApi.adminUpdateGrant(created.id, { allow: [] })).rejects.toMatchObject({
+      code: 'fs.invalid_name'
+    })
   })
 
   it('deletes a grant and it stops being listed', async () => {
@@ -511,7 +515,11 @@ describe('mockApi share links', () => {
   })
 
   it('patch leaves omitted fields alone and clears explicit nulls', async () => {
-    const created = await mockApi.shareCreate({ path: '/home/Photos/여행사진.png', label: '원본 라벨', max_downloads: 5 })
+    const created = await mockApi.shareCreate({
+      path: '/home/Photos/여행사진.png',
+      label: '원본 라벨',
+      max_downloads: 5
+    })
     const patched = await mockApi.shareUpdate(created.id, { label: null })
     expect(patched.label).toBeNull()
     expect(patched.max_downloads).toBe(5) // untouched: key was never sent
@@ -553,7 +561,11 @@ describe('mockApi transfer', () => {
 
   it('move takes the source with it', async () => {
     await mockApi.mkdir('/home/Documents/move-src')
-    const { results } = await mockApi.move({ paths: ['/home/Documents/move-src'], dest: '/home/Photos', on_conflict: 'fail' })
+    const { results } = await mockApi.move({
+      paths: ['/home/Documents/move-src'],
+      dest: '/home/Photos',
+      on_conflict: 'fail'
+    })
     expect(results.every((r) => r.ok)).toBe(true)
 
     const src = await mockApi.list('/home/Documents', {})
@@ -565,7 +577,11 @@ describe('mockApi transfer', () => {
   it('a move onto an existing name fails that item rather than silently overwriting', async () => {
     await mockApi.mkdir('/home/Documents/clash')
     await mockApi.mkdir('/home/Photos/clash')
-    const { results } = await mockApi.move({ paths: ['/home/Documents/clash'], dest: '/home/Photos', on_conflict: 'fail' })
+    const { results } = await mockApi.move({
+      paths: ['/home/Documents/clash'],
+      dest: '/home/Photos',
+      on_conflict: 'fail'
+    })
     expect(results[0].ok).toBe(false)
     expect(results[0].error?.code).toBe('fs.conflict')
     // The source has to still be there; a conflict must not consume it.

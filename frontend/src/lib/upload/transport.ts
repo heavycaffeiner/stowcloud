@@ -130,12 +130,11 @@ export interface DirectTransport {
     part: DirectPartURL,
     body: Blob,
     signal?: AbortSignal,
-    onProgress?: (bytesSent: number) => void,
+    onProgress?: (bytesSent: number) => void
   ): Promise<{ etag: string; checksum?: string }>
   completeDirect(id: string, parts: DirectPart[]): Promise<DirectReservation>
   cancelDirect(id: string): Promise<void>
 }
-
 
 export interface CreateSessionParams {
   filename: string
@@ -171,7 +170,7 @@ export interface Transport {
     part: DirectPartURL,
     body: Blob,
     signal?: AbortSignal,
-    onProgress?: (bytesSent: number) => void,
+    onProgress?: (bytesSent: number) => void
   ) => Promise<{ etag: string; checksum?: string }>
   completeDirect?: (id: string, parts: DirectPart[]) => Promise<DirectReservation>
   cancelDirect?: (id: string) => Promise<void>
@@ -182,7 +181,6 @@ export interface Transport {
 function b64(s: string): string {
   return btoa(unescape(encodeURIComponent(s)))
 }
-
 
 export class HttpTransport implements Transport {
   async reserveDirect(p: DirectCreateParams): Promise<DirectReservation> {
@@ -199,15 +197,31 @@ export class HttpTransport implements Transport {
         })
       })
       const responseBody = (await res.json().catch(() => null)) as Record<string, unknown> | null
-      const error = responseBody && typeof responseBody.error === 'object' && responseBody.error !== null ? (responseBody.error as Record<string, unknown>) : null
+      const error =
+        responseBody && typeof responseBody.error === 'object' && responseBody.error !== null
+          ? (responseBody.error as Record<string, unknown>)
+          : null
       const errorCode = error && typeof error.code === 'string' ? error.code : undefined
-      if (res.status === 501 || (res.status === 422 && errorCode === 'transfer.unsupported_size')) throw new DirectUploadUnsupportedError(errorCode)
-      if (!res.ok) throw new UploadHttpError(res.status, `direct upload reservation failed: ${res.status}`, retryAfterMs(res.headers.get('Retry-After')))
+      if (res.status === 501 || (res.status === 422 && errorCode === 'transfer.unsupported_size'))
+        throw new DirectUploadUnsupportedError(errorCode)
+      if (!res.ok)
+        throw new UploadHttpError(
+          res.status,
+          `direct upload reservation failed: ${res.status}`,
+          retryAfterMs(res.headers.get('Retry-After'))
+        )
       const body = responseBody
       if (!body || body.capability !== true || typeof body.id !== 'string') throw new DirectUploadUnsupportedError()
       const size = Number(body.size)
       const partSize = Number(body.part_size)
-      if (!Number.isSafeInteger(size) || size < 0 || !Number.isSafeInteger(partSize) || partSize <= 0 || typeof body.state !== 'string' || typeof body.expires_at !== 'string') {
+      if (
+        !Number.isSafeInteger(size) ||
+        size < 0 ||
+        !Number.isSafeInteger(partSize) ||
+        partSize <= 0 ||
+        typeof body.state !== 'string' ||
+        typeof body.expires_at !== 'string'
+      ) {
         throw new UploadHttpError(502, 'direct upload reservation was malformed')
       }
       return {
@@ -217,14 +231,30 @@ export class HttpTransport implements Transport {
         ...(typeof body.checksum === 'string' ? { checksum: body.checksum } : {}),
         partSize,
         expiresAt: body.expires_at,
-        parts: Array.isArray(body.parts) ? body.parts.flatMap((part) => {
-          if (!part || typeof part !== 'object') return []
-          const row = part as Record<string, unknown>
-          const partNumber = Number(row.part_number)
-          const rowSize = Number(row.size)
-          if (!Number.isSafeInteger(partNumber) || partNumber < 1 || !Number.isSafeInteger(rowSize) || rowSize < 0 || typeof row.etag !== 'string') return []
-          return [{ partNumber, size: rowSize, etag: row.etag, ...(typeof row.checksum === 'string' ? { checksum: row.checksum } : {}) }]
-        }) : []
+        parts: Array.isArray(body.parts)
+          ? body.parts.flatMap((part) => {
+              if (!part || typeof part !== 'object') return []
+              const row = part as Record<string, unknown>
+              const partNumber = Number(row.part_number)
+              const rowSize = Number(row.size)
+              if (
+                !Number.isSafeInteger(partNumber) ||
+                partNumber < 1 ||
+                !Number.isSafeInteger(rowSize) ||
+                rowSize < 0 ||
+                typeof row.etag !== 'string'
+              )
+                return []
+              return [
+                {
+                  partNumber,
+                  size: rowSize,
+                  etag: row.etag,
+                  ...(typeof row.checksum === 'string' ? { checksum: row.checksum } : {})
+                }
+              ]
+            })
+          : []
       }
     }, false)
   }
@@ -233,10 +263,18 @@ export class HttpTransport implements Transport {
     const res = await send(`${BASE}/direct-uploads/${encodeURIComponent(id)}`, { credentials: 'include' })
     if (!res.ok) throw new UploadHttpError(res.status, `direct upload status failed: ${res.status}`)
     const body = (await res.json().catch(() => null)) as Record<string, unknown> | null
-    if (!body || typeof body.id !== 'string' || typeof body.state !== 'string') throw new UploadHttpError(502, 'direct upload status was malformed')
+    if (!body || typeof body.id !== 'string' || typeof body.state !== 'string')
+      throw new UploadHttpError(502, 'direct upload status was malformed')
     const size = Number(body.size)
     const partSize = Number(body.part_size)
-    if (!Number.isSafeInteger(size) || size < 0 || !Number.isSafeInteger(partSize) || partSize <= 0 || typeof body.expires_at !== 'string') throw new UploadHttpError(502, 'direct upload status was malformed')
+    if (
+      !Number.isSafeInteger(size) ||
+      size < 0 ||
+      !Number.isSafeInteger(partSize) ||
+      partSize <= 0 ||
+      typeof body.expires_at !== 'string'
+    )
+      throw new UploadHttpError(502, 'direct upload status was malformed')
     return {
       id: body.id,
       state: body.state,
@@ -244,14 +282,30 @@ export class HttpTransport implements Transport {
       ...(typeof body.checksum === 'string' ? { checksum: body.checksum } : {}),
       partSize,
       expiresAt: body.expires_at,
-      parts: Array.isArray(body.parts) ? body.parts.flatMap((part) => {
-        if (!part || typeof part !== 'object') return []
-        const row = part as Record<string, unknown>
-        const partNumber = Number(row.part_number)
-        const rowSize = Number(row.size)
-        if (!Number.isSafeInteger(partNumber) || partNumber < 1 || !Number.isSafeInteger(rowSize) || rowSize < 0 || typeof row.etag !== 'string') return []
-        return [{ partNumber, size: rowSize, etag: row.etag, ...(typeof row.checksum === 'string' ? { checksum: row.checksum } : {}) }]
-      }) : []
+      parts: Array.isArray(body.parts)
+        ? body.parts.flatMap((part) => {
+            if (!part || typeof part !== 'object') return []
+            const row = part as Record<string, unknown>
+            const partNumber = Number(row.part_number)
+            const rowSize = Number(row.size)
+            if (
+              !Number.isSafeInteger(partNumber) ||
+              partNumber < 1 ||
+              !Number.isSafeInteger(rowSize) ||
+              rowSize < 0 ||
+              typeof row.etag !== 'string'
+            )
+              return []
+            return [
+              {
+                partNumber,
+                size: rowSize,
+                etag: row.etag,
+                ...(typeof row.checksum === 'string' ? { checksum: row.checksum } : {})
+              }
+            ]
+          })
+        : []
     }
   }
 
@@ -262,11 +316,18 @@ export class HttpTransport implements Transport {
       headers: { 'Content-Type': 'application/json', 'Sc-Csrf': csrfToken },
       body: JSON.stringify({ part_number: String(partNumber), size: String(size), checksum })
     })
-    if (!res.ok) throw new UploadHttpError(res.status, `direct upload part URL failed: ${res.status}`, retryAfterMs(res.headers.get('Retry-After')))
+    if (!res.ok)
+      throw new UploadHttpError(
+        res.status,
+        `direct upload part URL failed: ${res.status}`,
+        retryAfterMs(res.headers.get('Retry-After'))
+      )
     const body = (await res.json().catch(() => null)) as Record<string, unknown> | null
-    if (!body || typeof body.url !== 'string' || typeof body.headers !== 'object' || body.headers === null) throw new UploadHttpError(502, 'direct upload part URL was malformed')
+    if (!body || typeof body.url !== 'string' || typeof body.headers !== 'object' || body.headers === null)
+      throw new UploadHttpError(502, 'direct upload part URL was malformed')
     const headers: Record<string, string> = {}
-    for (const [key, value] of Object.entries(body.headers as Record<string, unknown>)) if (typeof value === 'string') headers[key] = value
+    for (const [key, value] of Object.entries(body.headers as Record<string, unknown>))
+      if (typeof value === 'string') headers[key] = value
     return {
       partNumber: Number(body.part_number),
       url: body.url,
@@ -275,10 +336,19 @@ export class HttpTransport implements Transport {
     }
   }
 
-  async uploadDirectPart(part: DirectPartURL, body: Blob, signal?: AbortSignal): Promise<{ etag: string; checksum?: string }> {
+  async uploadDirectPart(
+    part: DirectPartURL,
+    body: Blob,
+    signal?: AbortSignal
+  ): Promise<{ etag: string; checksum?: string }> {
     return withRetry(async () => {
       const res = await send(part.url, { method: 'PUT', headers: part.headers, body, signal })
-      if (!res.ok) throw new UploadHttpError(res.status, `direct upload part failed: ${res.status}`, retryAfterMs(res.headers.get('Retry-After')))
+      if (!res.ok)
+        throw new UploadHttpError(
+          res.status,
+          `direct upload part failed: ${res.status}`,
+          retryAfterMs(res.headers.get('Retry-After'))
+        )
       const etag = res.headers.get('ETag') ?? res.headers.get('etag')
       if (!etag) throw new UploadHttpError(502, 'direct upload part did not return an ETag')
       const checksum = res.headers.get('x-amz-checksum-sha256') ?? res.headers.get('X-Checksum-Sha256') ?? undefined
@@ -291,9 +361,21 @@ export class HttpTransport implements Transport {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', 'Sc-Csrf': csrfToken },
-      body: JSON.stringify({ parts: parts.map((part) => ({ part_number: String(part.partNumber), size: String(part.size), etag: part.etag, ...(part.checksum !== undefined ? { checksum: part.checksum } : {}) })) })
+      body: JSON.stringify({
+        parts: parts.map((part) => ({
+          part_number: String(part.partNumber),
+          size: String(part.size),
+          etag: part.etag,
+          ...(part.checksum !== undefined ? { checksum: part.checksum } : {})
+        }))
+      })
     })
-    if (!res.ok) throw new UploadHttpError(res.status, `direct upload completion failed: ${res.status}`, retryAfterMs(res.headers.get('Retry-After')))
+    if (!res.ok)
+      throw new UploadHttpError(
+        res.status,
+        `direct upload completion failed: ${res.status}`,
+        retryAfterMs(res.headers.get('Retry-After'))
+      )
     return this.directResponse(await res.json().catch(() => null))
   }
 
@@ -303,7 +385,12 @@ export class HttpTransport implements Transport {
       credentials: 'include',
       headers: { 'Sc-Csrf': csrfToken }
     })
-    if (!res.ok && res.status !== 404 && res.status !== 410) throw new UploadHttpError(res.status, `direct upload cancellation failed: ${res.status}`, retryAfterMs(res.headers.get('Retry-After')))
+    if (!res.ok && res.status !== 404 && res.status !== 410)
+      throw new UploadHttpError(
+        res.status,
+        `direct upload cancellation failed: ${res.status}`,
+        retryAfterMs(res.headers.get('Retry-After'))
+      )
   }
 
   private directResponse(raw: unknown): DirectReservation {
@@ -311,14 +398,28 @@ export class HttpTransport implements Transport {
     const body = raw as Record<string, unknown>
     const size = Number(body.size)
     const partSize = Number(body.part_size)
-    if (typeof body.id !== 'string' || typeof body.state !== 'string' || !Number.isSafeInteger(size) || size < 0 || !Number.isSafeInteger(partSize) || partSize <= 0 || typeof body.expires_at !== 'string') throw new UploadHttpError(502, 'direct upload response was malformed')
-    return { id: body.id, state: body.state, size, ...(typeof body.checksum === 'string' ? { checksum: body.checksum } : {}), partSize, expiresAt: body.expires_at, parts: [] }
+    if (
+      typeof body.id !== 'string' ||
+      typeof body.state !== 'string' ||
+      !Number.isSafeInteger(size) ||
+      size < 0 ||
+      !Number.isSafeInteger(partSize) ||
+      partSize <= 0 ||
+      typeof body.expires_at !== 'string'
+    )
+      throw new UploadHttpError(502, 'direct upload response was malformed')
+    return {
+      id: body.id,
+      state: body.state,
+      size,
+      ...(typeof body.checksum === 'string' ? { checksum: body.checksum } : {}),
+      partSize,
+      expiresAt: body.expires_at,
+      parts: []
+    }
   }
   async createSession(p: CreateSessionParams): Promise<{ id: string; offset: number }> {
-    const metaParts = [
-      `filename ${b64(p.filename)}`,
-      `dest ${b64(p.dest)}`
-    ]
+    const metaParts = [`filename ${b64(p.filename)}`, `dest ${b64(p.dest)}`]
     if (p.relativePath) metaParts.push(`relativePath ${b64(p.relativePath)}`)
     if (p.mtimeNs) metaParts.push(`mtime ${b64(p.mtimeNs)}`)
 
@@ -390,13 +491,7 @@ export class HttpTransport implements Transport {
           resolve({ offset: Number(rawOffset ?? offset) })
         } else {
           const retryHeader = xhr.getResponseHeader('Retry-After')
-          reject(
-            new UploadHttpError(
-              xhr.status,
-              `patch failed: ${xhr.status}`,
-              retryAfterMs(retryHeader)
-            )
-          )
+          reject(new UploadHttpError(xhr.status, `patch failed: ${xhr.status}`, retryAfterMs(retryHeader)))
         }
       }
 
@@ -425,11 +520,7 @@ export class HttpTransport implements Transport {
       signal
     })
     if (!res.ok) {
-      throw new UploadHttpError(
-        res.status,
-        `patch failed: ${res.status}`,
-        retryAfterMs(res.headers.get('Retry-After'))
-      )
+      throw new UploadHttpError(res.status, `patch failed: ${res.status}`, retryAfterMs(res.headers.get('Retry-After')))
     }
     return { offset: Number(res.headers.get('Upload-Offset') ?? offset) }
   }

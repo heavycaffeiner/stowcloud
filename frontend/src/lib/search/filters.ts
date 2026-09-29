@@ -37,7 +37,24 @@ export const EXTENSION_PRESETS: readonly ExtensionPreset[] = [
   {
     id: 'document',
     labelKey: /* i18n */ 'search.preset_document',
-    exts: ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'md', 'rtf', 'odt', 'ods', 'odp', 'hwp', 'hwpx', 'csv']
+    exts: [
+      'pdf',
+      'doc',
+      'docx',
+      'xls',
+      'xlsx',
+      'ppt',
+      'pptx',
+      'txt',
+      'md',
+      'rtf',
+      'odt',
+      'ods',
+      'odp',
+      'hwp',
+      'hwpx',
+      'csv'
+    ]
   },
   {
     id: 'video',
@@ -57,7 +74,32 @@ export const EXTENSION_PRESETS: readonly ExtensionPreset[] = [
   {
     id: 'code',
     labelKey: /* i18n */ 'search.preset_code',
-    exts: ['js', 'ts', 'tsx', 'jsx', 'go', 'rs', 'py', 'java', 'kt', 'c', 'h', 'cpp', 'cs', 'rb', 'php', 'sh', 'sql', 'json', 'yaml', 'yml', 'toml', 'xml', 'html', 'css']
+    exts: [
+      'js',
+      'ts',
+      'tsx',
+      'jsx',
+      'go',
+      'rs',
+      'py',
+      'java',
+      'kt',
+      'c',
+      'h',
+      'cpp',
+      'cs',
+      'rb',
+      'php',
+      'sh',
+      'sql',
+      'json',
+      'yaml',
+      'yml',
+      'toml',
+      'xml',
+      'html',
+      'css'
+    ]
   }
 ]
 

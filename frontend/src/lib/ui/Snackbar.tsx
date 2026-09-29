@@ -22,5 +22,9 @@ export function Snackbar({ message, actionLabel, onAction, onDismiss }: Snackbar
     }
   }, [onAction, onDismiss])
   if (!message) return null
-  return <mdui-snackbar ref={ref} open action={actionLabel} closeable>{message}</mdui-snackbar>
+  return (
+    <mdui-snackbar ref={ref} open action={actionLabel} closeable>
+      {message}
+    </mdui-snackbar>
+  )
 }

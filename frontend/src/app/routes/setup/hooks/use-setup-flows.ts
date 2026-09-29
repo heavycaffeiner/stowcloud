@@ -9,7 +9,11 @@ import { loginMutation } from '../../../../lib/query/session'
 import { useI18n } from '../../../../hooks/use-i18n'
 
 export const MIN_PASSWORD_LENGTH = 10
-export const toList = (value: string): string[] => value.split(',').map((item) => item.trim()).filter(Boolean)
+export const toList = (value: string): string[] =>
+  value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
 
 export function useSetupFlows(state: SetupState, actions: SetupActions) {
   const { t } = useI18n()
@@ -32,10 +36,16 @@ export function useSetupFlows(state: SetupState, actions: SetupActions) {
     if (!state.pickerAuthenticated) {
       try {
         const result = await login.mutateAsync({ username: state.username.trim(), password: state.password })
-        if (result.required === 'totp') { actions.patch({ doneButLoginFailed: true }); return }
+        if (result.required === 'totp') {
+          actions.patch({ doneButLoginFailed: true })
+          return
+        }
         await api.session()
         actions.patch({ pickerAuthenticated: true })
-      } catch { actions.patch({ doneButLoginFailed: true }); return }
+      } catch {
+        actions.patch({ doneButLoginFailed: true })
+        return
+      }
     }
     if (state.shareFailed) {
       try {
@@ -50,18 +60,37 @@ export function useSetupFlows(state: SetupState, actions: SetupActions) {
   }
   const submit = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault()
-    const canSubmit = !setup.isPending && !login.isPending && !retryShare.isPending && state.token.trim().length > 0 && state.username.trim().length > 0 && state.password.length >= MIN_PASSWORD_LENGTH && state.passwordConfirm === state.password && toList(state.appHosts).length > 0 && ((state.shareName.trim() === '') === (state.sharePath.trim() === ''))
+    const canSubmit =
+      !setup.isPending &&
+      !login.isPending &&
+      !retryShare.isPending &&
+      state.token.trim().length > 0 &&
+      state.username.trim().length > 0 &&
+      state.password.length >= MIN_PASSWORD_LENGTH &&
+      state.passwordConfirm === state.password &&
+      toList(state.appHosts).length > 0 &&
+      (state.shareName.trim() === '') === (state.sharePath.trim() === '')
     if (!canSubmit) return
     actions.patch({ errorMessage: null, shareRetryError: null, warnings: [], doneButLoginFailed: false })
     try {
-      const result = await setup.mutateAsync({ token: state.token.trim(), username: state.username.trim(), password: state.password, app_hosts: toList(state.appHosts), trusted_proxies: toList(state.trustedProxies), first_share: state.shareName.trim() ? { name: state.shareName.trim(), host: state.sharePath.trim() } : undefined })
+      const result = await setup.mutateAsync({
+        token: state.token.trim(),
+        username: state.username.trim(),
+        password: state.password,
+        app_hosts: toList(state.appHosts),
+        trusted_proxies: toList(state.trustedProxies),
+        first_share: state.shareName.trim() ? { name: state.shareName.trim(), host: state.sharePath.trim() } : undefined
+      })
       actions.patch({ accountCreated: true, warnings: result.warnings, shareFailed: result.share_failed === true })
       void queryClient.invalidateQueries({ queryKey: keys.session() })
       void queryClient.invalidateQueries({ queryKey: keys.setupRequired() })
       if (result.warnings.length > 0 || result.share_failed === true) return
       await continueAfterSetup()
     } catch (error) {
-      if (error instanceof SetupValidationError) { actions.patch({ warnings: error.findings }); return }
+      if (error instanceof SetupValidationError) {
+        actions.patch({ warnings: error.findings })
+        return
+      }
       actions.patch({ errorMessage: messageFor(error) })
     }
   }

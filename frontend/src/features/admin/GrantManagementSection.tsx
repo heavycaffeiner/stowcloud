@@ -1,6 +1,12 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useGrantManagementState } from './hooks/grant-management-state'
-import { ALL_GRANT_PERMS, ApiError, type AdminGrant, type GrantPermName, type GrantPrincipal } from '../../lib/api/client'
+import {
+  ALL_GRANT_PERMS,
+  ApiError,
+  type AdminGrant,
+  type GrantPermName,
+  type GrantPrincipal
+} from '../../lib/api/client'
 import { describeApiError } from '../../lib/api/error-text'
 import { adminGrantMutation, adminGrantsQuery, adminSharesQuery } from '../../lib/query/admin'
 import { useI18n } from '../../hooks/use-i18n'
@@ -51,13 +57,32 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
   const shares = sharesQuery.data ?? []
   const grants = grantsQuery.data ?? []
   const loading = sharesQuery.isPending || grantsQuery.isPending
-  const loadError = sharesQuery.error || grantsQuery.error
-    ? describeApiError(sharesQuery.error ?? grantsQuery.error, t('grant.could_not_load_permission_list'))
-    : null
+  const loadError =
+    sharesQuery.error || grantsQuery.error
+      ? describeApiError(sharesQuery.error ?? grantsQuery.error, t('grant.could_not_load_permission_list'))
+      : null
 
   const [state, patchState] = useGrantManagementState()
-  const { expandedIds, addOpen, addShareId, addSubpath, addAllow, addDeny, addInherit, addLabel, addValidation, editTarget, editAllow, editDeny, editInherit, editLabel, editValidation, deleteTarget } = state
-  const setExpandedIds = (value: Set<number> | ((current: Set<number>) => Set<number>)): void => patchState((current) => ({ expandedIds: typeof value === 'function' ? value(current.expandedIds) : value }))
+  const {
+    expandedIds,
+    addOpen,
+    addShareId,
+    addSubpath,
+    addAllow,
+    addDeny,
+    addInherit,
+    addLabel,
+    addValidation,
+    editTarget,
+    editAllow,
+    editDeny,
+    editInherit,
+    editLabel,
+    editValidation,
+    deleteTarget
+  } = state
+  const setExpandedIds = (value: Set<number> | ((current: Set<number>) => Set<number>)): void =>
+    patchState((current) => ({ expandedIds: typeof value === 'function' ? value(current.expandedIds) : value }))
   const setAddOpen = (value: boolean): void => patchState({ addOpen: value })
   const setAddShareId = (value: string): void => patchState({ addShareId: value })
   const setAddSubpath = (value: string): void => patchState({ addSubpath: value })
@@ -78,8 +103,10 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
   const deleteMut = useMutation(adminGrantMutation())
 
   const shareName = (id: number): string => shares.find((share) => share.id === id)?.name ?? t('grant.share', { id })
-  const addError = addValidation ?? (addMut.error ? grantError(addMut.error, t('common.could_not_add_folder'), t) : null)
-  const editError = editValidation ?? (editMut.error ? grantError(editMut.error, t('common.could_not_save_change'), t) : null)
+  const addError =
+    addValidation ?? (addMut.error ? grantError(addMut.error, t('common.could_not_add_folder'), t) : null)
+  const editError =
+    editValidation ?? (editMut.error ? grantError(editMut.error, t('common.could_not_save_change'), t) : null)
   const deleteError = deleteMut.error ? describeApiError(deleteMut.error, t('common.could_not_remove')) : null
   const shareOptions: SelectOption[] = [
     { value: '', text: t('grant.select_share'), disabled: true },
@@ -198,9 +225,16 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
     <>
       <section className="sc-admin-section sc-grants">
         <p className="sc-admin-section-hint">
-          <strong>{label}</strong>{t('grant.sees_only_folders_granted_here')}
+          <strong>{label}</strong>
+          {t('grant.sees_only_folders_granted_here')}
         </p>
-        {loading ? <ProgressCircular /> : loadError ? <p className="sc-admin-section-error" role="alert">{loadError}</p> : (
+        {loading ? (
+          <ProgressCircular />
+        ) : loadError ? (
+          <p className="sc-admin-section-error" role="alert">
+            {loadError}
+          </p>
+        ) : (
           <>
             {grants.length === 0 ? (
               <div className="sc-admin-empty">
@@ -219,61 +253,89 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
                   const overlap = grant.allow.filter((permission) => grant.deny.includes(permission))
                   const grantName = grant.label || shareName(grant.share)
                   return (
-                      <ListItem
-                        headline={
-                          <>
-                            <span className="sc-admin-row-name">{grantName}</span>
-                            {!grant.inherit ? <Chip variant="assist">{t('grant.path_only')}</Chip> : null}
-                          </>
-                        }
-                        supporting={
-                          <span className="sc-admin-grant-supporting">
-                            <span>{shareName(grant.share)}{grant.subpath ? ` / ${grant.subpath}` : t('grant.root')}</span>
-                            <span>
-                              {allowSummary(grant)}
-                              {grant.deny.length > 0 ? <span className="sc-admin-grant-summary-deny"> - {t('grant.denied', { perms: grant.deny.map((permission) => permLabel[permission]).join(', ') })}</span> : null}
-                            </span>
-                            {overlap.length > 0 ? (
-                              <span className="sc-admin-grant-warning">
-                                <Icon name="warning" size={14} />
-                                {t('grant.appears_both_allow_deny_so', { perms: overlap.map((permission) => permLabel[permission]).join(', ') })}
-                              </span>
-                            ) : null}
-                            {expanded ? (
-                              <span className="sc-admin-grant-perms">
-                                {grant.allow.map((permission) => <Chip key={`allow-${permission}`} variant="filter" selected>{permLabel[permission]}</Chip>)}
-                                {grant.deny.map((permission) => <Chip key={`deny-${permission}`} variant="input">{t('grant.denied', { perms: permLabel[permission] })}</Chip>)}
+                    <ListItem
+                      headline={
+                        <>
+                          <span className="sc-admin-row-name">{grantName}</span>
+                          {!grant.inherit ? <Chip variant="assist">{t('grant.path_only')}</Chip> : null}
+                        </>
+                      }
+                      supporting={
+                        <span className="sc-admin-grant-supporting">
+                          <span>
+                            {shareName(grant.share)}
+                            {grant.subpath ? ` / ${grant.subpath}` : t('grant.root')}
+                          </span>
+                          <span>
+                            {allowSummary(grant)}
+                            {grant.deny.length > 0 ? (
+                              <span className="sc-admin-grant-summary-deny">
+                                {' '}
+                                -{' '}
+                                {t('grant.denied', {
+                                  perms: grant.deny.map((permission) => permLabel[permission]).join(', ')
+                                })}
                               </span>
                             ) : null}
                           </span>
-                        }
-                        trailing={
-                          <span className="sc-admin-row-actions">
+                          {overlap.length > 0 ? (
+                            <span className="sc-admin-grant-warning">
+                              <Icon name="warning" size={14} />
+                              {t('grant.appears_both_allow_deny_so', {
+                                perms: overlap.map((permission) => permLabel[permission]).join(', ')
+                              })}
+                            </span>
+                          ) : null}
+                          {expanded ? (
+                            <span className="sc-admin-grant-perms">
+                              {grant.allow.map((permission) => (
+                                <Chip key={`allow-${permission}`} variant="filter" selected>
+                                  {permLabel[permission]}
+                                </Chip>
+                              ))}
+                              {grant.deny.map((permission) => (
+                                <Chip key={`deny-${permission}`} variant="input">
+                                  {t('grant.denied', { perms: permLabel[permission] })}
+                                </Chip>
+                              ))}
+                            </span>
+                          ) : null}
+                        </span>
+                      }
+                      trailing={
+                        <span className="sc-admin-row-actions">
+                          <IconButton
+                            label={
+                              expanded ? t('grant.collapse_permission_details') : t('grant.expand_permission_details')
+                            }
+                            expanded={expanded}
+                            onClick={() => toggleExpanded(grant.id)}
+                          >
+                            <span className={`sc-admin-grant-chevron${expanded ? ' sc-admin-grant-chevron-open' : ''}`}>
+                              <Icon name="chevron-right" size={18} />
+                            </span>
+                          </IconButton>
+                          <IconButton label={t('common.edit', { name: grantName })} onClick={() => openEdit(grant)}>
+                            <Icon name="settings" size={18} />
+                          </IconButton>
+                          <span className="sc-danger">
                             <IconButton
-                              label={expanded ? t('grant.collapse_permission_details') : t('grant.expand_permission_details')}
-                              expanded={expanded}
-                              onClick={() => toggleExpanded(grant.id)}
+                              label={t('common.remove', { name: grantName })}
+                              onClick={() => askDelete(grant)}
                             >
-                              <span className={`sc-admin-grant-chevron${expanded ? ' sc-admin-grant-chevron-open' : ''}`}>
-                                <Icon name="chevron-right" size={18} />
-                              </span>
+                              <Icon name="delete" size={18} />
                             </IconButton>
-                            <IconButton label={t('common.edit', { name: grantName })} onClick={() => openEdit(grant)}>
-                              <Icon name="settings" size={18} />
-                            </IconButton>
-                            <span className="sc-danger">
-                              <IconButton label={t('common.remove', { name: grantName })} onClick={() => askDelete(grant)}>
-                                <Icon name="delete" size={18} />
-                              </IconButton>
-                            </span>
                           </span>
-                        }
-                      />
+                        </span>
+                      }
+                    />
                   )
                 }}
               />
             )}
-            <Button variant="tonal" icon={<Icon name="add" />} onClick={openAdd}>{t('common.add_folder')}</Button>
+            <Button variant="tonal" icon={<Icon name="add" />} onClick={openAdd}>
+              {t('common.add_folder')}
+            </Button>
           </>
         )}
       </section>
@@ -284,19 +346,58 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
         onClose={closeAdd}
         actions={
           <>
-            <Button variant="text" disabled={addMut.isPending} onClick={closeAdd}>{t('common.cancel')}</Button>
-            <Button loading={addMut.isPending} onClick={submitAdd}>{t('common.add')}</Button>
+            <Button variant="text" disabled={addMut.isPending} onClick={closeAdd}>
+              {t('common.cancel')}
+            </Button>
+            <Button loading={addMut.isPending} onClick={submitAdd}>
+              {t('common.add')}
+            </Button>
           </>
         }
       >
-        <form className="sc-admin-form" onSubmit={(event) => { event.preventDefault(); submitAdd() }}>
-          <Select label={t('common.share')} options={shareOptions} value={addShareId} required onValueChange={setAddShareId} />
-          <TextField label={t('grant.subpath_leave_empty_whole_share')} placeholder={t('grant.e_g_vacation')} value={addSubpath} autoComplete="off" onValueChange={setAddSubpath} />
+        <form
+          className="sc-admin-form"
+          onSubmit={(event) => {
+            event.preventDefault()
+            submitAdd()
+          }}
+        >
+          <Select
+            label={t('common.share')}
+            options={shareOptions}
+            value={addShareId}
+            required
+            onValueChange={setAddShareId}
+          />
+          <TextField
+            label={t('grant.subpath_leave_empty_whole_share')}
+            placeholder={t('grant.e_g_vacation')}
+            value={addSubpath}
+            autoComplete="off"
+            onValueChange={setAddSubpath}
+          />
           <p className="sc-admin-section-field-hint">{t('grant.left_empty_whole_share_appears')}</p>
-          <PermissionGrid allow={addAllow} deny={addDeny} setAllow={setAddAllow} setDeny={setAddDeny} permLabel={permLabel} t={t} />
+          <PermissionGrid
+            allow={addAllow}
+            deny={addDeny}
+            setAllow={setAddAllow}
+            setDeny={setAddDeny}
+            permLabel={permLabel}
+            t={t}
+          />
           <Switch checked={addInherit} label={t('grant.apply_subfolders')} onChange={setAddInherit} />
-          <TextField label={t('grant.display_name_optional')} placeholder={t('grant.defaults_folder_name')} value={addLabel} autoComplete="off" onValueChange={setAddLabel} />
-          {addError ? <p className="sc-admin-section-error" role="alert">{addError}</p> : null}
+          <TextField
+            label={t('grant.display_name_optional')}
+            placeholder={t('grant.defaults_folder_name')}
+            value={addLabel}
+            autoComplete="off"
+            onValueChange={setAddLabel}
+          />
+          {addError ? (
+            <p className="sc-admin-section-error" role="alert">
+              {addError}
+            </p>
+          ) : null}
         </form>
       </Dialog>
 
@@ -306,17 +407,36 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
         onClose={closeEdit}
         actions={
           <>
-            <Button variant="text" disabled={editMut.isPending} onClick={closeEdit}>{t('common.cancel')}</Button>
-            <Button loading={editMut.isPending} onClick={submitEdit}>{t('common.save')}</Button>
+            <Button variant="text" disabled={editMut.isPending} onClick={closeEdit}>
+              {t('common.cancel')}
+            </Button>
+            <Button loading={editMut.isPending} onClick={submitEdit}>
+              {t('common.save')}
+            </Button>
           </>
         }
       >
         {editTarget ? (
-          <form className="sc-admin-form" onSubmit={(event) => { event.preventDefault(); submitEdit() }}>
+          <form
+            className="sc-admin-form"
+            onSubmit={(event) => {
+              event.preventDefault()
+              submitEdit()
+            }}
+          >
             <p className="sc-admin-section-field-hint">
-              {shareName(editTarget.share)}{editTarget.subpath ? ` / ${editTarget.subpath}` : t('grant.root')}{t('grant.share_path_cannot_changed_grant')}
+              {shareName(editTarget.share)}
+              {editTarget.subpath ? ` / ${editTarget.subpath}` : t('grant.root')}
+              {t('grant.share_path_cannot_changed_grant')}
             </p>
-            <PermissionGrid allow={editAllow} deny={editDeny} setAllow={setEditAllow} setDeny={setEditDeny} permLabel={permLabel} t={t} />
+            <PermissionGrid
+              allow={editAllow}
+              deny={editDeny}
+              setAllow={setEditAllow}
+              setDeny={setEditDeny}
+              permLabel={permLabel}
+              t={t}
+            />
             {editAllow.size > 0 && [...editAllow].some((permission) => editDeny.has(permission)) ? (
               <p className="sc-admin-grant-warning">
                 <Icon name="warning" size={14} />
@@ -324,8 +444,18 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
               </p>
             ) : null}
             <Switch checked={editInherit} label={t('grant.apply_subfolders')} onChange={setEditInherit} />
-            <TextField label={t('grant.display_name_optional')} placeholder={t('grant.defaults_folder_name')} value={editLabel} autoComplete="off" onValueChange={setEditLabel} />
-            {editError ? <p className="sc-admin-section-error" role="alert">{editError}</p> : null}
+            <TextField
+              label={t('grant.display_name_optional')}
+              placeholder={t('grant.defaults_folder_name')}
+              value={editLabel}
+              autoComplete="off"
+              onValueChange={setEditLabel}
+            />
+            {editError ? (
+              <p className="sc-admin-section-error" role="alert">
+                {editError}
+              </p>
+            ) : null}
           </form>
         ) : null}
       </Dialog>
@@ -336,28 +466,47 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
         onClose={closeDelete}
         actions={
           <>
-            <Button variant="text" disabled={deleteMut.isPending} onClick={closeDelete}>{t('common.cancel')}</Button>
-            <Button danger loading={deleteMut.isPending} onClick={submitDelete}>{t('common.remove_2')}</Button>
+            <Button variant="text" disabled={deleteMut.isPending} onClick={closeDelete}>
+              {t('common.cancel')}
+            </Button>
+            <Button danger loading={deleteMut.isPending} onClick={submitDelete}>
+              {t('common.remove_2')}
+            </Button>
           </>
         }
       >
         <p>
-          {t('grant.access_removed_immediately', { name: deleteTarget?.label || (deleteTarget ? shareName(deleteTarget.share) : '') })}{' '}
+          {t('grant.access_removed_immediately', {
+            name: deleteTarget?.label || (deleteTarget ? shareName(deleteTarget.share) : '')
+          })}{' '}
           {t('grant.will_not_see_folder_from', { principal: label })}
         </p>
-        {deleteError ? <p className="sc-admin-section-error" role="alert">{deleteError}</p> : null}
+        {deleteError ? (
+          <p className="sc-admin-section-error" role="alert">
+            {deleteError}
+          </p>
+        ) : null}
       </Dialog>
     </>
   )
 }
 
-function PermissionGrid({ allow, deny, setAllow, setDeny, permLabel, t }: PermissionSets & {
+function PermissionGrid({
+  allow,
+  deny,
+  setAllow,
+  setDeny,
+  permLabel,
+  t
+}: PermissionSets & {
   setAllow: (next: Set<GrantPermName>) => void
   setDeny: (next: Set<GrantPermName>) => void
   permLabel: Record<GrantPermName, string>
   t: Translate
 }) {
-  return <GrantPermissionGrid allow={allow} deny={deny} setAllow={setAllow} setDeny={setDeny} permLabel={permLabel} t={t} />
+  return (
+    <GrantPermissionGrid allow={allow} deny={deny} setAllow={setAllow} setDeny={setDeny} permLabel={permLabel} t={t} />
+  )
 }
 
 function togglePermission(set: Set<GrantPermName>, permission: GrantPermName, checked: boolean): Set<GrantPermName> {
@@ -369,6 +518,7 @@ function togglePermission(set: Set<GrantPermName>, permission: GrantPermName, ch
 
 function grantError(error: unknown, fallback: string, t: Translate, mapNotFound = true): string {
   if (error instanceof ApiError && error.code === 'fs.invalid_name') return t('grant.select_at_least_one_permission')
-  if (mapNotFound && error instanceof ApiError && error.code === 'fs.not_found') return t('common.share_no_longer_exists')
+  if (mapNotFound && error instanceof ApiError && error.code === 'fs.not_found')
+    return t('common.share_no_longer_exists')
   return describeApiError(error, fallback)
 }

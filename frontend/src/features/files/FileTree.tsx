@@ -67,7 +67,11 @@ function ancestorPaths(path: string): string[] {
 
 // Query observers belong to expanded branches, not windowed rows. Scrolling a
 // folder out of view must neither discard its children nor restart its loading.
-function DirectoryBranch({ path, currentPath, onChange }: {
+function DirectoryBranch({
+  path,
+  currentPath,
+  onChange
+}: {
   path: string
   currentPath: string
   onChange: (path: string, state: DirectoryState) => void
@@ -75,15 +79,26 @@ function DirectoryBranch({ path, currentPath, onChange }: {
   const query = useInfiniteQuery(dirListQuery(path, { key: 'name', order: 'asc' }))
   const directory = useMemo(() => dirViewOf(query.data?.pages), [query.data?.pages])
   const children = useMemo(() => directory.entries.filter((entry) => entry.kind === 'dir'), [directory.entries])
-  const state = useMemo<DirectoryState>(() => ({
-    children,
-    size: directory.dirs,
-    pending: query.isPending,
-    error: query.isError,
-    hasNextPage: query.hasNextPage,
-    fetchingNextPage: query.isFetchingNextPage,
-    fetchNextPage: query.fetchNextPage
-  }), [children, directory.dirs, query.isPending, query.isError, query.hasNextPage, query.isFetchingNextPage, query.fetchNextPage])
+  const state = useMemo<DirectoryState>(
+    () => ({
+      children,
+      size: directory.dirs,
+      pending: query.isPending,
+      error: query.isError,
+      hasNextPage: query.hasNextPage,
+      fetchingNextPage: query.isFetchingNextPage,
+      fetchNextPage: query.fetchNextPage
+    }),
+    [
+      children,
+      directory.dirs,
+      query.isPending,
+      query.isError,
+      query.hasNextPage,
+      query.isFetchingNextPage,
+      query.fetchNextPage
+    ]
+  )
 
   useEffect(() => onChange(path, state), [path, state, onChange])
   useEffect(() => {
@@ -97,13 +112,25 @@ function DirectoryBranch({ path, currentPath, onChange }: {
   return null
 }
 
-function visibleTree(roots: readonly TreeRoot[], expanded: ReadonlySet<string>, directories: ReadonlyMap<string, DirectoryState>) {
+function visibleTree(
+  roots: readonly TreeRoot[],
+  expanded: ReadonlySet<string>,
+  directories: ReadonlyMap<string, DirectoryState>
+) {
   const rows: TreeRow[] = []
   const branches: string[] = []
   const stack: TreeRow[] = []
   for (let index = roots.length - 1; index >= 0; index--) {
     const root = roots[index]
-    stack.push({ ...root, kind: 'folder', key: root.path, parent: null, depth: 0, position: index + 1, setSize: roots.length })
+    stack.push({
+      ...root,
+      kind: 'folder',
+      key: root.path,
+      parent: null,
+      depth: 0,
+      position: index + 1,
+      setSize: roots.length
+    })
   }
   while (stack.length) {
     const row = stack.pop()!
@@ -113,26 +140,54 @@ function visibleTree(roots: readonly TreeRoot[], expanded: ReadonlySet<string>, 
     const directory = directories.get(row.path)
     const depth = row.depth + 1
     if (!directory || directory.pending || directory.error) {
-      stack.push({ kind: 'status', key: `status:${row.path}`, parent: row.path, depth, status: directory?.error ? 'error' : 'loading' })
+      stack.push({
+        kind: 'status',
+        key: `status:${row.path}`,
+        parent: row.path,
+        depth,
+        status: directory?.error ? 'error' : 'loading'
+      })
       continue
     }
     if (directory.hasNextPage) {
-      stack.push({ kind: 'more', key: `more:${row.path}`, parent: row.path, depth, fetching: directory.fetchingNextPage })
+      stack.push({
+        kind: 'more',
+        key: `more:${row.path}`,
+        parent: row.path,
+        depth,
+        fetching: directory.fetchingNextPage
+      })
     }
     if (!directory.children.length) {
-      if (!directory.hasNextPage) stack.push({ kind: 'status', key: `status:${row.path}`, parent: row.path, depth, status: 'empty' })
+      if (!directory.hasNextPage)
+        stack.push({ kind: 'status', key: `status:${row.path}`, parent: row.path, depth, status: 'empty' })
       continue
     }
     for (let index = directory.children.length - 1; index >= 0; index--) {
       const child = directory.children[index]
       const path = joinPath(row.path, child.name)
-      stack.push({ kind: 'folder', key: path, path, name: child.name, parent: row.path, depth, position: index + 1, setSize: directory.size })
+      stack.push({
+        kind: 'folder',
+        key: path,
+        path,
+        name: child.name,
+        parent: row.path,
+        depth,
+        position: index + 1,
+        setSize: directory.size
+      })
     }
   }
   return { rows, branches }
 }
 
-export function FileTreeList({ roots, currentPath, onNavigate, rowSize = 40, 'aria-label': ariaLabel }: {
+export function FileTreeList({
+  roots,
+  currentPath,
+  onNavigate,
+  rowSize = 40,
+  'aria-label': ariaLabel
+}: {
   roots: readonly TreeRoot[]
   currentPath: string
   onNavigate: (path: string) => void
@@ -144,23 +199,48 @@ export function FileTreeList({ roots, currentPath, onNavigate, rowSize = 40, 'ar
   const pendingFocus = useRef<string | null>(null)
   const focusWithin = useRef(false)
   const loadingFocus = useRef<{ parent: string; childCount: number } | null>(null)
-  const [treeState, setTreeState] = useComponentState<{ expanded: Set<string>; directories: ReadonlyMap<string, DirectoryState>; focusKey: string | null }>({ expanded: new Set(ancestorPaths(currentPath)), directories: new Map(), focusKey: null })
+  const [treeState, setTreeState] = useComponentState<{
+    expanded: Set<string>
+    directories: ReadonlyMap<string, DirectoryState>
+    focusKey: string | null
+  }>({ expanded: new Set(ancestorPaths(currentPath)), directories: new Map(), focusKey: null })
   const { expanded, directories, focusKey } = treeState
-  const updateDirectory = useCallback((path: string, state: DirectoryState) => {
-    setTreeState((previous) => ({ ...previous, directories: previous.directories.get(path) === state ? previous.directories : new Map(previous.directories).set(path, state) }))
-  }, [setTreeState])
+  const updateDirectory = useCallback(
+    (path: string, state: DirectoryState) => {
+      setTreeState((previous) => ({
+        ...previous,
+        directories:
+          previous.directories.get(path) === state
+            ? previous.directories
+            : new Map(previous.directories).set(path, state)
+      }))
+    },
+    [setTreeState]
+  )
 
   useEffect(() => {
     const ancestors = ancestorPaths(currentPath)
-    setTreeState((previous) => ({ ...previous, expanded: ancestors.every((path) => previous.expanded.has(path)) ? previous.expanded : new Set([...previous.expanded, ...ancestors]) }))
+    setTreeState((previous) => ({
+      ...previous,
+      expanded: ancestors.every((path) => previous.expanded.has(path))
+        ? previous.expanded
+        : new Set([...previous.expanded, ...ancestors])
+    }))
   }, [currentPath, setTreeState])
 
   const model = useMemo(() => visibleTree(roots, expanded, directories), [roots, expanded, directories])
-  const focusable = useMemo(() => model.rows.filter((row): row is FolderRow | MoreRow => row.kind !== 'status'), [model.rows])
+  const focusable = useMemo(
+    () => model.rows.filter((row): row is FolderRow | MoreRow => row.kind !== 'status'),
+    [model.rows]
+  )
   const focusIndexes = useMemo(() => new Map(focusable.map((row, index) => [row.key, index])), [focusable])
-  const fallbackKey = focusKey?.startsWith('more:') && focusIndexes.has(focusKey.slice(5)) ? focusKey.slice(5) : undefined
-  const focusedKey = focusKey && focusIndexes.has(focusKey) ? focusKey : fallbackKey ?? (focusIndexes.has(currentPath) ? currentPath : focusable[0]?.key)
-  const pinnedKeys = useMemo(() => focusedKey ? [focusedKey] : [], [focusedKey])
+  const fallbackKey =
+    focusKey?.startsWith('more:') && focusIndexes.has(focusKey.slice(5)) ? focusKey.slice(5) : undefined
+  const focusedKey =
+    focusKey && focusIndexes.has(focusKey)
+      ? focusKey
+      : (fallbackKey ?? (focusIndexes.has(currentPath) ? currentPath : focusable[0]?.key))
+  const pinnedKeys = useMemo(() => (focusedKey ? [focusedKey] : []), [focusedKey])
 
   const focusMounted = (key: string): boolean => {
     const row = container.current?.querySelector<HTMLElement>(`[data-tree-key="${CSS.escape(key)}"]`)
@@ -199,10 +279,21 @@ export function FileTreeList({ roots, currentPath, onNavigate, rowSize = 40, 'ar
   })
 
   const toggle = (path: string) => {
-    setTreeState((previous) => ({ ...previous, expanded: (() => { const next = new Set(previous.expanded); if (next.has(path)) next.delete(path); else next.add(path); return next })() }))
+    setTreeState((previous) => ({
+      ...previous,
+      expanded: (() => {
+        const next = new Set(previous.expanded)
+        if (next.has(path)) next.delete(path)
+        else next.add(path)
+        return next
+      })()
+    }))
   }
   const navigate = (path: string) => {
-    setTreeState((previous) => ({ ...previous, expanded: previous.expanded.has(path) ? previous.expanded : new Set(previous.expanded).add(path) }))
+    setTreeState((previous) => ({
+      ...previous,
+      expanded: previous.expanded.has(path) ? previous.expanded : new Set(previous.expanded).add(path)
+    }))
     onNavigate(path)
   }
 
@@ -214,7 +305,12 @@ export function FileTreeList({ roots, currentPath, onNavigate, rowSize = 40, 'ar
     const row = focusable[index]
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Home' || event.key === 'End') {
       event.preventDefault()
-      const next = event.key === 'Home' ? 0 : event.key === 'End' ? focusable.length - 1 : Math.max(0, Math.min(index + (event.key === 'ArrowDown' ? 1 : -1), focusable.length - 1))
+      const next =
+        event.key === 'Home'
+          ? 0
+          : event.key === 'End'
+            ? focusable.length - 1
+            : Math.max(0, Math.min(index + (event.key === 'ArrowDown' ? 1 : -1), focusable.length - 1))
       focusRow(focusable[next].key)
     } else if (event.key === 'ArrowLeft') {
       event.preventDefault()
@@ -222,11 +318,17 @@ export function FileTreeList({ roots, currentPath, onNavigate, rowSize = 40, 'ar
       else if (row.parent) focusRow(row.parent)
     } else if (event.key === 'ArrowRight' && row.kind === 'folder') {
       event.preventDefault()
-      if (!expanded.has(row.path)) setTreeState((previous) => ({ ...previous, expanded: new Set(previous.expanded).add(row.path) }))
+      if (!expanded.has(row.path))
+        setTreeState((previous) => ({ ...previous, expanded: new Set(previous.expanded).add(row.path) }))
       else if (focusable[index + 1]?.parent === row.path) focusRow(focusable[index + 1].key)
     } else if (event.key === '*' && row.kind === 'folder') {
       event.preventDefault()
-      setTreeState((previous) => { const next = new Set(previous.expanded); for (const sibling of focusable) if (sibling.kind === 'folder' && sibling.parent === row.parent) next.add(sibling.path); return { ...previous, expanded: next } })
+      setTreeState((previous) => {
+        const next = new Set(previous.expanded)
+        for (const sibling of focusable)
+          if (sibling.kind === 'folder' && sibling.parent === row.parent) next.add(sibling.path)
+        return { ...previous, expanded: next }
+      })
     } else if ((event.key === 'Enter' || event.key === ' ') && row.kind === 'folder') {
       event.preventDefault()
       navigate(row.path)
@@ -235,7 +337,9 @@ export function FileTreeList({ roots, currentPath, onNavigate, rowSize = 40, 'ar
 
   return (
     <div ref={container} className="sc-file-tree-list">
-      {model.branches.map((path) => <DirectoryBranch key={path} path={path} currentPath={currentPath} onChange={updateDirectory} />)}
+      {model.branches.map((path) => (
+        <DirectoryBranch key={path} path={path} currentPath={currentPath} onChange={updateDirectory} />
+      ))}
       <VirtualList
         role="tree"
         aria-label={ariaLabel ?? t('tree.folder_tree')}
@@ -270,47 +374,60 @@ export function FileTreeList({ roots, currentPath, onNavigate, rowSize = 40, 'ar
           'aria-expanded': row.kind === 'folder' ? expanded.has(row.path) : undefined,
           'aria-selected': row.kind === 'folder' ? currentPath === row.path : undefined,
           'aria-current': row.kind === 'folder' && currentPath === row.path ? 'page' : undefined,
-          'aria-busy': row.kind === 'folder' && expanded.has(row.path) && (!directories.has(row.path) || directories.get(row.path)?.pending || directories.get(row.path)?.fetchingNextPage) ? true : undefined
+          'aria-busy':
+            row.kind === 'folder' &&
+            expanded.has(row.path) &&
+            (!directories.has(row.path) ||
+              directories.get(row.path)?.pending ||
+              directories.get(row.path)?.fetchingNextPage)
+              ? true
+              : undefined
         })}
-        renderItem={(row) => row.kind === 'folder' ? (
-          <FileTreeItem
-            path={row.path}
-            name={row.name}
-            depth={row.depth}
-            active={currentPath === row.path}
-            ancestor={currentPath.startsWith(`${row.path}/`)}
-            expanded={expanded.has(row.path)}
-            tabIndex={focusedKey === row.key ? 0 : -1}
-            onNavigate={navigate}
-            onToggle={toggle}
-          />
-        ) : row.kind === 'more' ? (
-          <button
-            type="button"
-            className="sc-tree-row-more"
-            style={{ paddingInlineStart: row.depth * 16 + 8 }}
-            data-tree-more
-            tabIndex={focusedKey === row.key ? 0 : -1}
-            aria-busy={row.fetching || undefined}
-            onClick={() => {
-              if (row.fetching) return
-              const directory = directories.get(row.parent)
-              if (!directory) return
-              loadingFocus.current = { parent: row.parent, childCount: directory.children.length }
-              directory.fetchNextPage()
-            }}
-          >
-            {row.fetching ? t('common.loading') : t('common.continue')}
-          </button>
-        ) : (
-          <p
-            className={`sc-tree-row-status${row.status === 'error' ? ' sc-tree-row-status-error' : ''}`}
-            style={{ paddingInlineStart: row.depth * 16 + 8 }}
-            role={row.status === 'error' ? 'alert' : row.status === 'loading' ? 'status' : undefined}
-          >
-            {row.status === 'error' ? t('tree.could_not_load_subfolders') : row.status === 'loading' ? t('common.loading') : t('tree.no_subfolders')}
-          </p>
-        )}
+        renderItem={(row) =>
+          row.kind === 'folder' ? (
+            <FileTreeItem
+              path={row.path}
+              name={row.name}
+              depth={row.depth}
+              active={currentPath === row.path}
+              ancestor={currentPath.startsWith(`${row.path}/`)}
+              expanded={expanded.has(row.path)}
+              tabIndex={focusedKey === row.key ? 0 : -1}
+              onNavigate={navigate}
+              onToggle={toggle}
+            />
+          ) : row.kind === 'more' ? (
+            <button
+              type="button"
+              className="sc-tree-row-more"
+              style={{ paddingInlineStart: row.depth * 16 + 8 }}
+              data-tree-more
+              tabIndex={focusedKey === row.key ? 0 : -1}
+              aria-busy={row.fetching || undefined}
+              onClick={() => {
+                if (row.fetching) return
+                const directory = directories.get(row.parent)
+                if (!directory) return
+                loadingFocus.current = { parent: row.parent, childCount: directory.children.length }
+                directory.fetchNextPage()
+              }}
+            >
+              {row.fetching ? t('common.loading') : t('common.continue')}
+            </button>
+          ) : (
+            <p
+              className={`sc-tree-row-status${row.status === 'error' ? ' sc-tree-row-status-error' : ''}`}
+              style={{ paddingInlineStart: row.depth * 16 + 8 }}
+              role={row.status === 'error' ? 'alert' : row.status === 'loading' ? 'status' : undefined}
+            >
+              {row.status === 'error'
+                ? t('tree.could_not_load_subfolders')
+                : row.status === 'loading'
+                  ? t('common.loading')
+                  : t('tree.no_subfolders')}
+            </p>
+          )
+        }
       />
     </div>
   )
@@ -322,7 +439,10 @@ export function FileTree({ currentPath, onNavigate, overlay = false, onClose }: 
   const dialog = useRef<HTMLDialogElement>(null)
   const wasOpen = useRef(false)
   const opener = useRef<HTMLElement | null>(null)
-  const roots = useMemo(() => (session.data?.roots ?? []).map((root) => ({ path: `/${root.label}`, name: root.label })), [session.data?.roots])
+  const roots = useMemo(
+    () => (session.data?.roots ?? []).map((root) => ({ path: `/${root.label}`, name: root.label })),
+    [session.data?.roots]
+  )
 
   useEffect(() => {
     const element = dialog.current
@@ -331,7 +451,9 @@ export function FileTree({ currentPath, onNavigate, overlay = false, onClose }: 
       opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
       wasOpen.current = true
       if (!element.open) element.showModal()
-      queueMicrotask(() => element.querySelector<HTMLElement>('[data-tree-label][tabindex="0"], [data-tree-more][tabindex="0"]')?.focus())
+      queueMicrotask(() =>
+        element.querySelector<HTMLElement>('[data-tree-label][tabindex="0"], [data-tree-more][tabindex="0"]')?.focus()
+      )
       return
     }
     if (!overlay && wasOpen.current) {
@@ -340,17 +462,43 @@ export function FileTree({ currentPath, onNavigate, overlay = false, onClose }: 
       const target = opener.current
       opener.current = null
       queueMicrotask(() => {
-        if (target?.isConnected && !target.hasAttribute('disabled') && !target.hasAttribute('aria-hidden')) target.focus()
+        if (target?.isConnected && !target.hasAttribute('disabled') && !target.hasAttribute('aria-hidden'))
+          target.focus()
         else document.querySelector<HTMLElement>('[role="grid"][tabindex="0"], [role="tree"][tabindex="0"]')?.focus()
       })
     }
   }, [overlay])
 
-  const tree = <FileTreeList roots={roots} currentPath={currentPath} onNavigate={onNavigate} rowSize={overlay ? 44 : 40} />
-  if (!overlay) return <nav className="sc-file-tree" aria-label={t('tree.folder_tree')}>{tree}</nav>
+  const tree = (
+    <FileTreeList roots={roots} currentPath={currentPath} onNavigate={onNavigate} rowSize={overlay ? 44 : 40} />
+  )
+  if (!overlay)
+    return (
+      <nav className="sc-file-tree" aria-label={t('tree.folder_tree')}>
+        {tree}
+      </nav>
+    )
   return (
-    <dialog ref={dialog} className="sc-file-tree sc-file-tree-overlay" aria-label={t('tree.folder_tree')} onClick={(event) => { if (event.target === event.currentTarget) onClose?.() }} onCancel={(event) => { event.preventDefault(); onClose?.() }} onClose={(event) => { if (!event.currentTarget.open && wasOpen.current) onClose?.() }}>
-      <div className="sc-file-tree-overlay-header"><button type="button" onClick={onClose} aria-label={t('tree.close_folder_tree')}>×</button></div>
+    <dialog
+      ref={dialog}
+      className="sc-file-tree sc-file-tree-overlay"
+      aria-label={t('tree.folder_tree')}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose?.()
+      }}
+      onCancel={(event) => {
+        event.preventDefault()
+        onClose?.()
+      }}
+      onClose={(event) => {
+        if (!event.currentTarget.open && wasOpen.current) onClose?.()
+      }}
+    >
+      <div className="sc-file-tree-overlay-header">
+        <button type="button" onClick={onClose} aria-label={t('tree.close_folder_tree')}>
+          ×
+        </button>
+      </div>
       <nav aria-label={t('tree.folder_tree')}>{tree}</nav>
     </dialog>
   )

@@ -11,11 +11,27 @@ export interface SecondaryPageStateProps {
 }
 
 /** Shared loading, error, and empty-state semantics for secondary routes. */
-export function SecondaryPageState({ loading, loadingLabel, error, errorText, empty, emptyText, children }: SecondaryPageStateProps) {
+export function SecondaryPageState({
+  loading,
+  loadingLabel,
+  error,
+  errorText,
+  empty,
+  emptyText,
+  children
+}: SecondaryPageStateProps) {
   return (
     <>
-      {loading ? <div className="sc-secondary-page-loading" role="status" aria-live="polite"><mdui-circular-progress aria-label={loadingLabel}></mdui-circular-progress></div> : null}
-      {error ? <p className="sc-secondary-page-error" role="alert">{errorText}</p> : null}
+      {loading ? (
+        <div className="sc-secondary-page-loading" role="status" aria-live="polite">
+          <mdui-circular-progress aria-label={loadingLabel}></mdui-circular-progress>
+        </div>
+      ) : null}
+      {error ? (
+        <p className="sc-secondary-page-error" role="alert">
+          {errorText}
+        </p>
+      ) : null}
       {!loading && !error && empty ? <p className="sc-secondary-page-empty">{emptyText}</p> : null}
       {children}
     </>

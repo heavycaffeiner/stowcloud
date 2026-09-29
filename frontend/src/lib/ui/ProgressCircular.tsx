@@ -26,7 +26,9 @@ export function ProgressCircular({ value = null, size = 24, label }: ProgressCir
   const percent = Math.round(Math.min(Math.max(value ?? 0, 0), 1) * 100)
   const resolved = label ?? t('progress.loading')
   const ref = useRef<ProgressElement | null>(null)
-  useEffect(() => { syncProgressLabel(ref.current, resolved) }, [resolved])
+  useEffect(() => {
+    syncProgressLabel(ref.current, resolved)
+  }, [resolved])
   return (
     <mdui-circular-progress
       ref={ref}

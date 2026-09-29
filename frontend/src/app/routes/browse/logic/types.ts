@@ -87,5 +87,5 @@ export const initialBrowseState: BrowseState = {
   unlockTarget: null,
   previewOpen: false,
   previewIndex: -1,
-  treeOpen: false,
+  treeOpen: false
 }

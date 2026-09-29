@@ -7,7 +7,9 @@ import { vanillaExtractPlugin } from '@vanilla-extract/vite-plugin'
 const require = createRequire(import.meta.url)
 const reactRouterRequire = createRequire(require.resolve('react-router-dom'))
 const reactRouterDevelopment = reactRouterRequire.resolve('react-router')
-const reactRouterProduction = reactRouterDevelopment.replace(/[\\/]dist[\\/]development[\\/]/, (match) => match.replace('development', 'production'))
+const reactRouterProduction = reactRouterDevelopment.replace(/[\\/]dist[\\/]development[\\/]/, (match) =>
+  match.replace('development', 'production')
+)
 const reactRouterDomProduction = reactRouterProduction.replace(/[\\/]index\.mjs$/, '/dom-export.mjs')
 
 declare const process: { env: Record<string, string | undefined> }

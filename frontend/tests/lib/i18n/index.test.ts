@@ -7,8 +7,8 @@ vi.mock('../../../src/lib/i18n/en.json', () => ({
     'test.job_finished_one': '{kind} job finished. {count} item processed.',
     'test.greeting': 'Hello {name}!',
     'test.empty': '',
-    'test.job_finished_other': '{kind} job finished. {count} items processed.',
-  },
+    'test.job_finished_other': '{kind} job finished. {count} items processed.'
+  }
 }))
 
 vi.mock('../../../src/lib/i18n/ko.json', () => ({
@@ -19,8 +19,8 @@ vi.mock('../../../src/lib/i18n/ko.json', () => ({
     'test.greeting': '안녕하세요 {name}!',
     'test.only_korean': '한국어 fallback',
     'test.empty': '',
-    'test.job_finished_other': '{kind} 작업 완료. {count}개 항목 처리됨.',
-  },
+    'test.job_finished_other': '{kind} 작업 완료. {count}개 항목 처리됨.'
+  }
 }))
 
 import { formatModifiedDateNs, t, tp, setLocale } from '../../../src/lib/i18n/index'
@@ -56,12 +56,8 @@ describe('tp', () => {
   })
 
   it('interpolates additional params alongside count', () => {
-    expect(tp('test.job_finished', 1, { kind: 'Copy' })).toBe(
-      'Copy job finished. 1 item processed.',
-    )
-    expect(tp('test.job_finished', 3, { kind: 'Copy' })).toBe(
-      'Copy job finished. 3 items processed.',
-    )
+    expect(tp('test.job_finished', 1, { kind: 'Copy' })).toBe('Copy job finished. 1 item processed.')
+    expect(tp('test.job_finished', 3, { kind: 'Copy' })).toBe('Copy job finished. 3 items processed.')
   })
 
   it('allows overriding count in params', () => {
@@ -73,9 +69,7 @@ describe('tp', () => {
     expect(tp('test.items', 1)).toBe('항목 1개')
     expect(tp('test.items', 0)).toBe('항목 0개')
     expect(tp('test.items', 5)).toBe('항목 5개')
-    expect(tp('test.job_finished', 1, { kind: '복사' })).toBe(
-      '복사 작업 완료. 1개 항목 처리됨.',
-    )
+    expect(tp('test.job_finished', 1, { kind: '복사' })).toBe('복사 작업 완료. 1개 항목 처리됨.')
   })
 })
 

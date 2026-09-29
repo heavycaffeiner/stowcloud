@@ -13,11 +13,20 @@ describe('public share upload queue', () => {
   it('uploads in order, reports a failure, and retries without reuploading completed items', async () => {
     let finishFirst!: (name: string) => void
     vi.mocked(dropUpload)
-      .mockImplementationOnce(() => new Promise<string>((resolve) => { finishFirst = resolve }))
+      .mockImplementationOnce(
+        () =>
+          new Promise<string>((resolve) => {
+            finishFirst = resolve
+          })
+      )
       .mockRejectedValueOnce(new ShareTooLargeError())
       .mockResolvedValueOnce('second (1).txt')
     const states: { uploading: boolean; statuses: string[] }[] = []
-    const queue = createPublicShareQueue({ token: 'first', setState: (state) => states.push({ uploading: state.uploading ?? false, statuses: state.queue?.map((item) => item.status) ?? [] }) })
+    const queue = createPublicShareQueue({
+      token: 'first',
+      setState: (state) =>
+        states.push({ uploading: state.uploading ?? false, statuses: state.queue?.map((item) => item.status) ?? [] })
+    })
 
     queue.add([new File(['1'], 'first.txt'), new File(['2'], 'second.txt')], null)
     await vi.waitFor(() => expect(dropUpload).toHaveBeenCalledTimes(1))
@@ -34,7 +43,12 @@ describe('public share upload queue', () => {
 
   it('does not publish an old token upload after switching shares', async () => {
     let finish!: (name: string) => void
-    vi.mocked(dropUpload).mockImplementationOnce(() => new Promise<string>((resolve) => { finish = resolve }))
+    vi.mocked(dropUpload).mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          finish = resolve
+        })
+    )
     let active = true
     const publish = vi.fn()
     const queue = createPublicShareQueue({ token: 'old', setState: publish, isActive: () => active })

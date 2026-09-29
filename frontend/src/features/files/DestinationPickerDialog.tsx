@@ -25,7 +25,10 @@ export function DestinationPickerDialog({
 }) {
   const { t } = useI18n()
   const session = useQuery(sessionQuery())
-  const roots = useMemo(() => (session.data?.roots ?? []).map((root) => ({ path: `/${root.label}`, name: root.label })), [session.data?.roots])
+  const roots = useMemo(
+    () => (session.data?.roots ?? []).map((root) => ({ path: `/${root.label}`, name: root.label })),
+    [session.data?.roots]
+  )
   const [state, setState] = useComponentState<{ selected: string | null }>({ selected: null })
   const selected = state.selected
   const stat = useQuery({ ...statQuery(selected ?? ''), enabled: open && selected !== null })
@@ -81,7 +84,7 @@ export function DestinationPickerDialog({
               ? t('dest.already_in_this_folder')
               : selected !== null && stat.data && !writable
                 ? t('dest.cannot_write_into_folder')
-                : selected ?? t('dest.no_folder_chosen')}
+                : (selected ?? t('dest.no_folder_chosen'))}
         </p>
       </div>
     </BrowseDialog>

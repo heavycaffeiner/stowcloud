@@ -16,7 +16,12 @@ export function SearchPage() {
     <section className="sc-search-page">
       <div className="sc-search-page-inner">
         <header className="sc-search-page-header">
-          <button type="button" className="sc-route-back" aria-label={t('common.back')} onClick={() => void navigate(scope ? `/b${scope}` : '/b/')}>
+          <button
+            type="button"
+            className="sc-route-back"
+            aria-label={t('common.back')}
+            onClick={() => void navigate(scope ? `/b${scope}` : '/b/')}
+          >
             <Icon name="chevron_left" />
           </button>
           <h1>{t('search.title')}</h1>

@@ -30,7 +30,15 @@ export function useEmergencyFlows(state: EmergencyState, actions: EmergencyActio
       const settings = await emergencySettings()
       if (requestId.current !== id) return
       if (state.documentText !== state.baselineDocument) {
-        actions.patch({ selectedSection: state.section, sectionLoading: false, sectionOutcome: { section: name, ok: false, message: t('emergency.section_change_requires_choice', { section: name }) } })
+        actions.patch({
+          selectedSection: state.section,
+          sectionLoading: false,
+          sectionOutcome: {
+            section: name,
+            ok: false,
+            message: t('emergency.section_change_requires_choice', { section: name })
+          }
+        })
         return
       }
       actions.applyMetadata(settings)
@@ -38,7 +46,15 @@ export function useEmergencyFlows(state: EmergencyState, actions: EmergencyActio
       actions.adoptSection(name, settings)
     } catch (error) {
       if (requestId.current !== id) return
-      actions.patch({ sectionLoading: false, selectedSection: state.section, sectionOutcome: { section: name, ok: false, message: t('emergency.section_load_failed', { section: name, error: messageFor(error) }) } })
+      actions.patch({
+        sectionLoading: false,
+        selectedSection: state.section,
+        sectionOutcome: {
+          section: name,
+          ok: false,
+          message: t('emergency.section_load_failed', { section: name, error: messageFor(error) })
+        }
+      })
     }
   }
   const chooseSection = (next: string): void => {
@@ -57,7 +73,8 @@ export function useEmergencyFlows(state: EmergencyState, actions: EmergencyActio
     }
     void loadSection(next)
   }
-  const stayOnSection = (): void => actions.patch({ pendingSection: null, selectedSection: state.section, sectionDialogOpen: false })
+  const stayOnSection = (): void =>
+    actions.patch({ pendingSection: null, selectedSection: state.section, sectionDialogOpen: false })
   const discardAndChange = (): void => {
     const next = state.pendingSection
     actions.patch({ pendingSection: null, sectionDialogOpen: false, documentText: state.baselineDocument })
@@ -68,20 +85,45 @@ export function useEmergencyFlows(state: EmergencyState, actions: EmergencyActio
   const saveCurrentSection = async (): Promise<boolean> => {
     const targetSection = state.section
     let body: unknown
-    try { body = JSON.parse(state.documentText) } catch {
-      actions.patch({ sectionOutcome: { section: targetSection, ok: false, message: t('emergency.section_invalid_json', { section: targetSection }) } })
+    try {
+      body = JSON.parse(state.documentText)
+    } catch {
+      actions.patch({
+        sectionOutcome: {
+          section: targetSection,
+          ok: false,
+          message: t('emergency.section_invalid_json', { section: targetSection })
+        }
+      })
       return false
     }
     actions.patch({ errorMessage: null, sectionOutcome: null, warnings: [], warningSection: null, busy: true })
     try {
       const result = await emergencySave(targetSection, body)
       if (state.section !== targetSection) return false
-      actions.patch({ baselineDocument: state.documentText, warnings: result.warnings, warningSection: targetSection, sectionOutcome: { section: targetSection, ok: true, message: t('emergency.section_stored_takes_effect_on_restart', { section: targetSection }) } })
+      actions.patch({
+        baselineDocument: state.documentText,
+        warnings: result.warnings,
+        warningSection: targetSection,
+        sectionOutcome: {
+          section: targetSection,
+          ok: true,
+          message: t('emergency.section_stored_takes_effect_on_restart', { section: targetSection })
+        }
+      })
       return true
     } catch (error) {
-      actions.patch({ sectionOutcome: { section: targetSection, ok: false, message: t('emergency.section_save_failed', { section: targetSection, error: messageFor(error) }) } })
+      actions.patch({
+        sectionOutcome: {
+          section: targetSection,
+          ok: false,
+          message: t('emergency.section_save_failed', { section: targetSection, error: messageFor(error) })
+        }
+      })
       return false
-    } finally { actions.patch({ busy: false }) }
+    } finally {
+      actions.patch({ busy: false })
+    }
   }
   const saveAndChange = async (): Promise<void> => {
     if (state.busy || !state.pendingSection) return
@@ -95,17 +137,40 @@ export function useEmergencyFlows(state: EmergencyState, actions: EmergencyActio
     if (state.busy || !state.username.trim() || !state.password || (state.step === 'totp' && !state.code.trim())) return
     actions.patch({ errorMessage: null, busy: true })
     try {
-      const result = await emergencyLogin(state.username.trim(), state.password, state.step === 'totp' ? state.code : undefined)
-      if (result.status === 'totp_required') { actions.setStep('totp'); return }
+      const result = await emergencyLogin(
+        state.username.trim(),
+        state.password,
+        state.step === 'totp' ? state.code : undefined
+      )
+      if (result.status === 'totp_required') {
+        actions.setStep('totp')
+        return
+      }
       await loadSettings()
-    } catch (error) { actions.patch({ errorMessage: messageFor(error) }) }
-    finally { actions.patch({ busy: false }) }
+    } catch (error) {
+      actions.patch({ errorMessage: messageFor(error) })
+    } finally {
+      actions.patch({ busy: false })
+    }
   }
   const restart = async (): Promise<void> => {
     actions.patch({ errorMessage: null, busy: true })
-    try { actions.patch({ restarting: (await emergencyRestart()).restarting }) }
-    catch (error) { actions.patch({ errorMessage: messageFor(error) }) }
-    finally { actions.patch({ busy: false }) }
+    try {
+      actions.patch({ restarting: (await emergencyRestart()).restarting })
+    } catch (error) {
+      actions.patch({ errorMessage: messageFor(error) })
+    } finally {
+      actions.patch({ busy: false })
+    }
   }
-  return { loadSettings, chooseSection, stayOnSection, discardAndChange, saveCurrentSection, saveAndChange, signIn, restart }
+  return {
+    loadSettings,
+    chooseSection,
+    stayOnSection,
+    discardAndChange,
+    saveCurrentSection,
+    saveAndChange,
+    signIn,
+    restart
+  }
 }
