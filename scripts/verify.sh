@@ -14,6 +14,11 @@
 #   VERIFY_REQUIRE_RACE=1   a skipped race run is a failure. The detector needs
 #                           cgo, which the Windows box has no compiler for, so
 #                           it runs where one exists and CI is where that is.
+#   VERIFY_SKIP_GO_TEST=1   the untagged Go suite already ran through just test.
+#   VERIFY_SKIP_COMPAT_TEST=1
+#                           the tagged compat packages already ran through just test.
+#   VERIFY_SKIP_GOLANGCI=1  golangci-lint already ran through just lint.
+#   VERIFY_SKIP_E2E=1       the browser suite runs separately through just e2e.
 #
 # One rule this script exists to keep, learned from a red CI: a failing step
 # prints everything it said. An earlier version piped failures through a tail;
@@ -627,7 +632,9 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
     run "go build -tags compat_nc"   ingo go build -tags compat_nc ./...
   fi
 
-  if LINT=$(go_tool golangci-lint "$GOLANGCI"); then
+  if [ "${VERIFY_SKIP_GOLANGCI:-0}" = 1 ]; then
+    skipped "golangci-lint run" "already ran through just lint" 0
+  elif LINT=$(go_tool golangci-lint "$GOLANGCI"); then
     run "golangci-lint run" native_tool "$LINT" run ./...
   else
     skipped "golangci-lint run" "not on PATH and could not be installed" \
@@ -635,7 +642,11 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   fi
 
   if [ "$HOST" = linux ]; then
-    run "go test ($HOST)" ingo_host go test -count=1 ./...
+    if [ "${VERIFY_SKIP_GO_TEST:-0}" = 1 ]; then
+      skipped "go test ($HOST)" "already ran through just test" 0
+    else
+      run "go test ($HOST)" ingo_host go test -count=1 ./...
+    fi
     run "VeraCrypt external golden" \
         ingo_host bash -c 'VAULT_INTEROP_FIXTURE="$PWD/internal/storage/vault/testdata/interop/hash_sha512.hc" go test -count=1 ./internal/storage/vault -run "^TestOpenExternalVeraCryptFixture$" -v'
   else
@@ -665,8 +676,12 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   # does not exist on this OS says nothing about the code.
   if [ -d backend/internal/http/nextcloud ]; then
     if [ "$HOST" = linux ]; then
-      run "go test -tags compat_nc" \
-          ingo_host go test -tags compat_nc -count=1 ./internal/http/nextcloud/... ./internal/app/...
+      if [ "${VERIFY_SKIP_COMPAT_TEST:-0}" = 1 ]; then
+        skipped "go test -tags compat_nc" "already ran through just test" 0
+      else
+        run "go test -tags compat_nc" \
+            ingo_host go test -tags compat_nc -count=1 ./internal/http/nextcloud/... ./internal/app/...
+      fi
     else
       skipped "go test -tags compat_nc" "the compat layer is Linux only" 0
     fi
@@ -742,7 +757,11 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
       # that asks whether a request arrives rather than whether a function is
       # correct, which is the distinction that let login sit on the wrong path
       # with the whole suite green.
-      run "the interface signs in and reaches its surfaces" bash scripts/e2e.sh
+      if [ "${VERIFY_SKIP_E2E:-0}" = 1 ]; then
+        skipped "the interface signs in and reaches its surfaces" "runs separately through just e2e" 0
+      else
+        run "the interface signs in and reaches its surfaces" bash scripts/e2e.sh
+      fi
     else
       skipped "the embedded bundle is the built one" "no pnpm" "${VERIFY_REQUIRE_UI:-0}"
     fi
