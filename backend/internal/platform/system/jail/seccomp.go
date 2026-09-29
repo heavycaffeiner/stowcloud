@@ -243,13 +243,6 @@ func allowedSyscalls() []int {
 	}
 }
 
-// AllowedSyscalls exposes the worker's list to the command that measures it.
-//
-// Exported so the audit run and the list under test cannot diverge: measuring
-// against a duplicate of the list establishes nothing about the one that
-// ships.
-func AllowedSyscalls() []int { return allowedSyscalls() }
-
 func stmt(code uint16, k uint32) unix.SockFilter {
 	return unix.SockFilter{Code: code, K: k}
 }

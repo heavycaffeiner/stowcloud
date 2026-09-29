@@ -89,9 +89,6 @@ func (h *Handlers) Routes() map[string]gin.HandlerFunc {
 	}
 }
 
-// NewHandlers is retained as a convenience for callers that only need routes.
-func NewHandlers(d Deps) map[string]gin.HandlerFunc { return New(d).Routes() }
-
 // EndSessionURL returns the provider logout URL for the request, when available.
 func (h *Handlers) EndSessionURL(c *gin.Context) (string, bool) {
 	client := h.d.Client()

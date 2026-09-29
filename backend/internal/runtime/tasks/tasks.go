@@ -180,16 +180,6 @@ func Validate(items []Task) error {
 	return fmt.Errorf("periodic tasks: %s", joinProblems(problems))
 }
 
-// TaskNames lists task names in sorted order for diagnostics.
-func TaskNames(items []Task) []string {
-	names := make([]string, 0, len(items))
-	for _, item := range items {
-		names = append(names, item.Name)
-	}
-	slices.Sort(names)
-	return slices.Compact(names)
-}
-
 func joinProblems(problems []string) string {
 	slices.Sort(problems)
 	return strings.Join(problems, "; ")

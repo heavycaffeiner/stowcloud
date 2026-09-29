@@ -269,14 +269,3 @@ func dirOf(path string) string {
 	}
 	return "."
 }
-
-// TLSConfig is the server's configuration for a certificate.
-//
-// 1.2 is the floor. Below it are protocol versions with known attacks and no
-// client this server needs to serve requires one.
-func TLSConfig(cert tls.Certificate) *tls.Config {
-	return &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		MinVersion:   tls.VersionTLS12,
-	}
-}

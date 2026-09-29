@@ -371,24 +371,8 @@ func TestIsReservedName(t *testing.T) {
 	}
 }
 
-func TestIsStagingName(t *testing.T) {
-	name, err := stagingName()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !IsStagingName(name) {
-		t.Fatalf("stagingName() produced %q, which IsStagingName rejects", name)
-	}
-	if IsStagingName(".scpart-") {
-		t.Fatal("the bare prefix with no suffix should not count as a staging name")
-	}
-	if IsStagingName("plain-name") {
-		t.Fatal("an ordinary name should not count as a staging name")
-	}
-}
-
 func TestEveryRefusedNameIsActuallyRefused(t *testing.T) {
-	for _, name := range RefusedNames() {
+	for _, name := range windowsReservedDeviceNames() {
 		if _, err := RootPath().Join(name); err == nil {
 			t.Errorf("%q is advertised as refused but was accepted", name)
 		}
@@ -400,7 +384,7 @@ func TestEveryRefusedNameIsActuallyRefused(t *testing.T) {
 }
 
 func TestEveryRefusedCharacterIsActuallyRefused(t *testing.T) {
-	for _, c := range RefusedNameCharacters() {
+	for _, c := range []string{"/", ":"} {
 		name := "a" + c + "b"
 		if _, err := RootPath().Join(name); err == nil {
 			t.Errorf("%q contains the advertised-refused character %q but was accepted", name, c)

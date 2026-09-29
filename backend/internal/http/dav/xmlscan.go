@@ -260,9 +260,6 @@ func (s *Scanner) resolved(name xml.Name) error {
 // xmlNamespace is the URI the "xml" prefix always denotes.
 const xmlNamespace = "http://www.w3.org/XML/1998/namespace"
 
-// Elements returns how many start elements have been read.
-func (s *Scanner) Elements() int { return s.count }
-
 // CheckBodySize reports whether the body read so far stayed inside the limit.
 //
 // The reader is bounded one byte past the limit, so a document that consumed

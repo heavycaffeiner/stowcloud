@@ -72,9 +72,6 @@ func randomToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
-// Hash produces the stored form of the three persisted values.
-func Hash(v string) [32]byte { return sha256.Sum256([]byte(v)) }
-
 // CodeChallenge derives the challenge from the verifier.
 //
 // The specification's alternative method sets the challenge equal to the

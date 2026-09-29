@@ -4,6 +4,7 @@ package agent_test
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -81,7 +82,7 @@ func TestTheWidenedCandidateStillValidates(t *testing.T) {
 	candidate := agent.Candidate(serverRendered(t), scope)
 
 	path := filepath.Join(t.TempDir(), "smb.conf.candidate")
-	if err := agent.WriteCandidate(path, candidate); err != nil {
+	if err := os.WriteFile(path, []byte(candidate), 0o600); err != nil {
 		t.Fatal(err)
 	}
 

@@ -300,11 +300,3 @@ func categoryOf(path string) string {
 	}
 	return rest
 }
-
-// ExceptionReason returns why a route departs from its category default, and
-// whether it does at all. The route dump prints it, so an operator reading the
-// table sees the justification rather than an unexplained difference.
-func ExceptionReason(method, path string) (string, bool) {
-	e, ok := exceptions()[method+" "+path]
-	return e.why, ok
-}

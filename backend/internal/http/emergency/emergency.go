@@ -31,7 +31,6 @@ import (
 	"io"
 	"net/http"
 	"net/netip"
-	"strings"
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/settings/check"
@@ -114,7 +113,7 @@ type Deps struct {
 
 	// Reason names why the door is being fronted, and is empty when the
 	// deployment is healthy and this is only the always-on route. The screen
-	// shows it, so somebody who arrived at a redirect learns what failed.
+	// shows it, so the operator learns what failed.
 	Reason func() string
 
 	// TrustedProxies controls forwarded scheme handling for exact Origin checks.
@@ -439,52 +438,6 @@ func restart(d Deps) http.HandlerFunc {
 		// whether the restart was even reached.
 		d.Restart()
 	}
-}
-
-// Redirecting sends every path outside the prefix to the door.
-//
-// This is what the serve layer mounts in place of the ordinary handler when the
-// engine could not be built, so browsing to the deployment lands on the repair
-// screen with a banner naming what failed rather than on a refused connection.
-//
-// A client expecting JSON treats an HTML body as a broken server, so API paths
-// get a 503 carrying the reason instead of a redirect to the page.
-func Redirecting(door http.Handler, page http.Handler, reason func() string) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, Prefix) {
-			door.ServeHTTP(w, r)
-			return
-		}
-		if strings.HasPrefix(r.URL.Path, "/api/") {
-			why := ""
-			if reason != nil {
-				why = reason()
-			}
-			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
-				"error":  "engine_unavailable",
-				"reason": why,
-			})
-			return
-		}
-		// Scripts and icons have to resolve for the redirect target to render
-		// at all, so they are served rather than bounced.
-		if page != nil && isAsset(r.URL.Path) {
-			page.ServeHTTP(w, r)
-			return
-		}
-		http.Redirect(w, r, Prefix, http.StatusFound)
-	})
-}
-
-// isAsset reports whether a path is a build artifact the page needs rather than
-// a route the client owns. The app bundle and favicon use their existing paths;
-// Vite worker chunks use /assets/, and the document registers the root service
-// worker directly.
-func isAsset(p string) bool {
-	return strings.HasPrefix(p, "/app/") ||
-		strings.HasPrefix(p, "/assets/") ||
-		strings.HasPrefix(p, "/favicon") ||
-		p == "/service-worker.js"
 }
 
 // decode reads a JSON body under the size limit.

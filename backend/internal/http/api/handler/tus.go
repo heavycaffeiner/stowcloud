@@ -23,13 +23,11 @@ const (
 	TusResumable   = "Tus-Resumable"
 	TusVersion     = "Tus-Version"
 	TusExtension   = "Tus-Extension"
-	TusMaxSize     = "Tus-Max-Size"
 	UploadOffset   = "Upload-Offset"
 	UploadLength   = "Upload-Length"
 	UploadDefer    = "Upload-Defer-Length"
 	UploadMetadata = "Upload-Metadata"
 	UploadChecksum = "Upload-Checksum"
-	UploadExpires  = "Upload-Expires"
 	ScRandomAccess = "Sc-Random-Access"
 )
 

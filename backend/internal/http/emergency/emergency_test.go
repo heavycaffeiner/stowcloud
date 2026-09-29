@@ -985,8 +985,8 @@ func TestTheStateRouteReportsWhetherSetupIsNeeded(t *testing.T) {
 	}
 }
 
-// The banner names what failed, so somebody who arrived at a redirect learns
-// more than that something went wrong.
+// The banner names what failed, so the operator learns more than that something
+// went wrong.
 func TestTheStateRouteCarriesTheReason(t *testing.T) {
 	h := Handler(Deps{
 		Auth: &fakeAuth{}, State: &fakeStore{},
@@ -997,66 +997,5 @@ func TestTheStateRouteCarriesTheReason(t *testing.T) {
 	w := ask(h, "GET", Prefix+"/api/state", "")
 	if got := body(t, w)["reason"]; got != "the listen address is already in use" {
 		t.Errorf("the banner said %q", got)
-	}
-}
-
-// The redirect wrapper: a browser lands on the repair screen.
-func TestTheRedirectWrapperSendsBrowsersToTheDoor(t *testing.T) {
-	_, _, door := signedIn(t)
-	h := Redirecting(door, nil, nil)
-
-	w := ask(h, "GET", "/files/somewhere", "")
-	if w.Code != http.StatusFound {
-		t.Fatalf("a browser got %d, want a redirect", w.Code)
-	}
-	if got := w.Header().Get("Location"); got != Prefix {
-		t.Errorf("the redirect points at %q", got)
-	}
-}
-
-// An API caller gets a status naming the reason instead of an HTML redirect,
-// which it would report as a corrupt server.
-func TestTheRedirectWrapperAnswersApiCallersWithAStatus(t *testing.T) {
-	_, _, door := signedIn(t)
-	h := Redirecting(door, nil, func() string { return "the database is unreadable" })
-
-	w := ask(h, "GET", "/api/v1/files", "")
-	if w.Code != http.StatusServiceUnavailable {
-		t.Fatalf("an API caller got %d, want 503", w.Code)
-	}
-	out := body(t, w)
-	if out["reason"] != "the database is unreadable" {
-		t.Errorf("the status does not name the reason: %v", out)
-	}
-}
-
-// The door itself still answers through the wrapper, or the screen it redirects
-// to could not load.
-func TestTheRedirectWrapperPassesTheDoorThrough(t *testing.T) {
-	_, _, door := signedIn(t)
-	h := Redirecting(door, nil, nil)
-
-	if w := ask(h, "GET", Prefix+"/api/state", ""); w.Code != http.StatusOK {
-		t.Errorf("the door returned %d through the wrapper", w.Code)
-	}
-}
-
-// The frontend's assets load through the wrapper, or the screen cannot draw.
-func TestTheRedirectWrapperServesTheAssetsThePageNeeds(t *testing.T) {
-	_, _, door := signedIn(t)
-	served := []string{}
-	page := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		served = append(served, r.URL.Path)
-		w.WriteHeader(http.StatusOK)
-	})
-	h := Redirecting(door, page, nil)
-
-	for _, p := range []string{"/app/main.js", "/assets/worker-123.js", "/favicon.ico", "/service-worker.js"} {
-		if w := ask(h, "GET", p, ""); w.Code != http.StatusOK {
-			t.Errorf("%s returned %d, so the repair screen cannot draw", p, w.Code)
-		}
-	}
-	if len(served) != 4 {
-		t.Errorf("the page handler saw %v", served)
 	}
 }

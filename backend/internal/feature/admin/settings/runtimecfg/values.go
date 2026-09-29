@@ -29,7 +29,6 @@
 package runtimecfg
 
 import (
-	"sync"
 	"time"
 
 	previewlimits "github.com/heavycaffeiner/stowcloud/backend/internal/feature/preview/limits"
@@ -205,48 +204,5 @@ func Defaults() Values {
 		SMBConfigDir:         DefaultSMBConfigDir,
 		ThumbnailEnabled:     true,
 		ThumbnailDir:         "",
-	}
-}
-
-// Holder holds the live values. Every reader goes through it, so a change
-// reaches every subsystem that asks rather than the ones somebody remembered.
-type Holder struct {
-	mu  sync.RWMutex
-	val Values
-
-	// apply propagates values to the running components. The wiring installs it,
-	// being the only layer that knows which components those are.
-	apply func(Values)
-}
-
-// New creates a holder around the values present at server start.
-func New(v Values) *Holder { return &Holder{val: v} }
-
-// Get is the live values.
-func (h *Holder) Get() Values {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return h.val
-}
-
-// OnApply registers the function that propagates changes to live components.
-func (h *Holder) OnApply(fn func(Values)) {
-	h.mu.Lock()
-	h.apply = fn
-	h.mu.Unlock()
-}
-
-// Set swaps in new values and propagates them to the live components.
-//
-// The callback runs after the lock is released. A callback that read the
-// holder while it was still held would deadlock, and a callback reading the
-// values it was just handed is the obvious thing to write.
-func (h *Holder) Set(v Values) {
-	h.mu.Lock()
-	h.val = v
-	fn := h.apply
-	h.mu.Unlock()
-	if fn != nil {
-		fn(v)
 	}
 }

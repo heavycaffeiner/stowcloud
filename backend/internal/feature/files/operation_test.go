@@ -346,7 +346,7 @@ func TestAFailedCopyRecordsATypedResultRow(t *testing.T) {
 	}
 }
 
-func TestOpReasonForClassifiesEverySentinelAClientBranchesOn(t *testing.T) {
+func TestOperationResultReasonClassifiesEverySentinelAClientBranchesOn(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		err  error
@@ -361,57 +361,9 @@ func TestOpReasonForClassifiesEverySentinelAClientBranchesOn(t *testing.T) {
 		// errf rather than as a bare sentinel.
 		{errf(ErrConflict, "the destination is taken"), state.ReasonItemConflict},
 	} {
-		if got := opReasonFor(tc.err); got != tc.want {
-			t.Fatalf("opReasonFor(%v) = %d, want %d", tc.err, got, tc.want)
+		if got := operationResultReason(tc.err); got != tc.want {
+			t.Fatalf("operationResultReason(%v) = %d, want %d", tc.err, got, tc.want)
 		}
-	}
-}
-
-func TestACancelledCopyStopsAndRecordsNoResult(t *testing.T) {
-	t.Parallel()
-	c, st, srcHost, dstHost, src, dst := twoShares(t)
-	ctx := context.Background()
-	if err := os.MkdirAll(filepath.Join(srcHost, "tree"), 0o755); err != nil {
-		t.Fatalf("building the tree: %v", err)
-	}
-	writeFile(t, srcHost, "tree/a.txt", "content")
-
-	// The runner is driven directly with the row already marked, rather than
-	// racing a cancel against a copy that may finish first. That race is
-	// real but it is the scheduler's, not this rule's: what is under test is
-	// that a runner whose gate answers true stops and records no outcome.
-	id, err := st.CreateOp(ctx, 1, state.OpCopy, 1, c.clk.Nanos(), []string{"tree"})
-	if err != nil {
-		t.Fatalf("creating the operation: %v", err)
-	}
-	if err = c.CancelOperation(ctx, 1, OperationID(id)); err != nil {
-		t.Fatalf("CancelOperation: %v", err)
-	}
-
-	from := at(t, src, "tree")
-	srcSt, err := from.root.Stat(from.path)
-	if err != nil {
-		t.Fatalf("stat: %v", err)
-	}
-	c.runCopy(ctx, id, from, at(t, dst, "tree"), srcSt)
-
-	op, err := c.Operation(ctx, 1, OperationID(id))
-	if err != nil {
-		t.Fatalf("reading the cancelled operation: %v", err)
-	}
-	if op.State != state.OpCancelled {
-		t.Fatalf("a cancelled copy ended in state %d, want cancelled", op.State)
-	}
-	// The one deliberate exception to the result-row rule: what was written
-	// stays and nothing undoes it, so the item is genuinely in an unknown
-	// state and recording no outcome is the honest answer.
-	if len(op.Results) != 0 {
-		t.Fatalf("a cancelled copy recorded %+v, want no result rows", op.Results)
-	}
-	// The gate is polled at the top of every call, so a cancel already
-	// standing when the walk begins stops it before the first item.
-	if _, serr := os.Stat(filepath.Join(dstHost, "tree")); !errors.Is(serr, os.ErrNotExist) {
-		t.Fatal("the walk wrote past a cancellation that was already standing")
 	}
 }
 
@@ -514,43 +466,6 @@ func TestEveryOperationStateIsNamedAndClassified(t *testing.T) {
 	unknown := Operation{State: state.OpState(99)}
 	if unknown.StateName() != "unknown" {
 		t.Errorf("an unnamed state is called %q", unknown.StateName())
-	}
-}
-
-// The published names cover every stored state and classify each the same way
-// the methods do.
-//
-// Without this the presentation tier's cross-check is circular: it compares
-// its list against this one, and nothing would compare this one against the
-// states that actually exist. A state added to the store and named in neither
-// place fails here.
-func TestThePublishedNamesCoverEveryStoredState(t *testing.T) {
-	t.Parallel()
-	published := OperationStateNames()
-
-	// Every state the store defines, walked by value. An added one appears as
-	// "unknown" and is reported: skipping unknowns would make this test blind
-	// to the single thing it exists to catch.
-	for i := range state.OpStateCount() {
-		op := Operation{State: state.OpState(i)}
-		name := op.StateName()
-		if name == "unknown" {
-			t.Errorf("the stored state %d has no name", i)
-			continue
-		}
-		terminal, ok := published[name]
-		if !ok {
-			t.Errorf("the state %q is named but not published", name)
-			continue
-		}
-		if terminal != op.Terminal() {
-			t.Errorf("the state %q is published as terminal=%v and reports %v",
-				name, terminal, op.Terminal())
-		}
-		delete(published, name)
-	}
-	if len(published) != 0 {
-		t.Errorf("published names that no stored state produces: %v", published)
 	}
 }
 

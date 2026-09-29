@@ -68,27 +68,6 @@ func TestAnUnknownReasonIsDropped(t *testing.T) {
 	}
 }
 
-// The token check is exact rather than shaped, because a value that merely
-// looks like a token is what an interpolated error string would be.
-func TestTheTokenCheckIsExact(t *testing.T) {
-	for _, good := range []string{"state_database", "smb_agent", " index_stale "} {
-		if !SafeHealthToken(good) {
-			t.Errorf("%q was rejected", good)
-		}
-	}
-	for _, bad := range []string{
-		"",
-		"state_database: permission denied",
-		"unknown_subsystem",
-		"STATE_DATABASE",
-		"state database",
-	} {
-		if SafeHealthToken(bad) {
-			t.Errorf("%q was accepted", bad)
-		}
-	}
-}
-
 // An unrecognised status is failing rather than ok: whatever produced it is
 // not something to describe here, and ok would be the wrong guess.
 func TestAnUnknownStatusBecomesFailing(t *testing.T) {

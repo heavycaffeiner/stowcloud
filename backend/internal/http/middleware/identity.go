@@ -82,29 +82,3 @@ func CSP(scriptHashes []string) string {
 	}
 	return strings.Join(directives, "; ")
 }
-
-// CSPAdmitsUploadedContent reports whether a policy names a host in a directive
-// that can execute or frame what it points at.
-//
-// Uploaded content is served from the content host, and the app's policy must
-// not admit that host into script, frame or worker sources: a file a user
-// uploaded would otherwise run as the application.
-func CSPAdmitsUploadedContent(policy, contentHost string) bool {
-	if contentHost == "" {
-		return false
-	}
-	for _, d := range strings.Split(policy, ";") {
-		d = strings.TrimSpace(d)
-		name, sources, found := strings.Cut(d, " ")
-		if !found {
-			continue
-		}
-		switch name {
-		case "script-src", "worker-src", "frame-src", "child-src", "default-src":
-			if strings.Contains(sources, contentHost) {
-				return true
-			}
-		}
-	}
-	return false
-}

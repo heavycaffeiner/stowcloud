@@ -278,16 +278,6 @@ func wrapPublication(operation string, res fsatomic.Result, err error) error {
 	return &publicationError{operation: operation, outcome: res.Outcome, err: err}
 }
 
-// PublicationOutcome reports the durable filesystem outcome carried by err.
-// It returns NotPublished when err is unrelated to publication.
-func PublicationOutcome(err error) fsatomic.Outcome {
-	var pe *publicationError
-	if errors.As(err, &pe) {
-		return pe.outcome
-	}
-	return fsatomic.NotPublished
-}
-
 // ResolveKeyFile derives the master key path from the environment, enforcing
 // that only a path may originate there. It also reports whether the key lands
 // inside the data directory, which the caller records.

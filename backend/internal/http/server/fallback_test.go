@@ -10,8 +10,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/route"
 )
 
 func shellApp(t *testing.T) *gin.Engine {
@@ -78,7 +76,7 @@ func TestTheRealRoutesStillAnswer(t *testing.T) {
 	app := shellApp(t)
 	var checked int
 	for _, r := range Table() {
-		if r.Method != "GET" || len(route.Params(r.Path)) > 0 {
+		if r.Method != "GET" || strings.Contains(r.Path, "{") {
 			continue
 		}
 		status, _ := ask(t, app, r.Path)

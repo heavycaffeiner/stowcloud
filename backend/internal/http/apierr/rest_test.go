@@ -202,7 +202,6 @@ func TestRequestErrorsCarryAClassNotAStatus(t *testing.T) {
 		wantStatus int
 	}{
 		{BadRequest("fs.bad_json", "path"), http.StatusBadRequest},
-		{UnprocessableInput("fs.invalid_name", "name"), http.StatusUnprocessableEntity},
 		{BadGatewayError("dav.foreign_destination", "destination"), http.StatusBadGateway},
 	} {
 		status, body := REST(Classify(c.err, VisibilityKnown))

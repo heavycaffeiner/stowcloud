@@ -26,12 +26,6 @@ func TestRequireResolverDistinguishesBlockedFromMissing(t *testing.T) {
 	if blocked.Error() == missing.Error() {
 		t.Fatal("blocked and missing report the same message")
 	}
-	if !strings.Contains(blocked.Error(), "profile") {
-		t.Errorf("blocked message does not mention a profile: %v", blocked)
-	}
-	if !strings.Contains(missing.Error(), "Upgrade") {
-		t.Errorf("missing message does not say to upgrade: %v", missing)
-	}
 	if !strings.Contains(blocked.Error(), "6.1.0") || !strings.Contains(missing.Error(), "5.4.0") {
 		t.Error("a message does not name the kernel it was given")
 	}
@@ -47,9 +41,6 @@ func TestRequireResolverDeniedDoesNotBlameAPolicy(t *testing.T) {
 	}
 	if strings.Contains(denied.Error(), "profile") {
 		t.Errorf("denied message points at a profile: %v", denied)
-	}
-	if !strings.Contains(denied.Error(), "uid") {
-		t.Errorf("denied message does not mention the running uid: %v", denied)
 	}
 	blocked := RequireResolver(Caps{Openat2: SupportBlocked, Kernel: "6.1.0"})
 	if denied.Error() == blocked.Error() {
@@ -96,19 +87,6 @@ func TestRequireResolverUnknownIsARefusal(t *testing.T) {
 func TestRequireResolverPresentStarts(t *testing.T) {
 	if err := RequireResolver(Caps{Openat2: SupportPresent}); err != nil {
 		t.Fatalf("present: %v, want nil", err)
-	}
-}
-
-// Every refusal states plainly that there is no fallback, since the next
-// question an operator asks is why the server does not just walk the path
-// component by component, and the answer is that doing so reopens the race
-// this design closes.
-func TestRequireResolverStatesThereIsNoFallback(t *testing.T) {
-	for _, s := range []Support{SupportBlocked, SupportMissing, SupportDenied} {
-		msg := RequireResolver(Caps{Openat2: s, Kernel: "6.1.0"}).Error()
-		if !strings.Contains(msg, "no fallback") {
-			t.Errorf("%v: message does not say there is no fallback: %s", s, msg)
-		}
 	}
 }
 

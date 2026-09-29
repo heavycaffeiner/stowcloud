@@ -37,13 +37,6 @@ func (e ETag) StrongEquals(other ETag) bool {
 	return !e.Weak && !other.Weak && e.Value == other.Value
 }
 
-// WeakEquals reports the weak comparison: equal values, whatever the strength.
-// Used for revalidation, where a semantically equal representation is what the
-// client is asking about.
-func (e ETag) WeakEquals(other ETag) bool {
-	return e.Value == other.Value
-}
-
 // ParseETag reads one entity tag.
 func ParseETag(raw string) (ETag, bool) {
 	raw = strings.TrimSpace(raw)
@@ -61,28 +54,6 @@ func ParseETag(raw string) (ETag, bool) {
 		return ETag{}, false
 	}
 	return ETag{Value: value, Weak: weak}, true
-}
-
-// MatchesIfNoneMatch reports whether a revalidation header matches.
-//
-// Weak comparison, because the client is asking whether its cached copy still
-// means the same thing. "*" matches whenever the resource exists.
-func MatchesIfNoneMatch(header string, current ETag, exists bool) bool {
-	header = strings.TrimSpace(header)
-	if header == "" {
-		return false
-	}
-	if header == "*" {
-		return exists
-	}
-
-	for _, part := range splitList(header) {
-		tag, ok := ParseETag(part)
-		if ok && tag.WeakEquals(current) {
-			return true
-		}
-	}
-	return false
 }
 
 // Condition is a single test a list applies.
@@ -348,16 +319,4 @@ func conditionHolds(cond Condition, res ResourceState) bool {
 		return !held
 	}
 	return held
-}
-
-// splitList splits a comma-separated header value.
-func splitList(header string) []string {
-	parts := strings.Split(header, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if p = strings.TrimSpace(p); p != "" {
-			out = append(out, p)
-		}
-	}
-	return out
 }

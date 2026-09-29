@@ -19,7 +19,6 @@ type fakeCommitProvider struct {
 	size      uint64
 	checksum  string
 	committed bool
-	aborts    int
 }
 
 func (p *fakeCommitProvider) Complete() error {
@@ -33,8 +32,6 @@ func (p *fakeCommitProvider) Metadata() (uint64, string, string, bool, error) {
 	}
 	return p.size, "published-etag", p.checksum, true, nil
 }
-
-func (p *fakeCommitProvider) Abort() { p.aborts++ }
 
 func TestCommitThenTimeoutSurvivesRestartWithoutAbort(t *testing.T) {
 	t.Parallel()
@@ -99,9 +96,6 @@ func TestCommitThenTimeoutSurvivesRestartWithoutAbort(t *testing.T) {
 	}
 	if len(expired) != 0 {
 		t.Fatalf("published transfer became sweepable: %+v", expired)
-	}
-	if provider.aborts != 0 {
-		t.Fatalf("provider aborts after published recovery: %d", provider.aborts)
 	}
 }
 

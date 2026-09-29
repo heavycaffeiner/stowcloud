@@ -63,9 +63,6 @@ type entry struct {
 // NewWriter starts an archive.
 func NewWriter(w io.Writer) *Writer { return &Writer{w: w} }
 
-// Err reports the sticky error, or nil.
-func (z *Writer) Err() error { return z.err }
-
 // AddBytes writes one entry from memory.
 func (z *Writer) AddBytes(name string, body []byte, modTime time.Time) error {
 	return z.AddFile(name, bytes.NewReader(body), modTime)

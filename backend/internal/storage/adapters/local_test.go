@@ -22,7 +22,7 @@ func TestLocalConformsToNeutralHierarchy(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(host, "nested"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	root, err := vfs.OpenShareRoot(1, host, vfs.DefaultSharePolicy())
+	root, _, err := vfs.RegisterShareRoot(1, host, vfs.DefaultSharePolicy())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestLocalRenameUsesRootConfinement(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(host, "from"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	root, err := vfs.OpenShareRoot(1, host, vfs.DefaultSharePolicy())
+	root, _, err := vfs.RegisterShareRoot(1, host, vfs.DefaultSharePolicy())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func TestLocalRejectsInvalidAndEscapingPaths(t *testing.T) {
 	if err := os.Symlink(filepath.Join(outside, "secret"), filepath.Join(host, "link")); err != nil {
 		t.Fatal(err)
 	}
-	root, err := vfs.OpenShareRoot(1, host, vfs.DefaultSharePolicy())
+	root, _, err := vfs.RegisterShareRoot(1, host, vfs.DefaultSharePolicy())
 	if err != nil {
 		t.Fatal(err)
 	}

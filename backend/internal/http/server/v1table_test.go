@@ -76,13 +76,13 @@ func TestEveryAccessExceptionCarriesAReason(t *testing.T) {
 		if r.Requirement == def {
 			continue
 		}
-		why, ok := ExceptionReason(r.Method, r.Path)
+		e, ok := exceptions()[r.Method+" "+r.Path]
 		if !ok {
 			t.Errorf("%s %s departs from its category default and is not in the exception list",
 				r.Method, r.Path)
 			continue
 		}
-		if strings.TrimSpace(why) == "" {
+		if strings.TrimSpace(e.why) == "" {
 			t.Errorf("%s %s is an exception with no reason", r.Method, r.Path)
 		}
 	}

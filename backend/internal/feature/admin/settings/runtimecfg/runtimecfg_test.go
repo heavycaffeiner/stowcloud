@@ -8,11 +8,9 @@ import (
 	"io"
 	"log/slog"
 	"reflect"
-	"sync"
 	"testing"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/concurrency"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/system/jail"
 )
 
@@ -332,76 +330,6 @@ func TestClampAndContains(t *testing.T) {
 	}
 	if b.Contains(9) || !b.Contains(10) || !b.Contains(20) || b.Contains(21) {
 		t.Error("Contains does not match the bound")
-	}
-}
-
-// The holder is read by every subsystem, so concurrent readers under a writer
-// have to be safe. Under -race this is what proves it.
-func TestTheHolderIsSafeUnderConcurrentReaders(t *testing.T) {
-	h := New(Defaults())
-
-	var wg sync.WaitGroup
-	stop := make(chan struct{})
-	for range 4 {
-		wg.Add(1)
-		concurrency.Go(t.Context(), "settings: holder reader", func() {
-			defer wg.Done()
-			for {
-				select {
-				case <-stop:
-					return
-				default:
-				}
-				if v := h.Get(); v.Listen == "" {
-					t.Error("a reader saw an empty value")
-					return
-				}
-			}
-		})
-	}
-
-	for i := range 200 {
-		v := Defaults()
-		v.RateBurst = 100 + i
-		h.Set(v)
-	}
-	close(stop)
-	wg.Wait()
-}
-
-// The update callback runs outside the lock. A callback that reads the holder
-// is the obvious thing to write, and under the lock it would deadlock.
-func TestTheApplyCallbackRunsOutsideTheLock(t *testing.T) {
-	h := New(Defaults())
-
-	done := make(chan Values, 1)
-	h.OnApply(func(v Values) {
-		// Reading the holder from inside the callback is the deadlock fixture.
-		done <- h.Get()
-	})
-
-	want := Defaults()
-	want.RateBurst = 4242
-	h.Set(want)
-
-	select {
-	case got := <-done:
-		if got.RateBurst != want.RateBurst {
-			t.Errorf("the callback read %d, want the value that was just set", got.RateBurst)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("the callback deadlocked reading the holder")
-	}
-}
-
-// A holder with no callback installed still sets.
-func TestSetWithoutACallback(t *testing.T) {
-	h := New(Defaults())
-	v := Defaults()
-	v.RateBurst = 7
-	h.Set(v)
-	if h.Get().RateBurst != 7 {
-		t.Error("the value did not take")
 	}
 }
 

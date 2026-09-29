@@ -79,10 +79,6 @@ var (
 	// write already in progress, which is why the refusal carries a delay.
 	ErrCacheFull = errors.New("the upload cache is full")
 
-	// ErrUnknownAlgo reports a checksum algorithm this server does not
-	// provide.
-	ErrUnknownAlgo = errors.New("unknown checksum algorithm")
-
 	// ErrNoCache is the cache switch on a deployment that has no spool.
 	ErrNoCache = errors.New("this deployment has no upload cache")
 )

@@ -204,27 +204,3 @@ func checkPath(where, path string) []string {
 	}
 	return out
 }
-
-// Params returns a pattern's parameter names in order, tails included.
-//
-// The registration step needs them to translate the pattern, and a handler
-// needs them to read what it matched. Both take the names from here rather
-// than re-parsing, so the two cannot disagree about what a route captured.
-func Params(path string) []string {
-	var out []string
-	for _, seg := range strings.Split(strings.TrimPrefix(path, "/"), "/") {
-		if !strings.HasPrefix(seg, "{") || !strings.HasSuffix(seg, "}") {
-			continue
-		}
-		out = append(out, strings.TrimSuffix(seg[1:len(seg)-1], "..."))
-	}
-	return out
-}
-
-// HasTail reports whether a pattern ends in a tail parameter, which decides
-// whether the registered pattern can be followed by anything.
-func HasTail(path string) bool {
-	segments := strings.Split(strings.TrimPrefix(path, "/"), "/")
-	last := segments[len(segments)-1]
-	return strings.HasPrefix(last, "{") && strings.HasSuffix(last, "...}")
-}

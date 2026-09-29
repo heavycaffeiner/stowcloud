@@ -38,15 +38,13 @@ const ExchangeTimeout = 5 * time.Second
 // anything larger is not a request.
 const MaxRequestBytes = 4 << 10
 
-// Handler answers the two operations. The runtime supplies it; this file owns
-// the transport and nothing else.
+// Handler answers a request. The runtime supplies it; this file owns the
+// transport and nothing else.
 type Handler interface {
 	// Apply performs a pass and reports it. The context bounds the external
 	// commands a pass runs, so a caller that gives up stops waiting on them
 	// rather than leaving them to finish against a connection that is gone.
 	Apply(ctx context.Context) Report
-	// Last repeats the previous report without performing a pass.
-	Last() Report
 }
 
 // Serve binds the socket and answers until the context ends.
@@ -142,9 +140,6 @@ func dispatch(ctx context.Context, conn io.Reader, h Handler, log *slog.Logger) 
 		report := h.Apply(ctx)
 		LogReport(log, report, "the server")
 		return report
-	case OpStatus:
-		// Repeating the previous answer is not an event.
-		return h.Last()
 	default:
 		report := FailedReport("unknown request: " + req.Op)
 		LogReport(log, report, "the server")

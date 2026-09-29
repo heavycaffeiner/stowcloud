@@ -33,7 +33,6 @@ func closeQuietly(c io.Closer) {
 type stubHandler struct {
 	mu      sync.Mutex
 	apply   Report
-	last    Report
 	applies int
 }
 
@@ -42,12 +41,6 @@ func (h *stubHandler) Apply(context.Context) Report {
 	defer h.mu.Unlock()
 	h.applies++
 	return h.apply
-}
-
-func (h *stubHandler) Last() Report {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.last
 }
 
 func (h *stubHandler) count() int {
@@ -137,23 +130,6 @@ func TestApplyRoundTrip(t *testing.T) {
 	}
 	if h.count() != 1 {
 		t.Errorf("the handler ran %d applies, want 1", h.count())
-	}
-}
-
-// Status repeats the previous report rather than performing a pass, which is
-// what makes it safe for a status screen to poll.
-func TestStatusDoesNotApply(t *testing.T) {
-	h := &stubHandler{last: Report{OK: true, Smbd: ActionUnchanged}}
-	socket := serve(t, h)
-
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-
-	if _, err := Status(ctx, socket); err != nil {
-		t.Fatal(err)
-	}
-	if h.count() != 0 {
-		t.Errorf("a status request performed %d applies, want 0", h.count())
 	}
 }
 

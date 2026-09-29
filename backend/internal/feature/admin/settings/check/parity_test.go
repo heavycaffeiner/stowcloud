@@ -55,58 +55,6 @@ func TestARoleConflictNamesBothFields(t *testing.T) {
 	mustNotFind(t, got, keyDuplicateHost)
 }
 
-// The save-time checker and the boot-time loader run the same rule, so a list
-// this package accepts is one the loader keeps whole.
-//
-// Without this they drift: the loader silently drops what the checker let
-// through, and a host an administrator saved stops answering with nothing in
-// the interface to say why.
-func TestTheCheckerAndTheLoaderAgreeOnHostRoles(t *testing.T) {
-	cases := []struct {
-		name                 string
-		appHosts, contentHos []string
-	}{
-		{"distinct", []string{"app.example.test"}, []string{"content.example.test"}},
-		{"overlapping", []string{"both.example.test"}, []string{"both.example.test"}},
-		{"case-folded overlap", []string{"Both.example.test"}, []string{"bOTH.example.test"}},
-		{"repeat in one list", []string{"a.example.test", "a.example.test"}, nil},
-		{"malformed", []string{"https://bad.example.test/x"}, nil},
-		{"empty content list", []string{"app.example.test"}, nil},
-	}
-
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			body := map[string]any{"app_hosts": anyList(c.appHosts)}
-			if c.contentHos != nil {
-				body["content_hosts"] = anyList(c.contentHos)
-			}
-			// The self host is one of the app hosts, so the lockout probe stays
-			// out of what this test is measuring.
-			self := ""
-			if len(c.appHosts) > 0 {
-				self = strings.ToLower(c.appHosts[0])
-			}
-
-			findings := Section(Input{Section: "network", Body: body, SelfHost: self})
-			checkerRefuses := Blocked(findings)
-			sharedRefuses := runtimecfg.CheckHostRoles(c.appHosts, c.contentHos) != nil
-
-			if checkerRefuses != sharedRefuses {
-				t.Errorf("the checker refuses=%v but the shared rule refuses=%v for %v / %v: %v",
-					checkerRefuses, sharedRefuses, c.appHosts, c.contentHos, keysOf(findings))
-			}
-		})
-	}
-}
-
-func anyList(items []string) []any {
-	out := make([]any, 0, len(items))
-	for _, s := range items {
-		out = append(out, s)
-	}
-	return out
-}
-
 // The bounds a refusal reports are the ones the loader clamps to, so the range
 // in the message is the range that is actually enforced.
 func TestTheReportedRangeIsTheEnforcedRange(t *testing.T) {

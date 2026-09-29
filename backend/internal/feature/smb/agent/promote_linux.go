@@ -3,7 +3,6 @@
 package agent
 
 import (
-	"fmt"
 	"os"
 
 	fsatomic "github.com/stowcloud/durablefs"
@@ -24,22 +23,6 @@ import (
 // promotedMode is what the daemon reads the configuration as. It runs as its
 // own user and the file holds no secret, so it is world-readable.
 const promotedMode = 0o644
-
-// candidateMode is scratch belonging to this agent alone.
-const candidateMode = 0o600
-
-// WriteCandidate stages a configuration for the validator.
-//
-// Deliberately a plain write. The candidate is validation scratch: every pass
-// regenerates it before use and the daemon never opens it, so a torn one costs
-// nothing and is replaced rather than repaired. Making it durable would spend a
-// sync on a file whose only reader is the validator this pass is about to run.
-func WriteCandidate(path, body string) error {
-	if err := os.WriteFile(path, []byte(body), candidateMode); err != nil {
-		return fmt.Errorf("writing the candidate configuration: %w", err)
-	}
-	return nil
-}
 
 // Promote replaces the configuration the daemon reads, durably.
 //

@@ -42,16 +42,8 @@ const (
 // StateNames exposes the public lifecycle names to the presentation layer.
 func StateNames() map[string]bool { return transfer.StateNames() }
 
-// ParseAlgo and ParseChecksum preserve the upload package's product error
-// vocabulary while delegating parsing and validation to transfer.
-func ParseAlgo(s string) (Algo, error) {
-	a, err := transfer.ParseAlgo(s)
-	if err != nil {
-		return 0, fmt.Errorf("%w: %v", ErrUnknownAlgo, err)
-	}
-	return a, nil
-}
-
+// ParseChecksum delegates to transfer and reports a malformed value as
+// ErrBadRequest.
 func ParseChecksum(s string) (Checksum, error) {
 	c, err := transfer.ParseChecksum(s)
 	if err != nil {

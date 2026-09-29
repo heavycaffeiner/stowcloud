@@ -76,11 +76,6 @@ func (g *ArchiveGate) Release() {
 	g.mu.Unlock()
 }
 
-// ArchiveBusy classifies a request refused because archive capacity is full.
-func ArchiveBusy() error {
-	return fmt.Errorf("archive capacity exhausted")
-}
-
 func archiveToken() (string, error) {
 	var raw [32]byte
 	if _, err := rand.Read(raw[:]); err != nil {

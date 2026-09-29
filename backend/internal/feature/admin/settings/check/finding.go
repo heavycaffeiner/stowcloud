@@ -20,12 +20,6 @@
 // in its own error table, and this package imports nothing presentation.
 package check
 
-import (
-	"errors"
-	"fmt"
-	"strings"
-)
-
 // Finding is a single observation a probe made about a proposed value.
 type Finding struct {
 	// Section and Field name where to put the message. Field is empty when the
@@ -53,39 +47,6 @@ func (f Finding) Arg(name string) (string, bool) {
 		}
 	}
 	return "", false
-}
-
-// ErrRefused is a settings change at least one blocking finding refused.
-//
-// The presentation layer maps this to its own status exactly once, and renders
-// the findings from the error's payload. No status appears in this package.
-var ErrRefused = errors.New("settings: the change was refused")
-
-// RefusedError carries the findings that refused a save.
-type RefusedError struct {
-	Findings []Finding
-}
-
-func (e *RefusedError) Error() string {
-	blocking := Blocking(e.Findings)
-	if len(blocking) == 0 {
-		return ErrRefused.Error()
-	}
-	keys := make([]string, 0, len(blocking))
-	for _, f := range blocking {
-		keys = append(keys, f.ReasonKey)
-	}
-	return fmt.Sprintf("%s: %s", ErrRefused.Error(), strings.Join(keys, ", "))
-}
-
-func (e *RefusedError) Is(target error) bool { return target == ErrRefused }
-
-// Refused is the error a save answers with, or nil when nothing blocks.
-func Refused(findings []Finding) error {
-	if !Blocked(findings) {
-		return nil
-	}
-	return &RefusedError{Findings: findings}
 }
 
 // Blocked reports whether any finding in the list is blocking.

@@ -377,7 +377,7 @@ func TestMoveWithAValidatorIsRefusedWithTheCurrentToken(t *testing.T) {
 	token := Token("anything")
 	_, err = c.Move(context.Background(), at(t, root, "a.txt"), to,
 		MoveOpts{OnConflict: ConflictOverwrite, IfMatch: &token})
-	if !IsPrecondition(err) {
+	if !errors.Is(err, ErrPrecondition) {
 		t.Fatalf("a supplied validator returned %v, want ErrPrecondition", err)
 	}
 	var perr *PreconditionError

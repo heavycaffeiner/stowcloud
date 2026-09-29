@@ -17,7 +17,6 @@ const (
 	OIDCDiscoveryTTL   = time.Hour
 	OIDCJWKSTTL        = time.Hour
 	OIDCFlowLifetime   = 10 * time.Minute
-	OIDCFlowTTL        = 10 * time.Minute
 )
 
 var ErrTooLarge = errors.New("limit exceeded")

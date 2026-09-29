@@ -8,7 +8,6 @@ const (
 	UploadReservedBytesPerUser   = 100 << 30
 	UploadFreeSpaceMargin        = 2 << 30
 	UploadFreeSpaceMarginDivisor = 20
-	UploadsInFlightPerUser       = 32
 	UploadSessionsPerUser        = 256
 	UploadSpooledNames           = 4096
 	UploadChunkFloor             = 5 << 20

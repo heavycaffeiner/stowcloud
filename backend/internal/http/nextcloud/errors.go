@@ -21,10 +21,6 @@ import (
 // below the mount.
 var ErrBadPath = errors.New("nc: malformed path")
 
-// ErrFlowPending is a device login whose person has not approved it yet. The
-// client polls against it, so it is not a failure.
-var ErrFlowPending = errors.New("nc: login flow pending")
-
 // DavStatus is the answer one refusal gets on the DAV surface.
 type DavStatus struct {
 	Code int

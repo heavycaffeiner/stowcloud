@@ -62,30 +62,6 @@ func TestARunningJobCarriesNoResults(t *testing.T) {
 	if len(running.Results) != 0 {
 		t.Errorf("a running job carried %d results", len(running.Results))
 	}
-	if terminal, _ := TerminalStateName(running.State); terminal {
-		t.Error("running was reported as terminal")
-	}
-}
-
-// Every terminal state is terminal, and the running one is not. A list written
-// twice is how one state is forgotten and a client polls a finished job
-// forever.
-func TestEveryTerminalStateIsTerminal(t *testing.T) {
-	for _, name := range []string{"done", "failed", "cancelled", "interrupted"} {
-		terminal, known := TerminalStateName(name)
-		if !terminal || !known {
-			t.Errorf("%q reported terminal=%v known=%v", name, terminal, known)
-		}
-	}
-	if terminal, known := TerminalStateName("running"); terminal || !known {
-		t.Errorf("running reported terminal=%v known=%v", terminal, known)
-	}
-	// An unknown state counts as finished, and says it is unknown: a client
-	// polling forever on a state this build does not have is worse than one
-	// that stops, and the second answer is what keeps the list above testable.
-	if terminal, known := TerminalStateName("something_new"); !terminal || known {
-		t.Errorf("an unknown state reported terminal=%v known=%v", terminal, known)
-	}
 }
 
 // The attempting and pending lists stay apart. Whether an attempted item
@@ -131,29 +107,5 @@ func TestAnEmptyOperationListEncodesAsAList(t *testing.T) {
 	}
 	if string(raw) != "[]" {
 		t.Errorf("an empty list encoded as %s", raw)
-	}
-}
-
-// The two terminal lists agree, name by name.
-//
-// core.Operation.Terminal reads the stored number and TerminalStateName reads
-// the name, because this tier may not import the tier that owns the numbers.
-// Two lists of the same thing is how one drifts, so this checks every name the
-// service publishes against this tier's answer.
-func TestBothTerminalChecksAgree(t *testing.T) {
-	published := core.OperationStateNames()
-	if len(published) < 5 {
-		t.Fatalf("the service publishes only %d state names: %v", len(published), published)
-	}
-	for name, terminal := range published {
-		got, known := TerminalStateName(name)
-		if !known {
-			t.Errorf("the state %q is published by the service and unknown to this tier", name)
-			continue
-		}
-		if got != terminal {
-			t.Errorf("the state %q: the service says terminal=%v and this tier says %v",
-				name, terminal, got)
-		}
 	}
 }

@@ -52,28 +52,6 @@ const (
 	ProbeThread
 )
 
-func (p Probe) String() string {
-	switch p {
-	case ProbePing:
-		return "ping"
-	case ProbeOpenEtcPasswd:
-		return "open /etc/passwd"
-	case ProbeCreateSocket:
-		return "create a socket"
-	case ProbeFork:
-		return "fork"
-	case ProbeSpin:
-		return "spin"
-	case ProbeReportLimits:
-		return "report rlimits"
-	case ProbeCountDescriptors:
-		return "count descriptors"
-	case ProbeThread:
-		return "add a thread"
-	}
-	return "unknown"
-}
-
 // ProbeOutcome records what happened.
 type ProbeOutcome uint8
 

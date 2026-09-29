@@ -80,13 +80,13 @@ func scriptSrc(policy string) string {
 // what it points at. A file a user uploaded must not run as the application.
 func TestUploadedContentIsNotAScriptSource(t *testing.T) {
 	policy := CSP([]string{"sha256-abc"})
-	if CSPAdmitsUploadedContent(policy, "files.example.test") {
+	if admitsUploadedContent(policy, "files.example.test") {
 		t.Errorf("the content host is an executable source: %q", policy)
 	}
 
 	// The check itself discriminates, or the assertion above would be empty.
 	bad := policy + "; frame-src 'self' files.example.test"
-	if !CSPAdmitsUploadedContent(bad, "files.example.test") {
+	if !admitsUploadedContent(bad, "files.example.test") {
 		t.Error("a policy that does admit the content host was reported clean")
 	}
 }
@@ -111,7 +111,7 @@ func TestTheSecurityHeadersAreSet(t *testing.T) {
 // route, because a credential handed to a device must not be able to change
 // the password that revokes it.
 func TestSessionRoutesRefuseAnAppPassword(t *testing.T) {
-	session := Principal{Kind: CredentialSessionCookie, Mask: SessionMask()}
+	session := Principal{Kind: CredentialSessionCookie, Mask: sessionMask()}
 	app := Principal{Kind: CredentialBasicApp, Mask: acl.Read | acl.Write}
 	none := Principal{Kind: CredentialNone}
 
@@ -132,7 +132,7 @@ func TestSessionRoutesRefuseAnAppPassword(t *testing.T) {
 // to the compatibility mount and the file protocol.
 func TestAnAppPasswordNeverReachesTheNativeAPI(t *testing.T) {
 	none := Principal{Kind: CredentialNone}
-	app := Principal{Kind: CredentialBasicApp, Mask: SessionMask()}
+	app := Principal{Kind: CredentialBasicApp, Mask: sessionMask()}
 
 	if err := Scope(route.Requirement{Access: route.AccessPublic}, none); err != nil {
 		t.Errorf("a public route refused an anonymous request: %v", err)
@@ -154,7 +154,7 @@ func TestAnUnsetAccessClassIsRefused(t *testing.T) {
 // The session mask carries every bit the model defines, so adding a bit does
 // not silently narrow what a session can do.
 func TestTheSessionMaskCoversEveryBit(t *testing.T) {
-	mask := SessionMask()
+	mask := sessionMask()
 	for _, np := range acl.NamedPerms() {
 		if !mask.Has(np.Perm) {
 			t.Errorf("the session mask omits %s", np.Name)
@@ -258,7 +258,7 @@ func chainWith(t *testing.T, req route.Requirement, body route.BodyClass, p Prin
 // A cookie mutation without the token is refused, and with it goes through.
 func TestCSRFIsCheckedThroughTheChain(t *testing.T) {
 	key := []byte("deployment key material")
-	session := Principal{Kind: CredentialSessionCookie, Mask: SessionMask()}
+	session := Principal{Kind: CredentialSessionCookie, Mask: sessionMask()}
 	app := chainWith(t, route.Requirement{Access: route.AccessSession}, route.BodyNone, session, key)
 
 	// The cookie's value is what the token derives from, so the test derives
@@ -320,7 +320,7 @@ func TestAnAppPasswordSkipsCSRFThroughTheChain(t *testing.T) {
 // key without complaint, so a token would derive from nothing and every
 // deployment would agree on the same value.
 func TestNoCSRFKeyRefusesTheMutation(t *testing.T) {
-	session := Principal{Kind: CredentialSessionCookie, Mask: SessionMask()}
+	session := Principal{Kind: CredentialSessionCookie, Mask: sessionMask()}
 
 	for _, c := range []struct {
 		what string
@@ -394,4 +394,31 @@ func TestTheBodyLimitRefusesByDeclaredLength(t *testing.T) {
 	if got := send(t, okApp, r).status; got != http.StatusOK {
 		t.Errorf("a body within the bound answered %d", got)
 	}
+}
+
+// sessionMask is every permission bit, the mask a session carries.
+func sessionMask() acl.Perms {
+	var all acl.Perms
+	for _, np := range acl.NamedPerms() {
+		all |= np.Perm
+	}
+	return all
+}
+
+// admitsUploadedContent reports whether a policy names the content host in a
+// directive that can execute or frame what it points at.
+func admitsUploadedContent(policy, contentHost string) bool {
+	for _, d := range strings.Split(policy, ";") {
+		name, sources, found := strings.Cut(strings.TrimSpace(d), " ")
+		if !found {
+			continue
+		}
+		switch name {
+		case "script-src", "worker-src", "frame-src", "child-src", "default-src":
+			if strings.Contains(sources, contentHost) {
+				return true
+			}
+		}
+	}
+	return false
 }

@@ -19,14 +19,14 @@ func TestSharesOfFiltersBrokenEncryptedAndNonLocal(t *testing.T) {
 		{ID: 3, Name: "bucket", Backend: core.BackendS3},
 		{ID: 4, Name: "secrets", Host: "/srv/secrets"},
 	}
-	got := SharesOf(defs, map[core.ShareID]bool{4: true}, slog.Default())
+	got := publishShares(defs, map[core.ShareID]bool{4: true}, slog.Default())
 	if len(got) != 1 || got[0].Name != "documents" {
 		t.Fatalf("got %+v, want only documents", got)
 	}
 }
 
 func TestSharesOfCarriesModesAndPath(t *testing.T) {
-	got := SharesOf([]core.ShareDef{{ID: 1, Name: "documents", Host: "/srv/documents", Policy: vfs.SharePolicy{ModeFile: 0o640, ModeDir: 0o750}, SharedExternally: true}}, nil, slog.Default())
+	got := publishShares([]core.ShareDef{{ID: 1, Name: "documents", Host: "/srv/documents", Policy: vfs.SharePolicy{ModeFile: 0o640, ModeDir: 0o750}, SharedExternally: true}}, nil, slog.Default())
 	if len(got) != 1 || got[0].ModeFile != 0o640 || got[0].ModeDir != 0o750 || !got[0].SharedExternally || got[0].Path != "/srv/documents" {
 		t.Fatalf("got %+v", got)
 	}
@@ -35,7 +35,7 @@ func TestSharesOfCarriesModesAndPath(t *testing.T) {
 func TestGrantsOfCollapsesPermissionsAndGroups(t *testing.T) {
 	user := int64(7)
 	group := int64(3)
-	got := GrantsOf([]state.GrantRow{
+	got := grantsOf([]state.GrantRow{
 		{ID: 1, User: &user, Share: 1, Allow: uint16(acl.Read)},
 		{ID: 2, User: &user, Share: 2, Subpath: "reports", Allow: uint16(acl.Read | acl.Download)},
 		{ID: 3, Group: &group, Share: 3, Allow: uint16(acl.Read | acl.Download), Deny: uint16(acl.Write)},

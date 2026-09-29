@@ -4,7 +4,6 @@
 package listener
 
 import (
-	"crypto/tls"
 	"errors"
 	"os"
 	"path/filepath"
@@ -249,17 +248,5 @@ func TestANewHostRegeneratesOnlyOnFirstBoot(t *testing.T) {
 	_, rerr := EnsureTLS(p, []string{"app.example.test", "later.example.test"}, fixedClock(), false, durable)
 	if !errors.Is(rerr, ErrTLSMaterial) {
 		t.Fatalf("a missing host after first boot returned %v", rerr)
-	}
-}
-
-// The floor is 1.2. Below it are versions with known attacks and no client
-// this server needs to serve requires one.
-func TestTheProtocolFloor(t *testing.T) {
-	cfg := TLSConfig(tls.Certificate{})
-	if cfg.MinVersion != tls.VersionTLS12 {
-		t.Errorf("the minimum version is %x", cfg.MinVersion)
-	}
-	if cfg.InsecureSkipVerify {
-		t.Error("verification is disabled")
 	}
 }

@@ -301,26 +301,6 @@ func (m *Multi) escape(s string) {
 	m.write(string(b.out))
 }
 
-// WriteLockDiscovery writes the body a LOCK answers with.
-//
-// Not a multistatus: it reports one property of one resource, so it carries no
-// href and no status. It shares the element writer because the owner text
-// inside it came from a client, and a second escaping path would mean trusting
-// that path to match this one.
-func WriteLockDiscovery(w io.Writer, token, owner string, timeoutSeconds int64) error {
-	m := NewMulti(w)
-	m.write(`<?xml version="1.0" encoding="utf-8"?>`)
-	m.write(`<d:prop xmlns:d="DAV:"><d:lockdiscovery><d:activelock>`)
-	m.write(`<d:locktype><d:write/></d:locktype><d:lockscope><d:exclusive/></d:lockscope>`)
-	m.write(`<d:depth>0</d:depth><d:owner>`)
-	m.escape(owner)
-	m.write(`</d:owner><d:timeout>Second-` + strconv.FormatInt(timeoutSeconds, 10) + `</d:timeout>`)
-	m.write(`<d:locktoken><d:href>`)
-	m.escape(token)
-	m.write(`</d:href></d:locktoken></d:activelock></d:lockdiscovery></d:prop>`)
-	return m.err
-}
-
 // WriteDAVError writes the error document a refusal carries.
 //
 // One client checks the response's content type against a short list of exact

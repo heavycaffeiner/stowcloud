@@ -22,7 +22,6 @@ type ShareRoot struct {
 	hasBtime bool
 	scratch  bool
 	host     string
-	admitted map[uint64]struct{}
 	scoped   *ShareRoot
 	owner    *ShareRoot
 }
@@ -86,11 +85,11 @@ func openRequestShareRoot(id ShareID, host string, policy SharePolicy) (*ShareRo
 	if err != nil {
 		return nil, mapLocalErr(err)
 	}
-	return &ShareRoot{id: id, backend: b, policy: policy, dev: b.Dev(), fsType: FsType(b.FsType()), hasBtime: b.HasBtime(), host: host, admitted: map[uint64]struct{}{b.Dev(): {}}}, nil
+	return &ShareRoot{id: id, backend: b, policy: policy, dev: b.Dev(), fsType: FsType(b.FsType()), hasBtime: b.HasBtime(), host: host}, nil
 }
 
 func newShareRoot(id ShareID, host string, policy SharePolicy, b *local.RootHandle) (*ShareRoot, error) {
-	r := &ShareRoot{id: id, backend: b, policy: policy, dev: b.Dev(), fsType: FsType(b.FsType()), hasBtime: b.HasBtime(), host: host, admitted: map[uint64]struct{}{b.Dev(): {}}}
+	r := &ShareRoot{id: id, backend: b, policy: policy, dev: b.Dev(), fsType: FsType(b.FsType()), hasBtime: b.HasBtime(), host: host}
 	if policy.Symlink == SymlinkDeny {
 		return r, nil
 	}
@@ -106,13 +105,6 @@ func newShareRoot(id ShareID, host string, policy SharePolicy, b *local.RootHand
 	return r, nil
 }
 
-func OpenShareRoot(id ShareID, host string, policy SharePolicy) (*ShareRoot, error) {
-	b, err := local.OpenRequestRoot(host, localPolicy(policy))
-	if err != nil {
-		return nil, mapLocalErr(err)
-	}
-	return newShareRoot(id, host, policy, b)
-}
 func RegisterShareRoot(id ShareID, host string, policy SharePolicy) (*ShareRoot, Admission, error) {
 	b, a, err := local.RegisterRequestRoot(host, localPolicy(policy))
 	if err != nil {
@@ -175,14 +167,4 @@ func (r *ShareRoot) Alive() error {
 		return fmt.Errorf("probe root: %w", ErrNotFound)
 	}
 	return mapLocalErr(r.backend.Alive())
-}
-
-// Retained only as a compatibility probe for product tests. Real resolution is
-// performed exclusively by local.RootHandle through openat2.
-func (r *ShareRoot) admitDevice(_ *os.File, dev uint64, _ string) error {
-	if _, ok := r.admitted[dev]; ok {
-		return nil
-	}
-	r.admitted[dev] = struct{}{}
-	return nil
 }

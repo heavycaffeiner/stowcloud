@@ -267,9 +267,6 @@ func TestTheFirstErrorSticks(t *testing.T) {
 	if w.written != before {
 		t.Errorf("the writer took %d more bytes after failing", w.written-before)
 	}
-	if !errors.Is(z.Err(), errBroken) {
-		t.Errorf("Err reports %v", z.Err())
-	}
 }
 
 // Closing twice does not append a second directory, since a deferred Close

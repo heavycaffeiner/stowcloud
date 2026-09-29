@@ -17,30 +17,6 @@ import (
 	"strings"
 )
 
-// SSE event names. Two, because a stream that ends without saying so is
-// indistinguishable from a connection that dropped.
-const (
-	// SSEHit is one permission-filtered result.
-	SSEHit = "hit"
-	// SSEDone ends the stream, whether the search finished or failed. A
-	// post-commitment failure arrives here rather than as a status, because
-	// the status is long gone by then.
-	SSEDone = "done"
-)
-
-// SSEDoneView ends a stream.
-//
-// Error and the other two fields are mutually exclusive in practice: a search
-// that failed reports why, and one that finished reports what it produced.
-type SSEDoneView struct {
-	Truncated bool   `json:"truncated"`
-	Tier      string `json:"tier"`
-	// Error carries a failure that happened after the stream was committed.
-	// It is a code rather than a message, for the same reason a health reason
-	// is: this text reaches a client that may not be entitled to detail.
-	Error string `json:"error,omitempty"`
-}
-
 // SSEFrame renders one event in the wire format.
 //
 // The data is encoded first and checked for a newline, because a newline

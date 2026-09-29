@@ -98,11 +98,6 @@ func Apply(ctx context.Context, socket string) (Report, error) {
 	return Do(ctx, socket, Request{Op: OpApply})
 }
 
-// Status repeats the agent's previous report without requesting another apply.
-func Status(ctx context.Context, socket string) (Report, error) {
-	return Do(ctx, socket, Request{Op: OpStatus})
-}
-
 // absent reports whether a dial failure means nothing is listening, as opposed
 // to something going wrong while connecting.
 //

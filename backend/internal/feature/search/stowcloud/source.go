@@ -68,9 +68,6 @@ func SourcesOf(sources []core.ScanSource) []search.Source {
 	return out
 }
 
-func UserSources(c *core.Core, user core.UserID) []search.Source {
-	return SourcesOf(c.UserScanSources(user))
-}
 func LabelSources(c *core.Core, user core.UserID, sources []core.ScanSource) []search.Source {
 	out := make([]search.Source, 0, len(sources))
 	for _, s := range sources {

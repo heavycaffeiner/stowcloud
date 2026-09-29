@@ -12,9 +12,6 @@ func TestAnUndeclaredAccessClassIsRefused(t *testing.T) {
 	if err == nil {
 		t.Fatal("a route with no access class validated")
 	}
-	if !strings.Contains(err.Error(), "unset") {
-		t.Errorf("the refusal does not say what is wrong: %v", err)
-	}
 }
 
 // A duplicate mount is the shape the old surface had: two routes, one handler,
@@ -102,46 +99,6 @@ func TestAMalformedParameterIsRefused(t *testing.T) {
 		if err == nil {
 			t.Errorf("the path %q validated", path)
 		}
-	}
-}
-
-// Params is what the registration step and the handler both read, so neither
-// re-parses and the two cannot disagree about what a route captured.
-func TestParamsReadsTheNamesInOrder(t *testing.T) {
-	for _, c := range []struct {
-		path string
-		want []string
-	}{
-		{"/api/v1/files/list", nil},
-		{"/api/v1/jobs/{id}", []string{"id"}},
-		{"/g/{id}/members/{user}", []string{"id", "user"}},
-		{"/dav/{path...}", []string{"path"}},
-	} {
-		got := Params(c.path)
-		if len(got) != len(c.want) {
-			t.Errorf("%s produced %v, want %v", c.path, got, c.want)
-			continue
-		}
-		for i := range got {
-			if got[i] != c.want[i] {
-				t.Errorf("%s produced %v, want %v", c.path, got, c.want)
-				break
-			}
-		}
-	}
-}
-
-// HasTail decides whether the registered pattern can be followed by anything,
-// which is the difference between matching one segment and matching the rest.
-func TestHasTailDistinguishesATailFromAParameter(t *testing.T) {
-	if !HasTail("/dav/{path...}") {
-		t.Error("a tail was not recognised")
-	}
-	if HasTail("/api/v1/jobs/{id}") {
-		t.Error("a named parameter was read as a tail")
-	}
-	if HasTail("/api/v1/files/list") {
-		t.Error("a literal was read as a tail")
 	}
 }
 

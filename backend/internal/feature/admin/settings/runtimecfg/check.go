@@ -113,40 +113,6 @@ func CheckOrigin(v string) error {
 	return nil
 }
 
-// CheckHostRoles validates the two host lists together.
-//
-// They are two roles rather than one allowlist, and the disjointness is the
-// point: one TLS name cannot both carry the session application and be the
-// cookie-free content origin, because the whole reason the content origin
-// exists is that it never sees a session cookie.
-func CheckHostRoles(appHosts, contentHosts []string) error {
-	seen := make(map[string]string, len(appHosts)+len(contentHosts))
-	for _, role := range []struct {
-		name  string
-		hosts []string
-	}{
-		{"app host", appHosts},
-		{"content host", contentHosts},
-	} {
-		for _, h := range role.hosts {
-			if err := CheckHost(h); err != nil {
-				return fmt.Errorf("%s: %w", role.name, err)
-			}
-			key := strings.ToLower(h)
-			if other, dup := seen[key]; dup {
-				if other == role.name {
-					return fmt.Errorf("the %s %q is listed twice", role.name, h)
-				}
-				return fmt.Errorf(
-					"the host %q is both an %s and a %s; one name cannot carry the session "+
-						"application and be the cookie-free content origin", h, other, role.name)
-			}
-			seen[key] = role.name
-		}
-	}
-	return nil
-}
-
 // CheckCanonicalURL validates the compatibility fallback.
 //
 // It is used when a request origin is unavailable, so it has to name a host the

@@ -11,7 +11,6 @@ package listener
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -95,9 +94,6 @@ const (
 	// HealthExitUnhealthy is a server that did not.
 	HealthExitUnhealthy HealthExit = 1
 )
-
-// ErrHealth is a health response this command will not accept.
-var ErrHealth = errors.New("the server did not answer with a valid health document")
 
 // HealthExitFor decides the exit code from a health status.
 //

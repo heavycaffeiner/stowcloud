@@ -40,15 +40,3 @@ func TrashOf(e core.TrashEntry) TrashView {
 		DeletedAtNs: strconv.FormatInt(e.DeletedAtNs, 10),
 	}
 }
-
-// TrashListOf projects a listing.
-//
-// Never nil: an empty trash encodes as an empty array, because a client
-// iterating a null gets a runtime error rather than zero rows.
-func TrashListOf(entries []core.TrashEntry) []TrashView {
-	out := make([]TrashView, 0, len(entries))
-	for _, e := range entries {
-		out = append(out, TrashOf(e))
-	}
-	return out
-}

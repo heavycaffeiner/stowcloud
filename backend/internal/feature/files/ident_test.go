@@ -1,45 +1,10 @@
 package core
 
 import (
-	"encoding/hex"
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vfs"
 )
-
-func TestNewInstanceIDIs32HexCharacters(t *testing.T) {
-	t.Parallel()
-	id, err := NewInstanceID()
-	if err != nil {
-		t.Fatalf("NewInstanceID: %v", err)
-	}
-	if len(id) != 2*instanceIDBytes {
-		t.Fatalf("NewInstanceID() = %q, want %d characters", id, 2*instanceIDBytes)
-	}
-	if _, err := hex.DecodeString(id); err != nil {
-		t.Fatalf("NewInstanceID() = %q, which is not hex: %v", id, err)
-	}
-	for _, r := range id {
-		if r >= 'A' && r <= 'Z' {
-			t.Fatalf("NewInstanceID() = %q, want lowercase hex", id)
-		}
-	}
-}
-
-func TestTwoInstanceIDsDiffer(t *testing.T) {
-	t.Parallel()
-	a, err := NewInstanceID()
-	if err != nil {
-		t.Fatalf("NewInstanceID: %v", err)
-	}
-	b, err := NewInstanceID()
-	if err != nil {
-		t.Fatalf("NewInstanceID: %v", err)
-	}
-	if a == b {
-		t.Fatalf("two calls both returned %q", a)
-	}
-}
 
 // ShareID is an alias rather than a defined type, so a vfs.ShareID passes
 // where a core.ShareID is wanted with no conversion. A defined type would

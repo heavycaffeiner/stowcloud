@@ -150,19 +150,6 @@ func (g *Guard) Sample(ctx context.Context, cfg Config) (State, error) {
 	return st, nil
 }
 
-// Blocked reports whether any file is currently refusing writes.
-//
-// Any rather than all: the files move together, so a disagreement means a
-// sample failed partway, and the safe reading of that is blocked.
-func (g *Guard) Blocked() bool {
-	for _, f := range g.files {
-		if f.WritesBlocked() {
-			return true
-		}
-	}
-	return false
-}
-
 // Unblock releases every file this guard measures.
 //
 // For a guard being switched off. A block is the guard's decision, so it has

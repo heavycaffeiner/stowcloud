@@ -372,21 +372,3 @@ func TestOnChangeFiresOnlyOnATransition(t *testing.T) {
 		t.Errorf("onChange fired %d times across many samples, want 1", calls)
 	}
 }
-
-// Blocked reports the files' own state, which is what the health surface asks.
-func TestBlockedReportsTheFiles(t *testing.T) {
-	t.Parallel()
-
-	f := &fakeFile{size: 5000}
-	g := sizeguard.New(t.TempDir(), []sizeguard.File{f})
-
-	if g.Blocked() {
-		t.Error("a fresh guard reports blocked")
-	}
-	if _, err := g.Sample(context.Background(), sizeguard.Config{MaxBytes: 1}); err != nil {
-		t.Fatalf("sampling: %v", err)
-	}
-	if !g.Blocked() {
-		t.Error("a tripped guard reports writable")
-	}
-}

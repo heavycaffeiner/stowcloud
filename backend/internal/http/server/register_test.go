@@ -84,11 +84,10 @@ func TestRegisterRefusesAMismatchedHandlerSet(t *testing.T) {
 	if err == nil {
 		t.Fatal("a mismatched handler set was registered")
 	}
-	if !strings.Contains(err.Error(), "has no handler") {
-		t.Errorf("report omits missing handler: %v", err)
-	}
-	if !strings.Contains(err.Error(), "names no route") {
-		t.Errorf("report omits orphaned handler: %v", err)
+	for _, name := range []string{table[0].Name, "nothing.names.this"} {
+		if !strings.Contains(err.Error(), name) {
+			t.Errorf("report omits %s: %v", name, err)
+		}
 	}
 }
 
@@ -131,10 +130,14 @@ func TestEachRouteCarriesItsOwnMetadata(t *testing.T) {
 }
 
 func concretePath(path string) string {
-	out := path
-	for _, p := range route.Params(path) {
-		out = strings.Replace(out, "{"+p+"...}", "some/nested/path", 1)
-		out = strings.Replace(out, "{"+p+"}", "42", 1)
+	segments := strings.Split(path, "/")
+	for i, seg := range segments {
+		switch {
+		case strings.HasPrefix(seg, "{") && strings.HasSuffix(seg, "...}"):
+			segments[i] = "some/nested/path"
+		case strings.HasPrefix(seg, "{"):
+			segments[i] = "42"
+		}
 	}
-	return out
+	return strings.Join(segments, "/")
 }

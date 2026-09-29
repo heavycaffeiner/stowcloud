@@ -131,16 +131,15 @@ type Pair struct {
 	Val Val
 }
 
-func Str(s string) Val                 { return Val{kind: valString, text: s} }
-func Int(i int64) Val                  { return Val{kind: valInt, num: i} }
-func Float(f float64) Val              { return Val{kind: valFloat, real: f} }
-func Bool(b bool) Val                  { return Val{kind: valBool, flag: b} }
-func Absent() Val                      { return Val{kind: valAbsent} }
-func P(k string, v Val) Pair           { return Pair{k, v} }
-func Obj(p ...Pair) Val                { return Val{kind: valObject, pairs: p} }
-func List(i ...Val) Val                { return Val{kind: valList, items: i, item: elemItem} }
-func NamedList(n string, i ...Val) Val { return Val{kind: valList, items: i, item: n} }
-func (v Val) IsAbsent() bool           { return v.kind == valAbsent }
+func Str(s string) Val       { return Val{kind: valString, text: s} }
+func Int(i int64) Val        { return Val{kind: valInt, num: i} }
+func Float(f float64) Val    { return Val{kind: valFloat, real: f} }
+func Bool(b bool) Val        { return Val{kind: valBool, flag: b} }
+func Absent() Val            { return Val{kind: valAbsent} }
+func P(k string, v Val) Pair { return Pair{k, v} }
+func Obj(p ...Pair) Val      { return Val{kind: valObject, pairs: p} }
+func List(i ...Val) Val      { return Val{kind: valList, items: i, item: elemItem} }
+func (v Val) IsAbsent() bool { return v.kind == valAbsent }
 
 var ErrElementName = errors.New("nc: illegal element name")
 

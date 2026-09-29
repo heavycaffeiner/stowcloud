@@ -12,8 +12,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/protocol/limits"
 )
 
 // Uploading, both ways the clients do it.
@@ -92,12 +90,12 @@ func TestAPlainUploadReportsIdentityAndEtag(t *testing.T) {
 	}
 }
 
-// A direct upload larger than the framework's buffered-body limit streams to
-// disk instead of being rejected before the Nextcloud handler can read it.
-func TestALargePlainUploadStreamsPastTheBufferedBodyLimit(t *testing.T) {
+// A direct upload past 128 MiB streams to disk instead of being buffered or
+// refused before the Nextcloud handler can read it.
+func TestALargePlainUploadStreamsToDisk(t *testing.T) {
 	t.Parallel()
 	f := newNCFixture(t, []byte("seed"))
-	size := int64(limits.ServerBodyLimit) + 1
+	size := int64(128<<20) + 1
 	body := io.LimitReader(zeroReader{}, size)
 
 	req, err := http.NewRequest(http.MethodPut, f.filePath("large.bin"), body)

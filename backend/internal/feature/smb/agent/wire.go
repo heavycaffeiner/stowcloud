@@ -39,8 +39,6 @@ const DefaultSocket = "/run/sc-smb/agent.sock"
 const (
 	// OpApply re-reads the rendered files and applies them immediately.
 	OpApply = "apply"
-	// OpStatus repeats the previous apply's report without performing another.
-	OpStatus = "status"
 )
 
 // Request is a single message to the agent.

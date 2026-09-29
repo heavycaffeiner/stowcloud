@@ -41,10 +41,6 @@ const (
 	OpPaused
 	// OpRetrying is durable work waiting for its next retry time.
 	OpRetrying
-
-	// opStateSentinel is one past the last state and is never stored. It
-	// exists so a walk over the states has a bound that moves with them.
-	opStateSentinel
 )
 
 // String returns the stable state name used by API layers and diagnostics.
@@ -70,14 +66,6 @@ func (s OpState) String() string {
 		return "unknown"
 	}
 }
-
-// OpStateCount is how many states exist.
-//
-// The states are consecutive from zero, so this is the bound a caller walks
-// them with. It reads the sentinel rather than the last named state, so
-// appending a state moves the bound without an edit here: a bound that has to
-// be updated by hand is one that will not be.
-func OpStateCount() int { return int(opStateSentinel) }
 
 // OpKind names the sort of work an operation performs.
 type OpKind int8

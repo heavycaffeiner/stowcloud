@@ -4,7 +4,6 @@ package vfs
 
 import local "github.com/stowcloud/storage/local"
 
-type Support = local.Support
 type Caps = local.Caps
 
 const (

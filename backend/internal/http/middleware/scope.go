@@ -68,20 +68,3 @@ func Scope(req route.Requirement, p Principal) error {
 	}
 	return ErrCredentialRequired
 }
-
-// SessionMask is the permission mask a session carries.
-//
-// Every bit. A session is the account acting directly, so narrowing it here
-// would be this layer inventing a restriction the account model does not have.
-// What the account may actually reach at a given path is still core.Resolve's
-// answer; this only says the credential class itself withholds nothing.
-//
-// Built from the named list rather than written as a literal, so a bit added
-// to the model is carried here without an edit that could be forgotten.
-func SessionMask() acl.Perms {
-	var all acl.Perms
-	for _, np := range acl.NamedPerms() {
-		all |= np.Perm
-	}
-	return all
-}

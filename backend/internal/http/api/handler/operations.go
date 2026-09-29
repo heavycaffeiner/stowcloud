@@ -10,18 +10,10 @@
 package handler
 
 import (
-	"context"
 	"strconv"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 )
-
-// OperationsAPI is what this family needs from the service layer.
-type OperationsAPI interface {
-	ListOperations(ctx context.Context, owner core.UserID, limit int) ([]core.Operation, error)
-	Operation(ctx context.Context, owner core.UserID, id core.OperationID) (core.Operation, error)
-	CancelOperation(ctx context.Context, owner core.UserID, id core.OperationID) error
-}
 
 // OperationView is one job as a client reads it.
 //
@@ -52,24 +44,6 @@ type OperationItemView struct {
 	OK     bool   `json:"ok"`
 	Reason string `json:"reason,omitempty"`
 	Text   string `json:"text,omitempty"`
-}
-
-// TerminalStateName reports whether a state name means the job has finished.
-//
-// Over the name rather than the stored number, because this tier may not
-// import the tier that owns the numbers. core.Operation.Terminal answers the
-// same question on the service side; this is the one a client's own polling
-// loop is written against, and both are checked against the same list of
-// names.
-func TerminalStateName(state string) (terminal, known bool) {
-	switch state {
-	case "done", "failed", "cancelled", "interrupted":
-		return true, true
-	case "queued", "running", "paused", "retrying":
-		return false, true
-	default:
-		return true, false
-	}
 }
 
 // OperationsOf projects a list of jobs.

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads/limits"
@@ -31,9 +32,6 @@ func TestChecksumParsing(t *testing.T) {
 		t.Fatalf("the checksum round-tripped as %+v", back)
 	}
 
-	if _, aerr := ParseAlgo("md5"); !errors.Is(aerr, ErrUnknownAlgo) {
-		t.Fatalf("an unoffered algorithm returned %v", aerr)
-	}
 	for name, wire := range map[string]string{
 		"no digest":                  "crc32c",
 		"not base64":                 "crc32c ...",
@@ -344,4 +342,13 @@ func TestTheReservedBytesBoundRefusesByName(t *testing.T) {
 	if !errors.As(err, &exhausted) {
 		t.Fatalf("a declared length past the account bound returned %v", err)
 	}
+}
+
+// Sum computes a digest over data for a test that needs an expected checksum.
+func Sum(a Algo, data []byte) ([]byte, error) {
+	h := newHasher(a)
+	if _, err := h.Write(data); err != nil {
+		return nil, fmt.Errorf("computing a %s digest: %w", a, err)
+	}
+	return h.Sum(nil), nil
 }

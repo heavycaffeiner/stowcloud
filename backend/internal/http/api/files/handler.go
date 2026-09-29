@@ -876,19 +876,3 @@ func fail(c *gin.Context, err error) {
 	middleware.SetCause(c, err)
 	refuse(c, apierr.Classify(err, apierr.VisibilityKnown))
 }
-
-// Method-shaped aliases make route binding explicit without app forwarding methods.
-func (h *Handler) ReadHandler(c *gin.Context)          { h.Read(c) }
-func (h *Handler) WriteHandler(c *gin.Context)         { h.Write(c) }
-func (h *Handler) MkdirHandler(c *gin.Context)         { h.Mkdir(c) }
-func (h *Handler) DeleteHandler(c *gin.Context)        { h.Delete(c) }
-func (h *Handler) RenameHandler(c *gin.Context)        { h.Rename(c) }
-func (h *Handler) MoveHandler(c *gin.Context)          { h.Move(c) }
-func (h *Handler) CopyHandler(c *gin.Context)          { h.Copy(c) }
-func (h *Handler) SizeHandler(c *gin.Context)          { h.Size(c) }
-func (h *Handler) RecentHandler(c *gin.Context)        { h.Recent(c) }
-func (h *Handler) ArchiveHandler(c *gin.Context)       { h.Archive(c) }
-func (h *Handler) ArchiveFetchHandler(c *gin.Context)  { h.ArchiveFetch(c) }
-func (h *Handler) ArchiveListHandler(c *gin.Context)   { h.ArchiveList(c) }
-func (h *Handler) DownloadHandler(c *gin.Context)      { h.Download(c) }
-func (h *Handler) DownloadFetchHandler(c *gin.Context) { h.DownloadFetch(c) }

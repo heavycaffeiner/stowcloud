@@ -168,32 +168,6 @@ func parseAddr(s string) (netip.Addr, bool) {
 	return netip.Addr{}, false
 }
 
-// ParseTrusted reads the operator's prefix list, returning the ones that parse
-// and the spellings that did not.
-//
-// Both halves are returned rather than failing on the first bad entry: a stored
-// list with one malformed prefix should still bring up the others, and the
-// caller warns about what it dropped. A bare address is accepted as its own
-// single-host prefix, which is how an operator writes one proxy.
-func ParseTrusted(specs []string) (prefixes []netip.Prefix, rejected []string) {
-	for _, raw := range specs {
-		s := strings.TrimSpace(raw)
-		if s == "" {
-			continue
-		}
-		if p, err := netip.ParsePrefix(s); err == nil {
-			prefixes = append(prefixes, p.Masked())
-			continue
-		}
-		if a, err := netip.ParseAddr(s); err == nil {
-			prefixes = append(prefixes, netip.PrefixFrom(unmap(a), unmap(a).BitLen()))
-			continue
-		}
-		rejected = append(rejected, s)
-	}
-	return prefixes, rejected
-}
-
 // IsPrivateClient reports whether a resolved client is on a private network,
 // which is what first boot admits before any host is named.
 //

@@ -247,12 +247,6 @@ func (p *Publisher) Publish(ctx context.Context) (agent.Report, error) {
 	return report, err
 }
 
-// PublishWithInputs is the pure publication entry point used by tests and by
-// callers that already adapted their state into feature-owned inputs.
-func PublishWithInputs(ctx context.Context, d Deps, cfg smb.Config) (agent.Report, error) {
-	return Publish(ctx, d, cfg)
-}
-
 // AccessChanged republishes synchronously after a committed auth change.
 func (p *Publisher) AccessChanged(ctx context.Context) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), agent.DefaultTimeout+5*time.Second)
@@ -294,12 +288,6 @@ func publishShares(defs []core.ShareDef, encrypted map[core.ShareID]bool, logger
 		out = append(out, Share{ID: int64(d.ID), Name: d.Name, Path: d.Host, ModeFile: d.Policy.ModeFile, ModeDir: d.Policy.ModeDir, SharedExternally: d.SharedExternally})
 	}
 	return out
-}
-
-// SharesOf adapts core share definitions for publication without exposing core
-// types to the renderer.
-func SharesOf(defs []core.ShareDef, encrypted map[core.ShareID]bool, logger *slog.Logger) []Share {
-	return publishShares(defs, encrypted, logger)
 }
 
 func grantsOf(rows []state.GrantRow, memberships []state.MembershipRow) []Grant {

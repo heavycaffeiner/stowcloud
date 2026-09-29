@@ -163,7 +163,6 @@ func uploadSentinels() []classifier {
 		{upload.ErrVerify, Unprocessable, "upload.verify_failed"},
 		{upload.ErrIncomplete, Unprocessable, "upload.incomplete"},
 		{upload.ErrChunkTooSmall, Unprocessable, "upload.chunk_too_small"},
-		{upload.ErrUnknownAlgo, Unprocessable, "upload.unknown_algorithm"},
 		{upload.ErrBadRequest, Malformed, "upload.bad_request"},
 
 		{upload.ErrTooLarge, BodyTooLarge, "upload.too_large"},

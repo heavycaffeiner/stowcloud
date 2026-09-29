@@ -11,6 +11,21 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/pathnames"
 )
 
+// The same user-visible name in two forms: precomposed ("e" with an acute
+// accent as one code point) and decomposed ("e" plus a combining acute
+// accent). Written with the literal bytes so an editor that normalizes on
+// save cannot collapse the difference this test depends on.
+const (
+	nfcSpelling = "caf\u00e9"
+	nfdSpelling = "cafe\u0301"
+)
+
+func TestFixturesActuallyDiffer(t *testing.T) {
+	if nfcSpelling == nfdSpelling {
+		t.Fatal("the two fixture spellings collapsed to one; every test below is vacuous")
+	}
+}
+
 // TestParseFunctionsNormalizeAnNFDPathToNFC covers the trust boundary every
 // protocol crosses through this package: a name a macOS client wrote
 // decomposed reaches every one of the three parsers already recomposed, so

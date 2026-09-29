@@ -7,35 +7,28 @@ import (
 	"testing"
 )
 
-// The two comparisons, side by side. A weak tag revalidates a GET and never
-// satisfies a write precondition.
-//
-// The asymmetry is the point. A weak tag says two representations mean the
-// same thing, which answers "is my cached copy still good" but not "is this
-// the exact byte sequence I read before I decided to overwrite it".
-func TestWeakRevalidatesAndStrongGuardsAWrite(t *testing.T) {
+// A weak tag never satisfies a write precondition. It says two representations
+// mean the same thing, not that they are the exact bytes a client read before
+// deciding to overwrite them.
+func TestOnlyAStrongTagGuardsAWrite(t *testing.T) {
 	weak := ETag{Value: "v1", Weak: true}
 	strong := ETag{Value: "v1"}
 
 	cases := []struct {
-		name        string
-		client      ETag
-		server      ETag
-		revalidates bool
-		guards      bool
+		name   string
+		client ETag
+		server ETag
+		guards bool
 	}{
-		{"both strong", strong, strong, true, true},
-		{"client weak", weak, strong, true, false},
-		{"server weak", strong, weak, true, false},
-		{"both weak", weak, weak, true, false},
-		{"different values", ETag{Value: "v2"}, strong, false, false},
+		{"both strong", strong, strong, true},
+		{"client weak", weak, strong, false},
+		{"server weak", strong, weak, false},
+		{"both weak", weak, weak, false},
+		{"different values", ETag{Value: "v2"}, strong, false},
 	}
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := c.client.WeakEquals(c.server); got != c.revalidates {
-				t.Errorf("weak comparison: got %v, want %v", got, c.revalidates)
-			}
 			if got := c.client.StrongEquals(c.server); got != c.guards {
 				t.Errorf("strong comparison: got %v, want %v", got, c.guards)
 			}
@@ -43,15 +36,9 @@ func TestWeakRevalidatesAndStrongGuardsAWrite(t *testing.T) {
 	}
 }
 
-// The same weak tag that revalidates a GET fails an If precondition. Run
-// through both real entry points rather than the comparison functions, so the
-// asymmetry is checked where a request meets it.
-func TestTheSameWeakTagRevalidatesButDoesNotGuard(t *testing.T) {
+// A weak tag fails an If precondition when run through the real entry point.
+func TestAWeakTagDoesNotGuardThroughTheIfHeader(t *testing.T) {
 	current := ETag{Value: "abc", Weak: true}
-
-	if !MatchesIfNoneMatch(`W/"abc"`, current, true) {
-		t.Error("a weak tag did not revalidate a GET")
-	}
 
 	h, err := ParseIf(`([W/"abc"])`, DefaultLimits(), "h")
 	if err != nil {
@@ -365,32 +352,6 @@ func TestTheIfHeaderBoundsRefuse(t *testing.T) {
 	tokenLim.NameBytes = 4
 	if _, err := ParseIf(`(<a-long-token>)`, tokenLim, "h"); !errors.Is(err, ErrIfTooLarge) {
 		t.Errorf("an oversized token was accepted: %v", err)
-	}
-}
-
-// If-None-Match's star matches whenever the resource exists, which is what a
-// conditional create is asking about.
-func TestTheStarMatchesAnExistingResource(t *testing.T) {
-	if !MatchesIfNoneMatch("*", ETag{Value: "v"}, true) {
-		t.Error("* did not match an existing resource")
-	}
-	if MatchesIfNoneMatch("*", ETag{}, false) {
-		t.Error("* matched a resource that is not there")
-	}
-}
-
-// If-None-Match takes a list, and any member matching is a match.
-func TestIfNoneMatchTakesAList(t *testing.T) {
-	current := ETag{Value: "v2"}
-
-	if !MatchesIfNoneMatch(`"v1", "v2", "v3"`, current, true) {
-		t.Error("a list containing the current tag did not match")
-	}
-	if MatchesIfNoneMatch(`"v1", "v3"`, current, true) {
-		t.Error("a list without the current tag matched")
-	}
-	if MatchesIfNoneMatch("", current, true) {
-		t.Error("an absent header matched")
 	}
 }
 

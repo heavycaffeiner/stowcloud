@@ -27,17 +27,6 @@ func Resolve(c *core.Core) func(core.UserID, string, acl.Perms) (core.Resolved, 
 	}
 }
 
-// Vpath returns the client-facing path for an entry in a resolved share.
-func Vpath(c *core.Core) func(core.UserID, core.Resolved, core.Entry) string {
-	return func(owner core.UserID, r core.Resolved, entry core.Entry) string {
-		vp, err := c.VpathFor(owner, r.Share(), entry.Path)
-		if err != nil {
-			return entry.Path.String()
-		}
-		return vp.String()
-	}
-}
-
 // Decode applies the shared JSON body limit and decoder.
 func Decode(c *gin.Context, into any) error {
 	return middleware.DecodeJSON(middleware.LimitBody(c.Request.Body, route.BodyJSON), into)

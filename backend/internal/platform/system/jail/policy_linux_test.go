@@ -1,6 +1,6 @@
 //go:build linux
 
-// The tests here reach Refuse and AllowedSyscalls, which live in files this
+// The tests here reach Refuse and allowedSyscalls, which live in files this
 // package only builds on Linux. Without the tag the Windows test binary
 // fails to compile, which is a broken build rather than a skipped test.
 
@@ -46,7 +46,7 @@ func TestRefuseWithNothingUnapplied(t *testing.T) {
 // the proof obligation: no way to open a file by name, reach the network, or
 // make another process.
 func TestTheWorkerListOmitsTheCallsItIsDefinedBy(t *testing.T) {
-	allowed := AllowedSyscalls()
+	allowed := allowedSyscalls()
 	if len(allowed) == 0 {
 		t.Fatal("the worker allow list is empty")
 	}
@@ -80,12 +80,12 @@ func TestTheWorkerListOmitsTheCallsItIsDefinedBy(t *testing.T) {
 // Exported so a measurement run and the list that ships cannot drift apart: a
 // measurement against a copy proves nothing about the real one.
 func TestAllowedSyscallsIsACopyOfOneList(t *testing.T) {
-	a, b := AllowedSyscalls(), AllowedSyscalls()
+	a, b := allowedSyscalls(), allowedSyscalls()
 	if !slices.Equal(a, b) {
 		t.Error("two reads of the allow list disagree")
 	}
 	a[0] = -1
-	if AllowedSyscalls()[0] == -1 {
+	if allowedSyscalls()[0] == -1 {
 		t.Error("a caller mutated the shipped list")
 	}
 }

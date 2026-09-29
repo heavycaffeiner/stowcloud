@@ -6,12 +6,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
 // Every filesystem type this build supports admits with the reflink and
-// warning shape the table promises, given a mount reporting a birth time.
+// warning shape the table promises.
 func TestAdmitFsTypeSupportedTable(t *testing.T) {
 	for _, tc := range []struct {
 		t           FsType
@@ -25,9 +24,9 @@ func TestAdmitFsTypeSupportedTable(t *testing.T) {
 		{FsXfs, true, false},
 		{FsTmpfs, false, true},
 	} {
-		adm, err := AdmitMount("/srv/share", tc.t, true)
-		if err != nil {
-			t.Errorf("%s: refused, %v", tc.t, err)
+		adm, reason := AdmitFsType(tc.t)
+		if !adm.OK {
+			t.Errorf("%s: refused, %s", tc.t, reason)
 			continue
 		}
 		if adm.Reflink != tc.wantReflink {
@@ -39,60 +38,13 @@ func TestAdmitFsTypeSupportedTable(t *testing.T) {
 	}
 }
 
-// Every named, unsupported type refuses, and the refusal names both the
-// filesystem and the path: "unsupported filesystem" alone gives an operator
-// nothing to act on.
-func TestAdmitFsTypeRefusalsAreNamed(t *testing.T) {
-	for _, ft := range []FsType{FsOverlay, FsFuse, FsNfs, FsCifs, FsSmb2, FsSquashfs, FsNtfs} {
-		_, err := AdmitMount("/srv/nested", ft, true)
-		if !errors.Is(err, ErrUnsupportedFilesystem) {
-			t.Errorf("%s: %v, want ErrUnsupportedFilesystem", ft, err)
-			continue
-		}
-		if !strings.Contains(err.Error(), ft.String()) {
-			t.Errorf("%s: refusal does not name the type: %v", ft, err)
-		}
-		if !strings.Contains(err.Error(), "/srv/nested") {
-			t.Errorf("%s: refusal does not name the path: %v", ft, err)
-		}
-	}
-}
-
 // The fail-closed half: a magic number this build has never classified
-// refuses by falling through to the default case, not by matching a
-// known-bad entry, and the message must not claim to know what it is.
+// refuses.
 func TestAdmitFsTypeUnclassifiedMagicRefuses(t *testing.T) {
 	for _, magic := range []FsType{0, 1, 0xDEADBEEF, 0xFFFFFFFF, FsExt4 + 1} {
-		adm, err := AdmitMount("/srv/x", magic, true)
-		if !errors.Is(err, ErrUnsupportedFilesystem) {
-			t.Errorf("magic %#x: %v, want a refusal", uint64(magic), err)
-		}
-		if adm.OK {
-			t.Errorf("magic %#x: admitted", uint64(magic))
-		}
-		for _, known := range []FsType{FsExt4, FsBtrfs, FsXfs, FsOverlay, FsNfs} {
-			if magic == known {
-				continue
-			}
-			if strings.Contains(err.Error(), known.String()) {
-				t.Errorf("magic %#x: refusal names %s, which it is not", uint64(magic), known)
-			}
-		}
-	}
-}
-
-// A supported type with no birth time still refuses: the type alone is
-// necessary and not sufficient, since without a birth time an inode reused
-// after a deletion cannot be told apart from the file that had it before.
-func TestAdmitMountRefusesNoBirthTimeEvenWhenSupported(t *testing.T) {
-	for _, ft := range []FsType{FsExt4, FsBtrfs, FsXfs, FsZfs, FsF2fs, FsTmpfs} {
-		_, err := AdmitMount("/srv/x", ft, false)
-		if !errors.Is(err, ErrUnsupportedFilesystem) {
-			t.Errorf("%s with no birth time: %v, want a refusal", ft, err)
-			continue
-		}
-		if !strings.Contains(err.Error(), "birth time") {
-			t.Errorf("%s: refusal does not say why: %v", ft, err)
+		adm, reason := AdmitFsType(magic)
+		if adm.OK || reason == "" {
+			t.Errorf("magic %#x: admitted, or refused without a reason", uint64(magic))
 		}
 	}
 }
@@ -160,77 +112,6 @@ func TestRegisterShareRootRefusalDoesNotAffectOtherShares(t *testing.T) {
 	}
 }
 
-// The share root's own verdict does not extend to a mount reached below it.
-// A real nested mount needs privilege this test does not assume, so the
-// gate is driven directly at admitDevice with an unseen device number,
-// proving the check runs against the filesystem rather than being skipped
-// because the directory happens to be real.
-func TestAdmitDeviceClassifiesRatherThanInherits(t *testing.T) {
-	dir := t.TempDir()
-	policy := DefaultSharePolicy()
-	policy.CrossMount = true
-
-	r, _, err := RegisterShareRoot(1, dir, policy)
-	if err != nil {
-		t.Skipf("this host's temp directory is on a filesystem this build refuses: %v", err)
-	}
-	t.Cleanup(func() {
-		if cerr := r.Close(); cerr != nil {
-			t.Errorf("close: %v", cerr)
-		}
-	})
-
-	if _, seen := r.admitted[r.dev]; !seen {
-		t.Fatal("the share root's own device was not recorded as admitted at registration")
-	}
-
-	sub := filepath.Join(dir, "nested")
-	if mkerr := os.Mkdir(sub, 0o755); mkerr != nil {
-		t.Fatalf("mkdir: %v", mkerr)
-	}
-	f, err := os.Open(sub)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	t.Cleanup(func() {
-		if cerr := f.Close(); cerr != nil {
-			t.Errorf("close: %v", cerr)
-		}
-	})
-
-	const unseenDev = ^uint64(0)
-	if err := r.admitDevice(f, unseenDev, sub); err != nil {
-		// sub really is on the same filesystem as the root, which
-		// registration already proved admits, so a refusal here can only
-		// mean admitDevice itself is broken.
-		t.Fatalf("a directory on an already-admitted filesystem was refused: %v", err)
-	}
-	if _, seen := r.admitted[unseenDev]; !seen {
-		t.Fatal("the verdict for the unseen device was not cached")
-	}
-}
-
-// The cache actually saves a call: once a device is classified, admitDevice
-// must not need to reach the filesystem again to answer for it. Passing a
-// nil descriptor for the cached path would panic on a Statx call, so a
-// clean return proves the second call short-circuited on the cache.
-func TestAdmitDeviceIsCachedPerDevice(t *testing.T) {
-	dir := t.TempDir()
-	r, _, err := RegisterShareRoot(1, dir, DefaultSharePolicy())
-	if err != nil {
-		t.Skipf("this host's temp directory is on a filesystem this build refuses: %v", err)
-	}
-	t.Cleanup(func() {
-		if cerr := r.Close(); cerr != nil {
-			t.Errorf("close: %v", cerr)
-		}
-	})
-
-	if err := r.admitDevice(nil, r.dev, dir); err != nil {
-		t.Fatalf("a cached device paid for a filesystem call and got: %v", err)
-	}
-}
-
 // Scratch space is not a share, and the constructor that opens it says so
 // rather than borrowing an id. What it does not skip is admission: a
 // filesystem this build cannot hold its contracts on is the same problem
@@ -276,15 +157,9 @@ func TestScratchRootRefusesWhatAShareRefuses(t *testing.T) {
 	}
 }
 
-// A directory this process can resolve via O_PATH but cannot really open
-// reproduces, at the syscall level, exactly the asymmetry a Landlock domain
-// that permits resolving a path but not reading it would produce:
-// OpenShareRoot succeeds and proveReadable fails with EACCES. Driving an
-// actual Landlock domain inside a unit test is not practical, so this test
-// reaches the same code path with a directory whose own mode denies
-// reading rather than a running sandbox. RegisterShareRoot cannot tell the
-// two apart by design; the point here is only that classifyUnreadable
-// renames the asymmetry, whichever produced it.
+// A directory whose mode denies reading stands in for a Landlock domain that
+// permits resolving a path but not reading it. Registration reports it as a
+// sandbox refusal that still unwraps to ErrDenied.
 func TestRegisterShareRootNamesTheOpenProveAsymmetry(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root bypasses the mode bit this test depends on")
@@ -309,18 +184,5 @@ func TestRegisterShareRootNamesTheOpenProveAsymmetry(t *testing.T) {
 	}
 	if !errors.Is(err, ErrDenied) {
 		t.Fatalf("RegisterShareRoot(%q) = %v, want it to still unwrap to ErrDenied", dir, err)
-	}
-}
-
-// classifyUnreadable passes through anything that is not itself a
-// permission denial: a directory that vanished between OpenShareRoot and
-// proveReadable is still ErrNotFound, not a sandbox refusal invented on top
-// of it.
-func TestClassifyUnreadablePassesThroughNonDenialErrors(t *testing.T) {
-	if got := classifyUnreadable(ErrNotFound); !errors.Is(got, ErrNotFound) {
-		t.Fatalf("classifyUnreadable(ErrNotFound) = %v, want it unwrapped to ErrNotFound", got)
-	}
-	if errors.Is(classifyUnreadable(ErrNotFound), ErrSandboxDenied) {
-		t.Fatal("classifyUnreadable invented a sandbox refusal for a missing path")
 	}
 }

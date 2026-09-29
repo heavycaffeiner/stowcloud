@@ -9,8 +9,6 @@
 package vfs
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"slices"
@@ -90,27 +88,6 @@ func IsReservedName(name string) bool {
 		}
 	}
 	return false
-}
-
-const stagingPrefix = ".scpart-"
-
-// stagingName mints a fresh ".scpart-" control name. The suffix comes from
-// crypto/rand so two concurrent writes aimed at the same destination cannot
-// land on the same staging name; O_EXCL at create time turns any collision
-// that does still happen into a refusal rather than a clobber.
-func stagingName() (string, error) {
-	var suffix [8]byte
-	if _, err := rand.Read(suffix[:]); err != nil {
-		return "", fmt.Errorf("vfs: mint a staging name: %w", err)
-	}
-	return stagingPrefix + hex.EncodeToString(suffix[:]), nil
-}
-
-// IsStagingName reports a name this package minted for a write still in
-// flight, so a maintenance sweep can tell "our staging file" apart from an
-// ordinary name that happens to start with a dot.
-func IsStagingName(name string) bool {
-	return strings.HasPrefix(name, stagingPrefix) && len(name) > len(stagingPrefix)
 }
 
 // windowsReservedDeviceNames are the names a Windows or SMB client can never
@@ -523,24 +500,3 @@ func (p SafePath) String() string { return strings.Join(p.comps, "/") }
 
 // Share crosses back into the core's vocabulary.
 func (p SafePath) Share() SharePath { return SharePath{raw: p.String()} }
-
-// RefusedNames is the whole-name half of the creation table, exported so a
-// protocol surface advertising "these names are refused" to a client reads
-// it from the table that actually enforces it. A name advertised as legal
-// and then refused leaves a sync client retrying forever without
-// converging.
-func RefusedNames() []string { return windowsReservedDeviceNames() }
-
-// RefusedNameCharacters is the character half of the same table.
-//
-// It omits characters this package accepts even though a Windows-hosted
-// server would refuse them: an asterisk or a question mark names an
-// ordinary file on the filesystems this package targets, and advertising
-// either as refused would push a client into renaming something this
-// package would have accepted as given. Individual control bytes are
-// likewise left off the list; the table still refuses them, but naming
-// thirty-odd unprintable characters one by one helps nobody reading this
-// list.
-func RefusedNameCharacters() []string {
-	return []string{"/", ":"}
-}

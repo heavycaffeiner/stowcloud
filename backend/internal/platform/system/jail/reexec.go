@@ -28,10 +28,6 @@ const firstSealedFD = 4
 // image RestrictAndReexec produced.
 func Reexeced(marker string) bool { return os.Getenv(marker) == "1" }
 
-// ReexecMarker is the environment variable the sequence marks its own image
-// with, so a caller assembling a worker can clear it deliberately.
-func ReexecMarker() string { return reexecMarker }
-
 // RestrictAndReexec applies spec to the calling thread and then swaps out the
 // process image, letting every thread of the resulting process inherit the
 // domain.

@@ -83,45 +83,6 @@ func TestThePromotedFileIsReadableByTheDaemon(t *testing.T) {
 	}
 }
 
-// The candidate is deliberately not durable, and the assertion is only that a
-// pass regenerates it. Asserting durability here would erase the distinction
-// this package is built around.
-func TestTheCandidateIsRegeneratedRatherThanRepaired(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "smb.conf.candidate")
-
-	// A torn candidate, as a crash mid-write would leave.
-	if err := os.WriteFile(path, []byte("[glo"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	const whole = "[global]\n  workgroup = OFFICE\n"
-	if err := WriteCandidate(path, whole); err != nil {
-		t.Fatal(err)
-	}
-	got, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(got) != whole {
-		t.Errorf("the pass did not regenerate the candidate: %q", got)
-	}
-}
-
-// The candidate is this agent's scratch and holds nothing anyone else needs.
-func TestTheCandidateIsPrivate(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "smb.conf.candidate")
-	if err := WriteCandidate(path, "[global]\n"); err != nil {
-		t.Fatal(err)
-	}
-	st, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if st.Mode().Perm() != candidateMode {
-		t.Errorf("the candidate is mode %v, want %v", st.Mode().Perm(), os.FileMode(candidateMode))
-	}
-}
-
 // A promotion into a directory that does not exist reports rather than leaving
 // the caller believing the daemon has a new configuration.
 func TestAPromotionThatCannotLandReports(t *testing.T) {

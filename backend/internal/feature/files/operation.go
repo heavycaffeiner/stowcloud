@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
 )
 
@@ -93,18 +92,6 @@ func (o Operation) Terminal() bool {
 		return false
 	default:
 		return true
-	}
-}
-
-// OperationStateNames lists every state name with whether it is terminal.
-//
-// Exported because the presentation tier decides terminality from the name,
-// having no access to the stored numbers, and two lists of the same states is
-// how one of them drifts. That tier checks its own answer against this.
-func OperationStateNames() map[string]bool {
-	return map[string]bool{
-		"queued": false, "running": false, "paused": false, "retrying": false,
-		"done": true, "failed": true, "cancelled": true, "interrupted": true,
 	}
 }
 
@@ -371,106 +358,4 @@ func (c *Core) stopAndWait() error {
 	ctx, cancel := context.WithTimeout(context.Background(), stopGrace)
 	defer cancel()
 	return c.jobs.Wait(ctx)
-}
-
-// Every terminal path writes the item's result row, because an item with no
-// result row is read as one the runner never got to: a finished copy that
-// recorded nothing would report itself done and list its own file as never
-// reached. FinishOp errors are ignored throughout, since the copy's own
-// outcome is already the answer and the row is best-effort bookkeeping.
-func (c *Core) runCopy(ctx context.Context, id int64, from, to Resolved, st vfs.Stat) {
-	c.runCopyPolicy(ctx, id, from, to, st, false)
-}
-
-func (c *Core) runCopyPolicy(
-	ctx context.Context, id int64, from, to Resolved, st vfs.Stat, overwriting bool,
-) {
-	if err := c.state.StartOpItem(ctx, id, 0); err != nil {
-		c.warn("marking a copy's item as started failed; the copy runs anyway",
-			"operation", id, "error", err)
-	}
-
-	err := c.copyTreeStaged(
-		ctx, from, to, st, acl.Read|acl.Download, c.cancelGate(ctx, id), overwriting,
-	)
-	now := c.clk.Nanos()
-	path := to.path.String()
-
-	switch {
-	case errors.Is(err, errOpCancelled) && c.jobsStopped():
-		// Stopped by a shutdown rather than by its owner. Interrupted is what
-		// a client reads as work that is still theirs and was not resumed,
-		// which is the truth about a copy the server walked away from.
-		if ierr := c.state.InterruptOp(ctx, id, now); ierr != nil {
-			c.warn("recording a copy's interruption failed",
-				"operation", id, "error", ierr)
-		}
-	case errors.Is(err, errOpCancelled):
-		// The one deliberate exception to the result-row rule: the stage was
-		// discarded before publication, so the item is genuinely unfinished.
-		c.finish(ctx, id, state.OpCancelled, 0, "", now, nil)
-	case err != nil:
-		results := []state.OpResult{{
-			Operation: id, Idx: 0, Path: path,
-			Reason: opReasonFor(err), Text: err.Error(),
-		}}
-		c.finish(ctx, id, state.OpFailed, 0, err.Error(), now, results)
-	default:
-		results := []state.OpResult{{
-			Operation: id, Idx: 0, Path: path,
-			OK: true, Reason: state.ReasonItemOk,
-		}}
-		c.finish(ctx, id, state.OpDone, 1, "", now, results)
-	}
-}
-
-// finish writes an operation's terminal row, logging rather than returning a
-// bookkeeping failure.
-func (c *Core) finish(
-	ctx context.Context, id int64, st state.OpState, progress int64,
-	message string, nowNs int64, results []state.OpResult,
-) {
-	if err := c.state.FinishOp(ctx, id, st, progress, message, nowNs, results); err != nil {
-		c.warn("recording a copy's outcome failed; the copy itself is done",
-			"operation", id, "error", err)
-	}
-}
-
-// cancelGate returns the closure copyRecursive polls at item boundaries.
-//
-// Reading the row is what makes a cancel reach a copy that is already
-// running rather than only stopping one that has not started; without it the
-// request was recorded and the walk ran to the end. A row that cannot be read
-// answers false: the work is real and the bookkeeping is what failed, so a
-// store hiccup must not abort a copy.
-func (c *Core) cancelGate(ctx context.Context, id int64) func() bool {
-	return func() bool {
-		// A shutdown stops the walk without a row to read, so a restart is
-		// not held open for the length of a tree.
-		if c.jobsStopped() {
-			return true
-		}
-		row, _, err := c.state.GetOp(ctx, id)
-		if err != nil {
-			return false
-		}
-		return row.Cancellation
-	}
-}
-
-// opReasonFor classifies a runner failure into the stored reason a client
-// branches on. The tray opens a conflict dialogue for a conflict and shows a
-// message for the rest, so a copy that failed on a taken name has to arrive
-// as a typed conflict rather than as prose.
-func opReasonFor(err error) state.OpResultReason {
-	switch {
-	case errors.Is(err, ErrConflict), errors.Is(err, ErrExists):
-		return state.ReasonItemConflict
-	case errors.Is(err, ErrNotFound):
-		return state.ReasonItemNotFound
-	case errors.Is(err, ErrDenied):
-		return state.ReasonItemDenied
-	default:
-		return state.ReasonItemFailed
-	}
 }

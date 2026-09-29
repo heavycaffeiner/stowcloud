@@ -12,7 +12,6 @@ package handler
 
 import (
 	"sort"
-	"strings"
 )
 
 // HealthStatus is the one-word summary.
@@ -98,13 +97,4 @@ func HealthOf(status HealthStatus, reasons []HealthReason) Health {
 		status = HealthFailing
 	}
 	return Health{Status: status, Reasons: out}
-}
-
-// SafeHealthToken reports whether a string is one of the fixed tokens.
-//
-// The check a caller applies at the seam where a service reports a reason. It
-// is deliberately not a validity check on the shape of a token: a value that
-// merely looks like one is exactly what an interpolated error string would be.
-func SafeHealthToken(s string) bool {
-	return knownReasons()[HealthReason(strings.TrimSpace(s))]
 }

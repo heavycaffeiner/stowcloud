@@ -14,7 +14,7 @@ import (
 // A frame is one frame. A newline in the payload would end it early and the
 // rest would arrive as a second, malformed event.
 func TestAnSSEFrameCannotSplitInTwo(t *testing.T) {
-	got, err := SSEFrame(SSEHit, map[string]string{"path": "a\nb: injected"})
+	got, err := SSEFrame("hit", map[string]string{"path": "a\nb: injected"})
 	if err != nil {
 		t.Fatalf("SSEFrame: %v", err)
 	}
@@ -46,28 +46,6 @@ func TestTheStreamOpensImmediately(t *testing.T) {
 	}
 	if !strings.HasSuffix(SSEComment(), "\n\n") {
 		t.Errorf("the opening frame is not terminated: %q", SSEComment())
-	}
-}
-
-// A failure after the stream is committed arrives as a done event, because the
-// status line went out long before.
-func TestAPostCommitmentFailureEndsTheStream(t *testing.T) {
-	got, err := SSEFrame(SSEDone, SSEDoneView{Error: "search.unavailable"})
-	if err != nil {
-		t.Fatalf("SSEFrame: %v", err)
-	}
-	if !strings.Contains(got, `"error":"search.unavailable"`) {
-		t.Errorf("the done frame is %q", got)
-	}
-
-	// An ordinary end carries no error field at all, so a client testing for
-	// its presence is not comparing against an empty string.
-	done, derr := SSEFrame(SSEDone, SSEDoneView{Tier: "index"})
-	if derr != nil {
-		t.Fatalf("SSEFrame: %v", derr)
-	}
-	if strings.Contains(done, "error") {
-		t.Errorf("a clean end carried an error: %q", done)
 	}
 }
 

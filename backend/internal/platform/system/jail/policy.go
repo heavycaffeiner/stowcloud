@@ -10,7 +10,6 @@ package jail
 import (
 	"errors"
 	"fmt"
-	"strings"
 )
 
 // Policy records what an operator requested. It expresses intent rather than
@@ -40,12 +39,6 @@ func (p Policy) String() string {
 	}
 	return "required"
 }
-
-// PolicyNames lists every policy this build supports, so the settings screen can
-// render the available choices. It is transmitted rather than compiled into the
-// client, because a client holding its own copy would offer policies the server
-// does not implement.
-func PolicyNames() []string { return []string{"required", "preferred", "off"} }
 
 // ParsePolicy is the trust boundary for the configured value. Three spellings
 // and nothing else: a name that is almost right is a policy the operator
@@ -89,27 +82,12 @@ type StepStatus struct {
 	Err error
 }
 
-// Status is what the health endpoint publishes. Degradations appear here rather
-// than only in a startup log, because log lines scroll out of reach while a
-// health field remains.
+// Status is what Apply reports: the policy, the kernel, and each layer's
+// outcome.
 type Status struct {
 	Policy Policy
 	Kernel string
 	Steps  []StepStatus
-}
-
-// LandlockApplied reports whether the filesystem domain is genuinely active.
-//
-// One decision outside this package depends on it: whether an ungranted path
-// remains reachable. A domain that was never installed restricts nothing, so a
-// share added beneath any parent works without a restart.
-func (s Status) LandlockApplied() bool {
-	for _, st := range s.Steps {
-		if st.Name == StepLandlock {
-			return st.Applied
-		}
-	}
-	return false
 }
 
 // The step names, so the reporter and the reader agree on one spelling.
@@ -117,32 +95,6 @@ const (
 	StepLandlock = "landlock"
 	StepSeccomp  = "seccomp"
 )
-
-// Degraded reports a policy whose request went unfulfilled.
-func (s Status) Degraded() bool {
-	if s.Policy == Off {
-		return false
-	}
-	for _, st := range s.Steps {
-		if !st.Applied {
-			return true
-		}
-	}
-	return false
-}
-
-func (s Status) String() string {
-	lines := make([]string, 0, len(s.Steps)+1)
-	lines = append(lines, fmt.Sprintf("hardening %s on kernel %s", s.Policy, s.Kernel))
-	for _, st := range s.Steps {
-		if st.Applied {
-			lines = append(lines, fmt.Sprintf("  %-10s applied", st.Name))
-			continue
-		}
-		lines = append(lines, fmt.Sprintf("  %-10s NOT applied: %v", st.Name, st.Err))
-	}
-	return strings.Join(lines, "\n") + "\n"
-}
 
 // firstUnapplied identifies the step a rejection points at.
 func (s Status) firstUnapplied() (StepStatus, bool) {

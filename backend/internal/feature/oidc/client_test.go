@@ -549,9 +549,6 @@ func TestTheFourFlowSecretsAreDistinct(t *testing.T) {
 		}
 		seen[v] = true
 	}
-	if Hash(f.State) == Hash(f.Nonce) {
-		t.Fatal("two secrets hash alike")
-	}
 }
 
 // steppingClock is a clock a test moves by hand, so a lifetime can be crossed

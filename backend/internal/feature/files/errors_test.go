@@ -71,9 +71,6 @@ func TestPreconditionErrorUnwrapsToItsSentinel(t *testing.T) {
 	if !errors.Is(err, ErrPrecondition) {
 		t.Fatalf("errors.Is(%v, ErrPrecondition) is false", err)
 	}
-	if !IsPrecondition(err) {
-		t.Fatal("IsPrecondition is false for a *PreconditionError")
-	}
 	var target *PreconditionError
 	if !errors.As(err, &target) || target.Current != "abc123" {
 		t.Fatalf("errors.As gave %+v, want the current token abc123", target)
@@ -83,23 +80,8 @@ func TestPreconditionErrorUnwrapsToItsSentinel(t *testing.T) {
 func TestPreconditionErrorCarriesAnEmptyTokenForAMissingTarget(t *testing.T) {
 	t.Parallel()
 	err := error(&PreconditionError{})
-	if !IsPrecondition(err) {
-		t.Fatal("IsPrecondition is false for a *PreconditionError with no token")
-	}
 	if !errors.Is(err, ErrPrecondition) {
 		t.Fatalf("%v does not match ErrPrecondition", err)
-	}
-}
-
-func TestIsPreconditionIsFalseForEveryOtherSentinel(t *testing.T) {
-	t.Parallel()
-	for _, s := range allSentinels() {
-		if s.name == "ErrPrecondition" {
-			continue
-		}
-		if IsPrecondition(s.err) {
-			t.Fatalf("IsPrecondition(%s) is true", s.name)
-		}
 	}
 }
 

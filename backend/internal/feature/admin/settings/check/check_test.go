@@ -3,10 +3,8 @@
 package check
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -64,11 +62,8 @@ func TestALockingHostListIsRefusedOnTheSettingsScreen(t *testing.T) {
 	if host, _ := f.Arg("host"); host != "files.example.test" {
 		t.Errorf("the finding named %q, want the host being locked out", host)
 	}
-	if !Blocked(got) || Refused(got) == nil {
+	if !Blocked(got) {
 		t.Error("the findings did not add up to a refusal")
-	}
-	if !errors.Is(Refused(got), ErrRefused) {
-		t.Error("the refusal does not match ErrRefused")
 	}
 }
 
@@ -89,9 +84,6 @@ func TestTheSameListOnlyWarnsWhereTheGuardDoesNotReach(t *testing.T) {
 	}
 	if Blocked(got) {
 		t.Error("the save was blocked on a screen the guard does not gate")
-	}
-	if Refused(got) != nil {
-		t.Error("a warning produced a refusal")
 	}
 }
 
@@ -653,36 +645,13 @@ func TestOnlyKnownSectionsAreAccepted(t *testing.T) {
 	}
 }
 
-// The refusal carries the findings, so the presentation layer renders them
-// without a second probe.
-func TestTheRefusalCarriesItsFindings(t *testing.T) {
+func TestAdvisoryAndBlockingPartitionTheFindings(t *testing.T) {
 	findings := []Finding{
 		advisory("network", "trusted_proxies", keyProxyIsEverything),
 		blocking("network", "bind", keyInvalidBindAddress),
 	}
-
-	err := Refused(findings)
-	if err == nil {
-		t.Fatal("a blocking finding did not refuse")
-	}
-	var refused *RefusedError
-	if !errors.As(err, &refused) {
-		t.Fatal("the refusal is not a RefusedError")
-	}
-	if len(refused.Findings) != 2 {
-		t.Errorf("the refusal carries %d findings, want both", len(refused.Findings))
-	}
-	// The message names what refused, so a log line is usable on its own.
-	if !strings.Contains(err.Error(), keyInvalidBindAddress) {
-		t.Errorf("the message does not name the refusal: %q", err)
-	}
-	// And not what merely warned.
-	if strings.Contains(err.Error(), keyProxyIsEverything) {
-		t.Errorf("the message names an advisory finding: %q", err)
-	}
-
-	if Refused(Advisory(findings)) != nil {
-		t.Error("advisory findings alone produced a refusal")
+	if Blocked(Advisory(findings)) {
+		t.Error("advisory findings alone blocked the save")
 	}
 	if len(Advisory(findings)) != 1 || len(Blocking(findings)) != 1 {
 		t.Error("the split does not partition the findings")

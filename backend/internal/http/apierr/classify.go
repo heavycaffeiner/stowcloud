@@ -293,14 +293,6 @@ func BadRequest(key, field string) error {
 	return &RequestError{Class: Malformed, Key: key, Args: fieldArg(field)}
 }
 
-// UnprocessableInput is input that parsed and then violated a constraint.
-//
-// Named for the input rather than the class because the class already owns the
-// bare word, and a constructor shadowing its own class reads as a mistake.
-func UnprocessableInput(key, field string) error {
-	return &RequestError{Class: Unprocessable, Key: key, Args: fieldArg(field)}
-}
-
 // BadGatewayError is a protocol target naming another origin or server.
 func BadGatewayError(key, field string) error {
 	return &RequestError{Class: BadGateway, Key: key, Args: fieldArg(field)}

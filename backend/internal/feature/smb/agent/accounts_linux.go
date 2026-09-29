@@ -3,7 +3,6 @@
 package agent
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -227,19 +226,6 @@ func (e *PublicationError) Unwrap() error { return e.Err }
 
 // PublicationOutcome exposes the durable result through wrapped errors.
 func (e *PublicationError) PublicationOutcome() fsatomic.Outcome { return e.Outcome }
-
-// OutcomeOf extracts a durable publication outcome from an error. Errors that
-// do not describe a publication are conservatively treated as not published.
-func OutcomeOf(err error) fsatomic.Outcome {
-	if err == nil {
-		return fsatomic.Published
-	}
-	var outcome interface{ PublicationOutcome() fsatomic.Outcome }
-	if !errors.As(err, &outcome) {
-		return fsatomic.NotPublished
-	}
-	return outcome.PublicationOutcome()
-}
 
 func WritePasswd(path, body string) error {
 	// The mode goes onto the staged file rather than being left to the open call,

@@ -28,12 +28,9 @@ type Config = publicvault.Config
 
 const (
 	minContainerDataMiB = publicvault.MinContainerDataMiB
-	maxContainerDataMiB = publicvault.MaxContainerDataMiB
 )
 
 var (
-	ErrContainerSize         = publicvault.ErrContainerSize
-	ErrUnknownHash           = publicvault.ErrUnknownHash
 	ErrWrongPassword         = publicvault.ErrWrongPassword
 	ErrHeaderCorrupt         = publicvault.ErrHeaderCorrupt
 	ErrUnsupportedVolume     = publicvault.ErrUnsupportedVolume

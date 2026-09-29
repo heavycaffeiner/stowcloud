@@ -139,7 +139,7 @@ func TestPreconditionRefusesEveryValidator(t *testing.T) {
 	want, _ := FileETag(st)
 	for _, tok := range []Token{"", "anything", Token(want)} {
 		perr := precondition(&tok, st)
-		if !IsPrecondition(perr) {
+		if !errors.Is(perr, ErrPrecondition) {
 			t.Fatalf("precondition(%q) = %v, want ErrPrecondition", tok, perr)
 		}
 		var pe *PreconditionError
@@ -161,7 +161,7 @@ func TestAValidatorAgainstAMissingTargetCarriesNoToken(t *testing.T) {
 	if !errors.As(err, &pe) || pe.Current != "" {
 		t.Fatalf("creating a missing file under a validator = %v, want an empty current token", err)
 	}
-	if !IsPrecondition(err) {
+	if !errors.Is(err, ErrPrecondition) {
 		t.Fatalf("the refusal does not unwrap to ErrPrecondition: %v", err)
 	}
 
@@ -177,7 +177,7 @@ func TestTheUnconditionalRetryIsTheWayPast(t *testing.T) {
 
 	tok := Token("v1")
 	if _, err := c.CreateFile(context.Background(), r,
-		vfs.DurableOpts{Mode: 0o644}, &tok, writeAll("new")); !IsPrecondition(err) {
+		vfs.DurableOpts{Mode: 0o644}, &tok, writeAll("new")); !errors.Is(err, ErrPrecondition) {
 		t.Fatalf("a validated replace = %v, want ErrPrecondition", err)
 	}
 	if got := readHost(t, host, "notes.txt"); got != "old" {

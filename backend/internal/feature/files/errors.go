@@ -135,10 +135,6 @@ func (e *PreconditionError) Error() string {
 
 func (e *PreconditionError) Unwrap() error { return ErrPrecondition }
 
-// IsPrecondition identifies a rejection caused by a validator that cannot be
-// satisfied.
-func IsPrecondition(err error) bool { return errors.Is(err, ErrPrecondition) }
-
 // mapVFSErr converts a filesystem error into a domain sentinel. It lives
 // here rather than beside any one caller because every file in the package
 // crosses this boundary, and because the mapping is a property of the error

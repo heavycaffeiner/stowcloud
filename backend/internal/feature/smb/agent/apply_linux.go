@@ -81,7 +81,7 @@ func NewAgent(paths Paths, log *slog.Logger, clk clock.Clock) *Agent {
 	return &Agent{paths: paths, log: log, clock: clk, smbd: NewSmbd(log)}
 }
 
-// Last returns the most recent apply result, used by status queries.
+// Last returns the most recent apply result.
 func (a *Agent) Last() Report {
 	a.mu.Lock()
 	defer a.mu.Unlock()

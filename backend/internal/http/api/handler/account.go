@@ -66,15 +66,6 @@ type AppPasswordView struct {
 	LastUsedNs *string `json:"last_used_ns,omitempty"`
 }
 
-// MintedAppPasswordView is the one response that carries the secret.
-//
-// A separate type, for the same reason the minted link is: a field that is
-// usually empty is a field one handler forgets to clear.
-type MintedAppPasswordView struct {
-	AppPassword AppPasswordView `json:"app_password"`
-	Secret      string          `json:"secret"`
-}
-
 // SessionHandle derives the revocation handle from a session's stored digest.
 //
 // A second hash rather than the digest itself. The store compares against the

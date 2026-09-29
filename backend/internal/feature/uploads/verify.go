@@ -34,16 +34,6 @@ func newHasher(a Algo) hash.Hash {
 	return crc32.New(castagnoli())
 }
 
-// Sum computes a digest over data, serving a caller that holds bytes with no
-// checksum attached.
-func Sum(a Algo, data []byte) ([]byte, error) {
-	h := newHasher(a)
-	if _, err := h.Write(data); err != nil {
-		return nil, fmt.Errorf("computing a %s digest: %w", a, err)
-	}
-	return h.Sum(nil), nil
-}
-
 // streamHasher is a running digest over a chunk that is never fully in
 // memory: the engine streams a body into the file and feeds the same slices
 // through here, so a per-chunk checksum costs a hasher rather than a copy.
