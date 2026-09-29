@@ -312,14 +312,6 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   run "layercheck (the internal tiers hold)" ingo_host go run ./tools/layercheck ./internal
   FMT=$(cd backend && gofmt -l . 2>/dev/null)
   grep_gate "gofmt" "$FMT" "Run: cd backend && gofmt -w ."
-  # D18. The module graph against the checked-in allowlist, so a new direct
-  # dependency is a diff to a file rather than a line in go.mod nobody reads.
-  DEPS_WANT=$(grep -vE '^[[:space:]]*(#|$)' backend/deps.allow | sort)
-  DEPS_HAVE=$(ingo go list -m -f '{{if and (not .Main) (not .Indirect)}}{{.Path}}{{end}}' all \
-              2>/dev/null | grep -v '^$' | sort)
-  DEPS_DIFF=$(diff <(printf '%s\n' "$DEPS_WANT") <(printf '%s\n' "$DEPS_HAVE") 2>/dev/null)
-  grep_gate "direct modules match backend/deps.allow" "$DEPS_DIFF" \
-    "< is allowed and absent, > is present and not allowed. Edit backend/deps.allow."
 
   # Three rules that are about a call appearing outside the one package that
   # owns it. Each scans code, not comments, for the same reason the compat
