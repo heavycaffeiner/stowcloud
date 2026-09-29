@@ -62,6 +62,7 @@ __pycache__/
 # reached a commit from a manual boot inside the package directory; the tests
 # themselves use temp dirs and never write here.
 *.db
+!backend/internal/store/state/testdata/release-v0.19.1/state.db
 *.db-wal
 *.db-shm
 
