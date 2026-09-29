@@ -345,7 +345,7 @@ func trashEntrySyntheticID(share core.ShareID, id string) uint64 {
 	input := append([]byte(strconv.FormatUint(uint64(share), 10)), 0)
 	input = append(input, id...)
 	h := fnv.New64a()
-	h.Write(input) //nolint:errcheck,gosec // hash.Hash.Write cannot fail.
+	h.Write(input) //nolint:errcheck // hash.Hash.Write cannot fail.
 	return h.Sum64()
 }
 

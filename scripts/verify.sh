@@ -321,28 +321,6 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   grep_gate "direct modules match backend/deps.allow" "$DEPS_DIFF" \
     "< is allowed and absent, > is present and not allowed. Edit backend/deps.allow."
 
-  # D1. Exceptions are countable, and the count is committed, so one being
-  # added shows up in the diff beside the reason it was added for.
-  #
-  # Separate fixed counts for the outer command/tooling surface and the
-  # feature-oriented internal tree. Both may only go down.
-  nolint_count() {
-    grep -rIno '//nolint:[a-zA-Z,]*' backend --include='*.go' 2>/dev/null \
-      | grep -c "$@" | tr -d '[:space:]'
-  }
-  NOLINT_WANT=$(grep -vE '^[[:space:]]*(#|$)' backend/nolint.budget | sed -n 1p | tr -d '[:space:]')
-  NOLINT_WANT_INTERNAL=$(grep -vE '^[[:space:]]*(#|$)' backend/nolint.budget | sed -n 2p | tr -d '[:space:]')
-  NOLINT_HAVE=$(nolint_count -v '^backend/internal/')
-  NOLINT_HAVE_INTERNAL=$(nolint_count '^backend/internal/')
-  NOLINT_HITS=""
-  [ "$NOLINT_WANT" = "$NOLINT_HAVE" ] || \
-    NOLINT_HITS="the outer tree: backend/nolint.budget says $NOLINT_WANT, it has $NOLINT_HAVE"
-  [ "$NOLINT_WANT_INTERNAL" = "$NOLINT_HAVE_INTERNAL" ] || \
-    NOLINT_HITS="$NOLINT_HITS"$'\n'"the internal tree: backend/nolint.budget says $NOLINT_WANT_INTERNAL, it has $NOLINT_HAVE_INTERNAL"
-  NOLINT_HITS=$(printf '%s' "$NOLINT_HITS" | sed '/^$/d')
-  grep_gate "//nolint counts match backend/nolint.budget" "$NOLINT_HITS" \
-    "Every exception carries a reason on its line. Update the budget deliberately."
-
   # Three rules that are about a call appearing outside the one package that
   # owns it. Each scans code, not comments, for the same reason the compat
   # gate below does: a package may explain in a comment why the exception

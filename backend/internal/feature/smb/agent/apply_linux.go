@@ -121,7 +121,7 @@ func (a *Agent) apply(ctx context.Context) Report {
 		return FailedReport(fmt.Sprintf("the state directory: %v", err))
 	}
 
-	src, err := os.ReadFile(a.paths.renderedConf()) //nolint:gosec // G304 flags variable path: the input is this agent's configured directory.
+	src, err := os.ReadFile(a.paths.renderedConf())
 	if err != nil {
 		if os.IsNotExist(err) {
 			// Missing configuration means disabled: the server deletes rendered
@@ -159,14 +159,14 @@ func (a *Agent) apply(ctx context.Context) Report {
 
 	// Account validation happens before installing anything. A failure at this
 	// stage means the account roster is unusable in its current form.
-	renderedPasswd, _ := os.ReadFile(a.paths.renderedPasswd()) //nolint:errcheck,gosec // an absent roster is an empty one, which is what a deployment with no SMB accounts looks like.
+	renderedPasswd, _ := os.ReadFile(a.paths.renderedPasswd()) //nolint:errcheck // an absent roster is an empty one, which is what a deployment with no SMB accounts looks like.
 	desired := ParseRendered(string(renderedPasswd))
 
-	currentPasswd, perr := os.ReadFile(a.paths.Passwd) //nolint:gosec // G304 flags variable path: the input is this agent's configured file.
+	currentPasswd, perr := os.ReadFile(a.paths.Passwd)
 	if perr != nil {
 		return FailedReport(fmt.Sprintf("reading %s: %v", a.paths.Passwd, perr))
 	}
-	groupFile, _ := os.ReadFile(a.paths.Group) //nolint:errcheck,gosec // an unreadable group file makes every group missing, which the check below reports.
+	groupFile, _ := os.ReadFile(a.paths.Group) //nolint:errcheck // an unreadable group file makes every group missing, which the check below reports.
 
 	if c := Collisions(desired, string(currentPasswd)); len(c) > 0 {
 		return FailedReport("refusing to sync: " + strings.Join(c, "; "))
@@ -281,7 +281,7 @@ func (a *Agent) teardown(ctx context.Context) Report {
 	if _, err := Prune(ctx, nil); err != nil {
 		a.log.Warn("the credentials could not be pruned, so a revoked one may still work", "error", err)
 	}
-	if current, err := os.ReadFile(a.paths.Passwd); err == nil { //nolint:gosec // G304 flags variable path: the input is this agent's configured file.
+	if current, err := os.ReadFile(a.paths.Passwd); err == nil {
 		if werr := WritePasswd(a.paths.Passwd, Rebuild(string(current), nil)); werr != nil {
 			a.log.Warn("the managed accounts could not be removed", "error", werr)
 		}

@@ -44,7 +44,7 @@ func haveTool(t *testing.T, name string) string {
 // passes a binary LookPath found and arguments that are this test's own
 // temporary directory and a needle from the list below.
 func runTool(tool string, args ...string) *exec.Cmd {
-	cmd := exec.Command(tool, args...) //nolint:gosec // G204: the tool comes from LookPath and the arguments are this test's own temp directory and needles.
+	cmd := exec.Command(tool, args...)
 	cmd.Stdin = nil
 	return cmd
 }

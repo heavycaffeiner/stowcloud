@@ -152,7 +152,7 @@ func probeOpen() (ProbeOutcome, string) {
 	// the path is a NUL-terminated buffer because a raw openat is the only way
 	// to reach the syscall the filter is meant to refuse.
 	atFDCWD := unix.AT_FDCWD
-	cwd := uintptr(atFDCWD)              //nolint:gosec // G115: see above.
+	cwd := uintptr(atFDCWD)
 	buf := uintptr(unsafe.Pointer(path)) //nolint:gosec // G103: see above.
 	fd, _, errno := unix.Syscall6(unix.SYS_OPENAT, cwd, buf,
 		uintptr(unix.O_RDONLY), 0, 0, 0)

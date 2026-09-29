@@ -40,7 +40,7 @@ func tool(t *testing.T, name string) string {
 // from LookPath and every argument is a constant in this file or a path under
 // this test's own TempDir.
 func testparmRun(tool string, args ...string) *exec.Cmd {
-	return exec.Command(tool, args...) //nolint:gosec // the tool comes from LookPath and the arguments are this file's constants and temp files.
+	return exec.Command(tool, args...)
 }
 
 func serverRendered(t *testing.T) string {

@@ -106,7 +106,7 @@ func (c *Cache) path(k Key) string {
 
 // Open returns a cached thumbnail, or reports its absence.
 func (c *Cache) Open(k Key) (*os.File, bool) {
-	f, err := os.Open(c.path(k)) //nolint:gosec // G304: the whole name is a digest this package computed.
+	f, err := os.Open(c.path(k))
 	if err != nil {
 		return nil, false
 	}

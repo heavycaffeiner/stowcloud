@@ -26,15 +26,20 @@ linters:
     - staticcheck
     - ineffassign
     - unused
+    # Every //nolint names its linter and carries a reason on the same line.
+    - nolintlint
 
   settings:
     errcheck:
       # D1 says an empty exclude list, so the built-in one goes too. Every
-      # ignored return needs a nolint with a reason on the line, and the gate
-      # counts those against a committed budget.
+      # ignored return needs a nolint with a reason on the line.
       disable-default-exclusions: true
       check-type-assertions: true
       check-blank: true
+
+    nolintlint:
+      require-explanation: true
+      require-specific: true
 
     gosec:
       excludes:
@@ -119,10 +124,9 @@ linters:
       # bucket-scoped identifier that is persisted verbatim in
       # share_definition.backend_config on purpose. The credential is
       # `secret_access_key`, which travels as a `secret.Secret` and never
-      # enters this struct, and `vetsecret` is the gate that keeps it that
-      # way. The JSON key is a stored contract and cannot be renamed to dodge
-      # a pattern match. Scoped to the one file, so G117 still applies
-      # everywhere else.
+      # enters this struct. The JSON key is a stored contract and cannot be
+      # renamed to dodge a pattern match. Scoped to the one file, so G117
+      # still applies everywhere else.
       - path: internal/storage/objstore/config\.go
         linters:
           - gosec

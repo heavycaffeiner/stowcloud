@@ -136,14 +136,12 @@ func TestTheAllowListCoversARealDecode(t *testing.T) {
 // test's 1.9s, because it compiles once and never decodes.
 func TestTheRuntimeStartsThreadsWithClone(t *testing.T) {
 	bin := filepath.Join(t.TempDir(), "worker")
-	//nolint:gosec // G204: the arguments are this test's own constants.
 	build := exec.Command("go", "build", "-o", bin,
 		"github.com/heavycaffeiner/stowcloud/backend/internal/feature/preview/worker/jailedworker")
 	if out, berr := build.CombinedOutput(); berr != nil {
 		t.Skipf("the worker could not be built: %s", out)
 	}
 
-	//nolint:gosec // G204: the arguments are this test's own constants.
 	dump := exec.Command("go", "tool", "objdump", "-s", "runtime.clone", bin)
 	out, derr := dump.Output()
 	if derr != nil {

@@ -32,7 +32,6 @@ func buildTestWorker(t *testing.T) string {
 			return
 		}
 		bin := filepath.Join(dir, "testworker")
-		//nolint:gosec // G204: the arguments are this test's own constants.
 		cmd := exec.Command("go", "build", "-o", bin,
 			"github.com/heavycaffeiner/stowcloud/backend/internal/feature/preview/worker/testworker")
 		if out, berr := cmd.CombinedOutput(); berr != nil {
@@ -138,7 +137,7 @@ func sourceFile(t *testing.T, w, h int) *os.File {
 	if err := os.WriteFile(path, buf.Bytes(), 0o600); err != nil {
 		t.Fatalf("writing the source: %v", err)
 	}
-	f, err := os.Open(path) //nolint:gosec // G304: this test's own TempDir and a fixed name.
+	f, err := os.Open(path)
 	if err != nil {
 		t.Fatalf("opening the source: %v", err)
 	}
@@ -152,7 +151,7 @@ func sourceFile(t *testing.T, w, h int) *os.File {
 
 func outputFile(t *testing.T) *os.File {
 	t.Helper()
-	f, err := os.Create(filepath.Join(t.TempDir(), "out.png")) //nolint:gosec // G304: as above.
+	f, err := os.Create(filepath.Join(t.TempDir(), "out.png"))
 	if err != nil {
 		t.Fatalf("creating the output: %v", err)
 	}
@@ -190,7 +189,7 @@ func TestAJobProducesAThumbnail(t *testing.T) {
 	}
 
 	// The bytes really landed, and they are a PNG.
-	written, err := os.ReadFile(out.Name()) //nolint:gosec // G304: this test's own output path.
+	written, err := os.ReadFile(out.Name())
 	if err != nil {
 		t.Fatalf("reading the output: %v", err)
 	}
@@ -289,7 +288,7 @@ func TestACorruptSourceIsADecodeFailureTheWorkerSurvives(t *testing.T) {
 	if err := os.WriteFile(path, []byte("\x89PNG\r\n\x1a\nnot really a png"), 0o600); err != nil {
 		t.Fatalf("writing the junk: %v", err)
 	}
-	in, err := os.Open(path) //nolint:gosec // G304: this test's own TempDir.
+	in, err := os.Open(path)
 	if err != nil {
 		t.Fatalf("opening the junk: %v", err)
 	}

@@ -269,7 +269,7 @@ func TestGetProducesAThumbnailAndThenHitsTheCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the first Get: %v", err)
 	}
-	body, err := os.ReadFile(first.File.Name()) //nolint:gosec // G304: the cache path this service just wrote.
+	body, err := os.ReadFile(first.File.Name())
 	if cerr := first.Close(); cerr != nil {
 		t.Errorf("closing: %v", cerr)
 	}

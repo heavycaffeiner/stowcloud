@@ -73,7 +73,7 @@ func runHealthcheck(argv []string) int {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, scheme+"://127.0.0.1"+tlsPortOf(probe.Addr)+"/api/v1/system/health", nil) //nolint:gosec // G704 reads the variable: the address is the server's own snapshot.
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, scheme+"://127.0.0.1"+tlsPortOf(probe.Addr)+"/api/v1/system/health", nil)
 	if err != nil {
 		return healthExitNoAnswer
 	}
@@ -88,7 +88,7 @@ func runHealthcheck(argv []string) int {
 		req.Host = probe.Host
 	}
 
-	resp, err := client.Do(req) //nolint:gosec // G704 reads the variable: the address is the operator's config.
+	resp, err := client.Do(req)
 	if err != nil {
 		return healthExitNoAnswer
 	}

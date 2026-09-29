@@ -28,7 +28,7 @@ import (
 // The gosec exception sits here rather than at each call site: the binary came
 // from LookPath and the configuration is this test's own temporary file.
 func testparmRun(tool string, args ...string) *exec.Cmd {
-	return exec.Command(tool, args...) //nolint:gosec // the tool comes from LookPath and the conf is this test's own temp file.
+	return exec.Command(tool, args...)
 }
 
 func testparmPath(t *testing.T) string {

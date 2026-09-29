@@ -43,7 +43,7 @@ func lookup(t *testing.T, name, why string) string {
 // passes a binary that came from LookPath and arguments that are this test's
 // own temporary files or constants in this file.
 func run(tool string, args ...string) *exec.Cmd {
-	cmd := exec.Command(tool, args...) //nolint:gosec // the tool comes from LookPath and the arguments are this file's own constants and temp files.
+	cmd := exec.Command(tool, args...)
 	cmd.Stdin = nil
 	return cmd
 }
@@ -51,7 +51,7 @@ func run(tool string, args ...string) *exec.Cmd {
 // openFixture opens a file this test wrote and closes it when the test ends.
 func openFixture(t *testing.T, path string) *os.File {
 	t.Helper()
-	f, err := os.Open(path) //nolint:gosec // a path this test created under its own TempDir.
+	f, err := os.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
