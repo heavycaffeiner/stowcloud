@@ -3,7 +3,6 @@
 package e2e_test
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -58,17 +57,7 @@ func fastPasswordParams() auth.Params {
 // boot opens an engine and serves it on a real socket.
 func boot(t *testing.T) string {
 	t.Helper()
-
-	e, err := app.Open(context.Background(), app.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
-	if err != nil {
-		t.Fatalf("opening the engine: %v", err)
-	}
-	t.Cleanup(func() {
-		if cerr := e.Close(); cerr != nil {
-			t.Errorf("closing the engine: %v", cerr)
-		}
-	})
-	return serve(t, e)
+	return serve(t, openEngine(t))
 }
 
 // serve mounts an already-open engine and puts it behind a real listener.
@@ -135,11 +124,7 @@ func get(t *testing.T, url string) (int, []byte) {
 		}
 	}()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatalf("reading the body: %v", err)
-	}
-	return resp.StatusCode, body
+	return resp.StatusCode, readAll(t, resp)
 }
 
 // shutdownBudget bounds every test server's wind-down. Well under the
@@ -200,15 +185,7 @@ func bootWithUser(t *testing.T) (string, string, session) {
 	t.Helper()
 	ctx := context.Background()
 
-	e, err := app.Open(ctx, app.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
-	if err != nil {
-		t.Fatalf("opening: %v", err)
-	}
-	t.Cleanup(func() {
-		if cerr := e.Close(); cerr != nil {
-			t.Errorf("closing the engine: %v", cerr)
-		}
-	})
+	e := openEngine(t)
 
 	id, err := e.Auth.CreateUser(ctx, "alice", "Alice", secret.New([]byte("a-long-enough-password")))
 	if err != nil {
@@ -246,16 +223,7 @@ func authed(t *testing.T, method, url string, sess session) (int, []byte) {
 		}
 	}()
 
-	body := make([]byte, 0, 1024)
-	buf := make([]byte, 1024)
-	for {
-		n, rerr := resp.Body.Read(buf)
-		body = append(body, buf[:n]...)
-		if rerr != nil {
-			break
-		}
-	}
-	return resp.StatusCode, body
+	return resp.StatusCode, readAll(t, resp)
 }
 
 // contentShare serves an engine holding one share with a file of known bytes.
@@ -279,15 +247,7 @@ func contentShareGrant(t *testing.T, perms acl.Perms, content []byte) (
 	t.Helper()
 	ctx := context.Background()
 
-	e, err := app.Open(ctx, app.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
-	if err != nil {
-		t.Fatalf("opening: %v", err)
-	}
-	t.Cleanup(func() {
-		if cerr := e.Close(); cerr != nil {
-			t.Errorf("closing: %v", cerr)
-		}
-	})
+	e = openEngine(t)
 
 	id, err := e.Auth.CreateUser(ctx, "alice", "Alice", secret.New([]byte("a-long-enough-password")))
 	if err != nil {
@@ -317,22 +277,15 @@ func contentShareGrant(t *testing.T, perms acl.Perms, content []byte) (
 	return served, signIn(t, served, "alice", "a-long-enough-password"), sh.Name, host, e, g.ID
 }
 
-// readAll drains a response body.
+// readAll drains a response body, failing the test if the read breaks off.
 func readAll(t *testing.T, resp *http.Response) []byte {
 	t.Helper()
 
-	var out bytes.Buffer
-	buf := make([]byte, 4096)
-	for {
-		n, err := resp.Body.Read(buf)
-		if _, werr := out.Write(buf[:n]); werr != nil {
-			t.Fatalf("buffering the body: %v", werr)
-		}
-		if err != nil {
-			break
-		}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading the body: %v", err)
 	}
-	return out.Bytes()
+	return body
 }
 
 // everyPerm is the full mask.

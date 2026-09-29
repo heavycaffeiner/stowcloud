@@ -332,121 +332,57 @@ func payload() []byte {
 	return out
 }
 
-// A read returns the file's bytes exactly.
-func TestReadingAFile(t *testing.T) {
+// A read returns exactly the bytes asked for and says which slice they are.
+// A wrong Content-Range or Content-Length is how a client assembling a file
+// from ranges ends up with a corrupt or truncated file and no error.
+func TestReadingRanges(t *testing.T) {
 	t.Parallel()
 	want := payload()
+	size := strconv.Itoa(len(want))
 	base, sess, share := contentShare(t, everyPerm(), want)
 
-	status, header, got := download(t, base, sess, "/"+share+"/doc.bin", "")
-	if status != http.StatusOK {
-		t.Fatalf("answered %d: %s", status, got)
-	}
-	if !bytes.Equal(got, want) {
-		t.Errorf("read %d bytes, want %d, and they differ", len(got), len(want))
-	}
-
-	// The length has to match what was sent. A wrong Content-Length is how a
-	// client ends up with a truncated file and no error.
-	if header.Get("Content-Length") != strconv.Itoa(len(want)) {
-		t.Errorf("Content-Length is %q for %d bytes", header.Get("Content-Length"), len(want))
-	}
-	if header.Get("Accept-Ranges") != "bytes" {
-		t.Error("the response does not advertise range support")
-	}
-}
-
-// A range returns exactly that slice, and says which slice it is.
-func TestReadingARange(t *testing.T) {
-	t.Parallel()
-	want := payload()
-	base, sess, share := contentShare(t, everyPerm(), want)
-
-	const from, to = 100, 199
-	status, header, got := download(t, base, sess, "/"+share+"/doc.bin",
-		fmt.Sprintf("bytes=%d-%d", from, to))
-	if status != http.StatusPartialContent {
-		t.Fatalf("a range answered %d, want 206: %s", status, got)
-	}
-	if !bytes.Equal(got, want[from:to+1]) {
-		t.Errorf("the range returned %d bytes and they are not want[%d:%d]", len(got), from, to+1)
-	}
-
-	// The header names the slice and the whole size. A client assembling a
-	// file from ranges uses both, and a wrong one corrupts the result with
-	// nothing reporting a failure.
-	wantRange := fmt.Sprintf("bytes %d-%d/%d", from, to, len(want))
-	if header.Get("Content-Range") != wantRange {
-		t.Errorf("Content-Range is %q, want %q", header.Get("Content-Range"), wantRange)
-	}
-	if header.Get("Content-Length") != strconv.Itoa(to-from+1) {
-		t.Errorf("Content-Length is %q for a %d byte range",
-			header.Get("Content-Length"), to-from+1)
-	}
-}
-
-// An open-ended range runs to the end of the file.
-func TestReadingAnOpenEndedRange(t *testing.T) {
-	t.Parallel()
-	want := payload()
-	base, sess, share := contentShare(t, everyPerm(), want)
-
-	const from = 4000
-	status, _, got := download(t, base, sess, "/"+share+"/doc.bin",
-		fmt.Sprintf("bytes=%d-", from))
-	if status != http.StatusPartialContent {
-		t.Fatalf("answered %d", status)
-	}
-	if !bytes.Equal(got, want[from:]) {
-		t.Errorf("got %d bytes, want the final %d", len(got), len(want)-from)
-	}
-}
-
-// A suffix range returns the last N bytes.
-func TestReadingASuffixRange(t *testing.T) {
-	t.Parallel()
-	want := payload()
-	base, sess, share := contentShare(t, everyPerm(), want)
-
-	const last = 64
-	status, _, got := download(t, base, sess, "/"+share+"/doc.bin",
-		fmt.Sprintf("bytes=-%d", last))
-	if status != http.StatusPartialContent {
-		t.Fatalf("answered %d", status)
-	}
-	if !bytes.Equal(got, want[len(want)-last:]) {
-		t.Errorf("got %d bytes, want the last %d", len(got), last)
-	}
-}
-
-// A range past the end is refused with the real size, so a client can ask
-// again correctly rather than guessing.
-func TestARangePastTheEndIsRefused(t *testing.T) {
-	t.Parallel()
-	want := payload()
-	base, sess, share := contentShare(t, everyPerm(), want)
-
-	status, header, body := download(t, base, sess, "/"+share+"/doc.bin", "bytes=99999-")
-	if status != http.StatusRequestedRangeNotSatisfiable {
-		t.Fatalf("answered %d, want 416: %s", status, body)
-	}
-	if got := header.Get("Content-Range"); got != "bytes */"+strconv.Itoa(len(want)) {
-		t.Errorf("Content-Range is %q, so the client is not told the real size", got)
-	}
-}
-
-// A multi-range request is refused rather than served as its first range.
-//
-// A client that asked for three pieces and got one, with a 206 saying nothing
-// went wrong, assembles a file out of what it received and finds the damage
-// later.
-func TestAMultiRangeRequestIsRefused(t *testing.T) {
-	t.Parallel()
-	base, sess, share := contentShare(t, everyPerm(), payload())
-
-	status, _, body := download(t, base, sess, "/"+share+"/doc.bin", "bytes=0-99,200-299")
-	if status == http.StatusPartialContent || status == http.StatusOK {
-		t.Fatalf("a multi-range request was served as %d with %d bytes", status, len(body))
+	for _, c := range []struct {
+		name   string
+		header string
+		status int
+		body   []byte
+		// contentRange is the expected header, or empty when none is sent.
+		contentRange string
+	}{
+		{"the whole file", "", http.StatusOK, want, ""},
+		{"a closed range", "bytes=100-199", http.StatusPartialContent, want[100:200], "bytes 100-199/" + size},
+		{"an open-ended range", "bytes=4000-", http.StatusPartialContent, want[4000:], "bytes 4000-4095/" + size},
+		{"a suffix range", "bytes=-64", http.StatusPartialContent, want[len(want)-64:], "bytes 4032-4095/" + size},
+		// Refused with the real size, so a client can ask again correctly.
+		{"a range past the end", "bytes=99999-", http.StatusRequestedRangeNotSatisfiable, nil, "bytes */" + size},
+		// Refused rather than served as its first range: a client that asked
+		// for two pieces and got one would assemble a file out of it.
+		{"a multi-range request", "bytes=0-99,200-299", http.StatusUnprocessableEntity, nil, ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			status, header, got := download(t, base, sess, "/"+share+"/doc.bin", c.header)
+			if status != c.status {
+				t.Fatalf("answered %d, want %d: %s", status, c.status, got)
+			}
+			if c.body == nil {
+				if got := header.Get("Content-Range"); got != c.contentRange {
+					t.Errorf("Content-Range is %q, want %q", got, c.contentRange)
+				}
+				return
+			}
+			if !bytes.Equal(got, c.body) {
+				t.Errorf("read %d bytes, want %d, and they differ", len(got), len(c.body))
+			}
+			if got := header.Get("Content-Length"); got != strconv.Itoa(len(c.body)) {
+				t.Errorf("Content-Length is %q for %d bytes", got, len(c.body))
+			}
+			if got := header.Get("Content-Range"); got != c.contentRange {
+				t.Errorf("Content-Range is %q, want %q", got, c.contentRange)
+			}
+			if header.Get("Accept-Ranges") != "bytes" {
+				t.Error("the response does not advertise range support")
+			}
+		})
 	}
 }
 

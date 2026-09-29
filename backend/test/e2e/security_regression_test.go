@@ -13,7 +13,6 @@ import (
 	"strconv"
 	"testing"
 
-	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
@@ -26,15 +25,7 @@ import (
 func TestRegressionAdminOIDCUnlinkDoesNotSetHardcodedPassword(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	e, err := app.Open(ctx, app.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if cerr := e.Close(); cerr != nil {
-			t.Error(cerr)
-		}
-	})
+	e := openEngine(t)
 
 	if _, aerr := e.Auth.CreateAdmin(ctx, "auditadmin", "Admin", pwOf(loginPassword)); aerr != nil {
 		t.Fatal(aerr)
@@ -235,15 +226,7 @@ func TestRegressionAppPasswordExcessiveExpiryRefused(t *testing.T) {
 func TestRegressionSMBGroupGrantsExpandedToMembers(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	e, err := app.Open(ctx, app.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if cerr := e.Close(); cerr != nil {
-			t.Error(cerr)
-		}
-	})
+	e := openEngine(t)
 
 	aliceID, err := e.Auth.CreateUser(ctx, "alice", "Alice", pwOf(loginPassword))
 	if err != nil {
@@ -320,15 +303,7 @@ func TestRegressionSMBGroupGrantsExpandedToMembers(t *testing.T) {
 func TestRegressionTrashSubfolderIsolation(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	e, err := app.Open(ctx, app.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if cerr := e.Close(); cerr != nil {
-			t.Error(cerr)
-		}
-	})
+	e := openEngine(t)
 
 	adminID, err := e.Auth.CreateAdmin(ctx, "admin", "Admin", pwOf(loginPassword))
 	if err != nil {
@@ -462,15 +437,7 @@ func TestRegressionPublicDropLinkEnforcesRequestBodyLimit(t *testing.T) {
 func TestRegressionDeletedUserHomeDirectoryNotInherited(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	e, err := app.Open(ctx, app.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if cerr := e.Close(); cerr != nil {
-			t.Error(cerr)
-		}
-	})
+	e := openEngine(t)
 
 	homesDir := t.TempDir()
 	if herr := e.Core.EnableHomes(ctx, homesDir); herr != nil {

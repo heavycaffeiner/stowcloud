@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 )
@@ -285,10 +284,7 @@ func TestRevokingAnotherAccountsSessionIsRefused(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	e, err := app.Open(ctx, app.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
-	if err != nil {
-		t.Fatal(err)
-	}
+	e := openEngine(t)
 	if _, cerr := e.Auth.CreateUser(ctx, loginName, "Alice", pwOf(loginPassword)); cerr != nil {
 		t.Fatal(cerr)
 	}
