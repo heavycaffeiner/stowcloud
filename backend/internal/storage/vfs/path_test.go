@@ -17,8 +17,7 @@ func parseSafe(t *testing.T, s string) SafePath {
 	return p
 }
 
-// TestEscapeTableRefusesEverywhere covers point 20 of the spec's test list:
-// the existing-name table is enforced identically by every entry point that
+// The existing-name table is enforced identically by every entry point that
 // reaches it.
 func TestEscapeTableRefusesEverywhere(t *testing.T) {
 	cases := []struct {
@@ -109,8 +108,7 @@ func TestVpathDoesNotAdmitTraversalUnderTheSlash(t *testing.T) {
 	}
 }
 
-// TestCreationTableRefusesWhatExistingAccepts covers point 21: names another
-// program's tool already wrote must remain reachable even though this
+// Names another program already wrote must remain reachable even though this
 // package would refuse minting them.
 func TestCreationTableRefusesWhatExistingAccepts(t *testing.T) {
 	names := []string{
@@ -141,7 +139,6 @@ func TestControlBytesAreOnlyRefusedOnCreate(t *testing.T) {
 	}
 }
 
-// TestJoinControlIsTheOnlyReservedNameProducer covers point 22.
 func TestJoinControlIsTheOnlyReservedNameProducer(t *testing.T) {
 	root := RootPath()
 	if _, err := root.Join(".scpart-x"); !errors.Is(err, ErrReservedName) {
@@ -171,7 +168,6 @@ func TestJoinControlStillAppliesEveryOtherRule(t *testing.T) {
 	}
 }
 
-// TestBoundsRefuseRatherThanTruncate covers point 23.
 func TestBoundsRefuseRatherThanTruncate(t *testing.T) {
 	atName := strings.Repeat("a", limits.NameBytes)
 	if _, err := ParseSafePath(atName); err != nil {
@@ -211,7 +207,6 @@ func TestComponentCountBuiltIncrementallyIsBounded(t *testing.T) {
 	}
 }
 
-// TestHasPrefixAndUnderAreComponentWise covers point 24.
 func TestHasPrefixAndUnderAreComponentWise(t *testing.T) {
 	a := parseSafe(t, "a")
 	ab := parseSafe(t, "a/b")
@@ -238,7 +233,6 @@ func TestHasPrefixAndUnderAreComponentWise(t *testing.T) {
 	}
 }
 
-// TestComponentsIsADefensiveCopy covers point 25.
 func TestComponentsIsADefensiveCopy(t *testing.T) {
 	p := parseSafe(t, "a/b")
 	got := p.Components()
