@@ -245,7 +245,7 @@ func (e *Engine) mergeStep(ctx context.Context, id SessionID) (bool, error) {
 		return false, nil
 	}
 
-	end := min64(next.off+next.size, committed)
+	end := min(next.off+next.size, committed)
 	if end > frontier {
 		copied, copyErr := e.copyIntoPart(root, id, part, next, frontier, end)
 		if copyErr != nil {

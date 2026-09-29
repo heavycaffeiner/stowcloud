@@ -410,8 +410,8 @@ func intersectSets(a, b *IntervalSet) *IntervalSet {
 	out := NewIntervalSet()
 	for _, x := range a.Runs() {
 		for _, y := range b.Runs() {
-			lo := max64(x.Lo, y.Lo)
-			hi := min64(x.Hi, y.Hi)
+			lo := max(x.Lo, y.Lo)
+			hi := min(x.Hi, y.Hi)
 			if lo >= hi {
 				continue
 			}
@@ -438,11 +438,4 @@ func sameRuns(a, b *IntervalSet) bool {
 		}
 	}
 	return true
-}
-
-func max64(a, b uint64) uint64 {
-	if a > b {
-		return a
-	}
-	return b
 }

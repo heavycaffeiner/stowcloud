@@ -23,12 +23,6 @@ func FullIntervalSet(length uint64) *IntervalSet {
 }
 
 // LoadIntervalSet rebuilds a set from stored rows using the upload run bound.
-func min64(a, b uint64) uint64 {
-	if a < b {
-		return a
-	}
-	return b
-}
 func LoadIntervalSet(rows []Range) (*IntervalSet, error) {
 	return transfer.LoadIntervalSet(rows, transfer.WithMaxRuns(limits.UploadIntervalRuns))
 }
