@@ -136,7 +136,7 @@ func dialEvents(t *testing.T, base string, cookie *http.Cookie) *websocket.Conn 
 		t.Errorf("closing: %v", cerr)
 	}
 	t.Cleanup(func() {
-		if cerr := conn.Close(); cerr != nil && !strings.Contains(cerr.Error(), "use of closed") {
+		if cerr := conn.Close(); cerr != nil && !errors.Is(cerr, net.ErrClosed) {
 			t.Logf("closing the socket: %v", cerr)
 		}
 	})

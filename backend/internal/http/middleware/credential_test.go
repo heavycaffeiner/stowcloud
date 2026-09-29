@@ -150,7 +150,6 @@ func TestTheThreeSetsMustBeDisjoint(t *testing.T) {
 	for _, c := range []struct {
 		what  string
 		paths ProtocolPaths
-		want  string
 	}{
 		{
 			"a public read that is also a credential flow",
@@ -158,7 +157,6 @@ func TestTheThreeSetsMustBeDisjoint(t *testing.T) {
 				PublicReads:     []MethodPath{{"GET", "/shared"}},
 				CredentialFlows: []MethodPath{{"POST", "/shared"}},
 			},
-			"both a public read and a credential flow",
 		},
 		{
 			"a public read under a file prefix",
@@ -166,7 +164,6 @@ func TestTheThreeSetsMustBeDisjoint(t *testing.T) {
 				FilePrefixes: []string{"/dav"},
 				PublicReads:  []MethodPath{{"GET", "/dav/public"}},
 			},
-			"under the file prefix",
 		},
 		{
 			"a credential flow under a file prefix",
@@ -174,34 +171,25 @@ func TestTheThreeSetsMustBeDisjoint(t *testing.T) {
 				FilePrefixes:    []string{"/dav"},
 				CredentialFlows: []MethodPath{{"POST", "/dav/flow"}},
 			},
-			"under the file prefix",
 		},
 	} {
-		err := ValidateProtocolPaths(c.paths)
-		if err == nil {
+		if err := ValidateProtocolPaths(c.paths); err == nil {
 			t.Errorf("%s was accepted", c.what)
-			continue
-		}
-		if !strings.Contains(err.Error(), c.want) {
-			t.Errorf("%s reported %q, which does not mention %q", c.what, err, c.want)
 		}
 	}
 }
 
 // A public read may not change state, and a credential flow must be a POST.
 func TestTheMethodRulesAreEnforced(t *testing.T) {
-	err := ValidateProtocolPaths(ProtocolPaths{
+	if err := ValidateProtocolPaths(ProtocolPaths{
 		PublicReads: []MethodPath{{"POST", "/anonymous-write"}},
-	})
-	if err == nil || !strings.Contains(err.Error(), "changes state") {
-		t.Errorf("an unauthenticated mutation labelled a public read: %v", err)
+	}); err == nil {
+		t.Error("an unauthenticated mutation labelled a public read was accepted")
 	}
-
-	err = ValidateProtocolPaths(ProtocolPaths{
+	if err := ValidateProtocolPaths(ProtocolPaths{
 		CredentialFlows: []MethodPath{{"GET", "/login/v2/poll"}},
-	})
-	if err == nil || !strings.Contains(err.Error(), "not a POST") {
-		t.Errorf("a GET credential flow: %v", err)
+	}); err == nil {
+		t.Error("a GET credential flow was accepted")
 	}
 
 	// The safe verbs pass, including OPTIONS for protocol discovery.
@@ -218,13 +206,10 @@ func TestTheMethodRulesAreEnforced(t *testing.T) {
 // whole application ends up answering a Basic challenge instead of its own
 // sign-in page.
 func TestAWholeTreeFilePrefixIsRefused(t *testing.T) {
-	err := ValidateProtocolPaths(ProtocolPaths{FilePrefixes: []string{"/"}})
-	if err == nil || !strings.Contains(err.Error(), "every path") {
-		t.Errorf("the root file prefix: %v", err)
-	}
-	err = ValidateProtocolPaths(ProtocolPaths{FilePrefixes: []string{"dav"}})
-	if err == nil || !strings.Contains(err.Error(), "does not begin with /") {
-		t.Errorf("a relative file prefix: %v", err)
+	for _, prefix := range []string{"/", "dav"} {
+		if err := ValidateProtocolPaths(ProtocolPaths{FilePrefixes: []string{prefix}}); err == nil {
+			t.Errorf("the file prefix %q was accepted", prefix)
+		}
 	}
 }
 

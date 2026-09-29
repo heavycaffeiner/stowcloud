@@ -282,6 +282,7 @@ func TestPreconditionRefusesInsideTheStepsTransaction(t *testing.T) {
 		t.Fatalf("Close: %v", err)
 	}
 
+	errRow := errors.New("row 7 cannot be migrated")
 	second := append(first, Migration{
 		Name: "two",
 		SQL:  `CREATE TABLE b (id INTEGER PRIMARY KEY)`,
@@ -294,7 +295,7 @@ func TestPreconditionRefusesInsideTheStepsTransaction(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			return errors.New("row 7 cannot be migrated")
+			return errRow
 		},
 	})
 
@@ -302,8 +303,8 @@ func TestPreconditionRefusesInsideTheStepsTransaction(t *testing.T) {
 	if !errors.Is(err, ErrMigrationFailed) {
 		t.Fatalf("a refused precondition returned %v, want ErrMigrationFailed", err)
 	}
-	if !strings.Contains(err.Error(), "row 7") {
-		t.Errorf("the refusal does not name the row: %v", err)
+	if !errors.Is(err, errRow) {
+		t.Errorf("the refusal %v does not carry the precondition's error", err)
 	}
 
 	back := open(t, Spec{Path: path, Migrations: first})

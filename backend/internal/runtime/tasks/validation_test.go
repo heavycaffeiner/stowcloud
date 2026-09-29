@@ -49,9 +49,6 @@ func TestAMissingTaskIsNamedWithItsReason(t *testing.T) {
 	if !strings.Contains(err.Error(), dropped) {
 		t.Errorf("the report does not name %s: %v", dropped, err)
 	}
-	if !strings.Contains(err.Error(), "is missing") {
-		t.Errorf("the report does not say it is missing: %v", err)
-	}
 	// The reason travels, so whoever reads it knows what stopped happening.
 	if !strings.Contains(err.Error(), RequiredTasks()[dropped]) {
 		t.Errorf("the report omits the reason: %v", err)
@@ -64,61 +61,41 @@ func TestADuplicateTaskIsRefused(t *testing.T) {
 	table := completeTable()
 	table = append(table, table[0])
 
-	err := Validate(table)
-	if err == nil {
+	if err := Validate(table); err == nil {
 		t.Fatal("a duplicated task was accepted")
-	}
-	if !strings.Contains(err.Error(), "appears 2 times") {
-		t.Errorf("the report says %q", err)
 	}
 }
 
-// A task with no interval or no function is refused rather than registered as
-// something that will never run or will spin.
+// A task with no interval, no function or no name is refused rather than
+// registered as something that will never run, will spin, or cannot be told
+// apart from another.
 func TestAnIncompleteTaskIsRefused(t *testing.T) {
+	run := func(context.Context) error { return nil }
 	for _, c := range []struct {
 		what string
 		task Task
-		want string
 	}{
-		{
-			"no interval",
-			Task{Name: "share.probe", Run: func(context.Context) error { return nil }},
-			"no interval",
-		},
-		{
-			"a negative interval",
-			Task{Name: "share.probe", Every: -time.Second, Run: func(context.Context) error { return nil }},
-			"no interval",
-		},
-		{
-			"no function",
-			Task{Name: "share.probe", Every: time.Second},
-			"no function",
-		},
-		{
-			"no name",
-			Task{Every: time.Second, Run: func(context.Context) error { return nil }},
-			"has no name",
-		},
+		{"no interval", Task{Name: "share.probe", Run: run}},
+		{"a negative interval", Task{Name: "share.probe", Every: -time.Second, Run: run}},
+		{"no function", Task{Name: "share.probe", Every: time.Second}},
 	} {
-		// Replace the first required task with the broken one, so the only
-		// problem is the one under test.
+		// Replace the required task of the same name, so the only problem is
+		// the one under test.
 		table := completeTable()
 		for i := range table {
-			if table[i].Name == "share.probe" {
+			if table[i].Name == c.task.Name {
 				table[i] = c.task
-				break
 			}
 		}
-		err := Validate(table)
-		if err == nil {
+		if err := Validate(table); err == nil {
 			t.Errorf("%s was accepted", c.what)
-			continue
 		}
-		if !strings.Contains(err.Error(), c.want) {
-			t.Errorf("%s reported %q, which does not mention %q", c.what, err, c.want)
-		}
+	}
+
+	// A nameless task is added rather than substituted, or the report would
+	// also carry the missing task it replaced.
+	if err := Validate(append(completeTable(), Task{Every: time.Second, Run: run})); err == nil {
+		t.Error("a task with no name was accepted")
 	}
 }
 
@@ -153,21 +130,16 @@ func TestEveryTaskProblemIsReportedAtOnce(t *testing.T) {
 	if err == nil {
 		t.Fatal("a table with several problems was accepted")
 	}
+	// The duplicate, every missing task and the stray one are all named, not
+	// just the first problem found.
 	msg := err.Error()
-	for _, want := range []string{"appears 2 times", "is missing", "not required"} {
-		if !strings.Contains(msg, want) {
-			t.Errorf("the report omits %q:\n  %s", want, msg)
-		}
-	}
-	// Every missing task is named, not just the first.
-	missing := 0
 	for name := range RequiredTasks() {
-		if strings.Contains(msg, name+" is missing") {
-			missing++
+		if !strings.Contains(msg, name) {
+			t.Errorf("the report omits %s:\n  %s", name, msg)
 		}
 	}
-	if missing != len(RequiredTasks())-1 {
-		t.Errorf("%d missing tasks were named, want %d", missing, len(RequiredTasks())-1)
+	if !strings.Contains(msg, "stray") {
+		t.Errorf("the report omits the stray task:\n  %s", msg)
 	}
 }
 

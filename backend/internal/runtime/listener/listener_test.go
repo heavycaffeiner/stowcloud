@@ -29,7 +29,7 @@ func TestClassifyDurableResultsReportsUncertainPair(t *testing.T) {
 	if err == nil {
 		t.Fatal("uncertain pair returned nil error")
 	}
-	for _, want := range []string{"/tls/key.pem", "/tls/cert.pem", "published", "publication uncertain"} {
+	for _, want := range []string{"/tls/key.pem", "/tls/cert.pem", fsatomic.Published.String(), fsatomic.PublicationUncertain.String()} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not mention %q", err, want)
 		}
@@ -46,7 +46,7 @@ func TestClassifyDurableResultsPreservesOperationErrorAndPartialResults(t *testi
 	if err == nil || !errors.Is(err, operationErr) {
 		t.Fatalf("error %v does not preserve operation error", err)
 	}
-	for _, want := range []string{"/tls/key.pem", "/tls/cert.pem", "publication uncertain", "not published"} {
+	for _, want := range []string{"/tls/key.pem", "/tls/cert.pem", fsatomic.PublicationUncertain.String(), fsatomic.NotPublished.String()} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not mention %q", err, want)
 		}

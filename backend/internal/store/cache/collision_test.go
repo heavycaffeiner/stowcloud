@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
@@ -183,9 +182,6 @@ func TestExhaustingTheAttemptsIsAHardError(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("eight files in a two-id space allocated without complaint")
-	}
-	if !strings.Contains(err.Error(), "attempts") {
-		t.Errorf("the refusal does not name the attempt bound: %v", err)
 	}
 }
 

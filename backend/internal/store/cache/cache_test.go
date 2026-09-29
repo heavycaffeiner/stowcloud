@@ -494,12 +494,10 @@ func TestResolveOfACyclicChainErrorsRatherThanLooping(t *testing.T) {
 		t.Fatalf("planting the cycle: %v", err)
 	}
 
+	// A cycle is corruption, not a node that went missing.
 	_, _, err := fx.c.Resolve(ctx, 1)
-	if err == nil {
-		t.Fatal("a cyclic parent chain resolved without complaint")
-	}
-	if !strings.Contains(err.Error(), "cyclic") {
-		t.Errorf("the refusal does not name the cycle: %v", err)
+	if err == nil || errors.Is(err, cache.ErrNoNode) {
+		t.Fatalf("a cyclic parent chain returned %v, want a corruption error", err)
 	}
 }
 

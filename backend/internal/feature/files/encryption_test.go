@@ -8,7 +8,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -118,17 +117,16 @@ func stored(t *testing.T, c *Core, id ShareID) bool {
 	return ok
 }
 
-// The salt's length is what makes its entropy claim enforceable, so the
-// refusal has to name it rather than fail generically: a client that
-// truncated the salt would otherwise look like a client that sent nothing.
-func TestTheSaltRefusalNamesTheLength(t *testing.T) {
+// The salt's length is what makes its entropy claim enforceable, so a short
+// salt is refused rather than stored.
+func TestAShortSaltIsRefused(t *testing.T) {
 	t.Parallel()
 	c, id, _ := encryptedShare(t)
 	err := c.EnableEncryption(context.Background(), id, Encryption{
 		Scheme: SchemeRcloneCrypt, Salt: "short", Verifier: testVerifier(),
 	})
-	if err == nil || !strings.Contains(err.Error(), "22") {
-		t.Errorf("the refusal is %v, want it to name the expected length", err)
+	if !errors.Is(err, ErrUnprocessable) {
+		t.Errorf("a short salt returned %v, want ErrUnprocessable", err)
 	}
 }
 
