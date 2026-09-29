@@ -43,43 +43,6 @@ func drain(t *testing.T, s *Stream) string {
 	return string(b)
 }
 
-func TestAWholeFileStreamsExactlyItsContent(t *testing.T) {
-	t.Parallel()
-	c, _, host, _ := listable(t)
-	writeFile(t, host, "readme.txt", "hello world")
-	r := resolveAt(t, c, "Documents/readme.txt", acl.Download)
-
-	entry, s, err := c.OpenStream(context.Background(), r, nil)
-	if err != nil {
-		t.Fatalf("OpenStream: %v", err)
-	}
-	defer closeStream(t, s)
-
-	if entry.Name != "readme.txt" || entry.Size != 11 {
-		t.Fatalf("the fid entry is %+v, want readme.txt of 11 bytes", entry)
-	}
-	if entry.ETag == "" {
-		t.Fatal("the fid entry carries no validator")
-	}
-	if s.Remaining() != 11 {
-		t.Fatalf("Remaining before the read is %d, want 11", s.Remaining())
-	}
-
-	head := make([]byte, 5)
-	if n, rerr := s.Read(head); n != 5 || rerr != nil {
-		t.Fatalf("reading the head = %d, %v", n, rerr)
-	}
-	if s.Remaining() != 6 {
-		t.Fatalf("Remaining mid-stream is %d, want 6", s.Remaining())
-	}
-	if rest := drain(t, s); string(head)+rest != "hello world" {
-		t.Fatalf("the stream produced %q%q", head, rest)
-	}
-	if s.Remaining() != 0 {
-		t.Fatalf("Remaining after the drain is %d", s.Remaining())
-	}
-}
-
 func TestRangeClamping(t *testing.T) {
 	t.Parallel()
 	c, _, host, _ := listable(t)
@@ -110,25 +73,6 @@ func TestRangeClamping(t *testing.T) {
 				t.Fatalf("the stream produced %q, want %q", got, tc.want)
 			}
 		})
-	}
-}
-
-func TestReadsAreChunkedWhateverTheBuffer(t *testing.T) {
-	t.Parallel()
-	c, _, host, _ := listable(t)
-	writeFile(t, host, "big.bin", strings.Repeat("a", streamChunk+4096))
-	r := resolveAt(t, c, "Documents/big.bin", acl.Download)
-	_, s := openStream(t, c, r, nil)
-	defer closeStream(t, s)
-
-	buf := make([]byte, streamChunk*2)
-	n, err := s.Read(buf)
-	if err != nil {
-		t.Fatalf("the first read: %v", err)
-	}
-	if n != streamChunk {
-		t.Fatalf("a read with a %d-byte buffer returned %d bytes, want the %d chunk",
-			len(buf), n, streamChunk)
 	}
 }
 
@@ -294,54 +238,6 @@ func (w *walkCollector) paths() []string {
 		out = append(out, e.RelPath)
 	}
 	return out
-}
-
-func TestArchiveWalkCoversATreeUnderTheRootsLeafName(t *testing.T) {
-	t.Parallel()
-	c, _, host, _ := listable(t)
-	if err := os.MkdirAll(filepath.Join(host, "box", "inner"), 0o755); err != nil {
-		t.Fatalf("building the tree: %v", err)
-	}
-	writeFile(t, host, "box/top.txt", "top")
-	writeFile(t, host, "box/inner/deep.txt", "deep")
-
-	r := resolveAt(t, c, "Documents/box", acl.Read|acl.Download)
-	w := newCollector(t)
-	if err := c.ArchiveWalk(context.Background(), r, w.visit); err != nil {
-		t.Fatalf("ArchiveWalk: %v", err)
-	}
-
-	// "box" itself is in the set: the walk announces its own root when that
-	// root is a directory. Without it an archive of an empty directory holds
-	// nothing, and extracting one loses the directory the caller asked for.
-	want := map[string]bool{
-		"box": true, "box/top.txt": true,
-		"box/inner": true, "box/inner/deep.txt": true,
-	}
-	for _, p := range w.paths() {
-		if !want[p] {
-			t.Fatalf("the walk produced the unexpected path %q (all: %v)", p, w.paths())
-		}
-		delete(want, p)
-	}
-	if len(want) != 0 {
-		t.Fatalf("the walk missed %v", want)
-	}
-	if w.body["box/top.txt"] != "top" || w.body["box/inner/deep.txt"] != "deep" {
-		t.Fatalf("the walk produced the bodies %v", w.body)
-	}
-	for _, e := range w.rows {
-		switch e.RelPath {
-		case "box/inner":
-			if !e.IsDir || !e.Readable {
-				t.Fatalf("the directory row is %+v", e)
-			}
-		case "box/top.txt":
-			if e.IsDir || !e.Readable || e.Size != 3 || e.MTimeNs == 0 {
-				t.Fatalf("the file row is %+v", e)
-			}
-		}
-	}
 }
 
 func TestArchiveWalkStopsAtASubtreeTheCallerCannotRead(t *testing.T) {

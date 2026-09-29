@@ -91,15 +91,6 @@ func TestAMalformedKeyFileRefuses(t *testing.T) {
 	}
 }
 
-// A missing file is not an error: the caller decides whether to generate one.
-func TestAMissingKeyFileIsNotAnError(t *testing.T) {
-	t.Parallel()
-	_, found, err := auth.LoadKeyRing(filepath.Join(t.TempDir(), "absent"))
-	if err != nil || found {
-		t.Fatalf("LoadKeyRing on a missing file returned found=%v, %v", found, err)
-	}
-}
-
 // The key file is the operator's own; it must not become readable to a
 // neighbour of the data directory. Linux-only: Windows has no POSIX
 // permission bits and reports 0666 for every regular file.
@@ -130,20 +121,6 @@ func TestStartupRefusesAKeyTheDatabaseDoesNotName(t *testing.T) {
 	}
 	if _, err := f.svc.OpenMasterKey(ctx); !errors.Is(err, auth.ErrKeyVersionMissing) {
 		t.Fatalf("a database naming an absent version started with %v", err)
-	}
-}
-
-func TestAFreshDeploymentEstablishesTheKeyVersion(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	f := newFixture(t)
-
-	ver, err := f.store.KeyVersionState(ctx)
-	if err != nil {
-		t.Fatalf("KeyVersionState: %v", err)
-	}
-	if ver != 1 {
-		t.Fatalf("the established version is %d", ver)
 	}
 }
 

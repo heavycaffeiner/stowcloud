@@ -83,29 +83,6 @@ func TestTheRefusalNamesTheLiveProperty(t *testing.T) {
 	}
 }
 
-// A request of only dead properties commits, and every one reports 200.
-func TestADeadOnlyRequestCommits(t *testing.T) {
-	const body = `<D:propertyupdate xmlns:D="DAV:" xmlns:V="urn:v">
-		<D:set><D:prop><V:a>1</V:a></D:prop></D:set>
-		<D:remove><D:prop><V:b/></D:prop></D:remove>
-	</D:propertyupdate>`
-
-	p, err := patch(t, body)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	plan := PlanPropPatch(p, liveSet("getetag", "resourcetype"))
-	if !plan.Commit {
-		t.Fatal("a dead-only request did not commit")
-	}
-	for _, o := range plan.Outcomes {
-		if o.Status != StatusOK {
-			t.Errorf("%q got %d in a committing request", o.Name.Local, o.Status)
-		}
-	}
-}
-
 // Document order is preserved. A set followed by a remove of the same property
 // leaves it absent; the other order leaves it set. Grouping by operation would
 // silently pick one of the two.

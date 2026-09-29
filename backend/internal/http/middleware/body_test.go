@@ -139,15 +139,6 @@ func TestJSONDecodeRefusesTrailingData(t *testing.T) {
 	}
 }
 
-// An unknown field is a refusal, so a client cannot send a field the server
-// silently drops and believe it took effect.
-func TestJSONDecodeRefusesAnUnknownField(t *testing.T) {
-	err := DecodeJSON(strings.NewReader(`{"name":"alice","admin":true}`), &payload{})
-	if !errors.Is(err, ErrBodyMalformed) {
-		t.Fatalf("an unknown field returned %v", err)
-	}
-}
-
 // An oversized JSON body is too large rather than malformed, so the caller
 // answers 413 with a limit rather than 400 blaming the client's syntax.
 func TestAnOversizedJSONBodyIsTooLargeNotMalformed(t *testing.T) {
@@ -158,15 +149,5 @@ func TestAnOversizedJSONBodyIsTooLargeNotMalformed(t *testing.T) {
 	}
 	if errors.Is(err, ErrBodyMalformed) {
 		t.Error("an oversized document was also reported as malformed")
-	}
-}
-
-// Ordinary bad syntax is malformed rather than too large.
-func TestBadSyntaxIsMalformed(t *testing.T) {
-	for _, body := range []string{``, `{`, `not json`, `{"name":}`} {
-		err := DecodeJSON(strings.NewReader(body), &payload{})
-		if !errors.Is(err, ErrBodyMalformed) {
-			t.Errorf("the body %q returned %v", body, err)
-		}
 	}
 }

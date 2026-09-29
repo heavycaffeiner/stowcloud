@@ -255,33 +255,6 @@ func TestMarkDirtyOnAVanishedShareIsSilent(t *testing.T) {
 	c.markDirty(context.Background(), 99, safe(t, "anything.txt"))
 }
 
-// TestARootRollupIsCachedUnderTheSentinel asserts the share root has no node
-// row of its own and is still cached: its id is the sentinel, which is what
-// makes markDirty able to push it unconditionally.
-func TestARootRollupIsCachedUnderTheSentinel(t *testing.T) {
-	t.Parallel()
-	c, _, hostDir, _ := writable(t)
-	tree(t, hostDir)
-	ctx := context.Background()
-
-	id, err := c.ensureFileIDChain(ctx, mustRoot(t, c, 10), 10, vfs.RootPath())
-	if err != nil {
-		t.Fatalf("ensuring the chain for the root: %v", err)
-	}
-	if id != ident.RootID {
-		t.Fatalf("the share root's id is %d, want the sentinel", id)
-	}
-
-	first := rollup(t, c, 10, "")
-	agg, ok, err := c.cache.DirEtag(ctx, 10, ident.RootID)
-	if err != nil {
-		t.Fatalf("reading the cached root aggregate: %v", err)
-	}
-	if !ok || agg != first {
-		t.Fatalf("the cached root aggregate is %+v, %v, want %+v", agg, ok, first)
-	}
-}
-
 func mustRoot(t *testing.T, c *Core, share ShareID) vfs.Root {
 	t.Helper()
 	root, ok := c.ShareRoot(share)

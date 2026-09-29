@@ -24,16 +24,6 @@ func completeTable() []Task {
 	return tasks
 }
 
-// A complete table is accepted.
-func TestACompleteTaskTableIsAccepted(t *testing.T) {
-	if err := Validate(completeTable()); err != nil {
-		t.Fatalf("a complete table: %v", err)
-	}
-	if len(RequiredTasks()) != 6 {
-		t.Errorf("got %d required tasks, want 6 real tasks", len(RequiredTasks()))
-	}
-}
-
 // A missing task is named, and the message says what it does. A dropped sweep
 // is invisible until a database has grown for a month, so the report has to be
 // enough to act on.

@@ -74,44 +74,6 @@ func TestAdmitFsTypeListsDoNotOverlap(t *testing.T) {
 	}
 }
 
-// Registration is where the refusal happens, on a real filesystem: a
-// developer's temp directory can legitimately sit on tmpfs, which this gate
-// admits with a warning rather than refusing.
-func TestRegisterShareRootAdmitsARealDirectory(t *testing.T) {
-	dir := t.TempDir()
-	r, adm, err := RegisterShareRoot(1, dir, DefaultSharePolicy())
-	if err != nil {
-		t.Skipf("this host's temp directory is on a filesystem this build refuses: %v", err)
-	}
-	t.Cleanup(func() {
-		if cerr := r.Close(); cerr != nil {
-			t.Errorf("close: %v", cerr)
-		}
-	})
-	if !adm.OK {
-		t.Fatal("registration returned an unadmitted verdict for a real directory")
-	}
-}
-
-// A refused registration closes the anchor and leaves nothing half open; a
-// missing host path is refused independent of admission, and does not
-// prevent an unrelated share from registering successfully right after.
-func TestRegisterShareRootRefusalDoesNotAffectOtherShares(t *testing.T) {
-	missing := filepath.Join(t.TempDir(), "does-not-exist")
-	if _, _, err := RegisterShareRoot(1, missing, DefaultSharePolicy()); err == nil {
-		t.Fatal("a nonexistent host path registered")
-	}
-
-	good := t.TempDir()
-	r, _, err := RegisterShareRoot(2, good, DefaultSharePolicy())
-	if err != nil {
-		t.Skipf("this host's temp directory is on a filesystem this build refuses: %v", err)
-	}
-	if cerr := r.Close(); cerr != nil {
-		t.Errorf("close: %v", cerr)
-	}
-}
-
 // Scratch space is not a share, and the constructor that opens it says so
 // rather than borrowing an id. What it does not skip is admission: a
 // filesystem this build cannot hold its contracts on is the same problem

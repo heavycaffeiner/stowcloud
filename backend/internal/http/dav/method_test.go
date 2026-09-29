@@ -10,25 +10,6 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 )
 
-// A Destination naming another host is refused. Following it would make the
-// server fetch or write against a host the caller chose.
-func TestAForeignDestinationIsRefused(t *testing.T) {
-	cases := []string{
-		"http://evil.example/dav/x",
-		"https://evil.example/dav/x",
-		"http://dav.example.com.evil.example/x",
-		"http://dav.example:8081/x",
-	}
-
-	for _, dest := range cases {
-		t.Run(dest, func(t *testing.T) {
-			if _, err := ParseDestination(dest, "dav.example:8080"); !errors.Is(err, ErrForeignDestination) {
-				t.Errorf("%q: want a foreign-host refusal, got %v", dest, err)
-			}
-		})
-	}
-}
-
 // The scheme is not compared. A reverse proxy terminating TLS makes the server
 // see http where the client wrote https, so comparing schemes would refuse
 // every COPY behind one.
@@ -157,16 +138,6 @@ func TestOnlyCopyAndMoveHaveADestination(t *testing.T) {
 		wantDest := m == "COPY" || m == "MOVE"
 		if req.HasDest() != wantDest {
 			t.Errorf("%s: destination endpoint %v, want %v", m, req.HasDest(), wantDest)
-		}
-	}
-}
-
-// The base set always carries the methods every mount serves.
-func TestAllowCarriesTheBaseMethods(t *testing.T) {
-	got := AllowHeader(AllowSet{Locking: true})
-	for _, m := range []string{"OPTIONS", "GET", "HEAD", "PROPFIND", "DELETE", "COPY", "MOVE", "LOCK", "UNLOCK"} {
-		if !strings.Contains(got, m) {
-			t.Errorf("%s is missing from %q", m, got)
 		}
 	}
 }

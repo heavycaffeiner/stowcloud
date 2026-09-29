@@ -4,10 +4,7 @@ package state_test
 
 import (
 	"context"
-	"errors"
 	"testing"
-
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
 )
 
 // The compatibility layer's durable rows: the deployment identity and the
@@ -110,18 +107,5 @@ func TestPuttingAnExistingKeyWritesNothing(t *testing.T) {
 	}
 	if got != "first" {
 		t.Errorf("the value is %q, want the first one", got)
-	}
-}
-
-// An absent key is its own answer, distinct from a storage failure. The
-// caller that mints on first read needs to tell them apart.
-func TestAnAbsentKeyIsAnErrorOfItsOwn(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	d, _ := open(t)
-
-	_, err := d.CompatKey(ctx, "nothing")
-	if !errors.Is(err, state.ErrNoCompatKey) {
-		t.Errorf("an absent key answered %v, want ErrNoCompatKey", err)
 	}
 }

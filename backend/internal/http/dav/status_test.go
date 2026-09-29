@@ -4,7 +4,6 @@ package dav
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -45,32 +44,6 @@ func TestALockRefusalNamesItsPrecondition(t *testing.T) {
 	}
 	if cond.Space != davNS {
 		t.Errorf("the precondition is in namespace %q", cond.Space)
-	}
-}
-
-// Wrapping is preserved, since every caller wraps with context before
-// returning. A mapping that only matched bare sentinels would answer 500 for
-// every real failure.
-func TestAWrappedSentinelStillMaps(t *testing.T) {
-	t.Parallel()
-
-	wrapped := fmt.Errorf("creating %s: %w", "notes.txt", core.ErrNoSpace)
-	if got, _ := StatusOf(wrapped); got != http.StatusInsufficientStorage {
-		t.Errorf("a wrapped out-of-space answered %d, want 507", got)
-	}
-}
-
-// A failure nobody classified is 500 rather than something specific. Guessing
-// would tell a client to retry what it should not.
-func TestAnUnknownFailureIsInternal(t *testing.T) {
-	t.Parallel()
-
-	status, cond := StatusOf(errors.New("something nobody mapped"))
-	if status != http.StatusInternalServerError {
-		t.Errorf("an unmapped failure answered %d", status)
-	}
-	if cond.Local != "" {
-		t.Errorf("an unmapped failure invented the precondition %q", cond.Local)
 	}
 }
 

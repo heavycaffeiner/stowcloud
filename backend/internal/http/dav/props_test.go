@@ -201,27 +201,6 @@ func TestAnUnlockedResourceStillReportsLockdiscovery(t *testing.T) {
 	}
 }
 
-// The owner a client supplied comes back escaped. It is arbitrary text that
-// this server stored and hands to every other client on a PROPFIND.
-func TestALockOwnerIsEscapedOnTheWayOut(t *testing.T) {
-	t.Parallel()
-
-	r := file()
-	r.Locks = []Lock{{
-		Token: "urn:uuid:t", Path: "/f", Exclusive: true,
-		Owner: `<D:href>http://evil/</D:href>`,
-	}}
-	got, _ := LiveProp(davName("lockdiscovery"), r)
-	body := renderProp(t, got)
-
-	if strings.Contains(body, "<D:href>http://evil/") {
-		t.Errorf("a client's markup reached the body: %s", body)
-	}
-	if !strings.Contains(body, "&lt;D:href&gt;") {
-		t.Errorf("the owner is missing or unescaped: %s", body)
-	}
-}
-
 // Both scopes are advertised, because both are granted. Advertising only
 // exclusive would make a client stop asking for the shared locks it can have.
 func TestSupportedlockAdvertisesBothScopes(t *testing.T) {

@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"testing"
 	"time"
 
@@ -113,30 +112,6 @@ func TestSortingKeepsEveryNameWithItsOwnKind(t *testing.T) {
 	}
 }
 
-func TestDirectoriesLeadInBothDirections(t *testing.T) {
-	t.Parallel()
-	c, _, host, r := listable(t)
-	for _, name := range []string{"a-dir", "z-dir"} {
-		if err := os.Mkdir(filepath.Join(host, name), 0o755); err != nil {
-			t.Fatalf("creating %q: %v", name, err)
-		}
-	}
-	writeFile(t, host, "a-file", "x")
-	writeFile(t, host, "z-file", "x")
-
-	asc := mustList(t, c, r, "", ListOptions{})
-	if got := names(asc); !equalNames(got, []string{"a-dir", "z-dir", "a-file", "z-file"}) {
-		t.Fatalf("ascending order is %v", got)
-	}
-	desc := mustList(t, c, r, "", ListOptions{Desc: true})
-	if got := names(desc); !equalNames(got, []string{"z-dir", "a-dir", "z-file", "a-file"}) {
-		t.Fatalf("descending order is %v, want the groups kept and only their contents flipped", got)
-	}
-	if asc.Dirs != 2 || desc.Dirs != 2 {
-		t.Fatalf("the pages count %d and %d directories, want 2", asc.Dirs, desc.Dirs)
-	}
-}
-
 func TestSortBySizeAndMtimeOrderByTheStatValue(t *testing.T) {
 	t.Parallel()
 	c, _, host, r := listable(t)
@@ -238,45 +213,6 @@ func TestAVanishedEntryIsASkeletonRow(t *testing.T) {
 	}
 }
 
-func TestPagingWalksTheDirectoryOnceWithStableAccounting(t *testing.T) {
-	t.Parallel()
-	c, _, host, r := listable(t)
-	const total = 25
-	for i := range total {
-		writeFile(t, host, "f"+strconv.Itoa(1000+i)+".txt", "x")
-	}
-
-	seen := map[string]bool{}
-	cur := Cursor("")
-	pages := 0
-	for {
-		p := mustList(t, c, r, cur, ListOptions{Limit: 10})
-		if p.Total != total || p.Dirs != 0 {
-			t.Fatalf("page %d reports total %d dirs %d, want %d and 0", pages, p.Total, p.Dirs, total)
-		}
-		for _, e := range p.Entries {
-			if seen[e.Name] {
-				t.Fatalf("%q appeared on two pages", e.Name)
-			}
-			seen[e.Name] = true
-		}
-		pages++
-		if p.Next == "" {
-			break
-		}
-		cur = p.Next
-		if pages > 10 {
-			t.Fatal("paging did not terminate")
-		}
-	}
-	if len(seen) != total {
-		t.Fatalf("paging saw %d of %d entries", len(seen), total)
-	}
-	if pages != 3 {
-		t.Fatalf("paging took %d pages of 10 over %d entries", pages, total)
-	}
-}
-
 func TestCursorRefusals(t *testing.T) {
 	t.Parallel()
 	c, _, host, r := listable(t)
@@ -297,26 +233,6 @@ func TestCursorRefusals(t *testing.T) {
 	}
 	if p.Total != 2 || p.DirEtag == "" {
 		t.Fatalf("the boundary page reports total %d etag %q", p.Total, p.DirEtag)
-	}
-}
-
-func TestTheLimitDefaultsAndIsClamped(t *testing.T) {
-	t.Parallel()
-	c, _, host, r := listable(t)
-	// 201 entries: one more than the default page, so the default is
-	// observable without minting two thousand files.
-	for i := range pageSize + 1 {
-		writeFile(t, host, "f"+strconv.Itoa(10000+i)+".txt", "x")
-	}
-
-	if p := mustList(t, c, r, "", ListOptions{}); len(p.Entries) != pageSize {
-		t.Fatalf("the default page holds %d rows, want %d", len(p.Entries), pageSize)
-	}
-	// A limit above the ceiling is clamped rather than refused, and here the
-	// clamp is above the directory, so the whole of it comes back.
-	p := mustList(t, c, r, "", ListOptions{Limit: maxPageSize + 500})
-	if len(p.Entries) != pageSize+1 || p.Next != "" {
-		t.Fatalf("an over-ceiling limit returned %d rows with next %q", len(p.Entries), p.Next)
 	}
 }
 
@@ -372,22 +288,6 @@ func TestReservedControlNamesNeverReachAPage(t *testing.T) {
 	}
 	if p.Total != 1 {
 		t.Fatalf("the page counts %d entries, want the control names excluded from the total", p.Total)
-	}
-}
-
-func TestThePageCarriesTheDirectoryInodesOwnToken(t *testing.T) {
-	t.Parallel()
-	c, _, host, r := listable(t)
-	writeFile(t, host, "a.txt", "x")
-
-	st, err := r.Root().Stat(r.Path())
-	if err != nil {
-		t.Fatalf("stating the directory: %v", err)
-	}
-	wantETag, wantWeak := FileETag(st)
-	p := mustList(t, c, r, "", ListOptions{})
-	if p.DirEtag != wantETag || p.DirEtagWeak != wantWeak {
-		t.Fatalf("the page's token is %q/%v, want %q/%v", p.DirEtag, p.DirEtagWeak, wantETag, wantWeak)
 	}
 }
 

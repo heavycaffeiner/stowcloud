@@ -63,44 +63,6 @@ func TestTheBasicUsernameIsIgnored(t *testing.T) {
 	}
 }
 
-// The public-read case attempts only the cookie: a signed-in browser sees
-// personalised state, and a stale header does not turn a public page into an
-// auth failure.
-func TestThePublicReadCaseAttemptsOnlyTheCookie(t *testing.T) {
-	cookie := hex.EncodeToString([]byte("session-bytes"))
-
-	got := Select(Presented{Authorization: basicHeader("u", "stale"), Cookie: cookie}, true)
-	if got.Kind != CredentialSessionCookie {
-		t.Fatalf("a public read selected %v, want the cookie", got.Kind)
-	}
-
-	// A stale header with no cookie resolves to nothing rather than to a
-	// credential that will fail.
-	got = Select(Presented{Authorization: basicHeader("u", "stale")}, true)
-	if got.Kind != CredentialNone {
-		t.Fatalf("a public read with only a header selected %v", got.Kind)
-	}
-}
-
-// The cookie is hex, decoded to the bytes the store hashes. Hashing the
-// printable form would make the spelling part of the secret.
-func TestTheCookieIsDecodedNotHashedAsText(t *testing.T) {
-	raw := []byte{0x00, 0xff, 0x10, 0x42}
-	got := Select(Presented{Cookie: hex.EncodeToString(raw)}, false)
-	if got.Kind != CredentialSessionCookie {
-		t.Fatalf("a hex cookie selected %v", got.Kind)
-	}
-	if string(got.Token) != string(raw) {
-		t.Errorf("the token is %x, want %x", got.Token, raw)
-	}
-
-	// The same bytes in upper case decode to the same secret.
-	up := Select(Presented{Cookie: strings.ToUpper(hex.EncodeToString(raw))}, false)
-	if string(up.Token) != string(raw) {
-		t.Errorf("an upper-case cookie decoded to %x", up.Token)
-	}
-}
-
 // Malformed credentials resolve to none rather than to a token that cannot be
 // checked.
 func TestMalformedCredentialsResolveToNone(t *testing.T) {

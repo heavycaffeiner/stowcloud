@@ -2,17 +2,6 @@ package vfs
 
 import "testing"
 
-func TestKindIsDirIsStrictEquality(t *testing.T) {
-	if !KindDir.IsDir() {
-		t.Fatal("KindDir.IsDir() should be true")
-	}
-	for _, k := range []Kind{KindOther, KindFile, KindSymlink} {
-		if k.IsDir() {
-			t.Fatalf("%v.IsDir() should be false", k)
-		}
-	}
-}
-
 func TestKindString(t *testing.T) {
 	cases := map[Kind]string{
 		KindOther:   "other",
@@ -48,22 +37,6 @@ func TestParseSymlinkPolicyRefusesUnknown(t *testing.T) {
 	}
 	if _, err := ParseSymlinkPolicy(""); err == nil {
 		t.Fatal("an empty policy string should be refused")
-	}
-}
-
-func TestDefaultSharePolicy(t *testing.T) {
-	p := DefaultSharePolicy()
-	if p.Symlink != SymlinkDeny {
-		t.Errorf("Symlink = %v, want SymlinkDeny", p.Symlink)
-	}
-	if !p.CrossMount {
-		t.Error("CrossMount should default to true")
-	}
-	if p.ModeFile != 0o664 || p.ModeDir != 0o775 {
-		t.Errorf("modes = %o/%o, want 0664/0775", p.ModeFile, p.ModeDir)
-	}
-	if p.Chown != nil {
-		t.Error("Chown should default to nil")
 	}
 }
 

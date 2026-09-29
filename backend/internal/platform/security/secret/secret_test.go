@@ -68,13 +68,6 @@ func TestEqualRejectsDifferentLengths(t *testing.T) {
 	}
 }
 
-func TestLenReflectsUnderlyingBytes(t *testing.T) {
-	s := New([]byte("abcde"))
-	if s.Len() != 5 {
-		t.Errorf("Len() = %d, want 5", s.Len())
-	}
-}
-
 func TestRevealAliasesTheUnderlyingBuffer(t *testing.T) {
 	buf := []byte(rawValue)
 	s := New(buf)

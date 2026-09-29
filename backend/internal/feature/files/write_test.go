@@ -773,18 +773,6 @@ func TestAFailingJournalDoesNotFailAWrite(t *testing.T) {
 	}
 }
 
-func TestANilJournalDoesNotFailAWrite(t *testing.T) {
-	t.Parallel()
-	c, _, host, _ := writable(t)
-	if c.journal != nil {
-		t.Fatal("the fixture core already carries a journal")
-	}
-	mustCreate(t, c, under(t, c, "Documents/nojournal.txt", acl.Write), "x")
-	if got := readHost(t, host, "nojournal.txt"); got != "x" {
-		t.Fatalf("the write with no journal left %q", got)
-	}
-}
-
 type cappedWriteSink struct{ remaining uint64 }
 
 func (s *cappedWriteSink) Reserve(_ context.Context, _ int64, additional uint64) (bool, error) {

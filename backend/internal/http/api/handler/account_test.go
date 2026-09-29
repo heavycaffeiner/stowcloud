@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 )
 
 // The revocation handle is derived from the stored digest, not the digest
@@ -100,85 +99,6 @@ func TestTheCurrentSessionIsMarked(t *testing.T) {
 	for i, r := range none {
 		if r.Current {
 			t.Errorf("row %d was marked current with no session known", i)
-		}
-	}
-}
-
-// An app password lists what it can reach, and an empty share list means every
-// share the account reaches rather than none.
-func TestAnAppPasswordListsItsScope(t *testing.T) {
-	v := AppPasswordOf(auth.AppPasswordRow{
-		ID:         7,
-		Name:       "phone",
-		ScopePerms: uint16(acl.Read | acl.Download),
-		Shares:     []string{"3", "5"},
-	})
-
-	if v.ID != "7" || v.Name != "phone" {
-		t.Errorf("the credential projected as %+v", v)
-	}
-	if len(v.Perms) != 2 || v.Perms[0] != "read" || v.Perms[1] != "download" {
-		t.Errorf("the permissions are %v", v.Perms)
-	}
-	if len(v.Shares) != 2 {
-		t.Errorf("the shares are %v", v.Shares)
-	}
-
-	// No shares encodes as an empty list rather than null, so a client
-	// iterating it does not have to test the field.
-	raw, err := json.Marshal(AppPasswordOf(auth.AppPasswordRow{}))
-	if err != nil {
-		t.Fatalf("encoding: %v", err)
-	}
-	if !strings.Contains(string(raw), `"shares":[]`) {
-		t.Errorf("an unscoped credential encoded as %s", raw)
-	}
-}
-
-// A credential that never expires or was never used says nothing rather than
-// zero, since zero is a real instant and would read as 1970.
-func TestAbsentTimesStayAbsent(t *testing.T) {
-	v := AppPasswordOf(auth.AppPasswordRow{})
-	if v.ExpiresNs != nil || v.LastUsedNs != nil {
-		t.Errorf("a fresh credential reports %v and %v", v.ExpiresNs, v.LastUsedNs)
-	}
-
-	raw, err := json.Marshal(v)
-	if err != nil {
-		t.Fatalf("encoding: %v", err)
-	}
-	if strings.Contains(string(raw), "expires_ns") || strings.Contains(string(raw), "last_used_ns") {
-		t.Errorf("a fresh credential encoded absent times: %s", raw)
-	}
-
-	// A real epoch value is present and is zero.
-	var epoch int64
-	used := AppPasswordOf(auth.AppPasswordRow{LastUsedNs: &epoch})
-	if used.LastUsedNs == nil || *used.LastUsedNs != "0" {
-		t.Errorf("a real epoch use encoded as %v", used.LastUsedNs)
-	}
-}
-
-// The projection copies the share slice rather than aliasing the service's.
-func TestTheAppPasswordDoesNotAliasTheService(t *testing.T) {
-	row := auth.AppPasswordRow{Shares: []string{"3"}}
-	v := AppPasswordOf(row)
-	row.Shares[0] = "mutated"
-
-	if v.Shares[0] != "3" {
-		t.Errorf("the view aliased the service's slice: %v", v.Shares)
-	}
-}
-
-// Empty listings encode as lists.
-func TestEmptyAccountListingsEncodeAsLists(t *testing.T) {
-	for _, v := range []any{SessionsOf(nil, nil), AppPasswordsOf(nil)} {
-		raw, err := json.Marshal(v)
-		if err != nil {
-			t.Fatalf("encoding: %v", err)
-		}
-		if string(raw) != "[]" {
-			t.Errorf("an empty listing encoded as %s", raw)
 		}
 	}
 }

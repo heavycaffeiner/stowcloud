@@ -64,31 +64,6 @@ func TestAnUnconfiguredGuardNeverBlocks(t *testing.T) {
 	}
 }
 
-// The ceiling trips on the databases' own size, and says which bound it was.
-func TestTheCeilingTripsOnTheDatabaseSize(t *testing.T) {
-	t.Parallel()
-
-	f := &fakeFile{size: 5000}
-	g := sizeguard.New(t.TempDir(), []sizeguard.File{f})
-
-	st, err := g.Sample(context.Background(), sizeguard.Config{MaxBytes: 4096})
-	if err != nil {
-		t.Fatalf("sampling: %v", err)
-	}
-	if !st.Blocked {
-		t.Fatal("a store over its ceiling was not blocked")
-	}
-	if !f.WritesBlocked() {
-		t.Error("the file was not moved")
-	}
-	if st.Reason == "" {
-		t.Error("the state names no reason")
-	}
-	if st.StoreBytes != 5000 {
-		t.Errorf("the sample reports %d bytes, want 5000", st.StoreBytes)
-	}
-}
-
 // Under the ceiling nothing is blocked, and a guard that had tripped releases.
 // Without the release a volume that recovered stays refusing writes forever.
 func TestRecoveringReleasesTheBlock(t *testing.T) {

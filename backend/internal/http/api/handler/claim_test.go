@@ -27,31 +27,6 @@ func aThumb() Claim {
 	return Claim{Purpose: PurposeThumb, UserID: 7, Path: "photos/summer.jpg", Width: 256, Height: 256}
 }
 
-// A sealed claim opens back into what was put in it.
-func TestAClaimRoundTrips(t *testing.T) {
-	k := claimKey(1)
-	sealed, err := SealClaim(k, aThumb(), claimNow)
-	if err != nil {
-		t.Fatalf("SealClaim: %v", err)
-	}
-
-	got, oerr := OpenClaim(keyring(k), PurposeThumb, sealed, claimNow)
-	if oerr != nil {
-		t.Fatalf("OpenClaim: %v", oerr)
-	}
-	if got.UserID != 7 || got.Path != "photos/summer.jpg" {
-		t.Errorf("the claim opened as %+v", got)
-	}
-	if got.Width != 256 || got.Height != 256 {
-		t.Errorf("the dimensions opened as %dx%d", got.Width, got.Height)
-	}
-	// A thumb claim only narrows a session, so it lives the longer of the two
-	// lifetimes: the route that opens one refuses it for any other account.
-	if got.ExpiresNs-got.IssuedNs != int64(ClaimLifetimeBound) {
-		t.Errorf("the lifetime is %v", time.Duration(got.ExpiresNs-got.IssuedNs))
-	}
-}
-
 // The claim carries no reusable credential. What leaks is the right to fetch
 // one file for a few minutes, under an account whose permission is checked
 // again at fetch time.

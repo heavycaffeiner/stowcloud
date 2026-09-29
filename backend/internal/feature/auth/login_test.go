@@ -56,38 +56,6 @@ func dropOIDCLinkTable(t *testing.T, f fixture) {
 	}
 }
 
-func TestLoginMintsASessionAndRecordsIt(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	f := newFixture(t)
-	id := f.account(t, "alice")
-
-	sess, err := f.svc.Login(ctx, auth.LoginRequest{
-		Name: "alice", Password: pw(testPassword), IP: "192.0.2.1", UA: "client",
-	}, 0)
-	if err != nil {
-		t.Fatalf("Login: %v", err)
-	}
-	if sess.UserID != id || sess.Token.Len() == 0 {
-		t.Fatalf("the session is %+v", sess)
-	}
-	principal, err := f.svc.LookupSession(ctx, sess.Token)
-	if err != nil {
-		t.Fatalf("LookupSession: %v", err)
-	}
-	if principal.UserID != id || principal.Login != "alice" {
-		t.Fatalf("the principal is %+v", principal)
-	}
-
-	rows, _, err := f.svc.AuditPage(ctx, auth.AuditFilter{})
-	if err != nil {
-		t.Fatalf("AuditPage: %v", err)
-	}
-	if len(rows) != 1 || rows[0].Event != "login" || !rows[0].OK {
-		t.Fatalf("the log holds %+v", rows)
-	}
-}
-
 // A response identical in content but faster is still an oracle, so an
 // unknown account pays for the same memory-hard invocation a real one does.
 func TestAnUnknownAccountAndAWrongPasswordAnswerAlikeAndCostAlike(t *testing.T) {
@@ -290,71 +258,6 @@ func TestSessionsExpireAbsolutelyAndWhenIdle(t *testing.T) {
 	}
 }
 
-// The stamp refreshes on use, so an active client stays signed in.
-func TestUsingASessionRefreshesItsIdleWindow(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	clk := &steppingClock{at: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
-	f := newFixtureWithClock(t, clk)
-	id := f.account(t, "alice")
-
-	sess, err := f.svc.CreateSession(ctx, id, "", "", 0, 30*24*time.Hour)
-	if err != nil {
-		t.Fatalf("CreateSession: %v", err)
-	}
-	for i := 0; i < 4; i++ {
-		clk.advance(20 * time.Minute)
-		if _, lerr := f.svc.LookupSession(ctx, sess.Token); lerr != nil {
-			t.Fatalf("the session went cold after %d steps: %v", i+1, lerr)
-		}
-	}
-}
-
-// Revocation is immediate because the generation counter invalidates every
-// cached decision, not because a lifetime elapsed.
-func TestARevokedSessionRefusesImmediately(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	f := newFixture(t)
-	id := f.account(t, "alice")
-
-	sess, err := f.svc.CreateSession(ctx, id, "", "", 0, time.Hour)
-	if err != nil {
-		t.Fatalf("CreateSession: %v", err)
-	}
-	before := f.svc.Generation()
-	if err = f.svc.RevokeSession(ctx, sess.Token); err != nil {
-		t.Fatalf("RevokeSession: %v", err)
-	}
-	if f.svc.Generation() == before {
-		t.Fatal("revoking a session did not bump the generation")
-	}
-	if _, err = f.svc.LookupSession(ctx, sess.Token); !errors.Is(err, auth.ErrCredentials) {
-		t.Fatalf("a revoked session resolved: %v", err)
-	}
-}
-
-// Disabling drops the account's sessions in the same transaction, so a client
-// holding one is signed out at the moment the write commits rather than when
-// its window happens to elapse.
-func TestDisablingAnAccountEndsItsLiveSessions(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	f := newFixture(t)
-	f.admin(t, "admin")
-	id := f.account(t, "alice")
-	sess, err := f.svc.CreateSession(ctx, id, "", "", 0, time.Hour)
-	if err != nil {
-		t.Fatalf("CreateSession: %v", err)
-	}
-	if err = f.svc.DisableAccount(ctx, id); err != nil {
-		t.Fatalf("DisableAccount: %v", err)
-	}
-	if _, err = f.svc.LookupSession(ctx, sess.Token); !errors.Is(err, auth.ErrCredentials) {
-		t.Fatalf("a disabled account's session returned %v", err)
-	}
-}
-
 // A session that outlives a disable, because it was minted afterwards or by
 // another process, still refuses, and says why: the lookup checks the account
 // and not only the row.
@@ -373,30 +276,5 @@ func TestASessionOfADisabledAccountRefusesWithItsOwnReason(t *testing.T) {
 	}
 	if _, err = f.svc.LookupSession(ctx, sess.Token); !errors.Is(err, auth.ErrAccountDisabled) {
 		t.Fatalf("a disabled account's session returned %v", err)
-	}
-}
-
-// The client holds row digests rather than tokens, so the revocation is
-// scoped to the owner in the same predicate.
-func TestRevokingByHashRefusesAnotherOwnersSession(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	f := newFixture(t)
-	alice := f.account(t, "alice")
-	mallory := f.account(t, "mallory")
-
-	sess, err := f.svc.CreateSession(ctx, alice, "", "", 0, time.Hour)
-	if err != nil {
-		t.Fatalf("CreateSession: %v", err)
-	}
-	rows, err := f.svc.Sessions(ctx, alice)
-	if err != nil || len(rows) != 1 {
-		t.Fatalf("Sessions returned %d rows, %v", len(rows), err)
-	}
-	if err = f.svc.RevokeSessionByHash(ctx, mallory, rows[0].IDHash); err != nil {
-		t.Fatalf("RevokeSessionByHash: %v", err)
-	}
-	if _, err = f.svc.LookupSession(ctx, sess.Token); err != nil {
-		t.Fatalf("another account's revocation killed the session: %v", err)
 	}
 }

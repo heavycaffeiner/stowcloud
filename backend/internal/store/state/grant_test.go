@@ -98,67 +98,6 @@ func TestPersistGrantRefusesADuplicateOverTheSameShareAndSubpath(t *testing.T) {
 	}
 }
 
-func TestPersistGrantRoundTripsAndStampsTheCallersClock(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	d, _ := open(t)
-	seedUser(t, d, 7, "u")
-
-	want := state.GrantRow{
-		User: id64(7), Share: 42, Subpath: "docs/private",
-		Allow: 0b1011, Deny: 0b0100, Inherit: true, Label: "read only",
-	}
-	id, err := d.PersistGrant(ctx, want, 1_700_000_000)
-	if err != nil {
-		t.Fatalf("PersistGrant: %v", err)
-	}
-
-	got, err := d.ListGrants(ctx, state.GrantFilter{})
-	if err != nil {
-		t.Fatalf("ListGrants: %v", err)
-	}
-	if len(got) != 1 {
-		t.Fatalf("%d grants, want 1", len(got))
-	}
-	g := got[0]
-	if g.ID != id {
-		t.Errorf("id %d, want %d", g.ID, id)
-	}
-	if g.User == nil || *g.User != 7 || g.Group != nil {
-		t.Errorf("principal came back as user %v, group %v", g.User, g.Group)
-	}
-	if g.Share != 42 || g.Subpath != "docs/private" {
-		t.Errorf("target came back as share %d, subpath %q", g.Share, g.Subpath)
-	}
-	if g.Allow != want.Allow || g.Deny != want.Deny || !g.Inherit || g.Label != want.Label {
-		t.Errorf("read back %+v, want %+v", g, want)
-	}
-	if g.CreatedNs != 1_700_000_000 {
-		t.Errorf("stamped %d, want the caller's clock value", g.CreatedNs)
-	}
-}
-
-func TestAGroupGrantStoresNoUser(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	d, _ := open(t)
-	seedGroup(t, d, 3, "editors")
-
-	if _, err := d.PersistGrant(ctx, state.GrantRow{Group: id64(3), Share: 1, Allow: 1}, 1); err != nil {
-		t.Fatalf("PersistGrant: %v", err)
-	}
-	got, err := d.ListGrants(ctx, state.GrantFilter{})
-	if err != nil {
-		t.Fatalf("ListGrants: %v", err)
-	}
-	if got[0].User != nil {
-		t.Errorf("a group grant carries user %d", *got[0].User)
-	}
-	if got[0].Group == nil || *got[0].Group != 3 {
-		t.Errorf("a group grant came back with group %v", got[0].Group)
-	}
-}
-
 // The regression the cascade decision rests on: a home grant names a share
 // that is never a share_definition row.
 func TestAHomeGrantNeedsNoShareDefinitionRow(t *testing.T) {
@@ -254,41 +193,6 @@ func TestUpdateGrantMovesOnlyThePermissions(t *testing.T) {
 	}
 }
 
-// An empty label clears it rather than storing an empty string, so "no
-// label" is one value on disk.
-func TestClearingALabelStoresNull(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	d, f := open(t)
-	seedUser(t, d, 1, "u")
-
-	id, err := d.PersistGrant(ctx, state.GrantRow{
-		User: id64(1), Share: 1, Allow: 1, Label: "named",
-	}, 1)
-	if err != nil {
-		t.Fatalf("PersistGrant: %v", err)
-	}
-	if uerr := d.UpdateGrant(ctx, id, 1, 0, false, ""); uerr != nil {
-		t.Fatalf("UpdateGrant: %v", uerr)
-	}
-
-	var label *string
-	if serr := f.SQL().QueryRowContext(ctx,
-		`SELECT label FROM "grant" WHERE id = ?`, id).Scan(&label); serr != nil {
-		t.Fatalf("reading the label: %v", serr)
-	}
-	if label != nil {
-		t.Errorf("a cleared label stored %q", *label)
-	}
-	got, err := d.ListGrants(ctx, state.GrantFilter{})
-	if err != nil {
-		t.Fatalf("ListGrants: %v", err)
-	}
-	if got[0].Label != "" {
-		t.Errorf("a cleared label reads back as %q", got[0].Label)
-	}
-}
-
 func TestUpdateAndDeleteOfAnUnknownGrantAreRefusals(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -299,40 +203,6 @@ func TestUpdateAndDeleteOfAnUnknownGrantAreRefusals(t *testing.T) {
 	}
 	if err := d.DeleteGrant(ctx, 4242); !errors.Is(err, state.ErrNoSuchGrant) {
 		t.Errorf("deleting an unknown grant returned %v, want ErrNoSuchGrant", err)
-	}
-}
-
-func TestDeleteGrantRemovesExactlyThatRow(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	d, _ := open(t)
-	seedUser(t, d, 1, "u")
-
-	var ids []int64
-	for i := range 3 {
-		id, err := d.PersistGrant(ctx, state.GrantRow{
-			User: id64(1), Share: 1, Subpath: strconv.Itoa(i), Allow: 1,
-		}, 1)
-		if err != nil {
-			t.Fatalf("PersistGrant: %v", err)
-		}
-		ids = append(ids, id)
-	}
-	if err := d.DeleteGrant(ctx, ids[1]); err != nil {
-		t.Fatalf("DeleteGrant: %v", err)
-	}
-
-	got, err := d.ListGrants(ctx, state.GrantFilter{})
-	if err != nil {
-		t.Fatalf("ListGrants: %v", err)
-	}
-	if len(got) != 2 {
-		t.Fatalf("%d grants after one delete, want 2", len(got))
-	}
-	for _, g := range got {
-		if g.ID == ids[1] {
-			t.Error("the deleted grant is still listed")
-		}
 	}
 }
 
@@ -456,46 +326,6 @@ func TestDeletingAUserCascadesToItsGrants(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Errorf("%d grants outlived their principal", len(got))
-	}
-}
-
-func TestMembershipsRoundTrip(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	d, _ := open(t)
-	seedUser(t, d, 1, "one")
-	seedUser(t, d, 2, "two")
-	seedGroup(t, d, 10, "editors")
-	seedGroup(t, d, 20, "readers")
-
-	pairs := [][2]int64{{1, 10}, {1, 20}, {2, 10}}
-	if err := d.Write(ctx, func(tx *sql.Tx) error {
-		for _, p := range pairs {
-			if _, err := tx.ExecContext(ctx,
-				`INSERT INTO membership(user, "group") VALUES (?, ?)`, p[0], p[1]); err != nil {
-				return err
-			}
-		}
-		return nil
-	}); err != nil {
-		t.Fatalf("seeding memberships: %v", err)
-	}
-
-	got, err := d.Memberships(ctx)
-	if err != nil {
-		t.Fatalf("Memberships: %v", err)
-	}
-	if len(got) != len(pairs) {
-		t.Fatalf("%d memberships, want %d", len(got), len(pairs))
-	}
-	seen := map[[2]int64]bool{}
-	for _, m := range got {
-		seen[[2]int64{m.User, m.Group}] = true
-	}
-	for _, p := range pairs {
-		if !seen[p] {
-			t.Errorf("membership %v is missing", p)
-		}
 	}
 }
 

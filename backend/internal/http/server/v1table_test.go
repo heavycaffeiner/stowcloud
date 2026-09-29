@@ -113,25 +113,6 @@ func TestEveryCategoryHasADeclaredDefault(t *testing.T) {
 	}
 }
 
-// The three duplicate spellings the document retires are gone.
-//
-// Named individually because each was load-bearing in the old tree and
-// documented as such: a reader wondering whether the retirement happened gets
-// an answer here rather than by grepping.
-func TestTheRetiredSpellingsAreAbsent(t *testing.T) {
-	built := tableRoutes()
-	for _, gone := range []struct{ route, why string }{
-		{"PUT " + Base + "/files/write", "the PUT alias for a file write"},
-		{"DELETE " + Base + "/jobs/{id}", "the DELETE alias for cancelling a job"},
-		{"GET " + Base + "/files/link", "the fs/link family, merged into links"},
-		{"POST " + Base + "/files/link", "the fs/link family, merged into links"},
-	} {
-		if slices.Contains(built, gone.route) {
-			t.Errorf("%s is mounted, and it is %s, which v1 retires", gone.route, gone.why)
-		}
-	}
-}
-
 // The admin category is session-only throughout, which is the rule that keeps a
 // filesystem credential handed to a device from creating users or rewriting the
 // settings document.

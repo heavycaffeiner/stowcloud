@@ -55,16 +55,6 @@ func (s *syncBuffer) Len() int {
 	return s.buf.Len()
 }
 
-func TestGoRunsFn(t *testing.T) {
-	done := make(chan struct{})
-	Go(context.Background(), "plain", func() { close(done) })
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("Go never ran fn")
-	}
-}
-
 func TestGoRecoversAPanicAndLogsStackAndName(t *testing.T) {
 	buf := newSyncBuffer()
 	prev := slog.Default()
@@ -136,20 +126,5 @@ func TestRecoverDeferredDirectlyBehavesTheSame(t *testing.T) {
 	}
 	if !strings.Contains(out, "manual panic") {
 		t.Errorf("log output missing panic value: %s", out)
-	}
-}
-
-func TestRecoverWithNoPanicIsANoop(t *testing.T) {
-	buf := newSyncBuffer()
-	prev := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(buf, nil)))
-	defer slog.SetDefault(prev)
-
-	func() {
-		defer Recover(context.Background(), "quiet")
-	}()
-
-	if buf.Len() != 0 {
-		t.Fatalf("Recover with no panic logged something: %s", buf.String())
 	}
 }

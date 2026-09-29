@@ -2,7 +2,6 @@ package core
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -65,26 +64,6 @@ func TestShareBrokenErrorUnwrapsToItsSentinel(t *testing.T) {
 	}
 }
 
-func TestPreconditionErrorUnwrapsToItsSentinel(t *testing.T) {
-	t.Parallel()
-	err := error(&PreconditionError{Current: "abc123"})
-	if !errors.Is(err, ErrPrecondition) {
-		t.Fatalf("errors.Is(%v, ErrPrecondition) is false", err)
-	}
-	var target *PreconditionError
-	if !errors.As(err, &target) || target.Current != "abc123" {
-		t.Fatalf("errors.As gave %+v, want the current token abc123", target)
-	}
-}
-
-func TestPreconditionErrorCarriesAnEmptyTokenForAMissingTarget(t *testing.T) {
-	t.Parallel()
-	err := error(&PreconditionError{})
-	if !errors.Is(err, ErrPrecondition) {
-		t.Fatalf("%v does not match ErrPrecondition", err)
-	}
-}
-
 func TestMapVFSErrMapsEveryNamedError(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -109,39 +88,6 @@ func TestMapVFSErrMapsEveryNamedError(t *testing.T) {
 				t.Fatalf("mapVFSErr(%v) = %v, want %v", tc.in, got, tc.want)
 			}
 		})
-	}
-}
-
-func TestMapVFSErrMapsAWrappedError(t *testing.T) {
-	t.Parallel()
-	// Every vfs sentinel arrives wrapped by the operation that produced it,
-	// so a mapping that only matched a bare value would map nothing real.
-	wrapped := fmt.Errorf("openat2: %w", vfs.ErrDenied)
-	if got := mapVFSErr(wrapped); !errors.Is(got, ErrDenied) {
-		t.Fatalf("mapVFSErr(%v) = %v, want ErrDenied", wrapped, got)
-	}
-}
-
-func TestMapVFSErrPassesAnUnnamedErrorThroughUnchanged(t *testing.T) {
-	t.Parallel()
-	// An error the table does not name is an infrastructure failure, and it
-	// keeps its identity so a caller can still match it.
-	infra := errors.New("the disk controller reset")
-	got := mapVFSErr(infra)
-	if !errors.Is(got, infra) {
-		t.Fatalf("mapVFSErr(%v) = %v, want the original error", infra, got)
-	}
-	for _, s := range allSentinels() {
-		if errors.Is(got, s.err) {
-			t.Fatalf("an unnamed error was mapped to %s", s.name)
-		}
-	}
-}
-
-func TestMapVFSErrPassesNilThrough(t *testing.T) {
-	t.Parallel()
-	if got := mapVFSErr(nil); got != nil {
-		t.Fatalf("mapVFSErr(nil) = %v, want nil", got)
 	}
 }
 

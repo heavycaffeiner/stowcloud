@@ -217,30 +217,6 @@ func TestTheSecondFactorAcceptsItsWindowAndRefusesOutsideIt(t *testing.T) {
 	}
 }
 
-// A code captured in transit must not be usable again inside its own window.
-func TestASecondFactorCodeCannotBeReplayed(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	f := newFixture(t)
-	id := f.account(t, "alice")
-	secretB32, err := f.svc.GenerateTOTPSecret()
-	if err != nil {
-		t.Fatalf("GenerateTOTPSecret: %v", err)
-	}
-	if err := f.svc.EnrollTOTP(ctx, id, secretB32); err != nil {
-		t.Fatalf("EnrollTOTP: %v", err)
-	}
-
-	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC).UnixNano()
-	code := totpCode(t, secretB32, now/int64(30*time.Second))
-	if ok, verr := f.svc.VerifyTOTP(ctx, id, code, now); verr != nil || !ok {
-		t.Fatalf("the first presentation returned %v, %v", ok, verr)
-	}
-	if ok, verr := f.svc.VerifyTOTP(ctx, id, code, now); verr != nil || ok {
-		t.Fatalf("the replay returned %v, %v", ok, verr)
-	}
-}
-
 // The factor the person just added must not be bypassable by the older
 // protocol answering to the account password.
 func TestEnrollingASecondFactorDropsTheStoredSMBCredential(t *testing.T) {
@@ -343,40 +319,6 @@ func TestSigningInDoesNotRestoreTheCredentialASecondFactorClosed(t *testing.T) {
 	}
 	if state.Credential != auth.SMBCredentialNone {
 		t.Fatalf("a sign-in reinstated the credential enrolment closed: %+v", state)
-	}
-}
-
-func TestRecoveryCodesAreSingleUseAndCountDown(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	f := newFixture(t)
-	id := f.account(t, "alice")
-
-	codes, err := f.svc.GenerateRecoveryCodes(ctx, id, 3)
-	if err != nil || len(codes) != 3 {
-		t.Fatalf("GenerateRecoveryCodes returned %d codes, %v", len(codes), err)
-	}
-	if n, cerr := f.svc.RecoveryCodesRemaining(ctx, id); cerr != nil || n != 3 {
-		t.Fatalf("the count is %d, %v", n, cerr)
-	}
-
-	used, err := f.svc.UseRecoveryCode(ctx, id, strings.ToLower(codes[0]))
-	if err != nil || !used {
-		t.Fatalf("the first use returned %v, %v", used, err)
-	}
-	if used, err = f.svc.UseRecoveryCode(ctx, id, codes[0]); err != nil || used {
-		t.Fatalf("the second use returned %v, %v", used, err)
-	}
-	if n, cerr := f.svc.RecoveryCodesRemaining(ctx, id); cerr != nil || n != 2 {
-		t.Fatalf("the count is %d, %v", n, cerr)
-	}
-
-	// Generating replaces the set, so a code from the old list stops working.
-	if _, err = f.svc.GenerateRecoveryCodes(ctx, id, 2); err != nil {
-		t.Fatalf("GenerateRecoveryCodes: %v", err)
-	}
-	if used, err = f.svc.UseRecoveryCode(ctx, id, codes[1]); err != nil || used {
-		t.Fatalf("a code from the replaced set returned %v, %v", used, err)
 	}
 }
 

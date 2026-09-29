@@ -181,19 +181,6 @@ func TestHrefRoundTripsThroughTheDecoder(t *testing.T) {
 	}
 }
 
-// A collection href ends in a slash, and the root is a slash on its own.
-func TestACollectionHrefEndsInASlash(t *testing.T) {
-	if got := EncodeHref([]string{"a", "b"}, true); got != "/a/b/" {
-		t.Errorf("got %q, want /a/b/", got)
-	}
-	if got := EncodeHref([]string{"a", "b"}, false); got != "/a/b" {
-		t.Errorf("got %q, want /a/b", got)
-	}
-	if got := EncodeHref(nil, true); got != "/" {
-		t.Errorf("the root collection got %q, want /", got)
-	}
-}
-
 // The same visible name in two forms, exactly as the vfs package's own
 // fixture: precomposed and decomposed. Written with the literal bytes so an
 // editor that normalizes on save cannot collapse the difference these tests

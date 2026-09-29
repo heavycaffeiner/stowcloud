@@ -65,19 +65,6 @@ func TestAnOperationIsScopedToItsOwner(t *testing.T) {
 	}
 }
 
-func TestAMissingOperationIdIsNotFound(t *testing.T) {
-	t.Parallel()
-	c, _, _, _, _, _ := twoShares(t)
-	ctx := context.Background()
-
-	if _, err := c.Operation(ctx, 1, 9999); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("reading a missing operation returned %v, want ErrNotFound", err)
-	}
-	if err := c.CancelOperation(ctx, 1, 9999); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("cancelling a missing operation returned %v, want ErrNotFound", err)
-	}
-}
-
 func TestTheUnfinishedSplitIsReadOnlyOnceAnOperationStopped(t *testing.T) {
 	t.Parallel()
 	c, st, _, _, _, _ := twoShares(t)

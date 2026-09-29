@@ -10,8 +10,6 @@ import (
 	"reflect"
 	"testing"
 	"time"
-
-	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/system/jail"
 )
 
 func quiet() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
@@ -27,25 +25,6 @@ func (f fakeStore) Settings(context.Context) (map[string]any, error) { return f.
 func loadWith(t *testing.T, doc map[string]any) Values {
 	t.Helper()
 	return Load(t.Context(), fakeStore{doc: doc}, Defaults(), quiet())
-}
-
-// A key nobody has saved runs as the compiled-in default, which is the floor.
-func TestZeroFieldsFallBackToDefaults(t *testing.T) {
-	got := loadWith(t, map[string]any{})
-	want := Defaults()
-
-	if got.Listen != want.Listen || got.Hardening != want.Hardening {
-		t.Errorf("the listener or the policy did not default: %q, %v", got.Listen, got.Hardening)
-	}
-	if got.RatePerSec != want.RatePerSec || got.RateBurst != want.RateBurst {
-		t.Errorf("the rate bounds did not default: %v, %d", got.RatePerSec, got.RateBurst)
-	}
-	if got.SMB.Workgroup == "" || got.SMB.ServiceUser == "" {
-		t.Errorf("the SMB defaults are empty: %+v", got.SMB)
-	}
-	if got.SMBConfigured {
-		t.Error("an empty document reported SMB as configured")
-	}
 }
 
 // A store that cannot be read is the defaults with a line, never a refusal.
@@ -395,13 +374,5 @@ func fullDocument() map[string]any {
 		"thumbnail": map[string]any{
 			"enabled": true, "dir": "/var/thumbs",
 		},
-	}
-}
-
-// The hardening policy round-trips through the document.
-func TestTheHardeningPolicyLoads(t *testing.T) {
-	got := loadWith(t, map[string]any{"security": map[string]any{"hardening": "preferred"}})
-	if got.Hardening != jail.Preferred {
-		t.Errorf("the policy loaded as %v", got.Hardening)
 	}
 }

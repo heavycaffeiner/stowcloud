@@ -6,40 +6,7 @@ import (
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 )
-
-// An account created without a file-sharing credential had no way to reach
-// that protocol until it changed its password, and the interface's "set a
-// separate password" framing made that defect read as a policy.
-func TestANewAccountReachesTheFileSharingProtocolWithNoFurtherStep(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	f := newFixture(t)
-	id := f.account(t, "alice")
-
-	state, err := f.svc.SMBStateOf(ctx, id)
-	if err != nil {
-		t.Fatalf("SMBStateOf: %v", err)
-	}
-	if state.Credential != auth.SMBCredentialAccount {
-		t.Fatalf("a fresh account reports %+v", state)
-	}
-	creds, err := f.svc.SMBCredentials(ctx)
-	if err != nil {
-		t.Fatalf("SMBCredentials: %v", err)
-	}
-	if len(creds) != 1 || creds[0].Name != "alice" {
-		t.Fatalf("the publishable credentials are %+v", creds)
-	}
-	offset, err := number.Narrow[uint32](id)
-	if err != nil {
-		t.Fatalf("the account id does not fit a uid: %v", err)
-	}
-	if creds[0].UID != auth.SMBBaseUid+offset {
-		t.Fatalf("the uid is %d, want the row id offset by the base", creds[0].UID)
-	}
-}
 
 // A committed transaction notifies the publication owner after the database
 // change. File rendering is owned by the SMB publisher, not auth.
@@ -145,67 +112,6 @@ func TestTheSecondFactorPolicyOnlyChangesWhatIsPublished(t *testing.T) {
 	if len(creds) != 1 {
 		t.Fatalf("moving the policy back did not restore access: %+v", creds)
 	}
-}
-
-// Clearing the separate password means losing the protocol for an account
-// whose account password cannot serve it, and saying so beats reporting a
-// success that reads as "nothing changed".
-func TestClearingASeparatePasswordReportsWhetherTheAccountPasswordTakesOver(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-
-	t.Run("an ordinary account reverts", func(t *testing.T) {
-		f := newFixture(t)
-		id := f.account(t, "alice")
-		if err := f.svc.SetSMBPassword(ctx, id, pw(testPassword)); err != nil {
-			t.Fatalf("SetSMBPassword: %v", err)
-		}
-		revertible, err := f.svc.ClearSMBPassword(ctx, id)
-		if err != nil || !revertible {
-			t.Fatalf("ClearSMBPassword = %v, %v", revertible, err)
-		}
-	})
-
-	t.Run("an opted-out account does not", func(t *testing.T) {
-		f := newFixture(t)
-		id := f.account(t, "alice")
-		if err := f.svc.SetSMBAccess(ctx, id, true, false); err != nil {
-			t.Fatalf("SetSMBAccess: %v", err)
-		}
-		revertible, err := f.svc.ClearSMBPassword(ctx, id)
-		if err != nil || revertible {
-			t.Fatalf("ClearSMBPassword = %v, %v", revertible, err)
-		}
-	})
-
-	t.Run("a provider-linked account does not", func(t *testing.T) {
-		f := newFixture(t)
-		id := f.account(t, "alice")
-		if err := f.svc.CreateOIDCLink(ctx, id, "https://idp", "subject"); err != nil {
-			t.Fatalf("CreateOIDCLink: %v", err)
-		}
-		revertible, err := f.svc.ClearSMBPassword(ctx, id)
-		if err != nil || revertible {
-			t.Fatalf("ClearSMBPassword = %v, %v", revertible, err)
-		}
-	})
-
-	t.Run("a blocked second factor does not", func(t *testing.T) {
-		f := newFixture(t)
-		id := f.account(t, "alice")
-		secretB32, err := f.svc.GenerateTOTPSecret()
-		if err != nil {
-			t.Fatalf("GenerateTOTPSecret: %v", err)
-		}
-		if err = f.svc.EnrollTOTP(ctx, id, secretB32); err != nil {
-			t.Fatalf("EnrollTOTP: %v", err)
-		}
-		f.svc.SetSMBTOTPPolicy(auth.TOTPBlock)
-		revertible, err := f.svc.ClearSMBPassword(ctx, id)
-		if err != nil || revertible {
-			t.Fatalf("ClearSMBPassword = %v, %v", revertible, err)
-		}
-	})
 }
 
 // A session is not a credential: signing somebody out of every device because

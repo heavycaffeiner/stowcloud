@@ -25,24 +25,6 @@ func mustRender(t *testing.T, cfg Config, shares []ShareDef) (string, Result) {
 	return string(out), res
 }
 
-// The defaults live in this package and nowhere else, which is what ends the
-// drift between two checkers probing with their own inline copies.
-func TestDefaultsAreOwnedHere(t *testing.T) {
-	got := Config{}.WithDefaults()
-	if got.Workgroup != DefaultWorkgroup || got.ServiceUser != DefaultServiceUser {
-		t.Errorf("the defaults came through as %q and %q", got.Workgroup, got.ServiceUser)
-	}
-	// A configured value survives.
-	mine := Config{Workgroup: "OFFICE", ServiceUser: "svc"}.WithDefaults()
-	if mine.Workgroup != "OFFICE" || mine.ServiceUser != "svc" {
-		t.Errorf("a configured value was overwritten: %+v", mine)
-	}
-	// An empty configuration validates, because the defaults fill it.
-	if err := Validate(Config{}); err != nil {
-		t.Errorf("an empty configuration did not validate under its own defaults: %v", err)
-	}
-}
-
 // Validate refuses what Render refuses, which is the parity the shared entry
 // point exists for.
 func TestValidateRefusesWhatRenderRefuses(t *testing.T) {

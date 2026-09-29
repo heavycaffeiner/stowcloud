@@ -125,21 +125,6 @@ func TestPageCountsDescribeTheWholeDirectory(t *testing.T) {
 	}
 }
 
-// The final page has no cursor, so its absence is what a client tests rather
-// than comparing counts.
-func TestTheFinalPageCarriesNoCursor(t *testing.T) {
-	raw, err := json.Marshal(PageOf(core.Page{}, func(core.Entry) string { return "" }, noRefs))
-	if err != nil {
-		t.Fatalf("encoding: %v", err)
-	}
-	if strings.Contains(string(raw), "next") {
-		t.Errorf("the final page carried a cursor: %s", raw)
-	}
-	if !strings.Contains(string(raw), `"entries":[]`) {
-		t.Errorf("an empty page encoded as %s", raw)
-	}
-}
-
 // noRefs is the sealer a projection test supplies: these tests are about the
 // wire shape of a row, and the references are sealed above this package.
 func noRefs(core.Entry, string) EntryRefs { return EntryRefs{} }

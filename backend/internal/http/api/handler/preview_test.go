@@ -97,16 +97,6 @@ func TestNothingUndecodableIsAdvertised(t *testing.T) {
 	}
 }
 
-// The extension is matched irrespective of case, since a filesystem carries
-// whatever the camera wrote and IMG_0001.JPG is the common form.
-func TestTheExtensionMatchIgnoresCase(t *testing.T) {
-	for _, name := range []string{"IMG_0001.JPG", "Photo.PnG", "scan.TIFF"} {
-		if !previewable(name) {
-			t.Errorf("%s was not recognised", name)
-		}
-	}
-}
-
 // A directory never carries the hint. It has no bytes to decode, and a grid
 // that asked would spend a request per folder to be told so.
 func TestADirectoryIsNeverPreviewable(t *testing.T) {

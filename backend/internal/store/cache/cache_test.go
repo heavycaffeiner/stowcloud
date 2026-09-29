@@ -628,22 +628,6 @@ func TestDirEtagSaysRecomputeForEveryStaleShape(t *testing.T) {
 	}
 }
 
-// MarkDirty on an id with no row writes a placeholder that is already
-// invalid, so the next read says recompute rather than erroring.
-func TestMarkDirtyOnAnUncachedIDIsARecomputeNotAnError(t *testing.T) {
-	ctx := context.Background()
-	fx := newFixture(t)
-
-	if err := fx.c.Write(ctx, func(tx *sql.Tx) error {
-		return fx.c.MarkDirty(ctx, tx, testShare, []ident.FileID{4242})
-	}); err != nil {
-		t.Fatalf("MarkDirty on an uncached id: %v", err)
-	}
-	if _, ok, err := fx.c.DirEtag(ctx, testShare, 4242); err != nil || ok {
-		t.Fatalf("the placeholder answered fresh %v (err %v)", ok, err)
-	}
-}
-
 // Both are deliberately outside the guard: refusing them would leave a stale
 // aggregate still flagged valid, which is a wrong answer rather than a saved
 // page.

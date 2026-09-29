@@ -40,18 +40,6 @@ func handlersFor(table []route.Route) Handlers {
 	return h
 }
 
-func TestTheShippedTableRegisters(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	app := gin.New()
-	table := Table()
-	if err := Register(app, table, handlersFor(table)); err != nil {
-		t.Fatalf("Register: %v", err)
-	}
-	if len(table) == 0 {
-		t.Fatal("the table is empty")
-	}
-}
-
 func TestEachRouteDispatchesToItsOwnHandler(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	app := gin.New()

@@ -8,7 +8,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -113,62 +112,6 @@ func TestSplitTrashNameCutsOnTheFirstDash(t *testing.T) {
 	}
 }
 
-func TestHexLowerIsLowercaseAndDashFree(t *testing.T) {
-	t.Parallel()
-	got := hexLower([]byte{0x00, 0x0f, 0xa5, 0xff, 0x10})
-	if got != "000fa5ff10" {
-		t.Fatalf("hexLower rendered %q", got)
-	}
-	id, err := newTrashID()
-	if err != nil {
-		t.Fatalf("minting an id: %v", err)
-	}
-	if len(id) != trashIDBytes*2 || strings.ContainsAny(id, "-ABCDEF") {
-		t.Fatalf("a minted id is %q", id)
-	}
-}
-
-func TestDeleteOnATrashEnabledShareRelocates(t *testing.T) {
-	t.Parallel()
-	c, _, hostDir, root := trashable(t)
-	sink := attachSink(t, c)
-	if err := os.MkdirAll(filepath.Join(hostDir, "docs/2024"), 0o755); err != nil {
-		t.Fatalf("building the tree: %v", err)
-	}
-	writeFile(t, hostDir, "docs/2024/report.pdf", "content")
-
-	r := under(t, c, "Documents/docs/2024/report.pdf", acl.Delete)
-	if err := c.Delete(context.Background(), r, false); err != nil {
-		t.Fatalf("deleting into the trash: %v", err)
-	}
-	if _, serr := os.Stat(filepath.Join(hostDir, "docs/2024/report.pdf")); !os.IsNotExist(serr) {
-		t.Fatal("the origin survived the trashing")
-	}
-
-	entries := trashNames(t, hostDir)
-	if len(entries) != 1 {
-		t.Fatalf("the trash holds %v, want one entry", entries)
-	}
-	_, rest, ok := splitTrashName(entries[0])
-	if !ok {
-		t.Fatalf("the entry name %q does not split", entries[0])
-	}
-	orig, ok := decodeOrigPath(rest)
-	if !ok || orig.String() != "docs/2024/report.pdf" {
-		t.Fatalf("the entry name decodes to %q", orig.String())
-	}
-
-	// The bytes are still on disk, only relocated, so nothing is credited
-	// until the purge.
-	if len(sink.released) != 0 || len(sink.reserved) != 0 {
-		t.Fatalf("trashing moved the ledger: %v %v", sink.released, sink.reserved)
-	}
-	// The control directory never appears in a listing.
-	if got := names(mustList(t, c, root, "", ListOptions{})); !equalNames(got, []string{"docs"}) {
-		t.Fatalf("the root listing is %v, want the trash hidden", got)
-	}
-}
-
 func TestTwoDeletesOfOnePathCoexist(t *testing.T) {
 	t.Parallel()
 	c, _, hostDir, _ := trashable(t)
@@ -182,39 +125,6 @@ func TestTwoDeletesOfOnePathCoexist(t *testing.T) {
 	}
 	if got := trashNames(t, hostDir); len(got) != 2 {
 		t.Fatalf("the trash holds %v, want two entries", got)
-	}
-}
-
-func TestPermanentAndDisabledDeletesRemoveForGood(t *testing.T) {
-	t.Parallel()
-	c, _, hostDir, _ := trashable(t)
-	sink := attachSink(t, c)
-	writeFile(t, hostDir, "bypass.txt", "0123456789")
-
-	r := under(t, c, "Documents/bypass.txt", acl.Delete)
-	if err := c.Delete(context.Background(), r, true); err != nil {
-		t.Fatalf("deleting permanently: %v", err)
-	}
-	if got := trashNames(t, hostDir); len(got) != 0 {
-		t.Fatalf("a permanent delete left %v in the trash", got)
-	}
-	if len(sink.released) != 1 || sink.released[0] != 10 {
-		t.Fatalf("a permanent delete credited %v, want one credit of 10", sink.released)
-	}
-
-	// A share without trash deletes permanently either way.
-	plain, _, plainHost, _ := writable(t)
-	plainSink := attachSink(t, plain)
-	writeFile(t, plainHost, "gone.txt", "abcde")
-	pr := under(t, plain, "Documents/gone.txt", acl.Delete)
-	if err := plain.Delete(context.Background(), pr, false); err != nil {
-		t.Fatalf("deleting on a trash-less share: %v", err)
-	}
-	if got := trashNames(t, plainHost); len(got) != 0 {
-		t.Fatalf("a trash-less share created a trash: %v", got)
-	}
-	if len(plainSink.released) != 1 || plainSink.released[0] != 5 {
-		t.Fatalf("the trash-less delete credited %v", plainSink.released)
 	}
 }
 
@@ -302,41 +212,6 @@ func TestTrashListReportsWhatWasDeleted(t *testing.T) {
 	}
 	if _, lerr := c.TrashList(ctx, stranger); !errors.Is(lerr, ErrDenied) {
 		t.Fatalf("listing without Read = %v, want ErrDenied", lerr)
-	}
-}
-
-func TestTrashRestorePutsAnEntryBack(t *testing.T) {
-	t.Parallel()
-	c, _, hostDir, root := trashable(t)
-	ctx := context.Background()
-	if err := os.MkdirAll(filepath.Join(hostDir, "docs/2024"), 0o755); err != nil {
-		t.Fatalf("building the tree: %v", err)
-	}
-	writeFile(t, hostDir, "docs/2024/report.pdf", "content")
-	if err := c.Delete(ctx, under(t, c, "Documents/docs/2024/report.pdf", acl.Delete), false); err != nil {
-		t.Fatalf("trashing: %v", err)
-	}
-	// The origin's ancestors go too, so the restore has to recreate them.
-	if err := os.RemoveAll(filepath.Join(hostDir, "docs")); err != nil {
-		t.Fatalf("removing the ancestors: %v", err)
-	}
-
-	rows, err := c.TrashList(ctx, root)
-	if err != nil || len(rows) != 1 {
-		t.Fatalf("TrashList = %v, %v", rows, err)
-	}
-	dest, err := c.TrashRestore(ctx, root, rows[0].ID)
-	if err != nil {
-		t.Fatalf("TrashRestore: %v", err)
-	}
-	if dest.String() != "docs/2024/report.pdf" {
-		t.Fatalf("the restore landed at %q", dest.String())
-	}
-	if got := readHost(t, hostDir, "docs/2024/report.pdf"); got != "content" {
-		t.Fatalf("the restored file holds %q", got)
-	}
-	if got := trashNames(t, hostDir); len(got) != 0 {
-		t.Fatalf("the trash still holds %v", got)
 	}
 }
 

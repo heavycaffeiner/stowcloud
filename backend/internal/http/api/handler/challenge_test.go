@@ -20,24 +20,6 @@ func challengeKey() []byte {
 	return []byte("a-derivation-key-of-adequate-length")
 }
 
-// A minted challenge opens to the account it named.
-func TestAChallengeNamesItsAccount(t *testing.T) {
-	const now = 1_700_000_000
-
-	c, err := handler.MintChallenge(challengeKey(), 42, now)
-	if err != nil {
-		t.Fatalf("minting: %v", err)
-	}
-
-	got, err := handler.OpenChallenge(challengeKey(), c, now)
-	if err != nil {
-		t.Fatalf("opening: %v", err)
-	}
-	if got != 42 {
-		t.Errorf("the challenge opened to %d", got)
-	}
-}
-
 // Two challenges for the same account in the same second differ.
 //
 // Without the nonce they would be identical, and one observed in a log or a

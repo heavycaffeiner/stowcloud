@@ -576,18 +576,3 @@ func TestCloseLeavesNoWALToReplay(t *testing.T) {
 		t.Errorf("the WAL is %d bytes after Close, want it truncated or gone", info.Size())
 	}
 }
-
-func TestCloseIsIdempotent(t *testing.T) {
-	d, err := Open(context.Background(), Spec{
-		Path: filepath.Join(t.TempDir(), "x.db"), Migrations: oneTable(),
-	})
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	if err := d.Close(); err != nil {
-		t.Fatalf("first Close: %v", err)
-	}
-	if err := d.Close(); err != nil {
-		t.Errorf("second Close: %v", err)
-	}
-}

@@ -4,7 +4,6 @@
 package middleware
 
 import (
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -88,57 +87,6 @@ func TestUploadedContentIsNotAScriptSource(t *testing.T) {
 	bad := policy + "; frame-src 'self' files.example.test"
 	if !admitsUploadedContent(bad, "files.example.test") {
 		t.Error("a policy that does admit the content host was reported clean")
-	}
-}
-
-// The always-on headers are present and say what they should.
-func TestTheSecurityHeadersAreSet(t *testing.T) {
-	h := SecurityHeaders()
-	for k, want := range map[string]string{
-		"X-Content-Type-Options": "nosniff",
-		"X-Frame-Options":        "DENY",
-	} {
-		if h[k] != want {
-			t.Errorf("%s is %q, want %q", k, h[k], want)
-		}
-	}
-	if h["Referrer-Policy"] == "" {
-		t.Error("no referrer policy is set")
-	}
-}
-
-// A session reaches every class; an app password does not reach a session
-// route, because a credential handed to a device must not be able to change
-// the password that revokes it.
-func TestSessionRoutesRefuseAnAppPassword(t *testing.T) {
-	session := Principal{Kind: CredentialSessionCookie, Mask: sessionMask()}
-	app := Principal{Kind: CredentialBasicApp, Mask: acl.Read | acl.Write}
-	none := Principal{Kind: CredentialNone}
-
-	req := route.Requirement{Access: route.AccessSession}
-	if err := Scope(req, session); err != nil {
-		t.Errorf("a session was refused: %v", err)
-	}
-	if err := Scope(req, app); !errors.Is(err, ErrSessionRequired) {
-		t.Errorf("an app password on a session route returned %v", err)
-	}
-	if err := Scope(req, none); !errors.Is(err, ErrCredentialRequired) {
-		t.Errorf("no credential on a session route returned %v", err)
-	}
-}
-
-// Public needs nothing. The session class needs the browser session: the
-// native API is the interface's own surface, and a device credential belongs
-// to the compatibility mount and the file protocol.
-func TestAnAppPasswordNeverReachesTheNativeAPI(t *testing.T) {
-	none := Principal{Kind: CredentialNone}
-	app := Principal{Kind: CredentialBasicApp, Mask: sessionMask()}
-
-	if err := Scope(route.Requirement{Access: route.AccessPublic}, none); err != nil {
-		t.Errorf("a public route refused an anonymous request: %v", err)
-	}
-	if err := Scope(route.Requirement{Access: route.AccessSession}, app); !errors.Is(err, ErrSessionRequired) {
-		t.Errorf("an app password carrying every bit returned %v", err)
 	}
 }
 

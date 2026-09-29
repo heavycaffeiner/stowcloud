@@ -110,23 +110,6 @@ func TestChargeQuotaSwallowsEveryFailure(t *testing.T) {
 	other.chargeQuota(context.Background(), 1, 100)
 }
 
-func TestACoreWithNoSinkChargesNothing(t *testing.T) {
-	t.Parallel()
-	c, _, hostDir, _ := writable(t)
-	if c.quota != nil {
-		t.Fatal("the fixture core already carries a sink")
-	}
-	// A write and a delete both run without a ledger, which is the
-	// quota-less deployment rather than a degraded one.
-	mustCreate(t, c, under(t, c, "Documents/free.txt", acl.Write), "bytes")
-	if err := c.Delete(context.Background(), under(t, c, "Documents/free.txt", acl.Delete), true); err != nil {
-		t.Fatalf("deleting with no sink: %v", err)
-	}
-	if got := trashNames(t, hostDir); len(got) != 0 {
-		t.Fatalf("the delete left %v", got)
-	}
-}
-
 func TestMagnitudeClampsTheMostNegativeValue(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

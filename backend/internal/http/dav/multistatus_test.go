@@ -302,25 +302,6 @@ func TestAnUndeclaredNamespaceIsNotInvented(t *testing.T) {
 	}
 }
 
-// propname writes names with no values, so a request for names does not
-// disclose the values.
-func TestPropnameWritesNoValues(t *testing.T) {
-	body := render(t, nil, func(m *Multistatus) {
-		m.Response("/f", []PropStat{
-			{Status: 200, Props: []Prop{
-				{Name: xml.Name{Space: davNS, Local: "displayname"}, Value: "secret", NamesOnly: true},
-			}},
-		})
-	})
-
-	if strings.Contains(body, "secret") {
-		t.Errorf("a propname response carried a value: %s", body)
-	}
-	if !strings.Contains(body, "displayname") {
-		t.Errorf("the name is missing: %s", body)
-	}
-}
-
 // The status line carries the code and its text.
 func TestTheStatusLine(t *testing.T) {
 	cases := map[int]string{

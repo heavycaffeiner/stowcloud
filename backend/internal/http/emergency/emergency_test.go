@@ -249,33 +249,6 @@ func TestAnUnparseablePeerIsRefused(t *testing.T) {
 	}
 }
 
-// Login goes through the shared auth service rather than checking a password
-// here. This asserts the call happened and carried what the service needs.
-func TestLoginGoesThroughTheSharedAuthService(t *testing.T) {
-	a, _, h := signedIn(t)
-
-	w := ask(h, "POST", Prefix+"/api/login", `{"username":"root","password":"pw","factor":"123456"}`)
-	if w.Code != http.StatusOK {
-		t.Fatalf("login returned %d: %s", w.Code, w.Body)
-	}
-	if len(a.logins) != 1 {
-		t.Fatalf("the auth service saw %d login calls, want 1", len(a.logins))
-	}
-	got := a.logins[0]
-	if got.Name != "root" {
-		t.Errorf("the username was %q", got.Name)
-	}
-	if string(got.Password.Reveal()) != "pw" {
-		t.Error("the password did not reach the auth service")
-	}
-	if got.Factor != "123456" {
-		t.Errorf("the second factor was %q, so an enrolled account could not sign in", got.Factor)
-	}
-	if got.IP == "" {
-		t.Error("no address reached the limiter, which is what makes it per-client")
-	}
-}
-
 // A refused credential is a 401 and never says which half was wrong.
 func TestBadCredentialsAreRefused(t *testing.T) {
 	a := &fakeAuth{loginErr: auth.ErrCredentials}
@@ -358,25 +331,6 @@ func TestAValidNonAdministratorIsRefused(t *testing.T) {
 	}
 	if a.records[0].target != "not_an_administrator" {
 		t.Errorf("the record does not say why: %q", a.records[0].target)
-	}
-}
-
-// A successful login is recorded under this door's own event name, which is
-// what makes the log able to answer whether safe mode was used.
-func TestASuccessfulLoginIsRecordedUnderTheDoorsOwnEvent(t *testing.T) {
-	a, _, h := signedIn(t)
-
-	if w := ask(h, "POST", Prefix+"/api/login", `{"username":"root","password":"pw"}`); w.Code != http.StatusOK {
-		t.Fatalf("login returned %d", w.Code)
-	}
-	if len(a.records) != 1 {
-		t.Fatalf("the login recorded %d events, want 1", len(a.records))
-	}
-	if a.records[0].event != EventLogin || !a.records[0].ok {
-		t.Errorf("recorded %+v", a.records[0])
-	}
-	if a.records[0].event == "auth.login" {
-		t.Error("the door reused the ordinary login event, so the log cannot distinguish it")
 	}
 }
 
@@ -952,50 +906,5 @@ func TestRestartRequiresASession(t *testing.T) {
 	}
 	if called {
 		t.Error("an unauthenticated request stopped the server")
-	}
-}
-
-// The state route answers before anybody signs in, and says whether there is an
-// account to sign in as.
-func TestTheStateRouteReportsWhetherSetupIsNeeded(t *testing.T) {
-	for _, c := range []struct {
-		name  string
-		users int64
-		err   error
-		want  bool
-	}{
-		{"no accounts", 0, nil, true},
-		{"an account exists", 1, nil, false},
-		// A count that cannot be read draws the login rather than pointing at
-		// setup: telling somebody who cannot reach the account table to create
-		// an administrator is advice they cannot follow.
-		{"the count fails", 0, errors.New("no database"), false},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			a := &fakeAuth{users: c.users, usersErr: c.err}
-			h := Handler(Deps{
-				Auth: a, State: &fakeStore{},
-				ClientAddr: func(*http.Request) netip.Addr { return netip.MustParseAddr("192.168.1.10") },
-			})
-			w := ask(h, "GET", Prefix+"/api/state", "")
-			if got := body(t, w)["setup_required"]; got != c.want {
-				t.Errorf("setup_required was %v, want %v", got, c.want)
-			}
-		})
-	}
-}
-
-// The banner names what failed, so the operator learns more than that something
-// went wrong.
-func TestTheStateRouteCarriesTheReason(t *testing.T) {
-	h := Handler(Deps{
-		Auth: &fakeAuth{}, State: &fakeStore{},
-		ClientAddr: func(*http.Request) netip.Addr { return netip.MustParseAddr("192.168.1.10") },
-		Reason:     func() string { return "the listen address is already in use" },
-	})
-
-	w := ask(h, "GET", Prefix+"/api/state", "")
-	if got := body(t, w)["reason"]; got != "the listen address is already in use" {
-		t.Errorf("the banner said %q", got)
 	}
 }

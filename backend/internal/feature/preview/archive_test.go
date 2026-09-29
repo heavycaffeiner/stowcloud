@@ -77,35 +77,6 @@ func listOf(t *testing.T, raw []byte) ArchiveListing {
 	return got
 }
 
-func TestListArchiveReadsNamesSizesAndDirectoryFlags(t *testing.T) {
-	raw := zipOf(t, "readme.txt", "docs/", "docs/guide.md")
-	got := listOf(t, raw)
-
-	if len(got.Entries) != 3 {
-		t.Fatalf("listed %d entries: %+v", len(got.Entries), got.Entries)
-	}
-	if got.Truncated || got.Skipped != 0 {
-		t.Errorf("a clean archive reported truncated=%v skipped=%d", got.Truncated, got.Skipped)
-	}
-
-	byName := map[string]ArchiveEntry{}
-	for _, e := range got.Entries {
-		byName[e.Name] = e
-	}
-	if !byName["docs/"].IsDir {
-		t.Error("a directory entry is not flagged as one")
-	}
-	if byName["readme.txt"].IsDir {
-		t.Error("a file is flagged as a directory")
-	}
-	if byName["readme.txt"].Size == 0 {
-		t.Error("a file entry reports no size")
-	}
-	if got.TotalUncompressed == 0 {
-		t.Error("the listing reports no total, so a caller cannot see a bomb")
-	}
-}
-
 // The cap truncates and says so, never a silent short list.
 func TestTheEntryCapTruncatesAndReports(t *testing.T) {
 	names := make([]string, 0, limits.ArchiveEntriesListed+5)

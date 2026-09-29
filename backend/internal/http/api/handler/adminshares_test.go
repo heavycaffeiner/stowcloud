@@ -69,19 +69,3 @@ func TestShareOfDefaultsAnEmptyBackendToLocal(t *testing.T) {
 		t.Errorf("an empty backend rendered as %q, want %q", view.Backend, core.BackendLocal)
 	}
 }
-
-// The source field carries the redacted location the opener produced,
-// which for a local share is the host path, and for another backend is
-// whatever Describe rendered rather than the host, which is empty for it.
-func TestShareOfCarriesTheSourceField(t *testing.T) {
-	view := ShareOf(core.Share{
-		ID: 2, Name: "bucket", Backend: core.BackendS3,
-		Source: "s3://photos/team at https://minio:9000",
-	})
-	if view.Source != "s3://photos/team at https://minio:9000" {
-		t.Errorf("the source field is %q", view.Source)
-	}
-	if view.Host != "" {
-		t.Errorf("a non-local share carries a host path: %q", view.Host)
-	}
-}

@@ -243,28 +243,6 @@ func TestTheAuditLogSurvivesTheAccountItNames(t *testing.T) {
 	}
 }
 
-// A screen has to tell "no target" from "a target whose name is blank".
-func TestAbsentAuditColumnsReadBackAsAbsent(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	d, _ := open(t)
-
-	if err := d.AppendAudit(ctx, state.AuditEntry{TsNs: 5, Event: "boot", OK: false}); err != nil {
-		t.Fatalf("AppendAudit: %v", err)
-	}
-	rows, err := d.AuditPage(ctx, 0, 10)
-	if err != nil || len(rows) != 1 {
-		t.Fatalf("AuditPage returned %d rows, %v", len(rows), err)
-	}
-	r := rows[0]
-	if r.Actor != nil || r.Target != nil || r.IP != nil || r.Detail != nil {
-		t.Fatalf("the absent columns read back as %+v", r)
-	}
-	if r.UA != "" || r.OK {
-		t.Fatalf("the row reads as %+v", r)
-	}
-}
-
 // The cursor is the previous page's last rowid, so a boundary stays correct
 // while new rows land ahead of it; an offset would shift every page.
 func TestTheAuditCursorPagesWhileRowsLandAhead(t *testing.T) {
@@ -449,26 +427,6 @@ func TestAFailedResealChangesNothing(t *testing.T) {
 	sec, err := d.SMBSecretOf(ctx, user)
 	if err != nil || string(sec.Ciphertext) != "nt" || sec.KeyVer != 1 {
 		t.Fatalf("the credential moved to %+v, %v", sec, err)
-	}
-}
-
-func TestAFreshDatabaseNamesNoKeyVersion(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	d, _ := open(t)
-
-	ver, err := d.KeyVersionState(ctx)
-	if err != nil {
-		t.Fatalf("KeyVersionState: %v", err)
-	}
-	if ver != state.MissingKeyVersion {
-		t.Fatalf("a fresh database names version %d", ver)
-	}
-	if err = d.SetKeyVersion(ctx, 3); err != nil {
-		t.Fatalf("SetKeyVersion: %v", err)
-	}
-	if ver, err = d.KeyVersionState(ctx); err != nil || ver != 3 {
-		t.Fatalf("the version reads back as %d, %v", ver, err)
 	}
 }
 

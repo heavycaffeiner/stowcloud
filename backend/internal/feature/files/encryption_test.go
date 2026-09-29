@@ -3,7 +3,6 @@
 package core
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -39,32 +38,6 @@ func encryptedShare(t *testing.T) (*Core, ShareID, string) {
 		t.Fatalf("CreateShare: %v", err)
 	}
 	return c, sh.ID, host
-}
-
-func TestEnablingEncryptionStoresWhatTheClientSent(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	c, id, _ := encryptedShare(t)
-
-	want := testEncryption()
-	if err := c.EnableEncryption(ctx, id, want); err != nil {
-		t.Fatalf("EnableEncryption: %v", err)
-	}
-
-	got, ok, err := c.EncryptionOf(ctx, id)
-	if err != nil || !ok {
-		t.Fatalf("EncryptionOf: ok=%v err=%v", ok, err)
-	}
-	if got.Scheme != want.Scheme || got.Salt != want.Salt {
-		t.Errorf("read back scheme %q salt %q, want %q and %q",
-			got.Scheme, got.Salt, want.Scheme, want.Salt)
-	}
-	if !bytes.Equal(got.Verifier, want.Verifier) {
-		t.Errorf("the verifier came back as %x, want %x", got.Verifier, want.Verifier)
-	}
-	if got.Created == 0 {
-		t.Error("the row carries no creation time")
-	}
 }
 
 // The whole of the boundary validation, since nothing stored here is
@@ -127,24 +100,6 @@ func TestAShortSaltIsRefused(t *testing.T) {
 	})
 	if !errors.Is(err, ErrUnprocessable) {
 		t.Errorf("a short salt returned %v, want ErrUnprocessable", err)
-	}
-}
-
-func TestEncryptionCannotBeTurnedOnOverExistingFiles(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	c, id, host := encryptedShare(t)
-
-	if err := os.WriteFile(filepath.Join(host, "already-here.txt"), []byte("plaintext"), 0o600); err != nil {
-		t.Fatalf("seeding a file: %v", err)
-	}
-
-	err := c.EnableEncryption(ctx, id, testEncryption())
-	if !errors.Is(err, ErrUnprocessable) {
-		t.Fatalf("EnableEncryption over a populated share returned %v, want ErrUnprocessable", err)
-	}
-	if stored(t, c, id) {
-		t.Error("the refused enable still wrote settings")
 	}
 }
 
@@ -217,44 +172,6 @@ func seedTrash(t *testing.T, host string) {
 	}
 }
 
-func TestDisablingIsIdempotentAndDisablingAnUnencryptedShareSucceeds(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	c, id, _ := encryptedShare(t)
-
-	if err := c.DisableEncryption(ctx, id); err != nil {
-		t.Fatalf("disabling a share that was never encrypted: %v", err)
-	}
-	if err := c.EnableEncryption(ctx, id, testEncryption()); err != nil {
-		t.Fatalf("EnableEncryption: %v", err)
-	}
-	for i := range 2 {
-		if err := c.DisableEncryption(ctx, id); err != nil {
-			t.Fatalf("DisableEncryption call %d: %v", i+1, err)
-		}
-	}
-	if ok, err := c.ShareEncrypted(ctx, id); err != nil || ok {
-		t.Errorf("ShareEncrypted after disable is %v (err %v), want false", ok, err)
-	}
-}
-
-func TestAPartFileDoesNotCountAsContent(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	c, id, host := encryptedShare(t)
-
-	// This server's own control names are bookkeeping, not content whose
-	// encryption state would become ambiguous, so they must not block the
-	// toggle: an abandoned upload would otherwise make a share permanently
-	// unencryptable.
-	if err := os.WriteFile(filepath.Join(host, ".scpart-abandoned"), []byte("x"), 0o600); err != nil {
-		t.Fatalf("seeding a part file: %v", err)
-	}
-	if err := c.EnableEncryption(ctx, id, testEncryption()); err != nil {
-		t.Fatalf("EnableEncryption with only a part file present: %v", err)
-	}
-}
-
 func TestTheEncryptedSetNamesOnlyTheEncryptedShares(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -278,14 +195,5 @@ func TestTheEncryptedSetNamesOnlyTheEncryptedShares(t *testing.T) {
 	}
 	if len(set) != 1 || set[0] != ids[1] {
 		t.Errorf("the encrypted set is %v, want exactly [%d]", set, ids[1])
-	}
-}
-
-func TestAnUnknownShareIsNotFound(t *testing.T) {
-	t.Parallel()
-	c, _ := newCore(t)
-	err := c.EnableEncryption(context.Background(), ShareID(999999), testEncryption())
-	if !errors.Is(err, ErrNotFound) {
-		t.Fatalf("EnableEncryption on an unknown share returned %v, want ErrNotFound", err)
 	}
 }

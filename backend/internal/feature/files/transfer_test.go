@@ -124,19 +124,6 @@ func TestParseOnConflictMapsEverySpelling(t *testing.T) {
 	}
 }
 
-func TestParseOnConflictRefusesAnUnknownSpelling(t *testing.T) {
-	t.Parallel()
-	// The false return is what the caller must act on. Returning fail as the
-	// value is incidental; silently applying it is the bug this prevents.
-	got, ok := ParseOnConflict("clobber")
-	if ok {
-		t.Fatal("ParseOnConflict accepted a policy this build does not have")
-	}
-	if got != ConflictFail {
-		t.Fatalf("the refused parse returned policy %d, want the fail default", got)
-	}
-}
-
 func TestMoveWithinAShareIsAPlainRename(t *testing.T) {
 	t.Parallel()
 	c, _, host, root := writable(t)

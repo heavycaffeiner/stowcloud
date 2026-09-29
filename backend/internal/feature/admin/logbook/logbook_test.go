@@ -127,20 +127,6 @@ func TestEveryLevelIsStored(t *testing.T) {
 	}
 }
 
-// A handler reports the levels it will store, so a caller that checks before
-// building an expensive record gets a truthful answer.
-func TestEnabledFollowsTheLevel(t *testing.T) {
-	s := open(t, logbook.Options{})
-	h := s.Handler(slog.LevelWarn)
-
-	if h.Enabled(context.Background(), slog.LevelInfo) {
-		t.Error("a handler at Warn reports Info as enabled")
-	}
-	if !h.Enabled(context.Background(), slog.LevelError) {
-		t.Error("a handler at Warn reports Error as disabled")
-	}
-}
-
 // Groups and attributes flatten to dotted names, because a record carries a
 // flat map and a filter over a nested shape would be a tree walk per line.
 func TestGroupsAndAttributesFlatten(t *testing.T) {

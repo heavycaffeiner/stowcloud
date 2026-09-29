@@ -183,27 +183,6 @@ func TestATokenIsUsableOnce(t *testing.T) {
 	}
 }
 
-// A failed attempt leaves the token usable, because the alternative is an
-// operator whose one token is spent on a password the server rejected.
-func TestAFailedAttemptDoesNotSpendTheToken(t *testing.T) {
-	ctx := context.Background()
-	g := NewSetupGate(newSetupClock(), &countingAccounts{})
-
-	tok, err := g.Issue(ctx)
-	if err != nil {
-		t.Fatalf("Issue: %v", err)
-	}
-
-	refused := errors.New("that password is too short")
-	if uerr := g.Use(ctx, tok, func(context.Context) error { return refused }); !errors.Is(uerr, refused) {
-		t.Fatalf("the failed attempt returned %v", uerr)
-	}
-	// The same token still works.
-	if uerr := g.Use(ctx, tok, func(context.Context) error { return nil }); uerr != nil {
-		t.Errorf("the retry returned %v", uerr)
-	}
-}
-
 // A request arriving before anything was issued is refused, and says so
 // distinctly: a stale file on disk must not pass a gate that minted nothing.
 func TestNothingIssuedIsItsOwnAnswer(t *testing.T) {

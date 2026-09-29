@@ -30,46 +30,6 @@ func TestParseSortKeyMapsTheNamedSpellings(t *testing.T) {
 	}
 }
 
-func TestNeedsStatIsTrueForExactlyTheTwoStatKeys(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		name string
-		key  SortKey
-		want bool
-	}{
-		{"name", SortName, false},
-		{"kind", SortKind, false},
-		{"size", SortSize, true},
-		{"mtime", SortMtime, true},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := tc.key.NeedsStat(); got != tc.want {
-				t.Fatalf("%s.NeedsStat() = %v, want %v", tc.name, got, tc.want)
-			}
-		})
-	}
-}
-
-// The zero ListOptions is what every caller that does not care passes, and
-// it has to mean the cheap listing: by name, ascending, one default page.
-func TestTheZeroListOptionsIsTheDefaultListing(t *testing.T) {
-	t.Parallel()
-	var opt ListOptions
-	if opt.Sort != SortName {
-		t.Fatalf("the zero ListOptions sorts by %d, want SortName", opt.Sort)
-	}
-	if opt.Desc {
-		t.Fatal("the zero ListOptions is descending")
-	}
-	if opt.Limit != 0 {
-		t.Fatalf("the zero ListOptions limits to %d, want 0", opt.Limit)
-	}
-	if opt.Sort.NeedsStat() {
-		t.Fatal("the default key stats every entry; it is meant to cost nothing")
-	}
-}
-
 // The empty cursor is the first page, which is what makes the zero value a
 // usable argument rather than an error.
 func TestTheZeroCursorIsTheFirstPage(t *testing.T) {

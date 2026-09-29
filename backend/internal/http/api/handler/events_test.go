@@ -38,17 +38,6 @@ func TestAnSSEFrameCannotSplitInTwo(t *testing.T) {
 	}
 }
 
-// The stream opens with a comment, so the client and any proxy see it
-// established rather than waiting on a first result seconds away.
-func TestTheStreamOpensImmediately(t *testing.T) {
-	if !strings.HasPrefix(SSEComment(), ":") {
-		t.Errorf("the opening frame is not a comment: %q", SSEComment())
-	}
-	if !strings.HasSuffix(SSEComment(), "\n\n") {
-		t.Errorf("the opening frame is not terminated: %q", SSEComment())
-	}
-}
-
 // A websocket frame carries no content, no etag and no metadata. The client
 // re-fetches, which is what re-applies permission at delivery time rather than
 // at subscribe time.

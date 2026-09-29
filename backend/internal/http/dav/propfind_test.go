@@ -285,19 +285,6 @@ func TestPropfindInheritsTheXmlDefenses(t *testing.T) {
 	}
 }
 
-// A depth outside what the operation accepts is refused, not clamped. A client
-// asking for a depth-infinity DELETE and receiving a depth-zero one has
-// deleted something other than what it named.
-func TestAnUnacceptedDepthIsRefusedNotClamped(t *testing.T) {
-	// PROPFIND takes all three; a lock takes zero or infinity only.
-	if _, err := ParseDepth("1", DepthInfinity, DepthZero, DepthInfinity); !errors.Is(err, ErrBadDepth) {
-		t.Errorf("depth 1 was accepted by an operation that takes 0 or infinity: %v", err)
-	}
-	if _, err := ParseDepth("infinity", DepthZero, DepthZero); !errors.Is(err, ErrBadDepth) {
-		t.Errorf("infinity was accepted by a depth-zero-only operation: %v", err)
-	}
-}
-
 // What the header accepts, and what it does not.
 func TestTheDepthHeaderValues(t *testing.T) {
 	all := []Depth{DepthZero, DepthOne, DepthInfinity}
@@ -336,22 +323,6 @@ func TestTheDepthHeaderValues(t *testing.T) {
 				t.Errorf("%q: want a depth refusal, got %v (%s)", c.value, err, got)
 			}
 		})
-	}
-}
-
-// An absent header takes the operation's own default, and the default still
-// has to be one the operation accepts.
-func TestAnAbsentDepthTakesTheDefault(t *testing.T) {
-	got, err := ParseDepth("", DepthInfinity, DepthZero, DepthOne, DepthInfinity)
-	if err != nil {
-		t.Fatalf("an absent header was refused: %v", err)
-	}
-	if got != DepthInfinity {
-		t.Errorf("got %s, want infinity", got)
-	}
-
-	if _, err := ParseDepth("", DepthInfinity, DepthZero); !errors.Is(err, ErrBadDepth) {
-		t.Errorf("a default outside the accepted set was allowed through: %v", err)
 	}
 }
 

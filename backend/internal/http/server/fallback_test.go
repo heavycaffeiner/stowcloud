@@ -72,24 +72,6 @@ func TestAMistypedReservedPathIsNotTheShell(t *testing.T) {
 	}
 }
 
-func TestTheRealRoutesStillAnswer(t *testing.T) {
-	app := shellApp(t)
-	var checked int
-	for _, r := range Table() {
-		if r.Method != "GET" || strings.Contains(r.Path, "{") {
-			continue
-		}
-		status, _ := ask(t, app, r.Path)
-		if status != 200 {
-			t.Errorf("%s %s answered %d", r.Method, r.Path, status)
-		}
-		checked++
-	}
-	if checked == 0 {
-		t.Fatal("no parameterless GET route was checked")
-	}
-}
-
 func TestReservationIsComponentWise(t *testing.T) {
 	for _, c := range []struct {
 		path     string

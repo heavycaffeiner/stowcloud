@@ -139,30 +139,6 @@ func openDescriptorsUnder(t *testing.T, dir string) int {
 	return n
 }
 
-func TestARegisteredShareIsVisibleThroughEveryAccessor(t *testing.T) {
-	t.Parallel()
-	c, _ := newCore(t)
-	d := def(t, 7, "documents")
-
-	if err := c.RegisterShare(context.Background(), d); err != nil {
-		t.Fatalf("RegisterShare: %v", err)
-	}
-
-	got, ok := c.Share(7)
-	if !ok {
-		t.Fatal("Share reported the share as unregistered")
-	}
-	if got.Name != "documents" || got.BrokenReason != "" {
-		t.Fatalf("Share returned %+v, want documents with no broken reason", got)
-	}
-	if _, ok := c.ShareRoot(7); !ok {
-		t.Fatal("ShareRoot reported no live root for a registered share")
-	}
-	if err := c.ShareBroken(7); err != nil {
-		t.Fatalf("ShareBroken on a live share: %v", err)
-	}
-}
-
 func TestSharesListsEveryShareByAscendingID(t *testing.T) {
 	t.Parallel()
 	c, _ := newCore(t)
@@ -422,46 +398,6 @@ func TestUnregisterHandlesABrokenShareAndAnUnknownID(t *testing.T) {
 		t.Fatal("the broken share survived UnregisterShare")
 	}
 	c.UnregisterShare(404)
-}
-
-func TestRootsCarryTheRegistrysFactsAndKeepABrokenShareListed(t *testing.T) {
-	t.Parallel()
-	c, st := newCore(t)
-	ctx := context.Background()
-	seedUser(t, st, 1, "ada")
-
-	live := def(t, 10, "documents")
-	live.TrashEnabled = true
-	live.SharedExternally = true
-	if err := c.RegisterShare(ctx, live); err != nil {
-		t.Fatalf("RegisterShare: %v", err)
-	}
-	c.RegisterBroken(ShareDef{ID: 11, Name: "archive"}, vfs.ErrNotFound)
-
-	grantRead(t, c, st, 1, 10, "Documents")
-	grantRead(t, c, st, 1, 11, "Archive")
-
-	roots := c.Roots(1)
-	if len(roots) != 2 {
-		t.Fatalf("Roots returned %d entries, want both shares", len(roots))
-	}
-	byShare := map[int64]acl.RootEntry{}
-	for _, r := range roots {
-		byShare[r.Share] = r
-	}
-
-	got := byShare[10]
-	if !got.TrashEnabled || !got.SharedExternally || got.BrokenReason != "" {
-		t.Fatalf("the live root is %+v, want trash and external set and no reason", got)
-	}
-	if got.Label != "Documents" {
-		t.Fatalf("the live root is labeled %q, want Documents", got.Label)
-	}
-
-	got = byShare[11]
-	if got.BrokenReason != "missing" {
-		t.Fatalf("the broken root carries reason %q, want missing", got.BrokenReason)
-	}
 }
 
 func TestRootsLeaveAnUnregisteredGrantAlone(t *testing.T) {

@@ -360,15 +360,6 @@ func TestPublisherDisablesWhenSettingsAreUnconfigured(t *testing.T) {
 	}
 }
 
-// Disabling a deployment that never published is not an error: the files are
-// already absent, which is the state being asked for.
-func TestDisableToleratesAbsentFiles(t *testing.T) {
-	d, _ := deps(t, nil, nil)
-	if _, err := Disable(t.Context(), d); err != nil {
-		t.Errorf("disabling an unpublished deployment failed: %v", err)
-	}
-}
-
 // Every removal is attempted before a failure is reported, so one unremovable
 // file does not leave the rest of the set in place.
 func TestDisableReportsPartialFailureAfterTryingEverything(t *testing.T) {

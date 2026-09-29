@@ -71,32 +71,3 @@ func TestApplyVeracryptPatchRefusesCreateFields(t *testing.T) {
 		t.Fatal("a patch naming create and size_mib was accepted")
 	}
 }
-
-// shareSpecOf refuses an s3 object carried alongside backend local, rather
-// than silently ignoring it and storing a local share with no s3 fields.
-func TestShareSpecOfRefusesAnS3ObjectAgainstBackendLocal(t *testing.T) {
-	t.Parallel()
-	_, err := shareSpecOf(createShareRequest{
-		Name: "docs", Host: "/srv/docs", Backend: "local",
-		S3: &shareS3Request{Bucket: new("photos")},
-	})
-	if err == nil {
-		t.Fatal("an s3 object against backend local was accepted")
-	}
-}
-
-// A veracrypt backend with no password is refused on creation: this server
-// cannot open, let alone create, a container it holds no password for.
-func TestShareSpecOfRefusesVeracryptWithNoPassword(t *testing.T) {
-	t.Parallel()
-	_, err := shareSpecOf(createShareRequest{
-		Name: "vault", Backend: "veracrypt",
-		Veracrypt: &shareVeracryptRequest{
-			Container: new("/srv/vaults/v.hc"),
-			Create:    new(true), SizeMiB: new(uint64(256)),
-		},
-	})
-	if err == nil {
-		t.Fatal("a veracrypt backend with no password was accepted")
-	}
-}

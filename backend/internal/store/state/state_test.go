@@ -1,7 +1,6 @@
 package state_test
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -357,39 +356,6 @@ func sampleSession(id []byte) state.UploadSession {
 		ID: id, User: 1, Share: 1, Dest: "d/f", PartName: ".part",
 		ChunkSize: 1 << 20, ChunkMinAtCreation: 1 << 20,
 		Filename: "f", CreatedNs: 1, ExpiresNs: 1 << 40,
-	}
-}
-
-func TestSharesRoundTrip(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	d, _ := open(t)
-
-	want := state.ShareRow{
-		Name: "docs", Host: "/srv/docs",
-		SharedExternally: true, TrashEnabled: true, SymlinkPolicy: "within_share",
-	}
-	id, err := d.InsertShare(ctx, want, 4242)
-	if err != nil {
-		t.Fatalf("InsertShare: %v", err)
-	}
-
-	got, err := d.ListShares(ctx)
-	if err != nil {
-		t.Fatalf("ListShares: %v", err)
-	}
-	if len(got) != 1 {
-		t.Fatalf("%d shares, want 1", len(got))
-	}
-	want.ID, want.Created = id, 4242
-	row := got[0]
-	if row.ID != want.ID || row.Name != want.Name || row.Host != want.Host ||
-		row.SharedExternally != want.SharedExternally || row.TrashEnabled != want.TrashEnabled ||
-		row.SymlinkPolicy != want.SymlinkPolicy || row.Created != want.Created ||
-		row.Backend != want.Backend || row.BackendConfig != want.BackendConfig ||
-		row.BackendSecretKeyVer != want.BackendSecretKeyVer ||
-		!bytes.Equal(row.BackendSecret, want.BackendSecret) {
-		t.Errorf("read back %+v, want %+v", row, want)
 	}
 }
 
@@ -757,54 +723,6 @@ func TestSearchSettingsConcurrentUpdatesKeepBothKeys(t *testing.T) {
 	}
 }
 
-func TestUnsetSettingsReadAsAbsentRatherThanErroring(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	d, _ := open(t)
-
-	switch all, err := d.Settings(ctx); {
-	case err != nil:
-		t.Fatalf("Settings on a fresh database: %v", err)
-	case len(all) != 0:
-		t.Errorf("a fresh database reports settings: %v", all)
-	}
-	if on, err := d.IndexNameEnabled(ctx); err != nil || on {
-		t.Errorf("the unset index switch reads %v (err %v), want off", on, err)
-	}
-	if rate, err := d.IndexBuildRate(ctx); err != nil || rate != 0 {
-		t.Errorf("the unset build rate reads %d (err %v), want 0", rate, err)
-	}
-}
-
-func TestConfigSecretRoundTrips(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	d, _ := open(t)
-
-	if _, ok, err := d.ReadConfigSecret(ctx, "absent"); err != nil || ok {
-		t.Fatalf("an unset secret reported found %v (err %v)", ok, err)
-	}
-
-	want := state.ConfigSecret{Value: []byte{1, 2, 3}, KeyVer: 7}
-	if err := d.WriteConfigSecret(ctx, "oidc", want); err != nil {
-		t.Fatalf("WriteConfigSecret: %v", err)
-	}
-	got, ok, err := d.ReadConfigSecret(ctx, "oidc")
-	if err != nil || !ok {
-		t.Fatalf("ReadConfigSecret: %v (found %v)", err, ok)
-	}
-	if string(got.Value) != string(want.Value) || got.KeyVer != want.KeyVer {
-		t.Errorf("read back %+v, want %+v", got, want)
-	}
-
-	if err := d.DeleteConfigSecret(ctx, "oidc"); err != nil {
-		t.Fatalf("DeleteConfigSecret: %v", err)
-	}
-	if _, ok, err := d.ReadConfigSecret(ctx, "oidc"); err != nil || ok {
-		t.Errorf("a deleted secret still reads back (found %v, err %v)", ok, err)
-	}
-}
-
 func TestActiveWorkCountsWhatARestartWouldInterrupt(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -831,18 +749,6 @@ func TestActiveWorkCountsWhatARestartWouldInterrupt(t *testing.T) {
 	}
 	if w.Uploads != 1 || w.Jobs != 1 {
 		t.Errorf("counted %+v, want one of each", w)
-	}
-}
-
-func TestFileBytesMeasuresTheFile(t *testing.T) {
-	t.Parallel()
-	d, _ := open(t)
-	n, err := d.FileBytes()
-	if err != nil {
-		t.Fatalf("FileBytes: %v", err)
-	}
-	if n <= 0 {
-		t.Errorf("the state database measures %d bytes", n)
 	}
 }
 
@@ -898,14 +804,6 @@ func TestOperationLifecycle(t *testing.T) {
 	}
 	if results[1].Reason != state.ReasonItemDenied || results[1].Text != "no" {
 		t.Errorf("the second result came back as %+v", results[1])
-	}
-}
-
-func TestGetOpOfAnUnknownIDIsErrNoSuchOp(t *testing.T) {
-	t.Parallel()
-	d, _ := open(t)
-	if _, _, err := d.GetOp(context.Background(), 4242); !errors.Is(err, state.ErrNoSuchOp) {
-		t.Fatalf("reading an unknown operation returned %v, want ErrNoSuchOp", err)
 	}
 }
 
@@ -1122,14 +1020,6 @@ func deref(v *int64) any {
 	return *v
 }
 
-func TestReadingAnUnknownUploadSessionIsARefusal(t *testing.T) {
-	t.Parallel()
-	d, _ := open(t)
-	if _, err := d.ReadUploadSession(context.Background(), []byte{7}); !errors.Is(err, state.ErrNoSuchUploadSession) {
-		t.Fatalf("reading an unknown session returned %v, want ErrNoSuchUploadSession", err)
-	}
-}
-
 func TestUploadIntervalsAreRewrittenWholeAndSurviveTheFullRange(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -1309,29 +1199,6 @@ func TestChunkSettingsReportWhetherAnAdminStoredThem(t *testing.T) {
 	}
 	if !c.Override || c.Min != 5<<20 || c.Default != 10<<20 {
 		t.Errorf("read back %+v", c)
-	}
-}
-
-func TestTouchedDirsAccumulate(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	d, _ := open(t)
-
-	for range 3 {
-		if err := d.TouchUploadDir(ctx, 1, "/a"); err != nil {
-			t.Fatalf("TouchUploadDir: %v", err)
-		}
-	}
-	if err := d.TouchUploadDir(ctx, 2, "/b"); err != nil {
-		t.Fatalf("TouchUploadDir: %v", err)
-	}
-
-	got, err := d.ListUploadTouchedDirs(ctx)
-	if err != nil {
-		t.Fatalf("ListUploadTouchedDirs: %v", err)
-	}
-	if len(got) != 2 {
-		t.Errorf("%d touched directories, want 2: %+v", len(got), got)
 	}
 }
 

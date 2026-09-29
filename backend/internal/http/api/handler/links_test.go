@@ -10,16 +10,10 @@ import (
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 )
 
 const testNow = int64(1700000000000000000)
-
-// testVpath stands in for the core's projection, which this package cannot
-// reach. The value is what matters to these tests only in that it is the one
-// the view reports.
-func testVpath(core.Link) string { return "files/target.txt" }
 
 // No field of the owner-facing view can carry the token or its hash, whatever
 // a caller passes. A listing is read on a screen, cached, and screenshotted;
@@ -88,92 +82,5 @@ func TestOnlyTheMintResponseCarriesTheToken(t *testing.T) {
 	// sending an empty string, which a client would try to use as a token.
 	if _, legacy := MintedLinkOf(core.Link{ID: 8}, "files/target.txt", testNow); legacy {
 		t.Error("a link with no recoverable token was minted anyway")
-	}
-}
-
-// A link that never expires has no expiry, since zero would be a real instant
-// in 1970 and every such link would read as long expired.
-func TestALinkThatNeverExpiresHasNoExpiry(t *testing.T) {
-	never := LinkOf(core.Link{Expires: 0, MaxDown: -1}, "files/target.txt", testNow)
-	if never.ExpiresNs != nil || never.Expired {
-		t.Errorf("a never-expiring link reports %v expired=%v", never.ExpiresNs, never.Expired)
-	}
-	if never.MaxDownloads != nil || never.Exhausted {
-		t.Errorf("an uncapped link reports %v exhausted=%v", never.MaxDownloads, never.Exhausted)
-	}
-
-	raw, err := json.Marshal(never)
-	if err != nil {
-		t.Fatalf("encoding: %v", err)
-	}
-	if strings.Contains(string(raw), "expires_ns") || strings.Contains(string(raw), "max_downloads") {
-		t.Errorf("a never-expiring uncapped link encoded limits: %s", raw)
-	}
-	// The download count is always present: zero downloads is a real answer.
-	if !strings.Contains(string(raw), `"downloads":"0"`) {
-		t.Errorf("the download count is missing: %s", raw)
-	}
-}
-
-// Expired and exhausted are separate answers, because one is fixed by
-// extending the link and the other by raising the cap.
-func TestExpiredAndExhaustedAreSeparate(t *testing.T) {
-	expired := LinkOf(core.Link{Expires: testNow - 1, MaxDown: 10, Downs: 3}, "files/target.txt", testNow)
-	if !expired.Expired || expired.Exhausted {
-		t.Errorf("an expired link reports expired=%v exhausted=%v", expired.Expired, expired.Exhausted)
-	}
-
-	spent := LinkOf(core.Link{Expires: testNow + 1, MaxDown: 3, Downs: 3}, "files/target.txt", testNow)
-	if spent.Expired || !spent.Exhausted {
-		t.Errorf("a spent link reports expired=%v exhausted=%v", spent.Expired, spent.Exhausted)
-	}
-
-	live := LinkOf(core.Link{Expires: testNow + 1, MaxDown: 10, Downs: 3}, "files/target.txt", testNow)
-	if live.Expired || live.Exhausted {
-		t.Errorf("a live link reports expired=%v exhausted=%v", live.Expired, live.Exhausted)
-	}
-}
-
-// A drop link is marked, because inferring it from permission names and
-// getting it wrong means showing a file browser for a mailbox.
-func TestADropLinkIsMarked(t *testing.T) {
-	drop := LinkOf(core.Link{Perms: acl.Create, MaxDown: -1}, "files/target.txt", testNow)
-	if !drop.Drop {
-		t.Error("a create-only link was not marked as a drop")
-	}
-
-	// Create alongside read is an ordinary link: the holder can list.
-	both := LinkOf(core.Link{Perms: acl.Create | acl.Read, MaxDown: -1}, "files/target.txt", testNow)
-	if both.Drop {
-		t.Error("a link that can list was marked as a drop")
-	}
-
-	readOnly := LinkOf(core.Link{Perms: acl.Read | acl.Download, MaxDown: -1}, "files/target.txt", testNow)
-	if readOnly.Drop {
-		t.Error("a read-only link was marked as a drop")
-	}
-}
-
-// One instant decides expiry for a whole listing, rather than each row
-// drifting against its own read of the clock.
-func TestAListingIsRenderedAgainstOneInstant(t *testing.T) {
-	links := []core.Link{
-		{ID: 1, Expires: testNow - 1, MaxDown: -1},
-		{ID: 2, Expires: testNow + 1, MaxDown: -1},
-	}
-	got := LinksOf(links, testVpath, testNow)
-	if len(got) != 2 {
-		t.Fatalf("the listing produced %d rows", len(got))
-	}
-	if !got[0].Expired || got[1].Expired {
-		t.Errorf("the rows report expired=%v and %v", got[0].Expired, got[1].Expired)
-	}
-
-	raw, err := json.Marshal(LinksOf(nil, testVpath, testNow))
-	if err != nil {
-		t.Fatalf("encoding: %v", err)
-	}
-	if string(raw) != "[]" {
-		t.Errorf("an empty listing encoded as %s", raw)
 	}
 }

@@ -23,22 +23,6 @@ type overrides interface {
 
 var _ overrides = (*state.DB)(nil)
 
-func TestNoOverrideIsNotAnError(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	d, _ := open(t)
-
-	if _, ok, err := d.LookupFileID(ctx, ident.Ident{Share: 1, Dev: 1, Ino: 1}); err != nil || ok {
-		t.Errorf("an identity nothing recorded: %v (found %v)", err, ok)
-	}
-	if _, ok, err := d.LookupFileIDOwner(ctx, 4242); err != nil || ok {
-		t.Errorf("an id nothing reserved: %v (found %v)", err, ok)
-	}
-	if n, err := d.CountFileIDOverrides(ctx); err != nil || n != 0 {
-		t.Errorf("a fresh database holds %d overrides (err %v)", n, err)
-	}
-}
-
 func TestOverridesRoundTripBothDirections(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

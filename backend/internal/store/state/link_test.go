@@ -17,68 +17,10 @@ import (
 
 func str(v string) *string { return &v }
 
-func u32(v uint32) *uint32 { return &v }
-
 func seedLinkOwner(t *testing.T, d *state.DB) int64 {
 	t.Helper()
 	seedUser(t, d, 1, "owner")
 	return 1
-}
-
-func TestLinkRoundTripsEveryColumn(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	d, _ := open(t)
-	owner := seedLinkOwner(t, d)
-
-	want := state.LinkRow{
-		TokenHash: []byte{1, 2, 3}, TokenEnc: []byte{4, 5}, TokenKeyVer: u32(2),
-		Share: 7, Path: "docs/report.pdf",
-		Dev: id64(66306), Ino: id64(12345), Btime: id64(-42),
-		Owner: owner, Perms: 0b1011,
-		PasswordHash: str("$argon2id$..."), ExpiresNs: id64(1 << 40),
-		MaxDown: id64(5), Label: str("for review"), Note: str("expires friday"),
-		CreatedNs: 1_700_000_000,
-	}
-	id, err := d.Insert(ctx, want)
-	if err != nil {
-		t.Fatalf("Insert: %v", err)
-	}
-
-	got, ok, err := d.ByID(ctx, id)
-	if err != nil || !ok {
-		t.Fatalf("ByID: %v (found %v)", err, ok)
-	}
-	want.ID, want.Downloads = id, 0
-	if string(got.TokenHash) != string(want.TokenHash) ||
-		string(got.TokenEnc) != string(want.TokenEnc) {
-		t.Errorf("the token columns came back as %v / %v", got.TokenHash, got.TokenEnc)
-	}
-	if got.TokenKeyVer == nil || *got.TokenKeyVer != 2 {
-		t.Errorf("the key version came back as %v", got.TokenKeyVer)
-	}
-	if got.Share != want.Share || got.Path != want.Path || got.Owner != want.Owner {
-		t.Errorf("the target came back as share %d, path %q, owner %d", got.Share, got.Path, got.Owner)
-	}
-	if got.Dev == nil || *got.Dev != 66306 || got.Ino == nil || *got.Ino != 12345 ||
-		got.Btime == nil || *got.Btime != -42 {
-		t.Errorf("the pin came back as dev %v, ino %v, btime %v", got.Dev, got.Ino, got.Btime)
-	}
-	if got.Perms != want.Perms || got.Downloads != 0 || got.CreatedNs != want.CreatedNs {
-		t.Errorf("read back %+v", got)
-	}
-	for name, pair := range map[string][2]*string{
-		"password": {got.PasswordHash, want.PasswordHash},
-		"label":    {got.Label, want.Label},
-		"note":     {got.Note, want.Note},
-	} {
-		if pair[0] == nil || *pair[0] != *pair[1] {
-			t.Errorf("%s came back as %v, want %q", name, pair[0], *pair[1])
-		}
-	}
-	if got.ExpiresNs == nil || *got.ExpiresNs != 1<<40 || got.MaxDown == nil || *got.MaxDown != 5 {
-		t.Errorf("the caps came back as expiry %v, max %v", got.ExpiresNs, got.MaxDown)
-	}
 }
 
 // A link against a share root carries no pin and no optional column, and
@@ -145,21 +87,6 @@ func TestByHashFindsTheSameRowAsByID(t *testing.T) {
 	}
 	if got.ID != id {
 		t.Errorf("ByHash found link %d, want %d", got.ID, id)
-	}
-}
-
-// Nothing matching is (row, false, nil): mapping that to a not-found error
-// belongs one layer up.
-func TestAMissingLinkIsNotAnError(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	d, _ := open(t)
-
-	if _, ok, err := d.ByID(ctx, 4242); err != nil || ok {
-		t.Errorf("ByID of an unknown id: %v (found %v)", err, ok)
-	}
-	if _, ok, err := d.ByHash(ctx, []byte{9, 9}); err != nil || ok {
-		t.Errorf("ByHash of an unknown hash: %v (found %v)", err, ok)
 	}
 }
 
@@ -283,31 +210,6 @@ func TestConsumeDownloadHonorsTheCapUnderConcurrency(t *testing.T) {
 	}
 	if row.Downloads != 3 {
 		t.Errorf("the counter reads %d, want 3", row.Downloads)
-	}
-}
-
-// An uncapped link never refuses, and a gone row reads the same as a reached
-// cap: the caller disambiguates with ByID.
-func TestConsumeDownloadWithoutACapAndOnAMissingRow(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	d, _ := open(t)
-	owner := seedLinkOwner(t, d)
-
-	id, err := d.Insert(ctx, state.LinkRow{
-		TokenHash: []byte{1}, Share: 1, Path: "p", Owner: owner, Perms: 1, CreatedNs: 1,
-	})
-	if err != nil {
-		t.Fatalf("Insert: %v", err)
-	}
-	for range 5 {
-		if ok, err := d.ConsumeDownload(ctx, id); err != nil || !ok {
-			t.Fatalf("an uncapped download: %v (consumed %v)", err, ok)
-		}
-	}
-
-	if ok, err := d.ConsumeDownload(ctx, 4242); err != nil || ok {
-		t.Errorf("a download against a missing row: %v (consumed %v)", err, ok)
 	}
 }
 

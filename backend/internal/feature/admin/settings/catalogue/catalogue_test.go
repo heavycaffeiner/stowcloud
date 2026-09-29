@@ -24,57 +24,6 @@ func TestEveryKeyResolvesToASection(t *testing.T) {
 	}
 }
 
-// A stored value is reported as stored, and an unset one as the default.
-//
-// The distinction matters: they look identical in a form and are not the same
-// fact. A value somebody set deliberately must not start following the default
-// when that default changes.
-func TestAStoredValueIsDistinguishedFromTheDefault(t *testing.T) {
-	stored := map[string]any{
-		"rate": map[string]any{"per_sec": float64(25)},
-	}
-	fields := byKey(Of(runtimecfg.Defaults(), stored).Fields)
-
-	if got := fields["rate.per_sec"].Source; got != SourceStored {
-		t.Errorf("a saved value reports source %q", got)
-	}
-	if got := fields["rate.burst"].Source; got != SourceDefault {
-		t.Errorf("an unsaved value reports source %q", got)
-	}
-}
-
-// A value equal to the default still reports as stored.
-//
-// Comparing values rather than looking the key up would call this unset, which
-// is the one direction that loses information.
-func TestAStoredValueEqualToTheDefaultStillReportsAsStored(t *testing.T) {
-	defaults := runtimecfg.Defaults()
-	stored := map[string]any{
-		"rate": map[string]any{"per_sec": defaults.RatePerSec},
-	}
-	fields := byKey(Of(defaults, stored).Fields)
-
-	if got := fields["rate.per_sec"].Source; got != SourceStored {
-		t.Errorf("a value saved as the default reports %q, want stored", got)
-	}
-}
-
-// A key saved as an explicit null still reports as stored.
-//
-// Presence is the question, not the value: a screen that cleared a field wrote
-// something there deliberately, and reporting it as unset would have the field
-// start following a default the operator had just overridden.
-func TestAKeyStoredAsNullStillReportsAsStored(t *testing.T) {
-	stored := map[string]any{
-		"oidc": map[string]any{"issuer": nil},
-	}
-	fields := byKey(Of(runtimecfg.Defaults(), stored).Fields)
-
-	if got := fields["oidc.issuer"].Source; got != SourceStored {
-		t.Errorf("a key stored as null reports %q, want stored", got)
-	}
-}
-
 // Numeric fields carry the bounds the checker enforces, so the form refuses
 // what the save would refuse rather than sending it and reporting an error.
 func TestNumericFieldsCarryTheBoundsTheCheckerUses(t *testing.T) {

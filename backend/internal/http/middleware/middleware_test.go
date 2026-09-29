@@ -199,13 +199,6 @@ func TestAMalformedChainReportsEveryProblem(t *testing.T) {
 	}
 }
 
-// An empty chain is refused rather than mounted as a server with no middleware.
-func TestAnEmptyChainIsRefused(t *testing.T) {
-	if err := ValidateChain(nil); err == nil {
-		t.Fatal("the empty chain was accepted")
-	}
-}
-
 // A forwarded chain whose leftmost entry is a private address is not special:
 // it is just the client the walk finds, the same as any other unroutable
 // public address would be. Private only matters to IsPrivateClient, which

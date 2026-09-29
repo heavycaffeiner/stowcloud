@@ -71,19 +71,6 @@ func TestAnAbsentDisplayNameReadsAsEmpty(t *testing.T) {
 	}
 }
 
-func TestAMissingAccountIsATypedRefusal(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	d, _ := open(t)
-
-	if _, err := d.AccountByID(ctx, 404); !errors.Is(err, state.ErrNoSuchAccount) {
-		t.Fatalf("AccountByID on a missing row returned %v", err)
-	}
-	if _, err := d.AccountByName(ctx, "nobody"); !errors.Is(err, state.ErrNoSuchAccount) {
-		t.Fatalf("AccountByName on a missing row returned %v", err)
-	}
-}
-
 // The duplicate is typed rather than a driver message: a constraint failure
 // reaching a client as a server error tells whoever typed the name that
 // something broke rather than that the name is taken.

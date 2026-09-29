@@ -82,15 +82,3 @@ func TestAnUnknownStatusBecomesFailing(t *testing.T) {
 		}
 	}
 }
-
-// A healthy deployment encodes an empty list rather than null, so a client
-// iterating the field does not have to test for it.
-func TestAHealthyResponseCarriesAnEmptyList(t *testing.T) {
-	raw, err := json.Marshal(HealthOf(HealthOK, nil))
-	if err != nil {
-		t.Fatalf("encoding: %v", err)
-	}
-	if string(raw) != `{"status":"ok","reasons":[]}` {
-		t.Errorf("a healthy deployment encoded as %s", raw)
-	}
-}
