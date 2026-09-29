@@ -680,7 +680,7 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
         skipped "go test -tags compat_nc" "already ran through just test" 0
       else
         run "go test -tags compat_nc" \
-            ingo_host go test -tags compat_nc -count=1 ./internal/http/nextcloud/... ./internal/app/...
+            ingo_host go test -tags compat_nc -count=1 ./internal/http/nextcloud/... ./test/...
       fi
     else
       skipped "go test -tags compat_nc" "the compat layer is Linux only" 0

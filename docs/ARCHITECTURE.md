@@ -4,6 +4,8 @@ The Linux server starts at `backend/cmd/sc-engine/main.go`. Preflight loads the 
 
 `backend/internal/store` owns SQLite state, cache, and journal files. `backend/internal/storage` owns filesystem and virtual filesystem operations. `backend/internal/feature` holds domain services, while `backend/internal/http` holds most transport handlers. The current route table, handler map, and Huma registration are separate. The planned restructure puts route registration in one server package.
 
+Tests that boot a whole engine and drive it over HTTP live in `backend/test/e2e`, with the shared boot and sign-in helpers in `harness_test.go`. Tests beside the code in `backend/internal` are unit tests of that package.
+
 The browser application lives in `frontend/src`. It currently uses React Router, React Query, Zustand, and mdui. The planned frontend restructure moves server data into React Query, URL state into the router, and mdui imports into one UI directory.
 
 ## Contracts retained during the restructure
