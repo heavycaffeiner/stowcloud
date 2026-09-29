@@ -150,7 +150,7 @@ func readClient(dir string) (string, error) {
 		if !isSource || strings.Contains(name, ".test.") {
 			return nil
 		}
-		body, rerr := os.ReadFile(path) //nolint:gosec // G304 reads the variable: the directory is the gate's own argument, never request input.
+		body, rerr := os.ReadFile(path)
 		if rerr != nil {
 			return rerr
 		}

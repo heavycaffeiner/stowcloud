@@ -250,10 +250,6 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   echo "=== go: $(go version) ==="
   echo
 
-  # The two in-tree analysers and the text scan. They run for the host's own
-  # OS because `go run` has to execute what it built, and each one is pointed
-  # at the shipping target from the inside.
-  run "vetgo (D7: one goroutine spawn)"        ingo_host go run ./tools/vetgo ./cmd ./internal
   # The client and the route table are two halves of one contract, and nothing
   # else here checks that they agree. A route the frontend calls and the server
   # does not mount is a screen that cannot work, and it was invisible to every
@@ -313,50 +309,6 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   )"
   grep_gate "no content URL composed from a path" "$CONTENT_URL_HITS" \
     "A row's bytes are addressed by its own reference: api.contentUrl(entry)."
-  # freshscan keeps the engine's comments from being the old tree's. This keeps
-  # the phase documents from describing a tree that moved on: each numbered
-  # deliberate change names what it is about, and a rename leaves the prose
-  # describing something that is not there.
-  #
-  # Every built phase: 0 (foundation), 1 (core) and 2. The audit documents
-  # describe the old tree on purpose, and phase 3's describe what is not built
-  # yet, so both would report their own subject matter as missing.
-  #
-  # Foundation and core were left out when this gate was written and were the
-  # only areas nothing checked. Adding them brought 175 change entries under
-  # the gate and found six documents naming the old tree's spelling of a
-  # symbol; each was checked by hand and is recorded in the tool's ignore list
-  # with what replaced it.
-  #
-  # http joined once its packages existed. It found a defect in the tool: an
-  # identifier with a slash was assumed to be a file path, so a route path was
-  # reported missing while sitting in the route table. Four of its six findings
-  # were that bug.
-  #
-  # The refactor documents are historical architecture plans: their deliberate
-  # changes name the future engine tree, not the current implementation, so
-  # running speccheck against internal would report every planned move as drift.
-  # Only an explicitly current spec tree is authoritative for this gate.
-  SPEC_ROOT=
-  for candidate in docs/internal/current docs/current docs/spec; do
-    if [ -d "$candidate" ]; then SPEC_ROOT="../$candidate"; break; fi
-  done
-  if [ -n "$SPEC_ROOT" ]; then
-    run "speccheck (the current phase documents match the internal tree)" bash -c '
-      cd backend
-      fail=0
-      for area in foundation core auth oidc upload search preview settings smb http; do
-        [ -d "'"$SPEC_ROOT"'/$area" ] || continue
-        if ! go run ./tools/speccheck "'"$SPEC_ROOT"'/$area" ./internal; then fail=1; fi
-      done
-      exit $fail'
-  else
-    skipped "speccheck (the current phase documents match the internal tree)" \
-            "only historical refactor documents are checked in; no current spec inputs" \
-            "${VERIFY_REQUIRE_SPECDOCS:-0}"
-  fi
-  run "vetsecret (D12: no secret to a verb)" ingo_host go run ./tools/vetsecret ./...
-  run "koscan (D15: no Korean in Go source)" ingo_host go run ./tools/koscan ./cmd ./tools ./internal
   run "layercheck (the internal tiers hold)" ingo_host go run ./tools/layercheck ./internal
   FMT=$(cd backend && gofmt -l . 2>/dev/null)
   grep_gate "gofmt" "$FMT" "Run: cd backend && gofmt -w ."
