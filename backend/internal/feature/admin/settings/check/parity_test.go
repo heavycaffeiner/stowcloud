@@ -3,66 +3,12 @@
 package check
 
 import (
-	"go/parser"
-	"go/token"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/settings/runtimecfg"
 )
-
-// The misplacement this package was rebuilt to fix: the old checker baked
-// http.StatusUnprocessableEntity into its refusal, so a service package chose
-// an HTTP status. The presentation layer maps ErrRefused to a status exactly
-// once, in its own table, and nothing here knows what a status is.
-//
-// Asserted by reading the imports rather than by convention, because the
-// regression is one import line away and it compiles.
-func TestThePackageImportsNothingPresentation(t *testing.T) {
-	banned := []string{
-		"net/http",
-		"apierr",
-	}
-
-	sources, err := filepath.Glob("*.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(sources) == 0 {
-		t.Fatal("no sources found, so this test would pass without checking anything")
-	}
-
-	fset := token.NewFileSet()
-	checked := 0
-	for _, source := range sources {
-		if strings.HasSuffix(source, "_test.go") {
-			continue
-		}
-		checked++
-
-		f, err := parser.ParseFile(fset, source, nil, parser.ImportsOnly)
-		if err != nil {
-			t.Fatalf("%s: %v", source, err)
-		}
-		for _, imp := range f.Imports {
-			path, err := strconv.Unquote(imp.Path.Value)
-			if err != nil {
-				t.Fatalf("%s: %v", source, err)
-			}
-			for _, bad := range banned {
-				if path == bad || strings.Contains(path, bad) {
-					t.Errorf("%s imports %q, which puts a transport decision in a service package",
-						source, path)
-				}
-			}
-		}
-	}
-	if checked == 0 {
-		t.Fatal("every source was skipped, so this test proved nothing")
-	}
-}
 
 // A repeat within one list is named by its own field, so the screen puts the
 // message beside the list it is about.

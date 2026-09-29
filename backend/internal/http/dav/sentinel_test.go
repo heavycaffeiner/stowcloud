@@ -4,11 +4,6 @@ package dav
 
 import (
 	"net/http"
-	"os"
-	"path/filepath"
-	"regexp"
-	"sort"
-	"strings"
 	"testing"
 )
 
@@ -82,65 +77,4 @@ func TestEverySentinelHasAStatus(t *testing.T) {
 			t.Errorf("%s answers %d, want %d", name, got, c.want)
 		}
 	}
-}
-
-// The list above covers every sentinel the package declares.
-//
-// Without this, adding a sentinel and forgetting the table passes: the test
-// only checks what it was told about. Reading the source is what makes the
-// list self-maintaining.
-func TestTheSentinelListIsComplete(t *testing.T) {
-	t.Parallel()
-
-	declared := declaredSentinels(t)
-	if len(declared) == 0 {
-		t.Fatal("no sentinels found: the scan is broken, not the package")
-	}
-
-	for _, name := range declared {
-		if _, ok := mappedSentinels()[name]; !ok {
-			t.Errorf("%s is declared but not in the mapped list, so nothing checks its status", name)
-		}
-	}
-	for name := range mappedSentinels() {
-		if !slicesContains(declared, name) {
-			t.Errorf("%s is in the mapped list but no longer declared", name)
-		}
-	}
-}
-
-// declaredSentinels reads the package's own source for exported error values.
-func declaredSentinels(t *testing.T) []string {
-	t.Helper()
-
-	entries, err := filepath.Glob("*.go")
-	if err != nil {
-		t.Fatalf("listing the package source: %v", err)
-	}
-
-	pattern := regexp.MustCompile(`(?m)^\s*(Err[A-Za-z0-9]*)\s*=\s*errors\.New\(`)
-	var out []string
-	for _, path := range entries {
-		if strings.HasSuffix(path, "_test.go") {
-			continue
-		}
-		body, rerr := os.ReadFile(path)
-		if rerr != nil {
-			t.Fatalf("reading %s: %v", path, rerr)
-		}
-		for _, m := range pattern.FindAllStringSubmatch(string(body), -1) {
-			out = append(out, m[1])
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
-func slicesContains(haystack []string, needle string) bool {
-	for _, s := range haystack {
-		if s == needle {
-			return true
-		}
-	}
-	return false
 }

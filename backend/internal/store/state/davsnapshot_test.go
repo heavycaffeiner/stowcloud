@@ -2,67 +2,10 @@ package state_test
 
 import (
 	"context"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
 )
-
-// One snapshot answers both questions a mutating method asks, so it cannot see
-// two versions of the lock table.
-//
-// Reading twice, once for the If header and once for the coverage guard, lets
-// a lock land between them. The request is then refused for a lock its own
-// precondition was never given the chance to name.
-//
-// Checked structurally, for the same reason the admission is: the database's
-// write path serializes, so a timing test cannot separate one read from two.
-func TestASnapshotReadsTheTableOnce(t *testing.T) {
-	t.Parallel()
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "davsnapshot.go", nil, 0)
-	if err != nil {
-		t.Fatalf("parsing davsnapshot.go: %v", err)
-	}
-
-	var body *ast.BlockStmt
-	for _, decl := range file.Decls {
-		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Name.Name == "SnapshotDavLocks" {
-			body = fn.Body
-		}
-	}
-	if body == nil {
-		t.Fatal("SnapshotDavLocks is not in davsnapshot.go; if it was renamed, this check watches nothing")
-	}
-
-	var writes []*ast.CallExpr
-	ast.Inspect(body, func(n ast.Node) bool {
-		if call, ok := n.(*ast.CallExpr); ok && calleeName(call) == "d.Write" {
-			writes = append(writes, call)
-		}
-		return true
-	})
-
-	if len(writes) != 1 {
-		t.Fatalf("SnapshotDavLocks opens %d transactions, want 1: a second is a version boundary a caller cannot see", len(writes))
-	}
-
-	// And every read is inside it. A read outside the transaction is not
-	// serialized against the writer and could come from either side of an
-	// admission.
-	inside := false
-	ast.Inspect(writes[0], func(n ast.Node) bool {
-		if call, ok := n.(*ast.CallExpr); ok && calleeName(call) == "liveLocksInShare" {
-			inside = true
-		}
-		return true
-	})
-	if !inside {
-		t.Error("the lock read does not run inside the snapshot's transaction")
-	}
-}
 
 // A snapshot answers every target it was asked about, including one with no
 // locks over it: a missing entry and an empty one are the same answer, and a

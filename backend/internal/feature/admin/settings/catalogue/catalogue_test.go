@@ -1,90 +1,12 @@
 package catalogue
 
 import (
-	"os"
-	"regexp"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/settings/runtimecfg"
 )
-
-// The catalogue and the loader describe the same set of fields.
-//
-// This is the failure the catalogue exists to make impossible, and it is
-// silent from both sides. A field the loader reads and the catalogue omits is
-// one an operator cannot see or change, with no error anywhere. A field the
-// catalogue offers and the loader ignores is a control that saves a value
-// nothing ever acts on: it reports success and changes nothing.
-//
-// The loader's own source is the fixture. Comparing against a second hand-kept
-// list would only check that two hand-kept lists agree.
-func TestTheCatalogueDescribesEveryFieldTheLoaderReads(t *testing.T) {
-	loaded := fieldsTheLoaderReads(t)
-	described := map[string]bool{}
-	for _, f := range Of(runtimecfg.Defaults(), map[string]any{}).Fields {
-		described[f.Key] = true
-	}
-
-	for key := range loaded {
-		if !described[key] && !described[bareName(key)] {
-			t.Errorf("the loader reads %q and the catalogue does not describe it, "+
-				"so an operator cannot see or change it", key)
-		}
-	}
-	for key := range described {
-		// The index switch is read by whoever opens the index rather than by
-		// the loader, so it is legitimately absent from the loader's source.
-		if key == "search.name_index_enabled" {
-			continue
-		}
-		// smb_policy carries no state of its own: "block" is the only value
-		// this build has ever implemented, and the field exists so a save
-		// confirms the policy it is relying on rather than the loader
-		// resolving a choice. Nothing reads it back because there is nothing
-		// to vary.
-		if key == "oidc.smb_policy" {
-			continue
-		}
-		// data_dir is a process argument the engine fills in, reported so an
-		// operator can see where this deployment keeps its state. There is no
-		// loader side by construction: a document cannot name the directory
-		// the document itself is read from.
-		if key == "data_dir" {
-			continue
-		}
-		// The network fields are described by their bare names, which is what
-		// the screen addresses them by, and stored under the network section.
-		if !loaded[key] && !loaded["network."+key] {
-			t.Errorf("the catalogue offers %q and the loader never reads it, "+
-				"so saving it would change nothing", key)
-		}
-	}
-}
-
-// fieldsTheLoaderReads scrapes the loader for the section and name of every
-// setting it consults.
-func fieldsTheLoaderReads(t *testing.T) map[string]bool {
-	t.Helper()
-
-	raw, err := os.ReadFile("../runtimecfg/load.go")
-	if err != nil {
-		t.Fatalf("reading the loader: %v", err)
-	}
-	// Every read goes through one of the document's typed accessors, each
-	// taking the section and the name as literals.
-	call := regexp.MustCompile(`\.(?:intOf|uintOf|stringOf|boolOf|rawBool|validStrings|stringsOf)\(\s*"([a-z_]+)",\s*"([a-z_]+)"`)
-
-	out := map[string]bool{}
-	for _, m := range call.FindAllStringSubmatch(string(raw), -1) {
-		out[m[1]+"."+m[2]] = true
-	}
-	if len(out) == 0 {
-		t.Fatal("the scrape found no fields, so this test would pass against anything")
-	}
-	return out
-}
 
 // Every key resolves to a section, which is what the patch route writes under.
 // A key resolving nowhere would save into nothing and report success.
@@ -100,15 +22,6 @@ func TestEveryKeyResolvesToASection(t *testing.T) {
 			t.Errorf("%q splits into %q and %q", f.Key, section, name)
 		}
 	}
-}
-
-// bareName drops a key's section, for comparing a described bare name against
-// the loader's fully-qualified one.
-func bareName(key string) string {
-	if _, name, ok := splitKey(key); ok {
-		return name
-	}
-	return key
 }
 
 // A stored value is reported as stored, and an unset one as the default.

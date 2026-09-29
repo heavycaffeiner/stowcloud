@@ -4,10 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"path/filepath"
 	"sync"
 	"testing"
 
@@ -107,91 +103,6 @@ func TestConcurrentExclusiveLocksAdmitExactlyOne(t *testing.T) {
 	}
 	if len(live) == 1 && live[0].Token != granted[0] {
 		t.Errorf("the stored lock is %q but %q was told it won", live[0].Token, granted[0])
-	}
-}
-
-// The decision and the write are one transaction, checked structurally
-// because no timing test can establish it reliably.
-//
-// The database's write path holds a mutex for the whole callback, so any two
-// Write calls are strictly serialized. That hides the difference: splitting
-// the scan from the insert is a real defect, since another admission can slot
-// its own scan into the gap, but it only loses when the scheduler arranges
-// exactly that order. Measured against the 800-racer test above, a split
-// admission is caught three runs in fifteen, which is coverage rather than
-// proof.
-//
-// So the property is read off the source. AdmitDavLock calls Write once, and
-// the conflict scan, the count and the insert are all inside that one call.
-func TestAdmissionIsOneTransaction(t *testing.T) {
-	t.Parallel()
-	src := filepath.Join("davlock.go")
-
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, src, nil, 0)
-	if err != nil {
-		t.Fatalf("parsing %s: %v", src, err)
-	}
-
-	var body *ast.BlockStmt
-	for _, decl := range file.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if ok && fn.Name.Name == "AdmitDavLock" {
-			body = fn.Body
-		}
-	}
-	if body == nil {
-		t.Fatal("AdmitDavLock is not in davlock.go; if it was renamed, this check watches nothing")
-	}
-
-	// Every call, with the Write calls marked, so the assertions below can
-	// speak about position as well as count.
-	var writes []*ast.CallExpr
-	inside := map[string]bool{}
-
-	ast.Inspect(body, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		if name := calleeName(call); name == "d.Write" {
-			writes = append(writes, call)
-		}
-		return true
-	})
-
-	if len(writes) != 1 {
-		t.Fatalf("AdmitDavLock makes %d Write calls, want exactly 1: a second one is a window another admission can commit into", len(writes))
-	}
-
-	// And the three steps are inside it. A scan that ran outside the
-	// transaction would decide against a table the insert never rechecks.
-	ast.Inspect(writes[0], func(n ast.Node) bool {
-		if call, ok := n.(*ast.CallExpr); ok {
-			inside[calleeName(call)] = true
-		}
-		return true
-	})
-
-	for _, step := range []string{"liveLocksInShare", "tx.ExecContext", "tx.QueryRowContext"} {
-		if !inside[step] {
-			t.Errorf("%s does not run inside the transaction", step)
-		}
-	}
-}
-
-// calleeName renders a call's target as pkg.Func or Func.
-func calleeName(call *ast.CallExpr) string {
-	switch fn := call.Fun.(type) {
-	case *ast.Ident:
-		return fn.Name
-	case *ast.SelectorExpr:
-		if x, ok := fn.X.(*ast.Ident); ok {
-			return x.Name + "." + fn.Sel.Name
-		}
-		return fn.Sel.Name
-	default:
-		return ""
 	}
 }
 

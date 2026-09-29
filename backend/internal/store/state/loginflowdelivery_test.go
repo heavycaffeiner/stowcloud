@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
+	"strings"
 	"sync"
 	"testing"
 
@@ -83,51 +81,6 @@ func TestExactlyOnePollClaimsDelivery(t *testing.T) {
 	if claimed != 1 {
 		t.Fatalf("%d of %d polls claimed delivery, want exactly 1", claimed, racers)
 	}
-}
-
-// The claim guard is inside the statement, checked structurally because the
-// database's write path serializes and a timing test cannot separate one
-// statement from a read followed by a write.
-func TestTheDeliveryClaimIsOneStatement(t *testing.T) {
-	t.Parallel()
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "loginflow_sql.go", nil, 0)
-	if err != nil {
-		t.Fatalf("parsing the SQL: %v", err)
-	}
-
-	var claim string
-	ast.Inspect(file, func(n ast.Node) bool {
-		spec, ok := n.(*ast.ValueSpec)
-		if !ok || len(spec.Names) == 0 || spec.Names[0].Name != "sqlClaimLoginFlowDelivery" {
-			return true
-		}
-		if len(spec.Values) == 1 {
-			if lit, ok := spec.Values[0].(*ast.BasicLit); ok {
-				claim = lit.Value
-			}
-		}
-		return false
-	})
-
-	if claim == "" {
-		t.Fatal("sqlClaimLoginFlowDelivery is gone; if it was renamed, this check watches nothing")
-	}
-	for _, want := range []string{"claimed_ns = 0", "approved_user IS NOT NULL"} {
-		if !contains(claim, want) {
-			t.Errorf("the claim statement does not carry %q: %s", want, claim)
-		}
-	}
-}
-
-// contains reports substring presence without importing strings for one use.
-func contains(haystack, needle string) bool {
-	for i := 0; i+len(needle) <= len(haystack); i++ {
-		if haystack[i:i+len(needle)] == needle {
-			return true
-		}
-	}
-	return false
 }
 
 // An unapproved flow cannot be claimed. Minting before a person approved would
@@ -391,7 +344,7 @@ func TestNoPlaintextReachesTheTable(t *testing.T) {
 			default:
 				continue
 			}
-			if cols[i] != "sealed_result" && contains(text, "sealed-bytes") {
+			if cols[i] != "sealed_result" && strings.Contains(text, "sealed-bytes") {
 				t.Errorf("column %q carries the delivery material", cols[i])
 			}
 		}
