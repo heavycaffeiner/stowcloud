@@ -176,7 +176,7 @@ func (h *handlers) pauseResumeHuma(ctx context.Context, in *operationInput, paus
 	if !ok {
 		return nil, humabridge.Failure(ctx, core.ErrNotFound)
 	}
-	if _, err := h.d.Core.Operation(ctx, owner, id); err != nil {
+	if _, err = h.d.Core.Operation(ctx, owner, id); err != nil {
 		return nil, humabridge.Failure(ctx, err)
 	}
 	if pause {

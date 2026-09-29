@@ -76,7 +76,7 @@ func (e *Engine) mountNative(router *gin.Engine) error {
 	}
 	return server.Bind(router, server.Binding{
 		Routes: server.Table(), Roots: []string{server.Base}, Chain: middleware.Chain(),
-		Handlers: handlers, HumaNames: humaNames, Deps: e.deps(),
+		Handlers: handlers, HumaNames: humaNames(), Deps: e.deps(),
 		MountHuma: func(app *gin.Engine) error {
 			var err error
 			typed, err = e.mountHuma(app)

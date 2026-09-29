@@ -88,10 +88,10 @@ func (h *handlers) accessHuma(ctx context.Context, in *accessInput) (*stateOutpu
 	if err != nil {
 		return nil, err
 	}
-	if err := h.reconfirmHuma(ctx, owner, in.Body.Current); err != nil {
+	if err = h.reconfirmHuma(ctx, owner, in.Body.Current); err != nil {
 		return nil, err
 	}
-	if err := h.d.Auth.SetSMBAccess(ctx, owner, in.Body.OptOut, in.Body.Enabled); err != nil {
+	if err = h.d.Auth.SetSMBAccess(ctx, owner, in.Body.OptOut, in.Body.Enabled); err != nil {
 		return nil, humabridge.Failure(ctx, err)
 	}
 	state, err := h.d.Auth.SMBStateOf(ctx, owner)
@@ -106,10 +106,10 @@ func (h *handlers) passwordSetHuma(ctx context.Context, in *passwordInput) (*sta
 	if err != nil {
 		return nil, err
 	}
-	if err := h.reconfirmHuma(ctx, owner, in.Body.Current); err != nil {
+	if err = h.reconfirmHuma(ctx, owner, in.Body.Current); err != nil {
 		return nil, err
 	}
-	if err := h.d.Auth.SetSMBPassword(ctx, owner, secret.New([]byte(in.Body.New))); err != nil {
+	if err = h.d.Auth.SetSMBPassword(ctx, owner, secret.New([]byte(in.Body.New))); err != nil {
 		return nil, humabridge.Failure(ctx, err)
 	}
 	state, err := h.d.Auth.SMBStateOf(ctx, owner)
@@ -124,7 +124,7 @@ func (h *handlers) passwordDeleteHuma(ctx context.Context, in *reconfirmInput) (
 	if err != nil {
 		return nil, err
 	}
-	if err := h.reconfirmHuma(ctx, owner, in.Body.Current); err != nil {
+	if err = h.reconfirmHuma(ctx, owner, in.Body.Current); err != nil {
 		return nil, err
 	}
 	revertible, err := h.d.Auth.ClearSMBPassword(ctx, owner)

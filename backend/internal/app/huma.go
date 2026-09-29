@@ -30,15 +30,17 @@ import (
 
 // humaNames declares the typed part of the native route table. The server
 // verifies that every name is registered on Gin before it starts listening.
-var humaNames = []string{
-	"jobs.list", "jobs.get", "jobs.cancel", "jobs.retry", "jobs.pause", "jobs.resume",
-	"trash.list", "trash.restore", "trash.purge",
-	"admin.logs.list", "admin.logs.timeline", "admin.storage",
-	"links.list", "links.create", "links.update", "links.delete", "admin.links.list",
-	"encryption.list", "admin.encryption.enable", "admin.encryption.disable",
-	"account.smb.create", "account.smb.password.set", "account.smb.password.delete",
-	"admin.shares.list", "admin.shares.create", "admin.shares.update", "admin.shares.retry", "admin.shares.delete",
-	"admin.grants.list", "admin.grants.create", "admin.grants.update", "admin.grants.delete",
+func humaNames() []string {
+	return []string{
+		"jobs.list", "jobs.get", "jobs.cancel", "jobs.retry", "jobs.pause", "jobs.resume",
+		"trash.list", "trash.restore", "trash.purge",
+		"admin.logs.list", "admin.logs.timeline", "admin.storage",
+		"links.list", "links.create", "links.update", "links.delete", "admin.links.list",
+		"encryption.list", "admin.encryption.enable", "admin.encryption.disable",
+		"account.smb.create", "account.smb.password.set", "account.smb.password.delete",
+		"admin.shares.list", "admin.shares.create", "admin.shares.update", "admin.shares.retry", "admin.shares.delete",
+		"admin.grants.list", "admin.grants.create", "admin.grants.update", "admin.grants.delete",
+	}
 }
 
 func (e *Engine) mountHuma(router *gin.Engine) (huma.API, error) {
