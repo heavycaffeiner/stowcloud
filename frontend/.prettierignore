@@ -1,0 +1,7 @@
+node_modules
+build
+../backend/internal/http/spa/build
+coverage
+test-results
+playwright-report
+pnpm-lock.yaml
