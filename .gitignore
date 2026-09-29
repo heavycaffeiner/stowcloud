@@ -75,3 +75,4 @@ docs/internal/
 /.agents/
 /scripts/*
 !/scripts/*.sh
+!/scripts/clean.py
