@@ -37,7 +37,7 @@ function walk(dir, out = []) {
 // silently missing one is worse than not allowing it.
 const CALL = /(?:^|[^\w.$])t\(\s*(['"])((?:\\.|(?!\1)[^\\])*)\1/g
 const TP_CALL = /(?:^|[^\w.$])tp\(\s*(['"])((?:\\.|(?!\1)[^\\])*)\1/g
-const DEFERRED = /\/\* i18n \*\/\s*(['"])((?:\\.|(?!\1)[^\\])*)\1/g
+const DEFERRED = /\/\* i18n \*\/\s*;?\s*(?:\(\s*)?(['"])((?:\\.|(?!\1)[^\\])*)\1/g
 const KEY_SHAPE = /^[a-z][a-z0-9_]*\.[a-z0-9_]+$/
 const used = new Map() // key -> first "file:line"
 
