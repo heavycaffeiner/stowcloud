@@ -145,7 +145,7 @@ func evaluate(importerTier, importerSub, importPath string) (string, bool) {
 	case strings.HasPrefix(importPath, durablefsPrefix):
 		return "", false
 	case strings.HasPrefix(importPath, internalPrefix):
-		return evaluateInternal(importerTier, importerSub, importPath)
+		return evaluateInternal(importerTier, importPath)
 	default:
 		return "", false
 	}
@@ -160,11 +160,11 @@ func knownTier(tier string) bool {
 	return ok
 }
 
-func evaluateInternal(importerTier, importerSub, importPath string) (string, bool) {
+func evaluateInternal(importerTier, importPath string) (string, bool) {
 	if !knownTier(importerTier) {
 		return fmt.Sprintf("unknown internal tier %q", importerTier), true
 	}
-	importedTier, importedSub, ok := tierAndSub(strings.TrimPrefix(importPath, internalPrefix))
+	importedTier, _, ok := tierAndSub(strings.TrimPrefix(importPath, internalPrefix))
 	if !ok {
 		return "internal import has no package tier", true
 	}
@@ -172,9 +172,6 @@ func evaluateInternal(importerTier, importerSub, importPath string) (string, boo
 		return fmt.Sprintf("unknown internal tier %q", importedTier), true
 	}
 	if importedTier == importerTier {
-		if importerTier == "app" && importerSub == importedSub {
-			return "", false
-		}
 		return "", false
 	}
 	if tierAllowed[importerTier][importedTier] {
