@@ -44,8 +44,8 @@ const (
 	// jailproof suite can assert the address-space bound is really set rather
 	// than assuming ApplyLimits was called.
 	ProbeReportLimits
-	// ProbeCountDescriptors reports the highest descriptor this process still
-	// holds, so the suite can assert the seal closed what the worker inherited.
+	// ProbeCountDescriptors reports the inherited descriptors this process
+	// still holds, so the suite can assert the seal closed them.
 	ProbeCountDescriptors
 	// ProbeThread tries adding an OS thread, which the filter admits so the
 	// runtime can grow its scheduler under load.
@@ -267,31 +267,32 @@ func captureLimits() {
 	capturedLimits.Store(&startupLimits{as: as.Cur, nofile: nofile.Cur, nproc: nproc.Cur})
 }
 
-// probeDescriptors reports the highest descriptor this process still holds.
+// probeDescriptors reports the descriptors above the control socket that lack
+// FD_CLOEXEC: the inherited ones, and those a job arrived with. Descriptors the
+// runtime opened for itself carry the flag and are not counted.
 //
 // It is what makes the wired SealDescriptors verifiable: os/exec's CLOEXEC
 // defaults cover most inherited descriptors, and "most" is not a security
 // answer, so the suite asserts nothing beyond the control socket survived.
 //
-// fstat rather than a directory read, because opening /proc/self/fd needs
+// fcntl rather than a directory read, because opening /proc/self/fd needs
 // openat, which the filter refuses by design.
 func probeDescriptors() (ProbeOutcome, string) {
 	highest := -1
 	count := 0
-	for fd := range probeFDScan {
-		var st unix.Stat_t
-		if err := unix.Fstat(fd, &st); err != nil {
+	for fd := ControlFD + 1; fd < probeFDScan; fd++ {
+		flags, err := unix.FcntlInt(uintptr(fd), unix.F_GETFD, 0)
+		if err != nil || flags&unix.FD_CLOEXEC != 0 {
 			continue
 		}
 		count++
 		highest = fd
 	}
-	return OutcomeCompleted, fmt.Sprintf("open=%d highest=%d", count, highest)
+	return OutcomeCompleted, fmt.Sprintf("inherited=%d highest=%d", count, highest)
 }
 
 // probeFDScan bounds the descriptor scan. Well above the handful a sealed
-// worker holds, and small enough that the loop is instant under a filter that
-// allows fstat and nothing else.
+// worker holds, and small enough that the loop is instant.
 const probeFDScan = 256
 
 // pathPtr builds a NUL-terminated path for a raw syscall.

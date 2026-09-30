@@ -3,6 +3,7 @@
 package jail
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -14,9 +15,8 @@ import (
 // instead of causing a loop.
 const reexecMarker = "SC_REEXEC"
 
-// fdSweepMax limits the fallback descriptor sweep. It exceeds any descriptor the
-// parent could plausibly hold while staying small enough for the loop to finish
-// instantly.
+// fdSweepMax limits the descriptor sweep. It exceeds any descriptor the parent
+// could plausibly hold while keeping the sweep near ten milliseconds.
 const fdSweepMax = 65536
 
 // firstSealedFD is the lowest descriptor SealDescriptors closes. Standard in,
@@ -88,26 +88,33 @@ func mandatoryGrants(self string) []Grant {
 	return grants
 }
 
-// SealDescriptors closes every descriptor above the worker's control socket.
+// SealDescriptors closes every descriptor above the worker's control socket
+// that this process inherited.
 //
 // This carries as much weight as the filters. The parent is a file server, so
 // the table a worker inherits at birth holds listening sockets, open share roots
 // and database handles. RLIMIT_NOFILE bounds how many new descriptors the worker
 // can acquire while doing nothing about inherited ones, and os/exec's CLOEXEC
 // defaults cover most but not all of them, which is not a security guarantee.
-// This covers all of them, verifiably.
+//
+// A descriptor with FD_CLOEXEC set cannot have survived an execve, so it was
+// opened by this image and is kept. The Go runtime opens its poller, the
+// poller's eventfd and the cgroup CPU limit before main; closing them leaves the
+// scheduler waiting on a dead descriptor, or on a job's file once the number is
+// reused.
 func SealDescriptors() error {
-	if err := unix.CloseRange(firstSealedFD, ^uint(0), 0); err == nil {
-		return nil
-	}
-	// close_range requires 5.9 while the product's minimum is 5.6, making the
-	// sweep a genuine code path rather than a formality. EBADF on a descriptor
-	// this process never held is the expected and harmless outcome, which is why
-	// the close error is not propagated: a caller can do nothing about a
-	// descriptor that was already gone.
 	for fd := firstSealedFD; fd < fdSweepMax; fd++ {
-		//nolint:errcheck // EBADF on an absent descriptor is the expected result; see above.
+		flags, err := unix.FcntlInt(uintptr(fd), unix.F_GETFD, 0)
+		if err != nil || flags&unix.FD_CLOEXEC != 0 {
+			continue
+		}
+		//nolint:errcheck // the descriptor was open a moment ago, and a failed close leaves nothing to retry.
 		_ = unix.Close(fd)
+	}
+	// Nothing of the runtime's sits this high. close_range needs 5.9 while the
+	// product's minimum is 5.6, where the sweep above is the bound.
+	if err := unix.CloseRange(fdSweepMax, ^uint(0), 0); err != nil && !errors.Is(err, unix.ENOSYS) {
+		return fmt.Errorf("closing descriptors from %d: %w", fdSweepMax, err)
 	}
 	return nil
 }

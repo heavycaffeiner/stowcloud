@@ -294,12 +294,12 @@ func TestAJailedWorkerHoldsNoUnexpectedDescriptor(t *testing.T) {
 		t.Fatalf("the descriptor probe reported %v: %s", outcome, detail)
 	}
 
-	// Standard in, out and error, the control socket, and the two descriptors
-	// this very job arrived with. Nothing above them.
-	const ceiling = worker.ControlFD + 2
-	if highest := fieldOf(t, detail, "highest"); highest > ceiling {
-		t.Errorf("the worker holds descriptor %d, above the control socket and its job: %q",
-			highest, detail)
+	// Above the control socket, only the two descriptors this very job arrived
+	// with. The runtime's own poller descriptors carry FD_CLOEXEC and are not
+	// counted.
+	if inherited := fieldOf(t, detail, "inherited"); inherited != 2 {
+		t.Errorf("the worker holds %d inherited descriptors above the control socket, want the job's two: %q",
+			inherited, detail)
 	}
 }
 
