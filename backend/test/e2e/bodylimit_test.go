@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/protocol/limits"
 )
 
 // A body declared past its route's class is answered with a 413 the client can
@@ -72,5 +73,55 @@ func TestAnOversizedDeclaredBodyIsRefusedWithAReadableStatus(t *testing.T) {
 
 	if resp.StatusCode != http.StatusRequestEntityTooLarge {
 		t.Errorf("answered %d, want 413", resp.StatusCode)
+	}
+}
+
+// postLoginBody sends body to the sign-in route unchanged. A reader that is
+// not a strings.Reader leaves the length undeclared, so the body goes out
+// chunked.
+func postLoginBody(t *testing.T, base string, body io.Reader) int {
+	t.Helper()
+
+	req, err := http.NewRequest(http.MethodPost, base+"/api/v1/auth/login", body)
+	if err != nil {
+		t.Fatalf("building: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", base)
+
+	resp, err := testClient().Do(req)
+	if err != nil {
+		t.Fatalf("requesting: %v", err)
+	}
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			t.Errorf("closing the body: %v", cerr)
+		}
+	}()
+	readAll(t, resp)
+	return resp.StatusCode
+}
+
+// A body of two documents is refused: which one the server honoured would
+// depend on which one its decoder happened to take.
+func TestAJSONBodyOfTwoDocumentsIsRefused(t *testing.T) {
+	t.Parallel()
+	base := boot(t)
+
+	body := strings.NewReader(`{"login":"alice","password":"x"}{"login":"root","password":"y"}`)
+	if status := postLoginBody(t, base, body); status != http.StatusBadRequest {
+		t.Errorf("answered %d, want 400", status)
+	}
+}
+
+// A chunked body declares no length, so the bound is enforced while it is read.
+func TestAnUndeclaredBodyPastTheBoundIsRefused(t *testing.T) {
+	t.Parallel()
+	base := boot(t)
+
+	pad := strings.Repeat("a", limits.RequestBody+4096)
+	body := io.MultiReader(strings.NewReader(`{"login":"` + pad + `","password":"x"}`))
+	if status := postLoginBody(t, base, body); status != http.StatusRequestEntityTooLarge {
+		t.Errorf("answered %d, want 413", status)
 	}
 }
