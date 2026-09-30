@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Stowcloud Jev-Ultrafast Agentic E2E Launcher
-# Orchestrates isolated sc-engine, headless Chrome with remote debugging,
+# Orchestrates isolated stowcloud, headless Chrome with remote debugging,
 # OpenRouter Jev policy decisions, and deterministic oracles.
 #
 # Usage:
@@ -41,9 +41,9 @@ echo "==> Running doctor preflight check"
 if [ -n "${SC_TEST_BIN:-}" ] && [ -f "$SC_TEST_BIN" ]; then
   BIN="$SC_TEST_BIN"
 else
-  echo "==> Building sc-engine binary"
-  BIN=$(mktemp -d)/sc-engine
-  (cd backend && CGO_ENABLED=0 go build -tags embed_ui -o "$BIN" ./cmd/sc-engine)
+  echo "==> Building the stowcloud binary"
+  BIN=$(mktemp -d)/stowcloud
+  (cd backend && CGO_ENABLED=0 go build -tags embed_ui -o "$BIN" ./cmd/stowcloud)
 fi
 
 # 3. Create isolated temporary directories
@@ -57,8 +57,8 @@ echo "{\"bind\":\"127.0.0.1:$PORT\",\"app_hosts\":[\"localhost\",\"127.0.0.1\"]}
 echo '{"per_sec":2000,"burst":5000}' | seed rate
 echo '{"hardening":"off"}' | seed security
 
-# 4. Start sc-engine server
-echo "==> Starting isolated sc-engine on port $PORT"
+# 4. Start the stowcloud server
+echo "==> Starting isolated stowcloud on port $PORT"
 "$BIN" --data-dir "$DIR/data" > "$DIR/log" 2>&1 &
 SERVER_PID=$!
 
@@ -86,7 +86,7 @@ while [ "$SECONDS" -lt "$DEADLINE" ]; do
 done
 
 if [ "$READY" -ne 1 ]; then
-  echo "FATAL: sc-engine server failed to become ready on port $PORT" >&2
+  echo "FATAL: stowcloud server failed to become ready on port $PORT" >&2
   cat "$DIR/log" >&2
   exit 1
 fi

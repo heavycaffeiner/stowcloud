@@ -8,7 +8,7 @@ dev:
 
 build:
     cd frontend && pnpm build
-    cd backend && CGO_ENABLED=0 go build -tags "embed_ui compat_nc" -o sc-engine ./cmd/sc-engine
+    cd backend && CGO_ENABLED=0 go build -tags "embed_ui compat_nc" -o stowcloud ./cmd/stowcloud
 
 test:
     cd frontend && pnpm test && pnpm check

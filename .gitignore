@@ -29,7 +29,7 @@ frontend/playwright-report/
 # `go build ./cmd/<name>` or `./tools/<name>` from inside backend/ drops the binary
 # beside the source. One entry per command, because a bare `/backend/*` would hide
 # a new directory.
-/backend/sc-engine
+/backend/stowcloud
 /backend/sc-smb-agent
 # Runtime state the testbed compose stack creates beside its own file.
 /deploy/testbed/data

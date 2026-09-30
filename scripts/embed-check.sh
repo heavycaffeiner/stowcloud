@@ -46,8 +46,8 @@ fi
 echo "    built bundle: $WANT"
 
 echo "==> building the binary with the embed tag"
-BIN=$(mktemp -d)/sc-engine
-(cd backend && CGO_ENABLED=0 GOOS=linux go build -tags embed_ui -o "$BIN" ./cmd/sc-engine)
+BIN=$(mktemp -d)/stowcloud
+(cd backend && CGO_ENABLED=0 GOOS=linux go build -tags embed_ui -o "$BIN" ./cmd/stowcloud)
 
 # The tag is what turns the embed on. A build without it serves no interface at
 # all, which is correct for a build with no bundle and would quietly pass a

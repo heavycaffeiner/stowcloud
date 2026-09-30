@@ -53,8 +53,8 @@ else
 fi
 
 echo "==> building the binary"
-BIN=$(mktemp -d)/sc-engine
-(cd backend && CGO_ENABLED=0 GOOS=linux go build -tags embed_ui -o "$BIN" ./cmd/sc-engine)
+BIN=$(mktemp -d)/stowcloud
+(cd backend && CGO_ENABLED=0 GOOS=linux go build -tags embed_ui -o "$BIN" ./cmd/stowcloud)
 
 DIR=$(mktemp -d)
 mkdir -p "$DIR/data" "$DIR/share/sub"

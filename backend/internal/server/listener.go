@@ -99,7 +99,7 @@ func NewListener(config ListenerConfig, app listenerApp, router *gin.Engine) (*L
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       2 * time.Minute,
 		ProbePath:         "/health/ready",
-		ProbeIdentity:     "sc-engine",
+		ProbeIdentity:     "stowcloud",
 	}
 	admission := hanamibootstrap.NewAdmission()
 	controller := hanamiprocess.NewController()

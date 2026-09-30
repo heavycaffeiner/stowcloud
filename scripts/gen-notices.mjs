@@ -86,7 +86,7 @@ const rows = [] // {eco, name, version, license, url, texts:[id]}
 const goList = execFileSync('go', [
   'list', '-deps', '-tags', BUILD_TAGS,
   '-f', '{{if .Module}}{{.Module.Path}}\t{{.Module.Version}}\t{{.Module.Dir}}{{end}}',
-  './cmd/sc-engine',
+  './cmd/stowcloud',
 ], { cwd: 'backend', encoding: 'utf8', env: { ...process.env, CGO_ENABLED: '0' } })
 
 const OWN = 'github.com/heavycaffeiner/stowcloud/backend'

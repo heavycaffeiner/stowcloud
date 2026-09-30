@@ -43,7 +43,7 @@ def remove_empty_directory(relative: str) -> None:
 
 def main() -> None:
     remove_pycache()
-    for relative in ("backend/sc-engine", ".dev/sc-engine", ".dev/stowcloud"):
+    for relative in ("backend/sc-engine", "backend/stowcloud", ".dev/sc-engine", ".dev/stowcloud"):
         remove_binary(relative)
     for relative in ("web", "admin"):
         remove_empty_directory(relative)

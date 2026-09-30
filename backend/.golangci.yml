@@ -70,8 +70,8 @@ linters:
       # `revision` is written by the linker (-X main.revision=...), which is
       # the only mechanism Go offers for stamping a build. It cannot be a
       # const, and nothing at runtime writes it: it is read once to answer
-      # `sc-engine version` and to report what a deployment is running.
-      - path: cmd/sc-engine/main\.go
+      # `stowcloud version` and to report what a deployment is running.
+      - path: cmd/stowcloud/main\.go
         linters:
           - gochecknoglobals
 

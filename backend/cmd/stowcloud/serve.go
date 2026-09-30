@@ -31,7 +31,7 @@ const healthExitNoAnswer = int(server.HealthExitUnhealthy)
 //	healthcheck [--data-dir DIR]
 func runHealthcheck(argv []string) int {
 	errOut := log.New(os.Stderr, "", 0)
-	dataDir, rest, perr := config.ParseDataDirArgs("sc-engine healthcheck", argv, os.Stderr)
+	dataDir, rest, perr := config.ParseDataDirArgs("stowcloud healthcheck", argv, os.Stderr)
 	if perr != nil || len(rest) > 0 {
 		return healthExitNoAnswer
 	}
@@ -53,7 +53,7 @@ func runHealthcheck(argv []string) int {
 		}
 		roots := x509.NewCertPool()
 		if !roots.AppendCertsFromPEM(certPEM) {
-			errOut.Println("sc-engine healthcheck: the stored certificate does not parse")
+			errOut.Println("stowcloud healthcheck: the stored certificate does not parse")
 			return healthExitNoAnswer
 		}
 		client = &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, ServerName: "localhost"}}, Timeout: 5 * time.Second}
@@ -81,14 +81,14 @@ func runHealthcheck(argv []string) int {
 	}
 	defer func() {
 		if cerr := resp.Body.Close(); cerr != nil {
-			errOut.Printf("sc-engine healthcheck: closing the body: %v\n", cerr)
+			errOut.Printf("stowcloud healthcheck: closing the body: %v\n", cerr)
 		}
 	}()
 
 	if resp.StatusCode != http.StatusOK {
 		// A server that answered something other than the health document is
 		// a server that did not answer the question.
-		errOut.Printf("sc-engine healthcheck: the server answered %d\n", resp.StatusCode)
+		errOut.Printf("stowcloud healthcheck: the server answered %d\n", resp.StatusCode)
 		return healthExitNoAnswer
 	}
 
@@ -104,7 +104,7 @@ func runHealthcheck(argv []string) int {
 		return healthExitNoAnswer
 	}
 	if jerr := json.Unmarshal(body, &doc); jerr != nil {
-		errOut.Println("sc-engine healthcheck: the health document did not parse")
+		errOut.Println("stowcloud healthcheck: the health document did not parse")
 		return healthExitNoAnswer
 	}
 
@@ -118,7 +118,7 @@ func runHealthcheck(argv []string) int {
 	}
 	exit := server.HealthExitFor(doc.Status, nil)
 	if exit != server.HealthExitOK {
-		errOut.Printf("sc-engine healthcheck: unrecognised status %q\n", doc.Status)
+		errOut.Printf("stowcloud healthcheck: unrecognised status %q\n", doc.Status)
 	}
 	return int(exit)
 }

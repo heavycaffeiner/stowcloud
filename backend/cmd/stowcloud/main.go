@@ -29,7 +29,7 @@ func main() {
 		case "settings":
 			os.Exit(runSettings(os.Args[2:]))
 		case "serve":
-			os.Exit(runServe("sc-engine serve", os.Args[2:]))
+			os.Exit(runServe("stowcloud serve", os.Args[2:]))
 		case "healthcheck":
 			os.Exit(runHealthcheck(os.Args[2:]))
 		case "preview-worker":
@@ -39,7 +39,7 @@ func main() {
 		}
 	}
 
-	os.Exit(runServe("sc-engine", os.Args[1:]))
+	os.Exit(runServe("stowcloud", os.Args[1:]))
 }
 
 // revision is stamped into the binary at build time with -ldflags="-X main.revision=...".

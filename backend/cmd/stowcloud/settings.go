@@ -30,7 +30,7 @@ import (
 func takeSettingsLock(out *log.Logger, dataDir string) (*instance.Lock, bool) {
 	lock, err := instance.Take(dataDir)
 	if err != nil {
-		out.Printf("sc-engine settings: cannot edit settings while the server is running: %v\n", err)
+		out.Printf("stowcloud settings: cannot edit settings while the server is running: %v\n", err)
 		return nil, false
 	}
 	return lock, true
@@ -38,7 +38,7 @@ func takeSettingsLock(out *log.Logger, dataDir string) (*instance.Lock, bool) {
 
 func releaseSettingsLock(out *log.Logger, lock *instance.Lock) {
 	if err := lock.Release(); err != nil {
-		out.Printf("sc-engine settings: releasing the data-directory lock: %v\n", err)
+		out.Printf("stowcloud settings: releasing the data-directory lock: %v\n", err)
 	}
 }
 
@@ -59,8 +59,8 @@ func runSettings(argv []string) int {
 
 func settingsUsage() int {
 	out := log.New(os.Stderr, "", 0)
-	out.Println("usage: sc-engine settings get [--data-dir DIR]")
-	out.Println("       sc-engine settings set <section> [--data-dir DIR] < document.json")
+	out.Println("usage: stowcloud settings get [--data-dir DIR]")
+	out.Println("       stowcloud settings set <section> [--data-dir DIR] < document.json")
 	out.Println()
 	out.Println("  Reads or writes the stored settings directly, for a deployment whose")
 	out.Println("  stored configuration stops the server answering. The document is one")
@@ -77,7 +77,7 @@ func settingsUsage() int {
 // the write takes the data-directory lock, so it refuses while a server runs.
 func runSettingsSet(argv []string) int {
 	out := log.New(os.Stderr, "", 0)
-	dataDir, rest, perr := config.ParseDataDirArgs("sc-engine settings set", argv, os.Stderr)
+	dataDir, rest, perr := config.ParseDataDirArgs("stowcloud settings set", argv, os.Stderr)
 	if perr != nil || len(rest) != 1 {
 		return settingsUsage()
 	}
@@ -85,21 +85,21 @@ func runSettingsSet(argv []string) int {
 
 	raw, rerr := io.ReadAll(io.LimitReader(os.Stdin, 1<<20))
 	if rerr != nil {
-		out.Printf("sc-engine settings: reading the document: %v\n", rerr)
+		out.Printf("stowcloud settings: reading the document: %v\n", rerr)
 		return 1
 	}
 	var sectionBody map[string]any
 	if jerr := json.Unmarshal(raw, &sectionBody); jerr != nil {
-		out.Printf("sc-engine settings: the document is not a JSON object: %v\n", jerr)
+		out.Printf("stowcloud settings: the document is not a JSON object: %v\n", jerr)
 		return 1
 	}
 	if !config.Known(section) {
-		out.Printf("sc-engine settings: unknown section %q\n", section)
+		out.Printf("stowcloud settings: unknown section %q\n", section)
 		return 1
 	}
 	findings := config.Section(config.Input{Section: section, Body: sectionBody, DataDir: dataDir, Lockout: config.LockoutWarns})
 	if config.Blocked(findings) {
-		out.Printf("sc-engine settings: settings refused: %v\n", findings)
+		out.Printf("stowcloud settings: settings refused: %v\n", findings)
 		return 1
 	}
 	lock, ok := takeSettingsLock(out, dataDir)
@@ -109,17 +109,17 @@ func runSettingsSet(argv []string) int {
 	defer releaseSettingsLock(out, lock)
 	stateFile, err := dbfile.Open(context.Background(), state.Spec(filepath.Join(dataDir, "state.db")))
 	if err != nil {
-		out.Printf("sc-engine settings: opening the store: %v\n", err)
+		out.Printf("stowcloud settings: opening the store: %v\n", err)
 		return 1
 	}
 	defer func() {
 		if cerr := stateFile.Close(); cerr != nil {
-			out.Printf("sc-engine settings: closing the store: %v\n", cerr)
+			out.Printf("stowcloud settings: closing the store: %v\n", cerr)
 		}
 	}()
 	st := state.New(stateFile)
 	if merr := st.MergeSettings(context.Background(), section, sectionBody); merr != nil {
-		out.Printf("sc-engine settings: writing %s: %v\n", section, merr)
+		out.Printf("stowcloud settings: writing %s: %v\n", section, merr)
 		return 1
 	}
 	out.Printf("wrote the %s section\n", section)
@@ -128,7 +128,7 @@ func runSettingsSet(argv []string) int {
 
 func runSettingsGet(argv []string) int {
 	out := log.New(os.Stderr, "", 0)
-	dataDir, rest, perr := config.ParseDataDirArgs("sc-engine settings get", argv, os.Stderr)
+	dataDir, rest, perr := config.ParseDataDirArgs("stowcloud settings get", argv, os.Stderr)
 	if perr != nil || len(rest) > 0 {
 		return settingsUsage()
 	}
@@ -140,27 +140,27 @@ func runSettingsGet(argv []string) int {
 
 	stateFile, err := dbfile.Open(context.Background(), state.Spec(filepath.Join(dataDir, "state.db")))
 	if err != nil {
-		out.Printf("sc-engine settings: opening the store: %v\n", err)
+		out.Printf("stowcloud settings: opening the store: %v\n", err)
 		return 1
 	}
 	defer func() {
 		if cerr := stateFile.Close(); cerr != nil {
-			out.Printf("sc-engine settings: closing the store: %v\n", cerr)
+			out.Printf("stowcloud settings: closing the store: %v\n", cerr)
 		}
 	}()
 	st := state.New(stateFile)
 	all, aerr := st.Settings(context.Background())
 	if aerr != nil {
-		out.Printf("sc-engine settings: reading them: %v\n", aerr)
+		out.Printf("stowcloud settings: reading them: %v\n", aerr)
 		return 1
 	}
 	body, jerr := json.MarshalIndent(all, "", "  ")
 	if jerr != nil {
-		out.Printf("sc-engine settings: rendering them: %v\n", jerr)
+		out.Printf("stowcloud settings: rendering them: %v\n", jerr)
 		return 1
 	}
 	if _, werr := fmt.Fprintln(os.Stdout, string(body)); werr != nil {
-		out.Printf("sc-engine settings: writing them out: %v\n", werr)
+		out.Printf("stowcloud settings: writing them out: %v\n", werr)
 		return 1
 	}
 	return 0

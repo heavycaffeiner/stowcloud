@@ -41,13 +41,13 @@ function resolveBinary(): string {
     return cachedBinPath
   }
   const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
-  const tempBin = path.join(os.tmpdir(), 'stowcloud-e2e-sc-engine')
+  const tempBin = path.join(os.tmpdir(), 'stowcloud-e2e-bin')
   if (fs.existsSync(tempBin)) {
     cachedBinPath = tempBin
     return tempBin
   }
 
-  execSync('go build -tags embed_ui -o ' + JSON.stringify(tempBin) + ' ./cmd/sc-engine', {
+  execSync('go build -tags embed_ui -o ' + JSON.stringify(tempBin) + ' ./cmd/stowcloud', {
     cwd: path.join(repoRoot, 'backend'),
     env: { ...process.env, CGO_ENABLED: '0', GOOS: 'linux' },
     stdio: 'pipe'
@@ -141,7 +141,7 @@ export const test = base.extend({
         proc.kill('SIGKILL')
         fs.closeSync(logFd)
         const logContent = fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf8') : 'no log'
-        throw new Error(`sc-engine failed to become healthy on port ${port}. Log:\n${logContent}`)
+        throw new Error(`stowcloud failed to become healthy on port ${port}. Log:\n${logContent}`)
       }
 
       let setupToken = ''
