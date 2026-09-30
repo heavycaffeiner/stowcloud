@@ -182,7 +182,9 @@ export const steps = style({
   display: 'flex',
   gap: '8px',
   flexWrap: 'wrap',
+  margin: '0',
   padding: '8px 0',
+  listStyle: 'none',
   color: vars.content.secondary
 })
 
@@ -194,7 +196,8 @@ export const step = style({
 
 export const stepActive = style({
   color: `rgb(${vars.color.primary})`,
-  borderColor: `rgb(${vars.color.primary})`
+  borderColor: `rgb(${vars.color.primary})`,
+  fontWeight: '600'
 })
 
 export const pathRow = style({

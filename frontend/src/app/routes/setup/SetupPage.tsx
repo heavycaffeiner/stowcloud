@@ -160,17 +160,21 @@ export function SetupPage() {
           </>
         ) : (
           <>
-            <nav className={authStyles.steps} aria-label={t('setup.create_administrator_account')}>
-              <span className={cx(authStyles.step, step === 1 && authStyles.stepActive)}>
-                1. {t('setup.create_administrator_account')}
-              </span>
-              <span className={cx(authStyles.step, step === 2 && authStyles.stepActive)}>
-                2. {t('setup.how_this_server_is_reached')}
-              </span>
-              <span className={cx(authStyles.step, step === 3 && authStyles.stepActive)}>
-                3. {t('setup.first_shared_folder')}
-              </span>
-            </nav>
+            <ol className={authStyles.steps} aria-label={t('progress.progress')}>
+              {[
+                t('setup.create_administrator_account'),
+                t('setup.how_this_server_is_reached'),
+                t('setup.first_shared_folder')
+              ].map((label, index) => (
+                <li
+                  key={label}
+                  className={cx(authStyles.step, step === index + 1 && authStyles.stepActive)}
+                  aria-current={step === index + 1 ? 'step' : undefined}
+                >
+                  {index + 1}. {label}
+                </li>
+              ))}
+            </ol>
             {step === 1 ? (
               <>
                 <TextField
