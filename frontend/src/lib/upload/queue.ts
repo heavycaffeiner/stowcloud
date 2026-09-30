@@ -13,15 +13,15 @@ import { queryClient } from '../query/client'
 import { invalidateDirs } from '../query/files'
 import { keys } from '../query/keys'
 import { uploads } from '../store/upload.store'
+import { CHUNK_SIZE_MIN } from './chunk-planner'
 import {
-  CHUNK_SIZE_MIN,
   loadStoredChunkSize,
   loadStoredConcurrency,
   storeChunkSize,
   storeConcurrency,
   subscribeUploadPreferences
-} from './chunk-planner'
-import type { AddItem, Cmd, Evt } from './worker'
+} from './preferences'
+import type { AddItem, Cmd, Evt } from './protocol'
 
 let worker: Worker | null = null
 
@@ -148,7 +148,7 @@ function syncWorkerPreferences(): void {
 
 function send(cmd: Cmd): void {
   if (worker === null) {
-    worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })
+    worker = new Worker(new URL('../../workers/upload.ts', import.meta.url), { type: 'module' })
     worker.addEventListener('message', (ev: MessageEvent<Evt>) => handle(ev.data))
     subscribeUploadPreferences(syncWorkerPreferences)
   }

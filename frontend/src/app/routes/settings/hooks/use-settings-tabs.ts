@@ -1,10 +1,7 @@
 import { useEffect, useMemo, useSyncExternalStore } from 'react'
 import { useRouteStore } from '../../../hooks/use-route-store'
-import {
-  DEFAULT_CONCURRENCY,
-  loadStoredConcurrency,
-  subscribeUploadPreferences
-} from '../../../../lib/upload/chunk-planner'
+import { DEFAULT_CONCURRENCY } from '../../../../lib/upload/chunk-planner'
+import { loadStoredConcurrency, subscribeUploadPreferences } from '../../../../lib/upload/preferences'
 import { setUploadConcurrency } from '../../../../lib/upload/queue'
 
 export const settingsTabs = ['account', 'security', 'connections', 'appearance'] as const

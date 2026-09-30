@@ -1,90 +1,18 @@
 // Pure upload-chunk planning.
-// /, §8.
 //
 // Deliberately does not use an IntervalSet: a client only ever resumes from
-// a single contiguous prefix (the value HEAD returns, per: "HEAD always returns the 0-based contiguous run end"), so planning
-// is just "list fixed-size chunks from resumeOffset to totalSize". No
-// merge/overlap bookkeeping is needed on the client.
+// the single contiguous prefix that HEAD returns, so planning is just "list
+// fixed-size chunks from resumeOffset to totalSize".
 
 export const CHUNK_SIZE_MIN = 5 * 1024 * 1024 // 5 MB, server-enforced floor
 export const CHUNK_SIZE_DEFAULT = 10 * 1024 * 1024 // 10 MB
 
-// Browser preferences are persisted by the window and sent to the upload worker.
-export const CHUNK_SIZE_STORAGE_KEY = 'sc.chunk_size'
-
-export const UPLOAD_CONCURRENCY_STORAGE_KEY = 'sc.upload_concurrency'
 export const DEFAULT_CONCURRENCY = 4
 export const MIN_CONCURRENCY = 1
 export const MAX_CONCURRENCY = 16
 
-const preferenceListeners = new Set<() => void>()
-
-export function subscribeUploadPreferences(listener: () => void): () => void {
-  preferenceListeners.add(listener)
-  const onStorage = (event: StorageEvent): void => {
-    if (event.key === null || event.key === CHUNK_SIZE_STORAGE_KEY || event.key === UPLOAD_CONCURRENCY_STORAGE_KEY)
-      listener()
-  }
-  if (typeof window !== 'undefined') window.addEventListener('storage', onStorage)
-  return () => {
-    preferenceListeners.delete(listener)
-    if (typeof window !== 'undefined') window.removeEventListener('storage', onStorage)
-  }
-}
-
-function notifyPreferences(): void {
-  for (const listener of preferenceListeners) listener()
-}
-
 export function validChunkSizeOverride(value: number, min = CHUNK_SIZE_MIN): boolean {
   return Number.isSafeInteger(value) && value >= Math.max(CHUNK_SIZE_MIN, min)
-}
-
-export function loadStoredChunkSize(min = CHUNK_SIZE_MIN): number | null {
-  try {
-    const raw = localStorage.getItem(CHUNK_SIZE_STORAGE_KEY)
-    if (!raw) return null
-    const value = Number(raw)
-    return validChunkSizeOverride(value, min) ? value : null
-  } catch {
-    return null
-  }
-}
-
-export function storeChunkSize(value: number | null, min = CHUNK_SIZE_MIN): boolean {
-  if (value !== null && !validChunkSizeOverride(value, min)) return false
-  try {
-    if (value === null) localStorage.removeItem(CHUNK_SIZE_STORAGE_KEY)
-    else localStorage.setItem(CHUNK_SIZE_STORAGE_KEY, String(value))
-  } catch {
-    return false
-  }
-  notifyPreferences()
-  return true
-}
-
-export function loadStoredConcurrency(): number {
-  try {
-    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(UPLOAD_CONCURRENCY_STORAGE_KEY) : null
-    if (!raw) return DEFAULT_CONCURRENCY
-    const n = Number(raw)
-    if (!Number.isFinite(n)) return DEFAULT_CONCURRENCY
-    return Math.max(MIN_CONCURRENCY, Math.min(MAX_CONCURRENCY, Math.round(n)))
-  } catch {
-    return DEFAULT_CONCURRENCY
-  }
-}
-
-export function storeConcurrency(value: number): boolean {
-  if (!Number.isFinite(value)) return false
-  try {
-    const clamped = Math.max(MIN_CONCURRENCY, Math.min(MAX_CONCURRENCY, Math.round(value)))
-    localStorage.setItem(UPLOAD_CONCURRENCY_STORAGE_KEY, String(clamped))
-  } catch {
-    return false
-  }
-  notifyPreferences()
-  return true
 }
 
 export interface ChunkDescriptor {

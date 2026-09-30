@@ -8,13 +8,11 @@ import { BYTES_PER_MB, bytesToMb, formatBytes } from '../../lib/format/bytes'
 import {
   CHUNK_SIZE_MIN,
   DEFAULT_CONCURRENCY,
-  loadStoredChunkSize,
-  loadStoredConcurrency,
   MAX_CONCURRENCY,
   MIN_CONCURRENCY,
-  subscribeUploadPreferences,
   validChunkSizeOverride
 } from '../../lib/upload/chunk-planner'
+import { loadStoredChunkSize, loadStoredConcurrency, subscribeUploadPreferences } from '../../lib/upload/preferences'
 import { setUploadChunkSize, setUploadConcurrency } from '../../lib/upload/queue'
 import { Button } from '../../lib/ui/Button'
 import { Icon } from '../../lib/ui/Icon'
