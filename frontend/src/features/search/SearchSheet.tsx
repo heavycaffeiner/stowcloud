@@ -26,7 +26,7 @@ export function SearchSheet({ open, scope = '', onClose }: SearchSheetProps) {
       className={styles.root}
       label={t('search.title')}
       onClose={onClose}
-      initialFocus={(dialog) => dialog.querySelector<HTMLElement>('input[type="search"]')}
+      initialFocus={(dialog) => dialog.querySelector<HTMLElement>('[role="searchbox"]')}
     >
       <div className={styles.body}>
         <ErrorBoundary>

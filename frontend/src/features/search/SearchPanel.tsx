@@ -60,7 +60,11 @@ export function SearchPanel({ scope = '', autoFocus = false, onNavigated, traili
         <input
           ref={controller.inputRef}
           className={styles.input}
-          type="search"
+          type="text"
+          role="searchbox"
+          inputMode="search"
+          enterKeyHint="search"
+          aria-label={t('search.placeholder')}
           value={state.query}
           placeholder={t('search.placeholder')}
           autoFocus={autoFocus}

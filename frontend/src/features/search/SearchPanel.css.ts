@@ -95,22 +95,6 @@ export const input = style({
   outline: 'none',
   padding: '0',
   selectors: {
-    '&::-webkit-search-decoration': {
-      WebkitAppearance: 'none',
-      display: 'none'
-    },
-    '&::-webkit-search-cancel-button': {
-      WebkitAppearance: 'none',
-      display: 'none'
-    },
-    '&::-webkit-search-results-button': {
-      WebkitAppearance: 'none',
-      display: 'none'
-    },
-    '&::-webkit-search-results-decoration': {
-      WebkitAppearance: 'none',
-      display: 'none'
-    },
     '&::placeholder': {
       color: vars.content.secondary
     }
