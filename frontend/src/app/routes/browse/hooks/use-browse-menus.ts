@@ -1,9 +1,10 @@
-import type { MouseEvent as ReactMouseEvent } from 'react'
+import type { Dispatch, MouseEvent as ReactMouseEvent } from 'react'
 import { useEffect } from 'react'
 import type { NewActionAnchor } from '../../../AppShell'
 import type { BrowseState } from '../logic/types'
+import type { StatePatch } from '../../../../lib/merge-state'
 
-type Patch = (patch: Partial<BrowseState> | ((state: BrowseState) => Partial<BrowseState>)) => void
+type Patch = Dispatch<StatePatch<BrowseState>>
 type Translate = (key: string, params?: Record<string, string | number>) => string
 
 export function useBrowseMenus({

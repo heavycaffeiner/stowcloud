@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useReducer } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import type { Entry, OwnedShareLinkInfo, Perms, ShareLinkInfo } from '../../../../lib/api/client'
 import { describeApiError } from '../../../../lib/api/error-text'
@@ -6,7 +6,7 @@ import { normalizePath } from '../../../../lib/api/path-utils'
 import { queryClient } from '../../../../lib/query/client'
 import { keys } from '../../../../lib/query/keys'
 import { statQuery } from '../../../../lib/query/files'
-import { useRouteStore } from '../../../hooks/use-route-store'
+import { mergeState } from '../../../../lib/merge-state'
 
 type LinkRow = ShareLinkInfo | OwnedShareLinkInfo
 export type { LinkRow }
@@ -37,7 +37,7 @@ function isOwned(link: LinkRow): link is OwnedShareLinkInfo {
 }
 
 export function useLinkManagement(userId: number | undefined, t: Translator) {
-  const [state, setState] = useRouteStore<LinkManagementState>({
+  const [state, setState] = useReducer(mergeState<LinkManagementState>, {
     managing: null,
     managingTarget: null,
     resolvingPath: null,

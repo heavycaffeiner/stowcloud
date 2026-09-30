@@ -1,4 +1,4 @@
-import type { DragEvent } from 'react'
+import type { Dispatch, DragEvent } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { ApiError, type Entry, type OnConflict } from '../../../../lib/api/client'
 import type { ShareEncryption } from '../../../../lib/api/types'
@@ -22,8 +22,9 @@ import { rowActions, type RowAction } from '../../../../features/files/logic/row
 import { browseTransferSources, runBrowseTransfer } from '../logic/browse-transfer'
 import { createBrowseUploadActions } from '../logic/browse-upload'
 import type { BrowseState } from '../logic/types'
+import type { StatePatch } from '../../../../lib/merge-state'
 
-type Patch = (patch: Partial<BrowseState> | ((state: BrowseState) => Partial<BrowseState>)) => void
+type Patch = Dispatch<StatePatch<BrowseState>>
 
 type BrowseActionContext = {
   path: string

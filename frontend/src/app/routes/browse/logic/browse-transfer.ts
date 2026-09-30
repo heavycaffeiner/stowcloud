@@ -1,3 +1,4 @@
+import type { Dispatch } from 'react'
 import { ApiError, type BatchResult, type Entry, type OnConflict } from '../../../../lib/api/client'
 import type { CopyResult } from '../../../../lib/api/types'
 import { baseName, joinPath } from '../../../../lib/api/path-utils'
@@ -5,8 +6,9 @@ import { batchErrorKey, describeApiError } from '../../../../lib/api/error-text'
 import { jobTray } from '../../../../lib/store/jobs.store'
 import { selection } from '../../../../lib/store/selection.store'
 import type { BrowseState } from './types'
+import type { StatePatch } from '../../../../lib/merge-state'
 
-type Patch = (patch: Partial<BrowseState> | ((state: BrowseState) => Partial<BrowseState>)) => void
+type Patch = Dispatch<StatePatch<BrowseState>>
 type Translate = (key: string, params?: Record<string, string | number>) => string
 type Mutation = {
   mutateAsync: (args: { paths: string[]; dest: string; onConflict: OnConflict }) => Promise<BatchResult | CopyResult>

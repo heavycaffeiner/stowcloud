@@ -1,11 +1,11 @@
 import { useMutation } from '@tanstack/react-query'
-import { useEffect, useRef } from 'react'
+import { useEffect, useReducer, useRef } from 'react'
 import type { BatchItemResult } from '../../../../lib/api/types'
 import { describeApiError } from '../../../../lib/api/error-text'
 import { tp } from '../../../../lib/i18n'
 import { trashPurgeMutation, trashRestoreMutation } from '../../../../lib/query/files'
 import { selection } from '../../../../lib/store/selection.store'
-import { useRouteStore } from '../../../hooks/use-route-store'
+import { mergeState } from '../../../../lib/merge-state'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
 
@@ -19,7 +19,7 @@ export type TrashState = {
 export function useTrashActions(t: Translate, selected: ReadonlySet<string>) {
   const restore = useMutation(trashRestoreMutation())
   const purge = useMutation(trashPurgeMutation())
-  const [state, setState] = useRouteStore<TrashState>({
+  const [state, setState] = useReducer(mergeState<TrashState>, {
     purgeOpen: false,
     purgeSingle: null,
     operation: null,

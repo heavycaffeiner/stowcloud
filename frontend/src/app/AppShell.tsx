@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { useMemo, useRef } from 'react'
+import { useMemo, useReducer, useRef } from 'react'
 import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useI18n } from '../hooks/use-i18n'
 import { isUnauthenticated, logoutMutation, screenOf, sessionQuery, setupRequiredQuery } from '../lib/query/session'
@@ -13,7 +13,6 @@ import { SearchSheet } from '../features/search/SearchSheet'
 import { Icon } from '../lib/ui/Icon'
 import { UploadTray } from '../features/uploads/UploadTray'
 import '../styles/app/shell.css.ts'
-import { useRouteStore } from './hooks/use-route-store'
 import {
   browsePathFromUrl,
   useAccountMenuDismissal,
@@ -25,6 +24,7 @@ import {
   useTrayGeometry,
   type ShellState
 } from './hooks/use-shell-lifecycle'
+import { mergeState } from '../lib/merge-state'
 
 /** Where the create menu should open, in viewport coordinates. `align` says
  * which edge `x` refers to: a left-hand trigger anchors its left edge, a
@@ -53,7 +53,7 @@ export function AppShell() {
     setupPending: definitiveFailure && setup.isPending,
     setupRequired: setup.data === true
   })
-  const [shell, setShell] = useRouteStore<ShellState>({
+  const [shell, setShell] = useReducer(mergeState<ShellState>, {
     lastBrowsePath: null,
     mobileDrawerOpen: false,
     folderSelectorOpen: false,

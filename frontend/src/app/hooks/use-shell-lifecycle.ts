@@ -1,8 +1,8 @@
-import { useEffect, type RefObject } from 'react'
+import { useEffect, type Dispatch, type RefObject } from 'react'
 import { swReady } from '../../lib/crypto/download-sw'
 import { startLiveInvalidation } from '../../lib/query/live'
 import { COMPACT_MAX_PX, ui } from '../../lib/store/ui.store'
-import type { RoutePatch } from './use-route-store'
+import type { StatePatch } from '../../lib/merge-state'
 
 /** State that belongs to the mounted application shell, not to a route. */
 export interface ShellState {
@@ -12,7 +12,7 @@ export interface ShellState {
   readonly accountMenuOpen: boolean
 }
 
-export type SetShellState = (patch: RoutePatch<ShellState>) => void
+export type SetShellState = Dispatch<StatePatch<ShellState>>
 
 export function isBrowsePathname(pathname: string): boolean {
   return pathname === '/b' || pathname.startsWith('/b/')

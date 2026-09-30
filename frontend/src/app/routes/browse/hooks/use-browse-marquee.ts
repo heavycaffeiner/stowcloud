@@ -1,12 +1,13 @@
-import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react'
+import type { Dispatch, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { useRef } from 'react'
 import { selection } from '../../../../lib/store/selection.store'
 import { autoScrollStep, movedFar, rectBetween } from '../../../../features/files/logic/marquee'
 import type { FileGridHandle } from '../../../../features/files/FileGrid'
 import type { FileViewHandle } from '../../../../features/files/FileTable'
 import type { BrowseState } from '../logic/types'
+import type { StatePatch } from '../../../../lib/merge-state'
 
-type Patch = (patch: Partial<BrowseState> | ((state: BrowseState) => Partial<BrowseState>)) => void
+type Patch = Dispatch<StatePatch<BrowseState>>
 
 export function useBrowseMarquee({
   mode,

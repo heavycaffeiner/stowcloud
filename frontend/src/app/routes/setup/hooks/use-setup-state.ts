@@ -1,5 +1,6 @@
-import { useRouteStore } from '../../../hooks/use-route-store'
+import { type Dispatch, useReducer } from 'react'
 import type { SetupFinding } from '../../../../lib/api/setup'
+import { mergeState, type StatePatch } from '../../../../lib/merge-state'
 
 export type SetupState = {
   token: string
@@ -22,7 +23,7 @@ export type SetupState = {
 }
 
 export type SetupActions = {
-  patch: (patch: Partial<SetupState> | ((state: SetupState) => Partial<SetupState>)) => void
+  patch: Dispatch<StatePatch<SetupState>>
   setToken: (value: string) => void
   setUsername: (value: string) => void
   setPassword: (value: string) => void
@@ -56,7 +57,7 @@ const initialState: SetupState = {
 }
 
 export function useSetupState(): { state: SetupState; actions: SetupActions } {
-  const [state, patch] = useRouteStore<SetupState>(initialState)
+  const [state, patch] = useReducer(mergeState<SetupState>, initialState)
   const actions: SetupActions = {
     patch,
     setToken: (value) => patch({ token: value }),

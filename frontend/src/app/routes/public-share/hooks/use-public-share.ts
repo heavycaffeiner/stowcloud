@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useReducer, useRef } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   getShare,
@@ -11,8 +11,8 @@ import {
   unlockShare
 } from '../../../../lib/api/share'
 import { useI18n } from '../../../../hooks/use-i18n'
-import { useRouteStore } from '../../../hooks/use-route-store'
 import { createPublicShareQueue, type DropItem, type PublicShareQueue } from '../logic/public-share-queue'
+import { mergeState } from '../../../../lib/merge-state'
 type PublicShareState = {
   password: string
   unlockError: string | null
@@ -28,7 +28,7 @@ export function usePublicShare() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const path = searchParams.get('path') ?? ''
-  const [state, setState] = useRouteStore<PublicShareState>({
+  const [state, setState] = useReducer(mergeState<PublicShareState>, {
     password: '',
     unlockError: null,
     unlocking: false,

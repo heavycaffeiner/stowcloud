@@ -1,6 +1,6 @@
-import { useMemo } from 'react'
-import { useRouteStore } from '../../../hooks/use-route-store'
+import { type Dispatch, useMemo, useReducer } from 'react'
 import type { EmergencyFinding, EmergencySettings } from '../../../../lib/api/emergency'
+import { mergeState, type StatePatch } from '../../../../lib/merge-state'
 
 export type EmergencyStep = 'loading' | 'setup' | 'credentials' | 'totp' | 'editing'
 export type SectionOutcome = { section: string; ok: boolean; message: string }
@@ -29,7 +29,7 @@ export type EmergencyState = {
 }
 
 export type EmergencyActions = {
-  patch: (patch: Partial<EmergencyState> | ((state: EmergencyState) => Partial<EmergencyState>)) => void
+  patch: Dispatch<StatePatch<EmergencyState>>
   setStep: (step: EmergencyStep) => void
   setUsername: (username: string) => void
   setPassword: (password: string) => void
@@ -69,7 +69,7 @@ function storedDocument(settings: EmergencySettings, name: string): string {
 }
 
 export function useEmergencyState(): { state: EmergencyState; actions: EmergencyActions } {
-  const [state, patch] = useRouteStore<EmergencyState>(initialState)
+  const [state, patch] = useReducer(mergeState<EmergencyState>, initialState)
   const actions = useMemo<EmergencyActions>(
     () => ({
       patch,

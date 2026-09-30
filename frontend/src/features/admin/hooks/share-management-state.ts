@@ -1,5 +1,6 @@
-import { usePatchState } from '../../../hooks/use-component-state'
+import { type Dispatch, useReducer } from 'react'
 import type { AdminShare, ShareBackend } from '../../../lib/api/client'
+import { mergeState, type StatePatch } from '../../../lib/merge-state'
 
 export interface BackendForm {
   hostPath: string
@@ -91,9 +92,6 @@ const initialShareManagementState: ShareManagementState = {
   pathPickerCounter: 0
 }
 
-export type ShareManagementPatch =
-  Partial<ShareManagementState> | ((state: ShareManagementState) => Partial<ShareManagementState>)
-
-export function useShareManagementState(): readonly [ShareManagementState, (patch: ShareManagementPatch) => void] {
-  return usePatchState(initialShareManagementState)
+export function useShareManagementState(): readonly [ShareManagementState, Dispatch<StatePatch<ShareManagementState>>] {
+  return useReducer(mergeState<ShareManagementState>, initialShareManagementState)
 }

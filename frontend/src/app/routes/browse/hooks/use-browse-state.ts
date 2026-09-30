@@ -1,10 +1,10 @@
-import { useCallback, useRef } from 'react'
-import { useRouteStore } from '../../../hooks/use-route-store'
+import { type Dispatch, useMemo, useReducer } from 'react'
 import type { BrowseState } from '../logic/types'
 import { initialBrowseState } from '../logic/types'
+import { mergeState, type StatePatch } from '../../../../lib/merge-state'
 
 export type BrowseActions = {
-  patch: (patch: Partial<BrowseState> | ((state: BrowseState) => Partial<BrowseState>)) => void
+  patch: Dispatch<StatePatch<BrowseState>>
   closeContextMenus: () => void
   closeMenus: () => void
   setSnackbar: (message: string | null) => void
@@ -12,22 +12,16 @@ export type BrowseActions = {
 }
 
 export function useBrowseState(): [BrowseState, BrowseActions] {
-  const [state, patch] = useRouteStore<BrowseState>(initialBrowseState)
-  const patchRef = useRef(patch)
-  patchRef.current = patch
-  const closeContextMenus = useCallback(
-    () => patchRef.current({ contextMenu: null, blankMenu: null, menuTrigger: null }),
+  const [state, patch] = useReducer(mergeState<BrowseState>, initialBrowseState)
+  const actions = useMemo<BrowseActions>(
+    () => ({
+      patch,
+      closeContextMenus: () => patch({ contextMenu: null, blankMenu: null, menuTrigger: null }),
+      closeMenus: () => patch({ newMenuOpen: false, overflowOpen: false, typeMenuOpen: false, dateMenuOpen: false }),
+      setSnackbar: (message) => patch({ snackbar: message }),
+      openConflict: (name, retry) => patch({ conflictName: name, conflictRetry: retry, conflictOpen: true })
+    }),
     []
   )
-  const closeMenus = useCallback(
-    () => patchRef.current({ newMenuOpen: false, overflowOpen: false, typeMenuOpen: false, dateMenuOpen: false }),
-    []
-  )
-  const setSnackbar = useCallback((message: string | null) => patchRef.current({ snackbar: message }), [])
-  const openConflict = useCallback(
-    (name: string, retry: BrowseState['conflictRetry']) =>
-      patchRef.current({ conflictName: name, conflictRetry: retry, conflictOpen: true }),
-    []
-  )
-  return [state, { patch, closeContextMenus, closeMenus, setSnackbar, openConflict }]
+  return [state, actions]
 }

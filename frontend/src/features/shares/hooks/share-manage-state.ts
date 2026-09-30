@@ -1,5 +1,6 @@
-import { usePatchState } from '../../../hooks/use-component-state'
+import { type Dispatch, useReducer } from 'react'
 import type { ShareLinkInfo } from '../../../lib/api/client'
+import { mergeState, type StatePatch } from '../../../lib/merge-state'
 
 export interface ShareManageState {
   dialogOpen: boolean
@@ -57,10 +58,8 @@ const initialShareManageState: ShareManageState = {
   copyErrorId: null
 }
 
-export type ShareManagePatch = Partial<ShareManageState> | ((state: ShareManageState) => Partial<ShareManageState>)
-
-export function useShareManageState(): [ShareManageState, (patch: ShareManagePatch) => void] {
-  return usePatchState(initialShareManageState)
+export function useShareManageState(): [ShareManageState, Dispatch<StatePatch<ShareManageState>>] {
+  return useReducer(mergeState<ShareManageState>, initialShareManageState)
 }
 
 export interface UnlockShareState {
@@ -70,8 +69,6 @@ export interface UnlockShareState {
 }
 
 const initialUnlockShareState: UnlockShareState = { passphrase: '', unlocking: false, error: null }
-export type UnlockSharePatch = Partial<UnlockShareState> | ((state: UnlockShareState) => Partial<UnlockShareState>)
-
-export function useUnlockShareState(): [UnlockShareState, (patch: UnlockSharePatch) => void] {
-  return usePatchState(initialUnlockShareState)
+export function useUnlockShareState(): [UnlockShareState, Dispatch<StatePatch<UnlockShareState>>] {
+  return useReducer(mergeState<UnlockShareState>, initialUnlockShareState)
 }

@@ -1,5 +1,6 @@
-import { usePatchState } from '../../../hooks/use-component-state'
+import { type Dispatch, useReducer } from 'react'
 import type { ApplyOutcome } from '../../../lib/api/types'
+import { mergeState, type StatePatch } from '../../../lib/merge-state'
 
 export type ServerSettingsGroup =
   'smb' | 'search' | 'thumbnail' | 'archive' | 'network' | 'db' | 'homes' | 'watch' | 'rate' | 'oidc'
@@ -18,9 +19,6 @@ export interface ServerSettingsState {
   secret: string
   announcement: string
 }
-
-export type ServerSettingsPatch =
-  Partial<ServerSettingsState> | ((state: ServerSettingsState) => Partial<ServerSettingsState>)
 
 export const SERVER_SETTINGS_GROUPS: readonly ServerSettingsGroup[] = [
   'smb',
@@ -54,6 +52,6 @@ const initialServerSettingsState: ServerSettingsState = {
   announcement: ''
 }
 
-export function useServerSettingsState(): readonly [ServerSettingsState, (patch: ServerSettingsPatch) => void] {
-  return usePatchState(initialServerSettingsState)
+export function useServerSettingsState(): readonly [ServerSettingsState, Dispatch<StatePatch<ServerSettingsState>>] {
+  return useReducer(mergeState<ServerSettingsState>, initialServerSettingsState)
 }

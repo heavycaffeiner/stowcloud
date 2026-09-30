@@ -1,4 +1,4 @@
-import type { ChangeEvent, MouseEvent as ReactMouseEvent, RefObject } from 'react'
+import type { ChangeEvent, Dispatch, MouseEvent as ReactMouseEvent, RefObject } from 'react'
 import { useEffect } from 'react'
 import type { Entry, Perms } from '../../../lib/api/client'
 import type { FileGridHandle } from '../../../features/files/FileGrid'
@@ -27,8 +27,9 @@ import {
 import { joinPath } from '../../../lib/api/path-utils'
 import type { BrowseState, BrowseFilterDate, BrowseFilterType } from './logic/types'
 import type { RowAction } from '../../../features/files/logic/row-actions'
+import type { StatePatch } from '../../../lib/merge-state'
 
-type Patch = (patch: Partial<BrowseState> | ((state: BrowseState) => Partial<BrowseState>)) => void
+type Patch = Dispatch<StatePatch<BrowseState>>
 type Translate = (key: string, params?: Record<string, string | number>) => string
 
 type BrowseToolbarModel = {

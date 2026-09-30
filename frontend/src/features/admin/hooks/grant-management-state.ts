@@ -1,5 +1,6 @@
-import { usePatchState } from '../../../hooks/use-component-state'
+import { type Dispatch, useReducer } from 'react'
 import type { AdminGrant, GrantPermName } from '../../../lib/api/client'
+import { mergeState, type StatePatch } from '../../../lib/merge-state'
 
 export interface GrantManagementState {
   expandedIds: Set<number>
@@ -39,9 +40,6 @@ const initialGrantManagementState: GrantManagementState = {
   deleteTarget: null
 }
 
-export type GrantManagementPatch =
-  Partial<GrantManagementState> | ((state: GrantManagementState) => Partial<GrantManagementState>)
-
-export function useGrantManagementState(): readonly [GrantManagementState, (patch: GrantManagementPatch) => void] {
-  return usePatchState(initialGrantManagementState)
+export function useGrantManagementState(): readonly [GrantManagementState, Dispatch<StatePatch<GrantManagementState>>] {
+  return useReducer(mergeState<GrantManagementState>, initialGrantManagementState)
 }

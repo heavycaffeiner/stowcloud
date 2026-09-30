@@ -1,10 +1,7 @@
-import { useEffect, useRef } from 'react'
-import { useRouteStore } from '../../../hooks/use-route-store'
+import { useEffect, useRef, useState } from 'react'
 
 const ADMIN_TABS = ['users', 'shares', 'storage', 'server', 'logs'] as const
 export type AdminTab = (typeof ADMIN_TABS)[number]
-
-type AdminState = { tab: AdminTab }
 
 function isAdminTab(value: string): value is AdminTab {
   return ADMIN_TABS.includes(value as AdminTab)
@@ -16,7 +13,7 @@ function currentTab(): AdminTab {
 }
 
 export function useAdminTab(): { tab: AdminTab; selectTab: (next: AdminTab) => void } {
-  const [state, setState] = useRouteStore<AdminState>(() => ({ tab: currentTab() }))
+  const [tab, setTab] = useState(currentTab)
   const seenHash = useRef(window.location.hash.slice(1))
 
   useEffect(() => {
@@ -27,14 +24,14 @@ export function useAdminTab(): { tab: AdminTab; selectTab: (next: AdminTab) => v
         `${window.location.pathname}${window.location.search}#users`
       )
       seenHash.current = 'users'
-      setState({ tab: 'users' })
+      setTab('users')
     }
 
     const reconcileHash = (): void => {
       const hash = window.location.hash.slice(1)
       seenHash.current = hash
       if (isAdminTab(hash)) {
-        setState({ tab: hash })
+        setTab(hash)
         return
       }
       window.history.replaceState(
@@ -43,16 +40,16 @@ export function useAdminTab(): { tab: AdminTab; selectTab: (next: AdminTab) => v
         `${window.location.pathname}${window.location.search}#users`
       )
       seenHash.current = 'users'
-      setState({ tab: 'users' })
+      setTab('users')
     }
 
     window.addEventListener('hashchange', reconcileHash)
     return () => window.removeEventListener('hashchange', reconcileHash)
-  }, [setState])
+  }, [])
 
   const selectTab = (next: AdminTab): void => {
-    if (next === state.tab) return
-    setState({ tab: next })
+    if (next === tab) return
+    setTab(next)
     seenHash.current = next
     window.history.replaceState(
       window.history.state,
@@ -61,5 +58,5 @@ export function useAdminTab(): { tab: AdminTab; selectTab: (next: AdminTab) => v
     )
   }
 
-  return { tab: state.tab, selectTab }
+  return { tab, selectTab }
 }

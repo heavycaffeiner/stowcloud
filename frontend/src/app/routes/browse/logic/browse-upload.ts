@@ -1,8 +1,10 @@
+import type { Dispatch } from 'react'
 import type { Entry, OnConflict } from '../../../../lib/api/client'
 import { addEntries, addFiles } from '../../../../lib/upload/queue'
 import type { BrowseState } from './types'
+import type { StatePatch } from '../../../../lib/merge-state'
 
-type Patch = (patch: Partial<BrowseState> | ((state: BrowseState) => Partial<BrowseState>)) => void
+type Patch = Dispatch<StatePatch<BrowseState>>
 type PickedEntry = { file: File; relativePath: string }
 
 type UploadContext = {

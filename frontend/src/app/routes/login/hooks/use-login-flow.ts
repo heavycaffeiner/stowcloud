@@ -1,10 +1,11 @@
+import { useReducer } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ApiError } from '../../../../lib/api/client'
 import { oidcErrorMessage, startOidcLogin } from '../../../../lib/api/oidc'
 import { useI18n } from '../../../../hooks/use-i18n'
 import { loginMutation, loginTotpMutation, oidcConfigQuery } from '../../../../lib/query/session'
-import { useRouteStore, type RoutePatch } from '../../../hooks/use-route-store'
+import { mergeState } from '../../../../lib/merge-state'
 
 type LoginFormState = {
   step: 'credentials' | 'totp'
@@ -22,7 +23,7 @@ export function useLoginFlow() {
   const { t } = useI18n()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const [form, setForm] = useRouteStore<LoginFormState>({
+  const [form, updateForm] = useReducer(mergeState<LoginFormState>, {
     step: 'credentials',
     factorMode: 'totp',
     username: '',
@@ -31,7 +32,6 @@ export function useLoginFlow() {
     challenge: '',
     errorMessage: null
   })
-  const updateForm = (patch: RoutePatch<LoginFormState>): void => setForm(patch)
   const returnTo = safeReturnTo(searchParams.get('returnTo'))
   const oidcConfig = useQuery(oidcConfigQuery())
   const login = useMutation(loginMutation())

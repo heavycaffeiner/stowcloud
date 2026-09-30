@@ -1,5 +1,5 @@
-import { useMemo } from 'react'
-import { useRouteStore } from '../../../hooks/use-route-store'
+import { type Dispatch, useEffect, useMemo, useReducer } from 'react'
+import { mergeState, type StatePatch } from '../../../../lib/merge-state'
 
 export type SealedDraft = { salt: string; bytes: Uint8Array }
 
@@ -20,7 +20,7 @@ export type EditState = {
 }
 
 export type EditActions = {
-  patch: (patch: Partial<EditState> | ((state: EditState) => Partial<EditState>)) => void
+  patch: Dispatch<StatePatch<EditState>>
   beginPath: (path: string) => void
   setDraft: (draft: string | null) => void
   clearDraftIf: (draft: string) => void
@@ -53,46 +53,34 @@ const initialEditState: EditState = {
   languageName: null
 }
 
-function clearSealed(sealedDraft: SealedDraft | null): void {
-  sealedDraft?.bytes.fill(0)
-}
-
 export function useEditState(): { state: EditState; actions: EditActions } {
-  const [state, patch] = useRouteStore(initialEditState)
+  const [state, patch] = useReducer(mergeState<EditState>, initialEditState)
+  // A sealed draft holds ciphertext of unsaved text; wipe it once it is replaced or the editor goes away.
+  useEffect(() => {
+    const sealed = state.sealedDraft
+    return () => {
+      sealed?.bytes.fill(0)
+    }
+  }, [state.sealedDraft])
   const actions = useMemo<EditActions>(
     () => ({
       patch,
       beginPath: (path) =>
-        patch((current) => {
-          clearSealed(current.sealedDraft)
-          return {
-            loadedPath: path,
-            baselineEtag: null,
-            awaitingBaseline: true,
-            draft: null,
-            sealedDraft: null,
-            languageName: null
-          }
+        patch({
+          loadedPath: path,
+          baselineEtag: null,
+          awaitingBaseline: true,
+          draft: null,
+          sealedDraft: null,
+          languageName: null
         }),
       setDraft: (draft) => patch({ draft }),
       clearDraftIf: (draft) => patch((current) => (current.draft === draft ? { draft: null } : {})),
       setLanguage: (languageName) => patch({ languageName }),
       markBaseline: (baselineEtag) => patch({ baselineEtag, awaitingBaseline: false }),
-      sealDraft: (sealedDraft) =>
-        patch((current) => {
-          clearSealed(current.sealedDraft)
-          return { sealedDraft, draft: null }
-        }),
-      restoreDraft: (draft) =>
-        patch((current) => {
-          clearSealed(current.sealedDraft)
-          return { draft, sealedDraft: null }
-        }),
-      clearDraft: () =>
-        patch((current) => {
-          clearSealed(current.sealedDraft)
-          return { draft: null, sealedDraft: null }
-        }),
+      sealDraft: (sealedDraft) => patch({ sealedDraft, draft: null }),
+      restoreDraft: (draft) => patch({ draft, sealedDraft: null }),
+      clearDraft: () => patch({ draft: null, sealedDraft: null }),
       setUnlockRequested: (unlockRequested) => patch({ unlockRequested }),
       completeUnlock: () =>
         patch((current) => ({ unlockRequested: false, sessionRevision: current.sessionRevision + 1 })),
