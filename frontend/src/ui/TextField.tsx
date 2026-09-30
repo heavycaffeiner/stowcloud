@@ -1,6 +1,6 @@
 import 'mdui/components/text-field.js'
 import type { KeyboardEventHandler } from 'react'
-import { useEffect, useId, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { cx } from './cx'
 import * as styles from './TextField.css'
 
@@ -11,11 +11,12 @@ interface TextFieldElement extends HTMLElement {
   removeAttribute(name: string): void
 }
 
+// The input lives in mdui's shadow root, where an id reference to the light-DOM error text
+// would not resolve, so the error is linked by element reflection instead.
 function syncTextFieldAria(
   element: TextFieldElement | null,
   label: string | undefined,
-  invalid: boolean,
-  describedBy: string | undefined
+  errorElement: HTMLElement | null
 ): void {
   if (!element) return
   const apply = () => {
@@ -23,10 +24,9 @@ function syncTextFieldAria(
     if (!control) return
     if (label) control.setAttribute('aria-label', label)
     else control.removeAttribute('aria-label')
-    if (invalid) control.setAttribute('aria-invalid', 'true')
+    if (errorElement) control.setAttribute('aria-invalid', 'true')
     else control.removeAttribute('aria-invalid')
-    if (describedBy) control.setAttribute('aria-describedby', describedBy)
-    else control.removeAttribute('aria-describedby')
+    control.ariaDescribedByElements = errorElement ? [errorElement] : null
   }
   if (element.updateComplete) void element.updateComplete.then(apply)
   else queueMicrotask(apply)
@@ -50,7 +50,6 @@ export interface TextFieldProps {
   disabled?: boolean
   required?: boolean
   name?: string
-  ariaDescribedby?: string
   className?: string
   onValueChange?: (value: string) => void
   onKeyDown?: KeyboardEventHandler<HTMLElement>
@@ -72,18 +71,15 @@ export function TextField({
   disabled = false,
   required = false,
   name,
-  ariaDescribedby,
   className,
   onValueChange,
   onKeyDown
 }: TextFieldProps) {
   const ref = useRef<TextFieldElement | null>(null)
-  const generatedId = useId()
-  const errorId = `${generatedId}-error`
-  const describedBy = [ariaDescribedby, error ? errorId : null].filter(Boolean).join(' ') || undefined
+  const errorRef = useRef<HTMLParagraphElement | null>(null)
   useEffect(() => {
-    syncTextFieldAria(ref.current, label, Boolean(error), describedBy)
-  }, [label, error, describedBy])
+    syncTextFieldAria(ref.current, label, error ? errorRef.current : null)
+  }, [label, error])
 
   useEffect(() => {
     const element = ref.current
@@ -125,7 +121,7 @@ export function TextField({
   }, [autoFocus])
 
   return (
-    <div className={cx(styles.root, error && styles.error, className)}>
+    <div className={cx(styles.root, className)}>
       <mdui-text-field
         ref={ref}
         className={styles.input}
@@ -140,13 +136,11 @@ export function TextField({
         disabled={disabled}
         required={required}
         name={name}
-        helper={error ?? helper}
-        aria-invalid={error ? 'true' : undefined}
-        aria-describedby={describedBy}
+        helper={error ? undefined : helper}
         onKeyDown={onKeyDown}
       ></mdui-text-field>
       {error ? (
-        <p id={errorId} className={styles.error} role="alert">
+        <p ref={errorRef} className={styles.error} role="alert">
           {error}
         </p>
       ) : null}

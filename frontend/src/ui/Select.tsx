@@ -20,7 +20,6 @@ export interface SelectProps {
   disabled?: boolean
   required?: boolean
   ariaLabel?: string
-  ariaDescribedby?: string
   onValueChange?: (value: string) => void
   onChange?: (value: string) => void
 }
@@ -51,7 +50,6 @@ export function Select({
   disabled = false,
   required = false,
   ariaLabel,
-  ariaDescribedby,
   onValueChange,
   onChange
 }: SelectProps) {
@@ -95,7 +93,6 @@ export function Select({
         required={required}
         data-testid={testid}
         aria-label={accessibleName}
-        aria-describedby={ariaDescribedby}
         style={{ width: '100%' }}
         onKeyDown={(event) => {
           // The open list closes on Escape by itself; marking the key handled keeps an enclosing dialog open.
