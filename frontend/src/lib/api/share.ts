@@ -206,12 +206,20 @@ export function unlockShare(token: string, password: string): Promise<boolean> {
     credentials: 'include',
     headers: { 'Content-Type': 'application/json; charset=utf-8' },
     body: JSON.stringify({ password })
-  }).then((res) => {
-    if (res.status === 401 || res.status === 403) return false
+  }).then(async (res) => {
+    if (res.ok) return true
     if (res.status === 404 || res.status === 410) throw new ShareNotFoundError(token)
-    if (!res.ok) throw new ShareUnlockFailedError(token)
-    return true
+    if (res.status === 422 && (await reasonKey(res)) === 'fs.link_password') return false
+    throw new ShareUnlockFailedError(token)
   })
+}
+
+/** The `error.detail.reason_key` of a refusal, or null when the body is not
+ *  the server's error envelope. */
+async function reasonKey(res: Response): Promise<string | null> {
+  const body: unknown = await res.json().catch(() => null)
+  const key = (body as { error?: { detail?: { reason_key?: unknown } } } | null)?.error?.detail?.reason_key
+  return typeof key === 'string' ? key : null
 }
 
 /** `GET /s/{token}/download?path=…`: one file under the link.

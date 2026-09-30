@@ -2,7 +2,7 @@
 // client. `VITE_API_MOCK` is forced here the same way setup.test.ts does
 // (see that file's header comment): the const is read at import time, so
 // ambient `.env` state must not decide whether these pass.
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 let getShare: typeof import('../../../src/lib/api/share').getShare
 let unlockShare: typeof import('../../../src/lib/api/share').unlockShare
@@ -78,5 +78,70 @@ describe('share.ts (mock)', () => {
     const { maxUploadBytes } = await getShare('drop')
     const tooBig = new File([new Uint8Array((maxUploadBytes ?? 0) + 1)], 'huge.bin')
     await expect(dropUpload('drop', tooBig)).rejects.toBeInstanceOf(ShareTooLargeError)
+  })
+})
+
+describe('share.ts (http) unlockShare', () => {
+  let ShareUnlockFailedError: typeof import('../../../src/lib/api/share').ShareUnlockFailedError
+
+  beforeEach(async () => {
+    vi.stubEnv('VITE_API_MOCK', '0')
+    vi.resetModules()
+    ;({ unlockShare, ShareNotFoundError, ShareUnlockFailedError } = await import('../../../src/lib/api/share'))
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
+  })
+
+  const refusal = (status: number, reasonKey: string): Response =>
+    new Response(
+      JSON.stringify({ error: { code: 'unprocessable', message: 'refused', detail: { reason_key: reasonKey } } }),
+      {
+        status
+      }
+    )
+
+  it('resolves false only for the wrong-password refusal', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => refusal(422, 'fs.link_password'))
+    )
+    await expect(unlockShare('tok', 'wrong')).resolves.toBe(false)
+  })
+
+  it('resolves true when the server sets the ticket', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(null, { status: 204 }))
+    )
+    await expect(unlockShare('tok', 'right')).resolves.toBe(true)
+  })
+
+  it('throws for a refusal that is not the password', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => refusal(422, 'unprocessable'))
+    )
+    await expect(unlockShare('tok', 'x')).rejects.toBeInstanceOf(ShareUnlockFailedError)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => refusal(429, 'auth.rate_limited'))
+    )
+    await expect(unlockShare('tok', 'x')).rejects.toBeInstanceOf(ShareUnlockFailedError)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('not json', { status: 422 }))
+    )
+    await expect(unlockShare('tok', 'x')).rejects.toBeInstanceOf(ShareUnlockFailedError)
+  })
+
+  it('throws ShareNotFoundError for a dead link', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => refusal(404, 'fs.not_found'))
+    )
+    await expect(unlockShare('tok', 'x')).rejects.toBeInstanceOf(ShareNotFoundError)
   })
 })
