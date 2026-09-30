@@ -1,3 +1,5 @@
+import 'mdui/components/select.js'
+import 'mdui/components/menu-item.js'
 import { useEffect, useRef } from 'react'
 
 export interface SelectOption {

@@ -1,3 +1,4 @@
+import 'mdui/components/chip.js'
 import type { MouseEventHandler, ReactNode } from 'react'
 import { useEffect, useRef } from 'react'
 export interface ChipProps {

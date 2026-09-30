@@ -1,3 +1,4 @@
+import 'mdui/components/checkbox.js'
 import type { ChangeEvent } from 'react'
 import { useEffect, useRef } from 'react'
 

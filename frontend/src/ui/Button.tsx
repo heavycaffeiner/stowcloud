@@ -1,3 +1,4 @@
+import 'mdui/components/button.js'
 import type { MouseEventHandler, PropsWithChildren, ReactNode } from 'react'
 import { useEffect, useRef } from 'react'
 import { useI18n } from '../hooks/use-i18n'

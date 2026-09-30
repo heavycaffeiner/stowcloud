@@ -1,3 +1,4 @@
+import 'mdui/components/divider.js'
 export interface DividerProps {
   inset?: boolean
   vertical?: boolean

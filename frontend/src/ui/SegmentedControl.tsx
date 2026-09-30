@@ -1,3 +1,5 @@
+import 'mdui/components/segmented-button-group.js'
+import 'mdui/components/segmented-button.js'
 import type { ReactNode } from 'react'
 import { useLayoutEffect, useReducer, useRef } from 'react'
 

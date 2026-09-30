@@ -1,3 +1,4 @@
+import 'mdui/components/snackbar.js'
 import { useEffect, useRef } from 'react'
 
 export interface SnackbarProps {

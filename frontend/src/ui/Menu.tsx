@@ -1,3 +1,4 @@
+import 'mdui/components/menu.js'
 import type { ReactNode } from 'react'
 import { useEffect, useRef } from 'react'
 import { useI18n } from '../hooks/use-i18n'

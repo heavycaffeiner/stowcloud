@@ -29,5 +29,23 @@ export default tseslint.config(
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'warn'
     }
+  },
+  {
+    // mdui stays behind the ui layer so a component library swap touches src/ui only.
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/ui/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { patterns: [{ group: ['mdui', 'mdui/*', '@mdui/*'], message: 'Import mdui only from src/ui.' }] }
+      ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'JSXOpeningElement > JSXIdentifier[name=/^mdui-/]',
+          message: 'Render mdui elements through a src/ui component.'
+        }
+      ]
+    }
   }
 )

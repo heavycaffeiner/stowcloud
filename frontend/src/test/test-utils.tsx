@@ -1,4 +1,3 @@
-import '../ui/mdui'
 if (!('ResizeObserver' in globalThis)) {
   class TestResizeObserver {
     observe(): void {}

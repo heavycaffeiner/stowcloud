@@ -1,3 +1,4 @@
+import 'mdui/components/button-icon.js'
 import type { MouseEventHandler, ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { useEventListener } from '../hooks/use-event-listener'

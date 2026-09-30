@@ -1,3 +1,4 @@
+import 'mdui/components/text-field.js'
 import type { KeyboardEventHandler } from 'react'
 import { useEffect, useId, useRef } from 'react'
 

@@ -1,3 +1,4 @@
+import 'mdui/components/circular-progress.js'
 import { useEffect, useRef } from 'react'
 import { useI18n } from '../hooks/use-i18n'
 

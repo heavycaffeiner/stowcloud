@@ -1,3 +1,4 @@
+import 'mdui/components/linear-progress.js'
 import { useI18n } from '../hooks/use-i18n'
 
 export interface ProgressLinearProps {
