@@ -394,7 +394,7 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
     grep -rIn --include='*.go' -iE '\bocs\b|remote\.php|nextcloud' backend/internal 2>/dev/null \
       | grep -v '_test\.go:' \
       | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)' \
-      | grep -vE '^backend/internal/(nextcloud/|app/nc(_off)?\.go:|http/server/fallback\.go:)' || true
+      | grep -vE '^backend/internal/(nextcloud/|server/nc(_off)?\.go:|web/fallback\.go:)' || true
   }
 
   # The reference clients are cloned into .ref so their wire behaviour can be
