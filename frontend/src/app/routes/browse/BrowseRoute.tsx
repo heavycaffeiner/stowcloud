@@ -168,6 +168,8 @@ function BrowsePageContent({ path }: { path: string }) {
     else openSearch(path)
   }
   const actionTarget = selected[0] ?? state.contextEntry
+  // A keyboard shortcut runs only what the row menu would offer for the selection.
+  const runRowAction = (key: string) => actions.actions.find((action) => action.key === key)?.run()
   const openContextFor = (entry: Entry, event: React.MouseEvent) => {
     if (!selectedNames.has(entry.name)) selection.only(entry.name, entries.indexOf(entry))
     patch({
@@ -276,20 +278,22 @@ function BrowsePageContent({ path }: { path: string }) {
         onBlankMenu={marquee.openBlankMenu}
         onOpen={actions.onOpen}
         onContextMenu={openContextFor}
-        onRename={() => {}}
-        onDelete={() => {}}
+        onRename={() => runRowAction('rename')}
+        onDelete={() => runRowAction('delete')}
         onSearchFocus={openSearchForPath}
-        onRequestMore={() => void query.fetchNextPage()}
+        onRequestMore={() => {
+          if (query.hasNextPage && !query.isFetchingNextPage) void query.fetchNextPage()
+        }}
         onTreeNavigate={(next) => void navigate(`/b${next}`)}
         onTreeClose={() => patch({ treeOpen: false })}
         onDetailsClose={onToggleDetails}
-        onDownload={() => {}}
+        onDownload={actions.downloadSelection}
         onShare={() => {
           const entry = selected[0] ?? state.contextEntry
           if (entry) patch({ shareTarget: entry })
         }}
         onDetailsContext={onDetailsContext}
-        onAddFolder={() => {}}
+        onAddFolder={() => void navigate('/admin#shares')}
         t={t}
         showingAll={showingAll}
       />
@@ -327,7 +331,7 @@ function BrowsePageContent({ path }: { path: string }) {
           onCreateFolder: actions.createFolder,
           onRename: actions.doRename,
           onDelete: actions.doDelete,
-          onTransfer: () => undefined,
+          onTransfer: (dest, kind) => void actions.transfer(state.destSources, dest, kind, 'fail'),
           onDownloadEntry: actions.downloadEntry,
           onEdit: (entry) => void actions.openEditor(entry)
         }}

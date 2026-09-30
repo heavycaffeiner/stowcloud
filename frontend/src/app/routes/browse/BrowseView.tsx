@@ -329,7 +329,7 @@ export function BrowseContent(props: BrowseContentProps) {
               <FileTable
                 ref={tableRef}
                 entries={filteredEntries}
-                total={filteredEntries.length}
+                total={all ? directory.total : filteredEntries.length}
                 dirs={dirs}
                 loading={isPending}
                 loadingMore={isFetchingMore}
@@ -346,7 +346,7 @@ export function BrowseContent(props: BrowseContentProps) {
               <FileGrid
                 ref={gridRef}
                 entries={filteredEntries}
-                total={filteredEntries.length}
+                total={all ? directory.total : filteredEntries.length}
                 dirs={dirs}
                 loading={isPending}
                 loadingMore={isFetchingMore}
