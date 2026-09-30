@@ -7,7 +7,9 @@ import { useSearchNavigation } from './hooks/use-search-navigation'
 import { CATEGORIES, SORT_KEYS } from './logic/search-state'
 import { SearchResults } from './SearchResults'
 import { ProgressCircular } from '../../ui/ProgressCircular'
-import '../../styles/features/search/search-panel.css.ts'
+import * as styles from './SearchPanel.css'
+import * as iconButtonStyles from '../../ui/IconButton.css'
+import { cx } from '../../ui/cx'
 
 export interface SearchPanelProps {
   readonly scope?: string
@@ -49,14 +51,14 @@ export function SearchPanel({ scope = '', autoFocus = false, onNavigated, traili
   const sortLabel = t(controller.sortLabelKey)
 
   return (
-    <div className="sc-search">
-      <form className="sc-search-query-bar" onSubmit={onSubmit}>
-        <span className="sc-search-query-icon" aria-hidden="true">
+    <div className={styles.root}>
+      <form className={styles.queryBar} onSubmit={onSubmit}>
+        <span className={styles.queryIcon} aria-hidden="true">
           <Icon name="search" size={20} />
         </span>
         <input
           ref={controller.inputRef}
-          className="sc-search-input"
+          className={styles.input}
           type="search"
           value={state.query}
           placeholder={t('search.placeholder')}
@@ -67,28 +69,28 @@ export function SearchPanel({ scope = '', autoFocus = false, onNavigated, traili
         {state.query.trim() ? (
           <button
             type="button"
-            className="sc-search-clear-btn sc-icon-button"
+            className={cx(styles.clearBtn, iconButtonStyles.root)}
             aria-label={t('search.clear')}
             onClick={controller.clear}
           >
             <Icon name="close" size={16} />
           </button>
         ) : null}
-        <button type="submit" className="sc-search-submit-btn" aria-label={t('search.run')}>
+        <button type="submit" className={styles.submitBtn} aria-label={t('search.run')}>
           {t('search.run')}
         </button>
         {trailing}
       </form>
 
-      <div className="sc-search-filter-bar">
-        <div className="sc-search-categories" role="group" aria-label={t('search.kind_label')} ref={categoriesRef}>
+      <div className={styles.filterBar}>
+        <div className={styles.categories} role="group" aria-label={t('search.kind_label')} ref={categoriesRef}>
           {CATEGORIES.map((cat) => {
             const isSelected = controller.activeCategory === cat.id
             return (
               <button
                 key={cat.id}
                 type="button"
-                className={`sc-search-category-pill${isSelected ? ' sc-search-category-pill-active' : ''}`}
+                className={cx(styles.categoryPill, isSelected && styles.categoryPillActive)}
                 aria-pressed={isSelected}
                 onClick={() => controller.selectCategory(cat.id)}
               >
@@ -99,16 +101,16 @@ export function SearchPanel({ scope = '', autoFocus = false, onNavigated, traili
           })}
         </div>
         <div
-          className="sc-search-scope-pill"
+          className={styles.scopePill}
           title={scope ? t('search.scope_current_prioritized', { folder: scope }) : t('search.scope_explanation')}
         >
           <Icon name={scope ? 'folder' : 'search'} size={14} />
           <span>{scope ? (scope.split('/').filter(Boolean).at(-1) ?? scope) : t('search.scope_all_accessible')}</span>
         </div>
-        <div className="sc-search-sort-wrap">
+        <div className={styles.sortWrap}>
           <button
             type="button"
-            className="sc-search-sort-btn"
+            className={styles.sortBtn}
             aria-expanded={state.sortOpen}
             aria-label={t('search.sort_by', { key: sortLabel })}
             onClick={() => controller.set('sortOpen', (open) => !open)}
@@ -117,12 +119,13 @@ export function SearchPanel({ scope = '', autoFocus = false, onNavigated, traili
             <span>{sortLabel}</span>
           </button>
           {state.sortOpen ? (
-            <div className="sc-search-menu sc-search-menu-end" role="menu">
+            <div className={styles.menu} role="menu">
               {SORT_KEYS.map(([key, labelKey]) => (
                 <button
                   key={key}
                   type="button"
                   role="menuitemradio"
+                  className={styles.menuItem}
                   aria-checked={state.sortKey === key}
                   onClick={() => {
                     controller.set('sortKey', key)
@@ -138,10 +141,10 @@ export function SearchPanel({ scope = '', autoFocus = false, onNavigated, traili
         </div>
       </div>
 
-      <div className="sc-search-status-bar">
-        <span className="sc-search-status-info" aria-hidden={state.running}>
+      <div className={styles.statusBar}>
+        <span className={styles.statusInfo} aria-hidden={state.running}>
           {state.running ? (
-            <span className="sc-search-progress" role="img" aria-label={t('search.searching_label')}>
+            <span className={styles.progress} role="img" aria-label={t('search.searching_label')}>
               <ProgressCircular size={14} />
             </span>
           ) : null}
@@ -150,17 +153,17 @@ export function SearchPanel({ scope = '', autoFocus = false, onNavigated, traili
             {state.running && state.scanned ? `, ${t('search.scanning', { dirs: String(state.scanned.dirs) })}` : ''}
           </span>
         </span>
-        <span className="sc-search-spoken" role="status" aria-live="polite">
+        <span className={styles.spoken} role="status" aria-live="polite">
           {spokenStatus}
         </span>
-        <span className="sc-search-status-actions">
+        <span className={styles.statusActions}>
           {!state.running && controller.fileCount > 0 && controller.dirCount > 0 ? (
-            <span className="sc-search-breakdown">
+            <span>
               {t('search.summary', { files: String(controller.fileCount), folders: String(controller.dirCount) })}
             </span>
           ) : null}
           {state.running ? (
-            <button type="button" className="sc-search-stop-btn" onClick={controller.stop}>
+            <button type="button" className={styles.stopBtn} onClick={controller.stop}>
               {t('search.stop')}
             </button>
           ) : null}

@@ -16,7 +16,7 @@ import { UserManagementRow } from './UserManagementRow'
 import { Icon } from '../../ui/Icon'
 import { ProgressCircular } from '../../ui/ProgressCircular'
 import { ProgressLinear } from '../../ui/ProgressLinear'
-import '../../styles/features/admin/admin.css.ts'
+import * as adminStyles from './admin.css'
 
 const MIN_PASSWORD_LEN = 10
 
@@ -160,10 +160,11 @@ export function UserManagementSection() {
     )
   }
   return (
-    <section className="sc-admin-section sc-user-mgmt">
-      <div className="sc-admin-section-header">
-        <p className="sc-admin-section-hint">{t('user.create_accounts_suspend_or_re')}</p>
+    <section className={adminStyles.section}>
+      <div className={adminStyles.sectionHeader}>
+        <p className={adminStyles.sectionHint}>{t('user.create_accounts_suspend_or_re')}</p>
         <Button
+          className={adminStyles.sectionHeaderAction}
           icon={<Icon name="add" />}
           onClick={() => {
             create.reset()
@@ -177,22 +178,23 @@ export function UserManagementSection() {
         </Button>
       </div>
       {toggleError ? (
-        <p className="sc-admin-section-error" role="alert">
+        <p className={adminStyles.sectionError} role="alert">
           {toggleError}
         </p>
       ) : null}
       {usersQuery.isPending ? (
         <ProgressCircular size={40} />
       ) : usersQuery.error ? (
-        <p className="sc-admin-section-error" role="alert">
+        <p className={adminStyles.sectionError} role="alert">
           {describeApiError(usersQuery.error, t('user.could_not_load_user_list'))}
         </p>
       ) : (
         <VirtualList
-          className="sc-admin-list"
+          className={adminStyles.list}
           items={users}
           itemKey={(user) => user.id}
           estimateSize={80}
+          itemProps={() => ({ className: adminStyles.item })}
           pinnedKeys={[
             deleteTarget?.id,
             quotaTarget?.id,
@@ -250,7 +252,7 @@ export function UserManagementSection() {
         }
       >
         <form
-          className="sc-admin-form"
+          className={adminStyles.form}
           onSubmit={(event) => {
             event.preventDefault()
             submitCreate()
@@ -277,14 +279,14 @@ export function UserManagementSection() {
                 tone={scorePasswordStrength(newPassword).tier}
                 label={t('common.password_strength', { level: scorePasswordStrength(newPassword).label })}
               />
-              <span className="sc-admin-section-field-hint">{scorePasswordStrength(newPassword).label}</span>
+              <span className={adminStyles.sectionFieldHint}>{scorePasswordStrength(newPassword).label}</span>
             </div>
           ) : null}
-          <p className="sc-admin-section-field-hint">
+          <p className={adminStyles.sectionFieldHint}>
             {t('user.at_least_characters_turning_smb', { min: MIN_PASSWORD_LEN })}
           </p>
           {createError ? (
-            <p className="sc-admin-section-error" role="alert">
+            <p className={adminStyles.sectionError} role="alert">
               {createError}
             </p>
           ) : null}
@@ -309,7 +311,7 @@ export function UserManagementSection() {
       >
         <p>{t('user.permanently_deletes_account_including_its', { name: deleteTarget?.name ?? '' })}</p>
         {deleteError ? (
-          <p className="sc-admin-section-error" role="alert">
+          <p className={adminStyles.sectionError} role="alert">
             {deleteError}
           </p>
         ) : null}
@@ -358,7 +360,7 @@ export function UserManagementSection() {
         }
       >
         <form
-          className="sc-admin-form"
+          className={adminStyles.form}
           onSubmit={(event) => {
             event.preventDefault()
             submitQuota()
@@ -371,14 +373,14 @@ export function UserManagementSection() {
             autoFocus
             onValueChange={setQuotaInput}
           />
-          <p className="sc-admin-section-field-hint">
+          <p className={adminStyles.sectionFieldHint}>
             {quotaTarget
               ? t('user.currently_using', { used: formatBytes(Number(BigInt(quotaTarget.usage_bytes))) })
               : ''}
             {t('user.empty_means_unlimited_uploads_copies')}
           </p>
           {quotaError ? (
-            <p className="sc-admin-section-error" role="alert">
+            <p className={adminStyles.sectionError} role="alert">
               {quotaError}
             </p>
           ) : null}
@@ -406,7 +408,7 @@ export function UserManagementSection() {
         }
       >
         <form
-          className="sc-admin-form"
+          className={adminStyles.form}
           onSubmit={(event) => {
             event.preventDefault()
             submitPassword()
@@ -434,14 +436,14 @@ export function UserManagementSection() {
                 tone={scorePasswordStrength(passwordInput).tier}
                 label={t('password.new_password_strength', { level: scorePasswordStrength(passwordInput).label })}
               />
-              <span className="sc-admin-section-field-hint">{scorePasswordStrength(passwordInput).label}</span>
+              <span className={adminStyles.sectionFieldHint}>{scorePasswordStrength(passwordInput).label}</span>
             </div>
           ) : null}
-          <p className="sc-admin-section-field-hint">
+          <p className={adminStyles.sectionFieldHint}>
             {t('password.must_at_least_characters', { min: MIN_PASSWORD_LEN })}
           </p>
           {passwordError ? (
-            <p className="sc-admin-section-error" role="alert">
+            <p className={adminStyles.sectionError} role="alert">
               {passwordError}
             </p>
           ) : null}

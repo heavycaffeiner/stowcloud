@@ -10,6 +10,8 @@ import { Switch } from '../../ui/Switch'
 import { TextField } from '../../ui/TextField'
 import { VirtualList } from '../../ui/VirtualList'
 import { SettingsDialog } from './SettingsDialog'
+import * as styles from './AppPasswordsSection.css'
+import * as settingsCardStyles from './SettingsCard.css'
 
 export function AppPasswordsSection() {
   const { t } = useI18n()
@@ -143,25 +145,26 @@ export function AppPasswordsSection() {
   }
 
   return (
-    <div className="sc-app-passwords">
+    <div className={styles.root}>
       {list.isPending ? (
-        <p>{t('common.loading')}</p>
+        <p className={settingsCardStyles.text}>{t('common.loading')}</p>
       ) : list.isError ? (
-        <p className="sc-app-passwords-error">{t('common.could_not_load_list')}</p>
+        <p className={styles.error}>{t('common.could_not_load_list')}</p>
       ) : (list.data ?? []).length === 0 ? (
-        <p className="sc-app-passwords-empty">{t('app_password.no_app_passwords_issued_yet')}</p>
+        <p className={settingsCardStyles.text}>{t('app_password.no_app_passwords_issued_yet')}</p>
       ) : (
         <VirtualList
-          className="sc-app-passwords-list"
+          className={styles.list}
           items={list.data ?? []}
           itemKey={(item) => item.id}
           estimateSize={96}
+          itemProps={() => ({ className: styles.item })}
           renderItem={(item) => (
             <>
-              <div>
-                <strong className="sc-app-passwords-name">{item.name}</strong>
-                {item.read_only ? <span className="sc-settings-badge">{t('common.read_only')}</span> : null}
-                <p>
+              <div className={styles.itemMain}>
+                <strong className={styles.name}>{item.name}</strong>
+                {item.read_only ? <span className={settingsCardStyles.badge}>{t('common.read_only')}</span> : null}
+                <p className={styles.detail}>
                   {t('app_password.issued', { date: formatDateNs(item.created_ns) })} -{' '}
                   {item.last_used_ns
                     ? t('app_password.last_used', { date: formatDateNs(item.last_used_ns) })
@@ -173,7 +176,7 @@ export function AppPasswordsSection() {
                       : ''}
                 </p>
               </div>
-              <div className="sc-settings-card-buttons">
+              <div className={styles.itemActions}>
                 {!isExpired(item) ? (
                   <Button
                     variant="text"
@@ -201,7 +204,7 @@ export function AppPasswordsSection() {
           )}
         />
       )}
-      <div className="sc-app-passwords-actions">
+      <div className={styles.actions}>
         <Button variant="outlined" onClick={openCreate}>
           {t('app_password.new_app_password')}
         </Button>
@@ -222,11 +225,11 @@ export function AppPasswordsSection() {
         }
       >
         {actionError ? (
-          <p className="sc-app-passwords-error" role="alert">
+          <p className={styles.error} role="alert">
             {actionError}
           </p>
         ) : null}
-        <p>{t('app_password.use_one_where_your_account')}</p>
+        <p className={settingsCardStyles.text}>{t('app_password.use_one_where_your_account')}</p>
         <TextField
           label={t('common.name')}
           placeholder={t('app_password.e_g_rclone_backup')}
@@ -241,7 +244,7 @@ export function AppPasswordsSection() {
           onValueChange={setNewCurrent}
         />
         <Switch checked={newReadOnly} label={t('app_password.read_only_download_only_no')} onChange={setNewReadOnly} />
-        <p>{t('app_password.read_only_recommended_anywhere_only')}</p>
+        <p className={settingsCardStyles.text}>{t('app_password.read_only_recommended_anywhere_only')}</p>
       </SettingsDialog>
       <SettingsDialog
         open={!!issuedToken}
@@ -250,15 +253,20 @@ export function AppPasswordsSection() {
         dismissible={false}
         actions={<Button onClick={acknowledgeIssued}>{t('app_password.acknowledge_saved')}</Button>}
       >
-        <p>{t('app_password.once_you_close_cannot_shown')}</p>
-        <div className="sc-token-row">
-          <input readOnly value={issuedToken ?? ''} aria-label={t('app_password.app_password_issued')} />
+        <p className={settingsCardStyles.text}>{t('app_password.once_you_close_cannot_shown')}</p>
+        <div className={styles.tokenRow}>
+          <input
+            className={styles.tokenInput}
+            readOnly
+            value={issuedToken ?? ''}
+            aria-label={t('app_password.app_password_issued')}
+          />
           <Button variant="text" onClick={() => void copyToken()}>
             {tokenCopyState === 'copied' ? t('common.copied') : t('common.copy')}
           </Button>
         </div>
         {tokenCopyState === 'failed' ? (
-          <p className="sc-app-passwords-copy-feedback" role="alert">
+          <p className={styles.copyFeedback} role="alert">
             {t('app_password.copy_failed')}
           </p>
         ) : null}
@@ -278,9 +286,11 @@ export function AppPasswordsSection() {
           </>
         }
       >
-        <p>{t('app_password.everything_using_disconnected_at_once', { name: revokeTarget?.name ?? '' })}</p>
+        <p className={settingsCardStyles.text}>
+          {t('app_password.everything_using_disconnected_at_once', { name: revokeTarget?.name ?? '' })}
+        </p>
         {actionError ? (
-          <p className="sc-app-passwords-error" role="alert">
+          <p className={styles.error} role="alert">
             {actionError}
           </p>
         ) : null}
@@ -300,9 +310,11 @@ export function AppPasswordsSection() {
           </>
         }
       >
-        <p>{t('app_password.next_time_that_device_erase', { name: wipeTarget?.name ?? '' })}</p>
+        <p className={settingsCardStyles.text}>
+          {t('app_password.next_time_that_device_erase', { name: wipeTarget?.name ?? '' })}
+        </p>
         {actionError ? (
-          <p className="sc-app-passwords-error" role="alert">
+          <p className={styles.error} role="alert">
             {actionError}
           </p>
         ) : null}

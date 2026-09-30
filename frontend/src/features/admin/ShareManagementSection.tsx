@@ -29,7 +29,8 @@ import { PathPickerDialog } from '../files/PathPickerDialog'
 import { ProgressCircular } from '../../ui/ProgressCircular'
 import { Select } from '../../ui/Select'
 import { TextField } from '../../ui/TextField'
-import '../../styles/features/admin/admin-sections.css.ts'
+import * as styles from './ShareManagementSection.css'
+import * as adminStyles from './admin.css'
 
 const MIN_VAULT_SIZE = 16
 const MAX_VAULT_SIZE = 1 << 20
@@ -130,7 +131,7 @@ function S3Fields({ form, setForm, creating }: S3FieldsProps) {
         onValueChange={(value) => update('s3Endpoint', value)}
         autoComplete="off"
       />
-      <p className="sc-admin-hint">{t('folder_share.s3_endpoint_scheme_hint')}</p>
+      <p className={adminStyles.hint}>{t('folder_share.s3_endpoint_scheme_hint')}</p>
       <TextField
         label={t('folder_share.s3_bucket')}
         placeholder={t('folder_share.e_g_s3_bucket')}
@@ -164,13 +165,13 @@ function S3Fields({ form, setForm, creating }: S3FieldsProps) {
         type="password"
         autoComplete="off"
       />
-      {!creating ? <p className="sc-admin-hint">{t('folder_share.keep_stored_credential')}</p> : null}
+      {!creating ? <p className={adminStyles.hint}>{t('folder_share.keep_stored_credential')}</p> : null}
       <Switch
         checked={form.s3PathStyle}
         label={t('folder_share.s3_path_style')}
         onChange={(checked) => setForm((current) => ({ ...current, s3PathStyle: checked, s3PathStyleTouched: true }))}
       />
-      <p className="sc-admin-hint">{t('folder_share.s3_hint')}</p>
+      <p className={adminStyles.hint}>{t('folder_share.s3_hint')}</p>
     </>
   )
 }
@@ -188,8 +189,9 @@ function VaultFields({ form, setForm, creating, openPathPicker }: VaultFieldsPro
     setForm((current) => ({ ...current, [key]: value }))
   return (
     <>
-      <div className="sc-path-row">
+      <div className={styles.pathRow}>
         <TextField
+          className={styles.pathRowField}
           label={t('folder_share.vault_container')}
           placeholder={t('folder_share.e_g_vault_container')}
           value={form.vaultContainer}
@@ -197,6 +199,7 @@ function VaultFields({ form, setForm, creating, openPathPicker }: VaultFieldsPro
           autoComplete="off"
         />
         <Button
+          className={styles.pathRowButton}
           variant="outlined"
           icon={<Icon name="file" />}
           onClick={() => openPathPicker(form.vaultContainer, (path) => update('vaultContainer', path))}
@@ -212,7 +215,7 @@ function VaultFields({ form, setForm, creating, openPathPicker }: VaultFieldsPro
         min={0}
         max={MAX_VAULT_PIM}
       />
-      <p className="sc-admin-hint">{t('folder_share.vault_pim_hint')}</p>
+      <p className={adminStyles.hint}>{t('folder_share.vault_pim_hint')}</p>
       <TextField
         label={t('folder_share.vault_password')}
         value={form.vaultPassword}
@@ -239,9 +242,9 @@ function VaultFields({ form, setForm, creating, openPathPicker }: VaultFieldsPro
           ) : null}
         </>
       ) : (
-        <p className="sc-admin-hint">{t('folder_share.keep_stored_credential')}</p>
+        <p className={adminStyles.hint}>{t('folder_share.keep_stored_credential')}</p>
       )}
-      <p className="sc-admin-hint">{t('folder_share.vault_hint')}</p>
+      <p className={adminStyles.hint}>{t('folder_share.vault_hint')}</p>
     </>
   )
 }
@@ -256,15 +259,21 @@ interface LocalPathFieldProps {
 function LocalPathField({ value, onChange, openPathPicker, placeholder }: LocalPathFieldProps) {
   const { t } = useI18n()
   return (
-    <div className="sc-path-row">
+    <div className={styles.pathRow}>
       <TextField
+        className={styles.pathRowField}
         label={t('folder_share.server_path')}
         placeholder={placeholder}
         value={value}
         onValueChange={onChange}
         autoComplete="off"
       />
-      <Button variant="outlined" icon={<Icon name="folder" />} onClick={() => openPathPicker(value, onChange)}>
+      <Button
+        className={styles.pathRowButton}
+        variant="outlined"
+        icon={<Icon name="folder" />}
+        onClick={() => openPathPicker(value, onChange)}
+      >
         {t('picker.browse_folder')}
       </Button>
     </div>
@@ -596,18 +605,18 @@ export function ShareManagementSection() {
         openPathPicker={(start, apply) => openPathPicker('folder', start, apply)}
         placeholder={creating ? t('folder_share.e_g_srv_photos') : undefined}
       />
-      {creating ? <p className="sc-admin-hint">{t('folder_share.enter_path_folder_already_exists')}</p> : null}
+      {creating ? <p className={adminStyles.hint}>{t('folder_share.enter_path_folder_already_exists')}</p> : null}
     </>
   )
   return (
     <>
-      <section className="sc-admin-section sc-shares">
-        <h2>{t('folder_share.folder_shares')}</h2>
-        <p className="sc-admin-hint">{t('folder_share.registers_real_folder_on_server')}</p>
+      <section className={adminStyles.section}>
+        <h2 className={adminStyles.sectionTitle}>{t('folder_share.folder_shares')}</h2>
+        <p className={adminStyles.hint}>{t('folder_share.registers_real_folder_on_server')}</p>
         {sharesQuery.isPending ? (
           <ProgressCircular />
         ) : sharesQuery.error ? (
-          <p className="sc-admin-error" role="alert">
+          <p className={adminStyles.error} role="alert">
             {describeApiError(sharesQuery.error, t('folder_share.could_not_load_share_list'))}
           </p>
         ) : (
@@ -638,16 +647,16 @@ export function ShareManagementSection() {
               onDelete={openDelete}
             />
             {smbNote ? (
-              <p className="sc-admin-note" role="status">
+              <p className={adminStyles.note} role="status">
                 {smbNote}
               </p>
             ) : null}
             {encryptionLoadError ? (
-              <p className="sc-admin-error" role="alert">
+              <p className={adminStyles.error} role="alert">
                 {encryptionLoadError}
               </p>
             ) : null}
-            <p className="sc-shares-enc-announce" aria-live="polite">
+            <p className={styles.encAnnounce} aria-live="polite">
               {announcement}
             </p>
             <Button variant="tonal" icon={<Icon name="add" />} onClick={openAdd}>
@@ -673,7 +682,7 @@ export function ShareManagementSection() {
         }
       >
         <form
-          className="sc-admin-form"
+          className={adminStyles.form}
           onSubmit={(event) => {
             event.preventDefault()
             void submitAdd()
@@ -697,7 +706,7 @@ export function ShareManagementSection() {
             ? renderLocalFields(addForm, setAddForm, true)
             : renderBackendFields(addBackend, addForm, setAddForm, true)}
           {addError ? (
-            <p className="sc-admin-error" role="alert">
+            <p className={adminStyles.error} role="alert">
               {addError}
             </p>
           ) : null}
@@ -721,28 +730,28 @@ export function ShareManagementSection() {
       >
         {editTarget ? (
           <form
-            className="sc-admin-form"
+            className={adminStyles.form}
             onSubmit={(event) => {
               event.preventDefault()
               void submitEdit()
             }}
           >
             <TextField label={t('common.name')} value={editName} onValueChange={setEditName} autoComplete="off" />
-            <p className="sc-admin-hint">
+            <p className={adminStyles.hint}>
               {t('folder_share.backend_fixed', { backend: backendLabel(t, editTarget.backend) })}
             </p>
             {editTarget.backend === 'local' ? (
               renderLocalFields(editForm, setEditForm, false)
             ) : (
               <>
-                <p className="sc-admin-hint" data-testid="edit-share-source">
+                <p className={adminStyles.hint} data-testid="edit-share-source">
                   {t('folder_share.current_location', { source: editTarget.source })}
                 </p>
                 {renderBackendFields(editTarget.backend, editForm, setEditForm, false)}
               </>
             )}
             {editError ? (
-              <p className="sc-admin-error" role="alert">
+              <p className={adminStyles.error} role="alert">
                 {editError}
               </p>
             ) : null}
@@ -771,7 +780,7 @@ export function ShareManagementSection() {
           <>
             <p>{t('folder_share.removes_every_user_permission_granted', { name: deleteTarget.name })}</p>
             {deleteError ? (
-              <p className="sc-admin-error" role="alert">
+              <p className={adminStyles.error} role="alert">
                 {deleteError}
               </p>
             ) : null}
@@ -799,10 +808,10 @@ export function ShareManagementSection() {
         }
       >
         {encEnableTarget ? (
-          <div className="sc-admin-form">
+          <div className={adminStyles.form}>
             <p>{t('encryption.enable_hint')}</p>
-            <p className="sc-admin-warning">{t('encryption.passphrase_warning')}</p>
-            <p className="sc-admin-hint">{t('encryption.verifier_note')}</p>
+            <p className={adminStyles.warning}>{t('encryption.passphrase_warning')}</p>
+            <p className={adminStyles.hint}>{t('encryption.verifier_note')}</p>
             <form
               onSubmit={(event) => {
                 event.preventDefault()
@@ -825,7 +834,7 @@ export function ShareManagementSection() {
                 autoComplete="new-password"
               />
               {encryptionEnableError ? (
-                <p className="sc-admin-error" role="alert">
+                <p className={adminStyles.error} role="alert">
                   {encryptionEnableError}
                 </p>
               ) : null}
@@ -853,7 +862,7 @@ export function ShareManagementSection() {
           <>
             <p>{t('encryption.disable_hint')}</p>
             {encDisableError ? (
-              <p className="sc-admin-error" role="alert">
+              <p className={adminStyles.error} role="alert">
                 {encDisableError}
               </p>
             ) : null}

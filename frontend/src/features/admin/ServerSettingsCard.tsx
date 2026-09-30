@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { AdminCard } from './AdminCard'
 import { Icon } from '../../ui/Icon'
+import * as styles from './ServerSettingsCard.css'
 
 export interface ServerSettingsCardProps {
   id: string
@@ -17,7 +18,7 @@ export function ServerSettingsCard({ id, title, subtitle, children }: ServerSett
       subtitle={subtitle}
       icon={<Icon name="settings" />}
       headingLevel="h4"
-      bodyClassName="sc-server-settings-form"
+      bodyClassName={styles.form}
     >
       {children}
     </AdminCard>

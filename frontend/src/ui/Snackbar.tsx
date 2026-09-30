@@ -1,5 +1,6 @@
 import 'mdui/components/snackbar.js'
 import { useEffect, useRef } from 'react'
+import * as styles from './Snackbar.css'
 
 export interface SnackbarProps {
   message: string | null
@@ -24,7 +25,7 @@ export function Snackbar({ message, actionLabel, onAction, onDismiss }: Snackbar
   }, [onAction, onDismiss])
   if (!message) return null
   return (
-    <mdui-snackbar ref={ref} open action={actionLabel} closeable>
+    <mdui-snackbar ref={ref} className={styles.root} open action={actionLabel} closeable>
       {message}
     </mdui-snackbar>
   )

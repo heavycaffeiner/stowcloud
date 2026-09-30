@@ -2,6 +2,8 @@ import 'mdui/components/button.js'
 import type { MouseEventHandler, PropsWithChildren, ReactNode } from 'react'
 import { useEffect, useRef } from 'react'
 import { useI18n } from '../hooks/use-i18n'
+import { cx } from './cx'
+import * as styles from './Button.css'
 
 interface ButtonElement extends HTMLElement {
   updateComplete?: Promise<unknown>
@@ -41,6 +43,7 @@ export interface ButtonProps extends PropsWithChildren {
   form?: string
   icon?: ReactNode
   endIcon?: ReactNode
+  className?: string
   onClick?: MouseEventHandler<HTMLElement>
 }
 
@@ -58,6 +61,7 @@ export function Button({
   form,
   icon,
   endIcon,
+  className,
   onClick,
   children
 }: ButtonProps) {
@@ -68,7 +72,7 @@ export function Button({
   }, [ariaLabel, pressed, loading])
   const squareIcon = square ? (icon ?? children) : null
   return (
-    <span className={`sc-button-wrap${danger ? ' sc-danger' : ''}`}>
+    <span className={cx(styles.wrap, danger && styles.danger, className)}>
       <mdui-button
         ref={ref}
         variant={variant}
@@ -80,19 +84,27 @@ export function Button({
         form={form}
         aria-label={ariaLabel}
         aria-pressed={pressed === undefined ? undefined : pressed}
-        className={square ? 'sc-button-square' : undefined}
+        className={cx(styles.button, square && styles.square)}
         aria-busy={loading ? 'true' : undefined}
         onClick={onClick}
       >
         {square ? (
           squareIcon !== null && squareIcon !== undefined ? (
-            <span slot="icon">{squareIcon}</span>
+            <span slot="icon" className={styles.slot}>
+              {squareIcon}
+            </span>
           ) : null
         ) : icon ? (
-          <span slot="icon">{icon}</span>
+          <span slot="icon" className={styles.slot}>
+            {icon}
+          </span>
         ) : null}
-        {!square ? loading ? <span className="sc-button-loading-label">{t('button.working')}</span> : children : null}
-        {!square && endIcon ? <span slot="end-icon">{endIcon}</span> : null}
+        {!square ? loading ? <span className={styles.loadingLabel}>{t('button.working')}</span> : children : null}
+        {!square && endIcon ? (
+          <span slot="end-icon" className={styles.slot}>
+            {endIcon}
+          </span>
+        ) : null}
       </mdui-button>
     </span>
   )

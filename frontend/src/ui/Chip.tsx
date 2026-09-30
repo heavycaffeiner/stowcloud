@@ -2,6 +2,7 @@ import 'mdui/components/chip.js'
 import type { MouseEventHandler, ReactNode } from 'react'
 import { useRef } from 'react'
 import { useEventListener } from '../hooks/use-event-listener'
+import * as styles from './Chip.css'
 export interface ChipProps {
   variant?: 'assist' | 'filter' | 'input'
   selected?: boolean
@@ -17,6 +18,7 @@ export function Chip({ variant = 'assist', selected = false, onClick, onRemove, 
   return (
     <mdui-chip
       ref={ref}
+      className={styles.root}
       variant={variant === 'filter' ? 'filter' : variant}
       selected={selected}
       selectable={Boolean(onClick)}

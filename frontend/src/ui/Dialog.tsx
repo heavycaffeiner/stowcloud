@@ -3,6 +3,8 @@ import type { KeyboardEvent, ReactNode } from 'react'
 import { useRef } from 'react'
 import { useEventListener } from '../hooks/use-event-listener'
 import { useRestoreFocus } from '../hooks/use-restore-focus'
+import { cx } from './cx'
+import * as styles from './Dialog.css'
 
 export interface DialogProps {
   open: boolean
@@ -45,7 +47,7 @@ export function Dialog({
   return (
     <mdui-dialog
       ref={ref}
-      className={className}
+      className={cx(styles.root, className)}
       headline={hideTitle ? undefined : title}
       open={open}
       aria-label={ariaLabel ?? title}
@@ -58,7 +60,11 @@ export function Dialog({
       }}
     >
       {children}
-      {actions ? <span slot="action">{actions}</span> : null}
+      {actions ? (
+        <span slot="action" className={styles.actions}>
+          {actions}
+        </span>
+      ) : null}
     </mdui-dialog>
   )
 }

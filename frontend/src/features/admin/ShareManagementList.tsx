@@ -5,6 +5,9 @@ import { IconButton } from '../../ui/IconButton'
 import { ListItem } from '../../ui/ListItem'
 import { Switch } from '../../ui/Switch'
 import { VirtualList } from '../../ui/VirtualList'
+import * as styles from './ShareManagementList.css'
+import * as adminStyles from './admin.css'
+import * as buttonStyles from '../../ui/Button.css'
 
 type Translator = (key: string, params?: Record<string, string | number>) => string
 
@@ -73,27 +76,29 @@ export function ShareManagementList({
   return (
     <>
       {shares.length === 0 ? (
-        <div className="sc-shares-empty">
+        <div className={styles.empty}>
           <Icon name="folder-tree" size={28} />
-          <p>{t('folder_share.no_shares_registered_add_folder')}</p>
+          <p className={styles.emptyText}>{t('folder_share.no_shares_registered_add_folder')}</p>
         </div>
       ) : (
         <VirtualList
-          className="sc-shares-list"
+          className={styles.list}
           items={shares}
           itemKey={(share) => share.id}
           estimateSize={112}
+          itemProps={() => ({ className: styles.item })}
           pinnedKeys={pinnedKeys}
           renderItem={(share) => {
             const encryption = encryptionByShare.get(share.id)
             return (
               <ListItem
+                className={styles.row}
                 leading={<Icon name="folder" size={20} />}
                 headline={
                   <>
                     <span>{share.name}</span>
                     {share.backend !== 'local' ? (
-                      <small className="sc-share-backend">{backendLabel(t, share.backend)}</small>
+                      <small className={styles.shareBackend}>{backendLabel(t, share.backend)}</small>
                     ) : null}
                   </>
                 }
@@ -101,13 +106,13 @@ export function ShareManagementList({
                   <>
                     <code data-testid="share-source">{share.source}</code>
                     {share.broken_reason ? (
-                      <span className="sc-admin-error">{brokenText(t, share.broken_reason)}</span>
+                      <span className={adminStyles.error}>{brokenText(t, share.broken_reason)}</span>
                     ) : null}
                     {encryptionLoaded ? (
-                      <span className="sc-shares-enc" data-testid="share-encryption">
+                      <span className={styles.enc} data-testid="share-encryption">
                         {encryption ? (
                           <>
-                            <span className="sc-shares-enc-note">
+                            <span className={styles.encNote}>
                               <Icon name="lock" size={14} />
                               {t('encryption.encrypted_note')}
                             </span>
@@ -131,9 +136,9 @@ export function ShareManagementList({
                       </span>
                     ) : null}
                     {encryption ? (
-                      <span className="sc-shares-enc-salt-row">
-                        <span className="sc-shares-enc-salt-label">{t('encryption.salt_label')}</span>
-                        <code className="sc-shares-enc-salt" data-testid="share-encryption-salt">
+                      <span className={styles.encSaltRow}>
+                        <span className={styles.encSaltLabel}>{t('encryption.salt_label')}</span>
+                        <code className={styles.encSalt} data-testid="share-encryption-salt">
                           {encryption.salt}
                         </code>
                         <Button
@@ -150,10 +155,10 @@ export function ShareManagementList({
                 trailing={
                   <>
                     <span
-                      className="sc-shares-trash"
+                      className={styles.trash}
                       title={trashTogglingId === share.id ? t('folder_share.applying') : undefined}
                     >
-                      <span className="sc-shares-trash-label">{t('folder_share.use_trash')}</span>
+                      <span className={styles.trashLabel}>{t('folder_share.use_trash')}</span>
                       <Switch
                         checked={share.trash_enabled}
                         disabled={trashTogglingId === share.id}
@@ -172,7 +177,7 @@ export function ShareManagementList({
                       icon="rename"
                       onClick={() => onEdit(share)}
                     />
-                    <span className="sc-danger">
+                    <span className={buttonStyles.danger}>
                       <IconButton
                         label={t('common.remove', { name: share.name })}
                         icon="delete"
@@ -187,12 +192,12 @@ export function ShareManagementList({
         />
       )}
       {trashError ? (
-        <p className="sc-admin-error" role="alert">
+        <p className={adminStyles.error} role="alert">
           {trashError}
         </p>
       ) : null}
       {retryError ? (
-        <p className="sc-admin-error" role="alert">
+        <p className={adminStyles.error} role="alert">
           {retryError}
         </p>
       ) : null}

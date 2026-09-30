@@ -1,4 +1,5 @@
 import { Icon } from '../../ui/Icon'
+import * as styles from './PageTabs.css'
 
 export interface PageTabItem<T extends string> {
   value: T
@@ -15,12 +16,12 @@ interface PageTabsProps<T extends string> {
 
 export function PageTabs<T extends string>({ label, items, active, onSelect }: PageTabsProps<T>) {
   return (
-    <nav className="sc-settings-page-tabs" aria-label={label}>
+    <nav className={styles.tabs} aria-label={label}>
       {items.map((item) => (
         <button
           key={item.value}
           type="button"
-          className="sc-settings-page-tab"
+          className={styles.tab}
           aria-current={item.value === active ? 'page' : undefined}
           onClick={() => onSelect(item.value)}
         >

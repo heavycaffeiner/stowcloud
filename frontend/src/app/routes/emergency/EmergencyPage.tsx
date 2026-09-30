@@ -9,7 +9,7 @@ import { useDocumentTitle } from '../../hooks/use-document-title'
 import { useEmergencyLifecycle } from './hooks/use-emergency-lifecycle'
 import { useEmergencyFlows } from './hooks/use-emergency-flows'
 import { useEmergencyState } from './hooks/use-emergency-state'
-import '../../../styles/app/routes/emergency.css.ts'
+import * as styles from './EmergencyPage.css'
 
 /* i18n */ ;('settings.would_lock_you_out')
 /* i18n */ ;('settings.proxy_range_is_everything')
@@ -47,26 +47,27 @@ export function EmergencyPage() {
   const findingText = (finding: EmergencyFinding): string => t(finding.reason_key, finding.reason_params ?? {})
 
   return (
-    <main className="sc-emergency">
-      <div className="sc-emergency-card">
-        <h1 className="sc-emergency-title">{t('emergency.emergency_settings')}</h1>
-        <p className="sc-emergency-subtitle">{t('emergency.subtitle')}</p>
+    <main className={styles.root}>
+      <div className={styles.card}>
+        <h1 className={styles.title}>{t('emergency.emergency_settings')}</h1>
+        <p className={styles.subtitle}>{t('emergency.subtitle')}</p>
         {reason ? (
-          <p className="sc-emergency-banner" role="alert">
+          <p className={styles.banner} role="alert">
             {t('emergency.the_server_is_degraded', { reason })}
           </p>
         ) : null}
         {errorMessage ? (
-          <p className="sc-emergency-error" role="alert">
+          <p className={styles.error} role="alert">
             {errorMessage}
           </p>
         ) : null}
-        {step === 'loading' ? <p className="sc-emergency-hint">{t('common.loading')}</p> : null}
+        {step === 'loading' ? <p className={styles.hint}>{t('common.loading')}</p> : null}
         {step === 'setup' ? (
           <>
-            <p className="sc-emergency-hint">{t('emergency.no_administrator_yet')}</p>
-            <div className="sc-emergency-actions">
+            <p className={styles.hint}>{t('emergency.no_administrator_yet')}</p>
+            <div className={styles.actions}>
               <Button
+                className={styles.action}
                 onClick={() => {
                   window.location.href = '/setup'
                 }}
@@ -77,7 +78,7 @@ export function EmergencyPage() {
           </>
         ) : null}
         {step === 'credentials' || step === 'totp' ? (
-          <form className="sc-emergency-form" onSubmit={flows.signIn}>
+          <form className={styles.form} onSubmit={flows.signIn}>
             {step === 'credentials' ? (
               <>
                 <TextField
@@ -97,7 +98,7 @@ export function EmergencyPage() {
               </>
             ) : (
               <>
-                <p className="sc-emergency-hint">{t('emergency.enter_your_code')}</p>
+                <p className={styles.hint}>{t('emergency.enter_your_code')}</p>
                 <TextField
                   value={code}
                   label={t('login.verification_code')}
@@ -107,8 +108,9 @@ export function EmergencyPage() {
                 />
               </>
             )}
-            <div className="sc-emergency-actions">
+            <div className={styles.actions}>
               <Button
+                className={styles.action}
                 type="submit"
                 loading={busy}
                 disabled={!username.trim() || !password || (step === 'totp' && !code.trim())}
@@ -120,18 +122,18 @@ export function EmergencyPage() {
         ) : null}
         {step === 'editing' ? (
           <>
-            <dl className="sc-emergency-facts">
-              <dt>{t('server.bind_address')}</dt>
-              <dd>
+            <dl className={styles.facts}>
+              <dt className={styles.factLabel}>{t('server.bind_address')}</dt>
+              <dd className={styles.factValue}>
                 <code>{listen}</code>
               </dd>
-              <dt>{t('server.app_hosts_comma_separated')}</dt>
-              <dd>
+              <dt className={styles.factLabel}>{t('server.app_hosts_comma_separated')}</dt>
+              <dd className={styles.factValue}>
                 <code>{appHosts.join(', ') || t('emergency.none')}</code>
               </dd>
             </dl>
             <form
-              className="sc-emergency-form"
+              className={styles.form}
               onSubmit={(event) => {
                 event.preventDefault()
                 void flows.saveCurrentSection()
@@ -146,28 +148,29 @@ export function EmergencyPage() {
                 onValueChange={flows.chooseSection}
               />
               {sectionLoading ? (
-                <p className="sc-emergency-hint" role="status">
+                <p className={styles.hint} role="status">
                   {t('emergency.loading_section', { section: selectedSection })}
                 </p>
               ) : null}
-              <label className="sc-emergency-label" htmlFor="sc-emergency-doc">
+              <label className={styles.label} htmlFor="sc-emergency-doc">
                 {t('emergency.stored_document')}
               </label>
               <textarea
                 id="sc-emergency-doc"
-                className="sc-emergency-textarea"
+                className={styles.textarea}
                 rows={14}
                 spellCheck={false}
                 disabled={sectionLoading || busy}
                 value={documentText}
                 onChange={(event) => actions.setDocumentText(event.target.value)}
               />
-              <p className="sc-emergency-hint">{t('emergency.document_hint')}</p>
-              <div className="sc-emergency-actions">
-                <Button type="submit" loading={busy} disabled={sectionLoading}>
+              <p className={styles.hint}>{t('emergency.document_hint')}</p>
+              <div className={styles.actions}>
+                <Button className={styles.action} type="submit" loading={busy} disabled={sectionLoading}>
                   {t('common.save')}
                 </Button>
                 <Button
+                  className={styles.action}
                   variant="outlined"
                   onClick={() => void flows.restart()}
                   loading={busy}
@@ -178,30 +181,27 @@ export function EmergencyPage() {
               </div>
             </form>
             {sectionOutcome ? (
-              <p
-                className={sectionOutcome.ok ? 'sc-emergency-ok' : 'sc-emergency-error'}
-                role={sectionOutcome.ok ? 'status' : 'alert'}
-              >
+              <p className={sectionOutcome.ok ? styles.ok : styles.error} role={sectionOutcome.ok ? 'status' : 'alert'}>
                 {sectionOutcome.message}
               </p>
             ) : null}
             {warningSection && warnings.length > 0 ? (
-              <p className="sc-emergency-warning" role="status">
+              <p className={styles.warning} role="status">
                 {t('emergency.warnings_for_section', { section: warningSection })}
               </p>
             ) : null}
             {warnings.map((warning, index) => (
-              <p className="sc-emergency-warning" role="status" key={`${warning.reason_key}-${index}`}>
+              <p className={styles.warning} role="status" key={`${warning.reason_key}-${index}`}>
                 {findingText(warning)}
               </p>
             ))}
             {restarting === true ? (
-              <p className="sc-emergency-ok" role="status">
+              <p className={styles.ok} role="status">
                 {t('emergency.restarting_now')}
               </p>
             ) : null}
             {restarting === false ? (
-              <p className="sc-emergency-warning" role="status">
+              <p className={styles.warning} role="status">
                 {t('emergency.no_supervisor_to_restart')}
               </p>
             ) : null}

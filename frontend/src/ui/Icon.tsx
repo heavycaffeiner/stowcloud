@@ -1,4 +1,6 @@
+import { cx } from './cx'
 import { icons, type IconName } from './icons'
+import * as styles from './Icon.css'
 
 export interface IconProps {
   name: string
@@ -15,7 +17,7 @@ export function Icon({ name, size = 20, className, slot }: IconProps) {
   const height = icon.height ?? 24
   return (
     <svg
-      className={className}
+      className={cx(styles.root, className)}
       slot={slot}
       width={size}
       height={size}

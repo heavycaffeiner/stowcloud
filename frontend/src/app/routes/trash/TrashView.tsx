@@ -4,6 +4,9 @@ import { formatDateNs } from '../../../lib/i18n'
 import { formatBytes } from '../../../lib/format/bytes'
 import { Icon } from '../../../ui/Icon'
 import { VirtualList } from '../../../ui/VirtualList'
+import * as styles from './TrashView.css'
+import * as secondaryPageShellStyles from '../secondary/SecondaryPageShell.css'
+import { cx } from '../../../ui/cx'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
 
@@ -22,22 +25,27 @@ export function TrashOperation({
   t: Translate
 }) {
   return (
-    <section className="sc-trash-operation" role="status" aria-live="polite">
-      <div className="sc-trash-operation-heading">
-        <h2>{operation.kind === 'restore' ? t('trash.restore') : t('trash.purge')}</h2>
-        <button type="button" onClick={onClose}>
+    <section className={styles.operation} role="status" aria-live="polite">
+      <div className={styles.operationHeading}>
+        <h2 className={styles.operationTitle}>
+          {operation.kind === 'restore' ? t('trash.restore') : t('trash.purge')}
+        </h2>
+        <button type="button" className={styles.operationClose} onClick={onClose}>
           {t('common.close')}
         </button>
       </div>
       <VirtualList
+        className={styles.operationList}
         items={operation.results}
         itemKey={(result) => result.path}
         estimateSize={20}
-        itemProps={(result) => ({ className: result.ok ? undefined : 'error' })}
+        itemProps={(result) => ({
+          className: cx(styles.operationItem, !result.ok && styles.operationError)
+        })}
         renderItem={(result) => (
           <>
-            <span>{result.path}</span>
-            <span>{result.ok ? t('common.done') : resultError(result, t)}</span>
+            <span className={styles.operationPath}>{result.path}</span>
+            <span className={styles.operationResult}>{result.ok ? t('common.done') : resultError(result, t)}</span>
           </>
         )}
       />
@@ -58,7 +66,7 @@ interface TrashRowProps {
 export function TrashRow({ entry, selected, disabled, onToggle, onRestore, onPurge, t }: TrashRowProps) {
   return (
     <>
-      <label className="sc-trash-checkbox">
+      <label className={styles.checkbox}>
         <input
           type="checkbox"
           checked={selected}
@@ -67,15 +75,15 @@ export function TrashRow({ entry, selected, disabled, onToggle, onRestore, onPur
           onChange={onToggle}
         />
       </label>
-      <span className="sc-trash-name" title={entry.name}>
+      <span className={styles.name} title={entry.name}>
         {entry.name}
       </span>
-      {!entry.is_dir ? <span className="sc-trash-meta">{formatBytes(entry.size)}</span> : null}
-      <span className="sc-trash-meta">{t('trash.deleted', { date: formatDateNs(entry.deleted_at_ns) })}</span>
-      <div className="sc-trash-row-actions">
+      {!entry.is_dir ? <span className={styles.meta}>{formatBytes(entry.size)}</span> : null}
+      <span className={styles.meta}>{t('trash.deleted', { date: formatDateNs(entry.deleted_at_ns) })}</span>
+      <div className={styles.rowActions}>
         <button
           type="button"
-          className="sc-route-icon-button"
+          className={secondaryPageShellStyles.routeIconButton}
           disabled={disabled}
           aria-label={t('trash.restore')}
           onClick={onRestore}
@@ -84,7 +92,7 @@ export function TrashRow({ entry, selected, disabled, onToggle, onRestore, onPur
         </button>
         <button
           type="button"
-          className="sc-route-icon-button sc-route-icon-button-danger"
+          className={cx(secondaryPageShellStyles.routeIconButton, secondaryPageShellStyles.routeIconButtonDanger)}
           disabled={disabled}
           aria-label={t('trash.purge')}
           onClick={onPurge}

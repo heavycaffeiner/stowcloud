@@ -6,7 +6,8 @@ import { useDocumentTitle } from '../../hooks/use-document-title'
 import { PageTabs, type PageTabItem } from '../PageTabs'
 import { AdminPanels, SectionLoading } from './AdminPanels'
 import { useAdminTab, type AdminTab } from './hooks/use-admin-tab'
-import '../../../styles/app/routes/admin/admin.css.ts'
+import * as styles from './AdminPage.css'
+import * as pageTabsStyles from '../PageTabs.css'
 
 type AdminTabItem = PageTabItem<AdminTab>
 
@@ -23,9 +24,9 @@ function adminTabs(t: (key: string) => string): readonly AdminTabItem[] {
 function AdminFrame({ children }: { children: ReactNode }) {
   const { t } = useI18n()
   return (
-    <section className="sc-settings-page sc-admin">
-      <header>
-        <h1>{t('common.administrator')}</h1>
+    <section className={pageTabsStyles.page}>
+      <header className={pageTabsStyles.header}>
+        <h1 className={pageTabsStyles.title}>{t('common.administrator')}</h1>
       </header>
       {children}
     </section>
@@ -42,7 +43,7 @@ export function AdminPage() {
   if (session.isPending) {
     return (
       <AdminFrame>
-        <div className="sc-admin-inner">
+        <div className={styles.inner}>
           <SectionLoading label={t('common.loading')} />
         </div>
       </AdminFrame>
@@ -51,8 +52,8 @@ export function AdminPage() {
   if (session.isError || !session.data) {
     return (
       <AdminFrame>
-        <div className="sc-admin-inner">
-          <p className="sc-admin-page-error" role="alert">
+        <div className={styles.inner}>
+          <p className={styles.pageError} role="alert">
             {t('common.could_not_load_list')}
           </p>
         </div>
@@ -62,8 +63,8 @@ export function AdminPage() {
   if (!session.data.user.is_admin) {
     return (
       <AdminFrame>
-        <div className="sc-admin-inner">
-          <p className="sc-admin-denied">{t('admin.only_administrators_can_see_screen')}</p>
+        <div className={styles.inner}>
+          <p className={styles.denied}>{t('admin.only_administrators_can_see_screen')}</p>
         </div>
       </AdminFrame>
     )

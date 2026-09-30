@@ -3,6 +3,9 @@ import type { Ref } from 'react'
 import { useI18n } from '../../../hooks/use-i18n'
 import type { EditorView } from '@codemirror/view'
 import type { LanguageSupport } from '@codemirror/language'
+import * as styles from './CodeEditor.css'
+import { codeVars } from './CodeEditor.css'
+import { cx } from '../../../ui/cx'
 
 export interface CodeEditorProps {
   value: string
@@ -112,7 +115,7 @@ export const CodeEditor = forwardRef(function CodeEditor(
         const syntaxTheme = languageMod.HighlightStyle.define([
           {
             tag: [highlightMod.tags.keyword, highlightMod.tags.modifier, highlightMod.tags.operatorKeyword],
-            color: 'var(--sc-code-keyword)'
+            color: codeVars.keyword
           },
           {
             tag: [
@@ -120,15 +123,15 @@ export const CodeEditor = forwardRef(function CodeEditor(
               highlightMod.tags.regexp,
               highlightMod.tags.special(highlightMod.tags.string)
             ],
-            color: 'var(--sc-code-string)'
+            color: codeVars.string
           },
           {
             tag: [highlightMod.tags.number, highlightMod.tags.bool, highlightMod.tags.null],
-            color: 'var(--sc-code-number)'
+            color: codeVars.number
           },
           {
             tag: [highlightMod.tags.typeName, highlightMod.tags.className, highlightMod.tags.namespace],
-            color: 'var(--sc-code-type)'
+            color: codeVars.type
           },
           {
             tag: [
@@ -136,25 +139,25 @@ export const CodeEditor = forwardRef(function CodeEditor(
               highlightMod.tags.function(highlightMod.tags.variableName),
               highlightMod.tags.labelName
             ],
-            color: 'var(--sc-code-definition)'
+            color: codeVars.definition
           },
           {
             tag: [highlightMod.tags.comment, highlightMod.tags.lineComment, highlightMod.tags.blockComment],
-            color: 'var(--sc-code-comment)',
+            color: codeVars.comment,
             fontStyle: 'italic'
           },
           {
             tag: [highlightMod.tags.heading, highlightMod.tags.strong],
-            color: 'var(--sc-code-heading)',
+            color: codeVars.heading,
             fontWeight: '700'
           },
           { tag: highlightMod.tags.emphasis, fontStyle: 'italic' },
           {
             tag: [highlightMod.tags.link, highlightMod.tags.url],
-            color: 'var(--sc-code-link)',
+            color: codeVars.link,
             textDecoration: 'underline'
           },
-          { tag: highlightMod.tags.invalid, color: 'var(--sc-code-invalid)' }
+          { tag: highlightMod.tags.invalid, color: codeVars.invalid }
         ])
         const byteLimitFilter = EditorState.transactionFilter.of((tr) => {
           if (maxBytes === undefined || !tr.docChanged) return tr
@@ -204,24 +207,24 @@ export const CodeEditor = forwardRef(function CodeEditor(
                   height: '100%',
                   fontSize: '0.875rem',
                   backgroundColor: 'transparent',
-                  color: 'var(--sc-code-foreground)'
+                  color: codeVars.foreground
                 },
                 '&.cm-focused': { outline: 'none' },
                 '.cm-scroller': {
                   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
                   lineHeight: '1.65'
                 },
-                '.cm-content': { padding: '12px 0', caretColor: 'var(--sc-code-caret)' },
+                '.cm-content': { padding: '12px 0', caretColor: codeVars.caret },
                 '.cm-line': { padding: '0 18px 0 10px' },
                 '.cm-gutters': {
-                  backgroundColor: 'var(--sc-code-gutter)',
-                  color: 'var(--sc-code-gutter-text)',
+                  backgroundColor: codeVars.gutter,
+                  color: codeVars.gutterText,
                   border: 'none',
                   paddingLeft: '8px'
                 },
-                '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: 'var(--sc-code-active-line)' },
+                '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: codeVars.activeLine },
                 '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
-                  backgroundColor: 'var(--sc-code-selection) !important'
+                  backgroundColor: `${codeVars.selection} !important`
                 }
               })
             ]
@@ -248,11 +251,11 @@ export const CodeEditor = forwardRef(function CodeEditor(
   }, [value])
 
   return (
-    <div ref={hostRef} className="sc-code-editor">
+    <div ref={hostRef} className={styles.root}>
       {failed ? (
-        <p className="sc-code-editor-status sc-code-editor-status-error">{t('editor.could_not_load_editor_check')}</p>
+        <p className={cx(styles.status, styles.statusError)}>{t('editor.could_not_load_editor_check')}</p>
       ) : null}
-      {!failed && !ready ? <p className="sc-code-editor-status">{t('editor.loading_editor')}</p> : null}
+      {!failed && !ready ? <p className={styles.status}>{t('editor.loading_editor')}</p> : null}
     </div>
   )
 })

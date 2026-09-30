@@ -10,6 +10,7 @@ import { useI18n } from '../../hooks/use-i18n'
 import { Button } from '../../ui/Button'
 import { TextField } from '../../ui/TextField'
 import { ProgressLinear } from '../../ui/ProgressLinear'
+import * as styles from './PasswordSection.css'
 
 export function PasswordSection() {
   const { t } = useI18n()
@@ -86,7 +87,7 @@ export function PasswordSection() {
   }
 
   return (
-    <form className="sc-password-form" onSubmit={submit}>
+    <form className={styles.root} onSubmit={submit}>
       <TextField
         type="password"
         label={t('common.current_password')}
@@ -104,13 +105,14 @@ export function PasswordSection() {
         onValueChange={setNewPassword}
       />
       {newPassword ? (
-        <div className="sc-password-form-strength">
+        <div className={styles.strength}>
           <ProgressLinear
+            className={styles.strengthBar}
             value={strength.ratio}
             tone={strength.tier}
             label={t('password.new_password_strength', { level: strength.label })}
           />
-          <span className="sc-password-form-strength-label">{strength.label}</span>
+          <span className={styles.strengthLabel}>{strength.label}</span>
         </div>
       ) : null}
       <TextField
@@ -121,16 +123,16 @@ export function PasswordSection() {
         onValueChange={setConfirmPassword}
       />
       {formError ? (
-        <p className="sc-password-form-error" role="alert">
+        <p className={styles.error} role="alert">
           {formError}
         </p>
       ) : null}
       {success ? (
-        <p className="sc-password-form-success" role="status">
+        <p className={styles.success} role="status">
           {t('password.password_changed')}
         </p>
       ) : null}
-      <div className="sc-password-form-actions">
+      <div className={styles.actions}>
         <Button type="submit" disabled={!currentPassword || !newPassword} loading={save.isPending}>
           {t('password.change_password')}
         </Button>

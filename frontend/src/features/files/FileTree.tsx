@@ -8,7 +8,8 @@ import { useI18n } from '../../hooks/use-i18n'
 import { FileTreeItem } from './FileTreeItem'
 import { VirtualList } from '../../ui/VirtualList'
 import { Modal } from '../../ui/Modal'
-import '../../styles/features/files/browse-ui.css.ts'
+import * as styles from './FileTree.css'
+import { cx } from '../../ui/cx'
 
 export interface FileTreeProps {
   currentPath: string
@@ -336,11 +337,12 @@ export function FileTreeList({
   }
 
   return (
-    <div ref={container} className="sc-file-tree-list">
+    <div ref={container} className={styles.list}>
       {model.branches.map((path) => (
         <DirectoryBranch key={path} path={path} currentPath={currentPath} onChange={updateDirectory} />
       ))}
       <VirtualList
+        className={styles.tree}
         role="tree"
         aria-label={ariaLabel ?? t('tree.folder_tree')}
         tabIndex={focusedKey ? -1 : 0}
@@ -399,7 +401,7 @@ export function FileTreeList({
           ) : row.kind === 'more' ? (
             <button
               type="button"
-              className="sc-tree-row-more"
+              className={styles.treeRowMore}
               style={{ paddingInlineStart: row.depth * 16 + 8 }}
               data-tree-more
               tabIndex={focusedKey === row.key ? 0 : -1}
@@ -416,7 +418,7 @@ export function FileTreeList({
             </button>
           ) : (
             <p
-              className={`sc-tree-row-status${row.status === 'error' ? ' sc-tree-row-status-error' : ''}`}
+              className={cx(styles.treeRowStatus, row.status === 'error' && styles.treeRowStatusError)}
               style={{ paddingInlineStart: row.depth * 16 + 8 }}
               role={row.status === 'error' ? 'alert' : row.status === 'loading' ? 'status' : undefined}
             >
@@ -446,22 +448,27 @@ export function FileTree({ currentPath, onNavigate, overlay = false, onClose }: 
   )
   if (!overlay)
     return (
-      <nav className="sc-file-tree" aria-label={t('tree.folder_tree')}>
+      <nav className={styles.root} aria-label={t('tree.folder_tree')}>
         {tree}
       </nav>
     )
   return (
     <Modal
       open
-      className="sc-file-tree sc-file-tree-overlay"
+      className={cx(styles.root, styles.overlay)}
       label={t('tree.folder_tree')}
       onClose={() => onClose?.()}
       initialFocus={(dialog) =>
         dialog.querySelector<HTMLElement>('[data-tree-label][tabindex="0"], [data-tree-more][tabindex="0"]')
       }
     >
-      <div className="sc-file-tree-overlay-header">
-        <button type="button" onClick={onClose} aria-label={t('tree.close_folder_tree')}>
+      <div className={styles.overlayHeader}>
+        <button
+          type="button"
+          className={styles.overlayClose}
+          onClick={onClose}
+          aria-label={t('tree.close_folder_tree')}
+        >
           ×
         </button>
       </div>

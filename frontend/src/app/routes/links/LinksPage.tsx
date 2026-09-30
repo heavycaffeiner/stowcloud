@@ -12,7 +12,8 @@ import { SecondaryPageState } from '../secondary/SecondaryPageState'
 import { LinkListRow } from './LinkRow'
 import { useLinkManagement, type LinkRow } from './hooks/use-link-management'
 import { ShareManageDialog } from '../../../features/shares/ShareManageDialog'
-import '../../../styles/app/routes/simple-pages.css.ts'
+import * as styles from './LinksPage.css'
+import * as secondaryPageShellStyles from '../secondary/SecondaryPageShell.css'
 
 export function LinksPage() {
   const { t } = useI18n()
@@ -28,7 +29,6 @@ export function LinksPage() {
 
   return (
     <SecondaryPageShell
-      className="sc-links"
       title={t('nav.links')}
       refreshLabel={t('common.refresh')}
       onRefresh={() => void activeQuery.refetch()}
@@ -54,10 +54,11 @@ export function LinksPage() {
       >
         {rows.length > 0 ? (
           <VirtualList
-            className="sc-secondary-page-list sc-links-list"
+            className={secondaryPageShellStyles.list}
             items={rows}
             itemKey={(link) => link.id}
             estimateSize={80}
+            itemProps={() => ({ className: styles.item })}
             pinnedKeys={management.managing ? [management.managing.id] : undefined}
             renderItem={(link) => {
               const mine = management.isMine(link)
@@ -72,7 +73,7 @@ export function LinksPage() {
                     onOpen={() => void management.openManagement(link)}
                   />
                   {management.targetErrorPath === path && management.targetError ? (
-                    <p className="sc-links-target-error" role="alert">
+                    <p className={styles.targetError} role="alert">
                       {management.targetError}
                     </p>
                   ) : null}

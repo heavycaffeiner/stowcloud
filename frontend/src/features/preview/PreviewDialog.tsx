@@ -21,6 +21,8 @@ import { ProgressCircular } from '../../ui/ProgressCircular'
 import { UnlockShareDialog } from '../shares/UnlockShareDialog'
 import { Icon } from '../../ui/Icon'
 import { isEditableFileName } from '../files/logic/editable-files'
+import * as styles from './PreviewDialog.css'
+import { cx } from '../../ui/cx'
 
 const TEXT_MAX_BYTES = 2 * 1024 * 1024
 const PREVIEW_DIM = 1600
@@ -274,40 +276,44 @@ export function PreviewDialog({
         open={open}
         title={entry.name}
         hideTitle
-        className="sc-preview-dialog"
+        className={styles.dialog}
         role="dialog"
         onClose={onClose}
         onKeyDown={onKeyDown}
       >
-        <div ref={previewRef} className="sc-preview">
-          <header className="sc-preview-bar">
-            <IconButton label={t('common.close')} onClick={onClose}>
+        <div ref={previewRef} className={styles.root}>
+          <header className={styles.bar}>
+            <IconButton className={styles.iconButton} label={t('common.close')} onClick={onClose}>
               <Icon name="close" />
             </IconButton>
-            <div className="sc-preview-meta">
-              <span className="sc-preview-name" title={entry.name}>
+            <div className={styles.meta}>
+              <span className={styles.name} title={entry.name}>
                 {entry.name}
               </span>
-              <span className="sc-preview-size">{formatEntrySize(entry.size, encryption !== null)}</span>
+              <span className={styles.size}>{formatEntrySize(entry.size, encryption !== null)}</span>
             </div>
             {body.kind === 'text' || body.kind === 'too-large-text' ? (
-              <IconButton label={t('browse.open_text_editor')} onClick={() => onEdit(entry)}>
+              <IconButton
+                className={styles.iconButton}
+                label={t('browse.open_text_editor')}
+                onClick={() => onEdit(entry)}
+              >
                 <Icon name="edit_document" />
               </IconButton>
             ) : null}
-            <IconButton label={t('common.download')} onClick={() => onDownload(entry)}>
+            <IconButton className={styles.iconButton} label={t('common.download')} onClick={() => onDownload(entry)}>
               <Icon name="download" />
             </IconButton>
           </header>
-          <div className="sc-preview-body">
-            <div className="sc-preview-stage">
+          <div className={styles.body}>
+            <div className={styles.stage}>
               {loading ? (
                 <ProgressCircular size={40} />
               ) : videoUrl ? (
-                <div className="sc-preview-video-container">
+                <div className={styles.videoContainer}>
                   <video
                     ref={videoRef}
-                    className="sc-preview-video"
+                    className={styles.video}
                     src={videoUrl}
                     controls
                     autoPlay
@@ -321,7 +327,7 @@ export function PreviewDialog({
                 </div>
               ) : imageUrl ? (
                 <img
-                  className="sc-preview-image"
+                  className={styles.image}
                   src={imageUrl}
                   alt={entry.name}
                   onError={() => {
@@ -331,26 +337,26 @@ export function PreviewDialog({
                   }}
                 />
               ) : textQuery.data?.content !== undefined ? (
-                <pre className="sc-preview-text">{textQuery.data.content}</pre>
+                <pre className={styles.text}>{textQuery.data.content}</pre>
               ) : archiveListing ? (
-                <div className="sc-preview-archive">
-                  <p className="sc-preview-archive-count">
+                <div className={styles.archive}>
+                  <p className={styles.archiveCount}>
                     {tp('preview.archive_entries', level.length)}{' '}
                     {archiveListing.skipped ? (
-                      <span className="sc-preview-archive-skipped">
+                      <span className={styles.archiveSkipped}>
                         {tp('preview.archive_skipped', archiveListing.skipped)}
                       </span>
                     ) : null}{' '}
                     {archiveListing.truncated ? (
-                      <span className="sc-preview-archive-skipped">
+                      <span className={styles.archiveSkipped}>
                         {t('preview.archive_truncated', { limit: archiveListing.limit })}
                       </span>
                     ) : null}
                   </p>
-                  <nav className="sc-preview-crumbs" aria-label={t('preview.archive_location')}>
+                  <nav className={styles.crumbs} aria-label={t('preview.archive_location')}>
                     <button
                       type="button"
-                      className="sc-preview-crumb"
+                      className={styles.crumb}
                       disabled={!cwd}
                       onClick={() => setPreviewState((state) => ({ ...state, cwd: '' }))}
                     >
@@ -358,12 +364,12 @@ export function PreviewDialog({
                     </button>
                     {crumbs.map((crumb, index) => (
                       <span key={crumb.path}>
-                        <span className="sc-preview-crumb-sep" aria-hidden="true">
+                        <span className={styles.crumbSep} aria-hidden="true">
                           /
                         </span>
                         <button
                           type="button"
-                          className="sc-preview-crumb"
+                          className={styles.crumb}
                           disabled={index === crumbs.length - 1}
                           onClick={() => setPreviewState((state) => ({ ...state, cwd: crumb.path }))}
                         >
@@ -373,14 +379,14 @@ export function PreviewDialog({
                     ))}
                   </nav>
                   {level.length === 0 ? (
-                    <p className="sc-preview-archive-empty">{t('preview.archive_empty')}</p>
+                    <p className={styles.archiveEmpty}>{t('preview.archive_empty')}</p>
                   ) : (
-                    <ul className="sc-preview-archive-list">
+                    <ul className={styles.archiveList}>
                       {cwd ? (
                         <li>
                           <button
                             type="button"
-                            className="sc-preview-archive-row sc-preview-archive-row-up"
+                            className={cx(styles.archiveRow, styles.archiveRowUp)}
                             onClick={archiveUp}
                           >
                             <Icon name="chevron_left" />
@@ -393,17 +399,17 @@ export function PreviewDialog({
                           {row.kind === 'dir' ? (
                             <button
                               type="button"
-                              className="sc-preview-archive-row sc-preview-archive-row-dir"
+                              className={styles.archiveRow}
                               onClick={() => setPreviewState((state) => ({ ...state, cwd: row.path }))}
                             >
                               <Icon name="folder" />
-                              <span className="sc-preview-archive-name">{row.label}</span>
+                              <span className={styles.archiveName}>{row.label}</span>
                               <span>{t('details.folder')}</span>
                             </button>
                           ) : (
-                            <div className="sc-preview-archive-row">
+                            <div className={styles.archiveRow}>
                               <Icon name="draft" />
-                              <span className="sc-preview-archive-name">{row.label}</span>
+                              <span className={styles.archiveName}>{row.label}</span>
                               <span>{t('details.file')}</span>
                               <span>{formatBytes(row.size)}</span>
                             </div>
@@ -414,18 +420,16 @@ export function PreviewDialog({
                   )}
                 </div>
               ) : (
-                <div className="sc-preview-card" role={failed ? 'alert' : undefined}>
-                  <p className="sc-preview-card-title">
-                    {locked ? t('preview.locked_title') : t('preview.cannot_preview')}
-                  </p>
-                  <p className="sc-preview-card-reason">
+                <div className={styles.card} role={failed ? 'alert' : undefined}>
+                  <p className={styles.cardTitle}>{locked ? t('preview.locked_title') : t('preview.cannot_preview')}</p>
+                  <p className={styles.cardReason}>
                     {locked
                       ? t('preview.locked_reason')
                       : (failed ??
                         (body.kind === 'too-large-text' ? t('preview.too_large_for_text') : t('preview.no_preview')))}
                   </p>
-                  {typeof failedDetail === 'string' ? <p className="sc-preview-card-detail">{failedDetail}</p> : null}
-                  <div className="sc-preview-card-actions">
+                  {typeof failedDetail === 'string' ? <p className={styles.cardDetail}>{failedDetail}</p> : null}
+                  <div className={styles.cardActions}>
                     {locked ? (
                       <Button onClick={() => setPreviewState((state) => ({ ...state, unlockOpen: true }))}>
                         {t('encryption.unlock')}
@@ -446,11 +450,16 @@ export function PreviewDialog({
             </div>
           </div>
           {hasPrev || hasNext ? (
-            <div className="sc-preview-nav">
-              <IconButton label={t('preview.previous')} disabled={!hasPrev} onClick={onPrev}>
+            <div className={styles.nav}>
+              <IconButton
+                className={styles.iconButton}
+                label={t('preview.previous')}
+                disabled={!hasPrev}
+                onClick={onPrev}
+              >
                 <Icon name="chevron_left" />
               </IconButton>
-              <IconButton label={t('preview.next')} disabled={!hasNext} onClick={onNext}>
+              <IconButton className={styles.iconButton} label={t('preview.next')} disabled={!hasNext} onClick={onNext}>
                 <Icon name="chevron_right" />
               </IconButton>
             </div>

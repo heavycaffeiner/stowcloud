@@ -25,8 +25,7 @@ import { useBrowseMenus } from './hooks/use-browse-menus'
 import { useBrowsePathSelection, useBrowseRouteFocus } from './hooks/use-browse-route-effects'
 import { BrowseSelectionBar } from './BrowseSelectionBar'
 import { BrowseToolbar, BrowseContent, BrowseDialogs } from './BrowseView'
-import '../../../styles/app/routes/browse.css.ts'
-import '../../../styles/features/files/browse-ui.css.ts'
+import * as styles from './BrowseRoute.css'
 
 export function BrowseRoute() {
   const params = useParams()
@@ -211,7 +210,7 @@ function BrowsePageContent({ path }: { path: string }) {
   const showingAll = filterType === 'all' && filterDate === 'any'
   return (
     <div
-      className="sc-browse"
+      className={styles.root}
       role="region"
       aria-label={t('browse.file_browser')}
       onDragOver={(event) => {

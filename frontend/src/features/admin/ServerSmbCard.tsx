@@ -2,6 +2,8 @@ import type { ReactNode } from 'react'
 import type { SettingsSnapshot } from '../../lib/api/types'
 import type { ServerSettingsGroup } from './hooks/server-settings-state'
 import { ServerSettingsCard } from './ServerSettingsCard'
+import * as styles from './ServerSmbCard.css'
+import * as adminStyles from './admin.css'
 type Translator = (key: string, params?: Record<string, string | number>) => string
 type Values = Record<string, unknown>
 type Input = (
@@ -41,9 +43,10 @@ export function ServerSmbCard({
       {!String(values['smb.server_name'] ?? '').trim() ? emptyNote('smb.server_name') : null}
       {input('smb.service_user', t('server.service_account_name'))}
       {toggle('smb.allow_public_bind', t('server.allow_access_from_outside_private'))}
-      <label>
+      <label className={styles.selectLabel}>
         {t('server.smb_access_2fa_users')}
         <select
+          className={styles.select}
           value={String(values['smb.totp_policy'] ?? 'require_separate')}
           onChange={(event) => onValueChange('smb.totp_policy', event.currentTarget.value)}
         >
@@ -53,11 +56,11 @@ export function ServerSmbCard({
       </label>
       {input('smb.service_gid', t('server.service_account_gid'), { type: 'number' })}
       {input('smb.interfaces', t('settings.smb_interfaces'))}
-      <p className="sc-admin-section-hint">{t('settings.smb_interfaces_hint')}</p>
+      <p className={adminStyles.sectionHint}>{t('settings.smb_interfaces_hint')}</p>
       {saveButton('smb')}
       {snapshot.smb_agent ? (
         <div
-          className={snapshot.smb_agent.ok ? 'sc-admin-section-hint' : 'sc-admin-section-warning'}
+          className={snapshot.smb_agent.ok ? adminStyles.sectionHint : adminStyles.warning}
           role={snapshot.smb_agent.ok ? 'status' : 'alert'}
         >
           <p>

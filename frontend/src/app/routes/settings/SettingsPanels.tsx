@@ -6,6 +6,9 @@ import { SettingsCard } from '../../../features/settings/SettingsCard'
 import { Button } from '../../../ui/Button'
 import { Icon } from '../../../ui/Icon'
 import { SegmentedControl } from '../../../ui/SegmentedControl'
+import * as styles from './SettingsPanels.css'
+import * as settingsCardStyles from '../../../features/settings/SettingsCard.css'
+import { cx } from '../../../ui/cx'
 const PasswordSection = lazy(() =>
   import('../../../features/settings/PasswordSection').then((m) => ({ default: m.PasswordSection }))
 )
@@ -35,29 +38,29 @@ type AccountPanelProps = {
 
 export function AccountPanel({ session, signOutPending, onSignOut, t }: AccountPanelProps) {
   return (
-    <div className="sc-settings-page-grid">
+    <div className={styles.pageGrid}>
       <SettingsCard
         leading={
-          <div className="sc-settings-avatar">
+          <div className={styles.avatar}>
             {((session?.user.display_name || session?.user.name || 'U')[0] ?? 'U').toUpperCase()}
           </div>
         }
         title={t('settings.account')}
         description={
           <>
-            <p className="sc-settings-account-name">{session?.user.display_name || session?.user.name}</p>
+            <p className={styles.accountName}>{session?.user.display_name || session?.user.name}</p>
             {session?.user.display_name && session.user.name && session.user.display_name !== session.user.name ? (
-              <p className="sc-settings-username">@{session.user.name}</p>
+              <p className={styles.username}>@{session.user.name}</p>
             ) : null}
           </>
         }
         trailing={
-          <span className="sc-settings-badge">
+          <span className={settingsCardStyles.badge}>
             {session?.user.is_admin ? t('common.administrator') : t('common.user_2')}
           </span>
         }
       >
-        <div className="sc-settings-row">
+        <div className={styles.row}>
           <Button
             variant="outlined"
             icon={<Icon name="close" size={18} />}
@@ -80,63 +83,61 @@ type SecurityPanelProps = {
 export function SecurityPanel({ oidcVisible, t }: SecurityPanelProps) {
   return (
     <Suspense fallback={<p>{t('common.loading')}</p>}>
-      <div className="sc-settings-page-grid">
+      <div className={styles.pageGrid}>
         <SettingsCard
           leading={
-            <div className="sc-settings-card-icon">
+            <div className={styles.cardIcon}>
               <Icon name="lock" size={20} />
             </div>
           }
           title={t('common.password')}
-          description={<p className="sc-settings-card-hint">{t('settings.at_least_10_characters_changing')}</p>}
+          description={<p className={styles.cardHint}>{t('settings.at_least_10_characters_changing')}</p>}
         >
           <PasswordSection />
         </SettingsCard>
         <SettingsCard
           leading={
-            <div className="sc-settings-card-icon">
+            <div className={styles.cardIcon}>
               <Icon name="lock" size={20} />
             </div>
           }
           title={t('settings.two_factor_authentication')}
-          description={<p className="sc-settings-card-hint">{t('settings.asks_6_digit_code_from')}</p>}
+          description={<p className={styles.cardHint}>{t('settings.asks_6_digit_code_from')}</p>}
         >
           <TotpSection />
         </SettingsCard>
         {oidcVisible ? (
           <SettingsCard
             leading={
-              <div className="sc-settings-card-icon">
+              <div className={styles.cardIcon}>
                 <Icon name="admin" size={20} />
               </div>
             }
             title={t('settings.single_sign_on')}
-            description={
-              <p className="sc-settings-card-hint">{t('settings.sign_your_organisations_identity_provider')}</p>
-            }
+            description={<p className={styles.cardHint}>{t('settings.sign_your_organisations_identity_provider')}</p>}
           >
             <OidcSection />
           </SettingsCard>
         ) : null}
         <SettingsCard
           leading={
-            <div className="sc-settings-card-icon">
+            <div className={styles.cardIcon}>
               <Icon name="lock" size={20} />
             </div>
           }
           title={t('settings.app_passwords')}
-          description={<p className="sc-settings-card-hint">{t('settings.use_one_where_your_account')}</p>}
+          description={<p className={styles.cardHint}>{t('settings.use_one_where_your_account')}</p>}
         >
           <AppPasswordsSection />
         </SettingsCard>
         <SettingsCard
           leading={
-            <div className="sc-settings-card-icon">
+            <div className={styles.cardIcon}>
               <Icon name="recent" size={20} />
             </div>
           }
           title={t('settings.active_sessions')}
-          description={<p className="sc-settings-card-hint">{t('settings.devices_currently_signed_account_sign')}</p>}
+          description={<p className={styles.cardHint}>{t('settings.devices_currently_signed_account_sign')}</p>}
         >
           <SessionsSection />
         </SettingsCard>
@@ -153,16 +154,16 @@ type ConnectionsPanelProps = {
 export function ConnectionsPanel({ session, t }: ConnectionsPanelProps) {
   return (
     <Suspense fallback={<p>{t('common.loading')}</p>}>
-      <div className="sc-settings-page-grid">
+      <div className={styles.pageGrid}>
         {session?.features.smb ? (
           <SettingsCard
             leading={
-              <div className="sc-settings-card-icon">
+              <div className={styles.cardIcon}>
                 <Icon name="folder-tree" size={20} />
               </div>
             }
             title={t('admin.server_smb')}
-            description={<p className="sc-settings-card-hint">{t('settings.mount_as_network_drive_file')}</p>}
+            description={<p className={styles.cardHint}>{t('settings.mount_as_network_drive_file')}</p>}
           >
             <SmbSection />
           </SettingsCard>
@@ -170,12 +171,12 @@ export function ConnectionsPanel({ session, t }: ConnectionsPanelProps) {
         {session?.features.webdav ? (
           <SettingsCard
             leading={
-              <div className="sc-settings-card-icon">
+              <div className={styles.cardIcon}>
                 <Icon name="link" size={20} />
               </div>
             }
             title={t('settings.connections')}
-            description={<p className="sc-settings-card-hint">{t('webdav.connect_from_your_os_file_manager')}</p>}
+            description={<p className={styles.cardHint}>{t('webdav.connect_from_your_os_file_manager')}</p>}
           >
             <WebdavSection />
           </SettingsCard>
@@ -209,18 +210,19 @@ export function AppearancePanel({
   t
 }: AppearancePanelProps) {
   return (
-    <div className="sc-settings-page-grid">
+    <div className={styles.pageGrid}>
       <SettingsCard
         leading={
-          <div className="sc-settings-card-icon">
+          <div className={styles.cardIcon}>
             <Icon name="settings" size={20} />
           </div>
         }
         title={t('settings.theme')}
-        description={<p className="sc-settings-card-hint">{t('settings.choosing_system_follows_your_device')}</p>}
+        description={<p className={styles.cardHint}>{t('settings.choosing_system_follows_your_device')}</p>}
       >
-        <div className="sc-settings-row sc-settings-row-segmented">
+        <div className={cx(styles.row, styles.rowSegmented)}>
           <SegmentedControl
+            className={styles.segmented}
             label={t('settings.theme')}
             value={theme}
             options={[
@@ -234,15 +236,16 @@ export function AppearancePanel({
       </SettingsCard>
       <SettingsCard
         leading={
-          <div className="sc-settings-card-icon">
+          <div className={styles.cardIcon}>
             <Icon name="info" size={20} />
           </div>
         }
         title={t('settings.language')}
-        description={<p className="sc-settings-card-hint">{t('settings.language_choice_stays_this_browser')}</p>}
+        description={<p className={styles.cardHint}>{t('settings.language_choice_stays_this_browser')}</p>}
       >
-        <div className="sc-settings-row sc-settings-row-segmented">
+        <div className={cx(styles.row, styles.rowSegmented)}>
           <SegmentedControl
+            className={styles.segmented}
             label={t('settings.language')}
             value={locale}
             options={[
@@ -255,15 +258,16 @@ export function AppearancePanel({
       </SettingsCard>
       <SettingsCard
         leading={
-          <div className="sc-settings-card-icon">
+          <div className={styles.cardIcon}>
             <Icon name="upload" size={20} />
           </div>
         }
         title={t('settings.upload_concurrency')}
-        description={<p className="sc-settings-card-hint">{t('settings.upload_concurrency_hint')}</p>}
+        description={<p className={styles.cardHint}>{t('settings.upload_concurrency_hint')}</p>}
       >
-        <div className="sc-settings-row sc-settings-row-segmented">
+        <div className={cx(styles.row, styles.rowSegmented)}>
           <SegmentedControl
+            className={styles.segmented}
             label={t('settings.upload_concurrency')}
             value={String(concurrency)}
             options={concurrencyChoices.map((count) => ({ value: String(count), label: count }))}
@@ -271,7 +275,7 @@ export function AppearancePanel({
           />
         </div>
         {concurrencySaveFailed ? (
-          <p className="sc-settings-error" role="alert">
+          <p className={styles.error} role="alert">
             {t('common.could_not_save_settings')}
           </p>
         ) : null}

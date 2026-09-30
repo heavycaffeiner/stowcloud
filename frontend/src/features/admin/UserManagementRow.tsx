@@ -3,6 +3,9 @@ import { Button } from '../../ui/Button'
 import { Icon } from '../../ui/Icon'
 import { ListItem } from '../../ui/ListItem'
 import { Switch } from '../../ui/Switch'
+import * as styles from './UserManagementRow.css'
+import * as adminStyles from './admin.css'
+import { cx } from '../../ui/cx'
 
 type Translator = (key: string, params?: Record<string, string | number>) => string
 
@@ -37,9 +40,9 @@ export function UserManagementRow({
     <ListItem
       headline={
         <>
-          <span className="sc-admin-row-name">{user.display_name || user.name}</span>
-          {user.is_admin ? <span className="sc-admin-chip">{t('common.administrator')}</span> : null}
-          {user.disabled ? <span className="sc-admin-chip sc-admin-chip-muted">{t('user.inactive')}</span> : null}
+          <span className={adminStyles.rowName}>{user.display_name || user.name}</span>
+          {user.is_admin ? <span className={adminStyles.chip}>{t('common.administrator')}</span> : null}
+          {user.disabled ? <span className={cx(adminStyles.chip, styles.chipMuted)}>{t('user.inactive')}</span> : null}
         </>
       }
       supporting={user.name}
@@ -54,10 +57,10 @@ export function UserManagementRow({
               onChange={onToggle}
             />
           </span>
-          <button className="sc-admin-chip sc-admin-chip-muted" type="button" onClick={onQuota}>
+          <button className={cx(adminStyles.chip, styles.chipMuted)} type="button" onClick={onQuota}>
             {quotaLabel}
           </button>
-          <div className="sc-admin-row-actions">
+          <div className={adminStyles.rowActions}>
             <Button
               variant="text"
               square

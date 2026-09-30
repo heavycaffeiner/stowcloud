@@ -10,7 +10,7 @@ import { PageTabs } from '../PageTabs'
 import { AccountPanel, AppearancePanel, ConnectionsPanel, SecurityPanel } from './SettingsPanels'
 import { useSettingsTabs, type SettingsTab } from './hooks/use-settings-tabs'
 import { ErrorBoundary } from '../../../ui/ErrorBoundary'
-import '../../../styles/app/routes/settings.css.ts'
+import * as pageTabsStyles from '../PageTabs.css'
 
 export function SettingsPage() {
   const { t } = useI18n()
@@ -59,9 +59,9 @@ export function SettingsPage() {
   }
 
   return (
-    <section className="sc-settings-page">
-      <header>
-        <h1>{t('common.settings')}</h1>
+    <section className={pageTabsStyles.page}>
+      <header className={pageTabsStyles.header}>
+        <h1 className={pageTabsStyles.title}>{t('common.settings')}</h1>
       </header>
       <PageTabs
         label={t('common.settings')}

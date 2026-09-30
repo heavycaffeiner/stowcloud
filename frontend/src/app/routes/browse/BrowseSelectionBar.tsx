@@ -2,6 +2,9 @@ import type { Entry } from '../../../lib/api/client'
 import type { RowAction } from '../../../features/files/logic/row-actions'
 import { formatBytes } from '../../../lib/format/bytes'
 import { Icon } from '../../../ui/Icon'
+import * as styles from './BrowseSelectionBar.css'
+import * as iconButtonStyles from '../../../ui/IconButton.css'
+import { cx } from '../../../ui/cx'
 
 type SelectionBarState = {
   compact: boolean
@@ -35,24 +38,24 @@ const actionIcons: Record<string, Parameters<typeof Icon>[0]['name']> = {
 export function BrowseSelectionBar({ state, actions, t }: BrowseSelectionBarProps) {
   const { compact, details, count, bytes } = state
   return (
-    <div className="sc-browse-selection-bar">
-      <div className="sc-browse-selection-bar-inner">
+    <div className={styles.bar}>
+      <div className={styles.barInner}>
         <button
           type="button"
-          className="sc-browse-selection-close-btn sc-icon-button"
+          className={cx(styles.closeBtn, iconButtonStyles.root)}
           aria-label={t('browse.clear_selection')}
           onClick={actions.onClear}
         >
           <Icon name="close" size={16} />
         </button>
-        <span className="sc-browse-selection-count">
+        <span className={styles.count}>
           {compact ? t('common.item_count', { count }) : t('browse.selected', { count, size: formatBytes(bytes) })}
         </span>
-        <span className="sc-browse-selection-divider" aria-hidden="true" />
-        <div className="sc-browse-selection-actions">
+        <span className={styles.divider} aria-hidden="true" />
+        <div className={styles.actions}>
           <button
             type="button"
-            className="sc-browse-selection-action-btn sc-icon-button"
+            className={cx(styles.actionBtn, iconButtonStyles.root)}
             aria-label={details ? t('details.hide') : t('details.show')}
             title={details ? t('details.hide') : t('details.show')}
             onClick={actions.onToggleDetails}
@@ -63,7 +66,7 @@ export function BrowseSelectionBar({ state, actions, t }: BrowseSelectionBarProp
             <button
               key={action.key}
               type="button"
-              className="sc-browse-selection-action-btn sc-icon-button"
+              className={cx(styles.actionBtn, iconButtonStyles.root)}
               aria-label={action.label}
               title={action.label}
               onClick={action.run}

@@ -10,7 +10,8 @@ import { TextField } from '../../ui/TextField'
 import { VirtualList } from '../../ui/VirtualList'
 import { formatDateNs } from '../../lib/i18n'
 import { useShareManageController, isDropLink } from './hooks/share-manage-controller'
-import '../../styles/features/shares/share-manage.css.ts'
+import * as styles from './ShareManageDialog.css'
+import { cx } from '../../ui/cx'
 
 export interface ShareManageDialogProps {
   open: boolean
@@ -77,7 +78,7 @@ export function ShareManageDialog({ open, path, targetName, targetIsDir, onClose
   return (
     <>
       <Dialog
-        className="sc-share-dialog"
+        className={styles.dialog}
         open={dialogOpen}
         title={t('share.share_links', { name: targetName })}
         onClose={closeIssued}
@@ -89,11 +90,11 @@ export function ShareManageDialog({ open, path, targetName, targetIsDir, onClose
         }
       >
         {justCreated ? (
-          <div className="sc-share-issued">
-            <p className="sc-share-issued-note">{t('share.link_shown_only_now_cannot')}</p>
-            <div className="sc-share-url-row">
+          <div className={styles.issued}>
+            <p className={styles.issuedNote}>{t('share.link_shown_only_now_cannot')}</p>
+            <div className={styles.urlRow}>
               <textarea
-                className="sc-share-url"
+                className={styles.url}
                 readOnly
                 rows={3}
                 aria-label={t('share.copy_link')}
@@ -104,12 +105,12 @@ export function ShareManageDialog({ open, path, targetName, targetIsDir, onClose
               </IconButton>
             </div>
             {copiedId === -1 ? (
-              <p className="sc-share-copy-feedback" role="status">
+              <p className={styles.copyFeedback} role="status">
                 {t('common.copied')}
               </p>
             ) : null}
             {copyErrorId === -1 ? (
-              <p className="sc-share-copy-feedback sc-share-copy-feedback-error" role="alert">
+              <p className={cx(styles.copyFeedback, styles.copyFeedbackError)} role="alert">
                 {t('share.copy_failed')}
               </p>
             ) : null}
@@ -119,29 +120,29 @@ export function ShareManageDialog({ open, path, targetName, targetIsDir, onClose
           </div>
         ) : null}
         {sharesQuery.isPending ? (
-          <div className="sc-share-loading">
+          <div className={styles.loading}>
             <ProgressCircular />
           </div>
         ) : loadError ? (
-          <p className="sc-share-error" role="alert">
+          <p className={styles.error} role="alert">
             {loadError}
           </p>
         ) : (
           <>
             {links.length === 0 && !creatingOpen ? (
-              <p className="sc-share-empty">{t('share.no_share_links_item')}</p>
+              <p className={styles.empty}>{t('share.no_share_links_item')}</p>
             ) : null}
             <VirtualList
-              className="sc-share-list"
+              className={styles.list}
               items={links}
               itemKey={(link) => link.id}
               estimateSize={112}
-              itemProps={() => ({ className: 'sc-share-item' })}
+              itemProps={() => ({ className: styles.item })}
               pinnedKeys={editingId === null ? [] : [editingId]}
               renderItem={(link) =>
                 editingId === link.id ? (
-                  <div className="sc-share-edit-form">
-                    <div className="sc-share-perm-row">
+                  <div className={styles.editForm}>
+                    <div className={styles.permRow}>
                       <Switch
                         checked={editRead}
                         label={t('share.read_view')}
@@ -194,7 +195,7 @@ export function ShareManageDialog({ open, path, targetName, targetIsDir, onClose
                         onValueChange={(value) => patch({ editNewPassword: value })}
                       />
                     ) : null}
-                    <div className="sc-share-edit-actions">
+                    <div className={styles.editActions}>
                       <Button variant="text" onClick={() => patch({ editingId: null })}>
                         {t('common.cancel')}
                       </Button>
@@ -204,11 +205,11 @@ export function ShareManageDialog({ open, path, targetName, targetIsDir, onClose
                     </div>
                   </div>
                 ) : (
-                  <div className="sc-share-item-row">
+                  <div className={styles.itemRow}>
                     <Icon name={link.has_password ? 'lock' : 'link'} size={18} />
-                    <div className="sc-share-item-main">
-                      <span className="sc-share-item-label">{link.label || t('share.no_label')}</span>
-                      <span className="sc-share-item-meta">
+                    <div className={styles.itemMain}>
+                      <span className={styles.itemLabel}>{link.label || t('share.no_label')}</span>
+                      <span className={styles.itemMeta}>
                         {isDropLink(link)
                           ? t('share.kind_drop')
                           : `${link.perms.read ? t('common.read') : ''}${link.perms.read && link.perms.download ? ' - ' : ''}${link.perms.download ? t('common.download') : ''} - ${t('share.used_times', { count: link.max_downloads ? `${link.downloads}/${link.max_downloads}` : link.downloads })}`}{' '}
@@ -216,11 +217,11 @@ export function ShareManageDialog({ open, path, targetName, targetIsDir, onClose
                           ? `- ${t('share.expires', { date: formatDateNs(link.expires_ns) })}`
                           : `- ${t('share.never_expires')}`}
                       </span>
-                      <span className="sc-share-item-meta">
+                      <span className={styles.itemMeta}>
                         {t('share.created', { date: formatDateNs(link.created_ns) })}
                       </span>
                     </div>
-                    <div className="sc-share-item-actions">
+                    <div className={styles.itemActions}>
                       {link.url ? (
                         <IconButton
                           label={copiedId === link.id ? t('share.copied') : t('share.copy_link')}
@@ -241,8 +242,8 @@ export function ShareManageDialog({ open, path, targetName, targetIsDir, onClose
               }
             />
             {creatingOpen ? (
-              <div className="sc-share-create-form">
-                <h3>{t('share.create_new_link')}</h3>
+              <div className={styles.createForm}>
+                <h3 className={styles.createTitle}>{t('share.create_new_link')}</h3>
                 <Select
                   label={t('share.kind_label')}
                   options={newKindOptions}
@@ -250,9 +251,9 @@ export function ShareManageDialog({ open, path, targetName, targetIsDir, onClose
                   onValueChange={(value) => patch({ newKind: value as 'download' | 'drop' })}
                 />
                 {newKind === 'drop' ? (
-                  <p className="sc-share-hint">{t('share.drop_hint')}</p>
+                  <p className={styles.hint}>{t('share.drop_hint')}</p>
                 ) : (
-                  <div className="sc-share-perm-row">
+                  <div className={styles.permRow}>
                     <Switch
                       checked={newRead}
                       label={t('share.read_view')}
@@ -301,11 +302,11 @@ export function ShareManageDialog({ open, path, targetName, targetIsDir, onClose
                   onValueChange={(value) => patch({ newLabel: value })}
                 />
                 {createError ? (
-                  <p className="sc-share-error" role="alert">
+                  <p className={styles.error} role="alert">
                     {createError}
                   </p>
                 ) : null}
-                <div className="sc-share-edit-actions">
+                <div className={styles.editActions}>
                   <Button variant="text" onClick={() => patch({ creatingOpen: false })}>
                     {t('common.cancel')}
                   </Button>
@@ -326,7 +327,7 @@ export function ShareManageDialog({ open, path, targetName, targetIsDir, onClose
         )}
       </Dialog>
       <Dialog
-        className="sc-share-dialog"
+        className={styles.dialog}
         open={revokeTarget !== null}
         title={t('share.revoke_share_link')}
         onClose={() => patch({ revokeTarget: null })}

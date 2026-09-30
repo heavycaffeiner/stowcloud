@@ -9,6 +9,8 @@ import { Button } from '../../ui/Button'
 import { TextField } from '../../ui/TextField'
 import { SettingsDialog } from './SettingsDialog'
 import { Switch } from '../../ui/Switch'
+import * as styles from './SmbSection.css'
+import * as settingsCardStyles from './SettingsCard.css'
 
 export function SmbSection() {
   const { t } = useI18n()
@@ -144,24 +146,24 @@ export function SmbSection() {
   }
 
   return (
-    <div className="sc-smb">
-      <p className="sc-smb-note">{t('smb.smb_reachable_only_from_local')}</p>
-      <p className="sc-smb-state">{stateLine}</p>
-      <div className="sc-smb-row">
+    <div className={styles.root}>
+      <p className={styles.note}>{t('smb.smb_reachable_only_from_local')}</p>
+      <p className={styles.state}>{stateLine}</p>
+      <div>
         <Switch
           checked={enabled}
           label={t('smb.allow_smb_access')}
           onChange={(checked) => openToggle(optOut, checked)}
         />
       </div>
-      <div className="sc-smb-row">
+      <div>
         <Switch
           checked={optOut}
           label={t('smb.do_not_store_smb_credentials')}
           onChange={(checked) => openToggle(checked, checked ? false : enabled)}
         />
       </div>
-      <div className="sc-smb-actions">
+      <div className={styles.actions}>
         <Button variant={credential === 'dedicated' ? 'outlined' : 'filled'} onClick={openSet}>
           {credential === 'dedicated' ? t('smb.change_separate_password') : t('smb.set_separate_password')}
         </Button>
@@ -171,7 +173,7 @@ export function SmbSection() {
           </Button>
         ) : null}
       </div>
-      <p className="sc-smb-announce" aria-live="polite">
+      <p className={styles.announce} aria-live="polite">
         {announcement}
       </p>
       <SettingsDialog
@@ -200,7 +202,9 @@ export function SmbSection() {
           </>
         }
       >
-        <p>{confirmingOptOut ? t('smb.confirm_opt_out_warning') : t('smb.confirm_setting_hint')}</p>
+        <p className={settingsCardStyles.text}>
+          {confirmingOptOut ? t('smb.confirm_opt_out_warning') : t('smb.confirm_setting_hint')}
+        </p>
         <TextField
           type="password"
           label={t('common.current_password')}
@@ -224,7 +228,7 @@ export function SmbSection() {
           </>
         }
       >
-        <p>{t('smb.set_password_hint')}</p>
+        <p className={settingsCardStyles.text}>{t('smb.set_password_hint')}</p>
         <TextField
           type="password"
           label={t('common.current_password')}
@@ -254,7 +258,9 @@ export function SmbSection() {
           </>
         }
       >
-        <p>{revertsToAccount ? t('smb.remove_reverts_to_account') : t('smb.remove_ends_access')}</p>
+        <p className={settingsCardStyles.text}>
+          {revertsToAccount ? t('smb.remove_reverts_to_account') : t('smb.remove_ends_access')}
+        </p>
         <TextField
           type="password"
           label={t('common.current_password')}

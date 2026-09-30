@@ -12,7 +12,8 @@ import { Icon } from '../../../ui/Icon'
 import { VirtualList } from '../../../ui/VirtualList'
 import { SecondaryPageShell } from '../secondary/SecondaryPageShell'
 import { SecondaryPageState } from '../secondary/SecondaryPageState'
-import '../../../styles/app/routes/simple-pages.css.ts'
+import * as styles from './RecentPage.css'
+import * as secondaryPageShellStyles from '../secondary/SecondaryPageShell.css'
 
 const RECENT_LIMIT = 100
 const RECENT_RETENTION_DAYS = 14
@@ -45,12 +46,12 @@ export function RecentPage() {
 
   return (
     <SecondaryPageShell
-      className="sc-recent"
+      className={styles.root}
       title={t('nav.recent')}
       refreshLabel={t('common.refresh')}
       onRefresh={() => void recent.refetch()}
     >
-      <p className="sc-secondary-page-coverage">
+      <p className={secondaryPageShellStyles.coverage}>
         {t('recent.coverage', { limit: RECENT_LIMIT, days: RECENT_RETENTION_DAYS })}
       </p>
       <SecondaryPageState
@@ -63,7 +64,7 @@ export function RecentPage() {
       >
         {hits.length > 0 ? (
           <VirtualList
-            className="sc-secondary-page-list"
+            className={secondaryPageShellStyles.list}
             items={hits}
             itemKey={(hit) => `${hit.at_ns}:${hit.vpath}`}
             estimateSize={56}
@@ -73,20 +74,20 @@ export function RecentPage() {
               return (
                 <button
                   type="button"
-                  className="sc-secondary-page-row sc-recent-row"
+                  className={secondaryPageShellStyles.row}
                   aria-label={t('recent.open_item', { name: hit.name, folder: parent })}
                   onClick={() => void navigate(href)}
                 >
-                  <span className="sc-secondary-page-icon">
+                  <span className={secondaryPageShellStyles.icon}>
                     <Icon name="draft" />
                   </span>
-                  <span className="sc-secondary-page-text">
-                    <span className="sc-secondary-page-name">{hit.name}</span>
-                    <span className="sc-secondary-page-path">{parent}</span>
+                  <span className={secondaryPageShellStyles.text}>
+                    <span className={secondaryPageShellStyles.name}>{hit.name}</span>
+                    <span className={secondaryPageShellStyles.path}>{parent}</span>
                   </span>
-                  <span className="sc-secondary-page-meta">{verb(hit)}</span>
-                  <span className="sc-secondary-page-meta">{formatBytes(hit.size)}</span>
-                  <span className="sc-secondary-page-meta">{formatDateNs(hit.at_ns)}</span>
+                  <span className={secondaryPageShellStyles.meta}>{verb(hit)}</span>
+                  <span className={secondaryPageShellStyles.meta}>{formatBytes(hit.size)}</span>
+                  <span className={secondaryPageShellStyles.meta}>{formatDateNs(hit.at_ns)}</span>
                 </button>
               )
             }}

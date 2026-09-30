@@ -22,7 +22,9 @@ import { RestartDialog } from './RestartDialog'
 import { ServerSettingsCard } from './ServerSettingsCard'
 import { ServerSmbCard } from './ServerSmbCard'
 import { ProgressCircular } from '../../ui/ProgressCircular'
-import '../../styles/features/admin/server-settings-section.css.ts'
+import * as styles from './ServerSettingsSection.css'
+import * as adminStyles from './admin.css'
+import { cx } from '../../ui/cx'
 
 type Group = ServerSettingsGroup
 type PathMode = 'folder' | 'file'
@@ -322,17 +324,19 @@ function findingList(outcome: ApplyOutcome | null, t: Translator): ReactNode {
   if (!findings.length) return null
   return (
     <VirtualList
-      className="sc-server-settings-findings"
+      className={styles.findings}
       items={findings}
       itemKey={(finding, index) => `${finding.section}-${finding.field ?? ''}-${finding.reason}-${index}`}
       estimateSize={72}
       itemProps={(finding) => ({
-        className: `sc-server-settings-finding ${finding.blocking ? 'sc-server-settings-finding-block' : 'sc-server-settings-finding-ok'}`
+        className: cx(styles.finding, finding.blocking ? styles.findingBlock : styles.findingOk)
       })}
       renderItem={(finding) => (
         <>
-          <strong>{finding.blocking ? t('settings.finding_blocking') : t('settings.finding_advisory')}</strong>
-          {finding.field ? <code>{finding.field}</code> : null}
+          <strong className={styles.findingKind}>
+            {finding.blocking ? t('settings.finding_blocking') : t('settings.finding_advisory')}
+          </strong>
+          {finding.field ? <code className={styles.findingField}>{finding.field}</code> : null}
           {t(finding.reason, finding.args ?? {})}
         </>
       )}
@@ -503,31 +507,36 @@ export function ServerSettingsSection() {
     if (activeGroup !== group) return null
     if (mutation.isPending)
       return (
-        <p className="sc-admin-section-status" role="status">
+        <p className={styles.adminSectionStatus} role="status">
           {t('common.saving')}
         </p>
       )
     if (validationError)
       return (
-        <p ref={errorRef} className="sc-admin-section-status sc-admin-section-status-error" role="alert" tabIndex={-1}>
+        <p
+          ref={errorRef}
+          className={cx(styles.adminSectionStatus, styles.adminSectionStatusError)}
+          role="alert"
+          tabIndex={-1}
+        >
           {validationError}
         </p>
       )
     if (outcome && !(outcome.stored || outcome.applied || outcome.restart_required))
       return (
-        <p className="sc-admin-section-status sc-admin-section-status-error" role="status">
+        <p className={cx(styles.adminSectionStatus, styles.adminSectionStatusError)} role="status">
           {t('common.could_not_save')}
         </p>
       )
     if (isDirty(group))
       return (
-        <p className="sc-admin-section-status" role="status">
+        <p className={styles.adminSectionStatus} role="status">
           {t('settings.unsaved_changes')}
         </p>
       )
     if (outcome)
       return (
-        <p className="sc-admin-section-status" role="status">
+        <p className={styles.adminSectionStatus} role="status">
           {outcome.restart_required
             ? t('server.change_takes_full_effect_only')
             : outcome.applied
@@ -546,6 +555,7 @@ export function ServerSettingsSection() {
   ) {
     return (
       <TextField
+        className={styles.field}
         label={label}
         value={key === 'oidc.secret' ? secret : String(values[key] ?? '')}
         type={options.type}
@@ -587,16 +597,16 @@ export function ServerSettingsSection() {
   }
   if (settings.isPending)
     return (
-      <section className="sc-admin-section">
-        <h3>{t('server.server_settings')}</h3>
+      <section className={adminStyles.section}>
+        <h3 className={adminStyles.sectionTitle}>{t('server.server_settings')}</h3>
         <ProgressCircular size={40} />
       </section>
     )
   if (settings.isError || !snapshot)
     return (
-      <section className="sc-admin-section">
-        <h3>{t('server.server_settings')}</h3>
-        <p className="sc-admin-section-error" role="alert">
+      <section className={adminStyles.section}>
+        <h3 className={adminStyles.sectionTitle}>{t('server.server_settings')}</h3>
+        <p className={adminStyles.sectionError} role="alert">
           {t('server.could_not_load_server_settings')}
         </p>
       </section>
@@ -618,11 +628,11 @@ export function ServerSettingsSection() {
   }
   return (
     <>
-      <section className="sc-admin-section">
-        <h3>{t('server.server_settings')}</h3>
-        <p className="sc-admin-section-hint">{t('server.settings_stored_in_database')}</p>
-        <nav className="sc-server-settings-nav" aria-label={t('admin.server_settings_navigation')}>
-          <div className="sc-server-settings-nav-items">
+      <section className={adminStyles.section}>
+        <h3 className={adminStyles.sectionTitle}>{t('server.server_settings')}</h3>
+        <p className={adminStyles.sectionHint}>{t('server.settings_stored_in_database')}</p>
+        <nav className={styles.nav} aria-label={t('admin.server_settings_navigation')}>
+          <div className={styles.navItems}>
             {[
               ['server-smb', 'admin.server_smb'],
               ['server-search', 'admin.server_search'],
@@ -634,6 +644,7 @@ export function ServerSettingsSection() {
               <button
                 key={id}
                 type="button"
+                className={styles.navButton}
                 onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
               >
                 {t(key)}
@@ -642,12 +653,12 @@ export function ServerSettingsSection() {
           </div>
         </nav>
         {snapshot.smb_public_bind_warning ? (
-          <p className="sc-admin-section-warning" role="alert">
+          <p className={adminStyles.warning} role="alert">
             {t('server.smb_reachable_from_outside_private')}
           </p>
         ) : null}
         {snapshot.smb_overgrants?.length ? (
-          <div className="sc-admin-section-warning">
+          <div className={adminStyles.warning}>
             <p role="alert">{t('server.smb_grants_more_than_configured')}</p>
             <VirtualList
               items={snapshot.smb_overgrants}
@@ -666,7 +677,7 @@ export function ServerSettingsSection() {
           saveButton={saveButton}
           emptyNote={(key) => {
             const note = emptyNote(snapshot, key, t)
-            return note ? <p className="sc-server-settings-empty-note">{note}</p> : null
+            return note ? <p className={styles.emptyNote}>{note}</p> : null
           }}
           onValueChange={setValue}
         />
@@ -675,33 +686,33 @@ export function ServerSettingsSection() {
           t('server.storage_paths'),
           t('settings.paths_readonly_reason'),
           <>
-            <dl className="sc-server-settings-other">
+            <dl className={styles.other}>
               {PATH_KEYS.map((key) => (
                 <div key={key}>
-                  <dt>{fieldLabel(t, key)}</dt>
-                  <dd>{displayValue(t, fields[key])}</dd>
+                  <dt className={styles.otherLabel}>{fieldLabel(t, key)}</dt>
+                  <dd className={styles.otherValue}>{displayValue(t, fields[key])}</dd>
                 </div>
               ))}
               <div>
-                <dt>{fieldLabel(t, 'symlink_policy')}</dt>
-                <dd>
-                  <span className="sc-server-settings-reason">{t('settings.readonly_per_share_symlink_policy')}</span>
+                <dt className={styles.otherLabel}>{fieldLabel(t, 'symlink_policy')}</dt>
+                <dd className={styles.otherValue}>
+                  <span className={styles.reason}>{t('settings.readonly_per_share_symlink_policy')}</span>
                 </dd>
               </div>
             </dl>
             {otherFields.length ? (
               <>
-                <h5 className="sc-admin-section-subhead">{t('settings.settings_sections')}</h5>
-                <dl className="sc-server-settings-other">
+                <h5 className={styles.adminSectionSubhead}>{t('settings.settings_sections')}</h5>
+                <dl className={styles.other}>
                   {otherFields.map((item) => (
                     <div key={item.key}>
-                      <dt>{fieldLabel(t, item.key)}</dt>
-                      <dd>
+                      <dt className={styles.otherLabel}>{fieldLabel(t, item.key)}</dt>
+                      <dd className={styles.otherValue}>
                         {displayValue(t, item.value)}
                         {item.readonly_reason_key ? (
                           <>
                             <br />
-                            <span className="sc-server-settings-reason">{serverKeyText(item.readonly_reason_key)}</span>
+                            <span className={styles.reason}>{serverKeyText(item.readonly_reason_key)}</span>
                           </>
                         ) : null}
                       </dd>
@@ -737,16 +748,20 @@ export function ServerSettingsSection() {
           t('server.thumbnail_enabled_description'),
           <>
             {toggle('thumbnail.enabled', t('server.thumbnail_enabled'))}
-            <div className="sc-server-settings-path-row">
+            <div className={styles.pathRow}>
               {input('thumbnail.dir', t('server.thumbnail_storage_dir'))}
-              <Button variant="outlined" onClick={() => setPathPicker({ mode: 'folder', key: 'thumbnail.dir' })}>
+              <Button
+                className={styles.pathButton}
+                variant="outlined"
+                onClick={() => setPathPicker({ mode: 'folder', key: 'thumbnail.dir' })}
+              >
                 {t('picker.browse_folder')}
               </Button>
             </div>
             {!String(values['thumbnail.dir'] ?? '').trim() && emptyNote(snapshot, 'thumbnail.dir', t) ? (
-              <p className="sc-server-settings-empty-note">{emptyNote(snapshot, 'thumbnail.dir', t)}</p>
+              <p className={styles.emptyNote}>{emptyNote(snapshot, 'thumbnail.dir', t)}</p>
             ) : null}
-            <p className="sc-admin-section-hint">{t('server.thumbnail_storage_dir_description')}</p>
+            <p className={adminStyles.sectionHint}>{t('server.thumbnail_storage_dir_description')}</p>
             {saveButton('thumbnail')}
           </>
         )}
@@ -757,21 +772,21 @@ export function ServerSettingsSection() {
           <>
             {input('app_hosts', t('server.app_hosts_comma_separated'))}
             {!String(values.app_hosts ?? '').trim() && emptyNote(snapshot, 'app_hosts', t) ? (
-              <p className="sc-server-settings-empty-note">{emptyNote(snapshot, 'app_hosts', t)}</p>
+              <p className={styles.emptyNote}>{emptyNote(snapshot, 'app_hosts', t)}</p>
             ) : null}
-            <p className="sc-admin-section-hint">{t('server.app_hosts_hint')}</p>
+            <p className={adminStyles.sectionHint}>{t('server.app_hosts_hint')}</p>
             {input('trusted_proxies', t('server.trusted_proxies_comma_separated'))}
             {!String(values.trusted_proxies ?? '').trim() && emptyNote(snapshot, 'trusted_proxies', t) ? (
-              <p className="sc-server-settings-empty-note">{emptyNote(snapshot, 'trusted_proxies', t)}</p>
+              <p className={styles.emptyNote}>{emptyNote(snapshot, 'trusted_proxies', t)}</p>
             ) : null}
             {hop ? (
-              <p className="sc-admin-section-hint">
+              <p className={adminStyles.sectionHint}>
                 {t('server.requests_arriving_from', { address: hopAddress || t('server.unknown_address') })}{' '}
                 {hop.peer_trusted ? t('server.peer_trusted') : t('server.peer_not_trusted')}
               </p>
             ) : null}
             {hop && !hop.peer_trusted && hop.forwarded_seen ? (
-              <div className="sc-admin-section-warning" role="alert">
+              <div className={adminStyles.warning} role="alert">
                 <p>{t('server.forwarding_headers_ignored_hint', { address: hopAddress })}</p>
                 <Button variant="text" onClick={addObserved} disabled={!hopAddress}>
                   {t('server.add_observed_address_to_trusted', { address: hopAddress })}
@@ -782,7 +797,7 @@ export function ServerSettingsSection() {
             {input('allowed_origins', t('server.allowed_origins_cors_comma_separated'))}
             {input('compat_canonical_url', t('server.compat_canonical_url'))}
             {input('bind', t('server.bind_address'))}
-            <p className="sc-admin-section-hint">{t('server.bind_address_hint')}</p>
+            <p className={adminStyles.sectionHint}>{t('server.bind_address_hint')}</p>
             {saveButton('network')}
           </>
         )}
@@ -793,7 +808,7 @@ export function ServerSettingsSection() {
           <>
             {input('watch.hot_set_max', t('server.maximum_folders_watched_at_once'), { type: 'number' })}
             {input('watch.full_threshold', t('server.changes_before_a_full_rescan'), { type: 'number' })}
-            <p className="sc-admin-section-hint">
+            <p className={adminStyles.sectionHint}>
               {t('settings.within_kernel_watch_limit', {
                 limit:
                   snapshot.fields.find((field) => field.key === 'watch.hot_set_max')?.range &&
@@ -811,9 +826,13 @@ export function ServerSettingsSection() {
           t('server.home_folders_hint'),
           <>
             {toggle('homes.enabled', t('server.enable_home_folders'))}
-            <div className="sc-server-settings-path-row">
+            <div className={styles.pathRow}>
               {input('homes.root', t('server.homes_root_path'))}
-              <Button variant="outlined" onClick={() => setPathPicker({ mode: 'folder', key: 'homes.root' })}>
+              <Button
+                className={styles.pathButton}
+                variant="outlined"
+                onClick={() => setPathPicker({ mode: 'folder', key: 'homes.root' })}
+              >
                 {t('picker.browse_folder')}
               </Button>
             </div>
@@ -846,22 +865,26 @@ export function ServerSettingsSection() {
             {input('oidc.scopes', t('settings.oidc_scopes'))}
             {input('oidc.display_name', t('settings.oidc_display_name'))}
             {toggle('oidc.allow_private_endpoints', t('settings.oidc_allow_private_endpoints'))}
-            <div className="sc-server-settings-path-row">
+            <div className={styles.pathRow}>
               {input('oidc.ca_cert_file', t('field.oidc_ca_cert_file'))}
-              <Button variant="outlined" onClick={() => setPathPicker({ mode: 'file', key: 'oidc.ca_cert_file' })}>
+              <Button
+                className={styles.pathButton}
+                variant="outlined"
+                onClick={() => setPathPicker({ mode: 'file', key: 'oidc.ca_cert_file' })}
+              >
                 {t('picker.browse_file')}
               </Button>
             </div>
-            <p className="sc-admin-section-hint">{t('server.connected_accounts_cannot_use_smb')}</p>
+            <p className={adminStyles.sectionHint}>{t('server.connected_accounts_cannot_use_smb')}</p>
             {saveButton('oidc')}
             {endpoints.data &&
             (endpoints.data.redirect_uris.length || endpoints.data.post_logout_redirect_uris.length) ? (
-              <div className="sc-server-settings-endpoints">
-                <p className="sc-admin-section-hint">{t('settings.oidc_endpoints_hint')}</p>
-                <h5 className="sc-admin-section-subhead">{t('settings.oidc_effective_redirect_uris')}</h5>
+              <div className={styles.endpoints}>
+                <p className={adminStyles.sectionHint}>{t('settings.oidc_endpoints_hint')}</p>
+                <h5 className={styles.adminSectionSubhead}>{t('settings.oidc_effective_redirect_uris')}</h5>
                 {endpoints.data.redirect_uris.map((uri) => (
-                  <div className="sc-server-settings-endpoint-row" key={uri}>
-                    <code className="sc-server-settings-endpoint-uri">{uri}</code>
+                  <div className={styles.endpointRow} key={uri}>
+                    <code className={styles.endpointUri}>{uri}</code>
                     <Button
                       variant="text"
                       ariaLabel={t('common.copy_named', { name: uri })}
@@ -871,10 +894,10 @@ export function ServerSettingsSection() {
                     </Button>
                   </div>
                 ))}
-                <h5 className="sc-admin-section-subhead">{t('settings.oidc_post_logout_redirect_uris')}</h5>
+                <h5 className={styles.adminSectionSubhead}>{t('settings.oidc_post_logout_redirect_uris')}</h5>
                 {endpoints.data.post_logout_redirect_uris.map((uri) => (
-                  <div className="sc-server-settings-endpoint-row" key={uri}>
-                    <code className="sc-server-settings-endpoint-uri">{uri}</code>
+                  <div className={styles.endpointRow} key={uri}>
+                    <code className={styles.endpointUri}>{uri}</code>
                     <Button
                       variant="text"
                       ariaLabel={t('common.copy_named', { name: uri })}
@@ -884,7 +907,7 @@ export function ServerSettingsSection() {
                     </Button>
                   </div>
                 ))}
-                <p className="sc-server-settings-announce" aria-live="polite">
+                <p className={styles.announce} aria-live="polite">
                   {announcement}
                 </p>
               </div>

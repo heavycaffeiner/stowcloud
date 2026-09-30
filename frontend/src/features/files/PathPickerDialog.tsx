@@ -4,9 +4,11 @@ import { useI18n } from '../../hooks/use-i18n'
 import { api } from '../../lib/api/client'
 import { Button } from '../../ui/Button'
 import { Dialog } from '../../ui/Dialog'
-import '../../styles/features/files/path-picker.css.ts'
 import { Icon } from '../../ui/Icon'
 import { VirtualList } from '../../ui/VirtualList'
+import * as styles from './PathPickerDialog.css'
+import * as utilitiesStyles from '../../ui/utilities.css'
+import { cx } from '../../ui/cx'
 
 export interface PathPickerDialogProps {
   open: boolean
@@ -100,8 +102,8 @@ export function PathPickerDialog({ open, mode, start, token, onClose, onPick }: 
         </>
       }
     >
-      <div className="sc-picker">
-        <div className="sc-picker-nav">
+      <div className={styles.root}>
+        <div className={styles.nav}>
           <Button
             variant="text"
             disabled={!listing.data || listing.data.parent === ''}
@@ -109,24 +111,24 @@ export function PathPickerDialog({ open, mode, start, token, onClose, onPick }: 
           >
             {t('picker.up')}
           </Button>
-          <p className="sc-picker-here" aria-live="polite">
+          <p className={styles.here} aria-live="polite">
             {hereText}
           </p>
         </div>
-        <div ref={body} className="sc-picker-body" tabIndex={-1}>
-          {listing.isPending ? <p className="sc-picker-status">{t('common.loading')}</p> : null}
+        <div ref={body} className={styles.body} tabIndex={-1}>
+          {listing.isPending ? <p className={styles.status}>{t('common.loading')}</p> : null}
           {showError ? (
-            <p className="sc-picker-status" role="alert">
+            <p className={styles.status} role="alert">
               {t('picker.could_not_list')}
             </p>
           ) : null}
           {!listing.isPending && !showError && listing.data ? (
             listing.data.entries.length === 0 ? (
-              <p className="sc-picker-status">{t('picker.empty')}</p>
+              <p className={styles.status}>{t('picker.empty')}</p>
             ) : (
               <VirtualList
                 key={listing.data.path}
-                className="sc-picker-entries"
+                className={styles.entries}
                 aria-label={atRoot ? t('picker.roots') : t('picker.here')}
                 items={listing.data.entries}
                 itemKey={(entry) => entry.path}
@@ -135,27 +137,31 @@ export function PathPickerDialog({ open, mode, start, token, onClose, onPick }: 
                   entry.is_dir ? (
                     <button
                       type="button"
-                      className="sc-picker-entry sc-focus-ring"
+                      className={cx(styles.entry, utilitiesStyles.focusRing)}
                       aria-label={t('picker.open_folder', { name: entry.name })}
                       onClick={() => navigate(entry.path)}
                     >
                       <Icon name="folder" />
-                      <span>{entry.name}</span>
+                      <span className={styles.entryName}>{entry.name}</span>
                     </button>
                   ) : mode === 'file' ? (
                     <button
                       type="button"
-                      className={`sc-picker-entry sc-focus-ring${selected === entry.path ? ' sc-picker-entry-selected' : ''}`}
+                      className={cx(
+                        styles.entry,
+                        utilitiesStyles.focusRing,
+                        selected === entry.path && styles.entrySelected
+                      )}
                       aria-pressed={selected === entry.path}
                       onClick={() => setState((value) => ({ ...value, selected: entry.path }))}
                     >
                       <Icon name="draft" />
-                      <span>{entry.name}</span>
+                      <span className={styles.entryName}>{entry.name}</span>
                     </button>
                   ) : (
-                    <span className="sc-picker-entry sc-picker-entry-disabled" aria-disabled="true">
+                    <span className={cx(styles.entry, styles.entryDisabled)} aria-disabled="true">
                       <Icon name="draft" />
-                      <span>{entry.name}</span>
+                      <span className={styles.entryName}>{entry.name}</span>
                     </span>
                   )
                 }
@@ -163,7 +169,7 @@ export function PathPickerDialog({ open, mode, start, token, onClose, onPick }: 
             )
           ) : null}
           {listing.data?.truncated ? (
-            <p className="sc-picker-status" role="status">
+            <p className={styles.status} role="status">
               {t('picker.truncated')}
             </p>
           ) : null}

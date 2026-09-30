@@ -1,6 +1,8 @@
 import 'mdui/components/text-field.js'
 import type { KeyboardEventHandler } from 'react'
 import { useEffect, useId, useRef } from 'react'
+import { cx } from './cx'
+import * as styles from './TextField.css'
 
 interface TextFieldElement extends HTMLElement {
   value: string
@@ -49,6 +51,7 @@ export interface TextFieldProps {
   required?: boolean
   name?: string
   ariaDescribedby?: string
+  className?: string
   onValueChange?: (value: string) => void
   onKeyDown?: KeyboardEventHandler<HTMLElement>
 }
@@ -70,6 +73,7 @@ export function TextField({
   required = false,
   name,
   ariaDescribedby,
+  className,
   onValueChange,
   onKeyDown
 }: TextFieldProps) {
@@ -121,9 +125,10 @@ export function TextField({
   }, [autoFocus])
 
   return (
-    <div className={`sc-field${error ? ' sc-field-error' : ''}`}>
+    <div className={cx(styles.root, error && styles.error, className)}>
       <mdui-text-field
         ref={ref}
+        className={styles.input}
         variant={variant}
         label={label}
         placeholder={placeholder}
@@ -141,7 +146,7 @@ export function TextField({
         onKeyDown={onKeyDown}
       ></mdui-text-field>
       {error ? (
-        <p id={errorId} className="sc-field-error" role="alert">
+        <p id={errorId} className={styles.error} role="alert">
           {error}
         </p>
       ) : null}

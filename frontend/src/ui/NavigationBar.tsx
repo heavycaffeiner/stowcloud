@@ -1,5 +1,7 @@
 import { useI18n } from '../hooks/use-i18n'
 import { Icon } from './Icon'
+import * as styles from './NavigationBar.css'
+import { cx } from './cx'
 
 export interface NavigationBarItem {
   readonly id: string
@@ -20,14 +22,14 @@ export interface NavigationBarProps {
 export function NavigationBar({ items, active, onSelect }: NavigationBarProps) {
   const { t } = useI18n()
   return (
-    <nav className="sc-nav-bar" aria-label={t('common.main_menu')}>
+    <nav className={styles.root} aria-label={t('common.main_menu')}>
       {items.map((item) => {
         const selected = item.id === active
         return (
           <button
             key={item.id}
             type="button"
-            className={selected ? 'sc-nav-bar-item is-active' : 'sc-nav-bar-item'}
+            className={cx(styles.item, selected && styles.itemActive)}
             aria-current={selected && !item.popup ? 'page' : undefined}
             aria-haspopup={item.popup}
             aria-expanded={item.popup ? item.expanded : undefined}
@@ -37,10 +39,10 @@ export function NavigationBar({ items, active, onSelect }: NavigationBarProps) {
               onSelect(item.id)
             }}
           >
-            <span className="sc-nav-bar-icon">
+            <span className={styles.icon}>
               <Icon name={item.icon} />
             </span>
-            <span className="sc-nav-bar-label">{item.label}</span>
+            <span className={styles.label}>{item.label}</span>
           </button>
         )
       })}

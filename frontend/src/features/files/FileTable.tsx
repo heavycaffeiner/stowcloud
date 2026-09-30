@@ -19,7 +19,12 @@ import { useFileActivation } from './hooks/use-file-activation'
 import { useFileFocusPreservation } from './hooks/use-file-focus-preservation'
 import { FileRowSkeleton } from './FileRowSkeleton'
 import { Icon } from '../../ui/Icon'
-import '../../styles/features/files/browse-ui.css.ts'
+import * as styles from './FileTable.css'
+import * as fileRowStyles from './FileRow.css'
+import * as utilitiesStyles from '../../ui/utilities.css'
+import { cx } from '../../ui/cx'
+
+const HEADER_CELL_CLASS = { name: styles.headerCellName, size: styles.headerCellSize, mtime: styles.headerCellMtime }
 
 export interface FileViewHandle {
   focusEntry: (name: string) => boolean
@@ -249,7 +254,12 @@ export const FileTable = forwardRef<FileViewHandle, FileTableProps>(function Fil
   return (
     <div
       ref={viewport}
-      className={`sc-file-table sc-file-table-contained${mobileRows ? ' sc-file-table-mobile-rows' : ''}${names.size ? ' sc-file-table-reserve-selection' : ''}`}
+      className={cx(
+        styles.root,
+        styles.contained,
+        mobileRows && styles.mobileRows,
+        names.size > 0 && styles.reserveSelection
+      )}
       style={{ touchAction: 'manipulation' }}
       data-density={density}
       role="grid"
@@ -266,13 +276,13 @@ export const FileTable = forwardRef<FileViewHandle, FileTableProps>(function Fil
       onContextMenu={activation.cancel}
     >
       {total === 0 && !loading ? (
-        <p className="sc-file-table-empty">{t('common.folder_empty')}</p>
+        <p className={styles.empty}>{t('common.folder_empty')}</p>
       ) : (
         <>
-          <div className="sc-file-table-header" role="row" aria-rowindex={1}>
+          <div className={styles.header} role="row" aria-rowindex={1}>
             <button
               type="button"
-              className="sc-file-table-header-cell sc-file-table-header-cell-select sc-touch-target"
+              className={cx(styles.headerCell, styles.headerCellSelect, utilitiesStyles.touchTarget)}
               role="columnheader"
               aria-label={t('browse.select_all')}
               onClick={() => {
@@ -281,42 +291,47 @@ export const FileTable = forwardRef<FileViewHandle, FileTableProps>(function Fil
               }}
             >
               <span
-                className={`sc-custom-checkbox${names.size > 0 && names.size === entries.length ? ' sc-custom-checkbox-checked' : names.size > 0 ? ' sc-custom-checkbox-indeterminate' : ''}`}
+                className={cx(
+                  fileRowStyles.customCheckbox,
+                  names.size > 0 && names.size === entries.length
+                    ? fileRowStyles.customCheckboxChecked
+                    : names.size > 0 && fileRowStyles.customCheckboxIndeterminate
+                )}
                 aria-hidden="true"
               >
                 {names.size > 0 && names.size === entries.length ? (
                   <Icon name="check" size={13} />
                 ) : names.size > 0 ? (
-                  <span className="sc-custom-checkbox-bar" />
+                  <span className={fileRowStyles.customCheckboxBar} />
                 ) : null}
               </span>
             </button>
             {(['name', 'size', 'mtime'] as const).map((key) => (
               <span
                 key={key}
-                className={`sc-file-table-header-cell sc-file-table-header-cell-${key}`}
+                className={cx(styles.headerCell, HEADER_CELL_CLASS[key])}
                 role="columnheader"
                 aria-sort={sortKey === key ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}
               >
                 <button
                   type="button"
-                  className={`sc-file-table-header-button${sortKey === key ? ' sc-file-table-header-button-active' : ''}`}
+                  className={cx(styles.headerButton, sortKey === key && styles.headerButtonActive)}
                   onClick={() => chooseSort(key)}
                   aria-label={`${sortLabel(key)}${sortKey === key ? `, ${sortOrder === 'asc' ? t('browse.sort_ascending') : t('browse.sort_descending')}` : ''}`}
                 >
                   <span>{sortLabel(key)}</span>
                   {sortKey === key ? (
-                    <span className="sc-file-table-header-sort" aria-hidden="true">
+                    <span className={styles.headerSort} aria-hidden="true">
                       {sortOrder === 'asc' ? '↑' : '↓'}
                     </span>
                   ) : null}
                 </button>
               </span>
             ))}
-            <span className="sc-file-table-header-cell sc-file-table-header-cell-actions" role="columnheader" />
+            <span className={cx(styles.headerCell, styles.headerCellActions)} role="columnheader" />
           </div>
-          <div className="sc-file-table-spacer" style={{ height: win.totalHeight }}>
-            <div className="sc-file-table-window" style={{ transform: `translate3d(0,${win.padTop}px,0)` }}>
+          <div className={styles.spacer} style={{ height: win.totalHeight }}>
+            <div className={styles.window} style={{ transform: `translate3d(0,${win.padTop}px,0)` }}>
               {rows.map(({ index, entry }) =>
                 entry ? (
                   <FileRow

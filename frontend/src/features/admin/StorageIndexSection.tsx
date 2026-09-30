@@ -20,7 +20,9 @@ import { Switch } from '../../ui/Switch'
 import { ProgressCircular } from '../../ui/ProgressCircular'
 import { VirtualList } from '../../ui/VirtualList'
 import { AdminCard } from './AdminCard'
-import '../../styles/features/admin/admin-sections.css.ts'
+import * as styles from './StorageIndexSection.css'
+import * as adminStyles from './admin.css'
+import { cx } from '../../ui/cx'
 
 const ACCURACY: Record<string, string> = {
   measured: 'storage.accuracy_counted_everything',
@@ -82,31 +84,32 @@ export function StorageIndexSection() {
         {storage.isPending ? (
           <ProgressCircular />
         ) : storage.error ? (
-          <p className="sc-admin-error">
+          <p className={adminStyles.error}>
             {describeApiError(storage.error, t('storage.could_not_load_storage_information'))}
           </p>
         ) : storage.data ? (
           <VirtualList
-            className="sc-storage-list"
+            className={styles.list}
             items={storageItems}
             itemKey={(item) => ('db_bytes' in item ? 'database' : `share:${item.label}`)}
             estimateSize={48}
+            itemProps={() => ({ className: styles.item })}
             renderItem={(item) =>
               'db_bytes' in item ? (
                 <>
-                  <div className="sc-storage-item-label">
+                  <div className={styles.itemLabel}>
                     <Icon name="database" size={18} />
                     <span>{t('storage.file_database')}</span>
                   </div>
-                  <strong>{formatBytes(item.db_bytes)}</strong>
+                  <strong className={styles.value}>{formatBytes(item.db_bytes)}</strong>
                 </>
               ) : (
                 <>
-                  <div className="sc-storage-item-label">
+                  <div className={styles.itemLabel}>
                     <Icon name="folder" size={18} />
-                    <span className="sc-filename">{item.label}</span>
+                    <span className={styles.itemName}>{item.label}</span>
                   </div>
-                  <strong>
+                  <strong className={styles.value}>
                     {t('storage.free', { free: formatBytes(item.free_bytes), total: formatBytes(item.total_bytes) })}
                   </strong>
                 </>
@@ -122,23 +125,25 @@ export function StorageIndexSection() {
         subtitle={t('storage.what_the_index_is_for')}
         icon={<Icon name="search" />}
       >
-        <div className="sc-storage-status-row">
-          <span className="sc-storage-status-label">{t('storage.index_status')}</span>
-          <span className={`sc-storage-status-badge ${status.data?.enabled ? 'sc-storage-status-badge-on' : ''}`}>
+        <div className={styles.statusRow}>
+          <span>{t('storage.index_status')}</span>
+          <span className={cx(styles.statusBadge, status.data?.enabled && styles.statusBadgeOn)}>
             {status.isPending ? <ProgressCircular size={16} /> : statusText}
           </span>
         </div>
 
         {status.error ? (
-          <p className="sc-admin-error">{describeApiError(status.error, t('storage.could_not_load_index_status'))}</p>
+          <p className={adminStyles.error}>
+            {describeApiError(status.error, t('storage.could_not_load_index_status'))}
+          </p>
         ) : null}
         {settings.error ? (
-          <p className="sc-admin-error">
+          <p className={adminStyles.error}>
             {describeApiError(settings.error, t('storage.could_not_load_index_settings'))}
           </p>
         ) : null}
         {status.data?.incomplete ? (
-          <p className="sc-admin-warning" role="alert">
+          <p className={adminStyles.warning} role="alert">
             {t('storage.index_incomplete')}
           </p>
         ) : null}
@@ -147,56 +152,56 @@ export function StorageIndexSection() {
           <ProgressCircular />
         ) : (
           <>
-            <div className="sc-storage-toggle-row">
+            <div className={adminStyles.storageToggleRow}>
               <Switch
                 checked={nameEnabled}
                 label={t('storage.enable_name_index')}
                 onChange={(checked) => toggle.mutate(checked)}
               />
-              {toggle.isPending ? <span className="sc-admin-note">{t('common.saving')}</span> : null}
+              {toggle.isPending ? <span className={adminStyles.note}>{t('common.saving')}</span> : null}
             </div>
             {toggle.error ? (
-              <p className="sc-admin-error">{describeApiError(toggle.error, t('common.could_not_save_settings'))}</p>
+              <p className={adminStyles.error}>{describeApiError(toggle.error, t('common.could_not_save_settings'))}</p>
             ) : null}
 
-            <div className="sc-index-cost">
+            <div className={styles.indexCost}>
               {estimate.data ? (
                 <>
-                  <dl>
+                  <dl className={styles.indexCostList}>
                     <div>
-                      <dt>{t('storage.files_to_index')}</dt>
-                      <dd>{formatNumber(estimate.data.files)}</dd>
+                      <dt className={styles.indexCostLabel}>{t('storage.files_to_index')}</dt>
+                      <dd className={styles.indexCostValue}>{formatNumber(estimate.data.files)}</dd>
                     </div>
                     <div>
-                      <dt>{t('storage.disk_space_needed')}</dt>
-                      <dd>{formatBytes(estimate.data.index_bytes)}</dd>
+                      <dt className={styles.indexCostLabel}>{t('storage.disk_space_needed')}</dt>
+                      <dd className={styles.indexCostValue}>{formatBytes(estimate.data.index_bytes)}</dd>
                     </div>
                     <div>
-                      <dt>{t('storage.time_to_build')}</dt>
-                      <dd>{formatDuration(estimate.data.build_secs)}</dd>
+                      <dt className={styles.indexCostLabel}>{t('storage.time_to_build')}</dt>
+                      <dd className={styles.indexCostValue}>{formatDuration(estimate.data.build_secs)}</dd>
                     </div>
                   </dl>
-                  <p className="sc-admin-note">
+                  <p className={adminStyles.note}>
                     {ACCURACY[estimate.data.confidence] ? t(ACCURACY[estimate.data.confidence]) : null}{' '}
                     {t('storage.build_only_runs_while_idle')}
                   </p>
                 </>
               ) : (
-                <p className="sc-admin-note">{t('storage.measure_before_turning_on')}</p>
+                <p className={adminStyles.note}>{t('storage.measure_before_turning_on')}</p>
               )}
-              <div className="sc-admin-row">
+              <div className={adminStyles.row}>
                 <Button variant="outlined" loading={estimate.isFetching} onClick={estimateCost}>
                   {estimate.data ? t('storage.measure_again') : t('storage.measure_the_cost')}
                 </Button>
               </div>
               {estimate.error ? (
-                <p className="sc-admin-error">
+                <p className={adminStyles.error}>
                   {describeApiError(estimate.error, t('storage.could_not_compute_estimate'))}
                 </p>
               ) : null}
             </div>
 
-            <div className="sc-admin-row">
+            <div className={adminStyles.row}>
               <Button
                 variant="filled"
                 loading={build.isPending}
@@ -207,19 +212,19 @@ export function StorageIndexSection() {
               </Button>
             </div>
             {jobText ? (
-              <p className="sc-admin-note" aria-live="polite">
+              <p className={adminStyles.note} aria-live="polite">
                 {jobText}
               </p>
             ) : null}
-            <p className="sc-admin-note">
+            <p className={adminStyles.note}>
               {nameEnabled ? t('storage.first_build_is_manual') : t('storage.turn_it_on_before_building')}
             </p>
             {build.error ? (
-              <p className="sc-admin-error">
+              <p className={adminStyles.error}>
                 {describeApiError(build.error, t('storage.could_not_start_index_build'))}
               </p>
             ) : null}
-            <p className="sc-admin-hint">
+            <p className={adminStyles.hint}>
               {t('storage.turning_it_off_keeps_the_existing_index')} {t('storage.to_free_the_space_delete')}{' '}
               <code>.scindex</code> {t('storage.in_each_shared_folder')}
             </p>

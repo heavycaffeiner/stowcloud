@@ -1,6 +1,8 @@
 import 'mdui/components/switch.js'
 import type { ReactNode } from 'react'
 import { useEffect, useRef } from 'react'
+import * as styles from './Switch.css'
+import { cx } from './cx'
 
 export interface SwitchProps {
   checked?: boolean
@@ -50,9 +52,10 @@ export function Switch({
 
   const accessibleLabel = label ?? (typeof children === 'string' ? children : undefined)
   return (
-    <label className={`sc-switch-row${disabled ? ' sc-switch-row-disabled' : ''}`}>
+    <label className={cx(styles.root, disabled && styles.disabled)}>
       <mdui-switch
         ref={ref}
+        className={styles.control}
         checked={checked}
         disabled={disabled}
         required={required}
@@ -60,7 +63,7 @@ export function Switch({
         value={value}
         aria-label={accessibleLabel}
       ></mdui-switch>
-      {showLabel && label ? <span>{label}</span> : null}
+      {showLabel && label ? <span className={styles.label}>{label}</span> : null}
       {children && typeof children !== 'string' ? children : null}
     </label>
   )

@@ -23,7 +23,10 @@ import { ProgressCircular } from '../../ui/ProgressCircular'
 import { Select, type SelectOption } from '../../ui/Select'
 import { TextField } from '../../ui/TextField'
 import { VirtualList } from '../../ui/VirtualList'
-import '../../styles/features/admin/admin.css.ts'
+import * as styles from './GrantManagementSection.css'
+import * as adminStyles from './admin.css'
+import * as buttonStyles from '../../ui/Button.css'
+import { cx } from '../../ui/cx'
 
 interface GrantManagementSectionProps {
   /** Who these grants belong to: a user id or a group id, never both. */
@@ -223,30 +226,31 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
 
   return (
     <>
-      <section className="sc-admin-section sc-grants">
-        <p className="sc-admin-section-hint">
+      <section className={adminStyles.section}>
+        <p className={adminStyles.sectionHint}>
           <strong>{label}</strong>
           {t('grant.sees_only_folders_granted_here')}
         </p>
         {loading ? (
           <ProgressCircular />
         ) : loadError ? (
-          <p className="sc-admin-section-error" role="alert">
+          <p className={adminStyles.sectionError} role="alert">
             {loadError}
           </p>
         ) : (
           <>
             {grants.length === 0 ? (
-              <div className="sc-admin-empty">
+              <div className={adminStyles.empty}>
                 <Icon name="account_tree" />
-                <p>{t('grant.no_folders_granted_yet_signing')}</p>
+                <p className={adminStyles.emptyText}>{t('grant.no_folders_granted_yet_signing')}</p>
               </div>
             ) : (
               <VirtualList
-                className="sc-admin-list"
+                className={adminStyles.list}
                 items={grants}
                 itemKey={(grant) => grant.id}
                 estimateSize={96}
+                itemProps={() => ({ className: adminStyles.item })}
                 pinnedKeys={[editTarget?.id, deleteTarget?.id].filter((id): id is number => id != null)}
                 renderItem={(grant) => {
                   const expanded = expandedIds.has(grant.id)
@@ -256,12 +260,12 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
                     <ListItem
                       headline={
                         <>
-                          <span className="sc-admin-row-name">{grantName}</span>
+                          <span className={adminStyles.rowName}>{grantName}</span>
                           {!grant.inherit ? <Chip variant="assist">{t('grant.path_only')}</Chip> : null}
                         </>
                       }
                       supporting={
-                        <span className="sc-admin-grant-supporting">
+                        <span className={styles.supporting}>
                           <span>
                             {shareName(grant.share)}
                             {grant.subpath ? ` / ${grant.subpath}` : t('grant.root')}
@@ -269,7 +273,7 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
                           <span>
                             {allowSummary(grant)}
                             {grant.deny.length > 0 ? (
-                              <span className="sc-admin-grant-summary-deny">
+                              <span className={styles.summaryDeny}>
                                 {' '}
                                 -{' '}
                                 {t('grant.denied', {
@@ -279,7 +283,7 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
                             ) : null}
                           </span>
                           {overlap.length > 0 ? (
-                            <span className="sc-admin-grant-warning">
+                            <span className={styles.warning}>
                               <Icon name="warning" size={14} />
                               {t('grant.appears_both_allow_deny_so', {
                                 perms: overlap.map((permission) => permLabel[permission]).join(', ')
@@ -287,7 +291,7 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
                             </span>
                           ) : null}
                           {expanded ? (
-                            <span className="sc-admin-grant-perms">
+                            <span className={styles.perms}>
                               {grant.allow.map((permission) => (
                                 <Chip key={`allow-${permission}`} variant="filter" selected>
                                   {permLabel[permission]}
@@ -303,7 +307,7 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
                         </span>
                       }
                       trailing={
-                        <span className="sc-admin-row-actions">
+                        <span className={adminStyles.rowActions}>
                           <IconButton
                             label={
                               expanded ? t('grant.collapse_permission_details') : t('grant.expand_permission_details')
@@ -311,14 +315,14 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
                             expanded={expanded}
                             onClick={() => toggleExpanded(grant.id)}
                           >
-                            <span className={`sc-admin-grant-chevron${expanded ? ' sc-admin-grant-chevron-open' : ''}`}>
+                            <span className={cx(styles.chevron, expanded && styles.chevronOpen)}>
                               <Icon name="chevron-right" size={18} />
                             </span>
                           </IconButton>
                           <IconButton label={t('common.edit', { name: grantName })} onClick={() => openEdit(grant)}>
                             <Icon name="settings" size={18} />
                           </IconButton>
-                          <span className="sc-danger">
+                          <span className={buttonStyles.danger}>
                             <IconButton
                               label={t('common.remove', { name: grantName })}
                               onClick={() => askDelete(grant)}
@@ -356,7 +360,7 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
         }
       >
         <form
-          className="sc-admin-form"
+          className={adminStyles.form}
           onSubmit={(event) => {
             event.preventDefault()
             submitAdd()
@@ -376,7 +380,7 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
             autoComplete="off"
             onValueChange={setAddSubpath}
           />
-          <p className="sc-admin-section-field-hint">{t('grant.left_empty_whole_share_appears')}</p>
+          <p className={adminStyles.sectionFieldHint}>{t('grant.left_empty_whole_share_appears')}</p>
           <PermissionGrid
             allow={addAllow}
             deny={addDeny}
@@ -394,7 +398,7 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
             onValueChange={setAddLabel}
           />
           {addError ? (
-            <p className="sc-admin-section-error" role="alert">
+            <p className={adminStyles.sectionError} role="alert">
               {addError}
             </p>
           ) : null}
@@ -418,13 +422,13 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
       >
         {editTarget ? (
           <form
-            className="sc-admin-form"
+            className={adminStyles.form}
             onSubmit={(event) => {
               event.preventDefault()
               submitEdit()
             }}
           >
-            <p className="sc-admin-section-field-hint">
+            <p className={adminStyles.sectionFieldHint}>
               {shareName(editTarget.share)}
               {editTarget.subpath ? ` / ${editTarget.subpath}` : t('grant.root')}
               {t('grant.share_path_cannot_changed_grant')}
@@ -438,7 +442,7 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
               t={t}
             />
             {editAllow.size > 0 && [...editAllow].some((permission) => editDeny.has(permission)) ? (
-              <p className="sc-admin-grant-warning">
+              <p className={styles.warning}>
                 <Icon name="warning" size={14} />
                 {t('grant.permission_listed_both_allow_deny')}
               </p>
@@ -452,7 +456,7 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
               onValueChange={setEditLabel}
             />
             {editError ? (
-              <p className="sc-admin-section-error" role="alert">
+              <p className={adminStyles.sectionError} role="alert">
                 {editError}
               </p>
             ) : null}
@@ -482,7 +486,7 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
           {t('grant.will_not_see_folder_from', { principal: label })}
         </p>
         {deleteError ? (
-          <p className="sc-admin-section-error" role="alert">
+          <p className={adminStyles.sectionError} role="alert">
             {deleteError}
           </p>
         ) : null}

@@ -1,18 +1,19 @@
-import '../../styles/features/files/browse-ui.css.ts'
+import * as styles from './FileRowSkeleton.css'
+import { cx } from '../../ui/cx'
 
 export function FileRowSkeleton({ rowIndex }: { rowIndex: number }) {
   return (
-    <div className="sc-row-skeleton" role="row" aria-rowindex={rowIndex} aria-busy="true">
-      <span className="sc-row-skeleton-cell sc-row-skeleton-cell-select" role="gridcell" />
-      <span className="sc-row-skeleton-cell sc-row-skeleton-cell-name" role="gridcell">
-        <span className="sc-row-skeleton-bar sc-row-skeleton-bar-icon" />
-        <span className="sc-row-skeleton-bar sc-row-skeleton-bar-name" />
+    <div className={styles.root} role="row" aria-rowindex={rowIndex} aria-busy="true">
+      <span className={cx(styles.cell, styles.cellSelect)} role="gridcell" />
+      <span className={cx(styles.cell, styles.cellName)} role="gridcell">
+        <span className={cx(styles.bar, styles.barIcon)} />
+        <span className={cx(styles.bar, styles.barName)} />
       </span>
-      <span className="sc-row-skeleton-cell sc-row-skeleton-cell-size" role="gridcell">
-        <span className="sc-row-skeleton-bar sc-row-skeleton-bar-size" />
+      <span className={cx(styles.cell, styles.cellSize)} role="gridcell">
+        <span className={cx(styles.bar, styles.barSize)} />
       </span>
-      <span className="sc-row-skeleton-cell sc-row-skeleton-cell-mtime" role="gridcell">
-        <span className="sc-row-skeleton-bar sc-row-skeleton-bar-mtime" />
+      <span className={cx(styles.cell, styles.cellMtime)} role="gridcell">
+        <span className={cx(styles.bar, styles.barMtime)} />
       </span>
     </div>
   )

@@ -7,6 +7,7 @@ import { Icon } from '../../ui/Icon'
 import { IconButton } from '../../ui/IconButton'
 import { VirtualList } from '../../ui/VirtualList'
 import { ProgressLinear } from '../../ui/ProgressLinear'
+import * as styles from './UploadTray.css'
 
 export function UploadTray() {
   const { t } = useI18n()
@@ -76,26 +77,12 @@ export function UploadTray() {
 
   return (
     <>
-      <div ref={politeRef} className="sc-upload-tray-sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
-      <div
-        ref={assertiveRef}
-        className="sc-upload-tray-sr-only"
-        role="alert"
-        aria-live="assertive"
-        aria-atomic="true"
-      ></div>
+      <div ref={politeRef} className={styles.srOnly} role="status" aria-live="polite" aria-atomic="true"></div>
+      <div ref={assertiveRef} className={styles.srOnly} role="alert" aria-live="assertive" aria-atomic="true"></div>
       {items.length > 0 ? (
-        <section
-          className={open ? 'sc-upload-tray' : 'sc-upload-tray sc-upload-tray-collapsed'}
-          aria-label={t('common.upload')}
-        >
-          <header className="sc-upload-tray-header">
-            <button
-              className="sc-upload-tray-title"
-              type="button"
-              onClick={() => uploads.setOpen(!open)}
-              aria-expanded={open}
-            >
+        <section className={styles.root} aria-label={t('common.upload')}>
+          <header className={styles.header}>
+            <button className={styles.title} type="button" onClick={() => uploads.setOpen(!open)} aria-expanded={open}>
               <Icon name="upload_file" />
               <span>{t('common.upload')}</span>
               <span>
@@ -106,7 +93,7 @@ export function UploadTray() {
                     : t('common.done')}
               </span>
             </button>
-            <div className="sc-upload-tray-actions">
+            <div className={styles.actions}>
               <IconButton label={t('common.clear_finished_items')} onClick={() => uploads.clearFinished()}>
                 <Icon name="check" />
               </IconButton>
@@ -120,18 +107,18 @@ export function UploadTray() {
             </div>
           </header>
           {open ? (
-            <div className="sc-upload-tray-scroll">
+            <div className={styles.scroll}>
               <VirtualList
-                className="sc-upload-tray-list"
+                className={styles.list}
                 items={items}
                 itemKey={(item) => item.id}
                 estimateSize={120}
-                itemProps={() => ({ className: 'sc-upload-tray-item' })}
+                itemProps={() => ({ className: styles.item })}
                 renderItem={(item) => (
                   <>
-                    <div className="sc-upload-tray-row">
-                      <span className="sc-filename sc-upload-tray-name">{item.name}</span>
-                      <span className="sc-upload-tray-meta">
+                    <div className={styles.row}>
+                      <span className={styles.name}>{item.name}</span>
+                      <span className={styles.meta}>
                         {formatBytes(item.sent)} / {formatBytes(item.total)}
                         {item.status === 'uploading' ? ` - ${formatRate(item.rate)} - ${formatEta(item.etaSec)}` : ''}
                         {item.status === 'canceled' ? ` - ${t('upload.canceled')}` : ''}
@@ -139,10 +126,8 @@ export function UploadTray() {
                       </span>
                     </div>
                     <ProgressLinear value={item.total > 0 ? item.sent / item.total : 0} label={item.name} />
-                    {item.message ? (
-                      <p className="sc-upload-tray-message">{t(item.message, item.messageParams)}</p>
-                    ) : null}
-                    <div className="sc-upload-tray-controls">
+                    {item.message ? <p>{t(item.message, item.messageParams)}</p> : null}
+                    <div className={styles.controls}>
                       {item.status === 'uploading' ? (
                         <IconButton label={t('upload.pause')} onClick={() => pauseUpload(item.id)}>
                           <Icon name="pause" />

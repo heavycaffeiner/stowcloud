@@ -7,29 +7,33 @@ import { useI18n } from '../../hooks/use-i18n'
 import { isVideoFile } from '../preview/logic/media-utils'
 import { Icon } from '../../ui/Icon'
 import { MiddleEllipsis } from './MiddleEllipsis'
-import '../../styles/features/files/browse-ui.css.ts'
+import * as styles from './FileRow.css'
+import * as iconButtonStyles from '../../ui/IconButton.css'
+import * as utilitiesStyles from '../../ui/utilities.css'
+import { cx } from '../../ui/cx'
+import { vars } from '../../ui/theme.css'
 
 export function getEntryIcon(entry: Entry): { name: string; color?: string } {
-  if (entry.kind === 'dir') return { name: 'folder', color: 'var(--sc-icon-color)' }
+  if (entry.kind === 'dir') return { name: 'folder', color: vars.content.icon }
   const dot = entry.name.lastIndexOf('.')
   const ext = dot > 0 ? entry.name.slice(dot + 1).toLowerCase() : ''
   if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'zst', 'iso'].includes(ext)) {
-    return { name: 'folder-zip', color: 'var(--sc-icon-color)' }
+    return { name: 'folder-zip', color: vars.content.icon }
   }
   if (ext === 'apk') {
-    return { name: 'android', color: 'var(--sc-icon-color)' }
+    return { name: 'android', color: vars.content.icon }
   }
   if (['mp4', 'mkv', 'mov', 'avi', 'webm', 'wmv', 'm4v'].includes(ext) || isVideoFile(entry.name)) {
-    return { name: 'movie', color: 'var(--sc-icon-color)' }
+    return { name: 'movie', color: vars.content.icon }
   }
   if (['mp3', 'flac', 'wav', 'aac', 'ogg', 'm4a', 'opus', 'wma'].includes(ext)) {
-    return { name: 'audio-file', color: 'var(--sc-icon-color)' }
+    return { name: 'audio-file', color: vars.content.icon }
   }
   if (
     ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'heic', 'avif'].includes(ext) ||
     entry.preview?.available
   ) {
-    return { name: 'image', color: 'var(--sc-icon-color)' }
+    return { name: 'image', color: vars.content.icon }
   }
   if (
     [
@@ -58,7 +62,7 @@ export function getEntryIcon(entry: Entry): { name: string; color?: string } {
       'css'
     ].includes(ext)
   ) {
-    return { name: 'code', color: 'var(--sc-icon-color)' }
+    return { name: 'code', color: vars.content.icon }
   }
   if (
     [
@@ -80,9 +84,9 @@ export function getEntryIcon(entry: Entry): { name: string; color?: string } {
       'csv'
     ].includes(ext)
   ) {
-    return { name: 'description', color: 'var(--sc-icon-color)' }
+    return { name: 'description', color: vars.content.icon }
   }
-  return { name: 'draft', color: 'var(--sc-icon-color)' }
+  return { name: 'draft', color: vars.content.icon }
 }
 export interface FileRowProps extends ActivationHandlers {
   entry: Entry
@@ -115,14 +119,14 @@ export function FileRow({
     <div
       {...activationHandlers}
       id={domId}
-      className={`sc-row${selected ? ' sc-row-selected' : ''}${focused ? ' sc-row-focused' : ''}`}
+      className={cx(styles.root, selected && styles.selected, focused && styles.focused)}
       role="row"
       aria-rowindex={rowIndex}
       aria-selected={selected}
       onContextMenu={onContextMenu}
     >
       <span
-        className="sc-row-cell sc-row-cell-select sc-touch-target"
+        className={cx(styles.cell, styles.cellSelect, utilitiesStyles.touchTarget)}
         role="gridcell"
         onClick={(event) => {
           event.stopPropagation()
@@ -136,18 +140,18 @@ export function FileRow({
         }}
         onDoubleClick={(event) => event.stopPropagation()}
       >
-        <span className={`sc-custom-checkbox${selected ? ' sc-custom-checkbox-checked' : ''}`} aria-hidden="true">
+        <span className={cx(styles.customCheckbox, selected && styles.customCheckboxChecked)} aria-hidden="true">
           {selected ? <Icon name="check" size={13} /> : null}
         </span>
-        <span className="sc-sr-only">{t('common.select', { name: entry.name })}</span>
+        <span className={utilitiesStyles.srOnly}>{t('common.select', { name: entry.name })}</span>
       </span>
-      <span className="sc-row-cell sc-row-cell-name" role="gridcell">
-        <span className="sc-row-icon-badge" style={{ color: fileIcon.color }}>
+      <span className={cx(styles.cell, styles.cellName)} role="gridcell">
+        <span className={styles.iconBadge} style={{ color: fileIcon.color }}>
           <Icon name={fileIcon.name} size={20} />
         </span>
-        <span className="sc-row-name-copy">
-          <MiddleEllipsis name={entry.name} className="sc-filename" />
-          <span className="sc-row-mobile-meta">
+        <span className={styles.nameCopy}>
+          <MiddleEllipsis name={entry.name} className={styles.name} />
+          <span className={styles.mobileMeta}>
             {entry.kind === 'dir' ? (
               t('details.folder')
             ) : (
@@ -160,21 +164,21 @@ export function FileRow({
           </span>
         </span>
         {entry.confusable ? (
-          <span className="sc-row-badge" title={t('common.look_alike_characters')}>
+          <span className={styles.badge} title={t('common.look_alike_characters')}>
             <Icon name="warning" />
           </span>
         ) : null}
       </span>
-      <span className="sc-row-cell sc-row-cell-size" role="gridcell">
+      <span className={cx(styles.cell, styles.cellSize)} role="gridcell">
         {entry.kind === 'dir' ? '-' : formatEntrySize(entry.size, encrypted)}
       </span>
-      <span className="sc-row-cell sc-row-cell-mtime" role="gridcell">
+      <span className={cx(styles.cell, styles.cellMtime)} role="gridcell">
         {formatModifiedDateNs(entry.mtime_ns)}
       </span>
-      <span className="sc-row-cell sc-row-cell-actions" role="gridcell">
+      <span className={cx(styles.cell, styles.cellActions)} role="gridcell">
         <button
           type="button"
-          className="sc-row-more-btn sc-icon-button"
+          className={cx(styles.moreBtn, iconButtonStyles.root)}
           aria-label={t('browse.more')}
           onClick={(event) => {
             event.stopPropagation()

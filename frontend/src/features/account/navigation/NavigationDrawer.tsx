@@ -7,6 +7,9 @@ import { Icon } from '../../../ui/Icon'
 import { IconButton } from '../../../ui/IconButton'
 import { Modal } from '../../../ui/Modal'
 import { VirtualList } from '../../../ui/VirtualList'
+import * as styles from './NavigationDrawer.css'
+import * as iconButtonStyles from '../../../ui/IconButton.css'
+import { cx } from '../../../ui/cx'
 
 export interface NavItem {
   readonly id: string
@@ -111,37 +114,33 @@ export function NavigationDrawer({
   const fileNavItems = destinations.filter((item) => ['recent', 'trash', 'links'].includes(item.id))
   const settingNavItems = destinations.filter((item) => ['settings', 'admin'].includes(item.id))
 
-  const drawerClass = overlay
-    ? 'sc-nav-drawer sc-nav-drawer-overlay'
-    : collapsed
-      ? 'sc-nav-drawer sc-nav-drawer-collapsed'
-      : 'sc-nav-drawer'
+  const drawerClass = cx(styles.root, overlay ? styles.overlay : collapsed && styles.collapsed)
 
   const content = (
     <>
       {overlay ? (
-        <div className="sc-nav-drawer-overlay-header">
+        <div className={styles.overlayHeader}>
           <button
             type="button"
-            className="sc-nav-drawer-overlay-close sc-icon-button"
+            className={cx(styles.overlayClose, iconButtonStyles.root)}
             aria-label={t('common.close')}
             onClick={onClose}
           >
             <Icon name="close" />
           </button>
-          <span className="sc-nav-drawer-app-name">{folderSelectorOnly ? t('nav.browse_folders') : 'Stowcloud'}</span>
-          <span className="sc-nav-drawer-user-avatar" aria-hidden="true">
+          <span className={styles.appName}>{folderSelectorOnly ? t('nav.browse_folders') : 'Stowcloud'}</span>
+          <span className={styles.userAvatar} aria-hidden="true">
             {userInitial}
           </span>
         </div>
       ) : null}
 
-      <div className="sc-nav-drawer-body">
+      <div className={styles.body}>
         {onNew && !folderSelectorOnly ? (
-          <div className="sc-nav-drawer-new-wrap">
+          <div className={styles.newWrap}>
             <button
               type="button"
-              className={collapsed ? 'sc-nav-drawer-new-btn sc-nav-drawer-new-btn-collapsed' : 'sc-nav-drawer-new-btn'}
+              className={cx(styles.newBtn, collapsed && styles.newBtnCollapsed)}
               aria-label={t('browse.new')}
               title={t('browse.new')}
               onClick={(event) => {
@@ -157,24 +156,24 @@ export function NavigationDrawer({
 
         {!folderSelectorOnly ? (
           <>
-            {!collapsed && fileNavItems.length > 0 ? <div className="sc-nav-drawer-divider" role="separator" /> : null}
-            <ul className="sc-nav-drawer-list">
+            {!collapsed && fileNavItems.length > 0 ? <div className={styles.divider} role="separator" /> : null}
+            <ul className={styles.list}>
               {fileNavItems.map((item) => {
                 const isActive = activeNav === item.id
                 return (
-                  <li key={item.id} className="sc-nav-drawer-entry">
+                  <li key={item.id} className={styles.entry}>
                     <button
-                      className={isActive ? 'sc-nav-drawer-item sc-nav-drawer-item-active' : 'sc-nav-drawer-item'}
+                      className={cx(styles.item, isActive && styles.itemActive)}
                       type="button"
                       aria-current={isActive ? 'page' : undefined}
                       aria-label={item.label}
                       title={collapsed ? item.label : undefined}
                       onClick={() => selectDestination(item)}
                     >
-                      <span className="sc-nav-drawer-item-icon">
+                      <span className={styles.itemIcon}>
                         <Icon name={item.icon} size={20} />
                       </span>
-                      {!collapsed ? <span className="sc-nav-drawer-item-label">{item.label}</span> : null}
+                      {!collapsed ? <span className={styles.itemLabel}>{item.label}</span> : null}
                     </button>
                   </li>
                 )
@@ -184,13 +183,13 @@ export function NavigationDrawer({
         ) : null}
 
         {folderSelectorOnly || (!collapsed && displayRoots.length > 0) ? (
-          <div className="sc-nav-drawer-roots-section">
-            <div className="sc-nav-drawer-section-header">
-              <span className="sc-nav-drawer-section-title">{t('nav.folders')}</span>
+          <div className={styles.rootsSection}>
+            <div className={styles.sectionHeader}>
+              <span className={styles.sectionTitle}>{t('nav.folders')}</span>
               {displayRoots.length > 0 ? (
                 <button
                   type="button"
-                  className="sc-nav-drawer-reorder-toggle"
+                  className={styles.reorderToggle}
                   aria-pressed={reordering}
                   onClick={() => setOrderState((state) => ({ ...state, reordering: !state.reordering }))}
                 >
@@ -198,27 +197,27 @@ export function NavigationDrawer({
                 </button>
               ) : null}
             </div>
-            <ul className="sc-nav-drawer-list" aria-label={t('nav.folder_selector')}>
-              <li className="sc-nav-drawer-entry">
+            <ul className={styles.list} aria-label={t('nav.folder_selector')}>
+              <li className={styles.entry}>
                 <VirtualList
-                  className={overlay ? 'sc-nav-drawer-sublist sc-nav-drawer-sublist-overlay' : 'sc-nav-drawer-sublist'}
+                  className={styles.sublist}
                   items={displayRoots}
                   itemKey={(root) => root.id}
                   estimateSize={reordering ? 48 : overlay ? 48 : 40}
                   renderItem={(root, index) =>
                     reordering ? (
-                      <div className="sc-nav-drawer-subitem sc-nav-drawer-subitem-reorder">
-                        <span className="sc-nav-drawer-item-icon">
+                      <div className={cx(styles.subitem, styles.subitemReorder)}>
+                        <span className={styles.itemIcon}>
                           <Icon name={root.icon ?? 'folder'} size={18} />
                         </span>
-                        <span className="sc-nav-drawer-subitem-label sc-filename">{root.label}</span>
-                        <span className="sc-nav-drawer-reorder-actions">
+                        <span className={styles.subitemLabel}>{root.label}</span>
+                        <span className={styles.reorderActions}>
                           <IconButton
                             label={t('nav.move_up', { name: root.label })}
                             disabled={index === 0}
                             onClick={() => moveRoot(index, -1)}
                           >
-                            <span className="sc-nav-drawer-reorder-chevron sc-nav-drawer-reorder-chevron-up">
+                            <span className={cx(styles.reorderChevron, styles.reorderChevronUp)}>
                               <Icon name="chevron_right" size={16} />
                             </span>
                           </IconButton>
@@ -227,7 +226,7 @@ export function NavigationDrawer({
                             disabled={index === displayRoots.length - 1}
                             onClick={() => moveRoot(index, 1)}
                           >
-                            <span className="sc-nav-drawer-reorder-chevron sc-nav-drawer-reorder-chevron-down">
+                            <span className={cx(styles.reorderChevron, styles.reorderChevronDown)}>
                               <Icon name="chevron_right" size={16} />
                             </span>
                           </IconButton>
@@ -236,27 +235,23 @@ export function NavigationDrawer({
                     ) : (
                       <button
                         type="button"
-                        className={
-                          active === root.id
-                            ? 'sc-nav-drawer-subitem sc-nav-drawer-subitem-active'
-                            : 'sc-nav-drawer-subitem'
-                        }
+                        className={cx(styles.subitem, active === root.id && styles.subitemActive)}
                         aria-current={active === root.id ? 'location' : undefined}
                         onClick={() => {
                           onSelect?.(root)
                           closeOverlay()
                         }}
                       >
-                        <span className="sc-nav-drawer-item-icon">
+                        <span className={styles.itemIcon}>
                           <Icon name={root.icon ?? 'folder'} size={18} />
                         </span>
-                        <span className="sc-nav-drawer-subitem-label sc-filename">{root.label}</span>
+                        <span className={styles.subitemLabel}>{root.label}</span>
                       </button>
                     )
                   }
                 />
                 {orderError ? (
-                  <p className="sc-nav-drawer-reorder-error" role="alert">
+                  <p className={styles.reorderError} role="alert">
                     {orderError}
                   </p>
                 ) : null}
@@ -267,28 +262,26 @@ export function NavigationDrawer({
 
         {!folderSelectorOnly ? (
           <>
-            <div className="sc-nav-drawer-divider" role="separator" />
-            {!collapsed ? <div className="sc-nav-drawer-section-title">{t('common.settings')}</div> : null}
-            <ul className="sc-nav-drawer-list">
+            <div className={styles.divider} role="separator" />
+            {!collapsed ? <div className={styles.sectionTitle}>{t('common.settings')}</div> : null}
+            <ul className={styles.list}>
               {settingNavItems.map((item) => {
                 const isActive = activeNav === item.id
                 return (
-                  <li key={item.id} className="sc-nav-drawer-entry">
+                  <li key={item.id} className={styles.entry}>
                     <button
                       type="button"
-                      className={isActive ? 'sc-nav-drawer-item sc-nav-drawer-item-active' : 'sc-nav-drawer-item'}
+                      className={cx(styles.item, isActive && styles.itemActive)}
                       aria-current={isActive ? 'page' : undefined}
                       aria-label={item.label}
                       title={collapsed ? item.label : undefined}
                       onClick={() => selectDestination(item)}
                     >
-                      <span className="sc-nav-drawer-item-icon">
+                      <span className={styles.itemIcon}>
                         <Icon name={item.icon} size={20} />
                       </span>
                       {!collapsed ? (
-                        <span className="sc-nav-drawer-item-label">
-                          {item.id === 'admin' ? t('nav.admin') : item.label}
-                        </span>
+                        <span className={styles.itemLabel}>{item.id === 'admin' ? t('nav.admin') : item.label}</span>
                       ) : null}
                     </button>
                   </li>

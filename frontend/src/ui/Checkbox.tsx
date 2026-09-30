@@ -1,5 +1,7 @@
 import 'mdui/components/checkbox.js'
 import { useRef } from 'react'
+import * as styles from './Checkbox.css'
+import * as utilitiesStyles from './utilities.css'
 
 export interface CheckboxProps {
   checked?: boolean
@@ -30,9 +32,10 @@ export function Checkbox({
 }: CheckboxProps) {
   const ref = useRef<CheckboxElement>(null)
   return (
-    <label className="sc-checkbox">
+    <label className={styles.root}>
       <mdui-checkbox
         ref={ref}
+        className={styles.control}
         checked={checked}
         indeterminate={indeterminate}
         disabled={disabled}
@@ -44,7 +47,7 @@ export function Checkbox({
         }}
         aria-label={label}
       />
-      {label && !hideLabel ? <span>{label}</span> : null}
+      {label && !hideLabel ? <span className={styles.label}>{label}</span> : null}
     </label>
   )
 }
@@ -52,8 +55,8 @@ export function Checkbox({
 /** Shows a selection state without taking input or focus; the surrounding control does both. */
 export function CheckboxIndicator({ checked, label }: { checked: boolean; label: string }) {
   return (
-    <mdui-checkbox checked={checked} tabIndex={-1}>
-      <span className="sc-sr-only">{label}</span>
+    <mdui-checkbox className={styles.indicator} checked={checked} tabIndex={-1}>
+      <span className={utilitiesStyles.srOnly}>{label}</span>
     </mdui-checkbox>
   )
 }

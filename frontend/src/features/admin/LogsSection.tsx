@@ -28,7 +28,9 @@ import { TextField } from '../../ui/TextField'
 import { ProgressCircular } from '../../ui/ProgressCircular'
 import { Checkbox } from '../../ui/Checkbox'
 import { VirtualList } from '../../ui/VirtualList'
-import '../../styles/features/admin/logs-section.css.ts'
+import * as styles from './LogsSection.css'
+import * as utilitiesStyles from '../../ui/utilities.css'
+import { cx } from '../../ui/cx'
 
 const SOURCE_MODES: readonly { mode: LogSourceMode; key: string }[] = [
   { mode: 'all', key: 'logs.source_all' },
@@ -42,6 +44,21 @@ const LEVEL_KEY: Record<string, string> = {
   ERROR: 'logs.level_error'
 }
 const OUTCOME_KEY: Record<string, string> = { ok: 'audit.success', failed: 'audit.failure' }
+const SEGMENT_CLASS: Record<string, string> = {
+  'server-debug': styles.segServerDebug,
+  'server-info': styles.segServerInfo,
+  'server-warn': styles.segServerWarn,
+  'server-error': styles.segServerError,
+  'audit-ok': styles.segAuditOk,
+  'audit-failed': styles.segAuditFailed
+}
+const LEVEL_CLASS: Record<string, string> = {
+  error: styles.levelError,
+  failed: styles.levelFailed,
+  warn: styles.levelWarn,
+  info: styles.levelInfo,
+  ok: styles.levelOk
+}
 
 /* i18n */ ;('logs.arrow_keys_move_between_buckets')
 /* i18n */ ;('logs.level_debug')
@@ -152,22 +169,22 @@ export function LogsSection() {
     return result
   }
   return (
-    <section className="sc-logs">
-      <h2>{t('common.logs')}</h2>
-      <p className="sc-logs-hint">{t('logs.what_the_logs_are')}</p>
-      <dl className="sc-logs-figures">
-        <div>
-          <dt>{t('logs.stored_size')}</dt>
-          <dd>{storedLabel}</dd>
+    <section className={styles.root}>
+      <h2 className={styles.title}>{t('common.logs')}</h2>
+      <p className={styles.hint}>{t('logs.what_the_logs_are')}</p>
+      <dl className={styles.figures}>
+        <div className={styles.figure}>
+          <dt className={styles.figureLabel}>{t('logs.stored_size')}</dt>
+          <dd className={styles.figureValue}>{storedLabel}</dd>
         </div>
-        <div>
-          <dt>{t('logs.segments')}</dt>
-          <dd>{formatNumber(newestPage?.segments ?? 0)}</dd>
+        <div className={styles.figure}>
+          <dt className={styles.figureLabel}>{t('logs.segments')}</dt>
+          <dd className={styles.figureValue}>{formatNumber(newestPage?.segments ?? 0)}</dd>
         </div>
       </dl>
-      <form className="sc-logs-filters" onSubmit={(event) => event.preventDefault()}>
-        <div className="sc-logs-sources">
-          <span className="sc-logs-group-label" id="sc-logs-source-label">
+      <form className={styles.filters} onSubmit={(event) => event.preventDefault()}>
+        <div className={styles.sources}>
+          <span className={styles.groupLabel} id="sc-logs-source-label">
             {t('logs.source')}
           </span>
           <div role="group" aria-labelledby="sc-logs-source-label">
@@ -175,11 +192,7 @@ export function LogsSection() {
               <button
                 key={option.mode}
                 type="button"
-                className={
-                  filters.sourceMode === option.mode
-                    ? 'sc-logs-source-button sc-logs-source-button-active'
-                    : 'sc-logs-source-button'
-                }
+                className={cx(styles.sourceButton, filters.sourceMode === option.mode && styles.sourceButtonActive)}
                 aria-pressed={filters.sourceMode === option.mode}
                 onClick={() => logsForm.patch({ sourceMode: option.mode })}
               >
@@ -188,9 +201,9 @@ export function LogsSection() {
             ))}
           </div>
         </div>
-        <fieldset className="sc-logs-levels">
-          <legend>{t('logs.level')}</legend>
-          <div className="sc-logs-level-boxes">
+        <fieldset className={styles.levels}>
+          <legend className={styles.levelsLegend}>{t('logs.level')}</legend>
+          <div className={styles.levelBoxes}>
             {ALL_LOG_LEVELS.map((level) => (
               <Checkbox
                 key={level}
@@ -201,8 +214,9 @@ export function LogsSection() {
             ))}
           </div>
         </fieldset>
-        <div className="sc-logs-fields">
+        <div className={styles.fields}>
           <TextField
+            className={styles.field}
             label={t('logs.search_text')}
             placeholder={t('logs.e_g_refused')}
             type="search"
@@ -211,6 +225,7 @@ export function LogsSection() {
             autoComplete="off"
           />
           <TextField
+            className={styles.field}
             label={t('logs.subsystem')}
             placeholder={t('logs.e_g_dav')}
             list="sc-logs-subsystems"
@@ -224,6 +239,7 @@ export function LogsSection() {
             ))}
           </datalist>
           <TextField
+            className={styles.field}
             label={t('logs.request_id')}
             placeholder={t('logs.e_g_request_id')}
             value={filters.requestId}
@@ -231,12 +247,14 @@ export function LogsSection() {
             autoComplete="off"
           />
           <TextField
+            className={styles.field}
             label={t('logs.from')}
             type="datetime-local"
             value={filters.since}
             onValueChange={(value) => logsForm.patch({ since: value })}
           />
           <TextField
+            className={styles.field}
             label={t('logs.to')}
             type="datetime-local"
             value={filters.until}
@@ -244,43 +262,47 @@ export function LogsSection() {
           />
         </div>
         {serverOnlyActive && filters.sourceMode !== 'server' ? (
-          <p className="sc-logs-scope" role="status">
+          <p className={styles.scope} role="status">
             {t('logs.server_only_filters_note')}
           </p>
         ) : null}
-        <p className="sc-logs-auto-note" role="status">
+        <p className={styles.autoNote} role="status">
           {t('logs.filters_update_automatically')}
         </p>
       </form>
-      <section className="sc-logs-chart" aria-labelledby="sc-logs-chart-title">
-        <div className="sc-logs-chart-head">
-          <h3 id="sc-logs-chart-title">{t('logs.timeline')}</h3>
-          <p className="sc-logs-hint">{t('logs.timeline_description')}</p>
+      <section className={styles.chart} aria-labelledby="sc-logs-chart-title">
+        <div className={styles.chartHead}>
+          <h3 id="sc-logs-chart-title" className={styles.timelineTitle}>
+            {t('logs.timeline')}
+          </h3>
+          <p className={styles.hint}>{t('logs.timeline_description')}</p>
         </div>
         {timeline.isPending && !view ? (
           <ProgressCircular label={t('logs.loading_timeline')} />
         ) : timeline.isError && !view ? (
-          <p className="sc-logs-note" role="status">
+          <p className={styles.note} role="status">
             {t('logs.could_not_load_timeline')}
           </p>
         ) : view ? (
           <>
             {view.truncated ? (
-              <p className="sc-logs-warn" role="status">
+              <p className={styles.warn} role="status">
                 {t('logs.timeline_truncated')}
               </p>
             ) : null}
             {view.total === 0 ? (
-              <div className="sc-logs-empty">
-                <p>{t('logs.no_events_in_window')}</p>
-                <p className="sc-logs-empty-hint">{t('logs.widen_the_filters')}</p>
+              <div className={styles.empty}>
+                <p className={styles.emptyText}>{t('logs.no_events_in_window')}</p>
+                <p className={cx(styles.emptyText, styles.emptyHint)}>{t('logs.widen_the_filters')}</p>
               </div>
             ) : (
               <>
-                <ul className="sc-logs-legend">
+                <ul className={styles.legend}>
                   {view.series.map((series) => (
-                    <li key={series.key}>
-                      <span className={`sc-logs-swatch sc-logs-seg-${series.source}-${series.name.toLowerCase()}`} />
+                    <li key={series.key} className={styles.legendItem}>
+                      <span
+                        className={cx(styles.swatch, SEGMENT_CLASS[`${series.source}-${series.name.toLowerCase()}`])}
+                      />
                       <span>
                         {series.source === 'server' ? t('logs.server_log') : t('common.audit_log')}{' '}
                         {seriesLabel(series)}
@@ -288,11 +310,11 @@ export function LogsSection() {
                     </li>
                   ))}
                 </ul>
-                <p className="sc-sr-only" id="sc-logs-plot-hint">
+                <p className={utilitiesStyles.srOnly} id="sc-logs-plot-hint">
                   {t('logs.arrow_keys_move_between_buckets')}
                 </p>
                 <div
-                  className="sc-logs-plot"
+                  className={styles.plot}
                   role="group"
                   aria-labelledby="sc-logs-chart-title"
                   aria-describedby="sc-logs-plot-hint"
@@ -304,21 +326,24 @@ export function LogsSection() {
                         barRefs.current[index] = node
                       }}
                       type="button"
-                      className={index === activeBucket ? 'sc-logs-bar sc-logs-bar-active' : 'sc-logs-bar'}
+                      className={cx(styles.bar, index === activeBucket && styles.barActive)}
                       tabIndex={index === activeBucket ? 0 : -1}
                       aria-label={barName(bar)}
                       onClick={() => logsForm.focusBucket(index)}
                       onFocus={() => logsForm.focusBucket(index)}
                       onKeyDown={(event) => onPlotKeyDown(event, index)}
                     >
-                      <span className="sc-logs-stack">
+                      <span className={styles.stack}>
                         {bar.total === 0 ? (
-                          <span className="sc-logs-baseline" />
+                          <span className={styles.baseline} />
                         ) : (
                           bar.segments.map((segment) => (
                             <span
                               key={segment.key}
-                              className={`sc-logs-seg sc-logs-seg-${segment.source}-${segment.name.toLowerCase()}`}
+                              className={cx(
+                                styles.seg,
+                                SEGMENT_CLASS[`${segment.source}-${segment.name.toLowerCase()}`]
+                              )}
                               style={{ height: `${segment.percent}%` }}
                             />
                           ))
@@ -327,7 +352,7 @@ export function LogsSection() {
                     </button>
                   ))}
                 </div>
-                <div className="sc-logs-axis">
+                <div className={styles.axis}>
                   <span>{formatDateNs(view.bars[0].startNs)}</span>
                   <span>
                     {t('logs.bucket_width', {
@@ -337,35 +362,43 @@ export function LogsSection() {
                   <span>{formatDateNs(view.bars.at(-1)?.endNs ?? view.bars[0].endNs)}</span>
                 </div>
                 {activeBar ? (
-                  <p className="sc-logs-readout" role="status" aria-live="polite">
+                  <p className={styles.readout} role="status" aria-live="polite">
                     {barName(activeBar)}
                   </p>
                 ) : null}
-                <details className="sc-logs-table-wrap">
-                  <summary>{t('logs.show_the_numbers')}</summary>
-                  <div className="sc-logs-table-scroll">
-                    <table className="sc-logs-table">
-                      <caption>{t('logs.timeline_table_caption')}</caption>
+                <details className={styles.tableWrap}>
+                  <summary className={styles.tableSummary}>{t('logs.show_the_numbers')}</summary>
+                  <div className={styles.tableScroll}>
+                    <table className={styles.table}>
+                      <caption className={styles.tableCaption}>{t('logs.timeline_table_caption')}</caption>
                       <thead>
                         <tr>
-                          <th scope="col">{t('logs.time')}</th>
+                          <th scope="col" className={cx(styles.tableCell, styles.tableCol)}>
+                            {t('logs.time')}
+                          </th>
                           {view.series.map((series) => (
-                            <th scope="col" key={series.key}>
+                            <th scope="col" key={series.key} className={cx(styles.tableCell, styles.tableCol)}>
                               {series.source === 'server' ? t('logs.server_log') : t('common.audit_log')}{' '}
                               {seriesLabel(series)}
                             </th>
                           ))}
-                          <th scope="col">{t('logs.total')}</th>
+                          <th scope="col" className={cx(styles.tableCell, styles.tableCol)}>
+                            {t('logs.total')}
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
                         {view.bars.map((bar) => (
                           <tr key={bar.startNs}>
-                            <th scope="row">{formatDateNs(bar.startNs)}</th>
+                            <th scope="row" className={styles.tableCell}>
+                              {formatDateNs(bar.startNs)}
+                            </th>
                             {view.series.map((series) => (
-                              <td key={series.key}>{formatNumber(countIn(bar, series.key))}</td>
+                              <td key={series.key} className={cx(styles.tableCell, styles.tableNum)}>
+                                {formatNumber(countIn(bar, series.key))}
+                              </td>
                             ))}
-                            <td>{formatNumber(bar.total)}</td>
+                            <td className={cx(styles.tableCell, styles.tableNum)}>{formatNumber(bar.total)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -377,7 +410,7 @@ export function LogsSection() {
           </>
         ) : null}
       </section>
-      <p className="sc-sr-only" role="status" aria-live="polite">
+      <p className={utilitiesStyles.srOnly} role="status" aria-live="polite">
         {loading
           ? t('logs.loading_logs')
           : failed
@@ -389,31 +422,31 @@ export function LogsSection() {
       {loading ? (
         <ProgressCircular label={t('logs.loading_logs')} />
       ) : failed ? (
-        <p className="sc-logs-error" role="alert">
+        <p className={styles.error} role="alert">
           {t('logs.could_not_load_logs')}
         </p>
       ) : items.length === 0 ? (
-        <div className="sc-logs-empty">
-          <p>{t('logs.no_records_match')}</p>
-          <p className="sc-logs-empty-hint">{t('logs.widen_the_filters')}</p>
+        <div className={styles.empty}>
+          <p className={styles.emptyText}>{t('logs.no_records_match')}</p>
+          <p className={cx(styles.emptyText, styles.emptyHint)}>{t('logs.widen_the_filters')}</p>
         </div>
       ) : (
         <>
           <VirtualList
-            className="sc-logs-list"
+            className={styles.list}
             items={items}
             itemKey={itemKey}
             estimateSize={80}
-            itemProps={() => ({ className: 'sc-logs-item' })}
+            itemProps={() => ({ className: styles.item })}
             renderItem={(item: UnifiedLogItem) => (
               <>
                 {item.source === 'audit' ? (
-                  <div className="sc-logs-row">
-                    <span className="sc-logs-level">{item.row.ok ? t('audit.success') : t('audit.failure')}</span>
-                    <span className="sc-logs-body">
-                      <span className="sc-logs-msg">{item.row.event}</span>
-                      <span className="sc-logs-meta">
-                        <span className="sc-logs-source">{t('common.audit_log')}</span>
+                  <div className={styles.row}>
+                    <span className={styles.level}>{item.row.ok ? t('audit.success') : t('audit.failure')}</span>
+                    <span className={styles.body}>
+                      <span className={styles.msg}>{item.row.event}</span>
+                      <span className={styles.meta}>
+                        <span className={styles.source}>{t('common.audit_log')}</span>
                         {auditMeta(item.row).map((part, index) => (
                           <span key={`${item.row.rowid}-${index}`}>{part}</span>
                         ))}
@@ -427,13 +460,13 @@ export function LogsSection() {
                       const open = expanded.has(item.key)
                       const body = (
                         <>
-                          <span className={`sc-logs-level sc-logs-level-${item.record.level.toLowerCase()}`}>
+                          <span className={cx(styles.level, LEVEL_CLASS[item.record.level.toLowerCase()])}>
                             {LEVEL_KEY[item.record.level] ? t(LEVEL_KEY[item.record.level]) : item.record.level}
                           </span>
-                          <span className="sc-logs-body">
-                            <span className="sc-logs-msg">{item.record.msg}</span>
-                            <span className="sc-logs-meta">
-                              <span className="sc-logs-source">{t('logs.server_log')}</span>
+                          <span className={styles.body}>
+                            <span className={styles.msg}>{item.record.msg}</span>
+                            <span className={styles.meta}>
+                              <span className={styles.source}>{t('logs.server_log')}</span>
                               <span>{formatDateNs(item.record.ts_ns)}</span>
                               {item.record.subsystem ? <span>{item.record.subsystem}</span> : null}
                               {item.record.request_id ? (
@@ -447,26 +480,26 @@ export function LogsSection() {
                         <>
                           <button
                             type="button"
-                            className="sc-logs-row sc-logs-row-button"
+                            className={cx(styles.row, styles.rowButton)}
                             aria-expanded={open}
                             onClick={() => logsForm.toggleExpanded(item.key)}
                           >
                             {body}
-                            <span className="sc-logs-disclose">{tp('logs.attribute_count', attrs.length)}</span>
+                            <span className={styles.disclose}>{tp('logs.attribute_count', attrs.length)}</span>
                           </button>
                           {open ? (
-                            <dl className="sc-logs-attrs">
+                            <dl className={styles.attrs}>
                               {attrs.map(([key, value]) => (
-                                <div key={key}>
-                                  <dt>{key}</dt>
-                                  <dd>{value}</dd>
+                                <div key={key} className={styles.attr}>
+                                  <dt className={styles.attrLabel}>{key}</dt>
+                                  <dd className={styles.attrValue}>{value}</dd>
                                 </div>
                               ))}
                             </dl>
                           ) : null}
                         </>
                       ) : (
-                        <div className="sc-logs-row">{body}</div>
+                        <div className={styles.row}>{body}</div>
                       )
                     })()}
                   </>
@@ -475,11 +508,11 @@ export function LogsSection() {
             )}
           />
           {truncated ? (
-            <p className="sc-logs-note" role="status">
+            <p className={styles.note} role="status">
               {tp('logs.reached_the_cap', items.length, { count: formatNumber(items.length) })}
             </p>
           ) : hasMore ? (
-            <div className="sc-logs-more">
+            <div className={styles.more}>
               <Button variant="text" onClick={loadMore} loading={loadingMore}>
                 {t('logs.load_more')}
               </Button>

@@ -18,7 +18,7 @@ import { Button } from '../../../ui/Button'
 import { ErrorBoundary } from '../../../ui/ErrorBoundary'
 import { Icon } from '../../../ui/Icon'
 import { ShareManageDialog } from '../../../features/shares/ShareManageDialog'
-import { Menu } from '../../../ui/Menu'
+import { Menu, MenuItem, MenuList } from '../../../ui/Menu'
 import { Breadcrumb } from '../../../features/files/Breadcrumb'
 import {
   pickDirectory,
@@ -30,6 +30,10 @@ import type { BrowseState, BrowseFilterDate, BrowseFilterType } from './logic/ty
 import type { MenuAnchor, RowAction } from '../../../features/files/logic/row-actions'
 import type { StatePatch } from '../../../lib/merge-state'
 import { ProgressCircular } from '../../../ui/ProgressCircular'
+import * as styles from './BrowseView.css'
+import * as iconButtonStyles from '../../../ui/IconButton.css'
+import * as utilitiesStyles from '../../../ui/utilities.css'
+import { cx } from '../../../ui/cx'
 
 type Patch = Dispatch<StatePatch<BrowseState>>
 type Translate = (key: string, params?: Record<string, string | number>) => string
@@ -88,46 +92,42 @@ export function BrowseToolbar(props: ToolbarProps) {
   const { onNavigate, onUnlock, onFilter, onRefresh, onToggleView, onToggleDetails, onSort, onNew, onOverflow } =
     actions
   return (
-    <header className={`sc-browse-toolbar${compact ? ' sc-browse-toolbar-compact' : ''}`}>
-      <div className="sc-browse-folder-heading">
-        <h1 className="sc-sr-only">{crumbs.at(-1)?.label ?? t('nav.files')}</h1>
+    <header className={cx(styles.toolbar, compact && styles.toolbarCompact)}>
+      <div className={styles.folderHeading}>
+        <h1 className={utilitiesStyles.srOnly}>{crumbs.at(-1)?.label ?? t('nav.files')}</h1>
         <Breadcrumb crumbs={crumbs} onNavigate={onNavigate} />
         {external ? (
-          <span className="sc-browse-external-badge">
+          <span className={styles.externalBadge}>
             <Icon name="warning" size={14} />
             {t('common.shared_with_other_services')}
           </span>
         ) : null}
         {encrypted ? (
           unlocked ? (
-            <span className="sc-browse-encrypted-badge">
+            <span className={styles.encryptedBadge}>
               <Icon name="lock" size={14} />
               {t('browse.encrypted_badge')}
             </span>
           ) : (
-            <button
-              type="button"
-              className="sc-browse-encrypted-badge sc-browse-encrypted-badge-locked"
-              onClick={onUnlock}
-            >
+            <button type="button" className={cx(styles.encryptedBadge, styles.encryptedBadgeLocked)} onClick={onUnlock}>
               <Icon name="lock" size={14} />
               {t('browse.encrypted_locked_badge')}
             </button>
           )
         ) : null}
         {broken ? (
-          <span className="sc-browse-broken-badge">
+          <span className={styles.brokenBadge}>
             <Icon name="warning" size={14} />
             {t('browse.this_folder_is_unavailable')}
           </span>
         ) : null}
       </div>
-      <div className="sc-browse-toolbar-actions">
+      <div className={styles.toolbarActions}>
         {!compact ? (
           <>
             <button
               type="button"
-              className={`sc-browse-filter-pill${filterType !== 'all' ? ' sc-browse-filter-pill-active' : ''}`}
+              className={cx(styles.filterPill, filterType !== 'all' && styles.filterPillActive)}
               aria-label={t('browse.filter_type')}
               aria-haspopup="menu"
               aria-expanded={openMenus.type}
@@ -138,7 +138,7 @@ export function BrowseToolbar(props: ToolbarProps) {
             </button>
             <button
               type="button"
-              className={`sc-browse-filter-pill${filterDate !== 'any' ? ' sc-browse-filter-pill-active' : ''}`}
+              className={cx(styles.filterPill, filterDate !== 'any' && styles.filterPillActive)}
               aria-label={t('browse.filter_date')}
               aria-haspopup="menu"
               aria-expanded={openMenus.date}
@@ -149,7 +149,7 @@ export function BrowseToolbar(props: ToolbarProps) {
             </button>
             <button
               type="button"
-              className="sc-browse-action-btn sc-icon-button"
+              className={cx(styles.actionBtn, iconButtonStyles.root)}
               aria-label={t('common.refresh')}
               onClick={onRefresh}
             >
@@ -157,7 +157,7 @@ export function BrowseToolbar(props: ToolbarProps) {
             </button>
             <button
               type="button"
-              className="sc-browse-action-btn sc-icon-button"
+              className={cx(styles.actionBtn, iconButtonStyles.root)}
               aria-label={mode === 'list' ? t('browse.grid_view') : t('browse.list_view')}
               onClick={onToggleView}
             >
@@ -165,7 +165,7 @@ export function BrowseToolbar(props: ToolbarProps) {
             </button>
             <button
               type="button"
-              className={`sc-browse-action-btn sc-icon-button${details ? ' is-active' : ''}`}
+              className={cx(styles.actionBtn, iconButtonStyles.root, details && styles.actionBtnActive)}
               aria-label={details ? t('details.hide') : t('details.show')}
               onClick={onToggleDetails}
             >
@@ -173,7 +173,7 @@ export function BrowseToolbar(props: ToolbarProps) {
             </button>
             <button
               type="button"
-              className="sc-browse-action-btn sc-icon-button"
+              className={cx(styles.actionBtn, iconButtonStyles.root)}
               aria-label={sortLabel}
               aria-haspopup="menu"
               aria-expanded={openMenus.sort}
@@ -187,7 +187,7 @@ export function BrowseToolbar(props: ToolbarProps) {
             {canCreate ? (
               <button
                 type="button"
-                className="sc-browse-fab-btn"
+                className={styles.fabBtn}
                 aria-label={t('browse.new')}
                 aria-haspopup="menu"
                 aria-expanded={openMenus.new}
@@ -198,7 +198,7 @@ export function BrowseToolbar(props: ToolbarProps) {
             ) : null}
             <button
               type="button"
-              className="sc-browse-action-btn sc-icon-button"
+              className={cx(styles.actionBtn, iconButtonStyles.root)}
               aria-label={sortLabel}
               aria-haspopup="menu"
               aria-expanded={openMenus.sort}
@@ -208,7 +208,7 @@ export function BrowseToolbar(props: ToolbarProps) {
             </button>
             <button
               type="button"
-              className="sc-browse-action-btn sc-icon-button"
+              className={cx(styles.actionBtn, iconButtonStyles.root)}
               aria-label={t('browse.more')}
               aria-haspopup="menu"
               aria-expanded={openMenus.overflow}
@@ -314,23 +314,23 @@ export function BrowseContent(props: BrowseContentProps) {
     onRequestMore()
   }, [all, hasNextPage, isFetchingMore, onRequestMore])
   return (
-    <div className="sc-browse-content">
+    <div className={styles.content}>
       {treeOpen ? (
         <FileTree currentPath={path} onNavigate={onTreeNavigate} overlay={compact} onClose={onTreeClose} />
       ) : null}
       <div
-        className={`sc-browse-table-wrap${dragOver ? ' sc-browse-table-wrap-dragover' : ''}${marqueeRect ? ' sc-browse-table-wrap-marquee' : ''}`}
+        className={cx(styles.tableWrap, dragOver && styles.tableWrapDragover, marqueeRect && styles.tableWrapMarquee)}
         onPointerDown={onPointerDown}
         onContextMenu={onBlankMenu}
         onClick={onEmptyClick}
       >
         {noShares ? (
-          <div className="sc-browse-nothing">
-            <div className="sc-browse-nothing-icon" aria-hidden="true">
+          <div className={styles.nothing}>
+            <div className={styles.nothingIcon} aria-hidden="true">
               <Icon name="folder" size={40} />
             </div>
-            <h2 className="sc-browse-nothing-title">{t('browse.nothing_here')}</h2>
-            <p className="sc-browse-nothing-hint">
+            <h2 className={styles.nothingTitle}>{t('browse.nothing_here')}</h2>
+            <p className={styles.nothingHint}>
               {isAdmin
                 ? t('browse.press_this_button_to_set_up_your_first_folder')
                 : t('browse.ask_an_administrator_for_a_folder')}
@@ -338,15 +338,15 @@ export function BrowseContent(props: BrowseContentProps) {
             {isAdmin ? <Button onClick={onAddFolder}>{t('common.add_folder')}</Button> : null}
           </div>
         ) : isPending ? (
-          <div className="sc-browse-loading">
+          <div className={styles.loading}>
             <ProgressCircular size={40} />
           </div>
         ) : error ? (
-          <p className="sc-browse-error" role="alert">
+          <p className={styles.error} role="alert">
             {errorText}
           </p>
         ) : (
-          <div className="sc-browse-view">
+          <div className={styles.view}>
             {mode === 'list' ? (
               <FileTable
                 ref={tableRef}
@@ -383,18 +383,18 @@ export function BrowseContent(props: BrowseContentProps) {
               />
             )}
             {isFetchingMore ? (
-              <div className="sc-browse-loading-more" role="status" aria-live="polite">
+              <div className={styles.loadingMore} role="status" aria-live="polite">
                 <ProgressCircular size={40} />
                 {t('common.loading')}
               </div>
             ) : null}
           </div>
         )}
-        {dragOver ? <div className="sc-browse-drop-overlay">{t('browse.drop_here_upload')}</div> : null}
+        {dragOver ? <div className={styles.dropOverlay}>{t('browse.drop_here_upload')}</div> : null}
       </div>
       {marqueeRect ? (
         <div
-          className="sc-browse-marquee"
+          className={styles.marquee}
           aria-hidden="true"
           style={{
             left: marqueeRect.left - marqueeScroll.x,
@@ -557,41 +557,42 @@ export function BrowseDialogs(props: BrowseDialogsProps) {
   return (
     <>
       <Menu compact={compact} open={contextMenu !== null} onClose={closeContext} x={contextMenu?.x} y={contextMenu?.y}>
-        <div className="sc-browse-new-menu" role="menu">
+        <MenuList>
           {rowActions.map((action) => (
-            <button
+            <MenuItem
               key={action.key}
-              type="button"
-              role="menuitem"
               onClick={() => {
                 onPatch({ contextMenu: null })
                 action.run()
               }}
             >
               {action.label}
-            </button>
+            </MenuItem>
           ))}
-        </div>
+        </MenuList>
       </Menu>
       {operation ? (
-        <section className="sc-browse-operation" role="status" aria-live="polite">
-          <div className="sc-browse-operation-heading">
-            <h2>
+        <section className={styles.operation} role="status" aria-live="polite">
+          <div className={styles.operationHeading}>
+            <h2 className={styles.operationTitle}>
               {operation.kind === 'delete'
                 ? t('common.delete')
                 : operation.kind === 'move'
                   ? t('common.move')
                   : t('common.copy')}
             </h2>
-            <button type="button" className="sc-browse-operation-close" onClick={() => onPatch({ operation: null })}>
+            <button type="button" className={styles.operationClose} onClick={() => onPatch({ operation: null })}>
               {t('common.close')}
             </button>
           </div>
           <VirtualList
+            className={styles.operationList}
             items={operation.results}
             itemKey={(result) => result.path}
             estimateSize={48}
-            itemProps={(result) => ({ className: !result.ok ? 'sc-browse-operation-error' : undefined })}
+            itemProps={(result) => ({
+              className: cx(styles.operationItem, !result.ok && styles.operationError)
+            })}
             renderItem={(result) => (
               <>
                 <span>{result.destination ? `${result.path} to ${result.destination}` : result.path}</span>
@@ -625,35 +626,31 @@ export function BrowseDialogs(props: BrowseDialogsProps) {
         x={blankMenu?.x}
         y={blankMenu?.y}
       >
-        <div className="sc-browse-new-menu" role="menu">
+        <MenuList>
           {canCreate ? (
             <>
-              <button type="button" role="menuitem" onClick={() => onPatch({ blankMenu: null, newFolderOpen: true })}>
+              <MenuItem onClick={() => onPatch({ blankMenu: null, newFolderOpen: true })}>
                 {t('common.new_folder')}
-              </button>
-              <button
-                type="button"
-                role="menuitem"
+              </MenuItem>
+              <MenuItem
                 onClick={() => {
                   onPatch({ blankMenu: null })
                   fileInputRef.current?.click()
                 }}
               >
                 {t('common.upload')}
-              </button>
-              <button
-                type="button"
-                role="menuitem"
+              </MenuItem>
+              <MenuItem
                 onClick={() => {
                   onPatch({ blankMenu: null })
                   void folderUpload()
                 }}
               >
                 {t('browse.upload_folder')}
-              </button>
+              </MenuItem>
             </>
           ) : null}
-        </div>
+        </MenuList>
       </Menu>
       <Menu
         compact={compact}
@@ -663,18 +660,18 @@ export function BrowseDialogs(props: BrowseDialogsProps) {
         y={sortMenuPosition.y}
         align="end"
       >
-        <div className="sc-browse-new-menu" role="menu">
+        <MenuList>
           {(['name', 'size', 'mtime', 'kind'] as const).map((key) => (
-            <button type="button" role="menuitem" key={key} onClick={() => onChooseSort(key)}>
+            <MenuItem key={key} onClick={() => onChooseSort(key)}>
               {sortKey === key
                 ? t('browse.sort_selected', {
                     label: sortName(key),
                     direction: sortOrder === 'asc' ? t('browse.sort_ascending') : t('browse.sort_descending')
                   })
                 : sortName(key)}
-            </button>
+            </MenuItem>
           ))}
-        </div>
+        </MenuList>
       </Menu>
       {canCreate ? (
         <Menu
@@ -685,38 +682,32 @@ export function BrowseDialogs(props: BrowseDialogsProps) {
           y={newMenuPosition.y}
           align={newMenuPosition.align}
         >
-          <div className="sc-browse-new-menu" role="menu">
-            <button
-              type="button"
-              role="menuitem"
+          <MenuList>
+            <MenuItem
               onClick={() => {
                 onCloseNew()
                 onPatch({ newFolderOpen: true })
               }}
             >
               {t('common.new_folder')}
-            </button>
-            <button
-              type="button"
-              role="menuitem"
+            </MenuItem>
+            <MenuItem
               onClick={() => {
                 onCloseNew()
                 fileInputRef.current?.click()
               }}
             >
               {t('common.upload')}
-            </button>
-            <button
-              type="button"
-              role="menuitem"
+            </MenuItem>
+            <MenuItem
               onClick={() => {
                 onCloseNew()
                 void folderUpload()
               }}
             >
               {t('browse.upload_folder')}
-            </button>
-          </div>
+            </MenuItem>
+          </MenuList>
         </Menu>
       ) : null}
       <Menu
@@ -727,65 +718,53 @@ export function BrowseDialogs(props: BrowseDialogsProps) {
         y={overflowPosition.y}
         align="end"
       >
-        <div className="sc-browse-new-menu" role="menu">
+        <MenuList>
           {compact ? (
             <>
-              <button
-                type="button"
-                role="menuitem"
+              <MenuItem
                 onClick={() => {
                   onToggleView()
                   onCloseOverflow()
                 }}
               >
                 {mode === 'list' ? t('browse.grid_view') : t('browse.list_view')}
-              </button>
-              <button
-                type="button"
-                role="menuitem"
+              </MenuItem>
+              <MenuItem
                 onClick={() => {
                   onToggleDetails()
                   onCloseOverflow()
                 }}
               >
                 {t('details.show')}
-              </button>
-              <button
-                type="button"
-                role="menuitem"
+              </MenuItem>
+              <MenuItem
                 onClick={() => {
                   onCloseOverflow()
                   onRefresh()
                 }}
               >
                 {t('common.refresh')}
-              </button>
+              </MenuItem>
             </>
           ) : null}
-          <button
-            type="button"
-            role="menuitem"
+          <MenuItem
             onClick={() => {
               onToggleTree()
               onCloseOverflow()
             }}
           >
             {treeOpen ? t('browse.hide_folder_tree') : t('browse.show_folder_tree')}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
+          </MenuItem>
+          <MenuItem
             onClick={() => {
               onCycleDensity()
               onCloseOverflow()
             }}
           >
             {t('browse.density', { density: densityLabel })}
-          </button>
-          <button type="button" role="menuitem" onClick={onNavigateTrash}>
-            {t('browse.open_trash')}
-          </button>
-        </div>
+          </MenuItem>
+          <MenuItem onClick={onNavigateTrash}>{t('browse.open_trash')}</MenuItem>
+        </MenuList>
       </Menu>
       <Menu
         compact={compact}
@@ -794,7 +773,7 @@ export function BrowseDialogs(props: BrowseDialogsProps) {
         x={typeMenuPosition.x}
         y={typeMenuPosition.y}
       >
-        <div className="sc-browse-new-menu" role="menu">
+        <MenuList>
           {(
             [
               ['all', /* i18n */ 'browse.filter_all'],
@@ -806,18 +785,16 @@ export function BrowseDialogs(props: BrowseDialogsProps) {
               ['archives', 'search.preset_archive']
             ] as const
           ).map(([value, key]) => (
-            <button
+            <MenuItem
               key={value}
-              type="button"
-              role="menuitemradio"
-              aria-checked={state.filterType === value}
+              checked={state.filterType === value}
               onClick={() => onPatch({ filterType: value, typeMenuOpen: false })}
             >
               {state.filterType === value ? '✓ ' : ''}
               {t(key)}
-            </button>
+            </MenuItem>
           ))}
-        </div>
+        </MenuList>
       </Menu>
       <Menu
         compact={compact}
@@ -826,7 +803,7 @@ export function BrowseDialogs(props: BrowseDialogsProps) {
         x={dateMenuPosition.x}
         y={dateMenuPosition.y}
       >
-        <div className="sc-browse-new-menu" role="menu">
+        <MenuList>
           {(
             [
               ['any', 'browse.date_any'],
@@ -836,18 +813,16 @@ export function BrowseDialogs(props: BrowseDialogsProps) {
               ['this_year', 'browse.date_this_year']
             ] as const
           ).map(([value, key]) => (
-            <button
+            <MenuItem
               key={value}
-              type="button"
-              role="menuitemradio"
-              aria-checked={state.filterDate === value}
+              checked={state.filterDate === value}
               onClick={() => onPatch({ filterDate: value, dateMenuOpen: false })}
             >
               {state.filterDate === value ? '✓ ' : ''}
               {t(key)}
-            </button>
+            </MenuItem>
           ))}
-        </div>
+        </MenuList>
       </Menu>
       <input
         ref={fileInputRef}
@@ -939,7 +914,7 @@ export function BrowseDialogs(props: BrowseDialogsProps) {
         />
       ) : null}
       {snackbar ? (
-        <div role="status" className="sc-snackbar" onClick={() => onPatch({ snackbar: null })}>
+        <div role="status" className={styles.snackbar} onClick={() => onPatch({ snackbar: null })}>
           {snackbar}
         </div>
       ) : null}

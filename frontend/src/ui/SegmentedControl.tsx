@@ -2,6 +2,8 @@ import 'mdui/components/segmented-button-group.js'
 import 'mdui/components/segmented-button.js'
 import type { ReactNode } from 'react'
 import { useLayoutEffect, useReducer, useRef } from 'react'
+import { cx } from './cx'
+import * as styles from './SegmentedControl.css'
 
 export interface SegmentedOption {
   value: string
@@ -13,6 +15,7 @@ export interface SegmentedControlProps {
   value: string
   options: SegmentedOption[]
   onChange: (value: string) => void
+  className?: string
 }
 
 interface SegmentedGroupElement extends HTMLElement {
@@ -20,7 +23,7 @@ interface SegmentedGroupElement extends HTMLElement {
 }
 
 /** A single-choice segmented control that always shows the owner's value. */
-export function SegmentedControl({ label, value, options, onChange }: SegmentedControlProps) {
+export function SegmentedControl({ label, value, options, onChange, className }: SegmentedControlProps) {
   const ref = useRef<SegmentedGroupElement>(null)
   const [changes, noteChange] = useReducer((count: number) => count + 1, 0)
 
@@ -33,6 +36,7 @@ export function SegmentedControl({ label, value, options, onChange }: SegmentedC
   return (
     <mdui-segmented-button-group
       ref={ref}
+      className={cx(styles.root, className)}
       selects="single"
       aria-label={label}
       value={value}
@@ -45,7 +49,7 @@ export function SegmentedControl({ label, value, options, onChange }: SegmentedC
       }}
     >
       {options.map((option) => (
-        <mdui-segmented-button key={option.value} value={option.value}>
+        <mdui-segmented-button key={option.value} className={styles.segment} value={option.value}>
           {option.label}
         </mdui-segmented-button>
       ))}

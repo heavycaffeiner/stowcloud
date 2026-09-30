@@ -1,12 +1,11 @@
+import './ui/styles'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { RouterProvider } from 'react-router-dom'
 import { RootProviders } from './app/RootProviders'
 import { router } from './app/router'
 import { currentLocale, initLocale } from './lib/i18n/state'
-import './ui/styles'
 import '@fontsource-variable/google-sans-flex/opsz.css'
-import './styles/global/base.css.ts'
 
 const root = document.getElementById('root')
 if (!root) throw new Error('Missing #root application mount')

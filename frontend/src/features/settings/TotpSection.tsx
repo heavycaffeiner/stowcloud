@@ -15,6 +15,9 @@ import { sessionQuery } from '../../lib/query/session'
 import { Button } from '../../ui/Button'
 import { TextField } from '../../ui/TextField'
 import { SettingsDialog } from './SettingsDialog'
+import * as styles from './TotpSection.css'
+import * as settingsCardStyles from './SettingsCard.css'
+import { cx } from '../../ui/cx'
 
 export function TotpSection() {
   const { t } = useI18n()
@@ -211,11 +214,9 @@ export function TotpSection() {
   }
 
   return (
-    <div className="sc-totp">
-      <div className="sc-totp-status">
-        <span className={enabled ? 'sc-totp-badge sc-totp-badge-on' : 'sc-totp-badge'}>
-          {enabled ? t('totp.on') : t('totp.off')}
-        </span>
+    <div className={styles.root}>
+      <div className={styles.status}>
+        <span className={cx(styles.badge, enabled && styles.badgeOn)}>{enabled ? t('totp.on') : t('totp.off')}</span>
         {enabled ? (
           <Button variant="outlined" onClick={openDisable}>
             {t('totp.turn_off_two_factor_authentication')}
@@ -225,15 +226,9 @@ export function TotpSection() {
         )}
       </div>
       {enabled ? (
-        <div className="sc-totp-recovery">
+        <div className={styles.recovery}>
           {recovery.data ? (
-            <p
-              className={
-                recovery.data.remaining <= 3
-                  ? 'sc-totp-recovery-count sc-totp-recovery-count-low'
-                  : 'sc-totp-recovery-count'
-              }
-            >
+            <p className={cx(styles.recoveryCount, recovery.data.remaining <= 3 && styles.recoveryCountLow)}>
               {tp('totp.recovery_codes_left', recovery.data.remaining)}
               {recovery.data.remaining <= 3 ? ` ${t('totp.running_low_reissue_them_now')}` : ''}
             </p>
@@ -269,13 +264,13 @@ export function TotpSection() {
           autoComplete="current-password"
           onValueChange={setEnrollPassword}
         />
-        {setup.isPending ? <p>{t('totp.loading_setup_details')}</p> : null}
+        {setup.isPending ? <p className={settingsCardStyles.text}>{t('totp.loading_setup_details')}</p> : null}
         {setupSecret ? (
           <>
-            <p>{t('totp.add_key_below_authenticator_app')}</p>
-            <div className="sc-totp-secret-row">
+            <p className={settingsCardStyles.text}>{t('totp.add_key_below_authenticator_app')}</p>
+            <div className={styles.secretRow}>
               <input
-                className="sc-totp-secret"
+                className={styles.secret}
                 readOnly
                 value={setupSecret}
                 aria-label={t('totp.add_key_below_authenticator_app')}
@@ -285,11 +280,11 @@ export function TotpSection() {
               </Button>
             </div>
             {secretCopyState === 'failed' ? (
-              <p className="sc-totp-copy-feedback" role="alert">
+              <p className={styles.copyFeedback} role="alert">
                 {t('totp.copy_secret_failed')}
               </p>
             ) : null}
-            <p className="sc-totp-url">{setupUrl}</p>
+            <p className={styles.url}>{setupUrl}</p>
             <TextField
               label={t('totp.6_digit_code')}
               value={enrollCode}
@@ -298,7 +293,7 @@ export function TotpSection() {
             />
           </>
         ) : enrollErrorText ? (
-          <p className="sc-totp-smb-warning" role="alert">
+          <p className={styles.smbWarning} role="alert">
             {enrollErrorText}
           </p>
         ) : null}
@@ -320,11 +315,11 @@ export function TotpSection() {
           </>
         }
       >
-        <p>{t('totp.enter_your_current_password_continue')}</p>
+        <p className={settingsCardStyles.text}>{t('totp.enter_your_current_password_continue')}</p>
         {smbDedicated ? (
-          <p className="sc-totp-smb-warning">{t('smb.dedicated_will_be_replaced')}</p>
+          <p className={styles.smbWarning}>{t('smb.dedicated_will_be_replaced')}</p>
         ) : (
-          <p className="sc-totp-smb-warning">{t('smb.remove_reverts_to_account')}</p>
+          <p className={styles.smbWarning}>{t('smb.remove_reverts_to_account')}</p>
         )}
         <TextField
           type="password"
@@ -351,7 +346,7 @@ export function TotpSection() {
           </>
         }
       >
-        <p>
+        <p className={settingsCardStyles.text}>
           {t('totp.reissuing_invalidates_all_10_recovery')} <strong>{t('totp.at_once')}</strong>
           {t('totp.cannot_undone_new_codes_shown')}
         </p>
@@ -370,11 +365,11 @@ export function TotpSection() {
         dismissible={false}
         actions={<Button onClick={acknowledgeRecoveryCodes}>{t('totp.acknowledge_codes_saved')}</Button>}
       >
-        <p>{t('totp.each_code_works_once_save')}</p>
-        <ul className="sc-totp-codes">
+        <p className={settingsCardStyles.text}>{t('totp.each_code_works_once_save')}</p>
+        <ul className={styles.codes}>
           {(recoveryCodes ?? []).map((code) => (
             <li key={code}>
-              <input className="sc-totp-code" readOnly value={code} aria-label={t('totp.recovery_codes')} />
+              <input className={styles.code} readOnly value={code} aria-label={t('totp.recovery_codes')} />
             </li>
           ))}
         </ul>
@@ -382,7 +377,7 @@ export function TotpSection() {
           {recoveryCopyState === 'copied' ? t('common.copied') : t('totp.copy_codes')}
         </Button>
         {recoveryCopyState === 'failed' ? (
-          <p className="sc-totp-copy-feedback" role="alert">
+          <p className={styles.copyFeedback} role="alert">
             {t('totp.copy_codes_failed')}
           </p>
         ) : null}

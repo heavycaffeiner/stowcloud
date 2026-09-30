@@ -8,7 +8,7 @@ import { Button } from '../../ui/Button'
 import { Dialog } from '../../ui/Dialog'
 import { ProgressCircular } from '../../ui/ProgressCircular'
 import { nextRestartWaitStep } from './logic/restart-wait'
-import '../../styles/features/admin/restart-dialog.css.ts'
+import * as styles from './RestartDialog.css'
 
 const POLL_INTERVAL_MS = 200
 const WAIT_BUDGET_MS = 45_000
@@ -143,23 +143,23 @@ export function RestartDialog({ open, outcome, onClose, onRestarted }: RestartDi
         </p>
       ) : null}
       {restart.error ? (
-        <p className="sc-restart-error" role="alert">
+        <p className={styles.error} role="alert">
           {describeApiError(restart.error, t('restart.could_not_start'))}
         </p>
       ) : null}
       {phase === 'waiting' ? (
-        <p className="sc-restart-status" role="status" aria-live="polite">
+        <p className={styles.status} role="status" aria-live="polite">
           <ProgressCircular />
           {t('restart.waiting_for_server', { seconds: WAIT_BUDGET_SECONDS })}
         </p>
       ) : null}
       {phase === 'timeout' ? (
-        <p className="sc-restart-error" role="alert" aria-live="assertive">
+        <p className={styles.error} role="alert" aria-live="assertive">
           {t('restart.timed_out', { seconds: WAIT_BUDGET_SECONDS })}
         </p>
       ) : null}
       {phase === 'success' ? (
-        <p className="sc-restart-status" role="status" aria-live="polite">
+        <p className={styles.status} role="status" aria-live="polite">
           {t('restart.came_back')}
         </p>
       ) : null}

@@ -1,5 +1,7 @@
 import type { PropsWithChildren, ReactNode } from 'react'
 import { Icon } from '../../../ui/Icon'
+import * as styles from './SecondaryPageShell.css'
+import { cx } from '../../../ui/cx'
 
 export interface SecondaryPageShellProps extends PropsWithChildren {
   title: ReactNode
@@ -19,11 +21,11 @@ export function SecondaryPageShell({
   children
 }: SecondaryPageShellProps) {
   return (
-    <section className={className ? `sc-secondary-page ${className}` : 'sc-secondary-page'}>
-      <div className="sc-secondary-page-inner">
-        <header className="sc-secondary-page-header">
-          <h1>{title}</h1>
-          <button type="button" className="sc-route-icon-button" aria-label={refreshLabel} onClick={onRefresh}>
+    <section className={cx(styles.root, className && className)}>
+      <div className={styles.inner}>
+        <header className={styles.header}>
+          <h1 className={styles.title}>{title}</h1>
+          <button type="button" className={styles.routeIconButton} aria-label={refreshLabel} onClick={onRefresh}>
             <Icon name="refresh" />
           </button>
         </header>

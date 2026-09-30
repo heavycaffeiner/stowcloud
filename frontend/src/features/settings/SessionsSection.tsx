@@ -7,6 +7,8 @@ import { activeSessionsQuery, revokeSessionMutation } from '../../lib/query/acco
 import { Button } from '../../ui/Button'
 import { VirtualList } from '../../ui/VirtualList'
 import { SettingsDialog } from './SettingsDialog'
+import * as styles from './SessionsSection.css'
+import * as settingsCardStyles from './SettingsCard.css'
 
 export function SessionsSection() {
   const { t } = useI18n()
@@ -28,23 +30,24 @@ export function SessionsSection() {
   }
 
   return (
-    <div className="sc-sessions">
+    <div className={styles.root}>
       {list.isPending ? (
-        <p>{t('common.loading')}</p>
+        <p className={settingsCardStyles.text}>{t('common.loading')}</p>
       ) : list.isError ? (
-        <p className="sc-sessions-error">{t('common.could_not_load_list')}</p>
+        <p className={styles.error}>{t('common.could_not_load_list')}</p>
       ) : (
         <VirtualList
-          className="sc-sessions-list"
+          className={styles.list}
           items={list.data ?? []}
           itemKey={(session) => session.id_hash}
           estimateSize={88}
+          itemProps={() => ({ className: styles.item })}
           renderItem={(session) => (
             <>
-              <div>
+              <div className={styles.itemMain}>
                 <strong>{session.ip_first ?? t('session.unknown_location')}</strong>
-                {session.current ? <span className="sc-sessions-badge">{t('session.current_session')}</span> : null}
-                <p title={session.ua_first ?? undefined}>
+                {session.current ? <span className={styles.badge}>{t('session.current_session')}</span> : null}
+                <p className={styles.detail} title={session.ua_first ?? undefined}>
                   {session.ua_display ?? t('session.unknown_device')} -{' '}
                   {t('session.last_active', { date: formatDateNs(session.last_seen_ns) })}
                 </p>
@@ -73,7 +76,7 @@ export function SessionsSection() {
           </>
         }
       >
-        <p>
+        <p className={settingsCardStyles.text}>
           {t('session.device_signed_out_immediately', {
             where: revokeTarget?.ip_first ?? t('session.unknown_location')
           })}

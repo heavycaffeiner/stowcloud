@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { useI18n } from '../../hooks/use-i18n'
 import { Button } from '../../ui/Button'
+import * as styles from './WebdavSection.css'
+import * as settingsCardStyles from './SettingsCard.css'
+import { cx } from '../../ui/cx'
 
 export function WebdavSection() {
   const { t } = useI18n()
@@ -45,12 +48,12 @@ export function WebdavSection() {
   }
 
   const token = (value: string, name: string, pre = false) => (
-    <div className="sc-webdav-token-row">
+    <div className={styles.tokenRow}>
       {pre ? (
-        <pre className="sc-webdav-token">{value}</pre>
+        <pre className={cx(styles.token, styles.tokenBlock)}>{value}</pre>
       ) : (
         <code
-          className="sc-webdav-token"
+          className={styles.token}
           data-testid={name === t('webdav.server_address') ? 'webdav-base-url' : undefined}
         >
           {value}
@@ -63,56 +66,56 @@ export function WebdavSection() {
   )
 
   return (
-    <div className="sc-webdav" data-testid="webdav-guide">
+    <div className={styles.root} data-testid="webdav-guide">
       <div>
-        <span className="sc-webdav-label">{t('webdav.server_address')}</span>
+        <span className={styles.label}>{t('webdav.server_address')}</span>
         {token(baseUrl, t('webdav.server_address'))}
       </div>
-      <p className="sc-webdav-credentials">{t('webdav.credentials_note')}</p>
-      <section className="sc-webdav-os">
-        <h3>{t('webdav.macos_heading')}</h3>
-        <ol>
+      <p className={styles.credentials}>{t('webdav.credentials_note')}</p>
+      <section className={styles.os}>
+        <h3 className={styles.heading}>{t('webdav.macos_heading')}</h3>
+        <ol className={styles.steps}>
           <li>{t('webdav.macos_step_open_connect')}</li>
           <li>{t('webdav.macos_step_enter_url')}</li>
           <li>{t('webdav.macos_step_credentials')}</li>
         </ol>
       </section>
-      <section className="sc-webdav-os">
-        <h3>{t('webdav.windows_heading')}</h3>
-        <ol>
+      <section className={styles.os}>
+        <h3 className={styles.heading}>{t('webdav.windows_heading')}</h3>
+        <ol className={styles.steps}>
           <li>{t('webdav.windows_step_open')}</li>
           <li>{t('webdav.windows_step_enter_url')}</li>
           <li>{t('webdav.windows_step_credentials')}</li>
         </ol>
-        <p>{t('webdav.windows_net_use_hint')}</p>
+        <p className={settingsCardStyles.text}>{t('webdav.windows_net_use_hint')}</p>
         {token(netUseCommand, t('webdav.net_use_command_label'))}
       </section>
-      <section className="sc-webdav-os">
-        <h3>{t('webdav.linux_heading')}</h3>
-        <ol>
+      <section className={styles.os}>
+        <h3 className={styles.heading}>{t('webdav.linux_heading')}</h3>
+        <ol className={styles.steps}>
           <li>{t('webdav.linux_step_open')}</li>
           <li>{t('webdav.linux_step_enter_url')}</li>
         </ol>
         {token(davUrl, t('webdav.dav_url_label'))}
       </section>
-      <section className="sc-webdav-os">
-        <h3>{t('webdav.generic_heading')}</h3>
-        <p>{t('webdav.generic_hint')}</p>
+      <section className={styles.os}>
+        <h3 className={styles.heading}>{t('webdav.generic_heading')}</h3>
+        <p className={settingsCardStyles.text}>{t('webdav.generic_hint')}</p>
       </section>
-      <section className="sc-webdav-os">
-        <h3>{t('webdav.rclone_heading')}</h3>
-        <p>{t('webdav.rclone_hint')}</p>
+      <section className={styles.os}>
+        <h3 className={styles.heading}>{t('webdav.rclone_heading')}</h3>
+        <p className={settingsCardStyles.text}>{t('webdav.rclone_hint')}</p>
         {token(rcloneRemote, t('webdav.rclone_remote_label'), true)}
-        <p>{t('webdav.rclone_mount_hint')}</p>
+        <p className={settingsCardStyles.text}>{t('webdav.rclone_mount_hint')}</p>
         {token(rcloneMount, t('webdav.rclone_mount_label'))}
-        <h4>{t('webdav.rclone_crypt_heading')}</h4>
-        <p>{t('webdav.rclone_crypt_hint')}</p>
+        <h4 className={styles.subheading}>{t('webdav.rclone_crypt_heading')}</h4>
+        <p className={settingsCardStyles.text}>{t('webdav.rclone_crypt_hint')}</p>
         {token(rcloneCrypt, t('webdav.rclone_crypt_label'), true)}
         {token(rcloneMountCrypt, t('webdav.rclone_mount_crypt_label'))}
-        <p>{t('webdav.rclone_crypt_warning')}</p>
+        <p className={settingsCardStyles.text}>{t('webdav.rclone_crypt_warning')}</p>
       </section>
-      <p className="sc-webdav-nfc-note">{t('webdav.nfc_note')}</p>
-      <p className="sc-webdav-announce" aria-live="polite">
+      <p className={styles.nfcNote}>{t('webdav.nfc_note')}</p>
+      <p className={styles.announce} aria-live="polite">
         {announcement}
       </p>
     </div>

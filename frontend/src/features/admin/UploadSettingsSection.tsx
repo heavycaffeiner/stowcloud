@@ -18,7 +18,8 @@ import { Icon } from '../../ui/Icon'
 import { Switch } from '../../ui/Switch'
 import { TextField } from '../../ui/TextField'
 import { AdminCard } from './AdminCard'
-import '../../styles/features/admin/admin-sections.css.ts'
+import * as styles from './UploadSettingsSection.css'
+import * as adminStyles from './admin.css'
 
 export function UploadSettingsSection() {
   const settings = useQuery(adminSettingsQuery())
@@ -245,14 +246,16 @@ function UploadSettingsForm({
         }
         icon={<Icon name="upload" />}
       >
-        <div className="sc-upload-form">
+        <div className={styles.form}>
           <TextField
+            className={styles.field}
             label={t('upload_settings.minimum_chunk_size_mb')}
             value={minMb}
             onValueChange={setMinMb}
             placeholder={String(bytesToMb(serverMin))}
           />
           <TextField
+            className={styles.field}
             label={t('upload_settings.default_chunk_size_mb')}
             value={defaultMb}
             onValueChange={setDefaultMb}
@@ -263,26 +266,26 @@ function UploadSettingsForm({
           </Button>
         </div>
         {serverValidation || mutation.error ? (
-          <p className="sc-admin-error" role="alert">
+          <p className={adminStyles.error} role="alert">
             {serverValidation ?? describeApiError(mutation.error, t('common.could_not_save'))}
           </p>
         ) : mutation.isPending ? (
-          <p className="sc-admin-note">{t('common.saving')}</p>
+          <p className={adminStyles.note}>{t('common.saving')}</p>
         ) : serverDirty ? (
-          <p className="sc-admin-note">{t('settings.unsaved_changes')}</p>
+          <p className={adminStyles.note}>{t('settings.unsaved_changes')}</p>
         ) : serverSaved ? (
-          <p className="sc-admin-saved" role="status">
+          <p className={styles.adminSaved} role="status">
             {t('upload_settings.server_wide_setting_saved')}
           </p>
         ) : null}
-        <dl className="sc-upload-estimate">
+        <dl className={styles.estimate}>
           <div>
-            <dt>{t('upload_settings.current_server_minimum')}</dt>
-            <dd>{formatBytes(serverMin)}</dd>
+            <dt className={styles.estimateLabel}>{t('upload_settings.current_server_minimum')}</dt>
+            <dd className={styles.estimateValue}>{formatBytes(serverMin)}</dd>
           </div>
           <div>
-            <dt>{t('upload_settings.current_server_default')}</dt>
-            <dd>{formatBytes(serverDefault)}</dd>
+            <dt className={styles.estimateLabel}>{t('upload_settings.current_server_default')}</dt>
+            <dd className={styles.estimateValue}>{formatBytes(serverDefault)}</dd>
           </div>
         </dl>
       </AdminCard>
@@ -294,11 +297,11 @@ function UploadSettingsForm({
         icon={<Icon name="history" />}
       >
         {cacheAvailable === false ? (
-          <p className="sc-admin-error" role="alert">
+          <p className={adminStyles.error} role="alert">
             {t('upload_settings.cache_spool_unavailable')}
           </p>
         ) : (
-          <div className="sc-storage-toggle-row">
+          <div className={adminStyles.storageToggleRow}>
             <Switch
               checked={cacheDraft === true}
               label={t('upload_settings.cache_spool_enable')}
@@ -308,7 +311,7 @@ function UploadSettingsForm({
               }}
             />
             {cacheDraft === null ? (
-              <p className="sc-admin-note">{t('upload_settings.cache_spool_state_unknown')}</p>
+              <p className={adminStyles.note}>{t('upload_settings.cache_spool_state_unknown')}</p>
             ) : null}
           </div>
         )}
@@ -320,15 +323,16 @@ function UploadSettingsForm({
         subtitle={t('upload_settings.unlike_server_wide_setting_above')}
         icon={<Icon name="settings" />}
       >
-        <div className="sc-upload-form">
+        <div className={styles.form}>
           <TextField
+            className={styles.field}
             label={t('upload_settings.browser_default_chunk_size_mb')}
             value={inputMb}
             error={overrideError}
             placeholder={String(bytesToMb(serverDefault))}
             onValueChange={setInputMb}
           />
-          <div className="sc-upload-actions">
+          <div className={styles.actions}>
             <Button onClick={saveOverride}>{t('common.save')}</Button>
             <Button variant="text" onClick={resetOverride} disabled={override === null}>
               {t('upload_settings.reset_server_default')}
@@ -336,13 +340,13 @@ function UploadSettingsForm({
           </div>
         </div>
         {overrideSaved ? (
-          <p className="sc-admin-saved" role="status">
+          <p className={styles.adminSaved} role="status">
             {t('upload_settings.saved_uploads_started_from_now', { size: formatBytes(override ?? 0) })}
           </p>
         ) : override !== null ? (
-          <p className="sc-admin-note">{t('upload_settings.current_override', { size: formatBytes(override) })}</p>
+          <p className={adminStyles.note}>{t('upload_settings.current_override', { size: formatBytes(override) })}</p>
         ) : (
-          <p className="sc-admin-note">{t('upload_settings.currently_using_server_default')}</p>
+          <p className={adminStyles.note}>{t('upload_settings.currently_using_server_default')}</p>
         )}
       </AdminCard>
 
@@ -352,15 +356,16 @@ function UploadSettingsForm({
         subtitle={t('upload_settings.concurrency_limit_hint')}
         icon={<Icon name="speed" />}
       >
-        <div className="sc-upload-form">
+        <div className={styles.form}>
           <TextField
+            className={styles.field}
             label={t('upload_settings.concurrency_limit')}
             value={concurrencyInput}
             error={concurrencyError}
             placeholder={String(DEFAULT_CONCURRENCY)}
             onValueChange={setConcurrencyInput}
           />
-          <div className="sc-upload-actions">
+          <div className={styles.actions}>
             <Button onClick={saveConcurrency}>{t('common.save')}</Button>
             <Button variant="text" onClick={resetConcurrency} disabled={activeConcurrency === DEFAULT_CONCURRENCY}>
               {t('upload_settings.reset_concurrency_default')}
@@ -368,11 +373,11 @@ function UploadSettingsForm({
           </div>
         </div>
         {concurrencySaved ? (
-          <p className="sc-admin-saved" role="status">
+          <p className={styles.adminSaved} role="status">
             {t('upload_settings.concurrency_saved')}
           </p>
         ) : (
-          <p className="sc-admin-note">{t('upload_settings.current_concurrency', { count: activeConcurrency })}</p>
+          <p className={adminStyles.note}>{t('upload_settings.current_concurrency', { count: activeConcurrency })}</p>
         )}
       </AdminCard>
     </>

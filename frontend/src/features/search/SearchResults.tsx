@@ -5,6 +5,8 @@ import { parentOf } from '../../lib/api/path-utils'
 import { extensionOf } from '../../lib/search/filters'
 import { computeWindow, type WindowResult } from '../../lib/virtual/windowing'
 import { Icon } from '../../ui/Icon'
+import * as styles from './SearchResults.css'
+import { vars } from '../../ui/theme.css'
 
 export interface SearchResultsProps {
   readonly ran: boolean
@@ -20,17 +22,17 @@ export interface SearchResultsProps {
 }
 
 function getHitIcon(hit: SearchHit): { name: string; color?: string } {
-  if (hit.entry.kind === 'dir') return { name: 'folder', color: 'var(--sc-icon-color)' }
+  if (hit.entry.kind === 'dir') return { name: 'folder', color: vars.content.icon }
   const ext = extensionOf(hit.entry.name).toLowerCase()
   if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'zst', 'iso'].includes(ext))
-    return { name: 'folder-zip', color: 'var(--sc-icon-color)' }
-  if (ext === 'apk') return { name: 'android', color: 'var(--sc-icon-color)' }
+    return { name: 'folder-zip', color: vars.content.icon }
+  if (ext === 'apk') return { name: 'android', color: vars.content.icon }
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'heic', 'avif'].includes(ext))
-    return { name: 'image', color: 'var(--sc-icon-color)' }
+    return { name: 'image', color: vars.content.icon }
   if (['mp4', 'mkv', 'mov', 'avi', 'webm', 'wmv', 'm4v', 'mpg', 'mpeg', 'flv'].includes(ext))
-    return { name: 'movie', color: 'var(--sc-icon-color)' }
+    return { name: 'movie', color: vars.content.icon }
   if (['mp3', 'flac', 'wav', 'aac', 'ogg', 'oga', 'm4a', 'opus', 'wma'].includes(ext))
-    return { name: 'audio-file', color: 'var(--sc-icon-color)' }
+    return { name: 'audio-file', color: vars.content.icon }
   if (
     [
       'js',
@@ -58,7 +60,7 @@ function getHitIcon(hit: SearchHit): { name: string; color?: string } {
       'css'
     ].includes(ext)
   )
-    return { name: 'code', color: 'var(--sc-icon-color)' }
+    return { name: 'code', color: vars.content.icon }
   if (
     [
       'pdf',
@@ -79,8 +81,8 @@ function getHitIcon(hit: SearchHit): { name: string; color?: string } {
       'csv'
     ].includes(ext)
   )
-    return { name: 'description', color: 'var(--sc-icon-color)' }
-  return { name: 'draft', color: 'var(--sc-icon-color)' }
+    return { name: 'description', color: vars.content.icon }
+  return { name: 'draft', color: vars.content.icon }
 }
 
 export function SearchResults({
@@ -97,40 +99,38 @@ export function SearchResults({
 }: SearchResultsProps) {
   return (
     <div
-      className="sc-search-results"
+      className={styles.results}
       ref={resultsRef}
       onScroll={(event) => onScroll(event.currentTarget.scrollTop)}
       tabIndex={-1}
     >
       {!ran ? (
-        <p className="sc-search-note">{t('search.type_and_press_enter')}</p>
+        <p className={styles.note}>{t('search.type_and_press_enter')}</p>
       ) : view.length === 0 && !running ? (
-        <p className="sc-search-note">
+        <p className={styles.note}>
           {t('search.no_results')}{' '}
-          {activeFilters ? (
-            <span className="sc-search-hint">{t('search.filtered_by', { filters: activeFilters })}</span>
-          ) : null}
+          {activeFilters ? <span>{t('search.filtered_by', { filters: activeFilters })}</span> : null}
         </p>
       ) : (
-        <div className="sc-search-spacer" style={{ height: windowed.totalHeight }}>
-          <ul className="sc-search-rows" style={{ transform: `translate3d(0, ${windowed.padTop}px, 0)` }}>
+        <div className={styles.spacer} style={{ height: windowed.totalHeight }}>
+          <ul className={styles.rows} style={{ transform: `translate3d(0, ${windowed.padTop}px, 0)` }}>
             {rows.map((hit) => {
               const hitIcon = getHitIcon(hit)
               return (
                 <li key={hit.path}>
-                  <button type="button" className="sc-search-row" onClick={() => onOpen(hit)}>
-                    <span className="sc-search-row-icon" style={{ color: hitIcon.color }}>
+                  <button type="button" className={styles.row} onClick={() => onOpen(hit)}>
+                    <span className={styles.rowIcon} style={{ color: hitIcon.color }}>
                       <Icon name={hitIcon.name} size={20} />
                     </span>
-                    <span className="sc-search-text">
-                      <span className="sc-search-name">{hit.entry.name}</span>
-                      <span className="sc-search-folder">{parentOf(hit.path)}</span>
+                    <span className={styles.text}>
+                      <span className={styles.name}>{hit.entry.name}</span>
+                      <span className={styles.folder}>{parentOf(hit.path)}</span>
                     </span>
-                    <span className="sc-search-cell">
+                    <span className={styles.cell}>
                       {hit.entry.kind !== 'dir' ? (
-                        <span className="sc-search-size">{formatBytes(hit.entry.size)}</span>
+                        <span className={styles.size}>{formatBytes(hit.entry.size)}</span>
                       ) : null}
-                      <span className="sc-search-date">{formatModifiedDateNs(hit.entry.mtime_ns)}</span>
+                      <span className={styles.date}>{formatModifiedDateNs(hit.entry.mtime_ns)}</span>
                     </span>
                   </button>
                 </li>

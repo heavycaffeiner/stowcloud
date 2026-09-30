@@ -1,5 +1,6 @@
 import { ALL_GRANT_PERMS, type GrantPermName } from '../../lib/api/client'
 import { Checkbox } from '../../ui/Checkbox'
+import * as styles from './GrantPermissionGrid.css'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
 
@@ -17,15 +18,15 @@ export interface GrantPermissionGridProps extends PermissionSets {
 
 export function GrantPermissionGrid({ allow, deny, setAllow, setDeny, permLabel, t }: GrantPermissionGridProps) {
   return (
-    <div className="sc-admin-permgrid">
-      <div className="sc-admin-permgrid-head">
+    <div className={styles.root}>
+      <div className={styles.head}>
         <span /> <span>{t('grant.allow')}</span>
         <span>{t('grant.deny')}</span>
       </div>
       {ALL_GRANT_PERMS.map((permission) => (
-        <div className="sc-admin-permgrid-row" key={permission}>
+        <div className={styles.row} key={permission}>
           <span>{permLabel[permission]}</span>
-          <span className="sc-admin-permgrid-cell">
+          <span className={styles.cell}>
             <Checkbox
               checked={allow.has(permission)}
               hideLabel
@@ -33,7 +34,7 @@ export function GrantPermissionGrid({ allow, deny, setAllow, setDeny, permLabel,
               onChange={(checked) => setAllow(togglePermission(allow, permission, checked))}
             />
           </span>
-          <span className="sc-admin-permgrid-cell">
+          <span className={styles.cell}>
             <Checkbox
               checked={deny.has(permission)}
               hideLabel

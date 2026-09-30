@@ -1,4 +1,7 @@
 import type { ReactNode } from 'react'
+import * as styles from './AdminCard.css'
+import * as textFieldStyles from '../../ui/TextField.css'
+import { cx } from '../../ui/cx'
 
 interface AdminCardProps {
   readonly id: string
@@ -15,14 +18,14 @@ export function AdminCard({ id, title, subtitle, icon, headingLevel = 'h3', body
   const Heading = headingLevel
   const headingId = `${id}-title`
   return (
-    <article className="sc-admin-card" id={id} aria-labelledby={headingId}>
-      <div className="sc-admin-card-head">
-        <div className="sc-admin-card-icon">{icon}</div>
-        <div className="sc-admin-card-meta">
-          <Heading className="sc-admin-card-title" id={headingId}>
+    <article className={cx(styles.root, textFieldStyles.onLowSurface)} id={id} aria-labelledby={headingId}>
+      <div className={styles.head}>
+        <div className={styles.icon}>{icon}</div>
+        <div className={styles.meta}>
+          <Heading className={styles.title} id={headingId}>
             {title}
           </Heading>
-          {subtitle ? <p className="sc-admin-card-subtitle">{subtitle}</p> : null}
+          {subtitle ? <p className={styles.subtitle}>{subtitle}</p> : null}
         </div>
       </div>
       {bodyClassName ? <div className={bodyClassName}>{children}</div> : children}

@@ -1,10 +1,12 @@
 import 'mdui/components/menu.js'
-import type { ReactNode } from 'react'
+import type { MouseEventHandler, ReactNode } from 'react'
 import { useEffect, useRef } from 'react'
 import { useI18n } from '../hooks/use-i18n'
 import { useOutsideDismiss } from '../hooks/use-outside-dismiss'
 import { useRestoreFocus } from '../hooks/use-restore-focus'
+import { cx } from './cx'
 import { Modal } from './Modal'
+import * as styles from './Menu.css'
 
 export interface MenuProps {
   open: boolean
@@ -44,12 +46,12 @@ export function Menu({ open, onClose, compact = false, x, y, align = 'start', ch
   if (compact) {
     return (
       <>
-        <div className="sc-sheet-scrim" onClick={close} aria-hidden="true" />
-        <Modal open className="sc-sheet" label={t('common.main_menu')} onClose={close}>
-          <div className="sc-sheet-handle-wrap" aria-hidden="true">
-            <div className="sc-sheet-handle" />
+        <div className={styles.sheetScrim} onClick={close} aria-hidden="true" />
+        <Modal open className={styles.sheet} label={t('common.main_menu')} onClose={close}>
+          <div className={styles.sheetHandleWrap} aria-hidden="true">
+            <div className={styles.sheetHandle} />
           </div>
-          <div className="sc-sheet-content">{children}</div>
+          <div className={styles.sheetContent}>{children}</div>
         </Modal>
       </>
     )
@@ -57,7 +59,7 @@ export function Menu({ open, onClose, compact = false, x, y, align = 'start', ch
   return (
     <div
       ref={rootRef}
-      className="sc-menu-shell"
+      className={styles.menuShell}
       style={{
         position: 'fixed',
         left,
@@ -66,7 +68,46 @@ export function Menu({ open, onClose, compact = false, x, y, align = 'start', ch
         maxHeight: top === undefined ? undefined : `calc(100vh - ${top}px - 8px)`
       }}
     >
-      <mdui-menu>{children}</mdui-menu>
+      <mdui-menu className={styles.menu}>{children}</mdui-menu>
     </div>
+  )
+}
+
+export interface MenuListProps {
+  id?: string
+  label?: string
+  className?: string
+  children?: ReactNode
+}
+
+export function MenuList({ id, label, className, children }: MenuListProps) {
+  return (
+    <div id={id} className={cx(styles.list, className)} role="menu" aria-label={label}>
+      {children}
+    </div>
+  )
+}
+
+export interface MenuItemProps {
+  /** Makes the item one choice of a radio group, checked or not. */
+  checked?: boolean
+  title?: string
+  className?: string
+  onClick?: MouseEventHandler<HTMLButtonElement>
+  children?: ReactNode
+}
+
+export function MenuItem({ checked, title, className, onClick, children }: MenuItemProps) {
+  return (
+    <button
+      type="button"
+      role={checked === undefined ? 'menuitem' : 'menuitemradio'}
+      aria-checked={checked}
+      title={title}
+      className={cx(styles.item, className)}
+      onClick={onClick}
+    >
+      {children}
+    </button>
   )
 }

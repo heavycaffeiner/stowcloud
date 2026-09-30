@@ -3,6 +3,8 @@ import { swReady } from '../../lib/crypto/download-sw'
 import { startLiveInvalidation } from '../../lib/query/live'
 import { useEventListener } from '../../hooks/use-event-listener'
 import type { StatePatch } from '../../lib/merge-state'
+import { cssVarName } from '../../ui/css-var'
+import { trayStackTop } from '../../ui/theme.css'
 
 /** State that belongs to the mounted application shell, not to a route. */
 export interface ShellState {
@@ -83,14 +85,14 @@ export function useTrayGeometry(trayStackRef: RefObject<HTMLDivElement | null>, 
     const publish = (): void => {
       const top =
         element.offsetHeight > 0 ? `${window.innerHeight - element.getBoundingClientRect().top + 12}px` : '0px'
-      document.documentElement.style.setProperty('--sc-tray-stack-top', top)
+      document.documentElement.style.setProperty(cssVarName(trayStackTop), top)
     }
     const observer = new ResizeObserver(publish)
     observer.observe(element)
     publish()
     return () => {
       observer.disconnect()
-      document.documentElement.style.removeProperty('--sc-tray-stack-top')
+      document.documentElement.style.removeProperty(cssVarName(trayStackTop))
     }
   }, [enabled, trayStackRef])
 }

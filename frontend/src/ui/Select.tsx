@@ -1,6 +1,7 @@
 import 'mdui/components/select.js'
 import 'mdui/components/menu-item.js'
 import { useEffect, useRef } from 'react'
+import * as styles from './Select.css'
 
 export interface SelectOption {
   value: string
@@ -81,9 +82,10 @@ export function Select({
   }, [onValueChange, onChange])
 
   return (
-    <div className="sc-select">
+    <div className={styles.root}>
       <mdui-select
         ref={ref}
+        className={styles.control}
         variant="outlined"
         value={value}
         label={label}
@@ -102,7 +104,7 @@ export function Select({
         }}
       >
         {options.map((option) => (
-          <mdui-menu-item key={option.value} value={option.value} disabled={option.disabled}>
+          <mdui-menu-item key={option.value} className={styles.item} value={option.value} disabled={option.disabled}>
             {option.text ?? option.label ?? option.value}
           </mdui-menu-item>
         ))}

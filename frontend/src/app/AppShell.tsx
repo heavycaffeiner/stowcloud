@@ -16,7 +16,6 @@ import { UploadTray } from '../features/uploads/UploadTray'
 import { ProgressCircular } from '../ui/ProgressCircular'
 import { Button } from '../ui/Button'
 import { ErrorBoundary } from '../ui/ErrorBoundary'
-import '../styles/app/shell.css.ts'
 import {
   browsePathFromUrl,
   useBrowsePathState,
@@ -27,6 +26,11 @@ import {
   type ShellState
 } from './hooks/use-shell-lifecycle'
 import { mergeState } from '../lib/merge-state'
+import * as styles from './AppShell.css'
+import * as iconButtonStyles from '../ui/IconButton.css'
+import * as routeErrorBoundaryStyles from './RouteErrorBoundary.css'
+import * as utilitiesStyles from '../ui/utilities.css'
+import { cx } from '../ui/cx'
 
 /** Where the create menu should open, in viewport coordinates. `align` says
  * which edge `x` refers to: a left-hand trigger anchors its left edge, a
@@ -205,11 +209,11 @@ export function AppShell() {
   if (screen === 'first-run') return <Navigate to="/setup" replace />
   if (sessionUnavailable) {
     return (
-      <main className="sc-error-page">
-        <section className="sc-error-page-card" role="alert">
+      <main className={routeErrorBoundaryStyles.root}>
+        <section className={routeErrorBoundaryStyles.card} role="alert">
           <h1>{t('session.connection_error')}</h1>
           <p>{t('session.connection_error_hint')}</p>
-          <div className="sc-error-page-actions">
+          <div>
             <Button onClick={() => void session.refetch()}>{t('common.retry')}</Button>
           </div>
         </section>
@@ -218,7 +222,7 @@ export function AppShell() {
   }
   if (screen !== 'browser') {
     return (
-      <div className="sc-app-shell-boot" role="status" aria-label={t('nav.checking_your_session')}>
+      <div className={styles.boot} role="status" aria-label={t('nav.checking_your_session')}>
         <ProgressCircular size={40} />
       </div>
     )
@@ -226,13 +230,13 @@ export function AppShell() {
 
   return (
     <>
-      <div className={compact ? 'sc-app-shell sc-app-shell-compact' : 'sc-app-shell'}>
-        <header className="sc-shell-header">
-          <div className="sc-shell-header-left">
+      <div className={cx(styles.root, compact && styles.compact)}>
+        <header className={styles.header}>
+          <div className={styles.headerLeft}>
             {!compact ? (
               <button
                 type="button"
-                className="sc-shell-header-menu-btn sc-icon-button"
+                className={cx(styles.headerMenuBtn, iconButtonStyles.root)}
                 aria-label={t('nav.toggle_sidebar')}
                 aria-expanded={!sidebarCollapsed}
                 onClick={() => ui.toggleSidebar()}
@@ -242,38 +246,38 @@ export function AppShell() {
             ) : null}
             <button
               type="button"
-              className="sc-shell-header-brand-btn"
+              className={styles.headerBrandBtn}
               onClick={() => navigateTo('files', browseHref(browseTarget()))}
             >
-              <span className="sc-shell-header-brand">Stowcloud</span>
+              <span className={styles.headerBrand}>Stowcloud</span>
             </button>
           </div>
 
-          <div className="sc-shell-header-center">
+          <div className={styles.headerCenter}>
             <button
-              className="sc-shell-header-search sc-focus-ring"
+              className={cx(styles.headerSearch, utilitiesStyles.focusRing)}
               type="button"
               onClick={openSearch}
               aria-label={t('common.search')}
             >
-              <span className="sc-shell-header-search-icon">
+              <span className={styles.headerSearchIcon}>
                 <Icon name="search" size={18} />
               </span>
-              <span className="sc-shell-header-search-placeholder">{t('common.search')}</span>
-              <span className="sc-shell-header-search-hints">
-                <kbd className="sc-shell-header-shortcut">/</kbd>
-                <span className="sc-shell-header-filter-icon" aria-hidden="true">
+              <span className={styles.headerSearchPlaceholder}>{t('common.search')}</span>
+              <span className={styles.headerSearchHints}>
+                <kbd className={styles.headerShortcut}>/</kbd>
+                <span className={styles.headerFilterIcon} aria-hidden="true">
                   <Icon name="tune" size={16} />
                 </span>
               </span>
             </button>
           </div>
 
-          <div className="sc-shell-header-right">
+          <div className={styles.headerRight}>
             {!compact ? (
               <button
                 type="button"
-                className="sc-shell-header-icon-btn sc-icon-button"
+                className={cx(styles.headerIconBtn, iconButtonStyles.root)}
                 aria-label={t('nav.help')}
                 onClick={() =>
                   window.open('https://github.com/heavycaffeiner/Stowcloud', '_blank', 'noopener,noreferrer')
@@ -285,32 +289,33 @@ export function AppShell() {
             {!compact ? (
               <button
                 type="button"
-                className="sc-shell-header-icon-btn sc-icon-button"
+                className={cx(styles.headerIconBtn, iconButtonStyles.root)}
                 aria-label={t('common.settings')}
                 onClick={() => navigateTo('settings', '/settings')}
               >
                 <Icon name="settings" size={20} />
               </button>
             ) : null}
-            <div className="sc-shell-header-account-wrap" ref={accountMenuRef}>
+            <div className={styles.headerAccountWrap} ref={accountMenuRef}>
               <button
                 type="button"
-                className="sc-shell-header-avatar-btn"
+                className={styles.headerAvatarBtn}
                 aria-label={session.data?.user.display_name || session.data?.user.name || 'User'}
                 aria-haspopup="menu"
                 aria-expanded={accountMenuOpen}
                 onClick={() => setShell((current) => ({ accountMenuOpen: !current.accountMenuOpen }))}
               >
-                <span className="sc-shell-header-avatar">{userInitial}</span>
+                <span className={styles.headerAvatar}>{userInitial}</span>
               </button>
               {accountMenuOpen ? (
-                <div className="sc-shell-header-account-menu" role="menu">
-                  <div className="sc-shell-header-account-name">
+                <div className={styles.headerAccountMenu} role="menu">
+                  <div className={styles.headerAccountName}>
                     {session.data?.user.display_name || session.data?.user.name}
                   </div>
                   <button
                     type="button"
                     role="menuitem"
+                    className={styles.headerAccountItem}
                     onClick={() => {
                       setShell({ accountMenuOpen: false })
                       navigateTo('settings', '/settings')
@@ -319,7 +324,7 @@ export function AppShell() {
                     <Icon name="settings" size={18} />
                     {t('common.settings')}
                   </button>
-                  <button type="button" role="menuitem" onClick={signOut}>
+                  <button type="button" role="menuitem" className={styles.headerAccountItem} onClick={signOut}>
                     <Icon name="close" size={18} />
                     {t('common.sign_out')}
                   </button>
@@ -329,7 +334,7 @@ export function AppShell() {
           </div>
         </header>
 
-        <div className="sc-shell-body">
+        <div className={styles.body}>
           {!compact ? (
             <NavigationDrawer
               collapsed={sidebarCollapsed}
@@ -346,7 +351,10 @@ export function AppShell() {
           ) : null}
 
           <main
-            className={`sc-app-shell-main${!compact && sidebarCollapsed ? ' sc-app-shell-main-collapsed' : !compact ? ' sc-app-shell-main-drawer' : ''}`}
+            className={cx(
+              styles.main,
+              !compact && sidebarCollapsed ? styles.mainCollapsed : !compact && styles.mainDrawer
+            )}
           >
             <Outlet />
           </main>
@@ -407,7 +415,7 @@ export function AppShell() {
         ) : null}
       </div>
 
-      <div ref={trayStackRef} className={compact ? 'sc-tray-stack sc-tray-stack-compact' : 'sc-tray-stack'}>
+      <div ref={trayStackRef} className={cx(styles.trayStack, compact && styles.trayStackCompact)}>
         <ErrorBoundary>
           <JobTray />
         </ErrorBoundary>

@@ -13,7 +13,7 @@ import { SecondaryPageState } from '../secondary/SecondaryPageState'
 import { TrashOperation, TrashRow } from './TrashView'
 import { useTrashActions } from './hooks/use-trash-actions'
 import { useTrashSelection } from './hooks/use-trash-selection'
-import '../../../styles/app/routes/simple-pages.css.ts'
+import * as styles from './TrashPage.css'
 
 export function TrashPage() {
   const { t } = useI18n()
@@ -32,7 +32,6 @@ export function TrashPage() {
 
   return (
     <SecondaryPageShell
-      className="sc-trash"
       title={t('common.trash')}
       refreshLabel={t('common.refresh')}
       onRefresh={() => void trash.refetch()}
@@ -55,8 +54,8 @@ export function TrashPage() {
       }
     >
       {entries.length > 0 ? (
-        <div className="sc-trash-toolbar">
-          <label className="sc-trash-select-all">
+        <div className={styles.toolbar}>
+          <label className={styles.selectAll}>
             <input
               type="checkbox"
               checked={allSelected}
@@ -67,7 +66,7 @@ export function TrashPage() {
             />
             {t('trash.select_all', { selected: selected.size, total: entries.length })}
           </label>
-          <div className="sc-trash-toolbar-actions">
+          <div className={styles.toolbarActions}>
             <Button
               variant="text"
               disabled={selected.size === 0 || busy}
@@ -89,9 +88,9 @@ export function TrashPage() {
         </div>
       ) : null}
       {notice ? (
-        <p className="sc-trash-notice" role="status" aria-live="polite">
+        <p className={styles.notice} role="status" aria-live="polite">
           {notice}{' '}
-          <button type="button" onClick={() => setState({ notice: null })}>
+          <button type="button" className={styles.noticeClose} onClick={() => setState({ notice: null })}>
             {t('common.close')}
           </button>
         </p>
@@ -107,11 +106,10 @@ export function TrashPage() {
       >
         {entries.length > 0 ? (
           <VirtualList
-            className="sc-trash-list"
             items={entries}
             itemKey={(entry) => entry.id}
             estimateSize={61}
-            itemProps={() => ({ className: 'sc-trash-row' })}
+            itemProps={() => ({ className: styles.row })}
             pinnedKeys={purgeOpen && purgeSingle !== null ? [purgeSingle] : undefined}
             renderItem={(entry) => (
               <TrashRow

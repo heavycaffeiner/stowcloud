@@ -5,6 +5,7 @@ import { Icon } from '../../ui/Icon'
 import { IconButton } from '../../ui/IconButton'
 import { Modal } from '../../ui/Modal'
 import { SearchPanel } from './SearchPanel'
+import * as styles from './SearchSheet.css'
 
 export interface SearchSheetProps {
   readonly open: boolean
@@ -22,12 +23,12 @@ export function SearchSheet({ open, scope = '', onClose }: SearchSheetProps) {
   return (
     <Modal
       open={open}
-      className="sc-search-sheet"
+      className={styles.root}
       label={t('search.title')}
       onClose={onClose}
       initialFocus={(dialog) => dialog.querySelector<HTMLElement>('input[type="search"]')}
     >
-      <div className="sc-search-sheet-body">
+      <div className={styles.body}>
         <ErrorBoundary>
           <SearchPanel scope={scope} autoFocus onNavigated={onClose} trailing={trailing} />
         </ErrorBoundary>

@@ -1,6 +1,8 @@
 import { useRef } from 'react'
 import { useI18n } from '../../hooks/use-i18n'
 import { Icon } from '../../ui/Icon'
+import * as styles from './FileTreeItem.css'
+import { cx } from '../../ui/cx'
 
 export interface FileTreeItemProps {
   path: string
@@ -30,12 +32,12 @@ export function FileTreeItem({
 
   return (
     <div
-      className={`sc-tree-row${active ? ' sc-tree-row-active' : ''}${ancestor ? ' sc-tree-row-ancestor' : ''}`}
+      className={cx(styles.root, active && styles.active, ancestor && styles.ancestor)}
       style={{ paddingInlineStart: depth * 16 + 8 }}
     >
       <button
         type="button"
-        className="sc-tree-row-twisty"
+        className={styles.twisty}
         data-tree-toggle
         tabIndex={-1}
         aria-expanded={expanded}
@@ -45,23 +47,20 @@ export function FileTreeItem({
           onToggle(path)
         }}
       >
-        <span
-          className={`sc-tree-row-twisty-icon${expanded ? ' sc-tree-row-twisty-icon-expanded' : ''}`}
-          aria-hidden="true"
-        >
+        <span className={cx(styles.twistyIcon, expanded && styles.twistyIconExpanded)} aria-hidden="true">
           <Icon name="chevron_right" size={16} />
         </span>
       </button>
       <button
         ref={label}
         type="button"
-        className="sc-tree-row-label"
+        className={styles.label}
         data-tree-label
         tabIndex={tabIndex}
         onClick={() => onNavigate(path)}
       >
-        <Icon name="folder" />
-        <span className="sc-tree-row-name">{name}</span>
+        <Icon name="folder" className={styles.icon} />
+        <span className={styles.name}>{name}</span>
       </button>
     </div>
   )

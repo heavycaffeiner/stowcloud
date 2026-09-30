@@ -9,7 +9,9 @@ import { useSetupFlows, MIN_PASSWORD_LENGTH, toList } from './hooks/use-setup-fl
 import { useSetupState } from './hooks/use-setup-state'
 import type { SetupFinding } from '../../../lib/api/setup'
 import { ProgressLinear } from '../../../ui/ProgressLinear'
-import '../../../styles/app/routes/auth.css.ts'
+import * as authStyles from '../auth.css'
+import * as utilitiesStyles from '../../../ui/utilities.css'
+import { cx } from '../../../ui/cx'
 
 function warningText(
   t: (key: string, params?: Record<string, string | number>) => string,
@@ -59,10 +61,10 @@ export function SetupPage() {
     (shareName.trim() === '') === (sharePath.trim() === '')
   useDocumentTitle(t('setup.create_administrator_account'))
   return (
-    <main className="sc-auth-page">
-      <form className="sc-auth-card" onSubmit={flows.submit}>
-        <h1 className="sc-auth-card-title">{t('setup.create_administrator_account')}</h1>
-        <p className="sc-auth-card-subtitle">
+    <main className={authStyles.page}>
+      <form className={authStyles.card} onSubmit={flows.submit}>
+        <h1 className={authStyles.title}>{t('setup.create_administrator_account')}</h1>
+        <p className={authStyles.subtitle}>
           {t('setup.on_server_s_first_start')} <code>setup-token</code> {t('setup.file_data_directory')}
           {flows.isMock ? (
             <>
@@ -73,24 +75,26 @@ export function SetupPage() {
         </p>
         {accountCreated ? (
           <>
-            <p className="sc-auth-card-success" role="status">
+            <p className={authStyles.success} role="status">
               {t('setup.account_created')}
             </p>
             {doneButLoginFailed ? (
-              <p className="sc-auth-card-error" role="alert">
+              <p className={authStyles.error} role="alert">
                 <Link to="/login">{t('setup.go_sign_page')}</Link> {t('setup.sign')}
               </p>
             ) : null}
             {warnings.length > 0 ? (
-              <div className="sc-auth-card-warning" role="status">
+              <div className={authStyles.warning} role="status">
                 {warnings.map((warning, index) => (
-                  <p key={`${warning.reason}-${index}`}>{warningText(t, warning)}</p>
+                  <p key={`${warning.reason}-${index}`} className={authStyles.warningText}>
+                    {warningText(t, warning)}
+                  </p>
                 ))}
               </div>
             ) : null}
             {shareFailed ? (
               <>
-                <p className="sc-auth-card-error" role="alert">
+                <p className={authStyles.error} role="alert">
                   {t('setup.account_created_share_failed')}
                 </p>
                 <TextField
@@ -99,14 +103,16 @@ export function SetupPage() {
                   autoComplete="off"
                   onValueChange={actions.setShareName}
                 />
-                <div className="sc-auth-card-path-row">
+                <div className={authStyles.pathRow}>
                   <TextField
+                    className={authStyles.pathField}
                     value={sharePath}
                     label={t('folder_share.server_path')}
                     autoComplete="off"
                     onValueChange={actions.setSharePath}
                   />
                   <Button
+                    className={authStyles.pathButton}
                     variant="outlined"
                     disabled={!pickerAuthenticated}
                     onClick={() => actions.patch({ pickerOpen: true })}
@@ -115,17 +121,18 @@ export function SetupPage() {
                   </Button>
                 </div>
                 {shareRetryError ? (
-                  <p className="sc-auth-card-error" role="alert">
+                  <p className={authStyles.error} role="alert">
                     {shareRetryError}
                   </p>
                 ) : null}
                 {shareRetryError && pickerAuthenticated ? (
-                  <Link className="sc-auth-card-setup-link sc-focus-ring" to="/admin#shares">
+                  <Link className={cx(authStyles.setupLink, utilitiesStyles.focusRing)} to="/admin#shares">
                     {t('setup.go_to_admin_shares')}
                   </Link>
                 ) : null}
-                <div className="sc-auth-card-actions">
+                <div className={authStyles.actions}>
                   <Button
+                    className={authStyles.action}
                     disabled={
                       flows.login.isPending ||
                       flows.retryShare.isPending ||
@@ -140,8 +147,12 @@ export function SetupPage() {
                 </div>
               </>
             ) : (
-              <div className="sc-auth-card-actions">
-                <Button loading={flows.login.isPending} onClick={() => void flows.continueAfterSetup()}>
+              <div className={authStyles.actions}>
+                <Button
+                  className={authStyles.action}
+                  loading={flows.login.isPending}
+                  onClick={() => void flows.continueAfterSetup()}
+                >
                   {t('setup.continue_anyway')}
                 </Button>
               </div>
@@ -149,10 +160,16 @@ export function SetupPage() {
           </>
         ) : (
           <>
-            <nav className="sc-auth-card-steps" aria-label={t('setup.create_administrator_account')}>
-              <span className={step === 1 ? 'is-active' : ''}>1. {t('setup.create_administrator_account')}</span>
-              <span className={step === 2 ? 'is-active' : ''}>2. {t('setup.how_this_server_is_reached')}</span>
-              <span className={step === 3 ? 'is-active' : ''}>3. {t('setup.first_shared_folder')}</span>
+            <nav className={authStyles.steps} aria-label={t('setup.create_administrator_account')}>
+              <span className={cx(authStyles.step, step === 1 && authStyles.stepActive)}>
+                1. {t('setup.create_administrator_account')}
+              </span>
+              <span className={cx(authStyles.step, step === 2 && authStyles.stepActive)}>
+                2. {t('setup.how_this_server_is_reached')}
+              </span>
+              <span className={cx(authStyles.step, step === 3 && authStyles.stepActive)}>
+                3. {t('setup.first_shared_folder')}
+              </span>
             </nav>
             {step === 1 ? (
               <>
@@ -178,13 +195,14 @@ export function SetupPage() {
                   onValueChange={actions.setPassword}
                 />
                 {password ? (
-                  <div className="sc-auth-card-strength">
+                  <div className={authStyles.strength}>
                     <ProgressLinear
+                      className={authStyles.strengthBar}
                       value={strength.ratio}
                       tone={strength.tier}
                       label={t('common.password_strength', { level: strength.label })}
                     />
-                    <span className="sc-auth-card-strength-label">{strength.label}</span>
+                    <span className={authStyles.strengthLabel}>{strength.label}</span>
                   </div>
                 ) : null}
                 <TextField
@@ -205,67 +223,79 @@ export function SetupPage() {
                   autoComplete="off"
                   onValueChange={actions.setAppHosts}
                 />
-                <p className="sc-auth-card-hint">{t('setup.app_hosts_hint')}</p>
+                <p className={authStyles.hint}>{t('setup.app_hosts_hint')}</p>
                 <TextField
                   value={trustedProxies}
                   label={t('server.trusted_proxies_comma_separated')}
                   autoComplete="off"
                   onValueChange={actions.setTrustedProxies}
                 />
-                <p className="sc-auth-card-hint">{t('setup.trusted_proxies_hint')}</p>
+                <p className={authStyles.hint}>{t('setup.trusted_proxies_hint')}</p>
               </>
             ) : null}
             {step === 3 ? (
               <>
-                <p className="sc-auth-card-hint">{t('setup.first_share_hint')}</p>
+                <p className={authStyles.hint}>{t('setup.first_share_hint')}</p>
                 <TextField
                   value={shareName}
                   label={t('common.name')}
                   autoComplete="off"
                   onValueChange={actions.setShareName}
                 />
-                <div className="sc-auth-card-path-row">
+                <div className={authStyles.pathRow}>
                   <TextField
+                    className={authStyles.pathField}
                     value={sharePath}
                     label={t('folder_share.server_path')}
                     autoComplete="off"
                     onValueChange={actions.setSharePath}
                   />
-                  <Button variant="outlined" onClick={() => actions.patch({ pickerOpen: true })}>
+                  <Button
+                    className={authStyles.pathButton}
+                    variant="outlined"
+                    onClick={() => actions.patch({ pickerOpen: true })}
+                  >
                     {t('picker.browse_folder')}
                   </Button>
                 </div>
               </>
             ) : null}
             {warnings.length > 0 ? (
-              <div className="sc-auth-card-warning" role="alert">
+              <div className={authStyles.warning} role="alert">
                 {warnings.map((warning, index) => (
-                  <p key={`${warning.reason}-${index}`}>{warningText(t, warning)}</p>
+                  <p key={`${warning.reason}-${index}`} className={authStyles.warningText}>
+                    {warningText(t, warning)}
+                  </p>
                 ))}
               </div>
             ) : null}
             {errorMessage ? (
-              <p className="sc-auth-card-error" role="alert">
+              <p className={authStyles.error} role="alert">
                 {errorMessage}
               </p>
             ) : null}
-            <div className="sc-auth-card-actions">
+            <div className={authStyles.actions}>
               {step > 1 ? (
-                <Button variant="outlined" type="button" onClick={actions.previousStep}>
+                <Button className={authStyles.action} variant="outlined" type="button" onClick={actions.previousStep}>
                   {t('common.back')}
                 </Button>
               ) : null}
               {step < 3 ? (
-                <Button type="button" onClick={actions.nextStep}>
+                <Button className={authStyles.action} type="button" onClick={actions.nextStep}>
                   {t('common.continue')}
                 </Button>
               ) : (
-                <Button type="submit" disabled={!canSubmit} loading={flows.setup.isPending || flows.login.isPending}>
+                <Button
+                  className={authStyles.action}
+                  type="submit"
+                  disabled={!canSubmit}
+                  loading={flows.setup.isPending || flows.login.isPending}
+                >
                   {t('setup.create_administrator_account')}
                 </Button>
               )}
             </div>
-            <Link className="sc-auth-card-setup-link sc-focus-ring" to="/login">
+            <Link className={cx(authStyles.setupLink, utilitiesStyles.focusRing)} to="/login">
               {t('setup.already_have_account_sign')}
             </Link>
           </>

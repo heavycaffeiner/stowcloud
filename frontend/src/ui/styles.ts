@@ -1,3 +1,21 @@
-// The entry imports this once, ahead of the app styles, so these keep their place in the cascade.
-import '../styles/ui/primitives.css.ts'
+// The entry imports this before anything else, so mdui's tokens come first, the theme overrides them,
+// and feature styles load after the ui layer and win ties against it.
 import 'mdui/mdui.css'
+import './theme.css'
+import './Checkbox.css'
+import './Switch.css'
+import './Button.css'
+import './IconButton.css'
+import './TextField.css'
+import './Select.css'
+import './ListItem.css'
+import './Menu.css'
+import './ProgressLinear.css'
+import './utilities.css'
+import './NavigationBar.css'
+import './Chip.css'
+import './Dialog.css'
+import './ErrorBoundary.css'
+import './Icon.css'
+import './SegmentedControl.css'
+import './Snackbar.css'

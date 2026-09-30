@@ -5,15 +5,17 @@ export interface ProgressCircularProps {
   value?: number | null
   size?: number
   label?: string
+  className?: string
 }
 
-export function ProgressCircular({ value = null, size = 24, label }: ProgressCircularProps) {
+export function ProgressCircular({ value = null, size = 24, label, className }: ProgressCircularProps) {
   const { t } = useI18n()
   const indeterminate = value === null || typeof value !== 'number' || !Number.isFinite(value)
   const percent = Math.round(Math.min(Math.max(value ?? 0, 0), 1) * 100)
   // mdui gives the element no role, so the host carries the progressbar semantics.
   return (
     <mdui-circular-progress
+      className={className}
       value={indeterminate ? undefined : percent / 100}
       max={1}
       style={{ width: size, height: size }}

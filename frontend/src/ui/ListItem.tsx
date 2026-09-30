@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react'
+import { cx } from './cx'
+import * as styles from './ListItem.css'
 
 export interface ListItemProps {
   selected?: boolean
@@ -7,12 +9,21 @@ export interface ListItemProps {
   trailing?: ReactNode
   headline: ReactNode
   supporting?: ReactNode
+  className?: string
 }
 
-export function ListItem({ selected = false, onClick, leading, trailing, headline, supporting }: ListItemProps) {
+export function ListItem({
+  selected = false,
+  onClick,
+  leading,
+  trailing,
+  headline,
+  supporting,
+  className
+}: ListItemProps) {
   return (
     <div
-      className={`sc-list-item${selected ? ' sc-list-item-selected' : ''}${onClick ? ' sc-list-item-clickable' : ''}`}
+      className={cx(styles.root, selected && styles.selected, onClick && styles.clickable, className)}
       onClick={onClick ? () => onClick() : undefined}
       role={onClick ? 'button' : 'presentation'}
       tabIndex={onClick ? 0 : undefined}
@@ -27,12 +38,12 @@ export function ListItem({ selected = false, onClick, leading, trailing, headlin
           : undefined
       }
     >
-      {leading ? <span className="sc-list-item-leading">{leading}</span> : null}
-      <span className="sc-list-item-text">
-        <span className="sc-list-item-headline">{headline}</span>
-        {supporting ? <span className="sc-list-item-supporting">{supporting}</span> : null}
+      {leading ? <span className={styles.leading}>{leading}</span> : null}
+      <span className={styles.text}>
+        <span className={styles.headline}>{headline}</span>
+        {supporting ? <span className={styles.supporting}>{supporting}</span> : null}
       </span>
-      {trailing ? <span className="sc-list-item-trailing">{trailing}</span> : null}
+      {trailing ? <span className={styles.trailing}>{trailing}</span> : null}
     </div>
   )
 }

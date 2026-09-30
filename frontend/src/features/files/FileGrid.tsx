@@ -17,7 +17,11 @@ import { useFileActivation } from './hooks/use-file-activation'
 import { useFileFocusPreservation } from './hooks/use-file-focus-preservation'
 import { Icon } from '../../ui/Icon'
 import { CheckboxIndicator } from '../../ui/Checkbox'
-import '../../styles/features/files/browse-ui.css.ts'
+import * as styles from './FileGrid.css'
+import * as utilitiesStyles from '../../ui/utilities.css'
+import { cx } from '../../ui/cx'
+import { cssVarName } from '../../ui/css-var'
+import { vars } from '../../ui/theme.css'
 
 export interface FileGridProps {
   entries: readonly Entry[]
@@ -68,7 +72,7 @@ function FileCardHeader({
   }
   const check = (
     <span
-      className="sc-file-grid-check sc-touch-target"
+      className={cx(styles.check, utilitiesStyles.touchTarget)}
       onClick={(event) => {
         event.stopPropagation()
         onCancel()
@@ -81,16 +85,16 @@ function FileCardHeader({
       <CheckboxIndicator checked={selected} label={t('common.select', { name: entry.name })} />
     </span>
   )
-  const name = <MiddleEllipsis name={entry.name} className="sc-file-grid-name" />
+  const name = <MiddleEllipsis name={entry.name} className={styles.name} />
   const badge = entry.confusable ? (
-    <span className="sc-file-grid-badge" title={t('common.look_alike_characters')}>
+    <span className={styles.badge} title={t('common.look_alike_characters')}>
       <Icon name="warning" />
     </span>
   ) : null
   const kebab = (
     <button
       type="button"
-      className="sc-file-grid-kebab"
+      className={styles.kebab}
       tabIndex={-1}
       aria-haspopup="menu"
       aria-expanded={menuFor === entry.name}
@@ -110,7 +114,7 @@ function FileCardHeader({
   return isFolder ? (
     <>
       {check}
-      <span className="sc-file-grid-type">
+      <span className={styles.type}>
         <Icon name="folder" />
       </span>
       {name}
@@ -118,7 +122,7 @@ function FileCardHeader({
       {kebab}
     </>
   ) : (
-    <div className="sc-file-grid-head">
+    <div className={styles.head}>
       {check}
       {name}
       {badge}
@@ -195,7 +199,8 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
     const element = viewport.current
     if (!element) return
     const scroll = element.scrollTop
-    const inlinePad = Number.parseFloat(getComputedStyle(element).getPropertyValue('--sc-content-pad')) || 24
+    const inlinePad =
+      Number.parseFloat(getComputedStyle(element).getPropertyValue(cssVarName(vars.layout.contentPad))) || 24
     setMetrics({
       width: element.clientWidth,
       scroll,
@@ -378,12 +383,12 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
       return (
         <div
           key={`skeleton-${index}`}
-          className={`sc-file-grid-card sc-file-grid-card-${isFolder ? 'folder' : 'file'} sc-file-grid-skeleton`}
+          className={cx(styles.card, isFolder ? styles.cardFolder : styles.cardFile, styles.skeleton)}
           style={{ width: cardW }}
           aria-busy="true"
         >
-          <span className="sc-file-grid-skeleton-line" />
-          {!isFolder ? <span className="sc-file-grid-skeleton-block" /> : null}
+          <span className={styles.skeletonLine} />
+          {!isFolder ? <span className={styles.skeletonBlock} /> : null}
         </div>
       )
     const selected = names.has(entry.name)
@@ -394,7 +399,12 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
       <div
         id={domId(entry.name)}
         key={entry.path}
-        className={`sc-file-grid-card sc-file-grid-card-${isFolder ? 'folder' : 'file'}${selected ? ' sc-file-grid-card-selected' : ''}${focusedCard ? ' sc-file-grid-card-focused' : ''}`}
+        className={cx(
+          styles.card,
+          isFolder ? styles.cardFolder : styles.cardFile,
+          selected && styles.cardSelected,
+          focusedCard && styles.cardFocused
+        )}
         role="gridcell"
         aria-colindex={col + 1}
         aria-selected={selected}
@@ -418,10 +428,10 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
         />
         {!isFolder ? (
           <>
-            <div className="sc-file-grid-thumb">
-              <Thumbnail entry={entry} dim={512} fallback={icon} iconSize={40} />
+            <div className={styles.thumb}>
+              <Thumbnail entry={entry} dim={512} fallback={icon} iconSize={40} imageClassName={styles.thumbImg} />
             </div>
-            <span className="sc-file-grid-meta">{formatEntrySize(entry.size, encrypted)}</span>
+            <span className={styles.meta}>{formatEntrySize(entry.size, encrypted)}</span>
           </>
         ) : null}
       </div>
@@ -438,7 +448,7 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
       return (
         <div
           key={`${isFolder ? 'd' : 'f'}-${row}`}
-          className="sc-file-grid-row"
+          className={styles.row}
           role="row"
           aria-rowindex={(isFolder ? row : folderRows + row) + 1}
           style={{ height: isFolder ? folderRowH : fileRowH, columnGap: card.columnGap }}
@@ -457,7 +467,7 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
     <div
       ref={viewport}
       data-density={density}
-      className={`sc-file-grid sc-file-grid-contained${names.size ? ' sc-file-grid-reserve-selection' : ''}`}
+      className={cx(styles.root, styles.contained, names.size > 0 && styles.reserveSelection)}
       style={{ touchAction: 'manipulation' }}
       role="grid"
       aria-multiselectable="true"
@@ -474,22 +484,22 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
       onContextMenu={activation.cancel}
     >
       {total === 0 && !loading ? (
-        <p className="sc-file-grid-empty">{t('common.folder_empty')}</p>
+        <p className={styles.empty}>{t('common.folder_empty')}</p>
       ) : (
         <>
           {folderCount > 0 ? (
             <>
-              <p className="sc-file-grid-group" aria-hidden="true">
+              <p className={styles.group} aria-hidden="true">
                 {t('grid.folders')}
               </p>
               <div
                 ref={folderEl}
-                className="sc-file-grid-section"
+                className={styles.section}
                 role="rowgroup"
                 aria-label={t('grid.folders')}
                 style={{ height: folderWin.totalHeight }}
               >
-                <div className="sc-file-grid-window" style={{ transform: `translate3d(0,${folderWin.padTop}px,0)` }}>
+                <div className={styles.window} style={{ transform: `translate3d(0,${folderWin.padTop}px,0)` }}>
                   {renderSection(true)}
                 </div>
               </div>
@@ -497,17 +507,17 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
           ) : null}
           {fileCount > 0 ? (
             <>
-              <p className="sc-file-grid-group" aria-hidden="true">
+              <p className={styles.group} aria-hidden="true">
                 {t('grid.files')}
               </p>
               <div
                 ref={fileEl}
-                className="sc-file-grid-section"
+                className={styles.section}
                 role="rowgroup"
                 aria-label={t('grid.files')}
                 style={{ height: fileWin.totalHeight }}
               >
-                <div className="sc-file-grid-window" style={{ transform: `translate3d(0,${fileWin.padTop}px,0)` }}>
+                <div className={styles.window} style={{ transform: `translate3d(0,${fileWin.padTop}px,0)` }}>
                   {renderSection(false)}
                 </div>
               </div>

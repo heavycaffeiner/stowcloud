@@ -23,7 +23,8 @@ import { Icon } from '../../../ui/Icon'
 import { IconButton } from '../../../ui/IconButton'
 import { MiddleEllipsis } from '../../../features/files/MiddleEllipsis'
 import { useDocumentTitle } from '../../hooks/use-document-title'
-import '../../../styles/app/routes/edit/editor.css.ts'
+import * as styles from './EditPage.css'
+import { cx } from '../../../ui/cx'
 
 export function EditPage() {
   const { t } = useI18n()
@@ -123,8 +124,8 @@ export function EditPage() {
 
   if (isDir)
     return (
-      <main className="sc-edit">
-        <p className="sc-edit-error" role="alert">
+      <main className={styles.root}>
+        <p className={styles.error} role="alert">
           {t('editor.folder_cannot_opened_editor')}
         </p>
       </main>
@@ -141,49 +142,49 @@ export function EditPage() {
   void sessionRevision
 
   return (
-    <main className="sc-edit">
-      <header className="sc-edit-toolbar">
+    <main className={styles.root}>
+      <header className={styles.toolbar}>
         <IconButton label={t('editor.go_back')} onClick={() => void navigate(`/b${parentOf(path)}`)}>
           <Icon name="chevron_left" />
         </IconButton>
-        <span className="sc-edit-file-icon" aria-hidden="true">
+        <span className={styles.fileIcon} aria-hidden="true">
           <Icon name="edit_document" />
         </span>
-        <div className="sc-edit-identity">
-          <div className="sc-edit-title">
-            <MiddleEllipsis name={filename} className="sc-edit-filename" />
+        <div className={styles.identity}>
+          <div className={styles.title}>
+            <MiddleEllipsis name={filename} className={styles.filename} />
             {dirty ? (
-              <span className="sc-edit-badge sc-edit-badge-dirty" title={t('editor.unsaved_changes')}>
+              <span className={cx(styles.badge, styles.badgeDirty)} title={t('editor.unsaved_changes')}>
                 {t('editor.unsaved_changes')}
               </span>
             ) : null}
           </div>
-          <div className="sc-edit-details">
-            <span className="sc-edit-language">{languageName ?? t('editor.plain_text')}</span>
-            {entry ? <span className="sc-edit-meta">{formatBytes(entry.size)}</span> : null}
+          <div className={styles.details}>
+            <span className={styles.language}>{languageName ?? t('editor.plain_text')}</span>
+            {entry ? <span className={styles.meta}>{formatBytes(entry.size)}</span> : null}
             {readOnly && entry ? (
-              <span className="sc-edit-badge sc-edit-badge-readonly">{t('common.read_only')}</span>
+              <span className={cx(styles.badge, styles.badgeReadonly)}>{t('common.read_only')}</span>
             ) : null}
           </div>
         </div>
-        <div className="sc-edit-actions">
+        <div className={styles.actions}>
           <Button loading={saveMutation.isPending} disabled={!canSave} onClick={() => void saveFlow.save()}>
             {t('editor.save_ctrl_s')}
           </Button>
         </div>
       </header>
-      <div className="sc-edit-body">
+      <div className={styles.body}>
         {locked ? (
-          <div className="sc-edit-locked" role="status">
+          <div className={styles.locked} role="status">
             <p>{t('encryption.unlock_hint')}</p>
             <Button onClick={() => actions.setUnlockRequested(true)}>{t('encryption.unlock')}</Button>
           </div>
         ) : loading ? (
-          <div className="sc-edit-loading">
+          <div className={styles.loading}>
             <ProgressCircular size={40} />
           </div>
         ) : loadError ? (
-          <p className="sc-edit-error" role="alert">
+          <p className={styles.error} role="alert">
             {loadError}
           </p>
         ) : (
@@ -201,7 +202,7 @@ export function EditPage() {
         )}
       </div>
       {saveError ? (
-        <p className="sc-edit-error" role="alert">
+        <p className={styles.error} role="alert">
           {saveError}
         </p>
       ) : null}

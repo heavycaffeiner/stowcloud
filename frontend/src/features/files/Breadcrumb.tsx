@@ -2,8 +2,10 @@ import { Fragment, useId, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import { useI18n } from '../../hooks/use-i18n'
 import { useCompact } from '../../ui/use-compact'
-import { Menu } from '../../ui/Menu'
+import { Menu, MenuItem, MenuList } from '../../ui/Menu'
 import { Icon } from '../../ui/Icon'
+import * as styles from './Breadcrumb.css'
+import { cx } from '../../ui/cx'
 
 export interface BreadcrumbCrumb {
   label: string
@@ -33,15 +35,15 @@ export function Breadcrumb({ crumbs, onNavigate }: BreadcrumbProps) {
   }
 
   return (
-    <nav className="sc-breadcrumb" aria-label={t('breadcrumb.path')}>
-      <ol className="sc-breadcrumb-list">
+    <nav className={styles.root} aria-label={t('breadcrumb.path')}>
+      <ol className={styles.list}>
         {visibleCrumbs.map((crumb, index) => (
           <Fragment key={crumb.path}>
             {shouldCollapse && index === (compact ? 0 : 1) && (
-              <li className="sc-breadcrumb-item sc-breadcrumb-item-ellipsis">
+              <li className={cx(styles.item, styles.itemEllipsis)}>
                 <button
                   type="button"
-                  className="sc-breadcrumb-ellipsis-btn"
+                  className={styles.ellipsisBtn}
                   aria-haspopup="menu"
                   aria-expanded={menu.open}
                   aria-controls={menuId}
@@ -51,31 +53,40 @@ export function Breadcrumb({ crumbs, onNavigate }: BreadcrumbProps) {
                 >
                   …
                 </button>
-                <span className="sc-breadcrumb-sep" aria-hidden="true">
+                <span className={styles.sep} aria-hidden="true">
                   /
                 </span>
               </li>
             )}
             <li
-              className={`sc-breadcrumb-item sc-breadcrumb-item-${index === visibleCrumbs.length - 1 ? 'current' : index === 0 ? 'root' : index === visibleCrumbs.length - 2 ? 'parent' : 'ancestor'}`}
+              className={cx(
+                styles.item,
+                index === visibleCrumbs.length - 1
+                  ? styles.itemCurrent
+                  : index === 0
+                    ? styles.itemRoot
+                    : index === visibleCrumbs.length - 2
+                      ? styles.itemParent
+                      : styles.itemAncestor
+              )}
             >
               {index < visibleCrumbs.length - 1 ? (
                 <>
                   <button
                     type="button"
-                    className="sc-breadcrumb-link"
+                    className={styles.link}
                     title={crumb.label}
                     onClick={() => onNavigate?.(crumb.path)}
                   >
-                    <span className="sc-breadcrumb-label">{crumb.label}</span>
+                    <span className={styles.label}>{crumb.label}</span>
                   </button>
-                  <span className="sc-breadcrumb-sep" aria-hidden="true">
+                  <span className={styles.sep} aria-hidden="true">
                     /
                   </span>
                 </>
               ) : (
-                <span className="sc-breadcrumb-current" aria-current="page" title={crumb.label}>
-                  <span className="sc-breadcrumb-label">{crumb.label}</span>
+                <span className={styles.current} aria-current="page" title={crumb.label}>
+                  <span className={styles.label}>{crumb.label}</span>
                 </span>
               )}
             </li>
@@ -91,28 +102,22 @@ export function Breadcrumb({ crumbs, onNavigate }: BreadcrumbProps) {
           x={menu.pos.x}
           y={menu.pos.y}
         >
-          <div
-            id={menuId}
-            className="sc-browse-new-menu sc-breadcrumb-menu"
-            role="menu"
-            aria-label={t('breadcrumb.path')}
-          >
+          <MenuList id={menuId} className={styles.menu} label={t('breadcrumb.path')}>
             {collapsedCrumbs.map((c) => (
-              <button
+              <MenuItem
                 key={c.path}
-                type="button"
-                role="menuitem"
+                className={styles.menuItem}
                 title={c.label}
                 onClick={() => {
                   setMenu((state) => ({ ...state, open: false }))
                   onNavigate?.(c.path)
                 }}
               >
-                <Icon name="folder" size={18} />
-                <span className="sc-breadcrumb-menu-label">{c.label}</span>
-              </button>
+                <Icon name="folder" size={18} className={styles.menuIcon} />
+                <span className={styles.menuLabel}>{c.label}</span>
+              </MenuItem>
             ))}
-          </div>
+          </MenuList>
         </Menu>
       )}
     </nav>

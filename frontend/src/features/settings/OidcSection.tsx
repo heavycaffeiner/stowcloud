@@ -10,6 +10,9 @@ import { oidcConfigQuery, sessionQuery } from '../../lib/query/session'
 import { Button } from '../../ui/Button'
 import { TextField } from '../../ui/TextField'
 import { SettingsDialog } from './SettingsDialog'
+import * as styles from './OidcSection.css'
+import * as settingsCardStyles from './SettingsCard.css'
+import { cx } from '../../ui/cx'
 
 export function OidcSection() {
   const { t } = useI18n()
@@ -87,14 +90,14 @@ export function OidcSection() {
   }
 
   return (
-    <div className="sc-oidc">
+    <div className={styles.root}>
       {flowError ? (
-        <p className="sc-oidc-error" role="alert">
+        <p className={styles.error} role="alert">
           {flowError}
         </p>
       ) : null}
-      <div className="sc-oidc-status">
-        <span className={linked ? 'sc-oidc-badge sc-oidc-badge-on' : 'sc-oidc-badge'}>
+      <div className={styles.status}>
+        <span className={cx(styles.badge, linked && styles.badgeOn)}>
           {linked ? t('oidc.connected') : t('oidc.not_connected')}
         </span>
         {linked ? (
@@ -107,16 +110,16 @@ export function OidcSection() {
       </div>
       {linked ? (
         <>
-          <p className="sc-oidc-detail">
+          <p className={styles.detail}>
             {session.data?.oidc.subject_hint ? t('oidc.identity', { subject: session.data.oidc.subject_hint }) : null}
             {session.data?.oidc.linked_ns
               ? ` ${t('oidc.connected_on', { date: formatDateNs(session.data.oidc.linked_ns) })}`
               : null}
           </p>
-          {!configured ? <p className="sc-oidc-detail">{t('oidc.single_sign_currently_switched_off')}</p> : null}
+          {!configured ? <p className={styles.detail}>{t('oidc.single_sign_currently_switched_off')}</p> : null}
         </>
       ) : configured ? (
-        <p className="sc-oidc-detail">{t('oidc.connect_sign_instead_your_account', { provider: providerLabel })}</p>
+        <p className={styles.detail}>{t('oidc.connect_sign_instead_your_account', { provider: providerLabel })}</p>
       ) : null}
       <SettingsDialog
         open={dialog === 'connect'}
@@ -147,8 +150,8 @@ export function OidcSection() {
           </>
         }
       >
-        <p>{t('oidc.after_you_confirm_password_taken')}</p>
-        <p className="sc-oidc-warning">{t('oidc.connecting_closes_smb_access_account')}</p>
+        <p className={settingsCardStyles.text}>{t('oidc.after_you_confirm_password_taken')}</p>
+        <p className={styles.warning}>{t('oidc.connecting_closes_smb_access_account')}</p>
         <TextField
           type="password"
           label={t('common.current_password')}
@@ -187,9 +190,9 @@ export function OidcSection() {
           </>
         }
       >
-        <p>{t('oidc.you_sign_your_account_password')}</p>
-        <p className="sc-oidc-warning">{t('oidc.every_session_opened_through_signed')}</p>
-        {smbDedicated ? <p className="sc-oidc-detail">{t('smb.dedicated_will_be_replaced')}</p> : null}
+        <p className={settingsCardStyles.text}>{t('oidc.you_sign_your_account_password')}</p>
+        <p className={styles.warning}>{t('oidc.every_session_opened_through_signed')}</p>
+        {smbDedicated ? <p className={styles.detail}>{t('smb.dedicated_will_be_replaced')}</p> : null}
         <TextField
           type="password"
           label={t('common.current_password')}

@@ -6,6 +6,8 @@ import { decryptDownload, isUnlocked } from '../../lib/crypto/e2ee'
 import { encryptionForLabel, shareLabelOf } from '../../lib/crypto/encrypted-shares'
 import type { IconName } from '../../ui/icons'
 import { Icon } from '../../ui/Icon'
+import { cx } from '../../ui/cx'
+import * as styles from './Thumbnail.css'
 
 const CACHE = new Map<string, string>()
 const CACHE_MAX = 300
@@ -87,9 +89,10 @@ export interface ThumbnailProps {
   dim: number
   fallback: IconName
   iconSize: number
+  imageClassName?: string
 }
 
-export function Thumbnail({ entry, dim, fallback, iconSize }: ThumbnailProps) {
+export function Thumbnail({ entry, dim, fallback, iconSize, imageClassName }: ThumbnailProps) {
   const [state, setState] = useState<{ url: string | null }>({ url: null })
   const { url } = state
   const key = `${entry.name}\x00${entry.etag}`
@@ -170,15 +173,22 @@ export function Thumbnail({ entry, dim, fallback, iconSize }: ThumbnailProps) {
 
   if (!url)
     return (
-      <span className="sc-thumb-icon">
+      <span className={styles.icon}>
         <Icon name={fallback} size={iconSize} />
       </span>
     )
   return (
-    <div className="sc-thumb-wrap">
-      <img className="sc-thumb-img" src={url} alt="" loading="lazy" decoding="async" onError={onError} />
+    <div className={styles.wrap}>
+      <img
+        className={cx(styles.img, imageClassName)}
+        src={url}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        onError={onError}
+      />
       {isVid ? (
-        <span className="sc-thumb-badge" aria-hidden="true">
+        <span className={styles.badge} aria-hidden="true">
           <Icon name="video" />
         </span>
       ) : null}

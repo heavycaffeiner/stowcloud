@@ -2,7 +2,9 @@ import 'mdui/components/button-icon.js'
 import type { MouseEventHandler, ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { useEventListener } from '../hooks/use-event-listener'
+import { cx } from './cx'
 import { Icon } from './Icon'
+import * as styles from './IconButton.css'
 
 interface IconButtonElement extends HTMLElement {
   updateComplete?: Promise<unknown>
@@ -35,6 +37,7 @@ export interface IconButtonProps {
   icon?: string
   selectedIcon?: string
   children?: ReactNode
+  className?: string
   onClick?: MouseEventHandler<HTMLElement>
 }
 
@@ -49,6 +52,7 @@ export function IconButton({
   icon,
   selectedIcon,
   children,
+  className,
   onClick
 }: IconButtonProps) {
   const buttonRef = useRef<IconButtonElement | null>(null)
@@ -116,7 +120,7 @@ export function IconButton({
   return (
     <span
       ref={wrapperRef}
-      className="sc-icon-button"
+      className={cx(styles.root, className)}
       role="none"
       onFocus={(event) => showOnKeyboardFocus(event.target)}
       onBlur={hide}
@@ -126,6 +130,7 @@ export function IconButton({
     >
       <mdui-button-icon
         ref={buttonRef}
+        className={styles.button}
         variant={selected ? 'tonal' : 'standard'}
         selectable={selected !== undefined}
         selected={selected}
@@ -139,7 +144,7 @@ export function IconButton({
       </mdui-button-icon>
       {shown ? (
         <span
-          className="sc-icon-button-tip sc-icon-button-tip-placed"
+          className={cx(styles.tip, styles.tipPlaced)}
           role="tooltip"
           aria-hidden="true"
           style={{

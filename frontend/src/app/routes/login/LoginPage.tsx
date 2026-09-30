@@ -3,7 +3,9 @@ import { Button } from '../../../ui/Button'
 import { TextField } from '../../../ui/TextField'
 import { useDocumentTitle } from '../../hooks/use-document-title'
 import { useLoginFlow } from './hooks/use-login-flow'
-import '../../../styles/app/routes/auth.css.ts'
+import * as authStyles from '../auth.css'
+import * as utilitiesStyles from '../../../ui/utilities.css'
+import { cx } from '../../../ui/cx'
 
 const SOURCE_URL = 'https://github.com/heavycaffeiner/stowcloud'
 
@@ -24,13 +26,13 @@ export function LoginPage() {
   useDocumentTitle(t('login.sign_stowcloud'))
   const { step, factorMode, username, password, code, errorMessage } = form
   return (
-    <main className="sc-auth-page">
+    <main className={authStyles.page}>
       <form
-        className="sc-auth-card sc-auth-card-login"
+        className={cx(authStyles.card, authStyles.login)}
         onSubmit={step === 'credentials' ? submitCredentials : submitTotp}
       >
-        <h1 className="sc-auth-card-title">Stowcloud</h1>
-        <p className="sc-auth-card-subtitle">
+        <h1 className={authStyles.title}>Stowcloud</h1>
+        <p className={authStyles.subtitle}>
           {returnTo ? t('login.sign_first_authorise_app') : t('login.sign_your_account')}
         </p>
         {step === 'credentials' ? (
@@ -52,7 +54,7 @@ export function LoginPage() {
           </>
         ) : (
           <>
-            <p className="sc-auth-card-subtitle">
+            <p className={authStyles.subtitle}>
               {factorMode === 'totp' ? t('login.enter_your_two_factor_code') : t('login.recovery_code_hint')}
             </p>
             <TextField
@@ -78,18 +80,19 @@ export function LoginPage() {
           </>
         )}
         {ssoError && step === 'credentials' ? (
-          <p className="sc-auth-card-error" role="alert">
+          <p className={authStyles.error} role="alert">
             {ssoError}
           </p>
         ) : null}
         {errorMessage ? (
-          <p className="sc-auth-card-error" role="alert">
+          <p className={authStyles.error} role="alert">
             {errorMessage}
           </p>
         ) : null}
-        <div className="sc-auth-card-actions">
+        <div className={authStyles.actions}>
           {step === 'totp' ? (
             <Button
+              className={authStyles.action}
               variant="text"
               onClick={() => updateForm({ step: 'credentials', factorMode: 'totp', code: '', errorMessage: null })}
             >
@@ -97,6 +100,7 @@ export function LoginPage() {
             </Button>
           ) : null}
           <Button
+            className={authStyles.action}
             type="submit"
             loading={step === 'credentials' ? login.isPending : loginTotp.isPending}
             disabled={step === 'credentials' ? !username.trim() || !password : !code.trim()}
@@ -106,7 +110,7 @@ export function LoginPage() {
         </div>
         {step === 'credentials' && ssoName !== null ? (
           <>
-            <div className="sc-auth-card-divider">
+            <div className={authStyles.divider}>
               <span>{t('login.or')}</span>
             </div>
             <Button variant="tonal" onClick={() => startOidcLogin(returnTo)}>
@@ -115,12 +119,12 @@ export function LoginPage() {
           </>
         ) : null}
         {step === 'credentials' ? (
-          <Link className="sc-auth-card-setup-link sc-focus-ring" to="/setup">
+          <Link className={cx(authStyles.setupLink, utilitiesStyles.focusRing)} to="/setup">
             {t('login.first_time_here_create_administrator')}
           </Link>
         ) : null}
-        <p className="sc-auth-card-licence">
-          <a href={SOURCE_URL} target="_blank" rel="noreferrer">
+        <p className={authStyles.licence}>
+          <a className={authStyles.licenceLink} href={SOURCE_URL} target="_blank" rel="noreferrer">
             {t('login.source')}
           </a>
         </p>

@@ -8,7 +8,7 @@ import { adminUnlinkOidcMutation, adminUserOidcQuery } from '../../lib/query/adm
 import { Button } from '../../ui/Button'
 import { Dialog } from '../../ui/Dialog'
 import { ProgressCircular } from '../../ui/ProgressCircular'
-import '../../styles/features/admin/admin.css.ts'
+import * as styles from './UserOidcDialog.css'
 
 interface UserOidcDialogProps {
   user: AdminUser | null
@@ -70,50 +70,50 @@ export function UserOidcDialog({ user, onClose }: UserOidcDialogProps) {
       {query.isPending ? (
         <ProgressCircular />
       ) : loadError ? (
-        <p className="sc-user-oidc-error" role="alert">
+        <p className={styles.error} role="alert">
           {loadError}
         </p>
       ) : link?.linked ? (
         <>
-          <dl className="sc-user-oidc-facts">
+          <dl className={styles.facts}>
             <div>
-              <dt>{t('oidc.provider')}</dt>
-              <dd>{link.issuer}</dd>
+              <dt className={styles.factLabel}>{t('oidc.provider')}</dt>
+              <dd className={styles.factValue}>{link.issuer}</dd>
             </div>
             <div>
-              <dt>{t('oidc.subject_sub')}</dt>
-              <dd>
+              <dt className={styles.factLabel}>{t('oidc.subject_sub')}</dt>
+              <dd className={styles.factValue}>
                 <code>{link.subject}</code>
               </dd>
             </div>
             <div>
-              <dt>{t('oidc.linked_on')}</dt>
-              <dd>{link.linked_ns ? formatDateNs(link.linked_ns) : '-'}</dd>
+              <dt className={styles.factLabel}>{t('oidc.linked_on')}</dt>
+              <dd className={styles.factValue}>{link.linked_ns ? formatDateNs(link.linked_ns) : '-'}</dd>
             </div>
             <div>
-              <dt>{t('oidc.last_sign')}</dt>
-              <dd>{link.last_login_ns ? formatDateNs(link.last_login_ns) : t('oidc.never')}</dd>
+              <dt className={styles.factLabel}>{t('oidc.last_sign')}</dt>
+              <dd className={styles.factValue}>
+                {link.last_login_ns ? formatDateNs(link.last_login_ns) : t('oidc.never')}
+              </dd>
             </div>
           </dl>
           {confirmUnlink ? (
             <>
-              <p className="sc-user-oidc-warning">{t('oidc.disconnecting_here_cannot_restore_smb')}</p>
+              <p className={styles.warning}>{t('oidc.disconnecting_here_cannot_restore_smb')}</p>
               {unlink.error ? (
-                <p className="sc-user-oidc-error" role="alert">
+                <p className={styles.error} role="alert">
                   {describeError(unlink.error, t('oidc.could_not_disconnect_try_again'))}
                 </p>
               ) : null}
             </>
           ) : (
-            <p className="sc-user-oidc-hint">{t('oidc.disconnecting_signs_account_out_every')}</p>
+            <p className={styles.hint}>{t('oidc.disconnecting_signs_account_out_every')}</p>
           )}
         </>
       ) : (
         <>
-          {unlink.isSuccess ? (
-            <p className="sc-user-oidc-warning">{t('oidc.disconnected_smb_access_account_will')}</p>
-          ) : null}
-          <p className="sc-user-oidc-hint">{t('oidc.no_identity_connected_user_must_link')}</p>
+          {unlink.isSuccess ? <p className={styles.warning}>{t('oidc.disconnected_smb_access_account_will')}</p> : null}
+          <p className={styles.hint}>{t('oidc.no_identity_connected_user_must_link')}</p>
         </>
       )}
     </Dialog>

@@ -15,7 +15,9 @@ import { Button } from '../../ui/Button'
 import { IconButton } from '../../ui/IconButton'
 import { Icon } from '../../ui/Icon'
 import { getEntryIcon } from './FileRow'
-import '../../styles/features/files/browse-ui.css.ts'
+import * as styles from './DetailsPanel.css'
+import { cx } from '../../ui/cx'
+import { vars } from '../../ui/theme.css'
 
 interface DetailsPanelProps {
   path: string
@@ -166,23 +168,23 @@ export function DetailsPanel({
   const heroIcon = one
     ? getEntryIcon(one)
     : many
-      ? { name: 'check', color: 'var(--sc-icon-color)' }
-      : { name: 'folder', color: 'var(--sc-icon-color)' }
+      ? { name: 'check', color: vars.content.icon }
+      : { name: 'folder', color: vars.content.icon }
   const heroDesc = one ? kindDescription(one) : many ? formatBytes(bytes) : t('details.folder')
 
   return (
     <aside
       ref={panel}
-      className={`sc-details${compact ? ' sc-details-sheet' : ''}`}
+      className={cx(styles.root, compact && styles.sheet)}
       role={compact ? 'dialog' : 'complementary'}
       aria-modal={compact ? 'true' : undefined}
       aria-label={t('details.title')}
     >
-      <header className="sc-details-head">
-        <span className="sc-details-head-icon" aria-hidden="true" style={{ color: heroIcon.color }}>
+      <header className={styles.head}>
+        <span className={styles.headIcon} aria-hidden="true" style={{ color: heroIcon.color }}>
           <Icon name={heroIcon.name} size={20} />
         </span>
-        <h2 className="sc-details-title">
+        <h2 className={styles.title}>
           <bdi>{title}</bdi>
         </h2>
         <IconButton label={t('common.close')} onClick={onClose}>
@@ -190,22 +192,22 @@ export function DetailsPanel({
         </IconButton>
       </header>
 
-      <div className="sc-details-summary">
-        <span className="sc-details-summary-icon" aria-hidden="true" style={{ color: heroIcon.color }}>
+      <div className={styles.summary}>
+        <span className={styles.summaryIcon} aria-hidden="true" style={{ color: heroIcon.color }}>
           <Icon name={heroIcon.name} size={24} />
         </span>
         <div>
-          <div className="sc-details-summary-title">
+          <div className={styles.summaryTitle}>
             <bdi>{title}</bdi>
           </div>
-          <div className="sc-details-summary-desc">{heroDesc}</div>
+          <div className={styles.summaryDesc}>{heroDesc}</div>
         </div>
       </div>
 
       {one || many ? (
-        <div className="sc-details-actions">
+        <div className={styles.actions}>
           {onDownload ? (
-            <Button icon={<Icon name="download" size={18} />} onClick={onDownload}>
+            <Button className={styles.action} icon={<Icon name="download" size={18} />} onClick={onDownload}>
               {t('common.download')}
             </Button>
           ) : null}
@@ -223,34 +225,35 @@ export function DetailsPanel({
       ) : null}
 
       {one?.confusable ? (
-        <p className="sc-details-warning">
+        <p className={styles.warning}>
           <Icon name="warning" size={16} />
           <span>{t('common.look_alike_characters')}</span>
         </p>
       ) : null}
 
-      <div className="sc-details-section-heading">{t('details.title')}</div>
+      <div className={styles.sectionHeading}>{t('details.title')}</div>
 
-      <dl className="sc-details-fields">
+      <dl className={styles.fields}>
         {fields.map((field) => (
-          <div key={field.label}>
-            <dt>{field.label}</dt>
-            <dd>
+          <div key={field.label} className={styles.field}>
+            <dt className={styles.fieldLabel}>{field.label}</dt>
+            <dd className={styles.fieldValue}>
               <bdi>{field.value}</bdi>
             </dd>
           </div>
         ))}
         {measured !== 'idle' ? (
-          <div>
-            <dt>{many ? t('details.download_size') : t('details.total_size')}</dt>
-            <dd>
+          <div className={styles.field}>
+            <dt className={styles.fieldLabel}>{many ? t('details.download_size') : t('details.total_size')}</dt>
+            <dd className={styles.fieldValue}>
               {measured === 'done' ? (
                 <>
-                  {formatBytes(bytes)} <small>{t('details.size_file_count', { count: files })}</small>
+                  {formatBytes(bytes)}{' '}
+                  <small className={styles.fieldNote}>{t('details.size_file_count', { count: files })}</small>
                 </>
               ) : measured === 'failed' ? (
                 <>
-                  <small role="alert">
+                  <small className={styles.fieldNote} role="alert">
                     {queries.some((query) => query.error instanceof ApiError && query.error.code === 'fs.denied')
                       ? t('details.size_hidden_by_permissions')
                       : t('details.could_not_measure')}
@@ -260,7 +263,9 @@ export function DetailsPanel({
                   </Button>
                 </>
               ) : (
-                <small role="status">{t('details.measuring')}</small>
+                <small className={styles.fieldNote} role="status">
+                  {t('details.measuring')}
+                </small>
               )}
             </dd>
           </div>

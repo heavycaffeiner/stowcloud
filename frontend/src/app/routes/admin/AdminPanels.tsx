@@ -2,6 +2,11 @@ import { lazy, Suspense } from 'react'
 import type { AdminTab } from './hooks/use-admin-tab'
 import { ErrorBoundary } from '../../../ui/ErrorBoundary'
 import { ProgressCircular } from '../../../ui/ProgressCircular'
+import * as styles from './AdminPanels.css'
+import * as adminPageStyles from './AdminPage.css'
+import * as settingsCardStyles from '../../../features/settings/SettingsCard.css'
+import * as textFieldStyles from '../../../ui/TextField.css'
+import { cx } from '../../../ui/cx'
 
 // Keep each admin section lazy so inactive tabs do not load their query graphs.
 const UserManagementSection = lazy(async () => {
@@ -35,7 +40,7 @@ const LogsSection = lazy(async () => {
 
 export function SectionLoading({ label }: { label: string }) {
   return (
-    <div className="sc-admin-loading" role="status" aria-live="polite">
+    <div className={styles.loading} role="status" aria-live="polite">
       <ProgressCircular size={40} />
       <span>{label}</span>
     </div>
@@ -51,39 +56,39 @@ interface AdminPanelsProps {
 
 export function AdminPanels({ tab, loadingLabel, usersLabel, groupsLabel }: AdminPanelsProps) {
   return (
-    <div className="sc-admin-inner">
+    <div className={adminPageStyles.inner}>
       <ErrorBoundary resetKey={tab}>
         <Suspense fallback={<SectionLoading label={loadingLabel} />}>
           {tab === 'users' ? (
             <>
-              <section className="sc-admin-page-section sc-settings-card">
-                <h2>{usersLabel}</h2>
+              <section className={cx(styles.pageSection, settingsCardStyles.card, textFieldStyles.onLowSurface)}>
+                <h2 className={styles.pageTitle}>{usersLabel}</h2>
                 <UserManagementSection />
               </section>
-              <section className="sc-admin-page-section sc-settings-card">
-                <h2>{groupsLabel}</h2>
+              <section className={cx(styles.pageSection, settingsCardStyles.card, textFieldStyles.onLowSurface)}>
+                <h2 className={styles.pageTitle}>{groupsLabel}</h2>
                 <GroupManagementSection />
               </section>
             </>
           ) : null}
           {tab === 'shares' ? (
-            <section className="sc-admin-page-section sc-settings-card">
+            <section className={cx(styles.pageSection, settingsCardStyles.card, textFieldStyles.onLowSurface)}>
               <ShareManagementSection />
             </section>
           ) : null}
           {tab === 'storage' ? (
-            <section className="sc-admin-page-section">
+            <section className={styles.pageSection}>
               <StorageIndexSection />
               <UploadSettingsSection />
             </section>
           ) : null}
           {tab === 'server' ? (
-            <section className="sc-admin-page-section">
+            <section className={styles.pageSection}>
               <ServerSettingsSection />
             </section>
           ) : null}
           {tab === 'logs' ? (
-            <section className="sc-admin-page-section sc-settings-card">
+            <section className={cx(styles.pageSection, settingsCardStyles.card, textFieldStyles.onLowSurface)}>
               <LogsSection />
             </section>
           ) : null}

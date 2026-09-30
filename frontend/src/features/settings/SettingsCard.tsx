@@ -1,22 +1,23 @@
-import { createElement, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
+import * as styles from './SettingsCard.css'
+import * as textFieldStyles from '../../ui/TextField.css'
+import { cx } from '../../ui/cx'
 
 interface SettingsCardProps {
   title: ReactNode
   description?: ReactNode
   leading?: ReactNode
   trailing?: ReactNode
-  headingLevel?: 2 | 3 | 4 | 5 | 6
   children: ReactNode
 }
 
-export function SettingsCard({ title, description, leading, trailing, headingLevel = 2, children }: SettingsCardProps) {
-  const heading = `h${headingLevel}` as 'h2' | 'h3' | 'h4' | 'h5' | 'h6'
+export function SettingsCard({ title, description, leading, trailing, children }: SettingsCardProps) {
   return (
-    <article className="sc-settings-card">
-      <div className="sc-settings-card-head">
+    <article className={cx(styles.card, textFieldStyles.onLowSurface)}>
+      <div className={styles.cardHead}>
         {leading}
-        <div className="sc-settings-card-meta">
-          {createElement(heading, null, title)}
+        <div className={styles.cardMeta}>
+          <h2 className={styles.cardTitle}>{title}</h2>
           {description}
         </div>
         {trailing}
