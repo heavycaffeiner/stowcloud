@@ -15,26 +15,26 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/concurrency"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // openEngine opens an engine on a fresh data directory and closes it when the
 // test ends.
-func openEngine(t *testing.T) *app.Engine {
+func openEngine(t *testing.T) *server.Engine {
 	t.Helper()
 	return openEngineAt(t, t.TempDir())
 }
 
 // openEngineAt opens an engine on dir and closes it when the test ends.
-func openEngineAt(t *testing.T, dir string) *app.Engine {
+func openEngineAt(t *testing.T, dir string) *server.Engine {
 	t.Helper()
-	e, err := app.Open(context.Background(), app.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	e, err := server.Open(context.Background(), server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening the engine: %v", err)
 	}
@@ -61,7 +61,7 @@ func boot(t *testing.T) string {
 }
 
 // serve mounts an already-open engine and puts it behind a real listener.
-func serve(t *testing.T, e *app.Engine) string {
+func serve(t *testing.T, e *server.Engine) string {
 	t.Helper()
 
 	app := gin.New()
@@ -242,7 +242,7 @@ func contentShareAt(t *testing.T, perms acl.Perms, content []byte) (base string,
 // contentShareGrant is contentShareAt plus the engine and the grant's id, for
 // a test that has to change what the account may reach while the server runs.
 func contentShareGrant(t *testing.T, perms acl.Perms, content []byte) (
-	base string, sess session, share, host string, e *app.Engine, grant int64,
+	base string, sess session, share, host string, e *server.Engine, grant int64,
 ) {
 	t.Helper()
 	ctx := context.Background()

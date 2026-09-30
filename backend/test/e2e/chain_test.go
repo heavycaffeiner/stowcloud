@@ -7,15 +7,15 @@ import (
 	"testing"
 	"time"
 
-	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // engineWithUser opens an engine holding one account.
-func engineWithUser(t *testing.T) (*app.Engine, int64) {
+func engineWithUser(t *testing.T) (*server.Engine, int64) {
 	t.Helper()
 	ctx := context.Background()
 

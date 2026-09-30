@@ -8,7 +8,7 @@
 // reason tokens and nothing else. No path, no address, no account name and no
 // error text, because each of those is a fact about this installation that a
 // caller with no credential has not earned.
-package app
+package server
 
 import (
 	"sort"

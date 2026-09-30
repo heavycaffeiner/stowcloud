@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server"
 )
 
 // With no provider configured, the sign-in screen is told so.
@@ -266,7 +266,7 @@ func TestAConfiguredProviderBuildsAClient(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	e, err := app.Open(ctx, app.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	e, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -317,7 +317,7 @@ func TestAProviderWithoutASecretStaysOff(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	e, err := app.Open(ctx, app.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	e, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}

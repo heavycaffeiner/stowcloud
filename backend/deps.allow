@@ -13,9 +13,8 @@ golang.org/x/sys
 
 # Hanami owns reusable process bootstrap, security policy, ownership, Fx
 # lifecycle, and managed listener generations. It is confined to command
-# composition plus internal/bootstrap/sandbox, internal/app composition, and
-# internal/runtime/listener; feature, platform, and transport code stay unaware
-# of the lifecycle framework.
+# composition plus internal/bootstrap/sandbox and internal/server; feature,
+# platform, and transport code stay unaware of the lifecycle framework.
 github.com/heavycaffeiner/hanami
 github.com/heavycaffeiner/hanami/gin
 github.com/heavycaffeiner/hanami/api
@@ -24,9 +23,8 @@ github.com/heavycaffeiner/hanami/api
 # authorization and the established JSON error contract remain local.
 github.com/danielgtaylor/huma/v2
 
-# Fx is the explicit dependency-composition boundary. It is used only by cmd,
-# bootstrap/sandbox, app composition, and runtime/listener; no feature or
-# platform package may depend on it.
+# Fx is the explicit dependency-composition boundary. It is used only by cmd
+# and internal/server; no feature or platform package may depend on it.
 go.uber.org/fx
 
 # Gin is the native HTTP router and the handler context of every route the

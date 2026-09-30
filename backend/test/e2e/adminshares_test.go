@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server"
 )
 
 // The administrative listing carries the host path; nothing else does.
@@ -879,7 +879,7 @@ func TestAnUnmeasurableShareIsListedWithoutFigures(t *testing.T) {
 	dir := t.TempDir()
 	host := t.TempDir()
 
-	e, err := app.Open(ctx, app.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	e, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -954,7 +954,7 @@ func TestSharesSurviveARestart(t *testing.T) {
 	dir := t.TempDir()
 	host := t.TempDir()
 
-	e, err := app.Open(ctx, app.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	e, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}

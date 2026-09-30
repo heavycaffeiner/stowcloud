@@ -12,7 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server"
 )
 
 // The rebuilt engine comes up on a real socket and answers a real request.
@@ -122,7 +122,7 @@ func TestEveryAnswerIsJSON(t *testing.T) {
 // A correct assembly mounts without error.
 func TestMountingACorrectAssembly(t *testing.T) {
 	t.Parallel()
-	e, err := app.Open(context.Background(), app.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
+	e, err := server.Open(context.Background(), server.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func TestClosingReleasesTheDatabases(t *testing.T) {
 	dir := t.TempDir()
 	ctx := context.Background()
 
-	e, err := app.Open(ctx, app.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	e, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatal(err)
 	}

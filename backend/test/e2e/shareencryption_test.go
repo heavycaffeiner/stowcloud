@@ -6,9 +6,9 @@ import (
 	"context"
 	"testing"
 
-	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
@@ -43,12 +43,12 @@ func testEncryption() files.Encryption {
 // string leaves thumbnails off, which is fine for every guard but the
 // thumbnail one.
 func encryptedShare(t *testing.T, perms acl.Perms, previewWorker string) (
-	base string, sess session, share string, e *app.Engine, owner int64,
+	base string, sess session, share string, e *server.Engine, owner int64,
 ) {
 	t.Helper()
 	ctx := context.Background()
 
-	e, err := app.Open(ctx, app.Options{DataDir: t.TempDir(), PreviewWorker: previewWorker, PasswordParams: fastPasswordParams()})
+	e, err := server.Open(ctx, server.Options{DataDir: t.TempDir(), PreviewWorker: previewWorker, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}

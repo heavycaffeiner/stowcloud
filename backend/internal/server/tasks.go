@@ -1,7 +1,7 @@
 //go:build linux
 
 // The application assembles recurring work over its feature services.
-package app
+package server
 
 import (
 	"context"

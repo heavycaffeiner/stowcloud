@@ -2,7 +2,7 @@
 
 // SMB publication composition. Rendering, grant mapping, and publication state
 // belong to smb/publish; this file only wires application dependencies.
-package app
+package server
 
 import (
 	"context"

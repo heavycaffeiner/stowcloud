@@ -16,9 +16,9 @@ import (
 
 	"github.com/heavycaffeiner/hanami"
 	securitylinux "github.com/heavycaffeiner/hanami/security/linux"
-	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/bootstrap/preflight"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/bootstrap/sandbox"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server"
 	"go.uber.org/fx"
 )
 
@@ -100,7 +100,7 @@ func run(addr, dataDir string, plain bool) error {
 			return config, nil
 		},
 		Modules: func(config preflight.Config) fx.Option {
-			return app.Module(app.ModuleConfig{
+			return server.Module(server.ModuleConfig{
 				DataDir:      config.DataDir,
 				Address:      config.Address,
 				Pinned:       config.Pinned,

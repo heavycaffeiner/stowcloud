@@ -19,11 +19,11 @@ import (
 	"sync"
 	"testing"
 
-	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/preview"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
@@ -102,7 +102,7 @@ func thumbShare(t *testing.T, perms acl.Perms, img []byte) (base string, sess se
 	t.Helper()
 	ctx := context.Background()
 
-	e, err := app.Open(ctx, app.Options{
+	e, err := server.Open(ctx, server.Options{
 		DataDir:        t.TempDir(),
 		PreviewWorker:  jailedWorker(t),
 		PasswordParams: fastPasswordParams(),
@@ -417,7 +417,7 @@ func TestAThumbnailNeedsACredential(t *testing.T) {
 func TestThumbnailSettingCanBeToggledOff(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	e, err := app.Open(ctx, app.Options{
+	e, err := server.Open(ctx, server.Options{
 		DataDir:        t.TempDir(),
 		PreviewWorker:  jailedWorker(t),
 		PasswordParams: fastPasswordParams(),

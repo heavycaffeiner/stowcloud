@@ -269,7 +269,7 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   run "routecheck (the client's paths are mounted)" \
       ingo_host go run ./tools/routecheck \
         -client-dir ../frontend/src \
-        -routes internal/app/routes.go \
+        -routes internal/server/routes.go \
         -allow routes.allow \
         -server-only routes.server-only
   # routecheck proves the paths exist. This proves the bodies match: the

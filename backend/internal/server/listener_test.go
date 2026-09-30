@@ -1,6 +1,6 @@
 //go:build linux
 
-package listener
+package server
 
 import (
 	"errors"

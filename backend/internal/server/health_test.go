@@ -1,7 +1,7 @@
 // Linux only, matching the package under test.
 //go:build linux
 
-package app
+package server
 
 import (
 	"encoding/json"

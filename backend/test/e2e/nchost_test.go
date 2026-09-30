@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server"
 )
 
 // The host roles, as the compatibility surface sees them: the app host serves
@@ -36,7 +36,7 @@ func namedNCFixture(t *testing.T, content []byte) ncFixture {
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	first, err := app.Open(ctx, app.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	first, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}

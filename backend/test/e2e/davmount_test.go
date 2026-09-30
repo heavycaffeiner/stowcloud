@@ -9,15 +9,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/app"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/dav"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 )
 
 // mounted builds the transport-owned mount around the fixture handler.
 func (f *fixture) mounted() http.Handler {
-	return dav.NewMount(dav.Deps{Core: f.core, Handler: f.h, Errors: app.ErrorClassifier()})
+	return dav.NewMount(dav.Deps{Core: f.core, Handler: f.h, Errors: server.ErrorClassifier()})
 }
 
 // asDavUser attaches the principal the chain would have put there.

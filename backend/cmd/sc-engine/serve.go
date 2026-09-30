@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/bootstrap/args"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/runtime/listener"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server"
 )
 
 // runServeCmd is the `serve` spelling of the default behaviour: it accepts
@@ -37,7 +37,7 @@ func runServeCmd(argv []string) int {
 	return 0
 }
 
-const healthExitNoAnswer = int(listener.HealthExitUnhealthy)
+const healthExitNoAnswer = int(server.HealthExitUnhealthy)
 
 // runHealthcheck probes the TLS listener over 127.0.0.1 and verifies the
 // presented certificate against the pair in data/tls.
@@ -52,7 +52,7 @@ func runHealthcheck(argv []string) int {
 	// Where to dial and what name to ask under. The settings live in a
 	// database the running server holds, so this reads the snapshot that
 	// server writes beside the certificate it is about to verify.
-	probe := listener.ReadProbe(filepath.Join(dataDir, ".probe.json"))
+	probe := server.ReadProbe(filepath.Join(dataDir, ".probe.json"))
 
 	var client *http.Client
 	scheme := "https"
@@ -129,8 +129,8 @@ func runHealthcheck(argv []string) int {
 	for _, r := range doc.Reasons {
 		errOut.Printf("degraded: %s %s\n", r.Kind, r.Detail)
 	}
-	exit := listener.HealthExitFor(doc.Status, nil)
-	if exit != listener.HealthExitOK {
+	exit := server.HealthExitFor(doc.Status, nil)
+	if exit != server.HealthExitOK {
 		errOut.Printf("sc-engine healthcheck: unrecognised status %q\n", doc.Status)
 	}
 	return int(exit)

@@ -13,10 +13,10 @@ import (
 	"strings"
 	"testing"
 
-	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
@@ -430,7 +430,7 @@ func linkEngineOverFolderAt(t *testing.T, perms acl.Perms) (base, token, host st
 }
 
 // linkFixture opens an engine with one account holding one share.
-func linkFixture(t *testing.T) (*app.Engine, int64, files.Share, string) {
+func linkFixture(t *testing.T) (*server.Engine, int64, files.Share, string) {
 	t.Helper()
 	ctx := context.Background()
 

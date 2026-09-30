@@ -1,6 +1,6 @@
 //go:build linux && !compat_nc
 
-package app
+package server
 
 import "github.com/gin-gonic/gin"
 

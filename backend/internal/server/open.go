@@ -7,7 +7,7 @@
 // rather than defaulted when a dependency is missing, because a half-wired
 // engine that starts is one that fails later, at a request, in front of a
 // user.
-package app
+package server
 
 import (
 	"context"
@@ -24,7 +24,6 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/admin"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/logbook"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/runtimecfg"
-	live "github.com/heavycaffeiner/stowcloud/backend/internal/app/settings"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/dav"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/cache"
@@ -42,12 +41,12 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/system/jail"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/preview"
-	runtimerestart "github.com/heavycaffeiner/stowcloud/backend/internal/runtime/restart"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/search"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/search/controller"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/search/svc"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
+	live "github.com/heavycaffeiner/stowcloud/backend/internal/server/settings"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/smb/publish"
@@ -216,7 +215,7 @@ type Engine struct {
 	jobsCtx     context.Context
 	jobsStop    context.CancelFunc
 	maintenance *jobs.Runner
-	Restart     *runtimerestart.Signal
+	Restart     *RestartSignal
 	hardening   jail.Policy
 }
 
@@ -279,7 +278,7 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 		jobsCtx:     jobsCtx,
 		jobsStop:    jobsStop,
 		maintenance: jobs.NewRunner(logger),
-		Restart:     &runtimerestart.Signal{},
+		Restart:     &RestartSignal{},
 		// Until settings are loaded, no proxy is trusted and no host is
 		// named. An empty host list is what first boot looks like, and the
 		// boundary admits only a private client in that state.

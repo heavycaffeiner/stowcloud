@@ -10,7 +10,7 @@
 // Order is specific before general, because errors.Is matches a wrapped error
 // and two sentinels can both match.
 
-package app
+package server
 
 import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/admin"

@@ -15,10 +15,10 @@ import (
 	"testing"
 	"time"
 
-	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
@@ -1018,7 +1018,7 @@ func TestClosingTheEngineWaitsForACopyToRecordItsOutcome(t *testing.T) {
 	ctx := context.Background()
 	dataDir := t.TempDir()
 
-	e, err := app.Open(ctx, app.Options{DataDir: dataDir, PasswordParams: fastPasswordParams()})
+	e, err := server.Open(ctx, server.Options{DataDir: dataDir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}

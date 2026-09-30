@@ -1,6 +1,6 @@
 //go:build linux
 
-package app
+package server
 
 import (
 	"context"
@@ -12,8 +12,6 @@ import (
 	hanamiprocess "github.com/heavycaffeiner/hanami/process"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/instance"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/system/jail"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/runtime/listener"
-	runtimerestart "github.com/heavycaffeiner/stowcloud/backend/internal/runtime/restart"
 	"go.uber.org/fx"
 )
 
@@ -48,20 +46,20 @@ func Module(config ModuleConfig) fx.Option {
 		fx.Invoke(func(lifecycle fx.Lifecycle, engine *Engine) {
 			lifecycle.Append(fx.Hook{OnStop: func(context.Context) error { return engine.Close() }})
 		}),
-		fx.Provide(func(engine *Engine, router *gin.Engine, admission *hanamibootstrap.Admission, controller *hanamiprocess.Controller) (*listener.Runtime, error) {
+		fx.Provide(func(engine *Engine, router *gin.Engine, admission *hanamibootstrap.Admission, controller *hanamiprocess.Controller) (*Listener, error) {
 			if err := engine.Mount(router); err != nil {
 				return nil, err
 			}
-			return listener.New(listener.Config{
+			return NewListener(ListenerConfig{
 				DataDir: config.DataDir, Address: config.Address, Pinned: config.Pinned,
 				Plain: config.Plain, Logger: config.Logger,
 			}, engine.Settings, router, admission, controller)
 		}),
-		fx.Invoke(func(lifecycle fx.Lifecycle, runtime *listener.Runtime) {
+		fx.Invoke(func(lifecycle fx.Lifecycle, runtime *Listener) {
 			lifecycle.Append(fx.Hook{OnStart: runtime.Start, OnStop: runtime.Stop})
 		}),
 		fx.Invoke(func(engine *Engine, controller *hanamiprocess.Controller) {
-			runtimerestart.Bind(engine.Restart, controller)
+			bindRestart(engine.Restart, controller)
 		}),
 	)
 }

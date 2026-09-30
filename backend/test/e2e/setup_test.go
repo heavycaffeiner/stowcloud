@@ -12,13 +12,13 @@ import (
 	"strings"
 	"testing"
 
-	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server"
 )
 
 // bootUnconfigured opens an engine over an empty directory, which is what a
 // first boot is: no accounts, and a setup token minted for the form.
-func bootUnconfigured(t *testing.T) (base, dataDir string, e *app.Engine) {
+func bootUnconfigured(t *testing.T) (base, dataDir string, e *server.Engine) {
 	t.Helper()
 	dataDir = t.TempDir()
 
@@ -292,7 +292,7 @@ func TestTheFirstAdministratorIsGrantedTheExistingShares(t *testing.T) {
 
 	// A share registered before the first account, which is the order an
 	// operator restoring a configuration lands in.
-	first, err := app.Open(ctx, app.Options{DataDir: dataDir, PasswordParams: fastPasswordParams()})
+	first, err := server.Open(ctx, server.Options{DataDir: dataDir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}

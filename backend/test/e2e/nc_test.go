@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
@@ -39,7 +39,7 @@ type ncFixture struct {
 	// password half of HTTP Basic once its login flow has finished.
 	token string
 	user  int64
-	e     *app.Engine
+	e     *server.Engine
 	sess  session
 }
 

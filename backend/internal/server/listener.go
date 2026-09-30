@@ -1,9 +1,10 @@
 //go:build linux
 
-// Package listener adapts the product application to Hanami's managed HTTP
+// The listener adapts the product application to Hanami's managed HTTP
 // generations. It owns the listener lifecycle, TLS material, and probe file;
 // the application owns routes and product policy.
-package listener
+
+package server
 
 import (
 	"context"
@@ -26,8 +27,8 @@ import (
 	fsatomic "github.com/stowcloud/durablefs"
 )
 
-// Config describes the process-local listener selected during bootstrap.
-type Config struct {
+// ListenerConfig describes the process-local listener selected during bootstrap.
+type ListenerConfig struct {
 	DataDir string
 	Address string
 	Pinned  bool
@@ -35,26 +36,26 @@ type Config struct {
 	Logger  *slog.Logger
 }
 
-// Application is the product surface the listener needs. It deliberately
+// listenerApp is the product surface the listener needs. It deliberately
 // carries no Hanami or Fx types: those remain at the process assembly edge.
-type Application interface {
+type listenerApp interface {
 	ProbeHost() string
 	OnAppHostChange(func())
 	OnBindChange(current string, pinned bool, fn func(string))
 }
 
-// Runtime owns one managed HTTP endpoint and its generation transitions.
-type Runtime struct {
+// Listener owns one managed HTTP endpoint and its generation transitions.
+type Listener struct {
 	manager *hanamihttp.Manager
 	server  hanamihttp.ServerConfig
-	config  Config
-	app     Application
+	config  ListenerConfig
+	app     listenerApp
 	logger  *slog.Logger
 	mu      sync.Mutex
 }
 
-// New prepares the managed HTTP endpoint for an already mounted router.
-func New(config Config, app Application, router *gin.Engine, admission *hanamibootstrap.Admission, controller *hanamiprocess.Controller) (*Runtime, error) {
+// NewListener prepares the managed HTTP endpoint for an already mounted router.
+func NewListener(config ListenerConfig, app listenerApp, router *gin.Engine, admission *hanamibootstrap.Admission, controller *hanamiprocess.Controller) (*Listener, error) {
 	if config.DataDir == "" {
 		return nil, errors.New("listener data directory is empty")
 	}
@@ -99,7 +100,7 @@ func New(config Config, app Application, router *gin.Engine, admission *hanamibo
 	if err != nil {
 		return nil, err
 	}
-	runtime := &Runtime{manager: manager, server: serverConfig, config: config, app: app, logger: logger}
+	runtime := &Listener{manager: manager, server: serverConfig, config: config, app: app, logger: logger}
 	app.OnAppHostChange(func() {
 		if err := runtime.publish(); err != nil {
 			logger.Error("the health probe snapshot could not be updated", "error", err)
@@ -118,7 +119,7 @@ func New(config Config, app Application, router *gin.Engine, admission *hanamibo
 }
 
 // Start begins the initial managed generation and publishes its settled address.
-func (runtime *Runtime) Start(ctx context.Context) error {
+func (runtime *Listener) Start(ctx context.Context) error {
 	if err := runtime.manager.Start(ctx); err != nil {
 		return err
 	}
@@ -126,11 +127,11 @@ func (runtime *Runtime) Start(ctx context.Context) error {
 }
 
 // Stop drains and closes all managed generations.
-func (runtime *Runtime) Stop(ctx context.Context) error {
+func (runtime *Listener) Stop(ctx context.Context) error {
 	return runtime.manager.Stop(ctx)
 }
 
-func (runtime *Runtime) replaceAddress(ctx context.Context, address string) (hanamihttp.ReplaceResult, error) {
+func (runtime *Listener) replaceAddress(ctx context.Context, address string) (hanamihttp.ReplaceResult, error) {
 	runtime.mu.Lock()
 	defer runtime.mu.Unlock()
 	next := runtime.server
@@ -142,7 +143,7 @@ func (runtime *Runtime) replaceAddress(ctx context.Context, address string) (han
 	return result, err
 }
 
-func (runtime *Runtime) publish() error {
+func (runtime *Listener) publish() error {
 	current := runtime.manager.Current()
 	if current.Address == "" {
 		return errors.New("publishing the health probe without a listener")

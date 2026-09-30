@@ -13,8 +13,8 @@ import (
 
 	searchindex "github.com/stowcloud/namesearch/index"
 
-	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server"
 )
 
 // indexEngine serves an engine whose name index is switched on, with an
@@ -23,12 +23,12 @@ import (
 // The setting is saved before the engine that reads it opens, which is the
 // order an operator configures in: the index directory is opened once at
 // construction, so a value written afterwards would not reach it.
-func indexEngine(t *testing.T) (base, dataDir string, cookie *http.Cookie, csrf string, e *app.Engine) {
+func indexEngine(t *testing.T) (base, dataDir string, cookie *http.Cookie, csrf string, e *server.Engine) {
 	t.Helper()
 	ctx := context.Background()
 	dataDir = t.TempDir()
 
-	first, err := app.Open(ctx, app.Options{DataDir: dataDir, PasswordParams: fastPasswordParams()})
+	first, err := server.Open(ctx, server.Options{DataDir: dataDir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -42,7 +42,7 @@ func indexEngine(t *testing.T) (base, dataDir string, cookie *http.Cookie, csrf 
 		t.Fatalf("closing: %v", cerr)
 	}
 
-	opened, oerr := app.Open(ctx, app.Options{DataDir: dataDir, PasswordParams: fastPasswordParams()})
+	opened, oerr := server.Open(ctx, server.Options{DataDir: dataDir, PasswordParams: fastPasswordParams()})
 	if oerr != nil {
 		t.Fatalf("reopening: %v", oerr)
 	}
@@ -218,7 +218,7 @@ func TestTheLegacyIndexDirectoryMovesToTheHiddenName(t *testing.T) {
 	ctx := context.Background()
 	dataDir := t.TempDir()
 
-	first, err := app.Open(ctx, app.Options{DataDir: dataDir, PasswordParams: fastPasswordParams()})
+	first, err := server.Open(ctx, server.Options{DataDir: dataDir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}

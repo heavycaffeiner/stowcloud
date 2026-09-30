@@ -8,14 +8,14 @@ import (
 	"strconv"
 	"testing"
 
-	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // aliceID is the fixture account's own id, looked up rather than assumed: a
 // hardcoded 1 would set the quota on whatever row happened to be first and
 // pass for the wrong reason.
-func aliceID(t *testing.T, e *app.Engine) int64 {
+func aliceID(t *testing.T, e *server.Engine) int64 {
 	t.Helper()
 	id, err := e.Auth.UserIDByName(context.Background(), "alice")
 	if err != nil {

@@ -9,7 +9,7 @@
 // recoverable. Anything else that does not match is a startup refusal, because
 // silently generating a new identity for a deployment clients have already
 // pinned is worse than not starting.
-package listener
+package server
 
 import (
 	"crypto/ecdsa"
@@ -78,13 +78,13 @@ func EnsureTLS(
 	cert, err := loadPair(p)
 	switch {
 	case err == nil:
-		if covers(cert, hosts) {
+		if coversHosts(cert, hosts) {
 			return cert, nil
 		}
 		if !firstBoot {
 			return tls.Certificate{}, fmt.Errorf(
 				"%w: it does not cover %s and this is not first boot",
-				ErrTLSMaterial, strings.Join(missing(cert, hosts), ", "))
+				ErrTLSMaterial, strings.Join(missingNames(cert, hosts), ", "))
 		}
 	case errors.Is(err, os.ErrNotExist):
 		// Nothing there yet, which is the ordinary first start.
@@ -98,7 +98,7 @@ func EnsureTLS(
 		return tls.Certificate{}, fmt.Errorf("%w: %w", ErrTLSMaterial, err)
 	}
 
-	return generate(p, hosts, clk, publish)
+	return generateTLS(p, hosts, clk, publish)
 }
 
 // errTornPublish is a key newer than the certificate beside it.
@@ -144,13 +144,13 @@ func loadPair(p TLSPaths) (tls.Certificate, error) {
 	return cert, nil
 }
 
-// covers reports whether the certificate serves every declared host.
-func covers(cert tls.Certificate, hosts []string) bool {
-	return len(missing(cert, hosts)) == 0
+// coversHosts reports whether the certificate serves every declared host.
+func coversHosts(cert tls.Certificate, hosts []string) bool {
+	return len(missingNames(cert, hosts)) == 0
 }
 
-// missing lists the declared hosts the certificate does not serve.
-func missing(cert tls.Certificate, hosts []string) []string {
+// missingNames lists the declared hosts the certificate does not serve.
+func missingNames(cert tls.Certificate, hosts []string) []string {
 	if cert.Leaf == nil {
 		return slices.Clone(hosts)
 	}
@@ -164,8 +164,8 @@ func missing(cert tls.Certificate, hosts []string) []string {
 	return out
 }
 
-// generate writes a fresh pair and returns it.
-func generate(p TLSPaths, hosts []string, clk clock.Clock, publish DurableWriter) (tls.Certificate, error) {
+// generateTLS writes a fresh pair and returns it.
+func generateTLS(p TLSPaths, hosts []string, clk clock.Clock, publish DurableWriter) (tls.Certificate, error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return tls.Certificate{}, fmt.Errorf("generating a key: %w", err)

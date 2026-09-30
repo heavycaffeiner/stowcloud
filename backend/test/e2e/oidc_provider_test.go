@@ -23,8 +23,8 @@ import (
 	"testing"
 	"time"
 
-	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server"
 )
 
 // A fake OpenID Connect provider, real enough to drive the whole flow: real
@@ -174,7 +174,7 @@ func (fp *fakeProvider) sign(claims map[string]any) (string, error) {
 // account, ready for the admin to point at a fake provider.
 type oidcFixture struct {
 	base        string
-	engine      *app.Engine
+	engine      *server.Engine
 	adminCookie *http.Cookie
 	adminCSRF   string
 	userCookie  *http.Cookie

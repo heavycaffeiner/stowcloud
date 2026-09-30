@@ -15,10 +15,10 @@ import (
 	"strings"
 	"testing"
 
-	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server"
 )
 
 const (
@@ -28,7 +28,7 @@ const (
 
 // bootForLogin serves an engine holding one account whose password is known,
 // and hands back the engine so a test can enrol a second factor on it.
-func bootForLogin(t *testing.T) (string, *app.Engine, int64) {
+func bootForLogin(t *testing.T) (string, *server.Engine, int64) {
 	t.Helper()
 	ctx := context.Background()
 
@@ -353,7 +353,7 @@ func TestAnEnrolledAccountIsAskedForACode(t *testing.T) {
 }
 
 // enrol puts a second factor on the account and returns its secret.
-func enrol(t *testing.T, e *app.Engine, id int64) string {
+func enrol(t *testing.T, e *server.Engine, id int64) string {
 	t.Helper()
 	ctx := context.Background()
 
@@ -733,7 +733,7 @@ func TestALogoutWhoseRevokeFailsIsReported(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	e, err := app.Open(ctx, app.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
+	e, err := server.Open(ctx, server.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}

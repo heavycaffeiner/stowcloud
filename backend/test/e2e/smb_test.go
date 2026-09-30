@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server"
 )
 
 // Setting the protocol credential needs the account password.
@@ -264,7 +264,7 @@ func TestTheStoredSecondFactorPolicyBlocksTheProtocol(t *testing.T) {
 
 	// Saved before the engine that serves it opens, which is the ordinary
 	// order: an operator configures, the server restarts, the value applies.
-	first, err := app.Open(ctx, app.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	first, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -335,7 +335,7 @@ func TestAnUnknownSecondFactorPolicyBlocks(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	first, err := app.Open(ctx, app.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	first, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -394,7 +394,7 @@ func TestThePermissivePolicyKeepsProtocolAccess(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	first, err := app.Open(ctx, app.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	first, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -450,13 +450,13 @@ func TestThePermissivePolicyKeepsProtocolAccess(t *testing.T) {
 // Saved before the engine that serves it opens, because the section decides
 // things at construction: the credential file's path is fixed when auth is
 // built, so a value written afterwards would not reach it.
-func bootWithSidecar(t *testing.T) (*app.Engine, string) {
+func bootWithSidecar(t *testing.T) (*server.Engine, string) {
 	t.Helper()
 	ctx := context.Background()
 	dir := t.TempDir()
 	configDir := filepath.Join(t.TempDir(), "smb")
 
-	first, err := app.Open(ctx, app.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	first, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -493,7 +493,7 @@ func TestTurningFileSharingOffReachesTheSidecar(t *testing.T) {
 	dir := t.TempDir()
 	configDir := filepath.Join(t.TempDir(), "smb")
 
-	first, err := app.Open(ctx, app.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	first, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -564,7 +564,7 @@ func TestEnablingSharingLaterStillWritesCredentials(t *testing.T) {
 	configDir := filepath.Join(t.TempDir(), "smb")
 
 	// Configured but off, which is what makes the path empty at startup.
-	first, err := app.Open(ctx, app.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	first, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}

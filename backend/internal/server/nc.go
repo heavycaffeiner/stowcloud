@@ -7,7 +7,7 @@
 // the two capabilities that carry a signed claim. The surface owns every
 // spelling on the wire and this file owns none of them, which is what keeps
 // the vocabulary in one package.
-package app
+package server
 
 import (
 	"context"

@@ -7,7 +7,7 @@
 // Two fields and nothing else. This file is read by a healthcheck and by an
 // operator's tooling, neither of which is authenticated, so it says where to
 // knock and not what is behind the door.
-package listener
+package server
 
 import (
 	"encoding/json"

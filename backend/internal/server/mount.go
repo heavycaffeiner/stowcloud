@@ -1,7 +1,7 @@
 //go:build linux
 
 // Serving the constructed engine.
-package app
+package server
 
 import (
 	"context"

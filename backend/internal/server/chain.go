@@ -5,7 +5,7 @@
 // The chain decides; this supplies what it decides over. Every crossing here
 // is one direction: the chain asks a question and a service answers it, and no
 // service learns that there is a request.
-package app
+package server
 
 import (
 	"context"

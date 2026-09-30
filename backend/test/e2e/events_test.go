@@ -20,7 +20,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/concurrency"
 
-	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server"
 )
 
 // eventsHost is the name the change-channel tests declare and then use.
@@ -32,14 +32,14 @@ const eventsHost = "files.example"
 
 // eventsEngine serves an engine whose app host is declared, with an
 // administrator and an ordinary account signed in.
-func eventsEngine(t *testing.T) (base string, admin, plain *http.Cookie, e *app.Engine) {
+func eventsEngine(t *testing.T) (base string, admin, plain *http.Cookie, e *server.Engine) {
 	t.Helper()
 	ctx := context.Background()
 	dir := t.TempDir()
 
 	// Saved before the engine that serves it opens: the host list is read at
 	// construction, which is the order an operator configures in anyway.
-	first, err := app.Open(ctx, app.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	first, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -61,7 +61,7 @@ func eventsEngine(t *testing.T) (base string, admin, plain *http.Cookie, e *app.
 	// Not closed by a cleanup: one test closes it itself, and a second close
 	// of an engine whose files are already released reports an error the test
 	// did not cause.
-	opened, oerr := app.Open(ctx, app.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	opened, oerr := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if oerr != nil {
 		t.Fatalf("reopening: %v", oerr)
 	}
@@ -756,7 +756,7 @@ func hostGet(t *testing.T, base, path string, cookie *http.Cookie) (int, []byte)
 
 // closeEngine releases an engine a test opened, tolerating one a test already
 // closed itself.
-func closeEngine(t *testing.T, e *app.Engine) {
+func closeEngine(t *testing.T, e *server.Engine) {
 	t.Helper()
 	if err := e.Close(); err != nil {
 		t.Errorf("closing: %v", err)

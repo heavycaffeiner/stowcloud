@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"testing"
 
-	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
-	live "github.com/heavycaffeiner/stowcloud/backend/internal/app/settings"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/dav"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server"
+	live "github.com/heavycaffeiner/stowcloud/backend/internal/server/settings"
 )
 
 // A saved host list reaches the running server.
@@ -24,7 +24,7 @@ func TestASavedHostListIsEnforced(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	e, err := app.Open(ctx, app.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	e, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestAContentHostServesNoApplicationRoute(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	e, err := app.Open(ctx, app.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	e, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestASavedProxyRangeDecidesWhoIsBelieved(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	e, err := app.Open(ctx, app.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	e, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -243,7 +243,7 @@ func TestTheStoredRateLimitIsApplied(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	e, err := app.Open(ctx, app.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	e, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}

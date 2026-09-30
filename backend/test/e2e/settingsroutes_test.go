@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server"
 )
 
 // A section saves and the document reports it back.
@@ -612,7 +612,7 @@ func TestANonStringSecretIsRefused(t *testing.T) {
 
 // bindEngine serves an engine with an administrator signed in, and hands the
 // engine back so a test can register the bind hook the process owns.
-func bindEngine(t *testing.T) (*app.Engine, string, *http.Cookie, string) {
+func bindEngine(t *testing.T) (*server.Engine, string, *http.Cookie, string) {
 	t.Helper()
 	ctx := context.Background()
 

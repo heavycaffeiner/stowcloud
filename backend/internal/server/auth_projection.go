@@ -1,6 +1,6 @@
 //go:build linux
 
-package app
+package server
 
 import (
 	"context"
@@ -24,7 +24,7 @@ type SessionDetailsDeps struct {
 }
 
 // FeaturesInputs are the live capabilities that determine which UI surfaces
-// this deployment serves. Callbacks keep transport independent of app.Engine.
+// this deployment serves. Callbacks keep transport independent of Engine.
 type FeaturesInputs struct {
 	SMBEnabled     func() bool
 	PreviewEnabled func() bool

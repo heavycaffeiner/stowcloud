@@ -8,7 +8,7 @@
 // may not name a filesystem type. Assembly is where a path the client wrote
 // becomes a share and a directory, and where the account's own permission is
 // applied to that translation.
-package app
+package server
 
 import (
 	"context"
