@@ -1,37 +1,27 @@
-import type { MouseEventHandler, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 
 export interface ListItemProps {
   selected?: boolean
-  onClick?: MouseEventHandler<HTMLDivElement>
-  onclick?: MouseEventHandler<HTMLDivElement>
+  onClick?: () => void
   leading?: ReactNode
   trailing?: ReactNode
   headline: ReactNode
   supporting?: ReactNode
 }
 
-export function ListItem({
-  selected = false,
-  onClick,
-  onclick,
-  leading,
-  trailing,
-  headline,
-  supporting
-}: ListItemProps) {
-  const action = onClick ?? onclick
+export function ListItem({ selected = false, onClick, leading, trailing, headline, supporting }: ListItemProps) {
   return (
     <div
-      className={`sc-list-item${selected ? ' sc-list-item-selected' : ''}${action ? ' sc-list-item-clickable' : ''}`}
-      onClick={action}
-      role={action ? 'button' : 'presentation'}
-      tabIndex={action ? 0 : undefined}
+      className={`sc-list-item${selected ? ' sc-list-item-selected' : ''}${onClick ? ' sc-list-item-clickable' : ''}`}
+      onClick={onClick ? () => onClick() : undefined}
+      role={onClick ? 'button' : 'presentation'}
+      tabIndex={onClick ? 0 : undefined}
       onKeyDown={
-        action
+        onClick
           ? (event) => {
               if (event.key === 'Enter' || event.key === ' ') {
                 event.preventDefault()
-                action(event as unknown as React.MouseEvent<HTMLDivElement>)
+                onClick()
               }
             }
           : undefined

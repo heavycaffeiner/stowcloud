@@ -39,7 +39,7 @@ export function LinksPage() {
             path={normalizePath(management.managing.path)}
             targetName={baseName(management.managing.path) || management.managing.path}
             targetIsDir={management.managingTarget?.kind === 'dir'}
-            onclose={() => management.setState({ managing: null, managingTarget: null })}
+            onClose={() => management.setState({ managing: null, managingTarget: null })}
           />
         ) : null
       }

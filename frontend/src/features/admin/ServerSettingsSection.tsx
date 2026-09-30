@@ -895,8 +895,8 @@ export function ServerSettingsSection() {
       <RestartDialog
         open={restartOutcome !== null}
         outcome={restartOutcome}
-        onclose={() => setRestartOutcome(null)}
-        onrestarted={() => {
+        onClose={() => setRestartOutcome(null)}
+        onRestarted={() => {
           setRestartOutcome(null)
           void queryClient.invalidateQueries({ queryKey: keys.adminSettings() })
         }}
@@ -905,8 +905,8 @@ export function ServerSettingsSection() {
         open={pathPicker !== null}
         mode={pathPicker?.mode ?? 'folder'}
         start={pathPicker ? String(values[pathPicker.key] ?? '') : ''}
-        onclose={() => setPathPicker(null)}
-        onpick={(path) => {
+        onClose={() => setPathPicker(null)}
+        onPick={(path) => {
           if (pathPicker) setValue(pathPicker.key, path)
           setPathPicker(null)
         }}

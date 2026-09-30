@@ -26,7 +26,7 @@ import {
 } from '../../../lib/upload/directory-picker'
 import { joinPath } from '../../../lib/api/path-utils'
 import type { BrowseState, BrowseFilterDate, BrowseFilterType } from './logic/types'
-import type { RowAction } from '../../../features/files/logic/row-actions'
+import type { MenuAnchor, RowAction } from '../../../features/files/logic/row-actions'
 import type { StatePatch } from '../../../lib/merge-state'
 import { ProgressCircular } from '../../../ui/ProgressCircular'
 
@@ -247,7 +247,7 @@ type BrowseContentProps = {
   onEmptyClick: (event: React.MouseEvent) => void
   onBlankMenu: (event: React.MouseEvent) => void
   onOpen: (entry: Entry) => void
-  onContextMenu: (entry: Entry, event: ReactMouseEvent) => void
+  onContextMenu: (entry: Entry, anchor: MenuAnchor) => void
   onRename: () => void
   onDelete: () => void
   onSearchFocus: () => void

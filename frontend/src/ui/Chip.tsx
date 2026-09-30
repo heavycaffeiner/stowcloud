@@ -1,46 +1,28 @@
 import 'mdui/components/chip.js'
 import type { MouseEventHandler, ReactNode } from 'react'
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
+import { useEventListener } from '../hooks/use-event-listener'
 export interface ChipProps {
   variant?: 'assist' | 'filter' | 'input'
   selected?: boolean
   onClick?: MouseEventHandler<HTMLElement>
-  onclick?: MouseEventHandler<HTMLElement>
   onRemove?: () => void
-  onremove?: () => void
   ariaLabel?: string
   children?: ReactNode
 }
 
-export function Chip({
-  variant = 'assist',
-  selected = false,
-  onClick,
-  onclick,
-  onRemove,
-  onremove,
-  ariaLabel,
-  children
-}: ChipProps) {
-  const remove = onRemove ?? onremove
-  const action = onClick ?? onclick ?? (remove ? () => remove() : undefined)
+export function Chip({ variant = 'assist', selected = false, onClick, onRemove, ariaLabel, children }: ChipProps) {
   const ref = useRef<HTMLElement | null>(null)
-  useEffect(() => {
-    const element = ref.current
-    if (!element || !remove) return
-    const handler = () => remove()
-    element.addEventListener('delete', handler)
-    return () => element.removeEventListener('delete', handler)
-  }, [remove])
+  useEventListener(onRemove ? ref : null, 'delete', () => onRemove?.())
   return (
     <mdui-chip
       ref={ref}
       variant={variant === 'filter' ? 'filter' : variant}
       selected={selected}
-      selectable={Boolean(onClick ?? onclick)}
-      deletable={Boolean(remove)}
+      selectable={Boolean(onClick)}
+      deletable={Boolean(onRemove)}
       aria-label={ariaLabel}
-      onClick={action}
+      onClick={onClick ?? (onRemove ? () => onRemove() : undefined)}
     >
       {children}
     </mdui-chip>

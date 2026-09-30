@@ -26,7 +26,7 @@ export function SearchPage() {
           </button>
           <h1>{t('search.title')}</h1>
         </header>
-        <SearchPanel scope={scope} autofocus />
+        <SearchPanel scope={scope} autoFocus />
       </div>
     </section>
   )

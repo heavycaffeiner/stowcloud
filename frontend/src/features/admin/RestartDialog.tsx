@@ -17,11 +17,11 @@ type Phase = 'confirm' | 'submitting' | 'waiting' | 'timeout' | 'success'
 interface RestartDialogProps {
   open: boolean
   outcome: ApplyOutcome | null
-  onclose: () => void
-  onrestarted: () => void
+  onClose: () => void
+  onRestarted: () => void
 }
 
-export function RestartDialog({ open, outcome, onclose, onrestarted }: RestartDialogProps) {
+export function RestartDialog({ open, outcome, onClose, onRestarted }: RestartDialogProps) {
   const { t } = useI18n()
   type RestartState = { phase: Phase; deadline: number | null; waitStartedAt: number | null; sawOutage: boolean }
   const [state, setState] = useState<RestartState>({
@@ -64,8 +64,8 @@ export function RestartDialog({ open, outcome, onclose, onrestarted }: RestartDi
     setSawOutage(step.sawOutage)
     if (step.outcome === 'confirmed') {
       setPhase('success')
-      onrestarted()
-      const timer = window.setTimeout(onclose, 900)
+      onRestarted()
+      const timer = window.setTimeout(onClose, 900)
       return () => window.clearTimeout(timer)
     }
     if (step.outcome === 'timed-out') setPhase('timeout')
@@ -79,8 +79,8 @@ export function RestartDialog({ open, outcome, onclose, onrestarted }: RestartDi
     health.dataUpdatedAt,
     health.isError,
     health.errorUpdatedAt,
-    onclose,
-    onrestarted
+    onClose,
+    onRestarted
   ])
   if (!open || !outcome?.restart_required) return null
   const activeUploads = outcome.active_uploads ?? 0
@@ -107,7 +107,7 @@ export function RestartDialog({ open, outcome, onclose, onrestarted }: RestartDi
   const actions =
     phase === 'confirm' ? (
       <>
-        <Button variant="text" onClick={onclose}>
+        <Button variant="text" onClick={onClose}>
           {t('common.cancel')}
         </Button>
         <Button danger onClick={confirmRestart}>
@@ -123,18 +123,18 @@ export function RestartDialog({ open, outcome, onclose, onrestarted }: RestartDi
       </>
     ) : phase === 'timeout' ? (
       <>
-        <Button variant="text" onClick={onclose}>
+        <Button variant="text" onClick={onClose}>
           {t('common.close')}
         </Button>
         <Button onClick={beginWaiting}>{t('common.retry')}</Button>
       </>
     ) : (
-      <Button variant="text" onClick={onclose}>
+      <Button variant="text" onClick={onClose}>
         {t('common.close')}
       </Button>
     )
   return (
-    <Dialog open={open} title={t('restart.title')} onClose={onclose} actions={actions}>
+    <Dialog open={open} title={t('restart.title')} onClose={onClose} actions={actions}>
       {phase === 'confirm' || phase === 'submitting' ? (
         <p>
           {activeUploads > 0 || activeJobs > 0

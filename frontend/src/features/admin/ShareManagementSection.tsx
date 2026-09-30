@@ -866,8 +866,8 @@ export function ShareManagementSection() {
         open={pathPicker !== null}
         mode={pathPicker?.mode ?? 'folder'}
         start={pathPicker?.start ?? ''}
-        onclose={() => setPathPicker(null)}
-        onpick={(path) => {
+        onClose={() => setPathPicker(null)}
+        onPick={(path) => {
           pathPicker?.apply(path)
           setPathPicker(null)
         }}

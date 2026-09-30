@@ -11,6 +11,13 @@ import { icons } from '../../../ui/icons'
 import { t } from '../../../lib/i18n'
 import { isEditableFileName } from './editable-files'
 
+/** Where a row menu opens and which element opened it; a mouse event fits as is. */
+export interface MenuAnchor {
+  readonly clientX: number
+  readonly clientY: number
+  readonly currentTarget: EventTarget | null
+}
+
 export interface RowAction {
   key: string
   label: string

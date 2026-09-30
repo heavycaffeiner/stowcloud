@@ -335,9 +335,9 @@ export function AppShell() {
               activeNav={activeNav}
               items={rootItems}
               active={activeRoot}
-              onselect={(root) => void navigate(`/b/${encodeURIComponent(root.id)}`)}
-              onnavselect={(item) => navigateTo(item.id, item.href)}
-              onsearch={openSearch}
+              onSelect={(root) => void navigate(`/b/${encodeURIComponent(root.id)}`)}
+              onNavSelect={(item) => navigateTo(item.id, item.href)}
+              onSearch={openSearch}
               onNew={activeNav === 'files' ? triggerNewAction : undefined}
               userInitial={userInitial}
             />
@@ -354,7 +354,7 @@ export function AppShell() {
           <NavigationBar
             items={compactItems}
             active={compactActive}
-            onselect={(id) => {
+            onSelect={(id) => {
               if (id === 'more') setShell((current) => ({ mobileDrawerOpen: !current.mobileDrawerOpen }))
               else navigateTo(id, compactItems.find((item) => item.id === id)?.href)
             }}
@@ -367,8 +367,8 @@ export function AppShell() {
             active={activeRoot}
             folderSelectorOnly
             overlay
-            onclose={() => setShell({ folderSelectorOpen: false })}
-            onselect={(root) => {
+            onClose={() => setShell({ folderSelectorOpen: false })}
+            onSelect={(root) => {
               setShell({ folderSelectorOpen: false })
               void navigate(`/b/${encodeURIComponent(root.id)}`)
             }}
@@ -383,16 +383,16 @@ export function AppShell() {
             items={rootItems}
             active={activeRoot}
             userInitial={userInitial}
-            onclose={() => setShell({ mobileDrawerOpen: false })}
-            onselect={(root) => {
+            onClose={() => setShell({ mobileDrawerOpen: false })}
+            onSelect={(root) => {
               setShell({ mobileDrawerOpen: false })
               void navigate(`/b/${encodeURIComponent(root.id)}`)
             }}
-            onnavselect={(item) => {
+            onNavSelect={(item) => {
               setShell({ mobileDrawerOpen: false })
               navigateTo(item.id, item.href)
             }}
-            onsearch={openSearch}
+            onSearch={openSearch}
             onNew={
               activeNav === 'files'
                 ? (trigger) => {
@@ -409,7 +409,7 @@ export function AppShell() {
         <JobTray />
         <UploadTray />
       </div>
-      <SearchSheet open={searchOpen && !compact} scope={searchScope} onclose={() => search.close()} />
+      <SearchSheet open={searchOpen && !compact} scope={searchScope} onClose={() => search.close()} />
     </>
   )
 }

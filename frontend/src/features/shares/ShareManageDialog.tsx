@@ -18,12 +18,11 @@ export interface ShareManageDialogProps {
   targetName: string
   targetIsDir: boolean
   onClose?: () => void
-  onclose?: () => void
 }
 
-export function ShareManageDialog({ open, path, targetName, targetIsDir, onClose, onclose }: ShareManageDialogProps) {
+export function ShareManageDialog({ open, path, targetName, targetIsDir, onClose }: ShareManageDialogProps) {
   const { t } = useI18n()
-  const closeParent = onClose ?? onclose ?? (() => undefined)
+  const closeParent = onClose ?? (() => undefined)
   const controller = useShareManageController(open, path, targetIsDir, t, closeParent)
   const {
     state,

@@ -27,11 +27,11 @@ export interface NavigationDrawerProps {
   readonly activeNav?: string
   readonly items?: readonly RootItem[]
   readonly active?: string
-  readonly onselect?: (item: RootItem) => void
-  readonly onnavselect?: (item: NavItem) => void
-  readonly onsearch?: () => void
+  readonly onSelect?: (item: RootItem) => void
+  readonly onNavSelect?: (item: NavItem) => void
+  readonly onSearch?: () => void
   readonly overlay?: boolean
-  readonly onclose?: () => void
+  readonly onClose?: () => void
   readonly folderSelectorOnly?: boolean
   readonly collapsed?: boolean
   readonly onNew?: (trigger: HTMLElement) => void
@@ -43,11 +43,11 @@ export function NavigationDrawer({
   activeNav = 'files',
   items = [],
   active = '',
-  onselect,
-  onnavselect,
-  onsearch,
+  onSelect,
+  onNavSelect,
+  onSearch,
   overlay = false,
-  onclose,
+  onClose,
   folderSelectorOnly = false,
   collapsed = false,
   onNew,
@@ -79,11 +79,11 @@ export function NavigationDrawer({
   }, [navItems, t])
 
   const closeOverlay = (): void => {
-    if (overlay) onclose?.()
+    if (overlay) onClose?.()
   }
 
   const selectDestination = (item: NavItem): void => {
-    onnavselect?.(item)
+    onNavSelect?.(item)
     closeOverlay()
   }
 
@@ -125,7 +125,7 @@ export function NavigationDrawer({
             type="button"
             className="sc-nav-drawer-overlay-close sc-icon-button"
             aria-label={t('common.close')}
-            onClick={onclose}
+            onClick={onClose}
           >
             <Icon name="close" />
           </button>
@@ -243,7 +243,7 @@ export function NavigationDrawer({
                         }
                         aria-current={active === root.id ? 'location' : undefined}
                         onClick={() => {
-                          onselect?.(root)
+                          onSelect?.(root)
                           closeOverlay()
                         }}
                       >
@@ -315,7 +315,7 @@ export function NavigationDrawer({
       id={folderSelectorOnly ? 'sc-folder-selector' : 'sc-shell-drawer'}
       className={drawerClass}
       label={folderSelectorOnly ? t('nav.folder_selector') : t('common.main_menu')}
-      onClose={() => onclose?.()}
+      onClose={() => onClose?.()}
     >
       {content}
     </Modal>

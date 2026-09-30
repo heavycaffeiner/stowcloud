@@ -14,10 +14,10 @@ export interface NavigationBarItem {
 export interface NavigationBarProps {
   readonly items: readonly NavigationBarItem[]
   readonly active: string
-  readonly onselect: (id: string) => void
+  readonly onSelect: (id: string) => void
 }
 
-export function NavigationBar({ items, active, onselect }: NavigationBarProps) {
+export function NavigationBar({ items, active, onSelect }: NavigationBarProps) {
   const { t } = useI18n()
   return (
     <nav className="sc-nav-bar" aria-label={t('common.main_menu')}>
@@ -34,7 +34,7 @@ export function NavigationBar({ items, active, onselect }: NavigationBarProps) {
             aria-controls={item.controls}
             onClick={(event) => {
               if (item.popup) event.currentTarget.focus()
-              onselect(item.id)
+              onSelect(item.id)
             }}
           >
             <span className="sc-nav-bar-icon">

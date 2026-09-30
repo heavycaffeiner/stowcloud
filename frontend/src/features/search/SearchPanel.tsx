@@ -11,17 +11,17 @@ import '../../styles/features/search/search-panel.css.ts'
 
 export interface SearchPanelProps {
   readonly scope?: string
-  readonly autofocus?: boolean
-  readonly onnavigated?: () => void
+  readonly autoFocus?: boolean
+  readonly onNavigated?: () => void
   readonly trailing?: ReactNode
 }
 
-export function SearchPanel({ scope = '', autofocus = false, onnavigated, trailing }: SearchPanelProps) {
+export function SearchPanel({ scope = '', autoFocus = false, onNavigated, trailing }: SearchPanelProps) {
   const { t } = useI18n()
   const resultsContainer = useRef<HTMLDivElement | null>(null)
   const categoriesRef = useRef<HTMLDivElement | null>(null)
   const controller = useSearchController({ scope, resultsContainer, categoriesRef })
-  const navigation = useSearchNavigation({ scope, state: controller.state, onNavigated: onnavigated })
+  const navigation = useSearchNavigation({ scope, state: controller.state, onNavigated })
   const { state } = controller
   const [spokenStatus, setSpokenStatus] = useState('')
   const lastSpokenAt = useRef(0)
@@ -60,7 +60,7 @@ export function SearchPanel({ scope = '', autofocus = false, onnavigated, traili
           type="search"
           value={state.query}
           placeholder={t('search.placeholder')}
-          autoFocus={autofocus}
+          autoFocus={autoFocus}
           onChange={(event) => controller.set('query', event.target.value)}
           onKeyDown={onQueryKeyDown}
         />

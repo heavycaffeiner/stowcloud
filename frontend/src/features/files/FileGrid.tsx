@@ -9,6 +9,7 @@ import { useViewStore } from '../../lib/store/view.store'
 import { computeScaleMapping, computeWindow, rowIndexToScrollTop } from '../../lib/virtual/windowing'
 import { cellPos, sectionRows, verticalTarget } from '../../lib/virtual/grid-sections'
 import { indicesInRect, type Rect } from './logic/marquee'
+import type { MenuAnchor } from './logic/row-actions'
 import { isVideoFile } from '../preview/logic/media-utils'
 import { Thumbnail } from '../preview/Thumbnail'
 import { MiddleEllipsis } from './MiddleEllipsis'
@@ -27,7 +28,7 @@ export interface FileGridProps {
   requestMore: () => void
   perms: Perms
   onOpen: (entry: Entry) => void
-  onContextMenu: (entry: Entry, event: ReactMouseEvent) => void
+  onContextMenu: (entry: Entry, anchor: MenuAnchor) => void
   menuFor?: string | null
   onRename?: () => void
   onDelete?: () => void
@@ -249,13 +250,11 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
     const element = entry ? document.getElementById(domId(entry.name)) : null
     if (!entry || !element) return
     const box = element.getBoundingClientRect()
-    onContextMenu(
-      entry,
-      new window.MouseEvent('contextmenu', {
-        clientX: Math.round(box.left + box.width / 2),
-        clientY: Math.round(box.top + box.height / 2)
-      }) as unknown as ReactMouseEvent
-    )
+    onContextMenu(entry, {
+      clientX: Math.round(box.left + box.width / 2),
+      clientY: Math.round(box.top + box.height / 2),
+      currentTarget: element
+    })
   }
 
   useImperativeHandle(

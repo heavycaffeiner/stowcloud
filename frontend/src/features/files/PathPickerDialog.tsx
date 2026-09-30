@@ -13,8 +13,8 @@ export interface PathPickerDialogProps {
   mode: 'folder' | 'file'
   start?: string
   token?: string
-  onclose: () => void
-  onpick: (path: string) => void
+  onClose: () => void
+  onPick: (path: string) => void
 }
 
 function guessStart(start: string | undefined, mode: PathPickerDialogProps['mode']): string {
@@ -23,7 +23,7 @@ function guessStart(start: string | undefined, mode: PathPickerDialogProps['mode
   const cut = start.lastIndexOf('/')
   return cut > 0 ? start.slice(0, cut) : ''
 }
-export function PathPickerDialog({ open, mode, start, token, onclose, onpick }: PathPickerDialogProps) {
+export function PathPickerDialog({ open, mode, start, token, onClose, onPick }: PathPickerDialogProps) {
   const { t } = useI18n()
   const [state, setState] = useState({
     currentPath: '',
@@ -79,8 +79,8 @@ export function PathPickerDialog({ open, mode, start, token, onclose, onpick }: 
     setState((value) => ({ ...value, currentPath: path, selected: null }))
   }
   const confirm = () => {
-    if (mode === 'folder' && listing.data && listing.data.path !== '') onpick(listing.data.path)
-    if (mode === 'file' && selected !== null) onpick(selected)
+    if (mode === 'folder' && listing.data && listing.data.path !== '') onPick(listing.data.path)
+    if (mode === 'file' && selected !== null) onPick(selected)
   }
 
   return (
@@ -91,7 +91,7 @@ export function PathPickerDialog({ open, mode, start, token, onclose, onpick }: 
       dismissible={false}
       actions={
         <>
-          <Button variant="text" onClick={onclose}>
+          <Button variant="text" onClick={onClose}>
             {t('common.cancel')}
           </Button>
           <Button disabled={!canConfirm} onClick={confirm}>

@@ -196,7 +196,7 @@ export function LogsSection() {
                 key={level}
                 checked={filters.levels.has(level)}
                 label={LEVEL_KEY[level] ? t(LEVEL_KEY[level]) : level}
-                onchange={() => logsForm.toggleLevel(level)}
+                onChange={() => logsForm.toggleLevel(level)}
               />
             ))}
           </div>

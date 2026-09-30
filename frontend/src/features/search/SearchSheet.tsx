@@ -8,13 +8,13 @@ import { SearchPanel } from './SearchPanel'
 export interface SearchSheetProps {
   readonly open: boolean
   readonly scope?: string
-  readonly onclose: () => void
+  readonly onClose: () => void
 }
 
-export function SearchSheet({ open, scope = '', onclose }: SearchSheetProps) {
+export function SearchSheet({ open, scope = '', onClose }: SearchSheetProps) {
   const { t } = useI18n()
   const trailing: ReactNode = (
-    <IconButton label={t('search.close')} onClick={onclose}>
+    <IconButton label={t('search.close')} onClick={onClose}>
       <Icon name="close" />
     </IconButton>
   )
@@ -23,11 +23,11 @@ export function SearchSheet({ open, scope = '', onclose }: SearchSheetProps) {
       open={open}
       className="sc-search-sheet"
       label={t('search.title')}
-      onClose={onclose}
+      onClose={onClose}
       initialFocus={(dialog) => dialog.querySelector<HTMLElement>('input[type="search"]')}
     >
       <div className="sc-search-sheet-body">
-        <SearchPanel scope={scope} autofocus onnavigated={onclose} trailing={trailing} />
+        <SearchPanel scope={scope} autoFocus onNavigated={onClose} trailing={trailing} />
       </div>
     </Modal>
   )

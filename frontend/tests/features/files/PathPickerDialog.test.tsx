@@ -16,8 +16,8 @@ describe('PathPickerDialog', () => {
         status: 200
       })
     )
-    const onpick = vi.fn()
-    render(<PathPickerDialog open mode="file" token="setup-token" onclose={vi.fn()} onpick={onpick} />)
+    const onPick = vi.fn()
+    render(<PathPickerDialog open mode="file" token="setup-token" onClose={vi.fn()} onPick={onPick} />)
 
     const file = await screen.findByRole('button', { name: 'note.txt' })
     file.dispatchEvent(new Event('click', { bubbles: true }))
@@ -27,7 +27,7 @@ describe('PathPickerDialog', () => {
     const choose = document.querySelector('mdui-button[variant="filled"]')!
     expect(choose.hasAttribute('disabled')).toBe(false)
     choose.dispatchEvent(new Event('click', { bubbles: true }))
-    expect(onpick).toHaveBeenCalledWith('/note.txt')
+    expect(onPick).toHaveBeenCalledWith('/note.txt')
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/v1/system/setup/browse'),
       expect.objectContaining({ method: 'POST' })
@@ -39,7 +39,7 @@ describe('PathPickerDialog', () => {
       .mockResolvedValueOnce(
         new Response(JSON.stringify(listing('', [{ name: 'root', path: '/root', is_dir: true }])), { status: 200 })
       )
-    render(<PathPickerDialog open mode="folder" start="/typed" onclose={vi.fn()} onpick={vi.fn()} />)
+    render(<PathPickerDialog open mode="folder" start="/typed" onClose={vi.fn()} onPick={vi.fn()} />)
     expect(await screen.findByRole('button', { name: 'Open root' })).toBeTruthy()
   })
 })

@@ -276,8 +276,8 @@ export function SetupPage() {
         mode="folder"
         start={sharePath}
         token={pickerAuthenticated ? undefined : token}
-        onclose={() => actions.patch({ pickerOpen: false })}
-        onpick={(path) => actions.patch({ sharePath: path, pickerOpen: false })}
+        onClose={() => actions.patch({ pickerOpen: false })}
+        onPick={(path) => actions.patch({ sharePath: path, pickerOpen: false })}
       />
     </main>
   )

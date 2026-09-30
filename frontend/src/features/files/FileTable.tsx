@@ -13,6 +13,7 @@ import {
   rowIndexToScrollTop
 } from '../../lib/virtual/windowing'
 import { indicesInRect, type Rect } from './logic/marquee'
+import type { MenuAnchor } from './logic/row-actions'
 import { FileRow } from './FileRow'
 import { useFileActivation } from './hooks/use-file-activation'
 import { useFileFocusPreservation } from './hooks/use-file-focus-preservation'
@@ -35,7 +36,7 @@ export interface FileTableProps {
   requestMore: () => void
   perms: Perms
   onOpen: (entry: Entry) => void
-  onContextMenu: (entry: Entry, event: ReactMouseEvent) => void
+  onContextMenu: (entry: Entry, anchor: MenuAnchor) => void
   onRename?: () => void
   onDelete?: () => void
   onSearchFocus?: () => void
@@ -133,13 +134,11 @@ export const FileTable = forwardRef<FileViewHandle, FileTableProps>(function Fil
     const element = entry ? document.getElementById(domId(entry.name)) : null
     if (!entry || !element) return
     const box = element.getBoundingClientRect()
-    onContextMenu(
-      entry,
-      new window.MouseEvent('contextmenu', {
-        clientX: Math.round(box.left + box.width / 2),
-        clientY: Math.round(box.top + box.height / 2)
-      }) as unknown as ReactMouseEvent
-    )
+    onContextMenu(entry, {
+      clientX: Math.round(box.left + box.width / 2),
+      clientY: Math.round(box.top + box.height / 2),
+      currentTarget: element
+    })
   }
   useImperativeHandle(
     ref,

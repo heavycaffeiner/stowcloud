@@ -11,6 +11,7 @@ import { describeApiError } from '../../../lib/api/error-text'
 import type { Entry, SortKey } from '../../../lib/api/client'
 import type { FileGridHandle } from '../../../features/files/FileGrid'
 import type { FileViewHandle } from '../../../features/files/FileTable'
+import type { MenuAnchor } from '../../../features/files/logic/row-actions'
 import { PreviewDialog } from '../../../features/preview/PreviewDialog'
 import { useDocumentTitle } from '../../hooks/use-document-title'
 import { useBrowseState } from './hooks/use-browse-state'
@@ -170,13 +171,13 @@ function BrowsePageContent({ path }: { path: string }) {
   const actionTarget = selected[0] ?? state.contextEntry
   // A keyboard shortcut runs only what the row menu would offer for the selection.
   const runRowAction = (key: string) => actions.actions.find((action) => action.key === key)?.run()
-  const openContextFor = (entry: Entry, event: React.MouseEvent) => {
+  const openContextFor = (entry: Entry, anchor: MenuAnchor) => {
     if (!selectedNames.has(entry.name)) selection.only(entry.name, entries.indexOf(entry))
     patch({
       contextEntry: entry,
       blankMenu: null,
-      menuTrigger: event.currentTarget as HTMLElement,
-      contextMenu: { x: event.clientX, y: event.clientY }
+      menuTrigger: anchor.currentTarget instanceof HTMLElement ? anchor.currentTarget : null,
+      contextMenu: { x: anchor.clientX, y: anchor.clientY }
     })
   }
   const onDetailsContext = (event: React.MouseEvent) => {

@@ -1,6 +1,5 @@
 import 'mdui/components/checkbox.js'
-import type { ChangeEvent } from 'react'
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
 
 export interface CheckboxProps {
   checked?: boolean
@@ -11,8 +10,11 @@ export interface CheckboxProps {
   required?: boolean
   name?: string
   value?: string
-  onchange?: (checked: boolean) => void
   onChange?: (checked: boolean) => void
+}
+
+interface CheckboxElement extends HTMLElement {
+  checked: boolean
 }
 
 export function Checkbox({
@@ -24,27 +26,22 @@ export function Checkbox({
   required = false,
   name,
   value,
-  onchange,
   onChange
 }: CheckboxProps) {
-  const ref = useRef<HTMLInputElement>(null)
-  useEffect(() => {
-    if (ref.current) ref.current.indeterminate = indeterminate
-  }, [indeterminate])
-  const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
-    onchange?.(event.currentTarget.checked)
-    onChange?.(event.currentTarget.checked)
-  }
+  const ref = useRef<CheckboxElement>(null)
   return (
     <label className="sc-checkbox">
       <mdui-checkbox
+        ref={ref}
         checked={checked}
         indeterminate={indeterminate}
         disabled={disabled}
         required={required}
         name={name}
         value={value}
-        onChange={handleChange}
+        onChange={() => {
+          if (ref.current) onChange?.(ref.current.checked)
+        }}
         aria-label={label}
       />
       {label && !hideLabel ? <span>{label}</span> : null}
