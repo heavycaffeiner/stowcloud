@@ -13,28 +13,15 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/dav"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/emergency"
-	featuretransfer "github.com/heavycaffeiner/stowcloud/backend/internal/feature/directtransfer"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
-	accounthttp "github.com/heavycaffeiner/stowcloud/backend/internal/http/api/account"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/adminlogs"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/adminsettings"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/adminshares"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/adminsmb"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/adminstorage"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/directtransfer"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/encryption"
-	filehttp "github.com/heavycaffeiner/stowcloud/backend/internal/http/api/files"
-	jobshttp "github.com/heavycaffeiner/stowcloud/backend/internal/http/api/jobs"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/links"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/oidc"
-	previewhttp "github.com/heavycaffeiner/stowcloud/backend/internal/http/api/preview"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/setup"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/smbaccount"
-	trashhttp "github.com/heavycaffeiner/stowcloud/backend/internal/http/api/trash"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/uploads"
+	jobshttp "github.com/heavycaffeiner/stowcloud/backend/internal/jobs"
 	featureoidc "github.com/heavycaffeiner/stowcloud/backend/internal/oidc"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/preview"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
+	links "github.com/heavycaffeiner/stowcloud/backend/internal/shares"
+	adminsmb "github.com/heavycaffeiner/stowcloud/backend/internal/smb"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/smb/agent"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/uploads"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/web"
 )
 
@@ -63,10 +50,10 @@ func (e *Engine) routes(router *gin.Engine) error {
 	sessionAPI := newTyped(router, session, config, e.errs)
 	adminAPI := newTyped(router, admin, config, e.errs)
 
-	resolve := filehttp.Resolve(e.Core)
+	resolve := files.Resolve(e.Core)
 
 	public.GET("/api/v1/system/health", e.health)
-	setupRoutes := setup.NewHandlers(setup.Deps{
+	setupRoutes := adminhttp.NewSetupHandlers(adminhttp.SetupDeps{
 		Auth: e.Auth, State: e.State, Gate: e.setup,
 		GrantEveryShare: e.Core.GrantEveryShare, CreateShare: e.Core.CreateShare,
 		Apply: e.Settings.Load, DataDir: e.dataDir, Logger: e.log(),
@@ -82,7 +69,7 @@ func (e *Engine) routes(router *gin.Engine) error {
 	admin.GET("/api/v1/admin/fs", adminFS.Browse)
 	session.GET("/api/v1/events", e.eventsSocket())
 
-	oidcRoutes := oidc.New(oidc.Deps{
+	oidcRoutes := featureoidc.NewHandlers(featureoidc.Deps{
 		Auth:          e.Auth,
 		Client:        func() *featureoidc.Client { e.settingsMu.RLock(); defer e.settingsMu.RUnlock(); return e.oidcClient },
 		DisplayName:   func() string { e.settingsMu.RLock(); defer e.settingsMu.RUnlock(); return e.oidcName },
@@ -124,17 +111,17 @@ func (e *Engine) routes(router *gin.Engine) error {
 	session.POST("/api/v1/account/totp/disable", middleware.LimitJSON, account.TOTPDisable)
 	session.GET("/api/v1/account/totp/recovery-codes", account.RecoveryList)
 	session.POST("/api/v1/account/totp/recovery-codes", middleware.LimitJSON, account.RecoveryCreate)
-	smb := &smbaccount.Handler{Auth: e.Auth}
+	smb := &adminsmb.AccountHandler{Auth: e.Auth}
 	op(sessionAPI, http.MethodPost, "/api/v1/account/smb", "account.smb.create", smb.Access)
 	op(sessionAPI, http.MethodPost, "/api/v1/account/smb/password", "account.smb.password.set", smb.SetPassword)
 	op(sessionAPI, http.MethodDelete, "/api/v1/account/smb/password", "account.smb.password.delete", smb.DeletePassword)
 	session.POST("/api/v1/account/oidc-link/start", middleware.LimitJSON, oidcRoutes.LinkStart)
 	session.DELETE("/api/v1/account/oidc-link", oidcRoutes.LinkDelete)
-	session.POST("/api/v1/account/roots/order", middleware.LimitJSON, accounthttp.RootOrderHandler(accounthttp.RootOrderDeps{State: e.State}))
+	session.POST("/api/v1/account/roots/order", middleware.LimitJSON, auth.RootOrderHandler(auth.RootOrderDeps{State: e.State}))
 
-	openClaim := filehttp.OpenBoundClaim(e.claimKey, e.clk().Nanos)
-	projection := filehttp.NewProjection(filehttp.ProjectionDeps{Core: e.Core, ClaimKey: e.claimKey, Now: e.clk().Nanos, Logger: e.log()})
-	fs := filehttp.NewHandler(filehttp.Deps{
+	openClaim := files.OpenBoundClaim(e.claimKey, e.clk().Nanos)
+	projection := files.NewProjection(files.ProjectionDeps{Core: e.Core, ClaimKey: e.claimKey, Now: e.clk().Nanos, Logger: e.log()})
+	fs := files.NewHandler(files.Deps{
 		Core: e.Core, Archives: e.Archives, Gate: e.archiveGate,
 		Resolve: resolve, OpenClaim: openClaim,
 		EntryView: projection.EntryView, Vpath: projection.Vpath, Refs: projection.Refs,
@@ -145,7 +132,7 @@ func (e *Engine) routes(router *gin.Engine) error {
 	session.GET("/api/v1/files/stat", fs.Stat)
 	session.GET("/api/v1/files/read", fs.Read)
 	session.GET("/api/v1/files/size", fs.Size)
-	session.GET("/api/v1/files/thumbnail", previewhttp.ThumbnailHandler(previewhttp.ThumbnailDeps{
+	session.GET("/api/v1/files/thumbnail", preview.ThumbnailHandler(preview.ThumbnailDeps{
 		Core: e.Core, Resolve: resolve, OpenClaim: openClaim, PreviewLease: e.previewLease, Logger: e.logger,
 	}))
 	session.POST("/api/v1/files/mkdir", middleware.LimitJSON, fs.Mkdir)
@@ -156,18 +143,18 @@ func (e *Engine) routes(router *gin.Engine) error {
 	session.POST("/api/v1/files/rename", middleware.LimitJSON, fs.Rename)
 	session.POST("/api/v1/files/archive", middleware.LimitJSON, fs.Archive)
 	session.GET("/api/v1/files/archive/fetch", fs.ArchiveFetch)
-	session.GET("/api/v1/files/archive/list", previewhttp.ArchiveListHandler(previewhttp.ArchiveListDeps{
+	session.GET("/api/v1/files/archive/list", preview.ArchiveListHandler(preview.ArchiveListDeps{
 		Core: e.Core, Resolve: resolve, AcquireArchive: e.acquireArchive, Logger: e.log(),
 	}))
 	session.POST("/api/v1/files/download", middleware.LimitJSON, fs.Download)
 	session.GET("/api/v1/files/download/fetch", fs.DownloadFetch)
 	session.GET("/api/v1/files/recent", fs.Recent)
 
-	transfer := directtransfer.NewHandler(directtransfer.Deps{
+	transfer := uploads.NewDirectHandler(uploads.DirectDependencies{
 		State: e.State, Resolve: resolve,
 		ShareEncrypted: e.Core.ShareEncrypted, GuardLock: e.guardDavLock,
-		ProviderForRow:        featuretransfer.ProviderForRow(e.Core, resolve),
-		RevalidateDestination: featuretransfer.RevalidateDestination(e.Core, resolve, e.guardDavLock),
+		ProviderForRow:        uploads.DirectProviderForRow(e.Core, resolve),
+		RevalidateDestination: uploads.RevalidateDirectDestination(e.Core, resolve, e.guardDavLock),
 		Now:                   e.now, Logger: e.log(),
 	})
 	session.POST("/api/v1/direct-uploads", middleware.LimitJSON, transfer.Create)
@@ -186,7 +173,7 @@ func (e *Engine) routes(router *gin.Engine) error {
 	session.DELETE("/api/v1/uploads/:id", upload.Abort)
 	public.OPTIONS("/api/v1/uploads/:id", upload.DiscoverOne)
 
-	linkRoutes := &links.Handler{
+	linkRoutes := &links.LinksHandler{
 		Core: e.Core, Auth: e.Auth, Resolve: resolve, Now: e.now,
 		VpathOf: func(l files.Link) string {
 			vp, err := e.Core.VpathFor(l.Owner, l.Share, l.Path)
@@ -202,7 +189,7 @@ func (e *Engine) routes(router *gin.Engine) error {
 	op(sessionAPI, http.MethodDelete, "/api/v1/links/{id}", "links.delete", linkRoutes.Delete)
 	op(adminAPI, http.MethodGet, "/api/v1/admin/links", "admin.links.list", linkRoutes.AdminList)
 
-	trash := &trashhttp.Handler{Core: e.Core, Resolve: resolve, Errors: e.errs}
+	trash := &files.TrashHandler{Core: e.Core, Resolve: resolve, Errors: e.errs}
 	op(sessionAPI, http.MethodGet, "/api/v1/trash", "trash.list", trash.List)
 	op(sessionAPI, http.MethodPost, "/api/v1/trash/restore", "trash.restore", trash.Restore)
 	op(sessionAPI, http.MethodPost, "/api/v1/trash/purge", "trash.purge", trash.Purge)
@@ -217,7 +204,7 @@ func (e *Engine) routes(router *gin.Engine) error {
 
 	session.GET("/api/v1/search/stream", e.searchHTTP.SearchStream)
 
-	enc := &encryption.Handler{Core: e.Core}
+	enc := &files.EncryptionHandler{Core: e.Core}
 	op(sessionAPI, http.MethodGet, "/api/v1/encryption", "encryption.list", enc.List)
 	op(adminAPI, http.MethodPost, "/api/v1/encryption/{id}", "admin.encryption.enable", enc.Enable)
 	op(adminAPI, http.MethodDelete, "/api/v1/encryption/{id}", "admin.encryption.disable", enc.Disable)
@@ -237,7 +224,7 @@ func (e *Engine) routes(router *gin.Engine) error {
 	admin.DELETE("/api/v1/admin/groups/:id/members/:user", users.MemberRemove)
 	admin.GET("/api/v1/admin/audit", users.Audit)
 
-	shares := &adminshares.Handler{
+	shares := &adminhttp.SharesHandler{
 		Core: e.Core, MarkSearchIncomplete: e.searchController.MarkIncomplete,
 		WatchShare: e.watchShare, UnwatchShare: e.unwatchShare, Logger: e.logger,
 	}
@@ -251,13 +238,13 @@ func (e *Engine) routes(router *gin.Engine) error {
 	op(adminAPI, http.MethodDelete, "/api/v1/admin/shares/{id}", "admin.shares.delete", shares.DeleteShare)
 	op(adminAPI, http.MethodPost, "/api/v1/admin/shares/{id}/retry", "admin.shares.retry", shares.RetryShare)
 
-	logs := &adminlogs.Handler{Logs: e.Logs, Auth: e.Auth}
+	logs := &adminhttp.LogsHandler{Logs: e.Logs, Auth: e.Auth}
 	op(adminAPI, http.MethodGet, "/api/v1/admin/logs", "admin.logs.list", logs.List)
 	op(adminAPI, http.MethodGet, "/api/v1/admin/logs/timeline", "admin.logs.timeline", logs.Timeline)
-	storage := &adminstorage.Handler{Core: e.Core, State: e.State}
+	storage := &adminhttp.StorageHandler{Core: e.Core, State: e.State}
 	op(adminAPI, http.MethodGet, "/api/v1/admin/storage", "admin.storage", storage.Get)
 
-	smbAdmin := adminsmb.NewHandlers(adminsmb.Deps{Apply: func(ctx context.Context) (agent.Report, bool, error) {
+	smbAdmin := adminsmb.NewAdminHandlers(adminsmb.AdminDeps{Apply: func(ctx context.Context) (agent.Report, bool, error) {
 		p := e.smbPublisherOf()
 		if p == nil {
 			return agent.Report{}, false, nil
@@ -270,7 +257,7 @@ func (e *Engine) routes(router *gin.Engine) error {
 	admin.GET("/api/v1/admin/index/estimate", e.searchHTTP.IndexEstimate)
 	admin.GET("/api/v1/admin/index/status", e.searchHTTP.IndexStatus)
 
-	settings := adminsettings.NewHandlers(adminsettings.Deps{
+	settings := adminhttp.NewSettingsHandlers(adminhttp.SettingsDeps{
 		State: e.State, Auth: e.Auth, Settings: e.Settings,
 		DataDir: e.dataDir, Hardening: e.hardening,
 		UploadPatch: upload.SettingsPatch,

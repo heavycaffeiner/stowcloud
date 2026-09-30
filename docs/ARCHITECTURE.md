@@ -2,7 +2,7 @@
 
 The Linux server starts at `backend/cmd/sc-engine/main.go`. Preflight loads the deployment settings and security policy. Hanami owns process startup and listener generations. `backend/internal/app/open.go` constructs the services, and `app/mount.go` attaches native API, WebDAV, public-link, compatibility, and SPA routes. Native JSON operations use Gin or Huma; Huma exposes the typed operations through OpenAPI.
 
-`backend/internal/db` owns SQLite state, cache, and journal files. `backend/internal/fs` owns filesystem and virtual filesystem operations. `backend/internal/feature` holds domain services, while `backend/internal/http` holds most transport handlers. The current route table, handler map, and Huma registration are separate. The planned restructure puts route registration in one server package.
+`backend/internal/db` owns SQLite state, cache, and journal files. `backend/internal/fs` owns filesystem and virtual filesystem operations. Each feature package, such as `backend/internal/files`, `uploads`, `shares`, and `admin`, holds its domain service and the handlers that serve it. `backend/internal/app/routes.go` registers every Gin route and Huma operation by access group. The planned restructure moves that wiring into one server package.
 
 Tests that boot a whole engine and drive it over HTTP live in `backend/test/e2e`, with the shared boot and sign-in helpers in `harness_test.go`. Tests beside the code in `backend/internal` are unit tests of that package.
 

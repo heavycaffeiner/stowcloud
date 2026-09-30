@@ -17,7 +17,6 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/runtimecfg"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/server"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/jobs"
 	task "github.com/heavycaffeiner/stowcloud/backend/internal/platform/concurrency"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
@@ -59,7 +58,7 @@ func (e *Engine) startEvents(ctx context.Context, cfg watchSettings) {
 		return
 	}
 	e.watcher = watcher
-	e.events = server.NewEventHub(ctx, server.EventDeps{
+	e.events = files.NewEventHub(ctx, files.EventDeps{
 		Resolve:     e.resolveForEvents,
 		Subscribe:   e.pinForEvents,
 		Unsubscribe: e.unpinForEvents,
@@ -86,8 +85,8 @@ func (e *Engine) unwatchShare(def files.ShareDef) {
 }
 
 // eventSources maps the runtime stream to the transport's opaque event shape.
-func eventSources(ctx context.Context, in <-chan jobs.Event) <-chan server.EventSource {
-	out := make(chan server.EventSource, eventQueue)
+func eventSources(ctx context.Context, in <-chan jobs.Event) <-chan files.EventSource {
+	out := make(chan files.EventSource, eventQueue)
 	task.Go(ctx, "event source mapping", func() {
 		defer close(out)
 		for {
@@ -99,7 +98,7 @@ func eventSources(ctx context.Context, in <-chan jobs.Event) <-chan server.Event
 					return
 				}
 				select {
-				case out <- server.EventSource{Share: ev.Share, Dir: ev.Dir, All: ev.All}:
+				case out <- files.EventSource{Share: ev.Share, Dir: ev.Dir, All: ev.All}:
 				case <-ctx.Done():
 					return
 				}
@@ -132,19 +131,19 @@ func (e *Engine) invalidateCache(ctx context.Context, ev jobs.Event) {
 }
 
 // resolveForEvents applies the caller's read permission to a path they named.
-func (e *Engine) resolveForEvents(user int64, path string) (server.EventTarget, bool) {
+func (e *Engine) resolveForEvents(user int64, path string) (files.EventTarget, bool) {
 	vp, err := vfs.ParseVpath(path)
 	if err != nil {
-		return server.EventTarget{}, false
+		return files.EventTarget{}, false
 	}
 	resolved, rerr := e.Core.Resolve(files.UserID(user), vp, acl.Read)
 	if rerr != nil {
-		return server.EventTarget{}, false
+		return files.EventTarget{}, false
 	}
-	return server.EventTarget{Share: uint32(resolved.Share()), Dir: resolved.Path().String(), Pin: resolved.Path()}, true
+	return files.EventTarget{Share: uint32(resolved.Share()), Dir: resolved.Path().String(), Pin: resolved.Path()}, true
 }
 
-func (e *Engine) pinForEvents(t server.EventTarget) {
+func (e *Engine) pinForEvents(t files.EventTarget) {
 	if e.watcher == nil {
 		return
 	}
@@ -155,7 +154,7 @@ func (e *Engine) pinForEvents(t server.EventTarget) {
 	e.watcher.Subscribe(t.Share, path.String())
 }
 
-func (e *Engine) unpinForEvents(t server.EventTarget) {
+func (e *Engine) unpinForEvents(t files.EventTarget) {
 	if e.watcher == nil {
 		return
 	}

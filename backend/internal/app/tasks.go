@@ -7,9 +7,9 @@ import (
 	"context"
 	"fmt"
 
-	directtransfer "github.com/heavycaffeiner/stowcloud/backend/internal/feature/directtransfer"
-	filehttp "github.com/heavycaffeiner/stowcloud/backend/internal/http/api/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/jobs"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/uploads"
 )
 
 func (e *Engine) tasks() []jobs.Task {
@@ -90,6 +90,6 @@ func (e *Engine) sweepUploads(ctx context.Context) error {
 
 // sweepDirectTransfers delegates durable transfer recovery to its feature owner.
 func (e *Engine) sweepDirectTransfers(ctx context.Context) error {
-	_, err := directtransfer.Sweep(ctx, e.State, e.now(), directtransfer.ProviderForRow(e.Core, filehttp.Resolve(e.Core)), e.log())
+	_, err := uploads.SweepDirect(ctx, e.State, e.now(), uploads.DirectProviderForRow(e.Core, files.Resolve(e.Core)), e.log())
 	return err
 }

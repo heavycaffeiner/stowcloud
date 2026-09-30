@@ -12,10 +12,9 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
-	filehttp "github.com/heavycaffeiner/stowcloud/backend/internal/http/api/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/publiclinks"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/jobs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/web"
 )
 
@@ -35,8 +34,8 @@ func (e *Engine) Mount(router *gin.Engine) error {
 	return nil
 }
 
-func (e *Engine) newPublicLinks() *publiclinks.Public {
-	return publiclinks.NewPublic(publiclinks.PublicDeps{
+func (e *Engine) newPublicLinks() *shares.Public {
+	return shares.NewPublic(shares.PublicDeps{
 		Core:     e.Core,
 		State:    e.State,
 		ClaimKey: e.claimKey.Key,
@@ -47,11 +46,11 @@ func (e *Engine) newPublicLinks() *publiclinks.Public {
 		},
 		Logger:          e.log(),
 		Frontend:        web.Page(),
-		CloseStream:     func(stream *files.Stream, name string) { filehttp.CloseStream(stream, name, e.log()) },
-		SendStreamRange: filehttp.SendStreamRange,
+		CloseStream:     func(stream *files.Stream, name string) { files.CloseStream(stream, name, e.log()) },
+		SendStreamRange: files.SendStreamRange,
 		AcquireArchive:  e.acquireArchive,
 		WriteArchive: func(ctx context.Context, w io.Writer, link files.Link, sub, name string) {
-			if err := filehttp.BuildArchive(ctx, w, name, func(ctx context.Context, visit filehttp.ArchiveVisit) error {
+			if err := files.BuildArchive(ctx, w, name, func(ctx context.Context, visit files.ArchiveVisit) error {
 				return e.Core.LinkArchiveWalk(ctx, link, sub, visit)
 			}, e.log()); err != nil {
 				e.log().Warn("a link archive ended early", "name", name, "error", err)

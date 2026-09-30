@@ -1,0 +1,215 @@
+//go:build linux
+
+// Package adminsettings serves administrator settings and restart intent.
+// It owns validation and response projection; the application supplies the
+// settings coordinator through a narrow interface.
+package admin
+
+import (
+	"context"
+	"log/slog"
+	"net"
+	"net/http"
+	"net/netip"
+	"time"
+
+	"github.com/gin-gonic/gin"
+
+	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/catalogue"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/check"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/runtimecfg"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/system/jail"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
+)
+
+const secretOIDCClient = "oidc_client_secret" //nolint:gosec // G101 flags this config key; it names stored secret material but is not secret material itself.
+
+const restartGrace = 250 * time.Millisecond
+
+// Settings is the application settings boundary used by these routes.
+type Settings interface {
+	Values(context.Context) runtimecfg.Values
+	Load(context.Context)
+	HasConfigSecret(context.Context, string) bool
+	WouldLoosenHardening(context.Context, jail.Policy) bool
+	BindPinned() bool
+	StoreConfigSecret(context.Context, string, string) error
+	TrustedProxies() []netip.Prefix
+}
+
+// SettingsDeps contains only services and callbacks needed by these routes.
+type SettingsDeps struct {
+	State        *state.DB
+	Auth         *auth.Service
+	Settings     Settings
+	DataDir      string
+	Hardening    jail.Policy
+	UploadPatch  gin.HandlerFunc
+	SMBAgentView func() *SMBAgentView
+	PublishSMB   func(context.Context)
+	OnRestart    func()
+	Logger       *slog.Logger
+}
+
+// NewSettingsHandlers builds the administrator settings handlers.
+func NewSettingsHandlers(d SettingsDeps) *SettingsHandlers {
+	return &SettingsHandlers{d: d}
+}
+
+type SettingsHandlers struct{ d SettingsDeps }
+
+func (h *SettingsHandlers) Get(c *gin.Context) {
+	stored, err := h.d.State.Settings(c.Request.Context())
+	if err != nil {
+		middleware.Fail(c, err)
+		return
+	}
+	if stored == nil {
+		stored = map[string]any{}
+	}
+	values := h.d.Settings.Values(c.Request.Context())
+	values.DataDir = h.d.DataDir
+	c.JSON(http.StatusOK, SettingsOf(catalogue.Of(values, stored), h.hopOf(c), h.d.SMBAgentView()))
+}
+
+func (h *SettingsHandlers) Patch(c *gin.Context) {
+	section := c.Param("section")
+	if section == "upload" {
+		if h.d.UploadPatch == nil {
+			middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+			return
+		}
+		h.d.UploadPatch(c)
+		return
+	}
+	if !check.Known(section) {
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		return
+	}
+	var body map[string]any
+	if err := middleware.DecodeJSON(c.Request.Body, &body); err != nil {
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
+		return
+	}
+	if !h.extractSecrets(c, section, body) {
+		return
+	}
+	findings := check.Section(check.Input{
+		Section:   section,
+		Body:      body,
+		SelfHost:  check.HostOnly(string(c.Request.Host)),
+		DataDir:   h.d.DataDir,
+		HasSecret: section == "oidc" && h.d.Settings.HasConfigSecret(c.Request.Context(), secretOIDCClient),
+		Lockout:   check.LockoutBlocks,
+	})
+	if Blocking(findings) {
+		c.JSON(http.StatusUnprocessableEntity, ApplyOutcomeOf(false, false, false, findings))
+		return
+	}
+	if err := h.d.State.MergeSettings(c.Request.Context(), section, body); err != nil {
+		middleware.Fail(c, err)
+		return
+	}
+	restart := catalogue.RestartRequiredFor(section, body)
+	if !restart {
+		h.d.Settings.Load(c.Request.Context())
+	}
+	if section == "smb" && h.d.PublishSMB != nil {
+		h.d.PublishSMB(c.Request.Context())
+	}
+	applied := !restart
+	if pin := h.pinnedBindFinding(section, body); pin != nil {
+		applied = false
+		findings = append(findings, *pin)
+	}
+	out := ApplyOutcomeOf(true, applied, restart, findings)
+	if restart {
+		uploads, jobs := h.activeWork(c)
+		out = out.WithActiveWork(uploads, jobs)
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+func (h *SettingsHandlers) Restart(c *gin.Context) {
+	if h.d.Settings.WouldLoosenHardening(c.Request.Context(), h.d.Hardening) {
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Conflict, Key: "system.hardening_cannot_loosen"})
+		return
+	}
+	uploads, jobs := h.activeWork(c)
+	c.JSON(http.StatusAccepted, restartResult{Restarting: true, ActiveUploads: uploads, ActiveJobs: jobs})
+	if h.d.OnRestart != nil {
+		time.AfterFunc(restartGrace, h.d.OnRestart)
+	}
+}
+
+type restartResult struct {
+	Restarting    bool `json:"restarting"`
+	ActiveUploads int  `json:"active_uploads"`
+	ActiveJobs    int  `json:"active_jobs"`
+}
+
+func (h *SettingsHandlers) activeWork(c *gin.Context) (uploads, jobs int) {
+	w, err := h.d.State.CountActiveWork(c.Request.Context())
+	if err != nil {
+		if h.d.Logger != nil {
+			h.d.Logger.Warn("could not count the work a restart would interrupt", "error", err)
+		}
+		return 1, 0
+	}
+	return w.Uploads, w.Jobs
+}
+
+func (h *SettingsHandlers) pinnedBindFinding(section string, body map[string]any) *check.Finding {
+	if section != "network" || !h.d.Settings.BindPinned() {
+		return nil
+	}
+	stored, named := body["bind"].(string)
+	if !named || stored == "" {
+		return nil
+	}
+	return &check.Finding{Section: section, Field: "bind", ReasonKey: "settings.bind_pinned_by_flag", Args: []string{"stored", stored}}
+}
+
+func (h *SettingsHandlers) extractSecrets(c *gin.Context, section string, body map[string]any) bool {
+	if section != "oidc" {
+		return true
+	}
+	raw, present := body["client_secret"]
+	if !present {
+		return true
+	}
+	delete(body, "client_secret")
+	plain, ok := raw.(string)
+	if !ok {
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		return false
+	}
+	if err := h.d.Settings.StoreConfigSecret(c.Request.Context(), secretOIDCClient, plain); err != nil {
+		middleware.Fail(c, err)
+		return false
+	}
+	return true
+}
+
+func (h *SettingsHandlers) hopOf(c *gin.Context) HopView {
+	peer, err := peerAddress(c.Request.RemoteAddr)
+	client := middleware.ClientOf(c)
+	hop := HopView{Client: client.String(), ForwardedSeen: c.GetHeader("CF-Connecting-IP") != "" || c.GetHeader("X-Forwarded-For") != ""}
+	if err != nil {
+		return hop
+	}
+	hop.Peer = peer.String()
+	hop.PeerTrusted = middleware.PeerTrusted(peer, h.d.Settings.TrustedProxies())
+	return hop
+}
+
+func peerAddress(raw string) (netip.Addr, error) {
+	host, _, err := net.SplitHostPort(raw)
+	if err == nil {
+		return netip.ParseAddr(host)
+	}
+	return netip.ParseAddr(raw)
+}

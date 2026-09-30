@@ -1,0 +1,400 @@
+//go:build linux
+
+// Package oidc serves the provider sign-on and account-linking routes.
+package oidc
+
+import (
+	"encoding/hex"
+	"errors"
+	"log/slog"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+
+	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/httpx"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
+)
+
+const (
+	bindingCookie = "__Host-sc_oidc"
+	loginPath     = "/login"
+	linkErrorPath = "/settings/security"
+	flowWindow    = 15 * time.Minute
+	providerAMR   = 4
+	sessionTTL    = 12 * time.Hour
+)
+
+const (
+	errDisabled             = "oidc.disabled"
+	errBadRequest           = "oidc.bad_request"
+	errBadState             = "oidc.bad_state"
+	errNotLinked            = "oidc.not_linked"
+	errProviderUnavailable  = "oidc.provider_unavailable"
+	errAccessDenied         = "oidc.access_denied"
+	errLinkSessionChanged   = "oidc.link_session_changed"
+	errSubjectAlreadyLinked = "oidc.subject_already_linked"
+	codeBadToken            = "auth.invalid_credentials" //nolint:gosec // G101 flags this client-facing wire error code; it is not credential material.
+	errInternal             = "internal"
+)
+
+type linkStartRequest struct {
+	Current  string `json:"current"`
+	ReturnTo string `json:"return_to"`
+}
+
+// Deps are the narrow application services and request policies needed by OIDC.
+type Deps struct {
+	Auth          *auth.Service
+	Client        func() *Client
+	DisplayName   func() string
+	AppHosts      func() []string
+	RequestScheme func(*http.Request) string
+	Logger        *slog.Logger
+}
+
+// Handlers owns the OIDC HTTP handlers and logout URL callback.
+type Handlers struct{ d Deps }
+
+// NewHandlers constructs OIDC route handlers from narrow typed dependencies.
+func NewHandlers(d Deps) *Handlers { return &Handlers{d: d} }
+
+// EndSessionURL returns the provider logout URL for the request, when available.
+func (h *Handlers) EndSessionURL(c *gin.Context) (string, bool) {
+	client := h.d.Client()
+	if client == nil {
+		return "", false
+	}
+	origin, ok := h.requestOrigin(c)
+	if !ok {
+		return "", false
+	}
+	target, err := client.EndSessionURL(c.Request.Context(), "", origin+loginPath)
+	if err != nil || target == "" {
+		return "", false
+	}
+	return target, true
+}
+
+func (h *Handlers) Config(c *gin.Context) {
+	if h.d.Client() == nil {
+		c.JSON(http.StatusOK, OIDCConfigView{Enabled: false})
+		return
+	}
+	c.JSON(http.StatusOK, OIDCConfigView{Enabled: true, DisplayName: h.d.DisplayName()})
+}
+
+func (h *Handlers) Start(c *gin.Context) {
+	client := h.d.Client()
+	if client == nil {
+		middleware.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
+		return
+	}
+	returnTo, err := httpx.SafeReturnTo(c.Query("return_to"))
+	if err != nil {
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		return
+	}
+	h.begin(c, client, 0, returnTo)
+}
+
+func (h *Handlers) LinkStart(c *gin.Context) {
+	owner, ok := middleware.UserOf(c)
+	if !ok {
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		return
+	}
+	var req linkStartRequest
+	if err := middleware.DecodeJSON(c.Request.Body, &req); err != nil {
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
+		return
+	}
+	if !auth.Reconfirm(c, h.d.Auth, owner, req.Current) {
+		return
+	}
+	client := h.d.Client()
+	if client == nil {
+		middleware.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
+		return
+	}
+	returnTo, err := httpx.SafeReturnTo(req.ReturnTo)
+	if err != nil {
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		return
+	}
+	h.begin(c, client, owner, returnTo)
+}
+
+func (h *Handlers) begin(c *gin.Context, client *Client, user int64, returnTo string) {
+	flow, err := NewFlowSecrets()
+	if err != nil {
+		middleware.Fail(c, err)
+		return
+	}
+	redirectURI, ok := h.redirectURI(c)
+	if !ok {
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		return
+	}
+	target, err := client.AuthorizeURL(c.Request.Context(), redirectURI, flow)
+	if err != nil {
+		middleware.Fail(c, err)
+		return
+	}
+	if err := h.d.Auth.StartOIDCFlow(c.Request.Context(), user, flow.State, flow.Nonce, flow.Binding, flow.CodeVerifier, redirectURI, returnTo); err != nil {
+		middleware.Fail(c, err)
+		return
+	}
+	h.setBinding(c, flow.Binding)
+	c.JSON(http.StatusOK, OIDCStartView{AuthorizeURL: target})
+}
+
+func (h *Handlers) Callback(c *gin.Context) {
+	client := h.d.Client()
+	if client == nil {
+		if err := h.redirectError(c, h.ambiguousPath(c), errDisabled); err != nil {
+			h.logError("redirecting the OIDC disabled error failed", "error", err)
+		}
+		return
+	}
+	if desc := c.Query("error"); desc != "" {
+		h.logInfo("the provider refused a sign-on", "error", desc)
+		if err := h.redirectError(c, h.ambiguousPath(c), errAccessDenied); err != nil {
+			h.logError("redirecting the OIDC access-denied error failed", "error", err)
+		}
+		return
+	}
+	authCode, state := c.Query("code"), c.Query("state")
+	if authCode == "" || state == "" {
+		if err := h.redirectError(c, h.ambiguousPath(c), errBadRequest); err != nil {
+			h.logError("redirecting the OIDC bad-request error failed", "error", err)
+		}
+		return
+	}
+	binding, err := c.Cookie(bindingCookie)
+	if err != nil {
+		binding = ""
+	}
+	h.clearBinding(c)
+	flow, err := h.d.Auth.TakeOIDCFlow(c.Request.Context(), state, binding)
+	if err != nil {
+		if redirectErr := h.redirectError(c, h.ambiguousPath(c), errBadState); redirectErr != nil {
+			h.logError("redirecting the OIDC bad-state error failed", "error", redirectErr)
+		}
+		return
+	}
+	landing := loginPath
+	if flow.User != 0 {
+		landing = linkErrorPath
+	}
+	raw, err := client.Exchange(c.Request.Context(), authCode, flow.RedirectURI, FlowSecrets{Nonce: flow.Nonce, CodeVerifier: flow.CodeVerifier})
+	if err != nil {
+		h.logWarn("the token exchange failed", "error", err)
+		if redirectErr := h.redirectError(c, landing, errProviderUnavailable); redirectErr != nil {
+			h.logError("redirecting the OIDC provider error failed", "error", redirectErr)
+		}
+		return
+	}
+	claims, err := client.VerifyIDToken(c.Request.Context(), raw, flow.Nonce)
+	if err != nil {
+		h.logWarn("an identity token did not verify", "error", err)
+		if err := h.redirectError(c, landing, codeBadToken); err != nil {
+			h.logError("redirecting the OIDC invalid-token error failed", "error", err)
+		}
+		return
+	}
+	if flow.User != 0 {
+		if err := h.completeLink(c, flow, claims); err != nil {
+			h.logWarn("completing single-sign-on link failed", "error", err)
+		}
+		return
+	}
+	if err := h.completeSignIn(c, flow, claims); err != nil {
+		h.logWarn("completing single-sign-on sign-in failed", "error", err)
+	}
+}
+
+func (h *Handlers) completeLink(c *gin.Context, flow auth.OIDCFlow, claims *Claims) error {
+	owner, ok := middleware.UserOf(c)
+	if !ok || owner != flow.User {
+		return h.redirectError(c, linkErrorPath, errLinkSessionChanged)
+	}
+	if err := h.d.Auth.CreateOIDCLink(c.Request.Context(), flow.User, claims.Issuer, claims.Subject); err != nil {
+		if errors.Is(err, auth.ErrOIDCLinkTaken) {
+			return h.redirectError(c, linkErrorPath, errSubjectAlreadyLinked)
+		}
+		h.logError("attaching a single-sign-on identity failed", "error", err)
+		return h.redirectError(c, linkErrorPath, errInternal)
+	}
+	return redirect(c, flow.ReturnTo)
+}
+
+func (h *Handlers) completeSignIn(c *gin.Context, flow auth.OIDCFlow, claims *Claims) error {
+	user, err := h.d.Auth.UserForOIDCIdentity(c.Request.Context(), claims.Issuer, claims.Subject)
+	if err != nil {
+		h.logInfo("a provider identity is not linked to any account", "issuer", claims.Issuer)
+		return h.redirectError(c, loginPath, errNotLinked)
+	}
+	sess, err := h.d.Auth.CreateSession(c.Request.Context(), user, middleware.ClientOf(c).String(), c.Request.UserAgent(), providerAMR, sessionTTL)
+	if err != nil {
+		h.logError("establishing a single-sign-on session failed", "error", err)
+		return h.redirectError(c, loginPath, errInternal)
+	}
+	if err := h.d.Auth.TouchOIDCLink(c.Request.Context(), claims.Issuer, claims.Subject); err != nil {
+		h.logWarn("stamping a single-sign-on link's last use failed", "error", err)
+	}
+	auth.SetSessionCookie(c, printableToken(sess.Token))
+	return redirect(c, flow.ReturnTo)
+}
+
+func (h *Handlers) LinkDelete(c *gin.Context) {
+	owner, ok := middleware.UserOf(c)
+	if !ok {
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		return
+	}
+	var req struct {
+		Current string `json:"current"`
+	}
+	if err := middleware.DecodeJSON(c.Request.Body, &req); err != nil {
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
+		return
+	}
+	if req.Current == "" {
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "auth.invalid_credentials"})
+		return
+	}
+	if !auth.Reconfirm(c, h.d.Auth, owner, req.Current) {
+		return
+	}
+	if err := h.d.Auth.RemoveOIDCLink(c.Request.Context(), owner); err != nil {
+		middleware.Fail(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (h *Handlers) AdminGet(c *gin.Context) {
+	id, ok := pathID(c)
+	if !ok {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	link, err := h.d.Auth.OIDCLinkOf(c.Request.Context(), id)
+	if err != nil {
+		if errors.Is(err, auth.ErrNoOIDCLink) {
+			c.JSON(http.StatusOK, OIDCLinkView{Linked: false})
+			return
+		}
+		middleware.Fail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, OIDCLinkOf(link))
+}
+
+func (h *Handlers) AdminDelete(c *gin.Context) {
+	id, ok := pathID(c)
+	if !ok {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	if err := h.d.Auth.RemoveOIDCLink(c.Request.Context(), id); err != nil {
+		middleware.Fail(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (h *Handlers) AdminEndpoints(c *gin.Context) {
+	hosts := h.d.AppHosts()
+	redirects := make([]string, 0, len(hosts))
+	postLogouts := make([]string, 0, len(hosts))
+	for _, host := range hosts {
+		redirects = append(redirects, "https://"+host+"/api/v1/auth/oidc/callback")
+		postLogouts = append(postLogouts, "https://"+host+loginPath)
+	}
+	c.JSON(http.StatusOK, OIDCEndpointsView{RedirectURIs: redirects, PostLogoutRedirectURIs: postLogouts})
+}
+
+func (h *Handlers) redirectURI(c *gin.Context) (string, bool) {
+	origin, ok := h.requestOrigin(c)
+	if !ok {
+		return "", false
+	}
+	return origin + "/api/v1/auth/oidc/callback", true
+}
+func (h *Handlers) requestOrigin(c *gin.Context) (string, bool) {
+	host := c.Request.Host
+	if host == "" {
+		return "", false
+	}
+	declared := h.d.AppHosts()
+	if len(declared) > 0 && !hostDeclared(declared, host) {
+		return "", false
+	}
+	scheme := "https"
+	if h.d.RequestScheme != nil {
+		scheme = h.d.RequestScheme(c.Request)
+	} else if c.Request.URL.Scheme == "http" || c.Request.TLS == nil {
+		scheme = "http"
+	}
+	if !middleware.OriginMatchesRequest(scheme+"://"+host, scheme, host) {
+		return "", false
+	}
+	return scheme + "://" + host, true
+}
+func hostDeclared(declared []string, host string) bool {
+	name := host
+	if i := strings.LastIndex(name, ":"); i > 0 && !strings.Contains(name[i:], "]") {
+		name = name[:i]
+	}
+	for _, d := range declared {
+		if strings.EqualFold(d, name) {
+			return true
+		}
+	}
+	return false
+}
+func (h *Handlers) ambiguousPath(c *gin.Context) string {
+	if _, ok := middleware.UserOf(c); ok {
+		return linkErrorPath
+	}
+	return loginPath
+}
+func redirect(c *gin.Context, target string) error { c.Redirect(http.StatusFound, target); return nil }
+func (h *Handlers) redirectError(c *gin.Context, target, code string) error {
+	return redirect(c, target+"?oidc_error="+url.QueryEscape(code))
+}
+func printableToken(t interface{ Reveal() []byte }) string { return hex.EncodeToString(t.Reveal()) }
+func (h *Handlers) setBinding(c *gin.Context, binding string) {
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie(bindingCookie, binding, int(flowWindow/time.Second), "/", "", true, true)
+}
+func (h *Handlers) clearBinding(c *gin.Context) {
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie(bindingCookie, "", -1, "/", "", true, true)
+}
+func pathID(c *gin.Context) (int64, bool) {
+	n, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	return n, err == nil && n > 0
+}
+func (h *Handlers) logInfo(msg string, args ...any) {
+	if h.d.Logger != nil {
+		h.d.Logger.Info(msg, args...)
+	}
+}
+func (h *Handlers) logWarn(msg string, args ...any) {
+	if h.d.Logger != nil {
+		h.d.Logger.Warn(msg, args...)
+	}
+}
+func (h *Handlers) logError(msg string, args ...any) {
+	if h.d.Logger != nil {
+		h.d.Logger.Error(msg, args...)
+	}
+}

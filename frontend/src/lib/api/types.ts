@@ -1121,7 +1121,7 @@ export interface ShareLinkInfo {
 }
 
 /** `GET /api/v1/admin/links`: one link as an administrator reads it
- *  (`backend/internal/http/api/handler/links.go`'s `OwnedLinkView`). Everything
+ *  (`backend/internal/shares/links.go`'s `OwnedLinkView`). Everything
  *  `ShareLinkInfo` carries, plus which account it belongs to: `owner` is the
  *  account id and `owner_name` its display name at read time, empty when the
  *  account has since been deleted. Never carries a token, the same as

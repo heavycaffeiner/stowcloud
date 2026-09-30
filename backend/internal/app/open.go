@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/admin"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/logbook"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/runtimecfg"
 	live "github.com/heavycaffeiner/stowcloud/backend/internal/app/settings"
@@ -34,12 +35,6 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files/backends"
-	filehttp "github.com/heavycaffeiner/stowcloud/backend/internal/http/api/files"
-	searchhttp "github.com/heavycaffeiner/stowcloud/backend/internal/http/api/search"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/setup"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/archive"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/publiclinks"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/server"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/jobs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/oidc"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
@@ -48,10 +43,12 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/system/jail"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/preview"
 	runtimerestart "github.com/heavycaffeiner/stowcloud/backend/internal/runtime/restart"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/search"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/search/controller"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/search/svc"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/smb/publish"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/uploads"
@@ -162,10 +159,10 @@ type Engine struct {
 
 	// Settings owns the applied document and live process callbacks.
 	Settings    *live.Coordinator
-	archiveGate *filehttp.ArchiveGate
+	archiveGate *files.ArchiveGate
 	// Archives names selections a browser is about to fetch. Never nil: a
 	// folder download is minted here before the navigation that collects it.
-	Archives *archive.Tickets
+	Archives *files.Tickets
 	// Search answers filename queries. Never nil: the walking tier needs no
 	// index and no subprocess, so every deployment has one.
 	Search *svc.Service
@@ -186,12 +183,12 @@ type Engine struct {
 	// setup guards first-administrator creation. It is built unconditionally,
 	// because whether the window is open is a question about the account count
 	// rather than about construction.
-	setup *server.SetupGate
+	setup *admin.SetupGate
 
 	// watcher reports filesystem changes, and events fans them out to clients.
 	// Both are nil when the host kernel refuses an inotify descriptor.
 	watcher *jobs.Manager
-	events  *server.EventHub
+	events  *files.EventHub
 
 	clock  clock.Clock
 	logger *slog.Logger
@@ -202,11 +199,11 @@ type Engine struct {
 	// The CSRF and content-claim keys derive from the master key at boot.
 	csrf             []byte
 	claimKey         files.ClaimKey
-	linkLimiter      *publiclinks.Limiter
-	publicLinks      *publiclinks.Public
-	totpLimiter      *publiclinks.Limiter
+	linkLimiter      *shares.LinkLimiter
+	publicLinks      *shares.Public
+	totpLimiter      *shares.LinkLimiter
 	searchController *controller.Controller
-	searchHTTP       *searchhttp.Manager
+	searchHTTP       *search.Manager
 	davLocks         *dav.StateLocks
 	oidcClient       *oidc.Client
 	oidcName         string
@@ -287,7 +284,7 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 		// named. An empty host list is what first boot looks like, and the
 		// boundary admits only a private client in that state.
 		limiter:     middleware.NewLimiter(clk, defaultRatePerSecond, defaultBurst),
-		archiveGate: filehttp.NewArchiveGate(),
+		archiveGate: files.NewArchiveGate(),
 		errs:        ErrorClassifier(),
 	}
 
@@ -501,7 +498,7 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 		Clock: clk, Logger: logger, Jobs: &e.jobs, JobsCtx: jobsCtx, JobsStop: jobsStop,
 		HasWatcher: func() bool { return e.watcher != nil },
 	})
-	e.searchHTTP = &searchhttp.Manager{Core: e.Core, Controller: e.searchController, Clock: clk, Logger: logger}
+	e.searchHTTP = &search.Manager{Core: e.Core, Controller: e.searchController, Clock: clk, Logger: logger}
 
 	// The name index, when the operator asked for one, is attached inside
 	// loadSettings below rather than here: that is the same call a save
@@ -559,12 +556,12 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	// The gate reads the account count through auth, so it is built after it.
 	// Unconditionally: a deployment that is already set up has a closed gate
 	// rather than no gate, and the two answer differently.
-	e.setup = server.NewSetupGate(clk, e.Auth)
+	e.setup = admin.NewSetupGate(clk, e.Auth)
 
 	// The token is minted at boot because nothing else can mint one: the form
 	// that would ask for it is the form the token opens. A deployment that
 	// already has an account mints none.
-	setup.IssueToken(ctx, e.setup, e.dataDir, e.logger)
+	admin.IssueToken(ctx, e.setup, e.dataDir, e.logger)
 
 	// The change channel, after the registry it watches and the settings that
 	// bound it.
@@ -599,7 +596,7 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 
 	// Names folder downloads a browser is about to fetch. Nothing can fail
 	// here: it is a bounded map holding no archives.
-	e.Archives = archive.NewTickets(clk)
+	e.Archives = files.NewTickets(clk)
 
 	// The device login rides on the auth service's own credential mint, so
 	// the plaintext of a delivered password exists once and never rests in
@@ -614,8 +611,8 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 		return fail(fmt.Errorf("generating direct claim key: %w", rerr))
 	}
 	e.claimKey = files.ClaimKey{Version: 1, Key: claimBytes}
-	e.linkLimiter = publiclinks.NewLimiter(5*time.Minute, 10, clk.Nanos)
-	e.totpLimiter = publiclinks.NewLimiter(5*time.Minute, 5, clk.Nanos)
+	e.linkLimiter = shares.NewLinkLimiter(5*time.Minute, 10, clk.Nanos)
+	e.totpLimiter = shares.NewLinkLimiter(5*time.Minute, 5, clk.Nanos)
 	e.davLocks = dav.NewStateLocks(e.State, clk, e.logger)
 	return e, nil
 }

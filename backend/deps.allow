@@ -29,8 +29,8 @@ github.com/danielgtaylor/huma/v2
 # platform package may depend on it.
 go.uber.org/fx
 
-# Gin is the native HTTP router and handler context. The layer gate confines it
-# to internal/http, internal/app, and internal/runtime/listener.
+# Gin is the native HTTP router and the handler context of every route the
+# feature packages mount.
 github.com/gin-gonic/gin
 
 # Argon2id password hashing, XChaCha20-Poly1305 at rest and MD4 for the SMB NT

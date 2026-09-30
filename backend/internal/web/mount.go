@@ -13,8 +13,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/server"
 )
 
 // Page returns the embedded interface, or nil when no bundle is present.
@@ -41,7 +39,7 @@ func Install(app *gin.Engine) error {
 		}
 		c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "not_found"})
 	}
-	if err := server.InstallFallback(app, shell); err != nil {
+	if err := InstallFallback(app, shell); err != nil {
 		return fmt.Errorf("installing the interface: %w", err)
 	}
 	return nil

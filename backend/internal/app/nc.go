@@ -16,9 +16,9 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/publiclinks"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/nextcloud"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
@@ -67,7 +67,7 @@ func (e *Engine) ncServer() *nextcloud.Server {
 			return nextcloud.LocateFile(ctx, e.Core, e.Cache, user, id)
 		},
 		SealClaim: seal, OpenClaim: open,
-		PublicLinkPath: func(token string) string { return publiclinks.PublicLinkPrefix + "/" + token },
+		PublicLinkPath: func(token string) string { return shares.PublicLinkPrefix + "/" + token },
 		LockGuard:      e.ncLockGuard, Clock: e.clk(), Logger: e.log(),
 	})
 }

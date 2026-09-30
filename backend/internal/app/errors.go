@@ -13,9 +13,9 @@
 package app
 
 import (
+	"github.com/heavycaffeiner/stowcloud/backend/internal/admin"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/server"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/oidc"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/preview"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
@@ -201,8 +201,8 @@ func previewSentinels() []apierr.Sentinel {
 // setupSentinels is the first-run gate.
 func setupSentinels() []apierr.Sentinel {
 	return []apierr.Sentinel{
-		{Err: server.ErrSetupClosed, Class: apierr.SetupComplete, Key: "setup.complete"},
-		{Err: server.ErrSetupNotIssued, Class: apierr.SetupExpired, Key: "setup.not_issued"},
-		{Err: server.ErrSetupToken, Class: apierr.SetupInvalidToken, Key: "setup.invalid_token"},
+		{Err: admin.ErrSetupClosed, Class: apierr.SetupComplete, Key: "setup.complete"},
+		{Err: admin.ErrSetupNotIssued, Class: apierr.SetupExpired, Key: "setup.not_issued"},
+		{Err: admin.ErrSetupToken, Class: apierr.SetupInvalidToken, Key: "setup.invalid_token"},
 	}
 }

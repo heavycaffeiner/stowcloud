@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/admin"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/server"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/uploads"
 )
@@ -72,9 +72,9 @@ func TestTheSetupGateRefusalsAreDistinct(t *testing.T) {
 		err  error
 		want apierr.Class
 	}{
-		{server.ErrSetupClosed, apierr.SetupComplete},
-		{server.ErrSetupNotIssued, apierr.SetupExpired},
-		{server.ErrSetupToken, apierr.SetupInvalidToken},
+		{admin.ErrSetupClosed, apierr.SetupComplete},
+		{admin.ErrSetupNotIssued, apierr.SetupExpired},
+		{admin.ErrSetupToken, apierr.SetupInvalidToken},
 	} {
 		if got := errs.Classify(c.err, apierr.VisibilityKnown).Class; got != c.want {
 			t.Errorf("%v classified as %s, want %s", c.err, got, c.want)
