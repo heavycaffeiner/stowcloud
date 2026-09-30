@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vfs"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
 )
 
 // End-to-end encryption for a share's file content: this file validates and

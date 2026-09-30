@@ -24,6 +24,8 @@ import (
 	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	featurepreview "github.com/heavycaffeiner/stowcloud/backend/internal/feature/preview"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/objstore"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/archive"
@@ -31,8 +33,6 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/route"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/objstore"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vfs"
 )
 
 // Deps are the capabilities needed by the authenticated file routes.

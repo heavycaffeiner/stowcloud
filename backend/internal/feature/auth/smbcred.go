@@ -8,9 +8,9 @@ import (
 
 	"golang.org/x/crypto/md4" //nolint:gosec,staticcheck // MD4 is fixed by the SMB protocol; the value is sealed at rest and only that algorithm matches.
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
 )
 
 // The file-sharing credential and the sink every credential change calls.

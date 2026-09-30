@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 )
 
 // waitForOp polls until an operation leaves the running state, which is how

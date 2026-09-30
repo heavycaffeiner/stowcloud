@@ -14,8 +14,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/preview/limits"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/pathnames"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/pathnames"
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/charmap"
 )

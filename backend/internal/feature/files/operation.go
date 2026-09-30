@@ -8,8 +8,8 @@ import (
 	"errors"
 	"time"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
 )
 
 // OperationID is what a client reattaches to a long operation with.

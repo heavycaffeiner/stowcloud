@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/dbfile"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/ident"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/dav/lock"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/dbfile"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/ident"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
 )
 
 // The manager is driven against the real table rather than a stub of it.

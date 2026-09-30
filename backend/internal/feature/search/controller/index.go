@@ -16,12 +16,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/search/stowcloud"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/search/svc"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/concurrency"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
 	fsatomic "github.com/stowcloud/durablefs"
 	searchlib "github.com/stowcloud/namesearch"
 	"github.com/stowcloud/namesearch/index"

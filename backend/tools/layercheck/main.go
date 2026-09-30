@@ -25,8 +25,8 @@ const (
 )
 
 var outboundHTTP = map[string]bool{
-	"feature/oidc":     true,
-	"storage/objstore": true,
+	"feature/oidc": true,
+	"fs/objstore":  true,
 }
 
 // tierAllowed is the dependency graph for internal packages. Same-tier
@@ -35,13 +35,13 @@ var outboundHTTP = map[string]bool{
 // directory cannot bypass the check by being mistaken for an external layer.
 var tierAllowed = map[string]map[string]bool{
 	"platform":  {},
-	"storage":   {"platform": true, "store": true},
-	"store":     {"platform": true, "storage": true},
-	"feature":   {"platform": true, "storage": true, "store": true},
-	"http":      {"feature": true, "platform": true, "storage": true, "store": true},
-	"runtime":   {"feature": true, "platform": true, "storage": true, "store": true},
-	"bootstrap": {"feature": true, "platform": true, "storage": true, "store": true, "runtime": true},
-	"app":       {"feature": true, "platform": true, "storage": true, "store": true, "http": true, "runtime": true},
+	"fs":        {"platform": true, "db": true},
+	"db":        {"platform": true, "fs": true},
+	"feature":   {"platform": true, "fs": true, "db": true},
+	"http":      {"feature": true, "platform": true, "fs": true, "db": true},
+	"runtime":   {"feature": true, "platform": true, "fs": true, "db": true},
+	"bootstrap": {"feature": true, "platform": true, "fs": true, "db": true, "runtime": true},
+	"app":       {"feature": true, "platform": true, "fs": true, "db": true, "http": true, "runtime": true},
 }
 
 func say(w io.Writer, format string, a ...any) error {
@@ -126,7 +126,7 @@ func evaluate(importerTier, importerSub, importPath string) (string, bool) {
 		if importerTier == "http" || importerTier == "app" || importerTier == "runtime" || importerTier == "bootstrap" || outboundHTTP[importerSub] {
 			return "", false
 		}
-		return "net/http is limited to http, app, runtime, bootstrap, feature/oidc, and storage/objstore", true
+		return "net/http is limited to http, app, runtime, bootstrap, feature/oidc, and fs/objstore", true
 	case strings.HasPrefix(importPath, ginPrefix):
 		if importerTier == "http" || importerTier == "app" || importerTier == "runtime" || importerTier == "bootstrap" {
 			return "", false
@@ -194,7 +194,7 @@ func tierFromFilePath(path string) (tier, sub string, ok bool) {
 		return tier, tier, true
 	}
 	sub = tier + "/" + parts[1]
-	if tier == "platform" && len(parts) >= 3 && parts[1] == "storage" && parts[2] == "objstore" {
+	if tier == "platform" && len(parts) >= 3 && parts[1] == "fs" && parts[2] == "objstore" {
 		sub += "/" + parts[2]
 	}
 	return tier, sub, true
@@ -221,7 +221,7 @@ func tierAndSub(rest string) (tier, sub string, ok bool) {
 	if len(parts) >= 2 {
 		sub += "/" + parts[1]
 	}
-	if tier == "platform" && len(parts) >= 3 && parts[1] == "storage" && parts[2] == "objstore" {
+	if tier == "platform" && len(parts) >= 3 && parts[1] == "fs" && parts[2] == "objstore" {
 		sub += "/" + parts[2]
 	}
 	return tier, sub, true

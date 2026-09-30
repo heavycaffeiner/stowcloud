@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads/limits"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vfs"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 )
 
 // The wire spelling round-trips, an unknown algorithm refuses rather than

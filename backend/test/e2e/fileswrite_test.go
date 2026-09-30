@@ -13,8 +13,8 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vfs"
 )
 
 // shareWith serves an engine whose account holds one share with exactly the

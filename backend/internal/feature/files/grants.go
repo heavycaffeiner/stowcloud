@@ -5,8 +5,8 @@ package core
 import (
 	"context"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
 )
 
 // Grant administration: thin wrappers over the store's grant aggregate, each

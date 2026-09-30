@@ -3,8 +3,8 @@ package auth
 import (
 	"context"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/limits"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/limits"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 )
 
 // The audit log. Rows are appended and never edited; the actor is nulled only

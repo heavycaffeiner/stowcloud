@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/ident"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vfs"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/ident"
 )
 
 // Resolved is what every operation takes instead of a virtual path: the

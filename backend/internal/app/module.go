@@ -10,10 +10,10 @@ import (
 	hanamibootstrap "github.com/heavycaffeiner/hanami/bootstrap"
 	hanamigin "github.com/heavycaffeiner/hanami/gin"
 	hanamiprocess "github.com/heavycaffeiner/hanami/process"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/instance"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/system/jail"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/runtime/listener"
 	runtimerestart "github.com/heavycaffeiner/stowcloud/backend/internal/runtime/restart"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/instance"
 	"go.uber.org/fx"
 )
 

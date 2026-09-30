@@ -3,7 +3,7 @@
 // Package davlock is the WebDAV lock table: taking a lock, refreshing it,
 // releasing it, and the guard every mutating method runs before it writes.
 //
-// The durable half lives in store/state, which admits a lock only if nothing
+// The durable half lives in db/state, which admits a lock only if nothing
 // live conflicts, inside one write transaction. What is here is the part above
 // that: minting a token, clamping a lease, deciding who may refresh or release,
 // and turning a held lock into the shape a LOCK response and the lockdiscovery
@@ -23,9 +23,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/ident"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/ident"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
 )
 
 // The refusals this package makes.

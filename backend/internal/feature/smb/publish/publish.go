@@ -27,13 +27,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
 	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/smb"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/smb/agent"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
 	fsatomic "github.com/stowcloud/durablefs"
 )
 

@@ -6,9 +6,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/ident"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/ident"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
 )
 
 // StateProps adapts the durable DAV property rows to the protocol property

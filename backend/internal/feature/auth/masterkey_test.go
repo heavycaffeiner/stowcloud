@@ -9,8 +9,8 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
 )
 
 // A key in an environment variable is visible to a container inspection and

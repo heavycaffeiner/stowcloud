@@ -13,12 +13,12 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/smb/publish"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vfs"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 )
 
 // SEC-AUTH-07: Admin OIDC unlink must not assign a hardcoded fallback password.

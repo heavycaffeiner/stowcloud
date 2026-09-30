@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vault"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vault"
 )
 
 func TestEachContainerRefusalCarriesItsOwnKind(t *testing.T) {

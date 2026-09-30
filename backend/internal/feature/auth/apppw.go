@@ -9,7 +9,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 )
 
 // App passwords live on the side a person types them, so they are minted in

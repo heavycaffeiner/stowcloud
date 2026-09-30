@@ -14,14 +14,14 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/dbfile"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/instance"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/settings/runtimecfg"
 	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vault"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/system/mountinfo"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vault"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vfs"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/dbfile"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/instance"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
 )
 
 // DefaultListen is used when neither the command line nor stored settings

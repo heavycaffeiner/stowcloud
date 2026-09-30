@@ -7,9 +7,9 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/ident"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vfs"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/ident"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 )
 
 // List is the default listing: by name, ascending, one default-sized page.

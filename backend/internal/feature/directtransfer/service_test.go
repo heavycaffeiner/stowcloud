@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/dbfile"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/objstore"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vfs"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/dbfile"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/objstore"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 )
 
 // directTransferProviderFake embeds the interface so the presign method, which

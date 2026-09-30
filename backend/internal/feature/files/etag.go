@@ -3,7 +3,7 @@ package core
 import (
 	"encoding/hex"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vfs"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"lukechampine.com/blake3"
 )
 

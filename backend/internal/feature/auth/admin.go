@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 )
 
 // Reads and writes for the administrative screens, plus the protocol-neutral

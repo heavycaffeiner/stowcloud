@@ -339,7 +339,7 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   #
   # Share-content renames and control-file publication have separate owners.
   RENAME_HITS=$(go_code 'os\.Rename\(|unix\.Renameat2?\(' \
-                | grep -vE '^backend/internal/storage/vfs/')
+                | grep -vE '^backend/internal/fs/vfs/')
   grep_gate "D11: rename only from the packages that own it" "$RENAME_HITS" \
     "Take the operation whose contract matches: vfs for share content, durablefs for a control file."
 
@@ -377,9 +377,9 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   # Tests build fixture strings rather than statements. Database limits format
   # typed error messages, not queries.
   SQL_HITS=$(go_code 'fmt\.Sprintf\(|fmt\.Sprint\(|strings\.Builder' \
-             | grep '^backend/internal/store/' | grep -v '_test\.go:' \
-             | grep -v '^backend/internal/store/limits/' || true)
-  grep_gate "D14: no built SQL in the store" "$SQL_HITS" \
+             | grep '^backend/internal/db/' | grep -v '_test\.go:' \
+             | grep -v '^backend/internal/db/limits/' || true)
+  grep_gate "D14: no built SQL in the db" "$SQL_HITS" \
     "Bind parameters. A query built from parts is an injection waiting for input."
 
   # D19. Closes F8, where two files carried thirteen per cent of the tree with
@@ -570,7 +570,7 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
       run "go test ($HOST)" ingo_host go test -count=1 ./...
     fi
     run "VeraCrypt external golden" \
-        ingo_host bash -c 'VAULT_INTEROP_FIXTURE="$PWD/internal/storage/vault/testdata/interop/hash_sha512.hc" go test -count=1 ./internal/storage/vault -run "^TestOpenExternalVeraCryptFixture$" -v'
+        ingo_host bash -c 'VAULT_INTEROP_FIXTURE="$PWD/internal/fs/vault/testdata/interop/hash_sha512.hc" go test -count=1 ./internal/fs/vault -run "^TestOpenExternalVeraCryptFixture$" -v'
   else
     skipped "go test ($HOST)" "the durable runtime is Linux-only; off-Linux test binaries are compiled above" 0
   fi

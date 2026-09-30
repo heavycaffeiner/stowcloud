@@ -14,13 +14,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/sizeguard"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/settings/runtimecfg"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/oidc"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/concurrency"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/system/jail"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/sizeguard"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
 )
 
 // Hosts is the live host boundary used by the request chain.

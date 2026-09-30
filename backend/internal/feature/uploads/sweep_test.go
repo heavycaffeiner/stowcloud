@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads/limits"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vfs"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 )
 
 // An expired session takes its part file with it.

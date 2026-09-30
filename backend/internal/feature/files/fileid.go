@@ -6,7 +6,7 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vfs"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 )
 
 // RecordFileIDs makes the stable ids of listed entries resolvable back to

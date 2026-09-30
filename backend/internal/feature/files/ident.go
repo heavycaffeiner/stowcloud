@@ -1,7 +1,7 @@
 package core
 
 import (
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vfs"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 )
 
 // UserID is an account, as the auth layer addresses one. Opaque to the core:

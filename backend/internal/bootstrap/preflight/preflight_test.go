@@ -9,8 +9,8 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/instance"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/system/mountinfo"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/instance"
 )
 
 // A second start against a live data directory is refused before it opens,

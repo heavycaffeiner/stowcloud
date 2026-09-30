@@ -13,12 +13,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/cache"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/dbfile"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/concurrency"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vfs"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/cache"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/dbfile"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
 	"github.com/stowcloud/storage/local"
 )
 

@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/concurrency"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vfs"
 )
 
 // The merger: one goroutine per cached session in flight, draining contiguous

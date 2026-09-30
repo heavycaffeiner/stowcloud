@@ -14,7 +14,7 @@ import (
 
 	"lukechampine.com/blake3"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/ident"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/ident"
 	fsatomic "github.com/stowcloud/durablefs"
 )
 

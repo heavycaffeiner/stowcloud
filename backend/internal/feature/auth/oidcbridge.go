@@ -6,8 +6,8 @@ import (
 	"crypto/subtle"
 	"errors"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/oidc/limits"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
 )
 
 // The persistent side of single sign-on. Its protocol counterpart speaks to the

@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 )
 
 // Groups hold memberships and no permission knowledge; a grant may name a

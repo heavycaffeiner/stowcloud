@@ -6,7 +6,7 @@ package stowcloud
 
 import (
 	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vfs"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	search "github.com/stowcloud/namesearch"
 )
 

@@ -7,8 +7,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
 )
 
 // SMBCredential is one publishable account, as facts.

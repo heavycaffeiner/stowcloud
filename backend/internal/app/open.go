@@ -23,6 +23,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 	live "github.com/heavycaffeiner/stowcloud/backend/internal/app/settings"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/cache"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/dbfile"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/instance"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/journal"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/sizeguard"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/logbook"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/settings/runtimecfg"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
@@ -51,12 +57,6 @@ import (
 	runtimeevents "github.com/heavycaffeiner/stowcloud/backend/internal/runtime/events"
 	runtimerestart "github.com/heavycaffeiner/stowcloud/backend/internal/runtime/restart"
 	runtimetasks "github.com/heavycaffeiner/stowcloud/backend/internal/runtime/tasks"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/cache"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/dbfile"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/instance"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/journal"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/sizeguard"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
 )
 
 // The request rate the limiter holds between construction and the settings

@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/instance"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/instance"
 )
 
 // The engine opens against a real empty directory, which is what a first boot

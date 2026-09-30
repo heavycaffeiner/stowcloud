@@ -9,11 +9,11 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/ident"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	lock "github.com/heavycaffeiner/stowcloud/backend/internal/feature/dav/lock"
 	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/ident"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
 )
 
 // StateLocks joins the durable lock table to the WebDAV protocol's lock types.

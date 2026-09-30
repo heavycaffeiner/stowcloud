@@ -13,9 +13,9 @@ import (
 	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	upload "github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads"
 	uploadlimits "github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads/limits"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/objstore"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/objstore"
 )
 
 // SessionDetailsDeps are the explicit application capabilities needed to

@@ -7,10 +7,10 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads/limits"
 	protocolimits "github.com/heavycaffeiner/stowcloud/backend/internal/platform/protocol/limits"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
 	"github.com/stowcloud/transfer"
 )
 

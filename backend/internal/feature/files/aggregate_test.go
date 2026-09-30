@@ -10,9 +10,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/ident"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vfs"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/ident"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 )
 
 func rollup(t *testing.T, c *Core, share ShareID, p string) Aggregate {

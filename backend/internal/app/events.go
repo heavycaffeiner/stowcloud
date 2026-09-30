@@ -17,12 +17,12 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/settings/runtimecfg"
 	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/server"
 	task "github.com/heavycaffeiner/stowcloud/backend/internal/platform/concurrency"
 	runtimeevents "github.com/heavycaffeiner/stowcloud/backend/internal/runtime/events"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vfs"
 	storagewatch "github.com/stowcloud/storage/watch"
 )
 

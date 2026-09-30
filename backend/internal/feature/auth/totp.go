@@ -11,9 +11,9 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
 )
 
 // The second factor: HMAC-SHA1 over a thirty-second counter with one step of

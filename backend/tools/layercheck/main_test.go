@@ -99,7 +99,7 @@ func TestFeatureOutboundHTTPAllowancesAreNarrow(t *testing.T) {
 import "net/http"
 var _ = http.MethodGet
 `,
-		"storage/objstore/client.go": `package objstore
+		"fs/objstore/client.go": `package objstore
 import "net/http"
 var _ = http.MethodGet
 `,
@@ -116,15 +116,15 @@ func TestTierDirection(t *testing.T) {
 		"feature/files/files.go": `package files
 import (
 	"` + modRoot + `platform/clock"
-	"` + modRoot + `storage/vfs"
-	"` + modRoot + `store/state"
+	"` + modRoot + `fs/vfs"
+	"` + modRoot + `db/state"
 )
 `,
 		"http/api/handler.go": `package handler
 import (
 	"` + modRoot + `feature/files"
-	"` + modRoot + `storage/vfs"
-	"` + modRoot + `store/state"
+	"` + modRoot + `fs/vfs"
+	"` + modRoot + `db/state"
 )
 `,
 		"bootstrap/preflight/preflight.go": `package preflight
@@ -143,15 +143,15 @@ import "` + modRoot + `feature/files"
 `,
 	}, "tier platform may not import tier feature")
 	assertRefused(t, map[string]string{
-		"storage/vfs/vfs.go": `package vfs
+		"fs/vfs/vfs.go": `package vfs
 import "` + modRoot + `feature/files"
 `,
-	}, "tier storage may not import tier feature")
+	}, "tier fs may not import tier feature")
 	assertRefused(t, map[string]string{
-		"store/state/state.go": `package state
+		"db/state/state.go": `package state
 import "` + modRoot + `http/api"
 `,
-	}, "tier store may not import tier http")
+	}, "tier db may not import tier http")
 }
 
 func TestFrameworkAllowances(t *testing.T) {

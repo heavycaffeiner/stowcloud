@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 )
 
 // RotationReport is what one rotation did, so the operator sees how many rows

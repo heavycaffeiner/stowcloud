@@ -13,7 +13,7 @@ import (
 	"errors"
 	"strings"
 
-	uniname "github.com/heavycaffeiner/stowcloud/backend/internal/storage/pathnames"
+	uniname "github.com/heavycaffeiner/stowcloud/backend/internal/fs/pathnames"
 )
 
 // The refusals a caller distinguishes.

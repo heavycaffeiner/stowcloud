@@ -10,9 +10,9 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vfs"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/cache"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/ident"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/cache"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/ident"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"lukechampine.com/blake3"
 )
 

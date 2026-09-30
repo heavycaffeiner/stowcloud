@@ -14,9 +14,9 @@ import (
 	"strconv"
 
 	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/objstore"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vault"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vfs"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/objstore"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vault"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 )
 
 // opener is core.BackendOpener's real implementation. The domain receives this

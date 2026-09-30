@@ -10,9 +10,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/concurrency"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
 )
 
 // homed is a core with homes enabled over a fresh host directory.

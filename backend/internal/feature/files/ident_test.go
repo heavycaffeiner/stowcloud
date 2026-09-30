@@ -3,7 +3,7 @@ package core
 import (
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vfs"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 )
 
 // ShareID is an alias rather than a defined type, so a vfs.ShareID passes

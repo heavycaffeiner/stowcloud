@@ -9,8 +9,8 @@ import (
 	"os"
 	"sync/atomic"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vfs"
 	"github.com/stowcloud/transfer"
 )
 

@@ -7,16 +7,16 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/dbfile"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/dbfile"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/store/state"
 )
 
 func TestReleaseV0191StateAndKeyRingUpgrade(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	dbData, err := os.ReadFile(filepath.Join("..", "..", "internal", "store", "state", "testdata", "release-v0.19.1", "state.db"))
+	dbData, err := os.ReadFile(filepath.Join("..", "..", "internal", "db", "state", "testdata", "release-v0.19.1", "state.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +30,7 @@ func TestReleaseV0191StateAndKeyRingUpgrade(t *testing.T) {
 	if closeErr := dbCopy.Close(); closeErr != nil {
 		t.Fatal(closeErr)
 	}
-	keyData, err := os.ReadFile(filepath.Join("..", "..", "internal", "store", "state", "testdata", "release-v0.19.1", "master.key"))
+	keyData, err := os.ReadFile(filepath.Join("..", "..", "internal", "db", "state", "testdata", "release-v0.19.1", "master.key"))
 	if err != nil {
 		t.Fatal(err)
 	}

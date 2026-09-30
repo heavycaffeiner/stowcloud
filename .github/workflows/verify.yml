@@ -144,8 +144,8 @@ jobs:
       - name: Check external VeraCrypt golden fixture
         working-directory: backend
         env:
-          VAULT_INTEROP_FIXTURE: ${{ github.workspace }}/backend/internal/storage/vault/testdata/interop/hash_sha512.hc
-        run: go test -count=1 ./internal/storage/vault -run '^TestOpenExternalVeraCryptFixture$' -v
+          VAULT_INTEROP_FIXTURE: ${{ github.workspace }}/backend/internal/fs/vault/testdata/interop/hash_sha512.hc
+        run: go test -count=1 ./internal/fs/vault -run '^TestOpenExternalVeraCryptFixture$' -v
 
       - name: bash scripts/verify.sh
         env:

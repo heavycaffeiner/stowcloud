@@ -5,8 +5,8 @@ package adminshares
 import (
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/objstore"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/storage/vault"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/objstore"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vault"
 )
 
 // An empty secret_access_key in a patch is refused rather than treated as
