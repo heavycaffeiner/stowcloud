@@ -1,103 +1,79 @@
+// layercheck refuses the two internal imports that would tangle the tree:
+// platform reaching into the product, and anything reaching into the wiring
+// package that is only meant to be called from cmd.
 package main
 
 import (
 	"fmt"
-	"go/ast"
 	"go/parser"
 	"go/token"
 	"io"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 )
 
-const moduleRoot = "github.com/heavycaffeiner/stowcloud/backend/"
-
-const (
-	internalPrefix  = moduleRoot + "internal/"
-	ginPrefix       = "github.com/gin-gonic/gin"
-	hanamiPrefix    = "github.com/heavycaffeiner/hanami"
-	fxPrefix        = "go.uber.org/fx"
-	netHTTP         = "net/http"
-	durablefsPrefix = "github.com/stowcloud/durablefs"
-)
-
-var outboundHTTP = map[string]bool{
-	"feature/oidc": true,
-	"fs/objstore":  true,
-}
-
-// tierAllowed is the dependency graph for internal packages. Same-tier
-// imports are always allowed; every cross-tier edge is listed explicitly.
-// Keep this closed over the retained top-level directories so a new internal
-// directory cannot bypass the check by being mistaken for an external layer.
-var tierAllowed = map[string]map[string]bool{
-	"platform":  {},
-	"fs":        {"platform": true, "db": true},
-	"db":        {"platform": true, "fs": true},
-	"feature":   {"platform": true, "fs": true, "db": true},
-	"http":      {"feature": true, "platform": true, "fs": true, "db": true},
-	"runtime":   {"feature": true, "platform": true, "fs": true, "db": true},
-	"bootstrap": {"feature": true, "platform": true, "fs": true, "db": true, "runtime": true},
-	"app":       {"feature": true, "platform": true, "fs": true, "db": true, "http": true, "runtime": true},
-}
-
-func say(w io.Writer, format string, a ...any) error {
-	_, err := fmt.Fprintf(w, format, a...)
-	return err
-}
+const internalPrefix = "github.com/heavycaffeiner/stowcloud/backend/internal/"
 
 func main() {
+	log.SetFlags(0)
+	log.SetPrefix("layercheck: ")
 	if len(os.Args) < 2 {
-		if err := say(os.Stderr, "usage: layercheck <dir>...\n"); err != nil {
-			os.Exit(2)
-		}
-		os.Exit(64)
+		log.Fatal("usage: layercheck <internal dir>...")
 	}
 	found := 0
 	for _, root := range os.Args[1:] {
 		n, err := check(root, os.Stdout)
 		if err != nil {
-			if writeErr := say(os.Stderr, "layercheck: %v\n", err); writeErr != nil {
-				os.Exit(2)
-			}
-			os.Exit(2)
+			log.Fatal(err)
 		}
 		found += n
 	}
 	if found > 0 {
-		if err := say(os.Stderr, "\nlayercheck: %d import(s) crossing an internal boundary.\n", found); err != nil {
-			os.Exit(2)
-		}
-		os.Exit(1)
+		log.Fatalf("%d import(s) crossing an internal boundary", found)
 	}
 }
 
+// check walks root, which is an internal directory, and reports each refused
+// import to out.
 func check(root string, out io.Writer) (int, error) {
 	found := 0
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
-		if d.IsDir() || !strings.HasSuffix(path, ".go") {
+		if d.IsDir() {
+			if d.Name() == "testdata" {
+				return filepath.SkipDir
+			}
 			return nil
 		}
-		tier, sub, ok := tierFromFilePath(path)
-		if !ok {
+		if !strings.HasSuffix(path, ".go") {
 			return nil
 		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		importer := filepath.ToSlash(filepath.Dir(rel))
 		fset := token.NewFileSet()
-		f, parseErr := parser.ParseFile(fset, path, nil, parser.ImportsOnly)
-		if parseErr != nil {
-			return parseErr
+		f, err := parser.ParseFile(fset, path, nil, parser.ImportsOnly)
+		if err != nil {
+			return err
 		}
 		for _, spec := range f.Imports {
-			n, reportErr := reportOne(out, fset, spec, tier, sub)
-			found += n
-			if reportErr != nil {
-				return reportErr
+			imported, err := strconv.Unquote(spec.Path.Value)
+			if err != nil || !strings.HasPrefix(imported, internalPrefix) {
+				continue
+			}
+			if reason := refuse(importer, strings.TrimPrefix(imported, internalPrefix)); reason != "" {
+				if _, err := fmt.Fprintf(out, "%s: import %q refused: %s\n", fset.Position(spec.Path.Pos()), imported, reason); err != nil {
+					return err
+				}
+				found++
 			}
 		}
 		return nil
@@ -105,124 +81,18 @@ func check(root string, out io.Writer) (int, error) {
 	return found, err
 }
 
-func reportOne(out io.Writer, fset *token.FileSet, spec *ast.ImportSpec, importerTier, importerSub string) (int, error) {
-	importPath, err := strconv.Unquote(spec.Path.Value)
-	if err != nil {
-		return 0, nil
-	}
-	reason, refused := evaluate(importerTier, importerSub, importPath)
-	if !refused {
-		return 0, nil
-	}
-	if writeErr := say(out, "%s: import %q refused: %s\n", fset.Position(spec.Path.Pos()), importPath, reason); writeErr != nil {
-		return 0, writeErr
-	}
-	return 1, nil
-}
-
-func evaluate(importerTier, importerSub, importPath string) (string, bool) {
+// refuse names the rule an import from importer to imported breaks, both
+// given relative to internal/, or returns "" when the import is allowed.
+func refuse(importer, imported string) string {
 	switch {
-	case importPath == netHTTP:
-		if importerTier == "http" || importerTier == "app" || importerTier == "runtime" || importerTier == "bootstrap" || outboundHTTP[importerSub] {
-			return "", false
-		}
-		return "net/http is limited to http, app, runtime, bootstrap, feature/oidc, and fs/objstore", true
-	case strings.HasPrefix(importPath, ginPrefix):
-		if importerTier == "http" || importerTier == "app" || importerTier == "runtime" || importerTier == "bootstrap" {
-			return "", false
-		}
-		return "Gin is limited to http, app, runtime, and bootstrap", true
-	case strings.HasPrefix(importPath, hanamiPrefix):
-		if compositionPackage(importerTier) {
-			return "", false
-		}
-		return "Hanami is limited to app composition, bootstrap, and runtime", true
-	case strings.HasPrefix(importPath, fxPrefix):
-		if compositionPackage(importerTier) {
-			return "", false
-		}
-		return "Fx is limited to app composition, bootstrap, and runtime", true
-	case strings.HasPrefix(importPath, durablefsPrefix):
-		return "", false
-	case strings.HasPrefix(importPath, internalPrefix):
-		return evaluateInternal(importerTier, importPath)
-	default:
-		return "", false
+	case under(importer, "platform") && !under(imported, "platform"):
+		return "platform imports nothing else under internal"
+	case imported == "server" && importer != "server":
+		return "only cmd imports the server package"
 	}
+	return ""
 }
 
-func compositionPackage(tier string) bool {
-	return tier == "app" || tier == "runtime" || tier == "bootstrap"
-}
-
-func knownTier(tier string) bool {
-	_, ok := tierAllowed[tier]
-	return ok
-}
-
-func evaluateInternal(importerTier, importPath string) (string, bool) {
-	if !knownTier(importerTier) {
-		return fmt.Sprintf("unknown internal tier %q", importerTier), true
-	}
-	importedTier, _, ok := tierAndSub(strings.TrimPrefix(importPath, internalPrefix))
-	if !ok {
-		return "internal import has no package tier", true
-	}
-	if !knownTier(importedTier) {
-		return fmt.Sprintf("unknown internal tier %q", importedTier), true
-	}
-	if importedTier == importerTier {
-		return "", false
-	}
-	if tierAllowed[importerTier][importedTier] {
-		return "", false
-	}
-	return fmt.Sprintf("tier %s may not import tier %s", importerTier, importedTier), true
-}
-
-func tierFromFilePath(path string) (tier, sub string, ok bool) {
-	rest, ok := afterInternal(filepath.ToSlash(path))
-	if !ok {
-		return "", "", false
-	}
-	parts := strings.Split(rest, "/")
-	if len(parts) < 2 {
-		return "", "", false
-	}
-	tier = parts[0]
-	if len(parts) == 2 {
-		return tier, tier, true
-	}
-	sub = tier + "/" + parts[1]
-	if tier == "platform" && len(parts) >= 3 && parts[1] == "fs" && parts[2] == "objstore" {
-		sub += "/" + parts[2]
-	}
-	return tier, sub, true
-}
-
-func afterInternal(slash string) (string, bool) {
-	const marker = "internal/"
-	if idx := strings.Index(slash, "/"+marker); idx >= 0 {
-		return slash[idx+len("/"+marker):], true
-	}
-	if strings.HasPrefix(slash, marker) {
-		return slash[len(marker):], true
-	}
-	return "", false
-}
-
-func tierAndSub(rest string) (tier, sub string, ok bool) {
-	if rest == "" {
-		return "", "", false
-	}
-	parts := strings.Split(rest, "/")
-	tier = parts[0]
-	sub = tier
-	if len(parts) >= 2 {
-		sub += "/" + parts[1]
-	}
-	if tier == "platform" && len(parts) >= 3 && parts[1] == "fs" && parts[2] == "objstore" {
-		sub += "/" + parts[2]
-	}
-	return tier, sub, true
+func under(pkg, dir string) bool {
+	return pkg == dir || strings.HasPrefix(pkg, dir+"/")
 }

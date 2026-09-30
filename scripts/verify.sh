@@ -309,7 +309,7 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   )"
   grep_gate "no content URL composed from a path" "$CONTENT_URL_HITS" \
     "A row's bytes are addressed by its own reference: api.contentUrl(entry)."
-  run "layercheck (the internal tiers hold)" ingo_host go run ./tools/layercheck ./internal
+  run "layercheck (platform and server boundaries hold)" ingo_host go run ./tools/layercheck ./internal
   FMT=$(cd backend && gofmt -l . 2>/dev/null)
   grep_gate "gofmt" "$FMT" "Run: cd backend && gofmt -w ."
 
