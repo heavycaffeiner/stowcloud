@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { AdminCard } from './AdminCard'
-import { Icon } from '../../lib/ui/Icon'
+import { Icon } from '../../ui/Icon'
 
 export interface ServerSettingsCardProps {
   id: string

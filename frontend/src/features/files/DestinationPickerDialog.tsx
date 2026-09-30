@@ -4,7 +4,7 @@ import { destinationProblem } from '../../lib/api/path-utils'
 import { statQuery } from '../../lib/query/files'
 import { sessionQuery } from '../../lib/query/session'
 import { useI18n } from '../../hooks/use-i18n'
-import { Button } from '../../lib/ui/Button'
+import { Button } from '../../ui/Button'
 import { BrowseDialog } from './browse-dialog'
 import { FileTreeList } from './FileTree'
 export function DestinationPickerDialog({

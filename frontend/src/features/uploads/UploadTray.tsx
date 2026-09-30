@@ -3,9 +3,9 @@ import { useI18n } from '../../hooks/use-i18n'
 import { formatBytes, formatEta, formatRate } from '../../lib/format/bytes'
 import { pauseUpload, resumeUpload, cancelUpload } from '../../lib/upload/queue'
 import { type UploadItem, uploads, useUploadStore } from '../../lib/store/upload.store'
-import { Icon } from '../../lib/ui/Icon'
-import { IconButton } from '../../lib/ui/IconButton'
-import { VirtualList } from '../../lib/ui/VirtualList'
+import { Icon } from '../../ui/Icon'
+import { IconButton } from '../../ui/IconButton'
+import { VirtualList } from '../../ui/VirtualList'
 
 export function UploadTray() {
   const { t } = useI18n()

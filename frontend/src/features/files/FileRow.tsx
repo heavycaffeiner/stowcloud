@@ -5,7 +5,7 @@ import { formatEntrySize } from '../../lib/format/entry-size'
 import { formatModifiedDateNs } from '../../lib/i18n'
 import { useI18n } from '../../hooks/use-i18n'
 import { isVideoFile } from '../preview/logic/media-utils'
-import { Icon } from '../../lib/ui/Icon'
+import { Icon } from '../../ui/Icon'
 import { MiddleEllipsis } from './MiddleEllipsis'
 import '../../styles/features/files/browse-ui.css.ts'
 

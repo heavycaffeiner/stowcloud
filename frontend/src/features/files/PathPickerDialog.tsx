@@ -2,10 +2,10 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useI18n } from '../../hooks/use-i18n'
 import { api } from '../../lib/api/client'
-import { Button } from '../../lib/ui/Button'
+import { Button } from '../../ui/Button'
 import '../../styles/features/files/path-picker.css.ts'
-import { Icon } from '../../lib/ui/Icon'
-import { VirtualList } from '../../lib/ui/VirtualList'
+import { Icon } from '../../ui/Icon'
+import { VirtualList } from '../../ui/VirtualList'
 
 export interface PathPickerDialogProps {
   open: boolean

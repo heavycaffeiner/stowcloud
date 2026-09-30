@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react'
 import { useI18n } from '../../hooks/use-i18n'
 import { unlock, WrongPassphraseError } from '../../lib/crypto/e2ee'
-import { Button } from '../../lib/ui/Button'
-import { TextField } from '../../lib/ui/TextField'
+import { Button } from '../../ui/Button'
+import { TextField } from '../../ui/TextField'
 import { useUnlockShareState } from './hooks/share-manage-state'
 
 export interface UnlockShareDialogProps {

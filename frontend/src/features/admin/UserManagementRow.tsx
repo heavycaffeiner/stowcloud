@@ -1,7 +1,7 @@
 import type { AdminUser } from '../../lib/api/client'
-import { Button } from '../../lib/ui/Button'
-import { Icon } from '../../lib/ui/Icon'
-import { ListItem } from '../../lib/ui/ListItem'
+import { Button } from '../../ui/Button'
+import { Icon } from '../../ui/Icon'
+import { ListItem } from '../../ui/ListItem'
 
 type Translator = (key: string, params?: Record<string, string | number>) => string
 

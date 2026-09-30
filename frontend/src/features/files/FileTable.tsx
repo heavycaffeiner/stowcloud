@@ -2,7 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 import type { KeyboardEvent, MouseEvent as ReactMouseEvent } from 'react'
 import type { Entry, Perms, SortKey } from '../../lib/api/types'
 import { selection, useSelectionStore } from '../../lib/store/selection.store'
-import { useCompact } from '../../lib/ui/use-compact'
+import { useCompact } from '../../ui/use-compact'
 import { useViewStore, view } from '../../lib/store/view.store'
 import { useI18n } from '../../hooks/use-i18n'
 import {
@@ -17,7 +17,7 @@ import { FileRow } from './FileRow'
 import { useFileActivation } from './hooks/use-file-activation'
 import { useFileFocusPreservation } from './hooks/use-file-focus-preservation'
 import { FileRowSkeleton } from './FileRowSkeleton'
-import { Icon } from '../../lib/ui/Icon'
+import { Icon } from '../../ui/Icon'
 import '../../styles/features/files/browse-ui.css.ts'
 
 export interface FileViewHandle {

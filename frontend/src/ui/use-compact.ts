@@ -1,4 +1,4 @@
-import { useMediaQuery } from '../../hooks/use-media-query'
+import { useMediaQuery } from '../hooks/use-media-query'
 
 // The complement of the (min-width: 905px) breakpoint the stylesheets use for the wide layout.
 const COMPACT_QUERY = 'not all and (min-width: 905px)'

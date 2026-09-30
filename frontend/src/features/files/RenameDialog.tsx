@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Button } from '../../lib/ui/Button'
-import { TextField } from '../../lib/ui/TextField'
+import { Button } from '../../ui/Button'
+import { TextField } from '../../ui/TextField'
 import { BrowseDialog } from './browse-dialog'
 import { useI18n } from '../../hooks/use-i18n'
 export function RenameDialog({

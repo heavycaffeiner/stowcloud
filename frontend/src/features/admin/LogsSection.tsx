@@ -23,11 +23,11 @@ import { adminAuditQuery, adminLogsQuery, adminTimelineQuery } from '../../lib/q
 import { adminUsersQuery } from '../../lib/query/admin'
 import { useDebounced } from '../../hooks/use-debounced'
 import { logsForm, useLogsFormStore } from '../../lib/store/logs.store'
-import { Button } from '../../lib/ui/Button'
-import { TextField } from '../../lib/ui/TextField'
-import { ProgressCircular } from '../../lib/ui/ProgressCircular'
-import { Checkbox } from '../../lib/ui/Checkbox'
-import { VirtualList } from '../../lib/ui/VirtualList'
+import { Button } from '../../ui/Button'
+import { TextField } from '../../ui/TextField'
+import { ProgressCircular } from '../../ui/ProgressCircular'
+import { Checkbox } from '../../ui/Checkbox'
+import { VirtualList } from '../../ui/VirtualList'
 import '../../styles/features/admin/logs-section.css.ts'
 
 const SOURCE_MODES: readonly { mode: LogSourceMode; key: string }[] = [

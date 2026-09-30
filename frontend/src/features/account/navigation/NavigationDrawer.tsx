@@ -3,9 +3,9 @@ import { useMutation } from '@tanstack/react-query'
 import { describeApiError } from '../../../lib/api/error-text'
 import { useI18n } from '../../../hooks/use-i18n'
 import { setRootOrderMutation } from '../../../lib/query/account'
-import { Icon } from '../../../lib/ui/Icon'
-import { IconButton } from '../../../lib/ui/IconButton'
-import { VirtualList } from '../../../lib/ui/VirtualList'
+import { Icon } from '../../../ui/Icon'
+import { IconButton } from '../../../ui/IconButton'
+import { VirtualList } from '../../../ui/VirtualList'
 
 export interface NavItem {
   readonly id: string

@@ -4,7 +4,7 @@ import { formatModifiedDateNs } from '../../lib/i18n'
 import { parentOf } from '../../lib/api/path-utils'
 import { extensionOf } from '../../lib/search/filters'
 import { computeWindow, type WindowResult } from '../../lib/virtual/windowing'
-import { Icon } from '../../lib/ui/Icon'
+import { Icon } from '../../ui/Icon'
 
 export interface SearchResultsProps {
   readonly ran: boolean

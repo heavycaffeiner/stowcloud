@@ -1,6 +1,6 @@
 import type { OwnedShareLinkInfo } from '../../../lib/api/client'
 import { useI18n } from '../../../hooks/use-i18n'
-import { Icon } from '../../../lib/ui/Icon'
+import { Icon } from '../../../ui/Icon'
 import { isDropLink, isExpired, isExhausted, type LinkRow } from './hooks/use-link-management'
 interface LinkRowProps {
   link: LinkRow

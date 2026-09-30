@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { useEffect, useRef } from 'react'
-import { useI18n } from '../../hooks/use-i18n'
-import { useOutsideDismiss } from '../../hooks/use-outside-dismiss'
+import { useI18n } from '../hooks/use-i18n'
+import { useOutsideDismiss } from '../hooks/use-outside-dismiss'
 export interface MenuProps {
   open: boolean
   onClose?: () => void

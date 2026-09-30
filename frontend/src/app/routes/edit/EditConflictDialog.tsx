@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useI18n } from '../../../hooks/use-i18n'
-import { Button } from '../../../lib/ui/Button'
+import { Button } from '../../../ui/Button'
 
 export interface EditConflictDialogProps {
   open: boolean

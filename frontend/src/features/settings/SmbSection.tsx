@@ -5,10 +5,10 @@ import { describeApiError } from '../../lib/api/error-text'
 import { useI18n } from '../../hooks/use-i18n'
 import { sessionQuery } from '../../lib/query/session'
 import { smbPasswordMutation, smbSettingsMutation } from '../../lib/query/account'
-import { Button } from '../../lib/ui/Button'
-import { TextField } from '../../lib/ui/TextField'
+import { Button } from '../../ui/Button'
+import { TextField } from '../../ui/TextField'
 import { SettingsDialog } from './SettingsDialog'
-import { Switch } from '../../lib/ui/Switch'
+import { Switch } from '../../ui/Switch'
 
 export function SmbSection() {
   const { t } = useI18n()

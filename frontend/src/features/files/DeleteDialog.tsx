@@ -1,6 +1,6 @@
-import { Button } from '../../lib/ui/Button'
+import { Button } from '../../ui/Button'
 import { BrowseDialog } from './browse-dialog'
-import { Icon } from '../../lib/ui/Icon'
+import { Icon } from '../../ui/Icon'
 import { useI18n } from '../../hooks/use-i18n'
 
 export function DeleteDialog({

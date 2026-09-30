@@ -1,6 +1,6 @@
 import type { MouseEventHandler, ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
-import { useEventListener } from '../../hooks/use-event-listener'
+import { useEventListener } from '../hooks/use-event-listener'
 import { Icon } from './Icon'
 
 interface IconButtonElement extends HTMLElement {

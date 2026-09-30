@@ -3,7 +3,7 @@ import { useI18n } from '../../../hooks/use-i18n'
 import { SearchPanel } from '../../../features/search/SearchPanel'
 import { useDocumentTitle } from '../../hooks/use-document-title'
 import '../../../styles/app/routes/simple-pages.css.ts'
-import { Icon } from '../../../lib/ui/Icon'
+import { Icon } from '../../../ui/Icon'
 
 export function SearchPage() {
   const { t } = useI18n()

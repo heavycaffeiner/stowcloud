@@ -7,7 +7,7 @@
 // one and missed on the other; this module is where adding, removing or gating
 // one is allowed to happen, and the only place.
 import type { Entry } from '../../../lib/api/client'
-import { icons } from '../../../lib/icons'
+import { icons } from '../../../ui/icons'
 import { t } from '../../../lib/i18n'
 import { isEditableFileName } from './editable-files'
 

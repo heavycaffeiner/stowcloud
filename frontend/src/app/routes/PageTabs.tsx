@@ -1,4 +1,4 @@
-import { Icon } from '../../lib/ui/Icon'
+import { Icon } from '../../ui/Icon'
 
 export interface PageTabItem<T extends string> {
   value: T

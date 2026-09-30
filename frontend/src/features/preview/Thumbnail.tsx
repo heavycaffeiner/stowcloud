@@ -4,8 +4,8 @@ import { isVideoFile, mimeTypeOf } from './logic/media-utils'
 import { registerMediaSource, releaseMediaSource, swReady } from '../../lib/crypto/download-sw'
 import { decryptDownload, isUnlocked } from '../../lib/crypto/e2ee'
 import { encryptionForLabel, shareLabelOf } from '../../lib/crypto/encrypted-shares'
-import type { IconName } from '../../lib/icons'
-import { Icon } from '../../lib/ui/Icon'
+import type { IconName } from '../../ui/icons'
+import { Icon } from '../../ui/Icon'
 
 const CACHE = new Map<string, string>()
 const CACHE_MAX = 300

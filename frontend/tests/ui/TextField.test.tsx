@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '../../../src/test/test-utils'
-import { TextField } from '../../../src/lib/ui/TextField'
+import { fireEvent, render, screen } from '../../src/test/test-utils'
+import { TextField } from '../../src/ui/TextField'
 
 describe('TextField', () => {
   it('reports user input while retaining the controlled value', () => {

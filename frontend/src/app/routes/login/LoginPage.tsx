@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
-import { Button } from '../../../lib/ui/Button'
-import { TextField } from '../../../lib/ui/TextField'
+import { Button } from '../../../ui/Button'
+import { TextField } from '../../../ui/TextField'
 import { useDocumentTitle } from '../../hooks/use-document-title'
 import { useLoginFlow } from './hooks/use-login-flow'
 import '../../../styles/app/routes/auth.css.ts'

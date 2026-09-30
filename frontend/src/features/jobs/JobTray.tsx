@@ -13,9 +13,9 @@ import {
   jobRetryMutation
 } from '../../lib/query/jobs'
 import { jobTray, useJobTrayStore } from '../../lib/store/jobs.store'
-import { Icon } from '../../lib/ui/Icon'
-import { IconButton } from '../../lib/ui/IconButton'
-import { VirtualList } from '../../lib/ui/VirtualList'
+import { Icon } from '../../ui/Icon'
+import { IconButton } from '../../ui/IconButton'
+import { VirtualList } from '../../ui/VirtualList'
 
 interface JobRow {
   id: string

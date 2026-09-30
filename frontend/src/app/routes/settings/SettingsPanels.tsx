@@ -3,8 +3,8 @@ import type { SessionInfo } from '../../../lib/api/types'
 import type { Locale } from '../../../lib/i18n/state'
 import type { ThemePref } from '../../../lib/store/ui.store'
 import { SettingsCard } from '../../../features/settings/SettingsCard'
-import { Button } from '../../../lib/ui/Button'
-import { Icon } from '../../../lib/ui/Icon'
+import { Button } from '../../../ui/Button'
+import { Icon } from '../../../ui/Icon'
 const PasswordSection = lazy(() =>
   import('../../../features/settings/PasswordSection').then((m) => ({ default: m.PasswordSection }))
 )

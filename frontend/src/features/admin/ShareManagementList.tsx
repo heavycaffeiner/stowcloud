@@ -1,10 +1,10 @@
 import type { AdminShare, ShareBackend, ShareEncryption } from '../../lib/api/client'
-import { Button } from '../../lib/ui/Button'
-import { Icon } from '../../lib/ui/Icon'
-import { IconButton } from '../../lib/ui/IconButton'
-import { ListItem } from '../../lib/ui/ListItem'
-import { Switch } from '../../lib/ui/Switch'
-import { VirtualList } from '../../lib/ui/VirtualList'
+import { Button } from '../../ui/Button'
+import { Icon } from '../../ui/Icon'
+import { IconButton } from '../../ui/IconButton'
+import { ListItem } from '../../ui/ListItem'
+import { Switch } from '../../ui/Switch'
+import { VirtualList } from '../../ui/VirtualList'
 
 type Translator = (key: string, params?: Record<string, string | number>) => string
 

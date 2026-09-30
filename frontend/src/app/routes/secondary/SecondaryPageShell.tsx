@@ -1,5 +1,5 @@
 import type { PropsWithChildren, ReactNode } from 'react'
-import { Icon } from '../../../lib/ui/Icon'
+import { Icon } from '../../../ui/Icon'
 
 export interface SecondaryPageShellProps extends PropsWithChildren {
   title: ReactNode

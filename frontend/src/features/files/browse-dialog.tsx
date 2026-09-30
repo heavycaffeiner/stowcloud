@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Dialog } from '../../lib/ui/Dialog'
+import { Dialog } from '../../ui/Dialog'
 import '../../styles/features/files/browse-ui.css.ts'
 
 export interface BrowseDialogProps {

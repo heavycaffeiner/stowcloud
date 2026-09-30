@@ -12,8 +12,8 @@ import {
   totpSetupMutation
 } from '../../lib/query/account'
 import { sessionQuery } from '../../lib/query/session'
-import { Button } from '../../lib/ui/Button'
-import { TextField } from '../../lib/ui/TextField'
+import { Button } from '../../ui/Button'
+import { TextField } from '../../ui/TextField'
 import { SettingsDialog } from './SettingsDialog'
 
 export function TotpSection() {

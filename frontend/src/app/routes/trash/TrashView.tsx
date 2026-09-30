@@ -2,8 +2,8 @@ import type { BatchItemResult, TrashEntry } from '../../../lib/api/types'
 import { batchErrorKey } from '../../../lib/api/error-text'
 import { formatDateNs } from '../../../lib/i18n'
 import { formatBytes } from '../../../lib/format/bytes'
-import { Icon } from '../../../lib/ui/Icon'
-import { VirtualList } from '../../../lib/ui/VirtualList'
+import { Icon } from '../../../ui/Icon'
+import { VirtualList } from '../../../ui/VirtualList'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
 

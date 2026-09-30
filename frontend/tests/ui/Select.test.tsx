@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render } from '../../../src/test/test-utils'
-import { Dialog } from '../../../src/lib/ui/Dialog'
-import { Select } from '../../../src/lib/ui/Select'
+import { fireEvent, render } from '../../src/test/test-utils'
+import { Dialog } from '../../src/ui/Dialog'
+import { Select } from '../../src/ui/Select'
 
 describe('Select', () => {
   it('does not dismiss an ancestor dialog when its dropdown closes', () => {

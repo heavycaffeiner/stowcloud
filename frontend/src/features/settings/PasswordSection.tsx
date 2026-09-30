@@ -7,8 +7,8 @@ import { scorePasswordStrength } from '../../lib/format/password-strength'
 import { validatePasswordChange } from '../../lib/format/password-change'
 import { changePasswordMutation } from '../../lib/query/account'
 import { useI18n } from '../../hooks/use-i18n'
-import { Button } from '../../lib/ui/Button'
-import { TextField } from '../../lib/ui/TextField'
+import { Button } from '../../ui/Button'
+import { TextField } from '../../ui/TextField'
 
 export function PasswordSection() {
   const { t } = useI18n()

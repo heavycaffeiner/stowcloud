@@ -5,9 +5,9 @@ import { describeApiError } from '../../lib/api/error-text'
 import { formatDateNs } from '../../lib/i18n'
 import { useI18n } from '../../hooks/use-i18n'
 import { adminUnlinkOidcMutation, adminUserOidcQuery } from '../../lib/query/admin'
-import { Button } from '../../lib/ui/Button'
-import { Dialog } from '../../lib/ui/Dialog'
-import { ProgressCircular } from '../../lib/ui/ProgressCircular'
+import { Button } from '../../ui/Button'
+import { Dialog } from '../../ui/Dialog'
+import { ProgressCircular } from '../../ui/ProgressCircular'
 import '../../styles/features/admin/admin.css.ts'
 
 interface UserOidcDialogProps {

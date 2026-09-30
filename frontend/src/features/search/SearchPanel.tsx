@@ -1,7 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent, ReactNode } from 'react'
 import { useI18n } from '../../hooks/use-i18n'
-import { Icon } from '../../lib/ui/Icon'
+import { Icon } from '../../ui/Icon'
 import { useSearchController } from './hooks/use-search-controller'
 import { useSearchNavigation } from './hooks/use-search-navigation'
 import { CATEGORIES, SORT_KEYS } from './logic/search-state'

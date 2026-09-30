@@ -14,10 +14,10 @@ import { registerMediaSource, releaseMediaSource, swReady } from '../../lib/cryp
 import { decryptDownload, isUnlocked, MAX_ENCRYPTABLE_BYTES } from '../../lib/crypto/e2ee'
 import { encryptionForLabel, shareLabelOf } from '../../lib/crypto/encrypted-shares'
 import { listEncryptedArchive } from '../../lib/crypto/zip-listing'
-import { Button } from '../../lib/ui/Button'
-import { IconButton } from '../../lib/ui/IconButton'
+import { Button } from '../../ui/Button'
+import { IconButton } from '../../ui/IconButton'
 import { UnlockShareDialog } from '../shares/UnlockShareDialog'
-import { Icon } from '../../lib/ui/Icon'
+import { Icon } from '../../ui/Icon'
 import { isEditableFileName } from '../files/logic/editable-files'
 
 const TEXT_MAX_BYTES = 2 * 1024 * 1024

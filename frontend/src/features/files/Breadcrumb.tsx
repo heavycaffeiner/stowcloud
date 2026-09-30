@@ -1,9 +1,9 @@
 import { Fragment, useId, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import { useI18n } from '../../hooks/use-i18n'
-import { useCompact } from '../../lib/ui/use-compact'
-import { Menu } from '../../lib/ui/Menu'
-import { Icon } from '../../lib/ui/Icon'
+import { useCompact } from '../../ui/use-compact'
+import { Menu } from '../../ui/Menu'
+import { Icon } from '../../ui/Icon'
 
 export interface BreadcrumbCrumb {
   label: string

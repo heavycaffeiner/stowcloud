@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render } from '../../../src/test/test-utils'
-import { Switch } from '../../../src/lib/ui/Switch'
+import { fireEvent, render } from '../../src/test/test-utils'
+import { Switch } from '../../src/ui/Switch'
 describe('Switch', () => {
   it('proposes a change without changing until the controlled value changes', () => {
     const onChange = vi.fn()

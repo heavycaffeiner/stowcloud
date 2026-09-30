@@ -6,7 +6,7 @@ import { dirListQuery, dirViewOf } from '../../lib/query/files'
 import { sessionQuery } from '../../lib/query/session'
 import { useI18n } from '../../hooks/use-i18n'
 import { FileTreeItem } from './FileTreeItem'
-import { VirtualList } from '../../lib/ui/VirtualList'
+import { VirtualList } from '../../ui/VirtualList'
 import '../../styles/features/files/browse-ui.css.ts'
 
 export interface FileTreeProps {

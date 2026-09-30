@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { localeTag } from '../../lib/i18n'
 import type { Locale } from '../../lib/i18n/state'
-import { applyMduiLocale, applyMduiTheme, initMdui } from '../../lib/ui/logic/mdui-runtime'
+import { applyMduiLocale, applyMduiTheme, initMdui } from '../../ui/mdui-runtime'
 import type { ThemePref } from '../../lib/store/ui.store'
 
 /** Initializes MDUI's color tokens once after the document becomes available. */

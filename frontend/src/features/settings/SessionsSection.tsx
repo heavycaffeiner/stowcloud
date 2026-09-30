@@ -4,8 +4,8 @@ import { ApiError, type ActiveSession } from '../../lib/api/client'
 import { formatDateNs } from '../../lib/i18n'
 import { useI18n } from '../../hooks/use-i18n'
 import { activeSessionsQuery, revokeSessionMutation } from '../../lib/query/account'
-import { Button } from '../../lib/ui/Button'
-import { VirtualList } from '../../lib/ui/VirtualList'
+import { Button } from '../../ui/Button'
+import { VirtualList } from '../../ui/VirtualList'
 import { SettingsDialog } from './SettingsDialog'
 
 export function SessionsSection() {

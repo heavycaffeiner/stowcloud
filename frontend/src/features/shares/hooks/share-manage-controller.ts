@@ -8,7 +8,7 @@ import {
   shareLinksQuery,
   shareUpdateMutation
 } from '../../../lib/query/shares'
-import type { SelectOption } from '../../../lib/ui/Select'
+import type { SelectOption } from '../../../ui/Select'
 import { useShareManageState } from './share-manage-state'
 
 const PRESET_DAYS: Record<string, number> = { '1d': 1, '7d': 7, '30d': 30 }
