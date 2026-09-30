@@ -5,6 +5,7 @@
 //   * a catalogue entry no call site uses: dead copy, or a renamed key;
 //   * `{placeholder}` sets that disagree between languages: a dropped hole
 //     renders as a missing word, an invented one renders literally;
+//   * a key defined twice in one catalogue: only the last copy takes effect;
 //   * a `t()` argument that is not a dotted key at all: the fingerprint of
 //     someone passing display text straight into `t()`.
 //
@@ -74,7 +75,8 @@ for (const file of walk(SRC)) {
   }
 }
 
-const catalogue = Object.fromEntries(LOCALES.map((l) => [l, JSON.parse(readFileSync(join(I18N, `${l}.json`), 'utf8'))]))
+const sources = Object.fromEntries(LOCALES.map((l) => [l, readFileSync(join(I18N, `${l}.json`), 'utf8')]))
+const catalogue = Object.fromEntries(LOCALES.map((l) => [l, JSON.parse(sources[l])]))
 const holes = (/** @type {string} */ s) =>
   [...s.matchAll(/\{(\w+)\}/g)]
     .map((m) => m[1])
@@ -85,6 +87,16 @@ const malformed = []
 const missing = []
 const orphaned = []
 const mismatched = []
+const duplicated = []
+
+// JSON.parse keeps the last of two equal keys, so a stale earlier copy would never show up as drift.
+for (const l of LOCALES) {
+  const seen = new Set()
+  for (const [, key] of sources[l].matchAll(/^\s*"((?:\\.|[^"\\])*)"\s*:/gm)) {
+    if (seen.has(key)) duplicated.push(`  ${key}  [${l}]`)
+    seen.add(key)
+  }
+}
 
 for (const [key, where] of used) {
   if (!KEY_SHAPE.test(key)) {
@@ -111,8 +123,9 @@ report('Not a catalogue key: display text passed to t()?', malformed)
 report('Key missing from a catalogue', missing)
 report('Placeholders disagree between languages', mismatched)
 report('Catalogue entry with no call site', orphaned)
+report('Key defined twice in a catalogue', duplicated)
 
-if (malformed.length || missing.length || orphaned.length || mismatched.length) {
+if (malformed.length || missing.length || orphaned.length || mismatched.length || duplicated.length) {
   console.error(`\ni18n-check failed. ${used.size} keys in use.`)
   process.exit(1)
 }
