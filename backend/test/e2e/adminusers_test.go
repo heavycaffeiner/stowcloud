@@ -115,7 +115,7 @@ func TestTheAdminOpenAPIDescribesTypedRoutes(t *testing.T) {
 	if err := json.Unmarshal(body, &doc); err != nil {
 		t.Fatalf("the specification does not parse: %v\n%s", err, body)
 	}
-	for _, path := range []string{"/api/v1/jobs", "/api/v1/trash", "/api/v1/admin/shares", "/api/v1/links", "/api/v1/encryption", "/api/v1/account/smb", "/api/v1/auth/login", "/api/v1/account/sessions", "/api/v1/admin/oidc/endpoints", "/api/v1/admin/users", "/api/v1/system/setup", "/api/v1/files/list", "/api/v1/files/move", "/api/v1/files/archive/list", "/api/v1/direct-uploads/{id}", "/s/{token}/auth"} {
+	for _, path := range []string{"/api/v1/jobs", "/api/v1/trash", "/api/v1/admin/shares", "/api/v1/links", "/api/v1/encryption", "/api/v1/account/smb", "/api/v1/auth/login", "/api/v1/account/sessions", "/api/v1/admin/oidc/endpoints", "/api/v1/admin/users", "/api/v1/system/setup", "/api/v1/files/list", "/api/v1/files/move", "/api/v1/files/archive/list", "/api/v1/direct-uploads/{id}", "/s/{token}", "/s/{token}/auth"} {
 		if _, ok := doc.Paths[path]; !ok {
 			t.Errorf("the specification omits %s", path)
 		}

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -93,6 +94,34 @@ func TestAPublicLinkDescribesItself(t *testing.T) {
 	}
 	if out.Name != "note.txt" || !out.CanDownload || out.Drop {
 		t.Errorf("the landing describes the link as %+v", out)
+	}
+}
+
+// A browser navigating to a link is handed to the web client, never the JSON
+// the client itself reads from the same address. This build embeds no
+// client, so the navigation finds nothing.
+func TestABrowserNavigatingToALinkDoesNotGetTheJSON(t *testing.T) {
+	t.Parallel()
+	base, token, _ := linkEngine(t, "note.txt", []byte("shared"), acl.Read|acl.Download)
+
+	req, err := http.NewRequest(http.MethodGet, base+"/s/"+token, nil)
+	if err != nil {
+		t.Fatalf("building: %v", err)
+	}
+	req.Header.Set("Accept", "text/html,application/xhtml+xml")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("navigating: %v", err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if cerr := resp.Body.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		t.Fatalf("reading: %v", err)
+	}
+	if resp.StatusCode != http.StatusNotFound || strings.Contains(string(body), "note.txt") {
+		t.Fatalf("the navigation answered %d: %s", resp.StatusCode, body)
 	}
 }
 

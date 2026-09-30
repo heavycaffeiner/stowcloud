@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/gin-gonic/gin"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
@@ -58,26 +59,31 @@ func (p *Public) linkFor(c *gin.Context) (files.Link, error) {
 		middleware.Fail(c, err)
 		return files.Link{}, err
 	}
-	if link.HasPassword && !p.unlocked(c, link) {
+	proof, cerr := c.Cookie(linkCookie(link.ID))
+	if cerr != nil {
+		proof = ""
+	}
+	if !p.unlocked(c.Request.Context(), link, proof) {
 		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "fs.link_password"})
 		return files.Link{}, errors.New("link locked")
 	}
 	return link, nil
 }
 func linkCookie(id int64) string { return "sc_link_" + strconv.FormatInt(id, 10) }
-func (p *Public) unlocked(c *gin.Context, link files.Link) bool {
+
+// unlocked reports whether proof is a valid unlock ticket for link.
+func (p *Public) unlocked(ctx context.Context, link files.Link, proof string) bool {
 	if !link.HasPassword {
 		return true
 	}
-	ticket, err := c.Cookie(linkCookie(link.ID))
-	if err != nil || ticket == "" {
+	if proof == "" {
 		return false
 	}
-	hash, err := p.d.State.PasswordHash(c.Request.Context(), link.ID)
+	hash, err := p.d.State.PasswordHash(ctx, link.ID)
 	if err != nil || hash == nil {
 		return false
 	}
-	return verifyTicket(p.d.ClaimKey, link.ID, *hash, ticket, p.d.Now())
+	return verifyTicket(p.d.ClaimKey, link.ID, *hash, proof, p.d.Now())
 }
 func ticket(key []byte, id int64, hash string, exp int64) string {
 	mac := hmac.New(sha256.New, key)
@@ -111,53 +117,114 @@ func verifyTicket(key []byte, id int64, hash, raw string, now int64) bool {
 	return hmac.Equal(sig, mac.Sum(nil))
 }
 
-func (p *Public) Landing(c *gin.Context) {
-	if strings.Contains(c.GetHeader("Accept"), "text/html") {
-		if p.d.Frontend != nil {
-			p.d.Frontend.ServeHTTP(c.Writer, c.Request)
-			c.Abort()
-			return
-		}
-		c.AbortWithStatus(http.StatusNotFound)
+// LandingPage hands a browser navigating to a link the web client, so the
+// typed route behind it only answers the client's own JSON request.
+func (p *Public) LandingPage(c *gin.Context) {
+	if !strings.Contains(c.GetHeader("Accept"), "text/html") {
 		return
 	}
-	link, root, err := p.d.Core.LinkPublic(c.Request.Context(), c.Param("token"))
+	if p.d.Frontend != nil {
+		p.d.Frontend.ServeHTTP(c.Writer, c.Request)
+		c.Abort()
+		return
+	}
+	c.AbortWithStatus(http.StatusNotFound)
+}
+
+type landingInput struct {
+	Token   string `path:"token"`
+	Path    string `query:"path"`
+	cookies []*http.Cookie
+}
+
+// Resolve keeps the request cookies: the unlock ticket's name depends on the
+// link, so it cannot be declared as a fixed cookie parameter.
+func (in *landingInput) Resolve(ctx huma.Context) []error {
+	in.cookies = huma.ReadCookies(ctx)
+	return nil
+}
+
+func (in *landingInput) cookie(name string) string {
+	for _, c := range in.cookies {
+		if c.Name == name {
+			return c.Value
+		}
+	}
+	return ""
+}
+
+// PublicLinkView is a link as its visitor sees it. A locked link answers
+// only Protected, so nothing about it is visible before the password.
+type PublicLinkView struct {
+	Protected bool `json:"protected"`
+	*PublicLinkDetailView
+}
+
+type PublicLinkDetailView struct {
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	IsDir          bool   `json:"is_dir"`
+	Size           uint64 `json:"size"`
+	Label          string `json:"label"`
+	Note           string `json:"note"`
+	Path           string `json:"path"`
+	CanDownload    bool   `json:"can_download"`
+	Drop           bool   `json:"drop"`
+	HasPassword    bool   `json:"has_password"`
+	MaxUploadBytes int64  `json:"max_upload_bytes"`
+	// Entries is present only for a readable folder, and then even when empty.
+	Entries *[]PublicLinkEntryView `json:"entries,omitempty"`
+}
+
+type PublicLinkEntryView struct {
+	Name string `json:"name"`
+	Kind string `json:"kind"`
+	Size uint64 `json:"size"`
+}
+
+type landingOutput struct{ Body PublicLinkView }
+
+// Landing describes a link, or one folder inside it, to a visitor.
+func (p *Public) Landing(ctx context.Context, in *landingInput) (*landingOutput, error) {
+	link, root, err := p.d.Core.LinkPublic(ctx, in.Token)
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return nil, err
 	}
-	if link.HasPassword && !p.unlocked(c, link) {
-		c.JSON(http.StatusOK, gin.H{"protected": true})
-		return
+	if !p.unlocked(ctx, link, in.cookie(linkCookie(link.ID))) {
+		return &landingOutput{Body: PublicLinkView{Protected: true}}, nil
 	}
-	sub := strings.Trim(c.Query("path"), "/")
+	sub := strings.Trim(in.Path, "/")
+	canRead := link.Perms.Has(acl.Read)
 	var listing files.LinkListing
-	if sub != "" && !link.Perms.Has(acl.Read) {
-		middleware.Fail(c, files.ErrNotFound)
-		return
-	}
-	if sub == "" && !link.Perms.Has(acl.Read) {
+	switch {
+	case sub != "" && !canRead:
+		return nil, files.ErrNotFound
+	case sub == "" && !canRead:
 		listing = files.LinkListing{IsDir: root.IsDir, Name: root.Name, Size: root.Size}
-	} else {
-		listing, err = p.d.Core.LinkBrowse(c.Request.Context(), link, sub)
+	default:
+		listing, err = p.d.Core.LinkBrowse(ctx, link, sub)
 		if err != nil {
-			middleware.Fail(c, err)
-			return
+			return nil, err
 		}
 	}
-	out := gin.H{"protected": false, "id": strconv.FormatInt(link.ID, 10), "name": listing.Name, "is_dir": listing.IsDir, "size": listing.Size, "label": link.Label, "note": link.Note, "path": listing.Path, "can_download": link.Perms.Has(acl.Download), "drop": link.Perms.Has(acl.Create) && !link.Perms.Has(acl.Read), "has_password": link.HasPassword, "max_upload_bytes": limits.RequestBody}
-	if listing.IsDir && link.Perms.Has(acl.Read) {
-		entries := make([]gin.H, 0, len(listing.Entries))
+	detail := &PublicLinkDetailView{
+		ID: strconv.FormatInt(link.ID, 10), Name: listing.Name, IsDir: listing.IsDir, Size: listing.Size,
+		Label: link.Label, Note: link.Note, Path: listing.Path,
+		CanDownload: link.Perms.Has(acl.Download), Drop: link.Perms.Has(acl.Create) && !canRead,
+		HasPassword: link.HasPassword, MaxUploadBytes: limits.RequestBody,
+	}
+	if listing.IsDir && canRead {
+		entries := make([]PublicLinkEntryView, 0, len(listing.Entries))
 		for _, e := range listing.Entries {
-			k := "file"
+			kind := "file"
 			if e.IsDir {
-				k = "dir"
+				kind = "dir"
 			}
-			entries = append(entries, gin.H{"name": e.Name, "kind": k, "size": e.Size})
+			entries = append(entries, PublicLinkEntryView{Name: e.Name, Kind: kind, Size: e.Size})
 		}
-		out["entries"] = entries
+		detail.Entries = &entries
 	}
-	c.JSON(http.StatusOK, out)
+	return &landingOutput{Body: PublicLinkView{PublicLinkDetailView: detail}}, nil
 }
 
 type unlockRequest struct {

@@ -279,14 +279,17 @@ func (e *Engine) routes(router *gin.Engine) error {
 	admin.GET("/api/v1/admin/openapi", func(c *gin.Context) { c.JSON(http.StatusOK, adminAPI.api.OpenAPI()) })
 
 	e.publicLinks = e.newPublicLinks()
-	public.GET("/s/:token", e.publicLinks.Landing)
+	// A browser navigating to a link gets the web client before the typed
+	// route runs; only the client's JSON request reaches the operation.
+	linkPage := newTyped(router, public.Group("", e.publicLinks.LandingPage), config, e.errs, true)
+	op(linkPage, http.MethodGet, "/s/{token}", "links.public.get", e.publicLinks.Landing)
 	op(publicAPI, http.MethodPost, "/s/{token}/auth", "links.unlock", e.publicLinks.Unlock(links.PublicLinkPrefix))
 	public.GET("/s/:token/download", e.publicLinks.Download)
 	public.GET("/s/:token/zip", e.publicLinks.Zip)
 	public.POST("/s/:token/drop", e.publicLinks.Drop)
 
 	dav.Mount(device, dav.Deps{Core: e.Core, State: e.State, Locks: e.davLocks, Clock: e.clk(), Logger: e.logger, Errors: e.errs, InfinityEntries: 10_000})
-	e.mountNCTagged(public, publicAPI, device)
+	e.mountNCTagged(public, publicAPI, linkPage, device)
 	return web.Install(router)
 }
 

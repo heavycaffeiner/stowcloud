@@ -23,9 +23,9 @@ import (
 
 // mountNCTagged mounts the compatibility surface and its front-controller
 // spelling of the public link routes.
-func (e *Engine) mountNCTagged(public gin.IRoutes, publicAPI typed, device gin.IRoutes) {
+func (e *Engine) mountNCTagged(public gin.IRoutes, publicAPI, linkPage typed, device gin.IRoutes) {
 	e.ncServer().Mount(device)
-	public.GET("/index.php/s/:token", e.publicLinks.Landing)
+	op(linkPage, http.MethodGet, "/index.php/s/{token}", "nc.links.public.get", e.publicLinks.Landing)
 	op(publicAPI, http.MethodPost, "/index.php/s/{token}/auth", "nc.links.unlock", e.publicLinks.Unlock("/index.php"+shares.PublicLinkPrefix))
 	public.GET("/index.php/s/:token/download", e.publicLinks.Download)
 	public.GET("/index.php/s/:token/zip", e.publicLinks.Zip)
