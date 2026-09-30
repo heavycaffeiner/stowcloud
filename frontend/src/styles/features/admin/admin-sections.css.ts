@@ -307,53 +307,6 @@ globalStyle('.sc-upload-actions, .sc-admin-section-upload-actions', {
   gap: '8px',
   flexShrink: '0'
 })
-globalStyle('.sc-picker', {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '8px',
-  width: 'min(36rem, 100%)',
-  minWidth: '0'
-})
-globalStyle('.sc-picker-nav', {
-  display: 'flex',
-  alignItems: 'center',
-  gap: '8px',
-  minWidth: '0'
-})
-globalStyle('.sc-picker-nav p', {
-  minWidth: '0',
-  margin: '0',
-  overflowWrap: 'anywhere',
-  color: 'rgb(var(--mdui-color-on-surface-variant))'
-})
-globalStyle('.sc-picker-body', {
-  maxHeight: '40vh',
-  overflowY: 'auto',
-  border: '1px solid var(--sc-outline-variant)',
-  background: 'transparent',
-  borderRadius: 'var(--sc-radius-small)'
-})
-globalStyle('.sc-picker-body p', {
-  padding: '16px'
-})
-globalStyle('.sc-picker-body ul', {
-  listStyle: 'none',
-  margin: '0',
-  padding: '4px'
-})
-globalStyle('.sc-picker-body li button, .sc-picker-body li span', {
-  display: 'flex',
-  alignItems: 'center',
-  gap: '8px',
-  width: '100%',
-  minBlockSize: '40px',
-  padding: '8px',
-  border: '0',
-  background: 'none',
-  color: 'inherit',
-  textAlign: 'left',
-  overflowWrap: 'anywhere'
-})
 globalStyle('.sc-admin-section-shares', {
   listStyle: 'none',
   margin: '0',
@@ -448,13 +401,6 @@ globalStyle('.sc-shares-list .sc-list-item-trailing', {
     '(max-width: 599.98px)': {
       width: '100%',
       justifyContent: 'flex-start'
-    }
-  }
-})
-globalStyle('.sc-picker-body li button, .sc-picker-body li span', {
-  '@media': {
-    '(max-width: 599.98px)': {
-      minBlockSize: '44px'
     }
   }
 })

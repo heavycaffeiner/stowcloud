@@ -41,7 +41,7 @@ globalStyle('.sc-picker-entry', {
   alignItems: 'center',
   gap: '8px',
   width: '100%',
-  minHeight: '40px',
+  minHeight: 'var(--sc-control-min)',
   padding: '8px',
   border: 'none',
   borderRadius: '4px',
