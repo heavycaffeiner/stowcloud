@@ -15,9 +15,9 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/smb/publish"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 )
 
@@ -149,11 +149,11 @@ func TestRegressionAppPasswordTrashAndShareScopeEnforced(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(hostAllowed, "allowed.txt"), []byte("allowed content"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	defAllowed, err := e.Core.CreateShare(ctx, core.ShareSpec{Name: "allowed", Host: hostAllowed})
+	defAllowed, err := e.Core.CreateShare(ctx, files.ShareSpec{Name: "allowed", Host: hostAllowed})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
+	if _, gerr := e.Core.CreateGrant(ctx, files.GrantSpec{
 		User: &uid, Share: defAllowed.ID, Allow: acl.Read | acl.Download | acl.Write | acl.Create | acl.Delete,
 		Inherit: true, Label: "allowed",
 	}); gerr != nil {
@@ -164,7 +164,7 @@ func TestRegressionAppPasswordTrashAndShareScopeEnforced(t *testing.T) {
 	if werr := os.WriteFile(filepath.Join(hostExcluded, "excluded.txt"), []byte("excluded content"), 0o600); werr != nil {
 		t.Fatal(werr)
 	}
-	defExcluded, derr := e.Core.CreateShare(ctx, core.ShareSpec{Name: "excluded", Host: hostExcluded})
+	defExcluded, derr := e.Core.CreateShare(ctx, files.ShareSpec{Name: "excluded", Host: hostExcluded})
 	if derr != nil {
 		t.Fatal(derr)
 	}
@@ -172,7 +172,7 @@ func TestRegressionAppPasswordTrashAndShareScopeEnforced(t *testing.T) {
 	if rerr := e.Core.RegisterShare(ctx, defExcluded); rerr != nil {
 		t.Fatal(rerr)
 	}
-	if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
+	if _, gerr := e.Core.CreateGrant(ctx, files.GrantSpec{
 		User: &uid, Share: defExcluded.ID, Allow: acl.Read | acl.Download | acl.Write | acl.Create | acl.Delete,
 		Inherit: true, Label: "excluded",
 	}); gerr != nil {
@@ -325,7 +325,7 @@ func TestRegressionTrashSubfolderIsolation(t *testing.T) {
 		t.Fatal(werr)
 	}
 
-	def, derr := e.Core.CreateShare(ctx, core.ShareSpec{Name: "files", Host: hostDir})
+	def, derr := e.Core.CreateShare(ctx, files.ShareSpec{Name: "files", Host: hostDir})
 	if derr != nil {
 		t.Fatal(derr)
 	}
@@ -335,12 +335,12 @@ func TestRegressionTrashSubfolderIsolation(t *testing.T) {
 	}
 
 	// Admin has whole-share access. Alice only has access to subfolder "public".
-	if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
+	if _, gerr := e.Core.CreateGrant(ctx, files.GrantSpec{
 		User: &adminID, Share: def.ID, Allow: acl.Read | acl.Write | acl.Create | acl.Delete | acl.Download, Inherit: true, Label: "admin-files",
 	}); gerr != nil {
 		t.Fatal(gerr)
 	}
-	if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
+	if _, gerr := e.Core.CreateGrant(ctx, files.GrantSpec{
 		User: &aliceID, Share: def.ID, Subpath: "public", Allow: acl.Read | acl.Write | acl.Create | acl.Delete | acl.Download, Inherit: true, Label: "alice-public",
 	}); gerr != nil {
 		t.Fatal(gerr)
@@ -351,7 +351,7 @@ func TestRegressionTrashSubfolderIsolation(t *testing.T) {
 	if perr != nil {
 		t.Fatal(perr)
 	}
-	resolved, err := e.Core.Resolve(core.UserID(adminID), confPath, acl.Delete)
+	resolved, err := e.Core.Resolve(files.UserID(adminID), confPath, acl.Delete)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -364,7 +364,7 @@ func TestRegressionTrashSubfolderIsolation(t *testing.T) {
 	if perr != nil {
 		t.Fatal(perr)
 	}
-	aliceResolved, err := e.Core.Resolve(core.UserID(aliceID), alicePath, acl.Read)
+	aliceResolved, err := e.Core.Resolve(files.UserID(aliceID), alicePath, acl.Read)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -381,7 +381,7 @@ func TestRegressionTrashSubfolderIsolation(t *testing.T) {
 	if perr != nil {
 		t.Fatal(perr)
 	}
-	adminResolved, err := e.Core.Resolve(core.UserID(adminID), adminPath, acl.Read)
+	adminResolved, err := e.Core.Resolve(files.UserID(adminID), adminPath, acl.Read)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -453,7 +453,7 @@ func TestRegressionDeletedUserHomeDirectoryNotInherited(t *testing.T) {
 	if berr != nil {
 		t.Fatal(berr)
 	}
-	bobRes, err := e.Core.Resolve(core.UserID(bob1), bobHome, acl.Write|acl.Create)
+	bobRes, err := e.Core.Resolve(files.UserID(bob1), bobHome, acl.Write|acl.Create)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -465,7 +465,7 @@ func TestRegressionDeletedUserHomeDirectoryNotInherited(t *testing.T) {
 	}
 
 	// 2. Delete user bob and clean his home.
-	if clerr := e.Core.CleanupHome(ctx, core.UserID(bob1)); clerr != nil {
+	if clerr := e.Core.CleanupHome(ctx, files.UserID(bob1)); clerr != nil {
 		t.Fatal(clerr)
 	}
 	if derr := e.Auth.DeleteUser(ctx, int64(bob1)); derr != nil {
@@ -477,7 +477,7 @@ func TestRegressionDeletedUserHomeDirectoryNotInherited(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bob2Res, err := e.Core.Resolve(core.UserID(bob2), bobHome, acl.Read)
+	bob2Res, err := e.Core.Resolve(files.UserID(bob2), bobHome, acl.Read)
 	if err == nil {
 		// If secret.txt can be opened, it means the old file was inherited!
 		_, stream, serr := e.Core.OpenStream(ctx, bob2Res, nil)

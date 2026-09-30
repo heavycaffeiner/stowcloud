@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 )
 
 // The handler every method hangs off, and the few things they all share.
@@ -34,7 +34,7 @@ type Locks interface {
 // Options configures a handler.
 type Options struct {
 	// Core is the domain. Required.
-	Core *core.Core
+	Core *files.Core
 	// Locks guards writes. Nil serves a deployment with no lock table, where
 	// every write proceeds: a server that cannot record a lock must not
 	// refuse every write on the grounds that it might be locked.
@@ -72,7 +72,7 @@ type Options struct {
 
 // Handler answers the WebDAV methods.
 type Handler struct {
-	core            *core.Core
+	core            *files.Core
 	locks           Locks
 	store           Store
 	keyOf           KeyOf
@@ -153,7 +153,7 @@ func writes(method string) bool {
 // holding the phone, and neither they nor a proxy is told what the resource
 // would have taken.
 func (h *Handler) failAllowing(
-	w http.ResponseWriter, r *http.Request, res core.Resolved, err error,
+	w http.ResponseWriter, r *http.Request, res files.Resolved, err error,
 ) {
 	if status, _ := StatusOf(err); status == http.StatusMethodNotAllowed {
 		w.Header().Set("Allow", h.allowFor(res))
@@ -178,7 +178,7 @@ func (h *Handler) closing(r *http.Request, c io.Closer, what string) {
 // A deployment with no lock table admits the write. Refusing everything
 // because a lock cannot be recorded would turn an absent feature into an
 // outage, and "an unrecorded lock might exist" is true of every write there.
-func (h *Handler) guard(r *http.Request, res core.Resolved) error {
+func (h *Handler) guard(r *http.Request, res files.Resolved) error {
 	submitted, err := h.precondition(r, res)
 	if err != nil {
 		return err
@@ -201,7 +201,7 @@ func (h *Handler) guard(r *http.Request, res core.Resolved) error {
 // a list that did not hold was never submitted, and one behind a Not was named
 // to assert the lock's absence: counting either would let a request unlock
 // something by mentioning it.
-func (h *Handler) precondition(r *http.Request, res core.Resolved) ([]string, error) {
+func (h *Handler) precondition(r *http.Request, res files.Resolved) ([]string, error) {
 	header := r.Header.Get("If")
 	if header == "" {
 		return nil, nil
@@ -225,7 +225,7 @@ func (h *Handler) precondition(r *http.Request, res core.Resolved) ([]string, er
 // resource gets the zero state, which holds no token and matches no tag, so a
 // condition about a path this request did not resolve fails rather than being
 // assumed true.
-func (h *Handler) stateOf(r *http.Request, res core.Resolved) StateOf {
+func (h *Handler) stateOf(r *http.Request, res files.Resolved) StateOf {
 	target := res.Path().Components()
 	return func(path []string) ResourceState {
 		if !sameComponents(path, target) {

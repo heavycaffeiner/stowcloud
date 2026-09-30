@@ -17,10 +17,10 @@ package apierr
 
 import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/oidc"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/preview"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 )
 
 func sentinels() []classifier {
@@ -66,9 +66,9 @@ func oidcSentinels() []classifier {
 // decision, and reporting a fault to a caller names tables and paths.
 func storeSentinels() []classifier {
 	return []classifier{
-		{core.ErrWritesBlocked, SubsystemUnavailable, "store.writes_blocked"},
-		{core.ErrGrantMalformed, Unprocessable, "admin.invalid_grant"},
-		{core.ErrGrantAlreadyExists, Conflict, "admin.grant_exists"},
+		{files.ErrWritesBlocked, SubsystemUnavailable, "store.writes_blocked"},
+		{files.ErrGrantMalformed, Unprocessable, "admin.invalid_grant"},
+		{files.ErrGrantAlreadyExists, Conflict, "admin.grant_exists"},
 	}
 }
 
@@ -80,27 +80,27 @@ func storeSentinels() []classifier {
 // the caller reached legitimately.
 func coreSentinels() []classifier {
 	return []classifier{
-		{core.ErrDenied, Denied, "fs.denied"},
-		{core.ErrNotFound, NotFound, "fs.not_found"},
+		{files.ErrDenied, Denied, "fs.denied"},
+		{files.ErrNotFound, NotFound, "fs.not_found"},
 
-		{core.ErrExists, Exists, "fs.exists"},
-		{core.ErrNotEmpty, NotEmpty, "fs.not_empty"},
-		{core.ErrCrossShare, Conflict, "fs.cross_share"},
-		{core.ErrTrashDisabled, Conflict, "fs.trash_disabled"},
-		{core.ErrConflict, Conflict, "fs.conflict"},
+		{files.ErrExists, Exists, "fs.exists"},
+		{files.ErrNotEmpty, NotEmpty, "fs.not_empty"},
+		{files.ErrCrossShare, Conflict, "fs.cross_share"},
+		{files.ErrTrashDisabled, Conflict, "fs.trash_disabled"},
+		{files.ErrConflict, Conflict, "fs.conflict"},
 
-		{core.ErrPrecondition, Precondition, "fs.precondition_failed"},
+		{files.ErrPrecondition, Precondition, "fs.precondition_failed"},
 
 		// A well-formed request the target's own state refuses, which is
 		// neither a race nor a missing precondition header, so it takes
 		// Unprocessable rather than Conflict or Precondition.
-		{core.ErrUnprocessable, Unprocessable, "fs.unprocessable"},
+		{files.ErrUnprocessable, Unprocessable, "fs.unprocessable"},
 
-		{core.ErrQuotaExceeded, NoSpace, "fs.quota_exceeded"},
-		{core.ErrNoSpace, NoSpace, "fs.no_space"},
+		{files.ErrQuotaExceeded, NoSpace, "fs.quota_exceeded"},
+		{files.ErrNoSpace, NoSpace, "fs.no_space"},
 
-		{core.ErrShareBroken, ShareUnavailable, "fs.share_unavailable"},
-		{core.ErrLinkExpired, Gone, "link.expired"},
+		{files.ErrShareBroken, ShareUnavailable, "fs.share_unavailable"},
+		{files.ErrLinkExpired, Gone, "link.expired"},
 	}
 }
 

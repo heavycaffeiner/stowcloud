@@ -10,10 +10,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/search/stowcloud"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/search/svc"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	search "github.com/stowcloud/namesearch"
@@ -108,7 +108,7 @@ func (s *Server) searchFilesByName(c *gin.Context, p Principal) (Val, bool, *Err
 func (s *Server) searchRecentEntries(c *gin.Context, p Principal) (Val, bool, *Error) {
 	const name = "Recently changed files"
 	ctx := c.Request.Context()
-	hits, err := s.deps.Core.Recent(ctx, user(p), core.RecentQuery{Limit: parseSearchLimit(c.Query("limit"))})
+	hits, err := s.deps.Core.Recent(ctx, user(p), files.RecentQuery{Limit: parseSearchLimit(c.Query("limit"))})
 	if err != nil {
 		return searchResultVal(name, nil), true, nil
 	}
@@ -216,7 +216,7 @@ func parentOf(path string) string {
 	return path[:i]
 }
 
-func (s *Server) searchSourcesOf(u core.UserID) []search.Source {
+func (s *Server) searchSourcesOf(u files.UserID) []search.Source {
 	return stowcloud.LabelSources(s.deps.Core, u, s.deps.Core.UserScanSources(u))
 }
 
@@ -234,7 +234,7 @@ func parseSearchLimit(raw string) int {
 // recentFiles answers GET /apps/files/api/v1/recent through core.Recent.
 func (s *Server) recentFiles(c *gin.Context, p Principal) (Val, bool, *Error) {
 	ctx := c.Request.Context()
-	hits, err := s.deps.Core.Recent(ctx, user(p), core.RecentQuery{})
+	hits, err := s.deps.Core.Recent(ctx, user(p), files.RecentQuery{})
 	if err != nil {
 		return Val{}, false, ocsErrorOf(err, apierr.VisibilityHidden)
 	}
@@ -274,7 +274,7 @@ func (s *Server) favoriteFiles(c *gin.Context, p Principal) (Val, bool, *Error) 
 // no longer parses, or whose share the account can no longer reach under
 // any label, is skipped rather than surfaced as an error: the row still
 // exists, but there is nothing left to render it as.
-func (s *Server) vpathOfFavorite(u core.UserID, f Favorite) (string, bool) {
+func (s *Server) vpathOfFavorite(u files.UserID, f Favorite) (string, bool) {
 	if s.deps.VpathOf == nil {
 		return "", false
 	}
@@ -300,7 +300,7 @@ func (s *Server) fileEntryAt(ctx context.Context, p Principal, vpath string) (Va
 // file, so the two views agree. A path this deployment cannot mint a stable
 // identity for is skipped, the same as any other file a listing cannot
 // vouch for.
-func (s *Server) fileEntryVal(ctx context.Context, res core.Resolved, p Principal) (Val, bool) {
+func (s *Server) fileEntryVal(ctx context.Context, res files.Resolved, p Principal) (Val, bool) {
 	entry, err := s.deps.Core.Stat(ctx, res)
 	if err != nil {
 		return Val{}, false

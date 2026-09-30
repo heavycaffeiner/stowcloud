@@ -18,8 +18,8 @@ import (
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/objstore"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
@@ -42,8 +42,8 @@ var (
 
 type Dependencies struct {
 	State                 *state.DB
-	Resolve               func(core.UserID, string, acl.Perms) (core.Resolved, error)
-	ShareEncrypted        func(context.Context, core.ShareID) (bool, error)
+	Resolve               func(files.UserID, string, acl.Perms) (files.Resolved, error)
+	ShareEncrypted        func(context.Context, files.ShareID) (bool, error)
 	GuardLock             func(context.Context, uint32, string, int64) error
 	ProviderForRow        func(context.Context, state.DirectTransferReservation) (objstore.DirectTransferProvider, bool, error)
 	RevalidateDestination func(context.Context, state.DirectTransferReservation) error
@@ -91,23 +91,23 @@ func Provider(root vfs.Root) (objstore.DirectTransferProvider, bool) {
 }
 
 func ProviderForRow(
-	coreSvc *core.Core,
-	resolve func(core.UserID, string, acl.Perms) (core.Resolved, error),
+	coreSvc *files.Core,
+	resolve func(files.UserID, string, acl.Perms) (files.Resolved, error),
 ) func(context.Context, state.DirectTransferReservation) (objstore.DirectTransferProvider, bool, error) {
 	return func(_ context.Context, row state.DirectTransferReservation) (objstore.DirectTransferProvider, bool, error) {
 		sharePath, err := vfs.ParseSharePath(row.Path)
 		if err != nil {
-			return nil, false, core.ErrNotFound
+			return nil, false, files.ErrNotFound
 		}
 		shareID, err := number.Narrow[uint32](row.Share)
 		if err != nil {
-			return nil, false, core.ErrNotFound
+			return nil, false, files.ErrNotFound
 		}
-		vpath, err := coreSvc.VpathFor(core.UserID(row.Owner), core.ShareID(shareID), sharePath)
+		vpath, err := coreSvc.VpathFor(files.UserID(row.Owner), files.ShareID(shareID), sharePath)
 		if err != nil {
-			return nil, false, core.ErrNotFound
+			return nil, false, files.ErrNotFound
 		}
-		resolved, err := resolve(core.UserID(row.Owner), vpath.String(), acl.Write|acl.Create)
+		resolved, err := resolve(files.UserID(row.Owner), vpath.String(), acl.Write|acl.Create)
 		if err != nil {
 			return nil, false, err
 		}
@@ -117,24 +117,24 @@ func ProviderForRow(
 }
 
 func RevalidateDestination(
-	coreSvc *core.Core,
-	resolve func(core.UserID, string, acl.Perms) (core.Resolved, error),
+	coreSvc *files.Core,
+	resolve func(files.UserID, string, acl.Perms) (files.Resolved, error),
 	guard func(context.Context, uint32, string, int64) error,
 ) func(context.Context, state.DirectTransferReservation) error {
 	return func(ctx context.Context, row state.DirectTransferReservation) error {
 		sharePath, err := vfs.ParseSharePath(row.Path)
 		if err != nil {
-			return core.ErrNotFound
+			return files.ErrNotFound
 		}
 		shareID, err := number.Narrow[uint32](row.Share)
 		if err != nil {
-			return core.ErrNotFound
+			return files.ErrNotFound
 		}
-		vpath, err := coreSvc.VpathFor(core.UserID(row.Owner), core.ShareID(shareID), sharePath)
+		vpath, err := coreSvc.VpathFor(files.UserID(row.Owner), files.ShareID(shareID), sharePath)
 		if err != nil {
-			return core.ErrNotFound
+			return files.ErrNotFound
 		}
-		resolved, err := resolve(core.UserID(row.Owner), vpath.String(), acl.Write|acl.Create)
+		resolved, err := resolve(files.UserID(row.Owner), vpath.String(), acl.Write|acl.Create)
 		if err != nil {
 			return err
 		}
@@ -146,22 +146,22 @@ func RevalidateDestination(
 		st, err := resolved.Root().Stat(resolved.Path())
 		if err == nil {
 			if st.Kind.IsDir() {
-				return core.ErrUnprocessable
+				return files.ErrUnprocessable
 			}
-			etag, _ := core.FileETag(st)
+			etag, _ := files.FileETag(st)
 			if etag != row.PriorETag {
-				return core.ErrPrecondition
+				return files.ErrPrecondition
 			}
 			return nil
 		}
 		if row.PriorETag != "" {
-			return core.ErrPrecondition
+			return files.ErrPrecondition
 		}
 		return nil
 	}
 }
 
-func (s *Service) Create(ctx context.Context, owner core.UserID, req CreateRequest) (state.DirectTransferReservation, error) {
+func (s *Service) Create(ctx context.Context, owner files.UserID, req CreateRequest) (state.DirectTransferReservation, error) {
 	if req.Size == 0 || req.Size > PartSize*MaxParts {
 		return state.DirectTransferReservation{}, ErrUnsupportedSize
 	}
@@ -172,7 +172,7 @@ func (s *Service) Create(ctx context.Context, owner core.UserID, req CreateReque
 	if encrypted, encryptionErr := s.d.ShareEncrypted(ctx, resolved.Share()); encryptionErr != nil {
 		return state.DirectTransferReservation{}, encryptionErr
 	} else if encrypted {
-		return state.DirectTransferReservation{}, core.ErrUnprocessable
+		return state.DirectTransferReservation{}, files.ErrUnprocessable
 	}
 	provider, ok := Provider(resolved.Root())
 	if !ok || !provider.DirectTransfer() {
@@ -186,15 +186,15 @@ func (s *Service) Create(ctx context.Context, owner core.UserID, req CreateReque
 	var priorSize uint64
 	if st, statErr := resolved.Root().Stat(resolved.Path()); statErr == nil {
 		if st.Kind.IsDir() {
-			return state.DirectTransferReservation{}, core.ErrUnprocessable
+			return state.DirectTransferReservation{}, files.ErrUnprocessable
 		}
-		priorETag, _ = core.FileETag(st)
+		priorETag, _ = files.FileETag(st)
 		priorSize = st.Size
 		if req.IfMatch != "" && req.IfMatch != priorETag {
-			return state.DirectTransferReservation{}, core.ErrPrecondition
+			return state.DirectTransferReservation{}, files.ErrPrecondition
 		}
 	} else if req.IfMatch != "" {
-		return state.DirectTransferReservation{}, core.ErrPrecondition
+		return state.DirectTransferReservation{}, files.ErrPrecondition
 	}
 
 	key := provider.ObjectKey(resolved.Path())
@@ -219,7 +219,7 @@ func (s *Service) Create(ctx context.Context, owner core.UserID, req CreateReque
 		if reserveErr != nil {
 			return state.DirectTransferReservation{}, reserveErr
 		}
-		return state.DirectTransferReservation{}, core.ErrQuotaExceeded
+		return state.DirectTransferReservation{}, files.ErrQuotaExceeded
 	}
 
 	now := s.d.Now()
@@ -242,7 +242,7 @@ func (s *Service) Create(ctx context.Context, owner core.UserID, req CreateReque
 	return row, nil
 }
 
-func (s *Service) Status(ctx context.Context, owner core.UserID, id string) (state.DirectTransferReservation, []state.DirectTransferPart, error) {
+func (s *Service) Status(ctx context.Context, owner files.UserID, id string) (state.DirectTransferReservation, []state.DirectTransferPart, error) {
 	row, err := s.d.State.GetDirectTransferOf(ctx, int64(owner), id)
 	if err != nil {
 		return state.DirectTransferReservation{}, nil, err
@@ -251,7 +251,7 @@ func (s *Service) Status(ctx context.Context, owner core.UserID, id string) (sta
 	return row, parts, err
 }
 
-func (s *Service) PresignPart(ctx context.Context, owner core.UserID, id string, part uint64, parse func(expected uint64) (string, error)) (PartResult, error) {
+func (s *Service) PresignPart(ctx context.Context, owner files.UserID, id string, part uint64, parse func(expected uint64) (string, error)) (PartResult, error) {
 	row, err := s.d.State.GetDirectTransferOf(ctx, int64(owner), id)
 	if err != nil {
 		return PartResult{}, err
@@ -268,7 +268,7 @@ func (s *Service) PresignPart(ctx context.Context, owner core.UserID, id string,
 	}
 	expected := PartSizeFor(row.ExpectedSize, part)
 	if expected == 0 {
-		return PartResult{}, core.ErrUnprocessable
+		return PartResult{}, files.ErrUnprocessable
 	}
 	partNumber, err := number.Narrow[int](part)
 	if err != nil {
@@ -291,7 +291,7 @@ func (s *Service) PresignPart(ctx context.Context, owner core.UserID, id string,
 
 func (s *Service) Complete(
 	ctx context.Context,
-	owner core.UserID,
+	owner files.UserID,
 	id string,
 	partsOf func() ([]CompletePart, error),
 ) (state.DirectTransferReservation, []state.DirectTransferPart, error) {
@@ -322,11 +322,11 @@ func (s *Service) Complete(
 	}
 	input, err := partsOf()
 	if err != nil {
-		return state.DirectTransferReservation{}, nil, core.ErrUnprocessable
+		return state.DirectTransferReservation{}, nil, files.ErrUnprocessable
 	}
 	client, err := partsFromInput(id, input, row.ExpectedSize)
 	if err != nil {
-		return state.DirectTransferReservation{}, nil, core.ErrUnprocessable
+		return state.DirectTransferReservation{}, nil, files.ErrUnprocessable
 	}
 	if row.State == state.DirectTransferCompleting {
 		return s.reconcileCompletion(ctx, owner, row, persisted, provider)
@@ -388,7 +388,7 @@ func (s *Service) Complete(
 	return s.publish(ctx, owner, row, client, receipt)
 }
 
-func (s *Service) reconcileCompletion(ctx context.Context, owner core.UserID, row state.DirectTransferReservation, parts []state.DirectTransferPart, provider objstore.DirectTransferProvider) (state.DirectTransferReservation, []state.DirectTransferPart, error) {
+func (s *Service) reconcileCompletion(ctx context.Context, owner files.UserID, row state.DirectTransferReservation, parts []state.DirectTransferPart, provider objstore.DirectTransferProvider) (state.DirectTransferReservation, []state.DirectTransferPart, error) {
 	size, etag, checksum, found, err := provider.ObjectMetadata(ctx, row.ObjectKey)
 	if err != nil {
 		return state.DirectTransferReservation{}, nil, err
@@ -405,7 +405,7 @@ func (s *Service) reconcileCompletion(ctx context.Context, owner core.UserID, ro
 	return s.publish(ctx, owner, row, parts, objstore.TransferReceipt{Size: size, ETag: etag, Checksum: checksum})
 }
 
-func (s *Service) publish(ctx context.Context, owner core.UserID, row state.DirectTransferReservation, parts []state.DirectTransferPart, receipt objstore.TransferReceipt) (state.DirectTransferReservation, []state.DirectTransferPart, error) {
+func (s *Service) publish(ctx context.Context, owner files.UserID, row state.DirectTransferReservation, parts []state.DirectTransferPart, receipt objstore.TransferReceipt) (state.DirectTransferReservation, []state.DirectTransferPart, error) {
 	now := s.d.Now()
 	if err := s.d.State.PublishDirectTransferAndReleaseUsage(ctx, row.ID, int64(owner), receipt.Size, receipt.ETag, receipt.Checksum, now, publishRelease(row)); err != nil {
 		return state.DirectTransferReservation{}, nil, err
@@ -421,7 +421,7 @@ func (s *Service) publish(ctx context.Context, owner core.UserID, row state.Dire
 func publishRelease(row state.DirectTransferReservation) uint64 {
 	return min(row.QuotaReservation, row.PriorSize)
 }
-func (s *Service) Cancel(ctx context.Context, owner core.UserID, id string) error {
+func (s *Service) Cancel(ctx context.Context, owner files.UserID, id string) error {
 	row, err := s.d.State.GetDirectTransferOf(ctx, int64(owner), id)
 	if err != nil {
 		return err

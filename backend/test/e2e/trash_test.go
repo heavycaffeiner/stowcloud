@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 )
 
@@ -37,15 +37,15 @@ func trashShare(t *testing.T, perms acl.Perms) (base string, sess session, share
 		t.Fatal(werr)
 	}
 
-	sh, err := e.Core.CreateShare(ctx, core.ShareSpec{Name: "bin", Host: host})
+	sh, err := e.Core.CreateShare(ctx, files.ShareSpec{Name: "bin", Host: host})
 	if err != nil {
 		t.Fatal(err)
 	}
 	on := true
-	if _, uerr := e.Core.UpdateShare(ctx, sh.ID, core.SharePatch{TrashEnabled: &on}); uerr != nil {
+	if _, uerr := e.Core.UpdateShare(ctx, sh.ID, files.SharePatch{TrashEnabled: &on}); uerr != nil {
 		t.Fatal(uerr)
 	}
-	if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
+	if _, gerr := e.Core.CreateGrant(ctx, files.GrantSpec{
 		User: &id, Share: sh.ID, Allow: perms, Inherit: true, Label: sh.Name,
 	}); gerr != nil {
 		t.Fatal(gerr)

@@ -7,8 +7,8 @@ import (
 	"encoding/xml"
 	"net/http"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/protocol/limits"
 )
 
@@ -26,7 +26,7 @@ import (
 const DefaultInfinityEntries = 10000
 
 // Propfind answers PROPFIND.
-func (h *Handler) Propfind(w http.ResponseWriter, r *http.Request, res core.Resolved) {
+func (h *Handler) Propfind(w http.ResponseWriter, r *http.Request, res files.Resolved) {
 	req, err := ParsePropFind(http.MaxBytesReader(w, r.Body, h.limits.Bytes), h.limits)
 	if err != nil {
 		h.fail(w, r, err)
@@ -48,7 +48,7 @@ func (h *Handler) Propfind(w http.ResponseWriter, r *http.Request, res core.Reso
 
 	st, serr := res.Root().Stat(res.Path())
 	if serr != nil {
-		h.fail(w, r, core.ErrNotFound)
+		h.fail(w, r, files.ErrNotFound)
 		return
 	}
 
@@ -110,10 +110,10 @@ func (h *Handler) Propfind(w http.ResponseWriter, r *http.Request, res core.Reso
 // segments plus the member's name, which is how a client builds the URL it
 // requests next.
 func (h *Handler) walk(
-	ctx context.Context, m *Multistatus, req PropFind, res core.Resolved, depth Depth,
+	ctx context.Context, m *Multistatus, req PropFind, res files.Resolved, depth Depth,
 	segs []string,
 ) error {
-	var cur core.Cursor
+	var cur files.Cursor
 	for {
 		// Once per page rather than once per entry: a client that hung up has
 		// to stop the walk, and checking per file would cost a syscall each.
@@ -155,7 +155,7 @@ func (h *Handler) walk(
 // writeEntry writes one resource's properties into the document.
 func (h *Handler) writeEntry(
 	ctx context.Context, m *Multistatus, req PropFind,
-	res core.Resolved, e core.Entry, href string,
+	res files.Resolved, e files.Entry, href string,
 ) error {
 	resource := Resource{
 		Name:     e.Name,
@@ -296,7 +296,7 @@ func wantsLockDiscovery(req PropFind) bool {
 // The count is the immediate directory rather than the whole subtree, which is
 // what makes the check cheap: a tree big enough to matter has a big directory
 // somewhere in it, and reading the total costs one listing.
-func (h *Handler) refuseHugeInfinity(ctx context.Context, res core.Resolved) error {
+func (h *Handler) refuseHugeInfinity(ctx context.Context, res files.Resolved) error {
 	page, err := h.core.List(ctx, res, "")
 	if err != nil {
 		return err
@@ -309,10 +309,10 @@ func (h *Handler) refuseHugeInfinity(ctx context.Context, res core.Resolved) err
 }
 
 // resolveChild resolves one member of an already-resolved collection.
-func (h *Handler) resolveChild(parent core.Resolved, e core.Entry) (core.Resolved, error) {
+func (h *Handler) resolveChild(parent files.Resolved, e files.Entry) (files.Resolved, error) {
 	p, err := parent.Path().JoinExisting(e.Name)
 	if err != nil {
-		return core.Resolved{}, err
+		return files.Resolved{}, err
 	}
 	return h.core.ResolveUnder(parent, p, acl.Read)
 }

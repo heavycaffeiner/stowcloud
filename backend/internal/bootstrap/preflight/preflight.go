@@ -18,7 +18,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/instance"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/settings/runtimecfg"
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vault"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/system/mountinfo"
@@ -136,14 +136,14 @@ func bootSettings(ctx context.Context, dataDir string, log *slog.Logger) (
 	}
 	for _, row := range rows {
 		switch row.Backend {
-		case string(core.BackendVeracrypt):
+		case string(files.BackendVeracrypt):
 			cfg, parseErr := vault.ParseConfig([]byte(row.BackendConfig))
 			if parseErr != nil {
 				log.Warn("a veracrypt share's configuration is unreadable, so its container is not granted", "share", row.Name, "error", parseErr)
 				continue
 			}
 			exactPaths = append(exactPaths, cfg.Container)
-		case string(core.BackendS3):
+		case string(files.BackendS3):
 		default:
 			shareHosts = append(shareHosts, row.Host)
 		}

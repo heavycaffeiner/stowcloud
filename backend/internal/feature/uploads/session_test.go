@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads/limits"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/stowcloud/transfer"
 )
@@ -105,7 +105,7 @@ func TestEverySurfaceIsOwnerScoped(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
 	sess := f.create(t, "report.txt", 10, SessionSpec{})
-	const stranger = core.UserID(999)
+	const stranger = files.UserID(999)
 
 	if _, err := f.engine.Get(ctx, sess.ID, stranger); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Get returned %v", err)

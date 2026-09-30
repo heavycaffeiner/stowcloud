@@ -17,8 +17,8 @@ import (
 
 	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/concurrency"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
@@ -262,11 +262,11 @@ func contentShareGrant(t *testing.T, perms acl.Perms, content []byte) (
 		t.Fatal(merr)
 	}
 
-	sh, err := e.Core.CreateShare(ctx, core.ShareSpec{Name: "files", Host: host})
+	sh, err := e.Core.CreateShare(ctx, files.ShareSpec{Name: "files", Host: host})
 	if err != nil {
 		t.Fatal(err)
 	}
-	g, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
+	g, gerr := e.Core.CreateGrant(ctx, files.GrantSpec{
 		User: &id, Share: sh.ID, Allow: perms, Inherit: true, Label: sh.Name,
 	})
 	if gerr != nil {

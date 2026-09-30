@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	"github.com/stowcloud/transfer"
@@ -33,7 +33,7 @@ import (
 // and the chunk holding the lock cannot receive its own body. Every upload
 // stalled after its first chunk.
 func (e *Engine) PatchAt(
-	ctx context.Context, root vfs.Root, id SessionID, user core.UserID,
+	ctx context.Context, root vfs.Root, id SessionID, user files.UserID,
 	off uint64, body io.Reader, sum *Checksum,
 ) (uint64, error) {
 	unlockChunk, lockErr := e.lockChunk(ctx, id, off)
@@ -366,8 +366,8 @@ const quotaStep = 8 << 20
 // narrows to exactly what still fits.
 type quotaBoundReader struct {
 	ctx     context.Context
-	core    *core.Core
-	user    core.UserID
+	core    *files.Core
+	user    files.UserID
 	base    uint64
 	read    uint64
 	allowed uint64
@@ -403,9 +403,9 @@ func (r *quotaBoundReader) admit() error {
 			r.allowed = r.read + step
 			return nil
 		}
-		if !errors.Is(err, core.ErrQuotaExceeded) {
+		if !errors.Is(err, files.ErrQuotaExceeded) {
 			return err
 		}
 	}
-	return core.ErrQuotaExceeded
+	return files.ErrQuotaExceeded
 }

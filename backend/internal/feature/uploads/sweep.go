@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/stowcloud/transfer"
 )
@@ -113,7 +113,7 @@ func (e *Engine) sweepCache(live []state.UploadSession) int {
 // shareDir identifies a single directory within one share, the unit the sweep
 // traverses.
 type shareDir struct {
-	share core.ShareID
+	share files.ShareID
 	dir   string
 }
 
@@ -314,7 +314,7 @@ func (e *Engine) collectExpired(ctx context.Context, sess state.UploadSession) b
 // sweepDir deletes control files in a directory that no live session claims and
 // that exceed the grace period in age.
 func (e *Engine) sweepDir(
-	share core.ShareID, dir vfs.SafePath, live []state.UploadSession, now int64,
+	share files.ShareID, dir vfs.SafePath, live []state.UploadSession, now int64,
 ) (parts, spools int) {
 	root, ok := e.core.ShareRoot(share)
 	if !ok {
@@ -378,7 +378,7 @@ func (e *Engine) sweepDir(
 // Directory comparison runs component by component through the path type rather
 // than over strings, because "ab" does not sit inside "a" while a string prefix
 // test would claim it does.
-func claimedNames(live []state.UploadSession, share core.ShareID, dir vfs.SafePath) map[string]struct{} {
+func claimedNames(live []state.UploadSession, share files.ShareID, dir vfs.SafePath) map[string]struct{} {
 	out := map[string]struct{}{}
 	for _, sess := range live {
 		id, ok := shareIDOf(sess.Share)

@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 )
 
 // EntryView is one file or directory.
@@ -118,7 +118,7 @@ type PageView struct {
 // listing said `Docs/readme.txt` for a file the caller has to ask for as
 // `Files/Docs/readme.txt`, so every row's own path was a 404 and download,
 // preview and stat all went through it.
-func EntryOf(e core.Entry, vpath string, refs EntryRefs) EntryView {
+func EntryOf(e files.Entry, vpath string, refs EntryRefs) EntryView {
 	v := EntryView{
 		Name:     e.Name,
 		Path:     vpath,
@@ -147,16 +147,16 @@ func EntryOf(e core.Entry, vpath string, refs EntryRefs) EntryView {
 //
 // Exported because the reference is sealed outside this package, and a second
 // name table there would drift from the one the projection uses.
-func Previewable(e core.Entry) bool { return !e.IsDir && previewable(e.Name) }
+func Previewable(e files.Entry) bool { return !e.IsDir && previewable(e.Name) }
 
 // PageOf projects one page of a listing.
 //
 // An empty page carries an empty list rather than null, so a client iterating
 // the entries does not have to test the field first.
 func PageOf(
-	p core.Page,
-	vpathOf func(core.Entry) string,
-	refsOf func(core.Entry, string) EntryRefs,
+	p files.Page,
+	vpathOf func(files.Entry) string,
+	refsOf func(files.Entry, string) EntryRefs,
 ) PageView {
 	out := PageView{
 		Entries:     make([]EntryView, 0, len(p.Entries)),
@@ -164,7 +164,7 @@ func PageOf(
 		Total:       p.Total,
 		DirETag:     p.DirEtag,
 		DirETagWeak: p.DirEtagWeak,
-		DirPerms:    core.PermNames(p.DirPerms),
+		DirPerms:    files.PermNames(p.DirPerms),
 	}
 	if p.Next != "" {
 		cursor := string(p.Next)

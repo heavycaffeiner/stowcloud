@@ -6,8 +6,8 @@ import (
 	"encoding/xml"
 	"net/http"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 )
 
 // PROPPATCH: writing the properties the server does not maintain itself.
@@ -18,7 +18,7 @@ import (
 // instruction means nothing is written.
 
 // Proppatch answers PROPPATCH.
-func (h *Handler) Proppatch(w http.ResponseWriter, r *http.Request, res core.Resolved) {
+func (h *Handler) Proppatch(w http.ResponseWriter, r *http.Request, res files.Resolved) {
 	if err := res.Require(acl.Write); err != nil {
 		h.fail(w, r, err)
 		return
@@ -32,7 +32,7 @@ func (h *Handler) Proppatch(w http.ResponseWriter, r *http.Request, res core.Res
 
 	st, serr := res.Root().Stat(res.Path())
 	if serr != nil {
-		h.fail(w, r, core.ErrNotFound)
+		h.fail(w, r, files.ErrNotFound)
 		return
 	}
 	if gerr := h.guard(r, res); gerr != nil {

@@ -12,8 +12,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/humabridge"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
@@ -21,13 +21,13 @@ import (
 )
 
 type NativeDeps struct {
-	Core *core.Core
+	Core *files.Core
 	Auth interface {
 		ListUsers(context.Context) ([]auth.UserRow, error)
 	}
-	Owner   func(*gin.Context) (core.UserID, bool)
-	Resolve func(core.UserID, string, acl.Perms) (core.Resolved, error)
-	VpathOf func(core.Link) string
+	Owner   func(*gin.Context) (files.UserID, bool)
+	Resolve func(files.UserID, string, acl.Perms) (files.Resolved, error)
+	VpathOf func(files.Link) string
 	Now     func() int64
 }
 
@@ -95,7 +95,7 @@ func Register(api huma.API, d NativeDeps) {
 	}, h.adminListHuma)
 }
 
-func (h *Native) humaOwner(ctx context.Context) (core.UserID, error) {
+func (h *Native) humaOwner(ctx context.Context) (files.UserID, error) {
 	owner, ok := h.d.Owner(humabridge.Gin(ctx))
 	if !ok {
 		return 0, humabridge.Refusal(apierr.Classified{Class: apierr.AuthRequired})
@@ -113,7 +113,7 @@ func (h *Native) listHuma(ctx context.Context, in *listInput) (*listOutput, erro
 	if err != nil {
 		return nil, err
 	}
-	var at *core.Resolved
+	var at *files.Resolved
 	if in.Path != "" {
 		r, rerr := h.d.Resolve(owner, in.Path, acl.Read)
 		if rerr != nil {
@@ -169,7 +169,7 @@ func (h *Native) createHuma(ctx context.Context, in *createInput) (*createOutput
 	if !ok {
 		return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Unprocessable})
 	}
-	link, token, err := h.d.Core.CreateLink(ctx, r, core.LinkSpec{
+	link, token, err := h.d.Core.CreateLink(ctx, r, files.LinkSpec{
 		Perms: perms, Password: in.Body.Password, Expires: expires, MaxDown: maxDown,
 		Label: in.Body.Label, Note: in.Body.Note,
 	})
@@ -178,7 +178,7 @@ func (h *Native) createHuma(ctx context.Context, in *createInput) (*createOutput
 	}
 	view, ok := handler.MintedLinkOf(link, h.d.VpathOf(link), h.d.Now())
 	if !ok {
-		return nil, humabridge.Failure(ctx, core.ErrNotFound)
+		return nil, humabridge.Failure(ctx, files.ErrNotFound)
 	}
 	view.Token = string(token.Reveal())
 	return &createOutput{Body: view, Status: http.StatusCreated}, nil
@@ -191,7 +191,7 @@ func (h *Native) updateHuma(ctx context.Context, in *updateInput) (*updateOutput
 	}
 	id, ok := parseLinkID(in.ID)
 	if !ok {
-		return nil, humabridge.Failure(ctx, core.ErrNotFound)
+		return nil, humabridge.Failure(ctx, files.ErrNotFound)
 	}
 	patch, ok := linkPatchOf(in.Body)
 	if !ok {
@@ -211,7 +211,7 @@ func (h *Native) deleteHuma(ctx context.Context, in *linkIDInput) (*deleteOutput
 	}
 	id, ok := parseLinkID(in.ID)
 	if !ok {
-		return nil, humabridge.Failure(ctx, core.ErrNotFound)
+		return nil, humabridge.Failure(ctx, files.ErrNotFound)
 	}
 	if err := h.d.Core.DeleteLink(ctx, owner, id); err != nil {
 		return nil, humabridge.Failure(ctx, err)
@@ -307,24 +307,24 @@ func tristateNumber[T int64 | int32](raw json.RawMessage) (**T, bool) {
 	return tristate[T](raw)
 }
 
-func linkPatchOf(req updateLinkRequest) (core.LinkPatch, bool) {
-	patch := core.LinkPatch{Label: req.Label, Note: req.Note}
+func linkPatchOf(req updateLinkRequest) (files.LinkPatch, bool) {
+	patch := files.LinkPatch{Label: req.Label, Note: req.Note}
 	if len(req.Perms) > 0 {
 		p, ok := linkPerms(req.Perms)
 		if !ok {
-			return core.LinkPatch{}, false
+			return files.LinkPatch{}, false
 		}
 		patch.Perms = &p
 	}
 	var ok bool
 	if patch.Password, ok = tristate[string](req.Password); !ok {
-		return core.LinkPatch{}, false
+		return files.LinkPatch{}, false
 	}
 	if patch.Expires, ok = tristateNumber[int64](req.Expires); !ok {
-		return core.LinkPatch{}, false
+		return files.LinkPatch{}, false
 	}
 	if patch.MaxDown, ok = tristateNumber[int32](req.MaxDown); !ok {
-		return core.LinkPatch{}, false
+		return files.LinkPatch{}, false
 	}
 	return patch, true
 }

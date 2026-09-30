@@ -15,8 +15,8 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/cache"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/dbfile"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/dav"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
@@ -30,15 +30,15 @@ import (
 // share layer expects anyway.
 
 const (
-	testShare      = core.ShareID(1)
-	testShareOther = core.ShareID(2)
-	testUser       = core.UserID(1)
+	testShare      = files.ShareID(1)
+	testShareOther = files.ShareID(2)
+	testUser       = files.UserID(1)
 )
 
 // fixture is one server's worth of state, plus the directory behind the share.
 type fixture struct {
 	h    *dav.Handler
-	core *core.Core
+	core *files.Core
 	dir  string
 	// locks is what the handler was given, so a test can arrange a refusal.
 	locks *stubLocks
@@ -130,7 +130,7 @@ func build(t *testing.T, held []string, infinityEntries int) *fixture {
 		t.Fatalf("preparing the cache: %v", cerr)
 	}
 
-	c, kerr := core.New(ctx, core.Options{State: st, Cache: ca, ACL: acl.NewEvaluator()})
+	c, kerr := files.New(ctx, files.Options{State: st, Cache: ca, ACL: acl.NewEvaluator()})
 	if kerr != nil {
 		t.Fatalf("building the core: %v", kerr)
 	}
@@ -152,7 +152,7 @@ func build(t *testing.T, held []string, infinityEntries int) *fixture {
 	if merr := os.MkdirAll(shareDir, 0o755); merr != nil {
 		t.Fatalf("creating the share directory: %v", merr)
 	}
-	if rerr := c.RegisterShare(ctx, core.ShareDef{
+	if rerr := c.RegisterShare(ctx, files.ShareDef{
 		ID: testShare, Name: "files", Host: shareDir, Policy: vfs.DefaultSharePolicy(),
 	}); rerr != nil {
 		t.Fatalf("registering the share: %v", rerr)
@@ -165,7 +165,7 @@ func build(t *testing.T, held []string, infinityEntries int) *fixture {
 	if merr := os.MkdirAll(otherDir, 0o755); merr != nil {
 		t.Fatalf("creating the second share directory: %v", merr)
 	}
-	if rerr := c.RegisterShare(ctx, core.ShareDef{
+	if rerr := c.RegisterShare(ctx, files.ShareDef{
 		ID: testShareOther, Name: "safe", Host: otherDir, Policy: vfs.DefaultSharePolicy(),
 	}); rerr != nil {
 		t.Fatalf("registering the second share: %v", rerr)
@@ -218,7 +218,7 @@ func seedUser(t *testing.T, st *state.DB, id int64) {
 
 // grantAll gives the test user everything over the share, so a refusal in a
 // test is the method's own decision rather than a missing grant.
-func grantAll(t *testing.T, c *core.Core, st *state.DB, user int64, share core.ShareID, label string) {
+func grantAll(t *testing.T, c *files.Core, st *state.DB, user int64, share files.ShareID, label string) {
 	t.Helper()
 	ctx := context.Background()
 	holder := user
@@ -266,7 +266,7 @@ func regrant(t *testing.T, f *fixture, allow acl.Perms) {
 }
 
 // resolve turns a share-relative path into what a mount would hand a method.
-func (f *fixture) resolve(t *testing.T, path string) core.Resolved {
+func (f *fixture) resolve(t *testing.T, path string) files.Resolved {
 	t.Helper()
 	vp, err := vfs.ParseVpath("/files/" + strings.TrimPrefix(path, "/"))
 	if err != nil {

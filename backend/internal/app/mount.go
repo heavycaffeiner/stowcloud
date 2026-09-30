@@ -17,9 +17,9 @@ import (
 	"github.com/gin-gonic/gin"
 
 	featuretransfer "github.com/heavycaffeiner/stowcloud/backend/internal/feature/directtransfer"
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	featureoidc "github.com/heavycaffeiner/stowcloud/backend/internal/feature/oidc"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/smb/agent"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	accounthttp "github.com/heavycaffeiner/stowcloud/backend/internal/http/api/account"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/adminsettings"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/adminsmb"
@@ -112,7 +112,7 @@ func (e *Engine) newPublicLinks() *publiclinks.Public {
 		Refuse:          handler.Refuse,
 		WriteJSON:       func(c *gin.Context, status int, v any) { c.JSON(status, v) },
 		Decode:          filehttp.Decode,
-		CloseStream:     func(stream *core.Stream, name string) { filehttp.CloseStream(stream, name, e.log()) },
+		CloseStream:     func(stream *files.Stream, name string) { filehttp.CloseStream(stream, name, e.log()) },
 		SendStreamRange: filehttp.SendStreamRange,
 		AcquireArchive: func() (func(), bool) {
 			if !e.archiveGate.TryAcquire() {
@@ -120,7 +120,7 @@ func (e *Engine) newPublicLinks() *publiclinks.Public {
 			}
 			return e.archiveGate.Release, true
 		},
-		WriteArchive: func(ctx context.Context, w io.Writer, link core.Link, sub, name string) {
+		WriteArchive: func(ctx context.Context, w io.Writer, link files.Link, sub, name string) {
 			if err := filehttp.BuildArchive(ctx, w, name, func(ctx context.Context, visit filehttp.ArchiveVisit) error {
 				return e.Core.LinkArchiveWalk(ctx, link, sub, visit)
 			}, e.log()); err != nil {

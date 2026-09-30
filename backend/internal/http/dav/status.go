@@ -9,7 +9,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/protocol/limits"
 )
 
@@ -76,20 +76,20 @@ func StatusOf(err error) (int, xml.Name) {
 	case errors.Is(err, ErrLocked):
 		return http.StatusLocked, davName("lock-token-submitted")
 
-	case errors.Is(err, ErrPreconditionFailed), errors.Is(err, core.ErrPrecondition):
+	case errors.Is(err, ErrPreconditionFailed), errors.Is(err, files.ErrPrecondition):
 		return http.StatusPreconditionFailed, xml.Name{}
 
 	// Absence and denial answer the same, which is what stops a stranger
 	// mapping a tree they cannot read by watching which paths answer 403.
-	case errors.Is(err, core.ErrNotFound):
+	case errors.Is(err, files.ErrNotFound):
 		return http.StatusNotFound, xml.Name{}
 
-	case errors.Is(err, core.ErrDenied):
+	case errors.Is(err, files.ErrDenied):
 		return http.StatusForbidden, xml.Name{}
 
 	// 405 rather than 409: the target exists and the method cannot apply to
 	// what is there, which is what a PUT onto a collection is.
-	case errors.Is(err, core.ErrExists):
+	case errors.Is(err, files.ErrExists):
 		return http.StatusMethodNotAllowed, xml.Name{}
 
 	case errors.Is(err, ErrUnsupportedMedia):
@@ -111,20 +111,20 @@ func StatusOf(err error) (int, xml.Name) {
 
 	// A parent that is missing, or a collection that still has members. Both
 	// are the request meeting a tree it did not expect.
-	case errors.Is(err, core.ErrNotEmpty), errors.Is(err, core.ErrConflict),
-		errors.Is(err, core.ErrCrossShare):
+	case errors.Is(err, files.ErrNotEmpty), errors.Is(err, files.ErrConflict),
+		errors.Is(err, files.ErrCrossShare):
 		return http.StatusConflict, xml.Name{}
 
 	// Out of room, either the volume's or a configured bound. A client retries
 	// these differently from a refusal, so they do not fold into 409.
-	case errors.Is(err, core.ErrNoSpace), errors.Is(err, core.ErrQuotaExceeded),
+	case errors.Is(err, files.ErrNoSpace), errors.Is(err, files.ErrQuotaExceeded),
 		errors.Is(err, limits.ErrTooLarge):
 		return http.StatusInsufficientStorage, xml.Name{}
 
 	// A share whose backing went away. 503 rather than 404: the resource is
 	// not gone, this server cannot reach it, and a sync client that reads 404
 	// deletes its local copy.
-	case errors.Is(err, core.ErrShareBroken):
+	case errors.Is(err, files.ErrShareBroken):
 		return http.StatusServiceUnavailable, xml.Name{}
 
 	default:

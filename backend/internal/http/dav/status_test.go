@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/protocol/limits"
 )
 
@@ -18,13 +18,13 @@ import (
 func TestAbsenceAndDenialAreDistinguishableOnlyToSomeoneWhoMayLook(t *testing.T) {
 	t.Parallel()
 
-	missing, _ := StatusOf(core.ErrNotFound)
+	missing, _ := StatusOf(files.ErrNotFound)
 	if missing != http.StatusNotFound {
 		t.Errorf("a missing resource answered %d", missing)
 	}
 	// Denial is 403 here because the caller was already resolved: the mount
 	// answers 404 for a path outside every grant, before this is reached.
-	denied, _ := StatusOf(core.ErrDenied)
+	denied, _ := StatusOf(files.ErrDenied)
 	if denied != http.StatusForbidden {
 		t.Errorf("a denial answered %d", denied)
 	}
@@ -74,19 +74,19 @@ func TestTheStatusTable(t *testing.T) {
 			"the client stated a condition and it was false"},
 		{"a Destination on another host", ErrForeignDestination, http.StatusBadGateway,
 			"the request is well formed and this server cannot serve it"},
-		{"a PUT onto a collection", core.ErrExists, http.StatusMethodNotAllowed,
+		{"a PUT onto a collection", files.ErrExists, http.StatusMethodNotAllowed,
 			"the target exists and the method cannot apply to what is there"},
 		{"a body on a method defining none", ErrUnsupportedMedia, http.StatusUnsupportedMediaType,
 			"MKCOL defines no body format"},
-		{"a missing parent", core.ErrConflict, http.StatusConflict,
+		{"a missing parent", files.ErrConflict, http.StatusConflict,
 			"409 tells a client to create the parent; 404 gives it no reason to"},
-		{"a collection with members", core.ErrNotEmpty, http.StatusConflict,
+		{"a collection with members", files.ErrNotEmpty, http.StatusConflict,
 			"the tree is not what the request expected"},
-		{"a move across shares", core.ErrCrossShare, http.StatusConflict,
+		{"a move across shares", files.ErrCrossShare, http.StatusConflict,
 			"no rename spans two shares atomically"},
-		{"the volume is full", core.ErrNoSpace, http.StatusInsufficientStorage,
+		{"the volume is full", files.ErrNoSpace, http.StatusInsufficientStorage,
 			"a client retries this differently from a refusal"},
-		{"a quota exceeded", core.ErrQuotaExceeded, http.StatusInsufficientStorage,
+		{"a quota exceeded", files.ErrQuotaExceeded, http.StatusInsufficientStorage,
 			"the same, for a configured ceiling"},
 		{"a bound exceeded", limits.ErrTooLarge, http.StatusInsufficientStorage,
 			"more of a durable resource than the caller may have"},
@@ -108,7 +108,7 @@ func TestTheStatusTable(t *testing.T) {
 func TestAnUnreachableShareIsNotReportedAsDeleted(t *testing.T) {
 	t.Parallel()
 
-	got, _ := StatusOf(core.ErrShareBroken)
+	got, _ := StatusOf(files.ErrShareBroken)
 	if got == http.StatusNotFound {
 		t.Fatal("an unreachable share answered 404, which a sync client reads as a deletion")
 	}
@@ -146,7 +146,7 @@ func TestAnErrorWithoutAConditionIsPlain(t *testing.T) {
 	t.Parallel()
 
 	w := httptest.NewRecorder()
-	mustWriteError(t, w, core.ErrNotFound)
+	mustWriteError(t, w, files.ErrNotFound)
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("the response is %d, want 404", w.Code)

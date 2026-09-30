@@ -8,8 +8,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
@@ -173,11 +173,11 @@ func (s *Server) quotaSpace(ctx context.Context, id int64) (free, total int64) {
 		if !ok {
 			continue
 		}
-		vpath, err := s.deps.VpathOf(core.UserID(id), share, grantSubpathOf(r.Subpath.String()))
+		vpath, err := s.deps.VpathOf(files.UserID(id), share, grantSubpathOf(r.Subpath.String()))
 		if err != nil {
 			continue
 		}
-		res, err := s.deps.Resolve(core.UserID(id), vpath, acl.Read)
+		res, err := s.deps.Resolve(files.UserID(id), vpath, acl.Read)
 		if err != nil {
 			continue
 		}

@@ -14,7 +14,7 @@ import (
 	"testing"
 
 	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 )
 
 // The host roles, as the compatibility surface sees them: the app host serves
@@ -58,11 +58,11 @@ func namedNCFixture(t *testing.T, content []byte) ncFixture {
 	if merr := os.Mkdir(filepath.Join(host, "sub"), 0o700); merr != nil {
 		t.Fatalf("seeding the folder: %v", merr)
 	}
-	sh, err := first.Core.CreateShare(ctx, core.ShareSpec{Name: "files", Host: host})
+	sh, err := first.Core.CreateShare(ctx, files.ShareSpec{Name: "files", Host: host})
 	if err != nil {
 		t.Fatalf("creating the share: %v", err)
 	}
-	if _, gerr := first.Core.CreateGrant(ctx, core.GrantSpec{
+	if _, gerr := first.Core.CreateGrant(ctx, files.GrantSpec{
 		User: &id, Share: sh.ID, Allow: ncEveryPerm(), Inherit: true, Label: sh.Name,
 	}); gerr != nil {
 		t.Fatalf("granting: %v", gerr)

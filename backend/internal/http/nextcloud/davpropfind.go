@@ -8,8 +8,8 @@ import (
 	"encoding/hex"
 	"net/http"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/protocol/limits"
@@ -78,7 +78,7 @@ func (s *Server) davPropfind(w http.ResponseWriter, r *http.Request, p Principal
 	m.Open()
 
 	selfHref := t.Href(t.Path, self.IsDir)
-	s.recordIDs(ctx, []core.Entry{self})
+	s.recordIDs(ctx, []files.Entry{self})
 	found, missing := s.renderFileEntry(ctx, query, self, res.Perms(), false, favSet, ownerID, ownerName, quota)
 	m.Response(selfHref, found, missing)
 
@@ -95,10 +95,10 @@ func (s *Server) davPropfind(w http.ResponseWriter, r *http.Request, p Principal
 
 // walkChildren writes one level of a collection's members.
 func (s *Server) walkChildren(
-	ctx context.Context, m *Multi, query PropQuery, res core.Resolved, t Target,
+	ctx context.Context, m *Multi, query PropQuery, res files.Resolved, t Target,
 	favSet FavoriteSet, ownerID, ownerName string, quota *QuotaProps,
 ) error {
-	var cur core.Cursor
+	var cur files.Cursor
 	written := 0
 	for {
 		if err := ctx.Err(); err != nil {
@@ -112,11 +112,11 @@ func (s *Server) walkChildren(
 		// rendered so their ids are recorded in one write and the record is
 		// consulted by the rendering that follows.
 		type member struct {
-			entry core.Entry
+			entry files.Entry
 			perms acl.Perms
 		}
 		members := make([]member, 0, len(page.Entries))
-		entries := make([]core.Entry, 0, len(page.Entries))
+		entries := make([]files.Entry, 0, len(page.Entries))
 		for _, e := range page.Entries {
 			childPath, jerr := res.Path().JoinExisting(e.Name)
 			if jerr != nil {
@@ -208,7 +208,7 @@ func (s *Server) davRootPropfind(w http.ResponseWriter, r *http.Request, p Princ
 	m := NewMulti(w)
 	m.Open()
 
-	selfEntry := core.Entry{
+	selfEntry := files.Entry{
 		IsDir:   true,
 		MTimeNs: s.clk.Now().UnixNano(),
 		ETag:    rootEtagOf(children, s.instanceTag()),
@@ -256,8 +256,8 @@ func (s *Server) davRootPropfind(w http.ResponseWriter, r *http.Request, p Princ
 // so it is computed once per share rather than twice.
 type rootChild struct {
 	label string
-	res   core.Resolved
-	entry core.Entry
+	res   files.Resolved
+	entry files.Entry
 	// unreachable marks a share the account holds that this request could not
 	// resolve or stat. It is listed anyway; see the loop that builds this set.
 	unreachable bool
@@ -375,7 +375,7 @@ func writePropPatchResponse(m *Multi, href string, applied, refused []PropName) 
 // renderFileEntry answers one entry's properties, filling in the favourite
 // flag and the account-wide facts every entry in a response shares.
 func (s *Server) renderFileEntry(
-	ctx context.Context, query PropQuery, e core.Entry, perms acl.Perms, shareRoot bool,
+	ctx context.Context, query PropQuery, e files.Entry, perms acl.Perms, shareRoot bool,
 	favSet FavoriteSet, ownerID, ownerName string, quota *QuotaProps,
 ) ([]Prop, []PropName) {
 	fav := false

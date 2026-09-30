@@ -9,11 +9,11 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/preview"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/search/svc"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
 )
 
@@ -36,39 +36,39 @@ type Store interface {
 	// on. It must answer the same value for the same file across restarts,
 	// and must not allocate: a listing that minted ids would hand out an
 	// identity for a file that may be gone by the time the client acts on it.
-	FileID(ctx context.Context, e core.Entry) (uint64, error)
+	FileID(ctx context.Context, e files.Entry) (uint64, error)
 
 	// RecordIDs makes the ids a response is about to hand out resolvable by
 	// LocateFile later. The explicit allocation FileID refuses to do
 	// implicitly: called with the entries a listing or a write actually
 	// reports, so a client that names one of them by id alone is answered.
-	RecordIDs(ctx context.Context, entries []core.Entry) error
+	RecordIDs(ctx context.Context, entries []files.Entry) error
 
 	// Favorites reads the caller's starred set once, for a request that asks
 	// about many entries.
-	Favorites(ctx context.Context, user core.UserID) (FavoriteSet, error)
+	Favorites(ctx context.Context, user files.UserID) (FavoriteSet, error)
 
 	// SetFavorite stars or unstars one entry.
-	SetFavorite(ctx context.Context, user core.UserID, e core.Entry, on bool) error
+	SetFavorite(ctx context.Context, user files.UserID, e files.Entry, on bool) error
 
 	// EncryptedShares names the shares whose contents this surface must not
 	// reveal. A client here has no way to decrypt one, so a listing that
 	// showed it would present ciphertext as the user's files.
-	EncryptedShares(ctx context.Context) (map[core.ShareID]bool, error)
+	EncryptedShares(ctx context.Context) (map[files.ShareID]bool, error)
 }
 
 // FavoriteSet is one account's starred set, as one request sees it.
 type FavoriteSet interface {
 	// Has reports whether an entry is starred. Keyed on the entry's identity
 	// rather than its path, so a starred file keeps its star across a rename.
-	Has(e core.Entry) bool
+	Has(e files.Entry) bool
 	// List names every starred path, for the query that answers the whole set.
 	List() []Favorite
 }
 
 // Favorite is one starred path.
 type Favorite struct {
-	Share core.ShareID
+	Share files.ShareID
 	// Path is share-relative, as the store recorded it.
 	Path string
 }
@@ -116,7 +116,7 @@ type OriginRequest struct {
 
 // Deps is everything the surface is built over.
 type Deps struct {
-	Core  *core.Core
+	Core  *files.Core
 	Auth  *auth.Service
 	Store Store
 
@@ -164,27 +164,27 @@ type Deps struct {
 	// A seam rather than a direct call, because parsing a path is the
 	// filesystem tier's own work and the presentation tier may not name its
 	// types. The same seam the native protocol mount uses.
-	Resolve func(user core.UserID, path string, need acl.Perms) (core.Resolved, error)
+	Resolve func(user files.UserID, path string, need acl.Perms) (files.Resolved, error)
 
 	// VpathOf crosses a share and a share-relative path back into the path a
 	// client addresses, which is the reverse direction a stored row (a
 	// favourite, a journal entry) has to be rendered through.
-	VpathOf func(user core.UserID, share core.ShareID, sharePath string) (string, error)
+	VpathOf func(user files.UserID, share files.ShareID, sharePath string) (string, error)
 
 	// LocateFile maps a stable file id back to the path the caller addresses
 	// it by. A client opening a notification, a preview or a direct link
 	// names a file by id and nothing else, so without this the whole of that
 	// is unreachable. The reverse index lives in a tier this package may not
 	// import. Nil answers every id as absent.
-	LocateFile func(ctx context.Context, user core.UserID, fileID uint64) (string, error)
+	LocateFile func(ctx context.Context, user files.UserID, fileID uint64) (string, error)
 
 	// SealClaim mints the short-lived capability a direct media URL carries,
 	// and OpenClaim reads one back. Both are the assembly's: the key is one
 	// the deployment holds and rotates, and a token this package invented
 	// would be a second credential format nothing else can revoke. Nil
 	// disables the direct-URL endpoints.
-	SealClaim func(user core.UserID, path string) (string, error)
-	OpenClaim func(token string) (user core.UserID, path string, err error)
+	SealClaim func(user files.UserID, path string) (string, error)
+	OpenClaim func(token string) (user files.UserID, path string, err error)
 
 	// PublicLinkPath is where a link token is served from, as a path with a
 	// leading slash. The engine's own public link surface owns that spelling,
@@ -195,7 +195,7 @@ type Deps struct {
 	// LockGuard reports whether a foreign lock blocks a write at a path. Nil
 	// admits every write, which is what a deployment without a lock table
 	// answers.
-	LockGuard func(ctx context.Context, res core.Resolved, principal int64) error
+	LockGuard func(ctx context.Context, res files.Resolved, principal int64) error
 
 	Clock  clock.Clock
 	Logger *slog.Logger

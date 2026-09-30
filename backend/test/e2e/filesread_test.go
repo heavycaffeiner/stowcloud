@@ -16,8 +16,8 @@ import (
 	"time"
 
 	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 )
@@ -895,24 +895,24 @@ func TestCopyingFromAShareWithoutMoveRights(t *testing.T) {
 	}
 	writableHost := t.TempDir()
 
-	source, err := e.Core.CreateShare(ctx, core.ShareSpec{Name: "reference", Host: readOnlyHost})
+	source, err := e.Core.CreateShare(ctx, files.ShareSpec{Name: "reference", Host: readOnlyHost})
 	if err != nil {
 		t.Fatal(err)
 	}
-	dest, err := e.Core.CreateShare(ctx, core.ShareSpec{Name: "mine", Host: writableHost})
+	dest, err := e.Core.CreateShare(ctx, files.ShareSpec{Name: "mine", Host: writableHost})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Read and Download only: everything a copy's source needs and nothing
 	// that would let the account change it.
-	if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
+	if _, gerr := e.Core.CreateGrant(ctx, files.GrantSpec{
 		User: &id, Share: source.ID, Allow: acl.Read | acl.Download,
 		Inherit: true, Label: source.Name,
 	}); gerr != nil {
 		t.Fatal(gerr)
 	}
-	if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
+	if _, gerr := e.Core.CreateGrant(ctx, files.GrantSpec{
 		User: &id, Share: dest.ID, Allow: everyPerm(), Inherit: true, Label: dest.Name,
 	}); gerr != nil {
 		t.Fatal(gerr)
@@ -1038,11 +1038,11 @@ func TestClosingTheEngineWaitsForACopyToRecordItsOutcome(t *testing.T) {
 			t.Fatal(werr)
 		}
 	}
-	sh, err := e.Core.CreateShare(ctx, core.ShareSpec{Name: "files", Host: host})
+	sh, err := e.Core.CreateShare(ctx, files.ShareSpec{Name: "files", Host: host})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
+	if _, gerr := e.Core.CreateGrant(ctx, files.GrantSpec{
 		User: &id, Share: sh.ID, Allow: everyPerm(), Inherit: true, Label: sh.Name,
 	}); gerr != nil {
 		t.Fatal(gerr)
@@ -1075,7 +1075,7 @@ func TestClosingTheEngineWaitsForACopyToRecordItsOutcome(t *testing.T) {
 	if perr != nil {
 		t.Fatalf("the job id %q is not a number", started.ID)
 	}
-	op, oerr := again.Core.Operation(ctx, core.UserID(id), core.OperationID(opID))
+	op, oerr := again.Core.Operation(ctx, files.UserID(id), files.OperationID(opID))
 	if oerr != nil {
 		t.Fatalf("reading the operation after the restart: %v", oerr)
 	}

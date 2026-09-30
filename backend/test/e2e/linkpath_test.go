@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 )
 
@@ -44,11 +44,11 @@ func TestALinkListingReportsANavigablePath(t *testing.T) {
 	if werr := os.WriteFile(filepath.Join(host, "Game", "save.dat"), []byte("x"), 0o600); werr != nil {
 		t.Fatalf("writing: %v", werr)
 	}
-	sh, err := e.Core.CreateShare(ctx, core.ShareSpec{Name: "vault", Host: host})
+	sh, err := e.Core.CreateShare(ctx, files.ShareSpec{Name: "vault", Host: host})
 	if err != nil {
 		t.Fatalf("creating the share: %v", err)
 	}
-	if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
+	if _, gerr := e.Core.CreateGrant(ctx, files.GrantSpec{
 		User: &id, Share: sh.ID, Subpath: "Game",
 		Allow:   acl.Read | acl.Write | acl.Create | acl.Download | acl.Share,
 		Inherit: true, Label: "Saves",
@@ -58,11 +58,11 @@ func TestALinkListingReportsANavigablePath(t *testing.T) {
 	if rerr := e.Core.ReloadGrants(ctx); rerr != nil {
 		t.Fatalf("reloading grants: %v", rerr)
 	}
-	r, rerr := e.Core.Resolve(core.UserID(id), vpathOf(t, "Saves/save.dat"), acl.Share)
+	r, rerr := e.Core.Resolve(files.UserID(id), vpathOf(t, "Saves/save.dat"), acl.Share)
 	if rerr != nil {
 		t.Fatalf("resolving: %v", rerr)
 	}
-	if _, _, cerr := e.Core.CreateLink(ctx, r, core.LinkSpec{
+	if _, _, cerr := e.Core.CreateLink(ctx, r, files.LinkSpec{
 		Perms: acl.Read | acl.Download, MaxDown: -1,
 	}); cerr != nil {
 		t.Fatalf("minting: %v", cerr)
@@ -94,7 +94,7 @@ func TestALinkListingReportsANavigablePath(t *testing.T) {
 		t.Errorf("the listing reports %q, which the account cannot open; want %q",
 			rows[0].Path, want)
 	}
-	if _, verr := e.Core.Resolve(core.UserID(id), vpathOf(t, rows[0].Path), acl.Read); verr != nil {
+	if _, verr := e.Core.Resolve(files.UserID(id), vpathOf(t, rows[0].Path), acl.Read); verr != nil {
 		t.Errorf("the reported path %q does not resolve: %v", rows[0].Path, verr)
 	}
 }

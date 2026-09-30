@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 )
 
@@ -20,7 +20,7 @@ const testNow = int64(1700000000000000000)
 // a live credential must not be in it.
 func TestALinkListingCarriesNoCredential(t *testing.T) {
 	tok := secret.New([]byte("this-is-the-token"))
-	l := core.Link{
+	l := files.Link{
 		ID:          7,
 		Token:       &tok,
 		TokenHash:   []byte("hash-bytes-that-authenticate-a-request"),
@@ -70,7 +70,7 @@ func TestTheLinkViewHasNoTokenField(t *testing.T) {
 // type rather than a field that is usually empty.
 func TestOnlyTheMintResponseCarriesTheToken(t *testing.T) {
 	tok := secret.New([]byte("this-is-the-token"))
-	got, ok := MintedLinkOf(core.Link{ID: 7, Token: &tok}, "files/target.txt", testNow)
+	got, ok := MintedLinkOf(files.Link{ID: 7, Token: &tok}, "files/target.txt", testNow)
 	if !ok {
 		t.Fatal("a link with a token could not be minted into a response")
 	}
@@ -80,7 +80,7 @@ func TestOnlyTheMintResponseCarriesTheToken(t *testing.T) {
 
 	// A link whose token could not be recovered reports so rather than
 	// sending an empty string, which a client would try to use as a token.
-	if _, legacy := MintedLinkOf(core.Link{ID: 8}, "files/target.txt", testNow); legacy {
+	if _, legacy := MintedLinkOf(files.Link{ID: 8}, "files/target.txt", testNow); legacy {
 		t.Error("a link with no recoverable token was minted anyway")
 	}
 }

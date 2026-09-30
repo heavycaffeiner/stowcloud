@@ -11,14 +11,14 @@ import (
 	"path/filepath"
 	"strconv"
 
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	httpheader "github.com/heavycaffeiner/stowcloud/backend/internal/http/headers"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 )
 
 // CloseStream closes a stream and records a close failure when a logger is supplied.
-func CloseStream(stream *core.Stream, name string, logger *slog.Logger) {
+func CloseStream(stream *files.Stream, name string, logger *slog.Logger) {
 	if stream == nil {
 		return
 	}
@@ -31,7 +31,7 @@ func CloseStream(stream *core.Stream, name string, logger *slog.Logger) {
 func SendStreamRange(c interface {
 	Header(string, string)
 	Status(int)
-}, writer io.Writer, entry core.FidEntry, stream *core.Stream, ranged bool, rng handler.ByteRange, size int64, attachAs string, logger *slog.Logger) {
+}, writer io.Writer, entry files.FidEntry, stream *files.Stream, ranged bool, rng handler.ByteRange, size int64, attachAs string, logger *slog.Logger) {
 	length, err := num.Narrow[int64](stream.Remaining())
 	if err != nil {
 		CloseStream(stream, entry.Name, logger)
@@ -71,7 +71,7 @@ func SendStreamRange(c interface {
 }
 
 type sharedLoggedStream struct {
-	inner  *core.Stream
+	inner  *files.Stream
 	name   string
 	logger *slog.Logger
 }

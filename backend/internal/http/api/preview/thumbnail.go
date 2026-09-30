@@ -13,9 +13,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	featurepreview "github.com/heavycaffeiner/stowcloud/backend/internal/feature/preview"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
@@ -25,10 +25,10 @@ import (
 // thumbnail protocol. Resolution and claim validation remain application
 // policy; framing and preview service use belong to this transport package.
 type ThumbnailDeps struct {
-	Core         *core.Core
-	Owner        func(*gin.Context) (core.UserID, bool)
-	Resolve      func(core.UserID, string, acl.Perms) (core.Resolved, error)
-	OpenClaim    func(*gin.Context, handler.ClaimPurpose, core.UserID) (handler.Claim, bool)
+	Core         *files.Core
+	Owner        func(*gin.Context) (files.UserID, bool)
+	Resolve      func(files.UserID, string, acl.Perms) (files.Resolved, error)
+	OpenClaim    func(*gin.Context, handler.ClaimPurpose, files.UserID) (handler.Claim, bool)
 	PreviewLease func() (*featurepreview.Lease, bool)
 	Fail         func(*gin.Context, error)
 	Refuse       func(*gin.Context, apierr.Classified)
@@ -59,7 +59,7 @@ func ThumbnailHandler(d ThumbnailDeps) gin.HandlerFunc {
 
 		claim, ok := d.OpenClaim(c, handler.PurposeThumb, owner)
 		if !ok {
-			d.Fail(c, core.ErrNotFound)
+			d.Fail(c, files.ErrNotFound)
 			return
 		}
 		r, err := d.Resolve(owner, claim.Path, acl.Read|acl.Download)

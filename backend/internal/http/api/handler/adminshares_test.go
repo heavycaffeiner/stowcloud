@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 )
 
@@ -21,13 +21,13 @@ func TestShareViewCarriesNoCredentialForAnyBackend(t *testing.T) {
 
 	cases := []struct {
 		name  string
-		share core.Share
+		share files.Share
 	}{
-		{"local", core.Share{ID: 1, Name: "docs", Host: "/srv/docs"}},
+		{"local", files.Share{ID: 1, Name: "docs", Host: "/srv/docs"}},
 		{
 			"s3",
-			core.Share{
-				ID: 2, Name: "bucket", Backend: core.BackendS3,
+			files.Share{
+				ID: 2, Name: "bucket", Backend: files.BackendS3,
 				Config: []byte(`{"bucket":"photos"}`),
 				Secret: secret.New([]byte(marker)),
 				Source: "s3://photos/team at https://minio:9000",
@@ -35,8 +35,8 @@ func TestShareViewCarriesNoCredentialForAnyBackend(t *testing.T) {
 		},
 		{
 			"veracrypt",
-			core.Share{
-				ID: 3, Name: "vault", Backend: core.BackendVeracrypt,
+			files.Share{
+				ID: 3, Name: "vault", Backend: files.BackendVeracrypt,
 				Config: []byte(`{"container":"/srv/vaults/v.hc"}`),
 				Secret: secret.New([]byte(marker)),
 				Source: "/srv/vaults/v.hc",
@@ -64,8 +64,8 @@ func TestShareViewCarriesNoCredentialForAnyBackend(t *testing.T) {
 // An empty Backend reads as local, so a row from before backends existed
 // and a client that never learned the field still get a sensible answer.
 func TestShareOfDefaultsAnEmptyBackendToLocal(t *testing.T) {
-	view := ShareOf(core.Share{ID: 1, Name: "docs", Host: "/srv/docs"})
-	if view.Backend != core.BackendLocal {
-		t.Errorf("an empty backend rendered as %q, want %q", view.Backend, core.BackendLocal)
+	view := ShareOf(files.Share{ID: 1, Name: "docs", Host: "/srv/docs"})
+	if view.Backend != files.BackendLocal {
+		t.Errorf("an empty backend rendered as %q, want %q", view.Backend, files.BackendLocal)
 	}
 }

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 )
 
 // The existence rule, which is the reason this package has a visibility input.
@@ -29,10 +29,10 @@ func TestTheHiddenResponsesAreByteIdentical(t *testing.T) {
 	var statuses []int
 
 	for _, err := range []error{
-		core.ErrNotFound,
-		core.ErrDenied,
-		fmt.Errorf("wrapped: %w", core.ErrDenied),
-		fmt.Errorf("resolving %q: %w", "a/b", core.ErrNotFound),
+		files.ErrNotFound,
+		files.ErrDenied,
+		fmt.Errorf("wrapped: %w", files.ErrDenied),
+		fmt.Errorf("resolving %q: %w", "a/b", files.ErrNotFound),
 	} {
 		status, body := REST(Classify(err, VisibilityHidden))
 		raw, merr := json.Marshal(body)
@@ -63,7 +63,7 @@ func TestTheHiddenResponsesAreByteIdentical(t *testing.T) {
 // denial is reported as one. Without this the fold would make every denial
 // unreportable, including on surfaces where saying so is correct.
 func TestAKnownDenialIsReportedAsDenied(t *testing.T) {
-	status, body := REST(Classify(core.ErrDenied, VisibilityKnown))
+	status, body := REST(Classify(files.ErrDenied, VisibilityKnown))
 	if status != http.StatusForbidden {
 		t.Errorf("a known denial answered %d, want 403", status)
 	}
@@ -76,7 +76,7 @@ func TestAKnownDenialIsReportedAsDenied(t *testing.T) {
 // hiding a denial, not about changing what absence means.
 func TestAbsenceIsNotFoundUnderEitherVisibility(t *testing.T) {
 	for _, v := range []Visibility{VisibilityHidden, VisibilityKnown} {
-		status, body := REST(Classify(core.ErrNotFound, v))
+		status, body := REST(Classify(files.ErrNotFound, v))
 		if status != http.StatusNotFound {
 			t.Errorf("absence under %v answered %d", v, status)
 		}
@@ -203,8 +203,8 @@ func TestARequestErrorNamesTheFieldNotItsValue(t *testing.T) {
 // A batch item for a hidden error is the same as the response's, so a batch
 // cannot become the surface that reveals what the single request hid.
 func TestABatchItemHonoursTheExistenceRule(t *testing.T) {
-	denied := WireOf(core.ErrDenied, VisibilityHidden)
-	missing := WireOf(core.ErrNotFound, VisibilityHidden)
+	denied := WireOf(files.ErrDenied, VisibilityHidden)
+	missing := WireOf(files.ErrNotFound, VisibilityHidden)
 
 	// Compared as encoded bytes, which is what a client actually receives, and
 	// which is also the only comparison available: the item carries a map.

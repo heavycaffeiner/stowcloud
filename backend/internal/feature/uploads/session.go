@@ -8,15 +8,15 @@ import (
 	"fmt"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	"github.com/stowcloud/transfer"
 )
 
 // Create opens a session against a resolved destination.
-func (e *Engine) Create(ctx context.Context, r core.Resolved, spec SessionSpec) (Session, error) {
+func (e *Engine) Create(ctx context.Context, r files.Resolved, spec SessionSpec) (Session, error) {
 	if err := r.Require(acl.Write | acl.Create); err != nil {
 		return Session{}, err
 	}
@@ -89,7 +89,7 @@ func (e *Engine) Create(ctx context.Context, r core.Resolved, spec SessionSpec) 
 
 // newRow builds the stored session from what Create was asked for.
 func (e *Engine) newRow(
-	id SessionID, r core.Resolved, dest vfs.SafePath, spec SessionSpec,
+	id SessionID, r files.Resolved, dest vfs.SafePath, spec SessionSpec,
 ) (state.UploadSession, error) {
 	minAtCreation, chunkSize := e.settings.Snapshot()
 	floor, ferr := number.Narrow[int64](minAtCreation)
@@ -197,7 +197,7 @@ func (e *Engine) discardPart(root vfs.Root, part vfs.SafePath, f *vfs.File) erro
 }
 
 // Get returns a single session, restricted to its owning account.
-func (e *Engine) Get(ctx context.Context, id SessionID, user core.UserID) (Session, error) {
+func (e *Engine) Get(ctx context.Context, id SessionID, user files.UserID) (Session, error) {
 	r, err := e.load(ctx, id)
 	if err != nil {
 		return Session{}, err
@@ -213,7 +213,7 @@ func (e *Engine) Get(ctx context.Context, id SessionID, user core.UserID) (Sessi
 // A client that asks after a failed chunk gets the truth rather than the part
 // file's size, which on a sparse file says where the last write landed and not
 // what is in it.
-func (e *Engine) Offset(ctx context.Context, id SessionID, user core.UserID) (uint64, error) {
+func (e *Engine) Offset(ctx context.Context, id SessionID, user files.UserID) (uint64, error) {
 	s, err := e.Get(ctx, id, user)
 	if err != nil {
 		return 0, err
@@ -223,7 +223,7 @@ func (e *Engine) Offset(ctx context.Context, id SessionID, user core.UserID) (ui
 
 // SetLength provides a deferred length, required by finalize and needed by the
 // interval set before it can report completeness.
-func (e *Engine) SetLength(ctx context.Context, id SessionID, user core.UserID, total uint64) error {
+func (e *Engine) SetLength(ctx context.Context, id SessionID, user files.UserID, total uint64) error {
 	unlock := e.lockRow(id)
 	defer unlock()
 
@@ -263,7 +263,7 @@ func (e *Engine) SetLength(ctx context.Context, id SessionID, user core.UserID, 
 // Writer admission closes first and every admitted body drains before cleanup,
 // so the part can be unlinked here without racing a write. A failed unlink
 // leaves the aborted row for a later DELETE or periodic sweep to retry.
-func (e *Engine) Abort(ctx context.Context, id SessionID, user core.UserID) error {
+func (e *Engine) Abort(ctx context.Context, id SessionID, user files.UserID) error {
 	barrier, generation, owner, werr := e.closeWriters(ctx, id)
 	if werr != nil {
 		return werr

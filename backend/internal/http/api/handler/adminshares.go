@@ -6,8 +6,8 @@ package handler
 import (
 	"strconv"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 )
 
 // ShareView is one registered share, as the screen that configures them sees
@@ -66,10 +66,10 @@ type ShareView struct {
 // ShareOf projects one share. Never a credential: Share carries none of its
 // own fields here, and Source is built by the opener's Describe from the
 // backend's config alone, so there is no field to omit by mistake.
-func ShareOf(s core.Share) ShareView {
+func ShareOf(s files.Share) ShareView {
 	backend := s.Backend
 	if backend == "" {
-		backend = core.BackendLocal
+		backend = files.BackendLocal
 	}
 	return ShareView{
 		ID:               strconv.FormatInt(int64(s.ID), 10),
@@ -86,7 +86,7 @@ func ShareOf(s core.Share) ShareView {
 // SharesOf projects a listing. `empty` answers whether each share holds
 // nothing; the caller supplies it, since only it has the context to walk the
 // storage with.
-func SharesOf(shares []core.ShareDef, empty func(core.ShareID) bool) []ShareView {
+func SharesOf(shares []files.ShareDef, empty func(files.ShareID) bool) []ShareView {
 	out := make([]ShareView, 0, len(shares))
 	for _, s := range shares {
 		v := ShareOf(s)
@@ -124,7 +124,7 @@ type GrantView struct {
 }
 
 // GrantOf projects one grant.
-func GrantOf(g core.Grant) GrantView {
+func GrantOf(g files.Grant) GrantView {
 	v := GrantView{
 		ID:        strconv.FormatInt(g.ID, 10),
 		Share:     strconv.FormatInt(g.Share, 10),
@@ -147,7 +147,7 @@ func GrantOf(g core.Grant) GrantView {
 }
 
 // GrantsOf projects a listing.
-func GrantsOf(rows []core.Grant) []GrantView {
+func GrantsOf(rows []files.Grant) []GrantView {
 	out := make([]GrantView, 0, len(rows))
 	for _, g := range rows {
 		out = append(out, GrantOf(g))
@@ -176,7 +176,7 @@ func permNames(p acl.Perms) []string {
 // is not the same as a full disk. A share that reported zero free would have
 // an operator moving data off a device that is fine.
 type ShareUsage struct {
-	ID    core.ShareID
+	ID    files.ShareID
 	Label string
 
 	Total, Free uint64

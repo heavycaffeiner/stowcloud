@@ -17,9 +17,9 @@ import (
 
 	search "github.com/stowcloud/namesearch"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	stowcloud "github.com/heavycaffeiner/stowcloud/backend/internal/feature/search/stowcloud"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/search/svc"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/concurrency"
 )
 
@@ -639,7 +639,7 @@ func TestASearchRefusedForBeingBusySaysSo(t *testing.T) {
 	// One slot, held by a search that blocks in its own callback until this
 	// test lets go.
 	f.e.Search.SetBounds(1, 0)
-	sources := stowcloud.SourcesOf(f.e.Core.UserScanSources(core.UserID(f.user)))
+	sources := stowcloud.SourcesOf(f.e.Core.UserScanSources(files.UserID(f.user)))
 	release := make(chan struct{})
 	held := make(chan struct{})
 	// The outcome travels on a channel rather than through t: the search

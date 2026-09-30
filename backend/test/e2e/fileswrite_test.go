@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 )
@@ -40,11 +40,11 @@ func shareWith(t *testing.T, perms acl.Perms) (base string, sess session, share 
 		t.Fatalf("writing: %v", werr)
 	}
 
-	sh, err := e.Core.CreateShare(ctx, core.ShareSpec{Name: "work", Host: host})
+	sh, err := e.Core.CreateShare(ctx, files.ShareSpec{Name: "work", Host: host})
 	if err != nil {
 		t.Fatalf("creating the share: %v", err)
 	}
-	if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
+	if _, gerr := e.Core.CreateGrant(ctx, files.GrantSpec{
 		User: &id, Share: sh.ID, Allow: perms, Inherit: true, Label: sh.Name,
 	}); gerr != nil {
 		t.Fatalf("granting: %v", gerr)
@@ -298,16 +298,16 @@ func TestADeleteGoesToTheTrashWhereTheShareHasOne(t *testing.T) {
 		t.Fatal(werr)
 	}
 
-	sh, err := e.Core.CreateShare(ctx, core.ShareSpec{Name: "kept", Host: host})
+	sh, err := e.Core.CreateShare(ctx, files.ShareSpec{Name: "kept", Host: host})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Trash on, which is what makes the two delete modes differ at all.
 	on := true
-	if _, uerr := e.Core.UpdateShare(ctx, sh.ID, core.SharePatch{TrashEnabled: &on}); uerr != nil {
+	if _, uerr := e.Core.UpdateShare(ctx, sh.ID, files.SharePatch{TrashEnabled: &on}); uerr != nil {
 		t.Fatalf("enabling trash: %v", uerr)
 	}
-	if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
+	if _, gerr := e.Core.CreateGrant(ctx, files.GrantSpec{
 		User: &id, Share: sh.ID, Allow: everyPerm(), Inherit: true, Label: sh.Name,
 	}); gerr != nil {
 		t.Fatal(gerr)
@@ -327,7 +327,7 @@ func TestADeleteGoesToTheTrashWhereTheShareHasOne(t *testing.T) {
 
 	// The file is recoverable: a permanent delete would leave nothing to
 	// restore, and a person who deleted by mistake would have no way back.
-	resolved, err := e.Core.Resolve(core.UserID(id), vpathOf(t, "/"+sh.Name), acl.Read)
+	resolved, err := e.Core.Resolve(files.UserID(id), vpathOf(t, "/"+sh.Name), acl.Read)
 	if err != nil {
 		t.Fatalf("resolving the share: %v", err)
 	}

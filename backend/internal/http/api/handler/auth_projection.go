@@ -10,9 +10,9 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	upload "github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads"
 	uploadlimits "github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads/limits"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/objstore"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
@@ -22,7 +22,7 @@ import (
 // project the deployment-specific portion of /auth/session.
 type SessionDetailsDeps struct {
 	Auth     *auth.Service
-	Core     *core.Core
+	Core     *files.Core
 	Upload   *upload.Engine
 	Features FeaturesInputs
 }
@@ -61,7 +61,7 @@ func SessionDetailsOf(ctx context.Context, id int64, d SessionDetailsDeps) (Sess
 		SMBCredential:        string(smb.Credential),
 		SMBUnavailableReason: smbUnavailableReason(smb),
 		Oidc:                 oidc,
-		Roots:                RootViews(d.Core, core.UserID(id)),
+		Roots:                RootViews(d.Core, files.UserID(id)),
 		Limits:               LimitsViewOf(d.Upload),
 		Features:             FeaturesViewOf(d.Core, d.Features),
 	}, nil
@@ -75,15 +75,15 @@ func smbUnavailableReason(smb auth.SMBState) string {
 }
 
 // RootViews projects the account's reachable roots for the wire.
-func RootViews(files *core.Core, owner core.UserID) []RootView {
-	if files == nil {
+func RootViews(fc *files.Core, owner files.UserID) []RootView {
+	if fc == nil {
 		return []RootView{}
 	}
-	roots := files.Roots(owner)
+	roots := fc.Roots(owner)
 	out := make([]RootView, 0, len(roots))
 	for _, root := range roots {
 		out = append(out, RootView{
-			Label: root.Label, Perms: core.PermNames(root.Perms),
+			Label: root.Label, Perms: files.PermNames(root.Perms),
 			SharedExternally: root.SharedExternally, TrashEnabled: root.TrashEnabled,
 			BrokenReason: root.BrokenReason,
 		})
@@ -111,14 +111,14 @@ func chunkBytes(v uint64) int64 {
 
 // FeaturesViewOf projects deployment capabilities without requiring an
 // application Engine-shaped dependency.
-func FeaturesViewOf(files *core.Core, in FeaturesInputs) FeaturesView {
+func FeaturesViewOf(fc *files.Core, in FeaturesInputs) FeaturesView {
 	directUploads := false
-	if files != nil {
-		for _, share := range files.Shares() {
-			if share.BrokenReason != "" || share.Backend != core.BackendS3 {
+	if fc != nil {
+		for _, share := range fc.Shares() {
+			if share.BrokenReason != "" || share.Backend != files.BackendS3 {
 				continue
 			}
-			if root, ok := files.ShareRoot(share.ID); ok {
+			if root, ok := fc.ShareRoot(share.ID); ok {
 				if provider, ok := root.(objstore.DirectTransferProvider); ok && provider.DirectTransfer() {
 					directUploads = true
 					break

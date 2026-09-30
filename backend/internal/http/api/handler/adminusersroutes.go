@@ -12,7 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/route"
@@ -24,7 +24,7 @@ import (
 // folders; when present it runs before account deletion.
 type AdminUsersDeps struct {
 	Auth        *auth.Service
-	CleanupHome func(ctx context.Context, user core.UserID) error
+	CleanupHome func(ctx context.Context, user files.UserID) error
 	Logger      *slog.Logger
 }
 
@@ -188,7 +188,7 @@ func (h *adminUsersHandlers) usersDelete(c *gin.Context) {
 		return
 	}
 	if h.d.CleanupHome != nil {
-		if err := h.d.CleanupHome(c.Request.Context(), core.UserID(target)); err != nil {
+		if err := h.d.CleanupHome(c.Request.Context(), files.UserID(target)); err != nil {
 			h.d.Logger.Warn("cleaning up deleted user home failed", "user", target, "error", err)
 		}
 	}
@@ -344,13 +344,13 @@ func adminAuditLimit(raw string) int {
 	return n
 }
 func adminJSON(c *gin.Context, status int, v any) { c.JSON(status, v) }
-func adminNotFound(c *gin.Context)                { adminFail(c, core.ErrNotFound) }
+func adminNotFound(c *gin.Context)                { adminFail(c, files.ErrNotFound) }
 func adminRefuse(c *gin.Context, class apierr.Classified) {
 	status, body := apierr.REST(class)
 	adminJSON(c, status, body)
 }
 func adminFail(c *gin.Context, err error) {
-	if errors.Is(err, core.ErrNotFound) {
+	if errors.Is(err, files.ErrNotFound) {
 		adminRefuse(c, apierr.Classified{Class: apierr.NotFound})
 		return
 	}

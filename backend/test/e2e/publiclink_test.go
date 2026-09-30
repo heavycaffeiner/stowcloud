@@ -15,8 +15,8 @@ import (
 
 	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 )
 
@@ -380,11 +380,11 @@ func linkEngineAt(
 		t.Fatalf("writing: %v", werr)
 	}
 
-	r, err := e.Core.Resolve(core.UserID(id), vpathOf(t, sh.Name+"/"+name), acl.Share)
+	r, err := e.Core.Resolve(files.UserID(id), vpathOf(t, sh.Name+"/"+name), acl.Share)
 	if err != nil {
 		t.Fatalf("resolving: %v", err)
 	}
-	_, tok, err := e.Core.CreateLink(ctx, r, core.LinkSpec{
+	_, tok, err := e.Core.CreateLink(ctx, r, files.LinkSpec{
 		Perms: perms, Password: password, MaxDown: -1,
 	})
 	if err != nil {
@@ -418,11 +418,11 @@ func linkEngineOverFolderAt(t *testing.T, perms acl.Perms) (base, token, host st
 		t.Fatalf("writing: %v", werr)
 	}
 
-	r, err := e.Core.Resolve(core.UserID(id), vpathOf(t, sh.Name+"/folder"), acl.Share)
+	r, err := e.Core.Resolve(files.UserID(id), vpathOf(t, sh.Name+"/folder"), acl.Share)
 	if err != nil {
 		t.Fatalf("resolving: %v", err)
 	}
-	_, tok, err := e.Core.CreateLink(ctx, r, core.LinkSpec{Perms: perms, MaxDown: -1})
+	_, tok, err := e.Core.CreateLink(ctx, r, files.LinkSpec{Perms: perms, MaxDown: -1})
 	if err != nil {
 		t.Fatalf("minting the link: %v", err)
 	}
@@ -430,7 +430,7 @@ func linkEngineOverFolderAt(t *testing.T, perms acl.Perms) (base, token, host st
 }
 
 // linkFixture opens an engine with one account holding one share.
-func linkFixture(t *testing.T) (*app.Engine, int64, core.Share, string) {
+func linkFixture(t *testing.T) (*app.Engine, int64, files.Share, string) {
 	t.Helper()
 	ctx := context.Background()
 
@@ -442,11 +442,11 @@ func linkFixture(t *testing.T) (*app.Engine, int64, core.Share, string) {
 	}
 
 	host := t.TempDir()
-	sh, err := e.Core.CreateShare(ctx, core.ShareSpec{Name: "files", Host: host})
+	sh, err := e.Core.CreateShare(ctx, files.ShareSpec{Name: "files", Host: host})
 	if err != nil {
 		t.Fatalf("creating the share: %v", err)
 	}
-	if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
+	if _, gerr := e.Core.CreateGrant(ctx, files.GrantSpec{
 		User: &id, Share: sh.ID,
 		Allow:   acl.Read | acl.Write | acl.Create | acl.Download | acl.Share,
 		Inherit: true, Label: sh.Name,

@@ -14,7 +14,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/gin-gonic/gin"
 
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/humabridge"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
@@ -27,7 +27,7 @@ const verifierMagic = "RCLONE\x00\x00"
 const verifierLen = 67
 
 type Deps struct {
-	Core *core.Core
+	Core *files.Core
 }
 
 type handlers struct{ d Deps }
@@ -96,32 +96,32 @@ func (h *handlers) listHuma(ctx context.Context, _ *listInput) (*listOutput, err
 		if err != nil {
 			continue
 		}
-		enc, found, err := h.d.Core.EncryptionOf(ctx, core.ShareID(id))
+		enc, found, err := h.d.Core.EncryptionOf(ctx, files.ShareID(id))
 		if err != nil {
 			return nil, humabridge.Failure(ctx, err)
 		}
 		if found {
-			out = append(out, handler.ShareEncryptionOf(core.ShareID(id), labels[share], enc))
+			out = append(out, handler.ShareEncryptionOf(files.ShareID(id), labels[share], enc))
 		}
 	}
 	return &listOutput{Body: listView{Shares: out}}, nil
 }
 
-func parseShareID(raw string) (core.ShareID, bool) {
+func parseShareID(raw string) (files.ShareID, bool) {
 	n, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil || n <= 0 || uint64(n) > uint64(^uint32(0)) {
 		return 0, false
 	}
-	return core.ShareID(n), true
+	return files.ShareID(n), true
 }
 
-func ownerOf(c *gin.Context) (core.UserID, bool) {
+func ownerOf(c *gin.Context) (files.UserID, bool) {
 	v, ok := c.Get(string(middleware.KeyCredential))
 	p, okp := v.(middleware.Principal)
 	if !ok || !okp || p.UserID == 0 {
 		return 0, false
 	}
-	return core.UserID(p.UserID), true
+	return files.UserID(p.UserID), true
 }
 
 func validSalt(s string) bool {
@@ -145,9 +145,9 @@ func validVerifierShape(decoded []byte) bool {
 func (h *handlers) enableHuma(ctx context.Context, in *enableInput) (*noContentOutput, error) {
 	id, ok := parseShareID(in.ID)
 	if !ok {
-		return nil, humabridge.Failure(ctx, core.ErrNotFound)
+		return nil, humabridge.Failure(ctx, files.ErrNotFound)
 	}
-	if in.Body.Scheme != core.SchemeRcloneCrypt {
+	if in.Body.Scheme != files.SchemeRcloneCrypt {
 		return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Unprocessable, Key: "encryption.invalid_scheme"})
 	}
 	if !validSalt(in.Body.Salt) {
@@ -157,8 +157,8 @@ func (h *handlers) enableHuma(ctx context.Context, in *enableInput) (*noContentO
 	if err != nil || !validVerifierShape(verifier) {
 		return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Unprocessable, Key: "encryption.invalid_verifier"})
 	}
-	if err := h.d.Core.EnableEncryption(ctx, id, core.Encryption{Scheme: in.Body.Scheme, Salt: in.Body.Salt, Verifier: verifier}); err != nil {
-		if errors.Is(err, core.ErrUnprocessable) {
+	if err := h.d.Core.EnableEncryption(ctx, id, files.Encryption{Scheme: in.Body.Scheme, Salt: in.Body.Salt, Verifier: verifier}); err != nil {
+		if errors.Is(err, files.ErrUnprocessable) {
 			return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Unprocessable, Key: "encryption.share_not_empty"})
 		}
 		return nil, humabridge.Failure(ctx, err)
@@ -168,10 +168,10 @@ func (h *handlers) enableHuma(ctx context.Context, in *enableInput) (*noContentO
 func (h *handlers) disableHuma(ctx context.Context, in *shareInput) (*noContentOutput, error) {
 	id, ok := parseShareID(in.ID)
 	if !ok {
-		return nil, humabridge.Failure(ctx, core.ErrNotFound)
+		return nil, humabridge.Failure(ctx, files.ErrNotFound)
 	}
 	if err := h.d.Core.DisableEncryption(ctx, id); err != nil {
-		if errors.Is(err, core.ErrUnprocessable) {
+		if errors.Is(err, files.ErrUnprocessable) {
 			return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Unprocessable, Key: "encryption.share_not_empty"})
 		}
 		return nil, humabridge.Failure(ctx, err)

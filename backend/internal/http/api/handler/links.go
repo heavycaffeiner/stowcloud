@@ -12,7 +12,7 @@ package handler
 import (
 	"strconv"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 )
 
 // LinkView is one share link as its owner reads it.
@@ -84,14 +84,14 @@ type MintedLinkView struct {
 // package cannot reach the core that projects a share-relative path onto a
 // label, and deriving one here from l.Path would reproduce the bug that made
 // every row navigate to the wrong place.
-func LinkOf(l core.Link, vpath string, nowNs int64) LinkView {
+func LinkOf(l files.Link, vpath string, nowNs int64) LinkView {
 	v := LinkView{
 		ID:          strconv.FormatInt(l.ID, 10),
 		Path:        vpath,
 		Share:       strconv.FormatUint(uint64(l.Share), 10),
 		Label:       l.Label,
 		Note:        l.Note,
-		Perms:       core.PermNames(l.Perms),
+		Perms:       files.PermNames(l.Perms),
 		Drop:        l.IsDrop(),
 		HasPassword: l.HasPassword,
 		CreatedNs:   strconv.FormatInt(l.CreatedNs, 10),
@@ -114,10 +114,10 @@ func LinkOf(l core.Link, vpath string, nowNs int64) LinkView {
 // addresses. Supplied by the caller because the projection lives in the core,
 // which this package may not import. An empty answer is a link whose share
 // the owner can no longer reach.
-type VpathOf func(l core.Link) string
+type VpathOf func(l files.Link) string
 
 // LinksOf projects a listing.
-func LinksOf(links []core.Link, vpathOf VpathOf, nowNs int64) []LinkView {
+func LinksOf(links []files.Link, vpathOf VpathOf, nowNs int64) []LinkView {
 	out := make([]LinkView, 0, len(links))
 	for _, l := range links {
 		out = append(out, LinkOf(l, vpathOf(l), nowNs))
@@ -149,7 +149,7 @@ type OwnedLinkView struct {
 // between the two reads is a link that still exists and still has to be
 // visible, since it is still serving whoever holds its URL.
 func OwnedLinksOf(
-	links []core.Link, names map[int64]string, vpathOf VpathOf, nowNs int64,
+	links []files.Link, names map[int64]string, vpathOf VpathOf, nowNs int64,
 ) []OwnedLinkView {
 	out := make([]OwnedLinkView, 0, len(links))
 	for _, l := range links {
@@ -168,7 +168,7 @@ func OwnedLinksOf(
 // case the service reports with a nil token. The caller answers with the
 // listing shape instead of inventing a token or sending an empty one, since an
 // empty string in that field is a token a client would try to use.
-func MintedLinkOf(l core.Link, vpath string, nowNs int64) (MintedLinkView, bool) {
+func MintedLinkOf(l files.Link, vpath string, nowNs int64) (MintedLinkView, bool) {
 	if l.Token == nil {
 		return MintedLinkView{}, false
 	}

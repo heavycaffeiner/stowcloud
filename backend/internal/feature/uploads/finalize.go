@@ -7,8 +7,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	"github.com/stowcloud/transfer"
@@ -22,10 +22,10 @@ import (
 // if cleanup needs retrying, because a filesystem commit cannot be undone and
 // presenting one as a resumable upload whose destination already exists is worse
 // than carrying the debt.
-func (e *Engine) Finalize(ctx context.Context, r core.Resolved, id SessionID) (entry core.Entry, retErr error) {
+func (e *Engine) Finalize(ctx context.Context, r files.Resolved, id SessionID) (entry files.Entry, retErr error) {
 	barrier, generation, owner, werr := e.closeWriters(ctx, id)
 	if werr != nil {
-		return core.Entry{}, werr
+		return files.Entry{}, werr
 	}
 	defer e.finishWriters(id, barrier)
 	completed := false
@@ -39,7 +39,7 @@ func (e *Engine) Finalize(ctx context.Context, r core.Resolved, id SessionID) (e
 	// the merger needs that lock itself, and it must be stopped before the part
 	// file is synced and closed under finalization.
 	if err := e.drainCache(ctx, id); err != nil {
-		return core.Entry{}, err
+		return files.Entry{}, err
 	}
 	unlock := e.lockRow(id)
 	defer unlock()
@@ -53,39 +53,39 @@ func (e *Engine) Finalize(ctx context.Context, r core.Resolved, id SessionID) (e
 // finalize is the shared path both spool modes converge on. The caller holds
 // the row lock and has already closed the writer admission gate.
 func (e *Engine) finalize(
-	ctx context.Context, r core.Resolved, id SessionID,
-) (entry core.Entry, retErr error) {
+	ctx context.Context, r files.Resolved, id SessionID,
+) (entry files.Entry, retErr error) {
 	rw, err := e.load(ctx, id)
 	if err != nil {
-		return core.Entry{}, err
+		return files.Entry{}, err
 	}
 	if oerr := requireOwner(rw, r.User()); oerr != nil {
-		return core.Entry{}, oerr
+		return files.Entry{}, oerr
 	}
 	if perr := r.Require(acl.Write | acl.Create); perr != nil {
-		return core.Entry{}, perr
+		return files.Entry{}, perr
 	}
 	dest, err := rw.dest()
 	if err != nil {
-		return core.Entry{}, err
+		return files.Entry{}, err
 	}
 	// Publication targets the destination the session was created against. A
 	// resolution pointing elsewhere describes a different file, and honouring
 	// it would publish through a permission check performed on another path.
 	if !dest.Equal(r.Path()) {
-		return core.Entry{}, fmt.Errorf("%w: this session publishes to %s",
+		return files.Entry{}, fmt.Errorf("%w: this session publishes to %s",
 			ErrBadRequest, rw.sess.Dest)
 	}
 	if st := e.effectiveState(rw); st != StateReceiving && st != StateFinalizing {
-		return core.Entry{}, ErrSessionState
+		return files.Entry{}, ErrSessionState
 	}
 
 	total, declared := rw.totalLen()
 	if !declared {
-		return core.Entry{}, fmt.Errorf("%w: this session never declared a length", ErrBadRequest)
+		return files.Entry{}, fmt.Errorf("%w: this session never declared a length", ErrBadRequest)
 	}
 	if !rw.set.IsComplete(total) {
-		return core.Entry{}, &IncompleteError{Missing: rw.set.Missing(total)}
+		return files.Entry{}, &IncompleteError{Missing: rw.set.Missing(total)}
 	}
 
 	// A session that is publishing is not receiving, and the sweep leaves a
@@ -93,12 +93,12 @@ func (e *Engine) finalize(
 	// through its own publish. Any pre-publication error restores receiving so
 	// PATCH can repair it and the normal expiry path can reclaim it.
 	if next, terr := transfer.Transition(SessionState(rw.sess.State), transfer.StateFinalizing); terr != nil {
-		return core.Entry{}, fmt.Errorf("%w: %v", ErrSessionState, terr)
+		return files.Entry{}, fmt.Errorf("%w: %v", ErrSessionState, terr)
 	} else {
 		rw.sess.State = int64(next)
 	}
 	if serr := e.save(ctx, rw); serr != nil {
-		return core.Entry{}, serr
+		return files.Entry{}, serr
 	}
 	defer func() {
 		if SessionState(rw.sess.State) != StateFinalizing {
@@ -118,23 +118,23 @@ func (e *Engine) finalize(
 
 	part, err := e.partPathOf(rw)
 	if err != nil {
-		return core.Entry{}, err
+		return files.Entry{}, err
 	}
 	root := r.Root()
 
 	if v := rw.verify(); v != nil {
 		f, herr := e.handleFor(root, id, part)
 		if herr != nil {
-			return core.Entry{}, herr
+			return files.Entry{}, herr
 		}
 		if verr := VerifyWholeFile(f, *v, total); verr != nil {
-			return core.Entry{}, verr
+			return files.Entry{}, verr
 		}
 	}
 
 	entry, err = e.publish(ctx, r, rw, part, total)
 	if err != nil {
-		return core.Entry{}, err
+		return files.Entry{}, err
 	}
 
 	// Mark the row terminal before cleanup. If deletion itself fails, the
@@ -165,19 +165,19 @@ func (e *Engine) finalize(
 // mode and ownership transplant, the quota charge, the cache invalidation and
 // the journal row all match what every other write in the product receives.
 func (e *Engine) publish(
-	ctx context.Context, r core.Resolved, rw *row, part vfs.SafePath, total uint64,
-) (core.Entry, error) {
+	ctx context.Context, r files.Resolved, rw *row, part vfs.SafePath, total uint64,
+) (files.Entry, error) {
 	root := r.Root()
 
 	if err := e.checkIfMatch(root, r.Path(), rw.sess.IfMatch); err != nil {
-		return core.Entry{}, err
+		return files.Entry{}, err
 	}
 	// The descriptor is released before the rename, so nothing relies on the
 	// semantics of renaming a file that remains open. This sync secures the
 	// bytes, while the directory sync performed later by publish is what makes
 	// them findable.
 	if err := e.syncAndClose(root, rw, part); err != nil {
-		return core.Entry{}, err
+		return files.Entry{}, err
 	}
 
 	if rw.sess.MtimeNs != nil {
@@ -223,13 +223,13 @@ func (e *Engine) checkIfMatch(root vfs.Root, dest vfs.SafePath, ifMatch string) 
 	}
 	st, err := root.Stat(dest)
 	if errors.Is(err, vfs.ErrNotFound) {
-		return fmt.Errorf("%w: nothing is at the destination", core.ErrPrecondition)
+		return fmt.Errorf("%w: nothing is at the destination", files.ErrPrecondition)
 	}
 	if err != nil {
 		return mapVFSErr(err)
 	}
-	current, _ := core.FileETag(st)
-	return fmt.Errorf("%w: the destination's current token is %s", core.ErrPrecondition, current)
+	current, _ := files.FileETag(st)
+	return fmt.Errorf("%w: the destination's current token is %s", files.ErrPrecondition, current)
 }
 
 // Assemble finalizes the name-ordered path by merging whatever chunks remain
@@ -240,11 +240,11 @@ func (e *Engine) checkIfMatch(root vfs.Root, dest vfs.SafePath, ifMatch string) 
 // protocol-neutral because this package cannot tell which protocol created the
 // session; only the layer that parsed the header can name it.
 func (e *Engine) Assemble(
-	ctx context.Context, r core.Resolved, id SessionID, total uint64, mtimeNs *int64,
-) (entry core.Entry, retErr error) {
+	ctx context.Context, r files.Resolved, id SessionID, total uint64, mtimeNs *int64,
+) (entry files.Entry, retErr error) {
 	barrier, generation, owner, werr := e.closeWriters(ctx, id)
 	if werr != nil {
-		return core.Entry{}, werr
+		return files.Entry{}, werr
 	}
 	defer e.finishWriters(id, barrier)
 	completed := false
@@ -258,24 +258,24 @@ func (e *Engine) Assemble(
 	defer unlock()
 	rw, err := e.load(ctx, id)
 	if err != nil {
-		return core.Entry{}, err
+		return files.Entry{}, err
 	}
 	if oerr := requireOwner(rw, r.User()); oerr != nil {
-		return core.Entry{}, oerr
+		return files.Entry{}, oerr
 	}
 	if serr := e.requireReceiving(rw); serr != nil {
-		return core.Entry{}, serr
+		return files.Entry{}, serr
 	}
 	if rw.mode() != SpoolNameOrdered {
-		return core.Entry{}, fmt.Errorf("%w: this session is offset-addressed", ErrBadRequest)
+		return files.Entry{}, fmt.Errorf("%w: this session is offset-addressed", ErrBadRequest)
 	}
 	if perr := r.Require(acl.Write | acl.Create); perr != nil {
-		return core.Entry{}, perr
+		return files.Entry{}, perr
 	}
 
 	declared, declaredLen := rw.totalLen()
 	if total != 0 && declaredLen && total != declared {
-		return core.Entry{}, fmt.Errorf("%w: the session declared a length of %d, not %d",
+		return files.Entry{}, fmt.Errorf("%w: the session declared a length of %d, not %d",
 			ErrBadRequest, declared, total)
 	}
 	bound := total
@@ -285,39 +285,39 @@ func (e *Engine) Assemble(
 	if bound > 0 {
 		held, herr := e.namedHeldBytes(r.Root(), rw, 0)
 		if herr != nil {
-			return core.Entry{}, herr
+			return files.Entry{}, herr
 		}
 		if held > bound {
-			return core.Entry{}, fmt.Errorf("%w: named chunks total %d exceeds the declared length of %d",
+			return files.Entry{}, fmt.Errorf("%w: named chunks total %d exceeds the declared length of %d",
 				ErrTooLarge, held, bound)
 		}
 	}
 
 	head, herr := number.Narrow[uint64](rw.sess.WriteHead)
 	if herr != nil {
-		return core.Entry{}, herr
+		return files.Entry{}, herr
 	}
 	if total == 0 && declaredLen {
 		total = declared
 	}
 	if total > 0 && head != total {
 		if head < total {
-			return core.Entry{}, fmt.Errorf("%w: %d of %d bytes assembled",
+			return files.Entry{}, fmt.Errorf("%w: %d of %d bytes assembled",
 				ErrIncomplete, head, total)
 		}
-		return core.Entry{}, fmt.Errorf("%w: %d bytes assembled against a declared total of %d",
+		return files.Entry{}, fmt.Errorf("%w: %d bytes assembled against a declared total of %d",
 			ErrBadRequest, head, total)
 	}
 	if total == 0 {
 		if head == 0 && !declaredLen {
-			return core.Entry{}, fmt.Errorf("%w: no bytes were received", ErrIncomplete)
+			return files.Entry{}, fmt.Errorf("%w: no bytes were received", ErrIncomplete)
 		}
 		total = head
 	}
 
 	declaredValue, nerr := number.Narrow[int64](total)
 	if nerr != nil {
-		return core.Entry{}, nerr
+		return files.Entry{}, nerr
 	}
 	rw.sess.TotalLen = &declaredValue
 	if mtimeNs != nil {
@@ -325,15 +325,15 @@ func (e *Engine) Assemble(
 	}
 	rw.set = FullIntervalSet(total)
 	if serr := e.save(ctx, rw); serr != nil {
-		return core.Entry{}, serr
+		return files.Entry{}, serr
 	}
 	if cerr := e.commitRange(ctx, rw); cerr != nil {
-		return core.Entry{}, cerr
+		return files.Entry{}, cerr
 	}
 
 	entry, retErr = e.finalize(ctx, r, id)
 	if retErr != nil {
-		return core.Entry{}, retErr
+		return files.Entry{}, retErr
 	}
 	completed = true
 

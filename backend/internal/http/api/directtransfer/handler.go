@@ -16,8 +16,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	feature "github.com/heavycaffeiner/stowcloud/backend/internal/feature/directtransfer"
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/objstore"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 )
@@ -29,9 +29,9 @@ type Handler struct {
 
 type Deps struct {
 	State                 *state.DB
-	Owner                 func(*gin.Context) (core.UserID, bool)
-	Resolve               func(core.UserID, string, acl.Perms) (core.Resolved, error)
-	ShareEncrypted        func(context.Context, core.ShareID) (bool, error)
+	Owner                 func(*gin.Context) (files.UserID, bool)
+	Resolve               func(files.UserID, string, acl.Perms) (files.Resolved, error)
+	ShareEncrypted        func(context.Context, files.ShareID) (bool, error)
 	GuardLock             func(context.Context, uint32, string, int64) error
 	ProviderForRow        func(context.Context, state.DirectTransferReservation) (objstore.DirectTransferProvider, bool, error)
 	RevalidateDestination func(context.Context, state.DirectTransferReservation) error
@@ -174,7 +174,7 @@ func (h *Handler) Part(c *gin.Context) {
 		if len(req.Size) > 0 {
 			size, sizeErr := directUint(req.Size)
 			if sizeErr != nil || size != expected {
-				return "", core.ErrUnprocessable
+				return "", files.ErrUnprocessable
 			}
 		}
 		return checksum, nil
@@ -260,9 +260,9 @@ func (h *Handler) writeServiceError(c *gin.Context, err error) {
 		h.d.Refuse(c, apierr.Classified{Class: apierr.Gone, Key: "direct_transfer.expired"})
 	case errors.Is(err, feature.ErrPartsMismatch):
 		h.d.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "direct_transfer.parts_mismatch"})
-	case errors.Is(err, core.ErrUnprocessable):
+	case errors.Is(err, files.ErrUnprocessable):
 		h.d.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
-	case errors.Is(err, core.ErrPrecondition):
+	case errors.Is(err, files.ErrPrecondition):
 		h.d.Refuse(c, apierr.Classified{Class: apierr.Precondition, Key: "fs.precondition_failed"})
 	default:
 		h.d.Fail(c, err)

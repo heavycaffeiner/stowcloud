@@ -12,7 +12,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/ident"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	lock "github.com/heavycaffeiner/stowcloud/backend/internal/feature/dav/lock"
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
 )
 
@@ -62,7 +62,7 @@ func protocolLockError(err error) error {
 	case errors.Is(err, lock.ErrLocked):
 		return ErrLocked
 	case errors.Is(err, lock.ErrNoSuchLock):
-		return core.ErrNotFound
+		return files.ErrNotFound
 	default:
 		return err
 	}

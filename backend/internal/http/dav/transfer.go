@@ -5,7 +5,7 @@ package dav
 import (
 	"net/http"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 )
 
 // COPY and MOVE.
@@ -18,7 +18,7 @@ import (
 type Target struct {
 	// Resolved is the destination, resolved and permission-checked by the
 	// mount exactly as the source was.
-	Resolved core.Resolved
+	Resolved files.Resolved
 	// Overwrite is the header's value. RFC 4918 defaults it to true, so only
 	// an explicit "F" turns it off.
 	Overwrite bool
@@ -31,14 +31,14 @@ type Target struct {
 // socket for minutes is the failure this avoids. A single file is done inline,
 // because that is one read and one durable write and the client would rather
 // have the answer than a job to poll.
-func (h *Handler) Copy(w http.ResponseWriter, r *http.Request, from core.Resolved, to Target) {
+func (h *Handler) Copy(w http.ResponseWriter, r *http.Request, from files.Resolved, to Target) {
 	if err := h.guard(r, to.Resolved); err != nil {
 		h.fail(w, r, err)
 		return
 	}
 	// A destination inside the source never terminates: each pass copies what
 	// the previous one just wrote. RFC 4918 refuses it outright.
-	if err := core.RefuseSelfDescendant(from, to.Resolved); err != nil {
+	if err := files.RefuseSelfDescendant(from, to.Resolved); err != nil {
 		h.fail(w, r, err)
 		return
 	}
@@ -50,7 +50,7 @@ func (h *Handler) Copy(w http.ResponseWriter, r *http.Request, from core.Resolve
 
 	srcSt, serr := from.Root().Stat(from.Path())
 	if serr != nil {
-		h.fail(w, r, core.ErrNotFound)
+		h.fail(w, r, files.ErrNotFound)
 		return
 	}
 
@@ -61,9 +61,9 @@ func (h *Handler) Copy(w http.ResponseWriter, r *http.Request, from core.Resolve
 	// reaches this line, so a delete here would remove a collection the
 	// transfer then declined to replace.
 	if srcSt.Kind.IsDir() {
-		policy := core.ConflictFail
+		policy := files.ConflictFail
 		if to.Overwrite {
-			policy = core.ConflictOverwrite
+			policy = files.ConflictOverwrite
 		}
 		if _, err := h.core.StartCopy(r.Context(), from.User(), from, to.Resolved, policy); err != nil {
 			h.fail(w, r, err)
@@ -84,7 +84,7 @@ func (h *Handler) Copy(w http.ResponseWriter, r *http.Request, from core.Resolve
 }
 
 // copyFile streams one file to a new durable write.
-func (h *Handler) copyFile(r *http.Request, from, to core.Resolved) error {
+func (h *Handler) copyFile(r *http.Request, from, to files.Resolved) error {
 	_, stream, err := h.core.OpenStream(r.Context(), from, nil)
 	if err != nil {
 		return err
@@ -99,7 +99,7 @@ func (h *Handler) copyFile(r *http.Request, from, to core.Resolved) error {
 //
 // Both endpoints are guarded, because a move writes at both: it removes the
 // source and creates the destination, and a lock over either has to refuse.
-func (h *Handler) Move(w http.ResponseWriter, r *http.Request, from core.Resolved, to Target) {
+func (h *Handler) Move(w http.ResponseWriter, r *http.Request, from files.Resolved, to Target) {
 	if err := h.guard(r, from); err != nil {
 		h.fail(w, r, err)
 		return
@@ -111,7 +111,7 @@ func (h *Handler) Move(w http.ResponseWriter, r *http.Request, from core.Resolve
 	// Same reasoning as COPY, and one case more: a move onto itself would
 	// otherwise report success having done nothing, and a move into a
 	// descendant would relocate a tree underneath itself.
-	if err := core.RefuseSelfDescendant(from, to.Resolved); err != nil {
+	if err := files.RefuseSelfDescendant(from, to.Resolved); err != nil {
 		h.fail(w, r, err)
 		return
 	}
@@ -126,7 +126,7 @@ func (h *Handler) Move(w http.ResponseWriter, r *http.Request, from core.Resolve
 	}
 
 	if _, err := h.core.Move(r.Context(), from, to.Resolved,
-		core.MoveOpts{Overwrite: to.Overwrite}); err != nil {
+		files.MoveOpts{Overwrite: to.Overwrite}); err != nil {
 		h.fail(w, r, err)
 		return
 	}

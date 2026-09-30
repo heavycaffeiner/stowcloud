@@ -15,8 +15,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/nextcloud"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/publiclinks"
 )
@@ -58,13 +58,13 @@ func (e *Engine) ncServer() *nc.Server {
 		},
 		OriginAllowed: e.originAllowed,
 		ConsentPage:   nc.ConsentPage(e.csrfKey),
-		Resolve: func(user core.UserID, path string, need acl.Perms) (core.Resolved, error) {
+		Resolve: func(user files.UserID, path string, need acl.Perms) (files.Resolved, error) {
 			return nc.Resolve(e.Core, user, path, need)
 		},
-		VpathOf: func(user core.UserID, share core.ShareID, path string) (string, error) {
+		VpathOf: func(user files.UserID, share files.ShareID, path string) (string, error) {
 			return nc.VpathOf(e.Core, user, share, path)
 		},
-		LocateFile: func(ctx context.Context, user core.UserID, id uint64) (string, error) {
+		LocateFile: func(ctx context.Context, user files.UserID, id uint64) (string, error) {
 			return nc.LocateFile(ctx, e.Core, e.Cache, user, id)
 		},
 		SealClaim: seal, OpenClaim: open,
@@ -78,6 +78,6 @@ func (e *Engine) ncOriginConfig() nc.OriginConfig {
 	return nc.OriginConfig{CanonicalURL: e.compatCanonicalURL(), ContentHosts: h.Content, Trusted: e.trustedProxies()}
 }
 
-func (e *Engine) ncLockGuard(ctx context.Context, res core.Resolved, principal int64) error {
+func (e *Engine) ncLockGuard(ctx context.Context, res files.Resolved, principal int64) error {
 	return e.guardDavLock(ctx, uint32(res.Share()), res.Path().String(), principal)
 }

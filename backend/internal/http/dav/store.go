@@ -8,7 +8,7 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/ident"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 )
 
 // StateProps adapts the durable DAV property rows to the protocol property
@@ -21,7 +21,7 @@ func NewStateProps(db *state.DB) *StateProps { return &StateProps{db: db} }
 
 // EntryKey names a property row by filesystem identity, so properties survive a
 // rename.
-func EntryKey(e core.Entry) ResourceKey { return e.Ident }
+func EntryKey(e files.Entry) ResourceKey { return e.Ident }
 
 func (p *StateProps) Props(ctx context.Context, key ResourceKey) ([]StoredProp, error) {
 	id, ok := key.(ident.Ident)

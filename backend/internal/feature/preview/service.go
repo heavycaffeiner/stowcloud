@@ -11,8 +11,8 @@ import (
 	"sync"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/ident"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
@@ -35,7 +35,7 @@ const (
 
 // Service handles thumbnail requests.
 type Service struct {
-	core  *core.Core
+	core  *files.Core
 	pool  *Pool
 	cache *Cache
 	clk   clock.Clock
@@ -51,7 +51,7 @@ type Service struct {
 
 // ServiceOptions holds the service's configuration.
 type ServiceOptions struct {
-	Core  *core.Core
+	Core  *files.Core
 	Pool  *Pool
 	Cache *Cache
 	Clock clock.Clock
@@ -163,7 +163,7 @@ func (l *Lease) Close() {
 }
 
 // Get produces a thumbnail while holding the lease.
-func (l *Lease) Get(ctx context.Context, r core.Resolved, preset Preset) (Thumb, error) {
+func (l *Lease) Get(ctx context.Context, r files.Resolved, preset Preset) (Thumb, error) {
 	if l == nil || l.s == nil {
 		return Thumb{}, ErrPoolClosed
 	}
@@ -171,7 +171,7 @@ func (l *Lease) Get(ctx context.Context, r core.Resolved, preset Preset) (Thumb,
 }
 
 // GetSized produces an exact-size thumbnail while holding the lease.
-func (l *Lease) GetSized(ctx context.Context, r core.Resolved, width, height int) (Thumb, error) {
+func (l *Lease) GetSized(ctx context.Context, r files.Resolved, width, height int) (Thumb, error) {
 	if l == nil || l.s == nil {
 		return Thumb{}, ErrPoolClosed
 	}
@@ -179,7 +179,7 @@ func (l *Lease) GetSized(ctx context.Context, r core.Resolved, width, height int
 }
 
 // Get produces a thumbnail for a resolved path, preferring the cache.
-func (s *Service) Get(ctx context.Context, r core.Resolved, preset Preset) (Thumb, error) {
+func (s *Service) Get(ctx context.Context, r files.Resolved, preset Preset) (Thumb, error) {
 	s.mu.Lock()
 	closed := s.closed
 	s.mu.Unlock()
@@ -201,7 +201,7 @@ func (s *Service) Get(ctx context.Context, r core.Resolved, preset Preset) (Thum
 // check and the same worker path, and it does not stretch a preset result: a
 // scaled-up thumbnail of a thumbnail is a blurrier answer than the one the
 // caller asked for.
-func (s *Service) GetSized(ctx context.Context, r core.Resolved, width, height int) (Thumb, error) {
+func (s *Service) GetSized(ctx context.Context, r files.Resolved, width, height int) (Thumb, error) {
 	s.mu.Lock()
 	closed := s.closed
 	s.mu.Unlock()
@@ -236,7 +236,7 @@ func presetFor(w, h int) Preset {
 // get is the one request path. sized says the width and height are the
 // caller's own rather than the preset's, which is what puts them in the key.
 func (s *Service) get(
-	ctx context.Context, r core.Resolved, preset Preset, width, height int, sized bool,
+	ctx context.Context, r files.Resolved, preset Preset, width, height int, sized bool,
 ) (Thumb, error) {
 	// The same permission a download requires. A thumbnail derives from the
 	// bytes, so viewing one amounts to viewing the file. Checked ahead of any
@@ -247,7 +247,7 @@ func (s *Service) get(
 
 	st, err := r.Root().Stat(r.Path())
 	if err != nil {
-		return Thumb{}, core.ErrNotFound
+		return Thumb{}, files.ErrNotFound
 	}
 	if st.Kind.IsDir() {
 		return Thumb{}, fmt.Errorf("%w: a directory has no thumbnail", ErrUnsupported)
@@ -285,10 +285,10 @@ func (s *Service) get(
 }
 
 // generate dispatches one job through the pool and stores the outcome.
-func (s *Service) generate(ctx context.Context, r core.Resolved, key Key, preset Preset) error {
+func (s *Service) generate(ctx context.Context, r files.Resolved, key Key, preset Preset) error {
 	in, err := r.Root().OpenRead(r.Path(), vfs.IntentRead)
 	if err != nil {
-		return core.ErrNotFound
+		return files.ErrNotFound
 	}
 	defer func() {
 		//nolint:errcheck // a read descriptor's close has nothing to report to.
@@ -404,7 +404,7 @@ func maxPixelsFor() uint32 {
 // failure here is about the host rather than the request: no worker binary,
 // no room for a cache. Refusing to boot over it would take down a server that
 // can still serve every file it holds.
-func Open(thumbsDir, worker string, c *core.Core, clk clock.Clock, log *slog.Logger) *Service {
+func Open(thumbsDir, worker string, c *files.Core, clk clock.Clock, log *slog.Logger) *Service {
 	opt := PoolOptions{Clock: clk}
 	if worker != "" {
 		// Only the binary. The pool supplies its default argument either way,

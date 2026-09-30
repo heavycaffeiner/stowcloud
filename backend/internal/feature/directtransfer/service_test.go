@@ -14,7 +14,7 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/dbfile"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/objstore"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 )
@@ -183,7 +183,7 @@ func TestCompleteRejectsDuplicatePartBeforeLeavingPending(t *testing.T) {
 			{Number: 1, ETag: "etag-1", Size: 32},
 			{Number: 1, ETag: "etag-1", Size: 32},
 		}, nil
-	}); !errors.Is(err, core.ErrUnprocessable) {
+	}); !errors.Is(err, files.ErrUnprocessable) {
 		t.Fatalf("duplicate Complete error = %v, want ErrUnprocessable", err)
 	}
 	got, err := d.GetDirectTransfer(ctx, row.ID)

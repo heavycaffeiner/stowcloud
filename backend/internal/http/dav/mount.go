@@ -14,8 +14,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
@@ -27,7 +27,7 @@ const DavPrefix = "/dav"
 
 // Deps supplies the narrow application dependencies needed by the mount.
 type Deps struct {
-	Core            *core.Core
+	Core            *files.Core
 	State           *state.DB
 	Locks           *StateLocks
 	Props           Store
@@ -83,7 +83,7 @@ func NewMount(d Deps) http.Handler {
 			apierr.WriteClassified(w, apierr.Classified{Class: apierr.AuthRequired})
 			return
 		}
-		user := core.UserID(principal.UserID)
+		user := files.UserID(principal.UserID)
 		r = r.WithContext(context.WithValue(r.Context(), davContextKey{}, path))
 		if IsRoot(path) {
 			if r.Method == "PROPFIND" {
@@ -171,14 +171,14 @@ func principalOf(r *http.Request) (middleware.Principal, bool) {
 	return p, true
 }
 
-func resolve(c *core.Core, r *http.Request, user core.UserID, urlPath string, want acl.Perms) (core.Resolved, error) {
+func resolve(c *files.Core, r *http.Request, user files.UserID, urlPath string, want acl.Perms) (files.Resolved, error) {
 	parts, err := SplitPath(strings.TrimPrefix(urlPath, DavPrefix))
 	if err != nil {
-		return core.Resolved{}, apierr.BadRequest("dav.bad_path", "path")
+		return files.Resolved{}, apierr.BadRequest("dav.bad_path", "path")
 	}
 	vp, perr := vfs.ParseVpath(strings.Join(parts, "/"))
 	if perr != nil {
-		return core.Resolved{}, core.ErrNotFound
+		return files.Resolved{}, files.ErrNotFound
 	}
 	res, rerr := c.Resolve(user, vp, want)
 	if rerr != nil {
@@ -194,20 +194,20 @@ func resolve(c *core.Core, r *http.Request, user core.UserID, urlPath string, wa
 				}
 			}
 			if !allowed {
-				return core.Resolved{}, core.ErrNotFound
+				return files.Resolved{}, files.ErrNotFound
 			}
 		}
 		if !p.Mask.IsEmpty() {
 			res = res.WithMask(p.Mask)
 			if !res.Has(want) {
-				return core.Resolved{}, core.ErrDenied
+				return files.Resolved{}, files.ErrDenied
 			}
 		}
 	}
 	return res, nil
 }
 
-func destination(c *core.Core, r *http.Request, user core.UserID) (Target, error) {
+func destination(c *files.Core, r *http.Request, user files.UserID) (Target, error) {
 	segments, err := ParseDestination(r.Header.Get("Destination"), r.Host)
 	switch {
 	case errors.Is(err, ErrNoDestination):
@@ -225,8 +225,8 @@ func destination(c *core.Core, r *http.Request, user core.UserID) (Target, error
 	return Target{Resolved: res, Overwrite: Overwrite(r.Header.Get("Overwrite"))}, nil
 }
 
-func rootProps(c *core.Core, p middleware.Principal) ([]Prop, []RootChild) {
-	roots := c.Roots(core.UserID(p.UserID))
+func rootProps(c *files.Core, p middleware.Principal) ([]Prop, []RootChild) {
+	roots := c.Roots(files.UserID(p.UserID))
 	children := make([]RootChild, 0, len(roots))
 	for _, rt := range roots {
 		if !rootVisible(p, rt) {

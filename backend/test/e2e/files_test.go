@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 )
 
@@ -187,7 +187,7 @@ func engineWithShare(t *testing.T) (base string, sess session, share string) {
 		t.Fatalf("writing a file: %v", werr)
 	}
 
-	sh, err := e.Core.CreateShare(ctx, core.ShareSpec{Name: "docs", Host: host})
+	sh, err := e.Core.CreateShare(ctx, files.ShareSpec{Name: "docs", Host: host})
 	if err != nil {
 		t.Fatalf("creating the share: %v", err)
 	}
@@ -198,7 +198,7 @@ func engineWithShare(t *testing.T) (base string, sess session, share string) {
 	if ierr != nil {
 		t.Fatalf("reading the account id: %v", ierr)
 	}
-	if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
+	if _, gerr := e.Core.CreateGrant(ctx, files.GrantSpec{
 		User: &id, Share: sh.ID, Allow: acl.Read | acl.Download,
 		Inherit: true, Label: sh.Name,
 	}); gerr != nil {
@@ -438,11 +438,11 @@ func engineWithManyFiles(t *testing.T) (base string, sess session, share string)
 		}
 	}
 
-	sh, err := e.Core.CreateShare(ctx, core.ShareSpec{Name: "docs", Host: host})
+	sh, err := e.Core.CreateShare(ctx, files.ShareSpec{Name: "docs", Host: host})
 	if err != nil {
 		t.Fatalf("creating the share: %v", err)
 	}
-	if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
+	if _, gerr := e.Core.CreateGrant(ctx, files.GrantSpec{
 		User: &id, Share: sh.ID, Allow: acl.Read | acl.Download,
 		Inherit: true, Label: sh.Name,
 	}); gerr != nil {
@@ -546,7 +546,7 @@ func TestAShareGrantedWithoutReadIsNotReadable(t *testing.T) {
 		t.Fatal(werr)
 	}
 
-	sh, err := e.Core.CreateShare(ctx, core.ShareSpec{Name: "dropbox", Host: host})
+	sh, err := e.Core.CreateShare(ctx, files.ShareSpec{Name: "dropbox", Host: host})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -554,7 +554,7 @@ func TestAShareGrantedWithoutReadIsNotReadable(t *testing.T) {
 	// A drop box: the account may add files and may not read what is there.
 	// The grant is real, so the share exists for this account; only the bit
 	// the route needs is missing.
-	if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
+	if _, gerr := e.Core.CreateGrant(ctx, files.GrantSpec{
 		User: &id, Share: sh.ID, Allow: acl.Read | acl.Create, Deny: acl.Read,
 		Inherit: true, Label: sh.Name,
 	}); gerr != nil {

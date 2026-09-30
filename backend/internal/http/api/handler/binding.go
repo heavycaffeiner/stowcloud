@@ -10,20 +10,20 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
 )
 
 // Owner reads the principal already selected by the middleware chain.
-func Owner(c *gin.Context) (core.UserID, bool) {
+func Owner(c *gin.Context) (files.UserID, bool) {
 	v, exists := c.Get(string(middleware.KeyCredential))
 	principal, ok := v.(middleware.Principal)
 	if !exists || !ok || principal.UserID == 0 {
 		return 0, false
 	}
-	return core.UserID(principal.UserID), true
+	return files.UserID(principal.UserID), true
 }
 
 // Fail sends a classified service error and preserves retry advice.
@@ -36,7 +36,7 @@ func Fail(c *gin.Context, err error) {
 	Refuse(c, apierr.Classify(err, apierr.VisibilityKnown))
 }
 
-func NotFound(c *gin.Context) { Fail(c, core.ErrNotFound) }
+func NotFound(c *gin.Context) { Fail(c, files.ErrNotFound) }
 
 func Refuse(c *gin.Context, class apierr.Classified) {
 	status, body := apierr.REST(class)

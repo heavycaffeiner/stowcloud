@@ -21,9 +21,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	featurepreview "github.com/heavycaffeiner/stowcloud/backend/internal/feature/preview"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/objstore"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
@@ -39,15 +39,15 @@ import (
 // Callbacks keep application policy such as identity, path parsing, claims,
 // and error projection outside this transport package.
 type Deps struct {
-	Core           *core.Core
-	Refs           func(core.UserID) func(core.Entry, string) handler.EntryRefs
+	Core           *files.Core
+	Refs           func(files.UserID) func(files.Entry, string) handler.EntryRefs
 	Archives       *archive.Tickets
 	Gate           *ArchiveGate
-	Owner          func(*gin.Context) (core.UserID, bool)
-	Resolve        func(core.UserID, string, acl.Perms) (core.Resolved, error)
-	OpenClaim      func(*gin.Context, handler.ClaimPurpose, core.UserID) (handler.Claim, bool)
-	EntryView      func(core.UserID, core.Resolved, core.Entry) handler.EntryView
-	Vpath          func(core.UserID, core.Resolved, core.Entry) string
+	Owner          func(*gin.Context) (files.UserID, bool)
+	Resolve        func(files.UserID, string, acl.Perms) (files.Resolved, error)
+	OpenClaim      func(*gin.Context, handler.ClaimPurpose, files.UserID) (handler.Claim, bool)
+	EntryView      func(files.UserID, files.Resolved, files.Entry) handler.EntryView
+	Vpath          func(files.UserID, files.Resolved, files.Entry) string
 	Fail           func(*gin.Context, error)
 	Refuse         func(*gin.Context, apierr.Classified)
 	NotFound       func(*gin.Context)
@@ -86,7 +86,7 @@ func NewHandler(d Deps) *Handler {
 	return &Handler{d: d}
 }
 
-func (h *Handler) owner(c *gin.Context) (core.UserID, bool) {
+func (h *Handler) owner(c *gin.Context) (files.UserID, bool) {
 	if h.d.Owner == nil {
 		return 0, false
 	}
@@ -117,9 +117,9 @@ func (h *Handler) notFound(c *gin.Context) {
 	h.refuse(c, apierr.Classified{Class: apierr.NotFound})
 }
 
-func (h *Handler) resolve(owner core.UserID, raw string, need acl.Perms) (core.Resolved, error) {
+func (h *Handler) resolve(owner files.UserID, raw string, need acl.Perms) (files.Resolved, error) {
 	if h.d.Resolve == nil {
-		return core.Resolved{}, core.ErrNotFound
+		return files.Resolved{}, files.ErrNotFound
 	}
 	return h.d.Resolve(owner, raw, need)
 }
@@ -157,12 +157,12 @@ func (h *Handler) List(c *gin.Context) {
 	if parseErr != nil {
 		limit = 0
 	}
-	page, err := h.d.Core.ListSorted(c.Request.Context(), r, core.Cursor(c.Query("cursor")), core.ListOptions{Sort: core.ParseSortKey(c.Query("sort")), Desc: c.Query("order") == "desc", Limit: limit})
+	page, err := h.d.Core.ListSorted(c.Request.Context(), r, files.Cursor(c.Query("cursor")), files.ListOptions{Sort: files.ParseSortKey(c.Query("sort")), Desc: c.Query("order") == "desc", Limit: limit})
 	if err != nil {
 		h.fail(c, err)
 		return
 	}
-	writeJSON(c, http.StatusOK, handler.PageOf(page, func(entry core.Entry) string { return h.d.Vpath(owner, r, entry) }, h.d.Refs(owner)))
+	writeJSON(c, http.StatusOK, handler.PageOf(page, func(entry files.Entry) string { return h.d.Vpath(owner, r, entry) }, h.d.Refs(owner)))
 }
 
 // Stat serves one permission-checked entry and its content references.
@@ -211,7 +211,7 @@ func (h *Handler) Read(c *gin.Context) {
 
 // StreamFile serves one resolved file. It is exported for public-link transport
 // adapters, which use the same range, ETag, CSP, and partial-stream semantics.
-func (h *Handler) StreamFile(c *gin.Context, r core.Resolved, attachAs string) {
+func (h *Handler) StreamFile(c *gin.Context, r files.Resolved, attachAs string) {
 	entry, stream, err := h.d.Core.OpenStream(c.Request.Context(), r, nil)
 	if err != nil {
 		h.fail(c, err)
@@ -220,7 +220,7 @@ func (h *Handler) StreamFile(c *gin.Context, r core.Resolved, attachAs string) {
 	size, nerr := num.Narrow[int64](entry.Size)
 	if nerr != nil {
 		h.closeStream(stream, entry.Name)
-		h.fail(c, core.ErrNotFound)
+		h.fail(c, files.ErrNotFound)
 		return
 	}
 	rng, ranged, rerr := handler.ParseRange(c.GetHeader("Range"), size)
@@ -239,7 +239,7 @@ func (h *Handler) StreamFile(c *gin.Context, r core.Resolved, attachAs string) {
 		start, serr := num.Narrow[uint64](rng.Start)
 		last, lerr := num.Narrow[uint64](rng.End - 1)
 		if serr != nil || lerr != nil {
-			h.fail(c, core.ErrNotFound)
+			h.fail(c, files.ErrNotFound)
 			return
 		}
 		entry, stream, err = h.d.Core.OpenStream(c.Request.Context(), r, &[2]uint64{start, last})
@@ -253,7 +253,7 @@ func (h *Handler) StreamFile(c *gin.Context, r core.Resolved, attachAs string) {
 
 // SendStream writes an already-open stream with all byte-serving headers.
 // The stream is always closed and read failures after commitment are logged.
-func (h *Handler) SendStream(c *gin.Context, entry core.FidEntry, stream *core.Stream, ranged bool, rng handler.ByteRange, size int64, attachAs string) {
+func (h *Handler) SendStream(c *gin.Context, entry files.FidEntry, stream *files.Stream, ranged bool, rng handler.ByteRange, size int64, attachAs string) {
 	length, lerr := num.Narrow[int64](stream.Remaining())
 	if lerr != nil {
 		h.closeStream(stream, entry.Name)
@@ -290,7 +290,7 @@ func (h *Handler) SendStream(c *gin.Context, entry core.FidEntry, stream *core.S
 }
 
 // ETagHeader formats a file validator with its weak marker.
-func ETagHeader(entry core.FidEntry) string {
+func ETagHeader(entry files.FidEntry) string {
 	if entry.ETagWeak {
 		return `W/"` + entry.ETag + `"`
 	}
@@ -306,7 +306,7 @@ func mimeType(name string) string {
 }
 
 type loggedStream struct {
-	inner  *core.Stream
+	inner  *files.Stream
 	name   string
 	logger *slog.Logger
 }
@@ -320,7 +320,7 @@ func (s *loggedStream) Read(p []byte) (int, error) {
 }
 func (s *loggedStream) Close() error { return s.inner.Close() }
 
-func (h *Handler) closeStream(stream *core.Stream, name string) {
+func (h *Handler) closeStream(stream *files.Stream, name string) {
 	if stream == nil {
 		return
 	}
@@ -350,7 +350,7 @@ func (h *Handler) Download(c *gin.Context) {
 	}
 	st, err := r.Root().Stat(r.Path())
 	if err != nil {
-		h.fail(c, core.ErrNotFound)
+		h.fail(c, files.ErrNotFound)
 		return
 	}
 	if st.Kind.IsDir() {
@@ -480,7 +480,7 @@ func (h *Handler) ArchiveFetch(c *gin.Context) {
 		h.refuse(c, apierr.Classified{Class: apierr.NotFound})
 		return
 	}
-	roots := make([]core.Resolved, 0, len(ticket.Paths))
+	roots := make([]files.Resolved, 0, len(ticket.Paths))
 	for _, path := range ticket.Paths {
 		resolved, err := h.resolve(owner, path, acl.Read|acl.Download)
 		if err != nil {
@@ -691,7 +691,7 @@ func (h *Handler) Write(c *gin.Context) {
 	writeJSON(c, http.StatusOK, h.d.EntryView(owner, r, entry))
 }
 
-func ifMatchOf(c *gin.Context) *core.Token {
+func ifMatchOf(c *gin.Context) *files.Token {
 	raw := strings.TrimSpace(c.GetHeader("If-Match"))
 	if raw == "" {
 		return nil
@@ -701,7 +701,7 @@ func ifMatchOf(c *gin.Context) *core.Token {
 	if raw == "" {
 		return nil
 	}
-	token := core.Token(raw)
+	token := files.Token(raw)
 	return &token
 }
 
@@ -711,11 +711,11 @@ type transferRequest struct {
 	OnConflict string `json:"on_conflict"`
 }
 
-func (t transferRequest) policy() (core.OnConflict, bool) {
+func (t transferRequest) policy() (files.OnConflict, bool) {
 	if t.OnConflict == "" {
-		return core.ConflictFail, true
+		return files.ConflictFail, true
 	}
-	return core.ParseOnConflict(t.OnConflict)
+	return files.ParseOnConflict(t.OnConflict)
 }
 
 // Move relocates an entry.
@@ -734,7 +734,7 @@ func (h *Handler) Move(c *gin.Context) {
 		h.refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
 	}
-	result, err := h.d.Core.Move(c.Request.Context(), from, to, core.MoveOpts{OnConflict: policy})
+	result, err := h.d.Core.Move(c.Request.Context(), from, to, files.MoveOpts{OnConflict: policy})
 	if err != nil {
 		h.fail(c, err)
 		return
@@ -770,7 +770,7 @@ func (h *Handler) Copy(c *gin.Context) {
 	writeJSON(c, http.StatusAccepted, handler.CopyStartOf(start))
 }
 
-func (h *Handler) transferEnds(c *gin.Context, owner core.UserID, sourceNeed acl.Perms) (req transferRequest, from, to core.Resolved, ok bool) {
+func (h *Handler) transferEnds(c *gin.Context, owner files.UserID, sourceNeed acl.Perms) (req transferRequest, from, to files.Resolved, ok bool) {
 	if err := h.decode(c, &req); err != nil {
 		h.refuse(c, apierr.Classified{Class: apierr.Malformed})
 		return req, from, to, false
@@ -778,30 +778,30 @@ func (h *Handler) transferEnds(c *gin.Context, owner core.UserID, sourceNeed acl
 	from, err := h.resolve(owner, req.From, sourceNeed)
 	if err != nil {
 		h.fail(c, err)
-		return req, core.Resolved{}, core.Resolved{}, false
+		return req, files.Resolved{}, files.Resolved{}, false
 	}
 	to, err = h.resolveDest(owner, req.To)
 	if err != nil {
 		h.fail(c, err)
-		return req, core.Resolved{}, core.Resolved{}, false
+		return req, files.Resolved{}, files.Resolved{}, false
 	}
 	return req, from, to, true
 }
-func (h *Handler) resolveDest(owner core.UserID, raw string) (core.Resolved, error) {
+func (h *Handler) resolveDest(owner files.UserID, raw string) (files.Resolved, error) {
 	if r, err := h.resolve(owner, raw, acl.Write|acl.Create); err == nil {
 		return r, nil
 	}
 	parent, name, ok := splitDest(raw)
 	if !ok {
-		return core.Resolved{}, core.ErrNotFound
+		return files.Resolved{}, files.ErrNotFound
 	}
 	pr, err := h.resolve(owner, parent, acl.Write|acl.Create)
 	if err != nil {
-		return core.Resolved{}, err
+		return files.Resolved{}, err
 	}
 	leaf, err := pr.Path().Join(name)
 	if err != nil {
-		return core.Resolved{}, core.ErrNotFound
+		return files.Resolved{}, files.ErrNotFound
 	}
 	return h.d.Core.ResolveUnder(pr, leaf, acl.Write|acl.Create)
 }
@@ -853,7 +853,7 @@ func (h *Handler) Recent(c *gin.Context) {
 	if err != nil {
 		limit = 0
 	}
-	hits, err := h.d.Core.Recent(c.Request.Context(), owner, core.RecentQuery{SinceNs: core.RecentSinceOf(since, h.d.Now()), Limit: core.RecentLimitOf(limit), Scope: c.Query("path")})
+	hits, err := h.d.Core.Recent(c.Request.Context(), owner, files.RecentQuery{SinceNs: files.RecentSinceOf(since, h.d.Now()), Limit: files.RecentLimitOf(limit), Scope: c.Query("path")})
 	if err != nil {
 		h.fail(c, err)
 		return

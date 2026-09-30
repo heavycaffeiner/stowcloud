@@ -12,7 +12,7 @@ import (
 	"time"
 
 	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 )
 
 // A section saves and the document reports it back.
@@ -437,11 +437,11 @@ func TestTheActiveWorkCountsAreReal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sh, err := e.Core.CreateShare(ctx, core.ShareSpec{Name: "docs", Host: host})
+	sh, err := e.Core.CreateShare(ctx, files.ShareSpec{Name: "docs", Host: host})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
+	if _, gerr := e.Core.CreateGrant(ctx, files.GrantSpec{
 		User: &admin, Share: sh.ID, Allow: everyPerm(), Inherit: true, Label: sh.Name,
 	}); gerr != nil {
 		t.Fatal(gerr)

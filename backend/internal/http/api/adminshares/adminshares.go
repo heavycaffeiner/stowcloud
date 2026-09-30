@@ -14,8 +14,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/objstore"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vault"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
@@ -29,10 +29,10 @@ import (
 // Deps supplies the narrow product services used by administrator share and
 // grant routes. Runtime hooks are post-commit side effects of registration.
 type Deps struct {
-	Core                 *core.Core
+	Core                 *files.Core
 	MarkSearchIncomplete func()
-	WatchShare           func(core.ShareDef)
-	UnwatchShare         func(core.ShareDef)
+	WatchShare           func(files.ShareDef)
+	UnwatchShare         func(files.ShareDef)
 	Logger               *slog.Logger
 }
 
@@ -124,7 +124,7 @@ type noContentOutput struct {
 	Status int `status:"204"`
 }
 
-func humaShareID(raw string) (core.ShareID, bool) {
+func humaShareID(raw string) (files.ShareID, bool) {
 	n, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil || n <= 0 {
 		return 0, false
@@ -133,7 +133,7 @@ func humaShareID(raw string) (core.ShareID, bool) {
 	if err != nil {
 		return 0, false
 	}
-	return core.ShareID(narrowed), true
+	return files.ShareID(narrowed), true
 }
 
 func humaGrantID(raw string) (int64, bool) {
@@ -152,7 +152,7 @@ func (h *handlers) adminUser(ctx context.Context) (int64, error) {
 }
 
 func (h *handlers) sharesListHuma(ctx context.Context, _ *sharesListInput) (*sharesListOutput, error) {
-	empty := func(id core.ShareID) bool { return h.d.Core.ShareEmpty(ctx, id) }
+	empty := func(id files.ShareID) bool { return h.d.Core.ShareEmpty(ctx, id) }
 	return &sharesListOutput{Body: handler.SharesOf(h.d.Core.Shares(), empty)}, nil
 }
 
@@ -167,7 +167,7 @@ func (h *handlers) sharesCreateHuma(ctx context.Context, in *sharesCreateInput) 
 	}
 	share, err := h.d.Core.CreateShare(ctx, spec)
 	if err != nil {
-		if errors.Is(err, core.ErrUnprocessable) {
+		if errors.Is(err, files.ErrUnprocessable) {
 			return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Unprocessable, Key: "admin.share_backend_unknown"})
 		}
 		return nil, humabridge.Failure(ctx, err)
@@ -187,8 +187,8 @@ func (h *handlers) sharesCreateHuma(ctx context.Context, in *sharesCreateInput) 
 	return &shareCreatedOutput{Body: handler.ShareOf(share), Status: http.StatusCreated}, nil
 }
 
-func (h *handlers) grantShareToContext(ctx context.Context, user int64, share core.ShareDef) error {
-	_, err := h.d.Core.CreateGrant(ctx, core.GrantSpec{
+func (h *handlers) grantShareToContext(ctx context.Context, user int64, share files.ShareDef) error {
+	_, err := h.d.Core.CreateGrant(ctx, files.GrantSpec{
 		User: &user, Share: share.ID,
 		Allow:   acl.Read | acl.Write | acl.Create | acl.Delete | acl.Rename | acl.Move | acl.Share | acl.Download,
 		Inherit: true, Label: share.Name,
@@ -199,17 +199,17 @@ func (h *handlers) grantShareToContext(ctx context.Context, user int64, share co
 func (h *handlers) sharesUpdateHuma(ctx context.Context, in *shareUpdateInput) (*shareOutput, error) {
 	id, ok := humaShareID(in.ID)
 	if !ok {
-		return nil, humabridge.Failure(ctx, core.ErrNotFound)
+		return nil, humabridge.Failure(ctx, files.ErrNotFound)
 	}
 	req := in.Body
 	if req.Name == nil && req.Host == nil && req.TrashEnabled == nil && req.Backend == nil && req.S3 == nil && req.Veracrypt == nil {
 		return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Malformed})
 	}
-	patch := core.SharePatch{Name: req.Name, Host: req.Host, TrashEnabled: req.TrashEnabled, Backend: req.Backend}
+	patch := files.SharePatch{Name: req.Name, Host: req.Host, TrashEnabled: req.TrashEnabled, Backend: req.Backend}
 	if req.S3 != nil || req.Veracrypt != nil {
 		current, found := h.d.Core.Share(id)
 		if !found {
-			return nil, humabridge.Failure(ctx, core.ErrNotFound)
+			return nil, humabridge.Failure(ctx, files.ErrNotFound)
 		}
 		if err := applyShareBackendPatch(&patch, current, req.S3, req.Veracrypt); err != nil {
 			return nil, humabridge.Failure(ctx, err)
@@ -217,7 +217,7 @@ func (h *handlers) sharesUpdateHuma(ctx context.Context, in *shareUpdateInput) (
 	}
 	share, err := h.d.Core.UpdateShare(ctx, id, patch)
 	if err != nil {
-		if errors.Is(err, core.ErrUnprocessable) {
+		if errors.Is(err, files.ErrUnprocessable) {
 			return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Unprocessable, Key: "admin.share_backend_immutable"})
 		}
 		return nil, humabridge.Failure(ctx, err)
@@ -234,7 +234,7 @@ func (h *handlers) sharesUpdateHuma(ctx context.Context, in *shareUpdateInput) (
 func (h *handlers) sharesRetryHuma(ctx context.Context, in *sharePathInput) (*shareOutput, error) {
 	id, ok := humaShareID(in.ID)
 	if !ok {
-		return nil, humabridge.Failure(ctx, core.ErrNotFound)
+		return nil, humabridge.Failure(ctx, files.ErrNotFound)
 	}
 	share, err := h.d.Core.RetryShare(ctx, id)
 	if err != nil {
@@ -246,11 +246,11 @@ func (h *handlers) sharesRetryHuma(ctx context.Context, in *sharePathInput) (*sh
 func (h *handlers) sharesDeleteHuma(ctx context.Context, in *sharePathInput) (*noContentOutput, error) {
 	id, ok := humaShareID(in.ID)
 	if !ok {
-		return nil, humabridge.Failure(ctx, core.ErrNotFound)
+		return nil, humabridge.Failure(ctx, files.ErrNotFound)
 	}
 	share, found := h.d.Core.Share(id)
 	if !found {
-		return nil, humabridge.Failure(ctx, core.ErrNotFound)
+		return nil, humabridge.Failure(ctx, files.ErrNotFound)
 	}
 	if err := h.d.Core.DeleteShare(ctx, id); err != nil {
 		return nil, humabridge.Failure(ctx, err)
@@ -262,7 +262,7 @@ func (h *handlers) sharesDeleteHuma(ctx context.Context, in *sharePathInput) (*n
 }
 
 func (h *handlers) grantsListHuma(ctx context.Context, in *grantsListInput) (*grantsListOutput, error) {
-	rows, err := h.d.Core.ListGrants(ctx, core.GrantFilter{
+	rows, err := h.d.Core.ListGrants(ctx, files.GrantFilter{
 		User: queryInt(in.User), Group: queryInt(in.Group), Share: queryInt(in.Share),
 	})
 	if err != nil {
@@ -291,7 +291,7 @@ func (h *handlers) grantsCreateHuma(ctx context.Context, in *grantCreateInput) (
 func (h *handlers) grantsUpdateHuma(ctx context.Context, in *grantUpdateInput) (*grantOutput, error) {
 	id, ok := humaGrantID(in.ID)
 	if !ok {
-		return nil, humabridge.Failure(ctx, core.ErrNotFound)
+		return nil, humabridge.Failure(ctx, files.ErrNotFound)
 	}
 	allow, ok := permsOf(in.Body.Allow)
 	if !ok {
@@ -311,7 +311,7 @@ func (h *handlers) grantsUpdateHuma(ctx context.Context, in *grantUpdateInput) (
 func (h *handlers) grantsDeleteHuma(ctx context.Context, in *grantPathInput) (*noContentOutput, error) {
 	id, ok := humaGrantID(in.ID)
 	if !ok {
-		return nil, humabridge.Failure(ctx, core.ErrNotFound)
+		return nil, humabridge.Failure(ctx, files.ErrNotFound)
 	}
 	if err := h.d.Core.DeleteGrant(ctx, id); err != nil {
 		return nil, humabridge.Failure(ctx, err)
@@ -389,51 +389,51 @@ func unprocessable(key string) error {
 // for which backend fields may even be present. An s3 object naming a
 // local share, or a veracrypt object with no password, refuses the whole
 // request rather than storing a share that cannot serve.
-func shareSpecOf(req createShareRequest) (core.ShareSpec, error) {
-	backend, berr := core.ParseBackend(req.Backend)
+func shareSpecOf(req createShareRequest) (files.ShareSpec, error) {
+	backend, berr := files.ParseBackend(req.Backend)
 	if berr != nil {
-		return core.ShareSpec{}, unprocessable("admin.share_backend_unknown")
+		return files.ShareSpec{}, unprocessable("admin.share_backend_unknown")
 	}
-	spec := core.ShareSpec{Name: req.Name, Backend: backend}
+	spec := files.ShareSpec{Name: req.Name, Backend: backend}
 	switch backend {
-	case core.BackendLocal:
+	case files.BackendLocal:
 		if req.S3 != nil || req.Veracrypt != nil {
-			return core.ShareSpec{}, unprocessable("admin.share_backend_extra_config")
+			return files.ShareSpec{}, unprocessable("admin.share_backend_extra_config")
 		}
 		if req.Host == "" {
-			return core.ShareSpec{}, unprocessable("admin.share_host_required")
+			return files.ShareSpec{}, unprocessable("admin.share_host_required")
 		}
 		spec.Host = req.Host
-	case core.BackendS3:
+	case files.BackendS3:
 		if req.Veracrypt != nil || req.Host != "" {
-			return core.ShareSpec{}, unprocessable("admin.share_backend_extra_config")
+			return files.ShareSpec{}, unprocessable("admin.share_backend_extra_config")
 		}
 		if req.S3 == nil {
-			return core.ShareSpec{}, unprocessable("admin.share_backend_config_missing")
+			return files.ShareSpec{}, unprocessable("admin.share_backend_config_missing")
 		}
 		cfg, plain, cerr := s3ConfigForCreate(req.S3)
 		if cerr != nil {
-			return core.ShareSpec{}, cerr
+			return files.ShareSpec{}, cerr
 		}
 		configBytes, secretVal, merr := marshalAndSealS3(cfg, plain)
 		if merr != nil {
-			return core.ShareSpec{}, merr
+			return files.ShareSpec{}, merr
 		}
 		spec.Config, spec.Secret = configBytes, secretVal
-	case core.BackendVeracrypt:
+	case files.BackendVeracrypt:
 		if req.S3 != nil || req.Host != "" {
-			return core.ShareSpec{}, unprocessable("admin.share_backend_extra_config")
+			return files.ShareSpec{}, unprocessable("admin.share_backend_extra_config")
 		}
 		if req.Veracrypt == nil {
-			return core.ShareSpec{}, unprocessable("admin.share_backend_config_missing")
+			return files.ShareSpec{}, unprocessable("admin.share_backend_config_missing")
 		}
 		cfg, plain, cerr := vaultConfigForCreate(req.Veracrypt)
 		if cerr != nil {
-			return core.ShareSpec{}, cerr
+			return files.ShareSpec{}, cerr
 		}
 		configBytes, secretVal, merr := marshalAndSealVault(cfg, plain)
 		if merr != nil {
-			return core.ShareSpec{}, merr
+			return files.ShareSpec{}, merr
 		}
 		spec.Config, spec.Secret = configBytes, secretVal
 	}
@@ -560,18 +560,18 @@ type updateShareRequest struct {
 // so a patch that touches one field of an s3 share does not have to
 // repeat every other one.
 func applyShareBackendPatch(
-	patch *core.SharePatch, current core.ShareDef, s3 *shareS3Request, vc *shareVeracryptRequest,
+	patch *files.SharePatch, current files.ShareDef, s3 *shareS3Request, vc *shareVeracryptRequest,
 ) error {
 	switch {
-	case s3 != nil && current.Backend != core.BackendS3,
-		vc != nil && current.Backend != core.BackendVeracrypt:
+	case s3 != nil && current.Backend != files.BackendS3,
+		vc != nil && current.Backend != files.BackendVeracrypt:
 		return unprocessable("admin.share_backend_extra_config")
 	case s3 == nil && vc == nil:
 		return nil
 	}
 
 	switch current.Backend {
-	case core.BackendS3:
+	case files.BackendS3:
 		cfg, perr := objstore.ParseConfig(current.Config)
 		if perr != nil {
 			return perr
@@ -588,7 +588,7 @@ func applyShareBackendPatch(
 		if plain != "" {
 			patch.Secret = &sec
 		}
-	case core.BackendVeracrypt:
+	case files.BackendVeracrypt:
 		cfg, perr := vault.ParseConfig(current.Config)
 		if perr != nil {
 			return perr
@@ -689,14 +689,14 @@ type grantRequest struct {
 // honoured, because each of them means the same thing to the caller: this
 // grant was not stored. What must not happen is storing a different grant
 // from the one described.
-func grantSpecOf(req grantRequest) (core.GrantSpec, bool) {
+func grantSpecOf(req grantRequest) (files.GrantSpec, bool) {
 	share, err := strconv.ParseUint(req.Share, 10, 32)
 	if err != nil || share == 0 {
-		return core.GrantSpec{}, false
+		return files.GrantSpec{}, false
 	}
 
-	spec := core.GrantSpec{
-		Share:   core.ShareID(share),
+	spec := files.GrantSpec{
+		Share:   files.ShareID(share),
 		Subpath: req.Subpath,
 		Inherit: req.Inherit,
 		Label:   req.Label,
@@ -712,30 +712,30 @@ func grantSpecOf(req grantRequest) (core.GrantSpec, bool) {
 	// which subject wins when a request names two.
 	switch {
 	case req.User != "" && req.Group != "":
-		return core.GrantSpec{}, false
+		return files.GrantSpec{}, false
 	case req.User != "":
 		id, perr := strconv.ParseInt(req.User, 10, 64)
 		if perr != nil || id <= 0 {
-			return core.GrantSpec{}, false
+			return files.GrantSpec{}, false
 		}
 		spec.User = &id
 	case req.Group != "":
 		id, perr := strconv.ParseInt(req.Group, 10, 64)
 		if perr != nil || id <= 0 {
-			return core.GrantSpec{}, false
+			return files.GrantSpec{}, false
 		}
 		spec.Group = &id
 	default:
-		return core.GrantSpec{}, false
+		return files.GrantSpec{}, false
 	}
 
 	allow, ok := permsOf(req.Allow)
 	if !ok {
-		return core.GrantSpec{}, false
+		return files.GrantSpec{}, false
 	}
 	deny, ok := permsOf(req.Deny)
 	if !ok {
-		return core.GrantSpec{}, false
+		return files.GrantSpec{}, false
 	}
 	spec.Allow, spec.Deny = allow, deny
 	return spec, true

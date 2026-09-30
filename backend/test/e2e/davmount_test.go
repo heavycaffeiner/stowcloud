@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/dav"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
 )
@@ -344,11 +344,11 @@ func TestAnUnreadablePathIsStillHidden(t *testing.T) {
 
 // encryptionSettingsForTest is a shape valid enough to pass EnableEncryption's
 // checks. Nothing here is ever decrypted; only the shape is checked.
-func encryptionSettingsForTest() core.Encryption {
+func encryptionSettingsForTest() files.Encryption {
 	verifier := make([]byte, 32+16+19)
 	copy(verifier, "RCLONE\x00\x00")
-	return core.Encryption{
-		Scheme:   core.SchemeRcloneCrypt,
+	return files.Encryption{
+		Scheme:   files.SchemeRcloneCrypt,
 		Salt:     "Zm9vYmFyYmF6cXV1eDEyMw",
 		Verifier: verifier,
 	}

@@ -13,8 +13,8 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/ident"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
@@ -22,7 +22,7 @@ import (
 
 // StoreDeps are the durable services needed by the compatibility store.
 type StoreDeps struct {
-	Core  *core.Core
+	Core  *files.Core
 	State *state.DB
 	Cache *cache.DB
 }
@@ -32,7 +32,7 @@ func NewStore(d StoreDeps) Store { return store{d: d} }
 
 type store struct{ d StoreDeps }
 
-func (s store) FileID(ctx context.Context, entry core.Entry) (uint64, error) {
+func (s store) FileID(ctx context.Context, entry files.Entry) (uint64, error) {
 	if recorded, ok, err := s.d.State.LookupFileID(ctx, entry.Ident); err != nil {
 		return 0, err
 	} else if ok {
@@ -41,11 +41,11 @@ func (s store) FileID(ctx context.Context, entry core.Entry) (uint64, error) {
 	return num.Narrow[uint64](cache.DeriveID(entry.Ident, 0))
 }
 
-func (s store) RecordIDs(ctx context.Context, entries []core.Entry) error {
+func (s store) RecordIDs(ctx context.Context, entries []files.Entry) error {
 	return s.d.Core.RecordFileIDs(ctx, entries)
 }
 
-func (s store) Favorites(ctx context.Context, user core.UserID) (FavoriteSet, error) {
+func (s store) Favorites(ctx context.Context, user files.UserID) (FavoriteSet, error) {
 	rows, err := s.d.State.Favorites(ctx, int64(user))
 	if err != nil {
 		return nil, err
@@ -53,16 +53,16 @@ func (s store) Favorites(ctx context.Context, user core.UserID) (FavoriteSet, er
 	return favoriteRows(rows), nil
 }
 
-func (s store) SetFavorite(ctx context.Context, user core.UserID, entry core.Entry, on bool) error {
+func (s store) SetFavorite(ctx context.Context, user files.UserID, entry files.Entry, on bool) error {
 	return s.d.State.SetFavorite(ctx, int64(user), state.Favorite{Ident: entry.Ident, Path: entry.Path.String()}, on)
 }
 
-func (s store) EncryptedShares(ctx context.Context) (map[core.ShareID]bool, error) {
+func (s store) EncryptedShares(ctx context.Context) (map[files.ShareID]bool, error) {
 	ids, err := s.d.Core.EncryptedShares(ctx)
 	if err != nil {
 		return nil, err
 	}
-	set := make(map[core.ShareID]bool, len(ids))
+	set := make(map[files.ShareID]bool, len(ids))
 	for _, id := range ids {
 		set[id] = true
 	}
@@ -71,7 +71,7 @@ func (s store) EncryptedShares(ctx context.Context) (map[core.ShareID]bool, erro
 
 type favoriteRows []state.Favorite
 
-func (f favoriteRows) Has(entry core.Entry) bool {
+func (f favoriteRows) Has(entry files.Entry) bool {
 	for _, row := range f {
 		if row.Ident.Equal(entry.Ident) {
 			return true
@@ -119,19 +119,19 @@ func (f loginFlow) Poll(ctx context.Context, pollToken, origin string) (FlowDeli
 }
 
 // Resolve parses a client path and resolves it through the core service.
-func Resolve(coreSvc *core.Core, owner core.UserID, path string, need acl.Perms) (core.Resolved, error) {
+func Resolve(coreSvc *files.Core, owner files.UserID, path string, need acl.Perms) (files.Resolved, error) {
 	vp, err := vfs.ParseVpath(path)
 	if err != nil {
-		return core.Resolved{}, core.ErrNotFound
+		return files.Resolved{}, files.ErrNotFound
 	}
 	return coreSvc.Resolve(owner, vp, need)
 }
 
 // VpathOf renders a stored share and relative path as a client path.
-func VpathOf(coreSvc *core.Core, owner core.UserID, share core.ShareID, sharePath string) (string, error) {
+func VpathOf(coreSvc *files.Core, owner files.UserID, share files.ShareID, sharePath string) (string, error) {
 	sp, err := vfs.ParseSharePath(sharePath)
 	if err != nil {
-		return "", core.ErrNotFound
+		return "", files.ErrNotFound
 	}
 	vp, err := coreSvc.VpathFor(owner, share, sp)
 	if err != nil {
@@ -141,21 +141,21 @@ func VpathOf(coreSvc *core.Core, owner core.UserID, share core.ShareID, sharePat
 }
 
 // LocateFile resolves a stable file id through the cache reverse index.
-func LocateFile(ctx context.Context, coreSvc *core.Core, cacheDB *cache.DB, user core.UserID, fileID uint64) (string, error) {
+func LocateFile(ctx context.Context, coreSvc *files.Core, cacheDB *cache.DB, user files.UserID, fileID uint64) (string, error) {
 	if cacheDB == nil {
-		return "", core.ErrNotFound
+		return "", files.ErrNotFound
 	}
 	id, err := num.Narrow[int64](fileID)
 	if err != nil {
-		return "", core.ErrNotFound
+		return "", files.ErrNotFound
 	}
 	share, path, err := cacheDB.Resolve(ctx, ident.FileID(id))
 	if err != nil {
-		return "", core.ErrNotFound
+		return "", files.ErrNotFound
 	}
 	vp, err := coreSvc.VpathFor(user, share, path)
 	if err != nil {
-		return "", core.ErrNotFound
+		return "", files.ErrNotFound
 	}
 	return vp.String(), nil
 }
@@ -236,17 +236,17 @@ func FeaturesFor(instanceID string, thumbnails, chunking bool) Features {
 }
 
 // Claims returns the content claim codec used by direct media URLs.
-func Claims(key handler.ClaimKey, now func() int64) (func(core.UserID, string) (string, error), func(string) (core.UserID, string, error)) {
-	seal := func(user core.UserID, path string) (string, error) {
+func Claims(key handler.ClaimKey, now func() int64) (func(files.UserID, string) (string, error), func(string) (files.UserID, string, error)) {
+	seal := func(user files.UserID, path string) (string, error) {
 		return handler.SealClaim(key, handler.Claim{Purpose: handler.PurposeDownload, UserID: int64(user), Path: path}, now())
 	}
-	open := func(token string) (core.UserID, string, error) {
+	open := func(token string) (files.UserID, string, error) {
 		keys := map[uint32][]byte{key.Version: key.Key}
 		cl, err := handler.OpenClaim(keys, handler.PurposeDownload, token, now())
 		if err != nil {
 			return 0, "", err
 		}
-		return core.UserID(cl.UserID), cl.Path, nil
+		return files.UserID(cl.UserID), cl.Path, nil
 	}
 	return seal, open
 }

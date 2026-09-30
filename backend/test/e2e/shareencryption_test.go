@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 )
 
@@ -19,11 +19,11 @@ import (
 // Nothing here has to decrypt. EnableEncryption checks shape only, because
 // the passphrase that would open the verifier never reaches this server, and
 // every guard this file exercises refuses before any content is read.
-func testEncryption() core.Encryption {
+func testEncryption() files.Encryption {
 	verifier := make([]byte, 32+16+19)
 	copy(verifier, "RCLONE\x00\x00")
-	return core.Encryption{
-		Scheme:   core.SchemeRcloneCrypt,
+	return files.Encryption{
+		Scheme:   files.SchemeRcloneCrypt,
 		Salt:     "AAAAAAAAAAAAAAAAAAAAAA",
 		Verifier: verifier,
 	}
@@ -67,7 +67,7 @@ func encryptedShare(t *testing.T, perms acl.Perms, previewWorker string) (
 	}
 
 	host := t.TempDir()
-	sh, err := e.Core.CreateShare(ctx, core.ShareSpec{Name: "vault", Host: host})
+	sh, err := e.Core.CreateShare(ctx, files.ShareSpec{Name: "vault", Host: host})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func encryptedShare(t *testing.T, perms acl.Perms, previewWorker string) (
 		t.Fatalf("enabling encryption: %v", eerr)
 	}
 
-	if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
+	if _, gerr := e.Core.CreateGrant(ctx, files.GrantSpec{
 		User: &owner, Share: sh.ID, Allow: perms, Inherit: true, Label: sh.Name,
 	}); gerr != nil {
 		t.Fatal(gerr)

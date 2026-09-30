@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 )
@@ -33,7 +33,7 @@ import (
 // to cut on the first one). Decimal digits followed by a dash followed by a
 // hex string has no slash, needs no percent-decoding to split, and
 // round-trips through a single URL path component untouched.
-func trashMemberName(share core.ShareID, id string) string {
+func trashMemberName(share files.ShareID, id string) string {
 	return strconv.FormatUint(uint64(share), 10) + "-" + id
 }
 
@@ -42,7 +42,7 @@ func trashMemberName(share core.ShareID, id string) string {
 // on the first dash is unambiguous: a decimal share id can never contain a
 // dash either, so the first dash is always the boundary between the two
 // halves, whatever the hex id after it looks like.
-func parseTrashMember(name string) (core.ShareID, string, bool) {
+func parseTrashMember(name string) (files.ShareID, string, bool) {
 	share, id, ok := strings.Cut(name, "-")
 	if !ok || share == "" || id == "" {
 		return 0, "", false
@@ -51,7 +51,7 @@ func parseTrashMember(name string) (core.ShareID, string, bool) {
 	if err != nil {
 		return 0, "", false
 	}
-	return core.ShareID(n), id, true
+	return files.ShareID(n), id, true
 }
 
 // davTrash serves the trash tree. Features().Trash false means this
@@ -113,9 +113,9 @@ func (s *Server) trashDispatchList(w http.ResponseWriter, r *http.Request, p Pri
 
 // trashShareRoot is one share already resolved for a trash operation.
 type trashShareRoot struct {
-	share core.ShareID
+	share files.ShareID
 	label string
-	res   core.Resolved
+	res   files.Resolved
 }
 
 // trashRoots resolves every share the caller may read trash on.
@@ -162,7 +162,7 @@ func (s *Server) trashPropfind(w http.ResponseWriter, r *http.Request, p Princip
 	selfHref := t.Href(nil, true)
 	selfProps, selfMissing := s.entryProps(ctx, EntryProps{
 		Query: query,
-		Entry: core.Entry{IsDir: true, MTimeNs: s.clk.Now().UnixNano()},
+		Entry: files.Entry{IsDir: true, MTimeNs: s.clk.Now().UnixNano()},
 	})
 	m.Response(selfHref, selfProps, selfMissing)
 
@@ -207,7 +207,7 @@ func (s *Server) trashPropfind(w http.ResponseWriter, r *http.Request, p Princip
 // coincide with a live file's numeric id elsewhere in the tree is harmless:
 // nothing compares the two namespaces.
 func (s *Server) trashEntryProps(
-	ctx context.Context, p Principal, query PropQuery, root trashShareRoot, e core.TrashEntry,
+	ctx context.Context, p Principal, query PropQuery, root trashShareRoot, e files.TrashEntry,
 ) ([]Prop, []PropName) {
 	origLocation := e.OrigPath
 	if s.deps.VpathOf != nil && e.OrigPath != "" {
@@ -220,7 +220,7 @@ func (s *Server) trashEntryProps(
 		// honest answer, unlike an empty value that reads as unknown.
 	}
 
-	entry := core.Entry{
+	entry := files.Entry{
 		Name:    e.Name,
 		IsDir:   e.IsDir,
 		Size:    e.Size,
@@ -249,7 +249,7 @@ func (s *Server) trashEntryProps(
 // has none), so it reports them missing; this restores them to the stable
 // value the trash screen needs to key its own state on.
 func trashOverrideIdentity(
-	found []Prop, missing []PropName, query PropQuery, share core.ShareID, id string,
+	found []Prop, missing []PropName, query PropQuery, share files.ShareID, id string,
 ) ([]Prop, []PropName) {
 	if !query.Asked(PropID()) && !query.Asked(PropFileID()) {
 		return found, missing
@@ -339,7 +339,7 @@ func removePropNames(in []PropName, names ...PropName) []PropName {
 // with a real file's fileid elsewhere in the tree is never confused with
 // it: nothing reaches a trash entry by fileid, only by this collection's
 // own href.
-func trashEntrySyntheticID(share core.ShareID, id string) uint64 {
+func trashEntrySyntheticID(share files.ShareID, id string) uint64 {
 	// Assembled then hashed once, so no write can fail: the separator keeps
 	// two different pairs from hashing alike.
 	input := append([]byte(strconv.FormatUint(uint64(share), 10)), 0)
@@ -354,7 +354,7 @@ func trashEntrySyntheticID(share core.ShareID, id string) uint64 {
 // while it sits in the trash, so a value derived from what names it rather
 // than from its content is stable for exactly as long as the entry exists,
 // which is the whole of what a validator here has to promise.
-func trashEntryToken(share core.ShareID, id string) string {
+func trashEntryToken(share files.ShareID, id string) string {
 	return strconv.FormatUint(trashEntrySyntheticID(share, id+"\x00etag"), 16)
 }
 
@@ -388,7 +388,7 @@ func (s *Server) trashDelete(w http.ResponseWriter, r *http.Request, p Principal
 		// Answering 204 there would report an emptied trash to a client that
 		// emptied nothing, and the next listing would show every entry back.
 		if purged == 0 && len(roots) > 0 {
-			s.failDav(w, r, core.ErrDenied, apierr.VisibilityKnown)
+			s.failDav(w, r, files.ErrDenied, apierr.VisibilityKnown)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -511,7 +511,7 @@ func (s *Server) trashGet(w http.ResponseWriter, r *http.Request, p Principal, t
 		}
 	}
 	if !found {
-		s.failDav(w, r, core.ErrNotFound, apierr.VisibilityHidden)
+		s.failDav(w, r, files.ErrNotFound, apierr.VisibilityHidden)
 		return
 	}
 	WriteDAVError(w, http.StatusNotImplemented,
@@ -522,8 +522,8 @@ func (s *Server) trashGet(w http.ResponseWriter, r *http.Request, p Principal, t
 // specific member, applying the caller's own mask and share allowlist
 // exactly as any other path on this surface does.
 func (s *Server) trashShareResolve(
-	ctx context.Context, p Principal, share core.ShareID, need acl.Perms,
-) (core.Resolved, error) {
+	ctx context.Context, p Principal, share files.ShareID, need acl.Perms,
+) (files.Resolved, error) {
 	for _, rt := range s.roots(ctx, p) {
 		id, ok := shareIDOf(rt.Share)
 		if !ok || id != share {
@@ -531,16 +531,16 @@ func (s *Server) trashShareResolve(
 		}
 		return s.resolve(ctx, p, rt.Label, need)
 	}
-	return core.Resolved{}, core.ErrNotFound
+	return files.Resolved{}, files.ErrNotFound
 }
 
 // shareIDOf narrows a store row's share id, which is wider than a share id
 // because the column is a generic foreign key. A row too wide to be one is
 // corrupt, and the caller treats it as a share it cannot reach.
-func shareIDOf(v int64) (core.ShareID, bool) {
+func shareIDOf(v int64) (files.ShareID, bool) {
 	narrowed, err := num.Narrow[uint32](v)
 	if err != nil {
 		return 0, false
 	}
-	return core.ShareID(narrowed), true
+	return files.ShareID(narrowed), true
 }

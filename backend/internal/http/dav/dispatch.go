@@ -5,7 +5,7 @@ package dav
 import (
 	"net/http"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 )
 
 // OPTIONS, and the one entry point a mount calls.
@@ -15,7 +15,7 @@ import (
 // the path and hands both over without knowing the method table.
 
 // Options answers OPTIONS.
-func (h *Handler) Options(w http.ResponseWriter, _ *http.Request, res core.Resolved) {
+func (h *Handler) Options(w http.ResponseWriter, _ *http.Request, res files.Resolved) {
 	// Class 2 is locking. Advertising it without a lock table would have a
 	// client take a lock it believes is recorded and write on the strength of
 	// it, so the class follows what this deployment can actually do.
@@ -53,7 +53,7 @@ func (h *Handler) MountOptions(w http.ResponseWriter) {
 }
 
 // allowFor describes what this resource accepts.
-func (h *Handler) allowFor(res core.Resolved) string {
+func (h *Handler) allowFor(res files.Resolved) string {
 	set := AllowSet{
 		Locking: h.taker != nil,
 	}
@@ -69,7 +69,7 @@ func (h *Handler) allowFor(res core.Resolved) string {
 // COPY and MOVE are absent: their destination arrives as a URL in a header,
 // and resolving it is the mount's work, so those two take a second resolution
 // and are called directly.
-func (h *Handler) ServeMethod(w http.ResponseWriter, r *http.Request, res core.Resolved) {
+func (h *Handler) ServeMethod(w http.ResponseWriter, r *http.Request, res files.Resolved) {
 	switch r.Method {
 	case http.MethodOptions:
 		h.Options(w, r, res)
@@ -103,7 +103,7 @@ func (h *Handler) ServeMethod(w http.ResponseWriter, r *http.Request, res core.R
 // It takes the resolution rather than a fixed list, so the Allow header names
 // what this resource accepts: a GET of a collection is refused, and the header
 // beside the refusal has to be true of that collection.
-func (h *Handler) methodNotAllowedFor(w http.ResponseWriter, res core.Resolved) {
+func (h *Handler) methodNotAllowedFor(w http.ResponseWriter, res files.Resolved) {
 	w.Header().Set("Allow", h.allowFor(res))
 	w.WriteHeader(http.StatusMethodNotAllowed)
 }

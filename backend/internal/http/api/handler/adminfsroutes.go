@@ -16,7 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vault"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
@@ -32,7 +32,7 @@ var (
 // AdminFSDeps supplies the registry and host paths used by the browse dialog.
 type AdminFSDeps struct {
 	Auth         *auth.Service
-	Core         *core.Core
+	Core         *files.Core
 	DataDir      string
 	SetupVerify  func(context.Context, string) error
 	SetupRefusal func(error) apierr.Classified
@@ -205,15 +205,15 @@ func (h *adminFSHandlers) hostFSRoots() HostListingView {
 	return HostListingView{Entries: entries}
 }
 
-func adminHostFSShareCandidates(s core.ShareDef) []string {
+func adminHostFSShareCandidates(s files.ShareDef) []string {
 	switch s.Backend {
-	case core.BackendVeracrypt:
+	case files.BackendVeracrypt:
 		cfg, err := vault.ParseConfig(s.Config)
 		if err != nil || cfg.Container == "" {
 			return nil
 		}
 		return []string{filepath.Dir(cfg.Container)}
-	case core.BackendS3:
+	case files.BackendS3:
 		return nil
 	default:
 		if s.Host == "" {

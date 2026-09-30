@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 )
 
 // bootUnconfigured opens an engine over an empty directory, which is what a
@@ -296,7 +296,7 @@ func TestTheFirstAdministratorIsGrantedTheExistingShares(t *testing.T) {
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
-	if _, cerr := first.Core.CreateShare(ctx, core.ShareSpec{Name: "documents", Host: t.TempDir()}); cerr != nil {
+	if _, cerr := first.Core.CreateShare(ctx, files.ShareSpec{Name: "documents", Host: t.TempDir()}); cerr != nil {
 		t.Fatalf("registering a share: %v", cerr)
 	}
 	if cerr := first.Close(); cerr != nil {

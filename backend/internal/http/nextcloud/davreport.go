@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/search/svc"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/protocol/limits"
 	search "github.com/stowcloud/namesearch"
@@ -211,8 +211,8 @@ func (s *Server) davSearch(w http.ResponseWriter, r *http.Request, p Principal, 
 // searchHit pairs a resolved capability with the entry it names, since
 // rendering needs both and a walk or a lookup produces both together.
 type searchHit struct {
-	res   core.Resolved
-	entry core.Entry
+	res   files.Resolved
+	entry files.Entry
 	// vpath is the wire path a client requests this hit back under: the
 	// share label the caller navigates the share as, not the share's own
 	// internal path, which a resolve call never sees and a client cannot
@@ -354,7 +354,7 @@ func (s *Server) searchByName(
 
 	roots := s.searchScopeRoots(ctx, p, scopeVpath)
 	filter := search.Filter{Kind: kind}
-	hits := s.walkForSearch(ctx, roots, func(e core.Entry) bool {
+	hits := s.walkForSearch(ctx, roots, func(e files.Entry) bool {
 		if !filter.Admits(e.Name, e.IsDir) {
 			return false
 		}
@@ -404,7 +404,7 @@ func (s *Server) searchByMedia(
 	ctx context.Context, p Principal, scopeVpath string, lowerNs, upperNs int64, limit int, complete bool, descending bool, wantImage, wantVideo bool,
 ) []searchHit {
 	roots := s.searchScopeRoots(ctx, p, scopeVpath)
-	hits := s.walkForSearch(ctx, roots, func(e core.Entry) bool {
+	hits := s.walkForSearch(ctx, roots, func(e files.Entry) bool {
 		// A folder is not a picture, whatever its name ends in.
 		if e.IsDir || !withinWindow(e.MTimeNs, lowerNs, upperNs) {
 			return false
@@ -425,9 +425,9 @@ func (s *Server) searchByMedia(
 func (s *Server) searchByModTime(
 	ctx context.Context, p Principal, scopeVpath string, lowerNs int64, limit int, complete bool, descending bool,
 ) []searchHit {
-	q := core.RecentQuery{
-		SinceNs: core.RecentSinceOf(lowerNs, s.clk.Now()),
-		Limit:   core.RecentLimitOf(limit),
+	q := files.RecentQuery{
+		SinceNs: files.RecentSinceOf(lowerNs, s.clk.Now()),
+		Limit:   files.RecentLimitOf(limit),
 		Scope:   scopeVpath,
 	}
 	rows, err := s.deps.Core.Recent(ctx, user(p), q)
@@ -453,14 +453,14 @@ func (s *Server) searchByModTime(
 // scope, dropping it silently on a refusal: a search or journal hit is a
 // moment-old answer, never a guarantee the path still resolves or is still
 // this caller's to see.
-func (s *Server) searchResolveAt(ctx context.Context, p Principal, vpath string) (core.Resolved, core.Entry, bool) {
+func (s *Server) searchResolveAt(ctx context.Context, p Principal, vpath string) (files.Resolved, files.Entry, bool) {
 	res, err := s.resolve(ctx, p, vpath, acl.Read)
 	if err != nil {
-		return core.Resolved{}, core.Entry{}, false
+		return files.Resolved{}, files.Entry{}, false
 	}
 	entry, err := s.deps.Core.Stat(ctx, res)
 	if err != nil {
-		return core.Resolved{}, core.Entry{}, false
+		return files.Resolved{}, files.Entry{}, false
 	}
 	return res, entry, true
 }
@@ -470,7 +470,7 @@ func (s *Server) searchResolveAt(ctx context.Context, p Principal, vpath string)
 // client requests it back by.
 type searchRoot struct {
 	vpath string
-	res   core.Resolved
+	res   files.Resolved
 }
 
 // searchScopeRoots resolves the starting points a scoped walk descends
@@ -502,14 +502,14 @@ func (s *Server) searchScopeRoots(ctx context.Context, p Principal, scopeVpath s
 // other entry: a name search reports the folder someone named, and a query
 // that wants files only says so in its own predicate.
 func (s *Server) walkForSearch(
-	ctx context.Context, roots []searchRoot, match func(core.Entry) bool,
+	ctx context.Context, roots []searchRoot, match func(files.Entry) bool,
 ) []searchHit {
 	var out []searchHit
 	visited := 0
 
-	var walk func(vpath string, res core.Resolved)
-	walk = func(vpath string, res core.Resolved) {
-		var cur core.Cursor
+	var walk func(vpath string, res files.Resolved)
+	walk = func(vpath string, res files.Resolved) {
+		var cur files.Cursor
 		for {
 			if visited >= davSearchWalkCeiling || ctx.Err() != nil {
 				return

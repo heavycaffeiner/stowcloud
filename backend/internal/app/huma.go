@@ -11,7 +11,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humagin"
 	"github.com/gin-gonic/gin"
 	hanamiapi "github.com/heavycaffeiner/hanami/api"
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/adminlogs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/adminshares"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/adminstorage"
@@ -120,7 +120,7 @@ func (e *Engine) mountHuma(router *gin.Engine) (huma.API, error) {
 	links.Register(api, links.NativeDeps{
 		Core: e.Core, Auth: e.Auth, Owner: handler.Owner,
 		Resolve: filehttp.Resolve(e.Core), Now: e.now,
-		VpathOf: func(l core.Link) string {
+		VpathOf: func(l files.Link) string {
 			vp, err := e.Core.VpathFor(l.Owner, l.Share, l.Path)
 			if err != nil {
 				return ""

@@ -8,8 +8,8 @@ import (
 	"fmt"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads/limits"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	protocolimits "github.com/heavycaffeiner/stowcloud/backend/internal/platform/protocol/limits"
 	"github.com/stowcloud/transfer"
 )
@@ -34,7 +34,7 @@ const aliasMaxBytes = limits.NameBytes
 // referencing a nonexistent session. An id the account already holds is rejected
 // instead of rebound, since a silent rebind would strand the first session's
 // spool with nothing naming it.
-func (e *Engine) BindAlias(ctx context.Context, tid string, user core.UserID, id SessionID) error {
+func (e *Engine) BindAlias(ctx context.Context, tid string, user files.UserID, id SessionID) error {
 	if err := checkTransferID(tid); err != nil {
 		return err
 	}
@@ -67,7 +67,7 @@ func (e *Engine) BindAlias(ctx context.Context, tid string, user core.UserID, id
 // Share and destination come from what bind time captured rather than being
 // resolved again, so a later call reuses precisely what the session was created
 // against instead of a path that may since denote something else.
-func (e *Engine) LookupAlias(ctx context.Context, tid string, user core.UserID) (Alias, error) {
+func (e *Engine) LookupAlias(ctx context.Context, tid string, user files.UserID) (Alias, error) {
 	if err := checkTransferID(tid); err != nil {
 		return Alias{}, err
 	}
@@ -92,7 +92,7 @@ func (e *Engine) LookupAlias(ctx context.Context, tid string, user core.UserID) 
 // UnbindAlias removes a transfer id from an account's namespace, leaving the
 // session intact. A client that unbinds an id has merely stopped addressing the
 // upload that way rather than abandoning it.
-func (e *Engine) UnbindAlias(ctx context.Context, tid string, user core.UserID) error {
+func (e *Engine) UnbindAlias(ctx context.Context, tid string, user files.UserID) error {
 	if err := checkTransferID(tid); err != nil {
 		return err
 	}

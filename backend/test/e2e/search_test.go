@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 )
 
 // sseEvent is one frame read off the stream.
@@ -199,7 +199,7 @@ func TestSearchOnlyReportsReadableFiles(t *testing.T) {
 	if werr := os.WriteFile(filepath.Join(host, "secret-doc.txt"), []byte("x"), 0o600); werr != nil {
 		t.Fatal(werr)
 	}
-	sh, err := e.Core.CreateShare(ctx, core.ShareSpec{Name: "vault", Host: host})
+	sh, err := e.Core.CreateShare(ctx, files.ShareSpec{Name: "vault", Host: host})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +209,7 @@ func TestSearchOnlyReportsReadableFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
+	if _, gerr := e.Core.CreateGrant(ctx, files.GrantSpec{
 		User: &granted, Share: sh.ID, Allow: everyPerm(), Inherit: true, Label: sh.Name,
 	}); gerr != nil {
 		t.Fatal(gerr)
@@ -336,7 +336,7 @@ func TestSearchRespectsAGrantThatStartsPartwayDown(t *testing.T) {
 		t.Fatal(werr)
 	}
 
-	sh, err := e.Core.CreateShare(ctx, core.ShareSpec{Name: "vault", Host: host})
+	sh, err := e.Core.CreateShare(ctx, files.ShareSpec{Name: "vault", Host: host})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,7 +345,7 @@ func TestSearchRespectsAGrantThatStartsPartwayDown(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The grant starts at the subdirectory, not at the share root.
-	if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
+	if _, gerr := e.Core.CreateGrant(ctx, files.GrantSpec{
 		User: &user, Share: sh.ID, Subpath: "allowed",
 		Allow: everyPerm(), Inherit: true, Label: sh.Name,
 	}); gerr != nil {

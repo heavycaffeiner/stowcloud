@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 )
@@ -533,15 +533,15 @@ func grantAnAccount(t *testing.T, f ncFixture, login string) {
 	if err != nil {
 		t.Fatalf("creating the second account: %v", err)
 	}
-	mine, err := f.e.Core.ListGrants(ctx, core.GrantFilter{User: f.user})
+	mine, err := f.e.Core.ListGrants(ctx, files.GrantFilter{User: f.user})
 	if err != nil || len(mine) == 0 {
 		t.Fatalf("reading the account's own grants: %v", err)
 	}
-	share, nerr := num.Narrow[core.ShareID](mine[0].Share)
+	share, nerr := num.Narrow[files.ShareID](mine[0].Share)
 	if nerr != nil {
 		t.Fatalf("reading the share id: %v", nerr)
 	}
-	if _, gerr := f.e.Core.CreateGrant(ctx, core.GrantSpec{
+	if _, gerr := f.e.Core.CreateGrant(ctx, files.GrantSpec{
 		User: &id, Share: share, Allow: ncEveryPerm(), Inherit: true, Label: f.share,
 	}); gerr != nil {
 		t.Fatalf("granting the second account: %v", gerr)
@@ -599,7 +599,7 @@ func TestSharingWithAnAccountIsRefused(t *testing.T) {
 	grantAnAccount(t, f, "bob")
 	ctx := context.Background()
 
-	before, err := f.e.Core.ListGrants(ctx, core.GrantFilter{})
+	before, err := f.e.Core.ListGrants(ctx, files.GrantFilter{})
 	if err != nil {
 		t.Fatalf("reading the grants: %v", err)
 	}
@@ -609,7 +609,7 @@ func TestSharingWithAnAccountIsRefused(t *testing.T) {
 			t.Errorf("share type %d answered %d, want a refusal\n%s", shareType, status, body)
 		}
 	}
-	after, err := f.e.Core.ListGrants(ctx, core.GrantFilter{})
+	after, err := f.e.Core.ListGrants(ctx, files.GrantFilter{})
 	if err != nil {
 		t.Fatalf("reading the grants back: %v", err)
 	}

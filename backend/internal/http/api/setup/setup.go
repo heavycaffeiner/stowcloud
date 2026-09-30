@@ -13,7 +13,7 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/settings/check"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
@@ -37,7 +37,7 @@ type Deps struct {
 	Gate Gate
 
 	GrantEveryShare func(context.Context, int64) error
-	CreateShare     func(context.Context, core.ShareSpec) (core.Share, error)
+	CreateShare     func(context.Context, files.ShareSpec) (files.Share, error)
 	Apply           func(context.Context)
 	DataDir         string
 	Logger          *slog.Logger
@@ -136,7 +136,7 @@ func (h *handlers) post(c *gin.Context) {
 			h.logger().Warn("the first share was not created", "error", errors.New("share creation unavailable"))
 			out.ShareFailed = true
 		} else {
-			share, err := h.d.CreateShare(c.Request.Context(), core.ShareSpec{Name: req.FirstShare.Name, Host: req.FirstShare.Host})
+			share, err := h.d.CreateShare(c.Request.Context(), files.ShareSpec{Name: req.FirstShare.Name, Host: req.FirstShare.Host})
 			if err != nil {
 				h.logger().Warn("the first share was not created", "error", err)
 				out.ShareFailed = true

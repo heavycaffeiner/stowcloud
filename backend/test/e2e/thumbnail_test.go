@@ -20,9 +20,9 @@ import (
 	"testing"
 
 	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/preview"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 )
@@ -130,11 +130,11 @@ func thumbShare(t *testing.T, perms acl.Perms, img []byte) (base string, sess se
 		t.Fatal(werr)
 	}
 
-	sh, err := e.Core.CreateShare(ctx, core.ShareSpec{Name: "pics", Host: host})
+	sh, err := e.Core.CreateShare(ctx, files.ShareSpec{Name: "pics", Host: host})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
+	if _, gerr := e.Core.CreateGrant(ctx, files.GrantSpec{
 		User: &id, Share: sh.ID, Allow: perms, Inherit: true, Label: sh.Name,
 	}); gerr != nil {
 		t.Fatal(gerr)
@@ -448,12 +448,12 @@ func TestThumbnailSettingCanBeToggledOff(t *testing.T) {
 	if werr := os.WriteFile(filepath.Join(host, "photo.png"), samplePNG(t, 64, 64), 0o600); werr != nil {
 		t.Fatal(werr)
 	}
-	sh, err := e.Core.CreateShare(ctx, core.ShareSpec{Name: "pics", Host: host})
+	sh, err := e.Core.CreateShare(ctx, files.ShareSpec{Name: "pics", Host: host})
 	if err != nil {
 		t.Fatal(err)
 	}
 	holder := int64(userID)
-	if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
+	if _, gerr := e.Core.CreateGrant(ctx, files.GrantSpec{
 		User: &holder, Share: sh.ID, Allow: everyPerm(), Inherit: true,
 	}); gerr != nil {
 		t.Fatal(gerr)
@@ -513,7 +513,7 @@ func TestAnEncryptedThumbnailIsRefusedWithoutPoisoningTheNegativeCache(t *testin
 	if perr != nil {
 		t.Fatal(perr)
 	}
-	r, rerr := e.Core.Resolve(core.UserID(owner), p, acl.Read|acl.Download)
+	r, rerr := e.Core.Resolve(files.UserID(owner), p, acl.Read|acl.Download)
 	if rerr != nil {
 		t.Fatal(rerr)
 	}

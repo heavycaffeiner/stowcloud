@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 )
 
 // Rendering one files-tree entry into the property vocabulary.
@@ -23,7 +23,7 @@ import (
 // EntryProps is what one entry needs rendered.
 type EntryProps struct {
 	Query     PropQuery
-	Entry     core.Entry
+	Entry     files.Entry
 	Perms     acl.Perms
 	ShareRoot bool
 	Favorite  bool
@@ -285,7 +285,7 @@ func entryPropNames(in EntryProps) []PropName {
 // entrySize is oc:size: a file's own byte count, and a directory's recursive
 // total from the core's rollup. Unknown, on any failure, answers zero rather
 // than a stale or guessed figure.
-func (s *Server) entrySize(ctx context.Context, e core.Entry) uint64 {
+func (s *Server) entrySize(ctx context.Context, e files.Entry) uint64 {
 	if !e.IsDir {
 		return e.Size
 	}
@@ -302,7 +302,7 @@ func (s *Server) entrySize(ctx context.Context, e core.Entry) uint64 {
 
 // birthSeconds is a filesystem's birth time in epoch seconds, zero when it
 // reports none.
-func birthSeconds(e core.Entry) int64 {
+func birthSeconds(e files.Entry) int64 {
 	if e.BTimeNs == nil {
 		return 0
 	}

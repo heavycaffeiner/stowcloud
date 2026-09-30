@@ -6,7 +6,7 @@ package handler
 import (
 	"strconv"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 )
 
 // TrashView is one deleted entry.
@@ -30,7 +30,7 @@ type TrashView struct {
 }
 
 // TrashOf projects one entry.
-func TrashOf(e core.TrashEntry) TrashView {
+func TrashOf(e files.TrashEntry) TrashView {
 	return TrashView{
 		ID:          e.ID,
 		Name:        e.Name,

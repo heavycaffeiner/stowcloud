@@ -12,7 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/humabridge"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
@@ -23,9 +23,9 @@ const jobsPageSize = 100
 // Deps contains only the operation services and composition callbacks needed by
 // these routes.
 type Deps struct {
-	Core      *core.Core
+	Core      *files.Core
 	State     *state.DB
-	Owner     func(*gin.Context) (core.UserID, bool)
+	Owner     func(*gin.Context) (files.UserID, bool)
 	StartJobs func()
 	NowNs     func() int64
 }
@@ -88,15 +88,15 @@ func (h *handlers) listHuma(ctx context.Context, _ *ListInput) (*ListOutput, err
 	return &ListOutput{Body: handler.OperationsOf(ops)}, nil
 }
 
-func parseOperationInput(id string) (core.OperationID, bool) {
+func parseOperationInput(id string) (files.OperationID, bool) {
 	n, err := strconv.ParseInt(id, 10, 64)
 	if err != nil || n <= 0 {
 		return 0, false
 	}
-	return core.OperationID(n), true
+	return files.OperationID(n), true
 }
 
-func (h *handlers) operationOwner(ctx context.Context) (core.UserID, error) {
+func (h *handlers) operationOwner(ctx context.Context) (files.UserID, error) {
 	c := humabridge.Gin(ctx)
 	owner, ok := h.d.Owner(c)
 	if !ok {
@@ -112,7 +112,7 @@ func (h *handlers) getHuma(ctx context.Context, in *operationInput) (*operationO
 	}
 	id, ok := parseOperationInput(in.ID)
 	if !ok {
-		return nil, humabridge.Failure(ctx, core.ErrNotFound)
+		return nil, humabridge.Failure(ctx, files.ErrNotFound)
 	}
 	op, err := h.d.Core.Operation(ctx, owner, id)
 	if err != nil {
@@ -128,7 +128,7 @@ func (h *handlers) cancelHuma(ctx context.Context, in *operationInput) (*noConte
 	}
 	id, ok := parseOperationInput(in.ID)
 	if !ok {
-		return nil, humabridge.Failure(ctx, core.ErrNotFound)
+		return nil, humabridge.Failure(ctx, files.ErrNotFound)
 	}
 	if err := h.d.Core.CancelOperation(ctx, owner, id); err != nil {
 		return nil, humabridge.Failure(ctx, err)
@@ -143,7 +143,7 @@ func (h *handlers) retryHuma(ctx context.Context, in *operationInput) (*noConten
 	}
 	id, ok := parseOperationInput(in.ID)
 	if !ok {
-		return nil, humabridge.Failure(ctx, core.ErrNotFound)
+		return nil, humabridge.Failure(ctx, files.ErrNotFound)
 	}
 	op, err := h.d.Core.Operation(ctx, owner, id)
 	if err != nil {
@@ -174,7 +174,7 @@ func (h *handlers) pauseResumeHuma(ctx context.Context, in *operationInput, paus
 	}
 	id, ok := parseOperationInput(in.ID)
 	if !ok {
-		return nil, humabridge.Failure(ctx, core.ErrNotFound)
+		return nil, humabridge.Failure(ctx, files.ErrNotFound)
 	}
 	if _, err = h.d.Core.Operation(ctx, owner, id); err != nil {
 		return nil, humabridge.Failure(ctx, err)
@@ -192,5 +192,5 @@ func (h *handlers) pauseResumeHuma(ctx context.Context, in *operationInput, paus
 }
 
 var _ interface {
-	ListOperations(context.Context, core.UserID, int) ([]core.Operation, error)
-} = (*core.Core)(nil)
+	ListOperations(context.Context, files.UserID, int) ([]files.Operation, error)
+} = (*files.Core)(nil)

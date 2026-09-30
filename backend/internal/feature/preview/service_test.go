@@ -17,13 +17,13 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/cache"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/dbfile"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 )
 
 const (
-	testUser   = core.UserID(1)
+	testUser   = files.UserID(1)
 	shareLabel = "files"
 )
 
@@ -61,7 +61,7 @@ func newService(t *testing.T) *fixture {
 	}
 
 	evaluator := acl.NewEvaluator()
-	c, err := core.New(ctx, core.Options{State: st, Cache: ca, ACL: evaluator})
+	c, err := files.New(ctx, files.Options{State: st, Cache: ca, ACL: evaluator})
 	if err != nil {
 		t.Fatalf("building the core: %v", err)
 	}
@@ -76,7 +76,7 @@ func newService(t *testing.T) *fixture {
 	}
 
 	shareRoot := t.TempDir()
-	share, serr := c.CreateShare(ctx, core.ShareSpec{Name: shareLabel, Host: shareRoot})
+	share, serr := c.CreateShare(ctx, files.ShareSpec{Name: shareLabel, Host: shareRoot})
 	if serr != nil {
 		t.Skipf("this host's temp directory is on a filesystem this build refuses: %v", serr)
 	}
@@ -100,9 +100,9 @@ func newService(t *testing.T) *fixture {
 // change the tree or the permissions underneath it.
 type fixture struct {
 	svc   *Service
-	core  *core.Core
+	core  *files.Core
 	state *state.DB
-	share core.ShareID
+	share files.ShareID
 	root  string
 }
 
@@ -148,7 +148,7 @@ func (f *fixture) writeImage(t *testing.T, name string, w, h int) string {
 
 // resolve asks for a capability the way a request does: with the permission
 // the caller intends to exercise.
-func (f *fixture) resolve(t *testing.T, name string, need acl.Perms) (core.Resolved, error) {
+func (f *fixture) resolve(t *testing.T, name string, need acl.Perms) (files.Resolved, error) {
 	t.Helper()
 	p, err := vfs.ParseVpath(shareLabel + "/" + name)
 	if err != nil {
@@ -159,7 +159,7 @@ func (f *fixture) resolve(t *testing.T, name string, need acl.Perms) (core.Resol
 
 // mustResolve is resolve where the resolution itself is not what is under
 // test.
-func (f *fixture) mustResolve(t *testing.T, name string, need acl.Perms) core.Resolved {
+func (f *fixture) mustResolve(t *testing.T, name string, need acl.Perms) files.Resolved {
 	t.Helper()
 	r, err := f.resolve(t, name, need)
 	if err != nil {
@@ -171,10 +171,10 @@ func (f *fixture) mustResolve(t *testing.T, name string, need acl.Perms) core.Re
 // readOnlyUser seeds a second account granted Read over the share and nothing
 // else, so a capability without Download can be obtained honestly rather than
 // by editing one.
-func (f *fixture) readOnlyUser(t *testing.T) core.UserID {
+func (f *fixture) readOnlyUser(t *testing.T) files.UserID {
 	t.Helper()
 	ctx := t.Context()
-	const id = core.UserID(2)
+	const id = files.UserID(2)
 
 	if err := f.state.Write(ctx, func(tx *sql.Tx) error {
 		_, werr := tx.ExecContext(ctx,
@@ -203,8 +203,8 @@ func (f *fixture) readOnlyUser(t *testing.T) core.UserID {
 
 // resolveAs is resolve for an account other than the fixture's own.
 func (f *fixture) resolveAs(
-	t *testing.T, user core.UserID, name string, need acl.Perms,
-) (core.Resolved, error) {
+	t *testing.T, user files.UserID, name string, need acl.Perms,
+) (files.Resolved, error) {
 	t.Helper()
 	p, err := vfs.ParseVpath(shareLabel + "/" + name)
 	if err != nil {

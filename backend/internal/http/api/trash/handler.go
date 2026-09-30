@@ -1,7 +1,7 @@
 //go:build linux
 
 // Package trash contains the authenticated HTTP adapters for the file trash.
-// It owns request parsing and wire projection while feature/files owns trash
+// It owns request parsing and wire projection while the files package owns trash
 // policy and storage semantics.
 package trash
 
@@ -14,8 +14,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/gin-gonic/gin"
 
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/humabridge"
@@ -27,9 +27,9 @@ import (
 // Identity, path resolution, and error projection remain application policy
 // supplied as callbacks; Core is the feature boundary for trash operations.
 type Deps struct {
-	Core    *core.Core
-	Owner   func(*gin.Context) (core.UserID, bool)
-	Resolve func(core.UserID, string, acl.Perms) (core.Resolved, error)
+	Core    *files.Core
+	Owner   func(*gin.Context) (files.UserID, bool)
+	Resolve func(files.UserID, string, acl.Perms) (files.Resolved, error)
 }
 
 // Handler implements the authenticated trash HTTP routes.
@@ -69,7 +69,7 @@ func Register(api huma.API, d Deps) {
 		OperationID: "trash.purge", Method: http.MethodPost, Path: "/trash/purge",
 	}, h.purgeHuma)
 }
-func (h *Handler) humaOwner(ctx context.Context) (core.UserID, error) {
+func (h *Handler) humaOwner(ctx context.Context) (files.UserID, error) {
 	c := humabridge.Gin(ctx)
 	owner, ok := h.owner(c)
 	if !ok {
@@ -84,7 +84,7 @@ func (h *Handler) listHuma(ctx context.Context, in *listInput) (*listOutput, err
 		return nil, err
 	}
 	views := make([]handler.TrashView, 0, 8)
-	qualify := func(share core.ShareID, entries []core.TrashEntry) {
+	qualify := func(share files.ShareID, entries []files.TrashEntry) {
 		for _, entry := range entries {
 			view := handler.TrashOf(entry)
 			view.ID = strconv.FormatUint(uint64(share), 10) + ":" + entry.ID
@@ -167,16 +167,16 @@ func (h *Handler) purgeHuma(ctx context.Context, in *batchInput) (*batchOutput, 
 	return h.batchHuma(ctx, in.Body.IDs, acl.Delete, false)
 }
 
-func (h *Handler) owner(c *gin.Context) (core.UserID, bool) {
+func (h *Handler) owner(c *gin.Context) (files.UserID, bool) {
 	if h.d.Owner == nil {
 		return 0, false
 	}
 	return h.d.Owner(c)
 }
 
-func (h *Handler) resolve(owner core.UserID, raw string, need acl.Perms) (core.Resolved, error) {
+func (h *Handler) resolve(owner files.UserID, raw string, need acl.Perms) (files.Resolved, error) {
 	if h.d.Resolve == nil {
-		return core.Resolved{}, core.ErrNotFound
+		return files.Resolved{}, files.ErrNotFound
 	}
 	return h.d.Resolve(owner, raw, need)
 }
@@ -190,14 +190,14 @@ type trashBatchItem struct {
 // resolveTrashID accepts only the share-qualified ids emitted by List and
 // resolves the share through the caller's own roots. A foreign share and an
 // unknown entry both remain not-found.
-func (h *Handler) resolveTrashID(owner core.UserID, raw string, need acl.Perms) (core.Resolved, string, error) {
+func (h *Handler) resolveTrashID(owner files.UserID, raw string, need acl.Perms) (files.Resolved, string, error) {
 	share, id, ok := strings.Cut(raw, ":")
 	if !ok || id == "" {
-		return core.Resolved{}, "", apierr.BadRequest("trash.bad_id", "ids")
+		return files.Resolved{}, "", apierr.BadRequest("trash.bad_id", "ids")
 	}
 	n, err := strconv.ParseUint(share, 10, 32)
 	if err != nil {
-		return core.Resolved{}, "", apierr.BadRequest("trash.bad_id", "ids")
+		return files.Resolved{}, "", apierr.BadRequest("trash.bad_id", "ids")
 	}
 	for _, root := range h.d.Core.Roots(owner) {
 		narrowed, err := num.Narrow[uint32](root.Share)
@@ -213,5 +213,5 @@ func (h *Handler) resolveTrashID(owner core.UserID, raw string, need acl.Perms) 
 		}
 		return resolved, id, nil
 	}
-	return core.Resolved{}, "", core.ErrNotFound
+	return files.Resolved{}, "", files.ErrNotFound
 }

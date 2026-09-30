@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	previewlimits "github.com/heavycaffeiner/stowcloud/backend/internal/feature/preview/limits"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/archive"
 )
 
@@ -114,7 +114,7 @@ func archiveFilename(requested string) (string, bool) {
 }
 
 // ArchiveVisit is the callback used by BuildArchive to enumerate entries.
-type ArchiveVisit func(core.WalkEntry, *core.Stream) error
+type ArchiveVisit func(files.WalkEntry, *files.Stream) error
 
 // ArchiveWalk enumerates entries for one archive request.
 type ArchiveWalk func(context.Context, ArchiveVisit) error
@@ -125,7 +125,7 @@ type ArchiveWalk func(context.Context, ArchiveVisit) error
 func BuildArchive(ctx context.Context, w io.Writer, name string, walk ArchiveWalk, logger *slog.Logger) error {
 	z := archive.NewWriter(w)
 	builder := archiveBuilder{z: z}
-	walkErr := walk(ctx, func(entry core.WalkEntry, stream *core.Stream) error {
+	walkErr := walk(ctx, func(entry files.WalkEntry, stream *files.Stream) error {
 		if !entry.IsDir && !entry.Readable && logger != nil {
 			logger.Warn("skipped an unreadable entry", "path", entry.RelPath)
 		}
@@ -188,7 +188,7 @@ func (r *archiveEntryReader) Read(p []byte) (int, error) {
 	return n, nil
 }
 
-func (b *archiveBuilder) add(entry core.WalkEntry, stream *core.Stream) error {
+func (b *archiveBuilder) add(entry files.WalkEntry, stream *files.Stream) error {
 	if b.entries >= archiveContentEntries {
 		b.incomplete = true
 		return errArchiveBounded

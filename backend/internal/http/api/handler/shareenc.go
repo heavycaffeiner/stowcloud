@@ -6,7 +6,7 @@ package handler
 import (
 	"encoding/base64"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 )
 
 // ShareEncryptionView is one share's rclone-crypt parameters.
@@ -47,7 +47,7 @@ type ShareEncryptionView struct {
 // exact 22-character string the user types into rclone as password2, and
 // re-encoding it would hand back a value that no longer matches what they
 // typed.
-func ShareEncryptionOf(share core.ShareID, labels []string, e core.Encryption) ShareEncryptionView {
+func ShareEncryptionOf(share files.ShareID, labels []string, e files.Encryption) ShareEncryptionView {
 	return ShareEncryptionView{
 		Share:     int64(share),
 		Labels:    labels,

@@ -12,8 +12,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	httpheader "github.com/heavycaffeiner/stowcloud/backend/internal/http/headers"
 )
@@ -83,7 +83,7 @@ func (s *Server) davGet(w http.ResponseWriter, r *http.Request, p Principal, t T
 		return
 	}
 	defer s.closeDownload(stream)
-	s.setEntryHeaders(ctx, w, core.Entry{Name: entry.Name, Size: entry.Size, MTimeNs: entry.MTime, ETag: entry.ETag, IsDir: false})
+	s.setEntryHeaders(ctx, w, files.Entry{Name: entry.Name, Size: entry.Size, MTimeNs: entry.MTime, ETag: entry.ETag, IsDir: false})
 	contentType := ContentTypeOf(false, entry.Name)
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -163,7 +163,7 @@ func (s *Server) davPut(w http.ResponseWriter, r *http.Request, p Principal, t T
 	}
 	var currentToken string
 	if existed {
-		currentToken, _ = core.FileETag(st)
+		currentToken, _ = files.FileETag(st)
 	}
 
 	// The core refuses every validator it is handed by design (every etag it
@@ -265,8 +265,8 @@ func (s *Server) davMkcol(w http.ResponseWriter, r *http.Request, p Principal, t
 		// about to create, and 404 gives a client creating parents on
 		// demand no reason to. Android maps exactly this to "create the
 		// parent and retry".
-		if errors.Is(merr, core.ErrNotFound) && !parentExists(res) {
-			s.failDav(w, r, core.ErrConflict, apierr.VisibilityHidden)
+		if errors.Is(merr, files.ErrNotFound) && !parentExists(res) {
+			s.failDav(w, r, files.ErrConflict, apierr.VisibilityHidden)
 			return
 		}
 		// core.ErrExists classifies as apierr.Exists, which davStatusOf
@@ -282,7 +282,7 @@ func (s *Server) davMkcol(w http.ResponseWriter, r *http.Request, p Principal, t
 
 // parentExists reports whether the enclosing collection is there. A share
 // root always is, so anything one level inside it has a parent.
-func parentExists(res core.Resolved) bool {
+func parentExists(res files.Resolved) bool {
 	p := res.Path()
 	if p.IsRoot() || p.Parent().IsRoot() {
 		return true
@@ -292,7 +292,7 @@ func parentExists(res core.Resolved) bool {
 }
 
 // closeDownload closes a GET stream, logging a failure the client cannot see.
-func (s *Server) closeDownload(stream *core.Stream) {
+func (s *Server) closeDownload(stream *files.Stream) {
 	if err := stream.Close(); err != nil {
 		s.log.Warn("a download stream did not close cleanly", "error", err)
 	}
@@ -404,12 +404,12 @@ func (s *Server) davMove(w http.ResponseWriter, r *http.Request, p Principal, t 
 		return
 	}
 
-	if serr := core.RefuseSelfDescendant(from, to); serr != nil {
+	if serr := files.RefuseSelfDescendant(from, to); serr != nil {
 		// 409, not the 403 the sentinel would otherwise answer with: the
 		// android client's own status table maps 409 to a conflict result,
 		// which is the closer fit for a request that conflicts with the
 		// tree's own shape rather than with a permission.
-		s.failDav(w, r, core.ErrConflict, apierr.VisibilityHidden)
+		s.failDav(w, r, files.ErrConflict, apierr.VisibilityHidden)
 		return
 	}
 
@@ -432,8 +432,8 @@ func (s *Server) davMove(w http.ResponseWriter, r *http.Request, p Principal, t 
 		return
 	}
 
-	if _, merr := s.deps.Core.Move(ctx, from, to, core.MoveOpts{Overwrite: overwrite}); merr != nil {
-		if errors.Is(merr, core.ErrExists) {
+	if _, merr := s.deps.Core.Move(ctx, from, to, files.MoveOpts{Overwrite: overwrite}); merr != nil {
+		if errors.Is(merr, files.ErrExists) {
 			// A collision the stat above did not see, because something
 			// created the destination in between. The standard answers a
 			// refused overwrite with 412, and one client maps exactly that
@@ -475,14 +475,14 @@ func (s *Server) davCopy(w http.ResponseWriter, r *http.Request, p Principal, t 
 		s.failDav(w, r, err, apierr.VisibilityHidden)
 		return
 	}
-	if serr := core.RefuseSelfDescendant(from, to); serr != nil {
-		s.failDav(w, r, core.ErrConflict, apierr.VisibilityHidden)
+	if serr := files.RefuseSelfDescendant(from, to); serr != nil {
+		s.failDav(w, r, files.ErrConflict, apierr.VisibilityHidden)
 		return
 	}
 
 	srcSt, serr := from.Root().Stat(from.Path())
 	if serr != nil {
-		s.failDav(w, r, core.ErrNotFound, apierr.VisibilityHidden)
+		s.failDav(w, r, files.ErrNotFound, apierr.VisibilityHidden)
 		return
 	}
 	if srcSt.Kind.IsDir() || from.Share() != to.Share() {

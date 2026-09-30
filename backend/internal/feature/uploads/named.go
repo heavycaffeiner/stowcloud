@@ -9,8 +9,8 @@ import (
 	"io"
 	"slices"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads/limits"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 )
@@ -27,7 +27,7 @@ import (
 // own spooled file to wait, and each append drains whichever successors arrived
 // in the interim.
 func (e *Engine) PutNamed(
-	ctx context.Context, root vfs.Root, id SessionID, user core.UserID,
+	ctx context.Context, root vfs.Root, id SessionID, user files.UserID,
 	name uint32, body io.Reader, sum *Checksum,
 ) error {
 	unlock := e.lockRow(id)
@@ -370,7 +370,7 @@ type Chunk struct {
 // start and takes the highest name to decide what to call the next chunk, so
 // both answers are right while no member's size is invented.
 func (e *Engine) ListChunks(
-	ctx context.Context, root vfs.Root, id SessionID, user core.UserID,
+	ctx context.Context, root vfs.Root, id SessionID, user files.UserID,
 ) ([]Chunk, error) {
 	r, err := e.load(ctx, id)
 	if err != nil {

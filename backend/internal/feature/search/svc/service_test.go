@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/search/limits"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/search/stowcloud"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	search "github.com/stowcloud/namesearch"
 	"github.com/stowcloud/namesearch/index"
@@ -44,7 +44,7 @@ func corpus(t *testing.T, share uint32, names ...string) (search.Source, string)
 			t.Errorf("close: %v", cerr)
 		}
 	})
-	return stowcloud.SourceOf(core.ScanSource{Share: core.ShareID(share), Root: root, Base: vfs.RootPath()}), dir
+	return stowcloud.SourceOf(files.ScanSource{Share: files.ShareID(share), Root: root, Base: vfs.RootPath()}), dir
 }
 
 func newIndex(t *testing.T) *index.NameIndex {

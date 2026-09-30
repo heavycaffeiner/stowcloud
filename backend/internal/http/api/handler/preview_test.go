@@ -6,8 +6,8 @@ package handler
 import (
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/preview"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 )
 
 // decodableFormats pairs each format the decoder sniffs with the extensions a
@@ -100,7 +100,7 @@ func TestNothingUndecodableIsAdvertised(t *testing.T) {
 // A directory never carries the hint. It has no bytes to decode, and a grid
 // that asked would spend a request per folder to be told so.
 func TestADirectoryIsNeverPreviewable(t *testing.T) {
-	v := EntryOf(core.Entry{Name: "photos.png", IsDir: true}, "", EntryRefs{})
+	v := EntryOf(files.Entry{Name: "photos.png", IsDir: true}, "", EntryRefs{})
 	if v.Preview != nil {
 		t.Error("a directory was projected as previewable")
 	}
@@ -110,10 +110,10 @@ func TestADirectoryIsNeverPreviewable(t *testing.T) {
 // client tests for presence instead of reading a field that is usually there
 // and usually false.
 func TestTheHintIsAbsentOnAnUndecodableFile(t *testing.T) {
-	if v := EntryOf(core.Entry{Name: "notes.txt"}, "", EntryRefs{}); v.Preview != nil {
+	if v := EntryOf(files.Entry{Name: "notes.txt"}, "", EntryRefs{}); v.Preview != nil {
 		t.Error("a text file carries a preview hint")
 	}
-	v := EntryOf(core.Entry{Name: "photo.png"}, "", EntryRefs{})
+	v := EntryOf(files.Entry{Name: "photo.png"}, "", EntryRefs{})
 	if v.Preview == nil || !v.Preview.Available {
 		t.Error("an image carries no preview hint")
 	}

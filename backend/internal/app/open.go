@@ -32,8 +32,6 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/logbook"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/settings/runtimecfg"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files/backends"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/oidc"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/preview"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/search/controller"
@@ -41,6 +39,8 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/smb/publish"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files/backends"
 	filehttp "github.com/heavycaffeiner/stowcloud/backend/internal/http/api/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	searchhttp "github.com/heavycaffeiner/stowcloud/backend/internal/http/api/search"
@@ -130,7 +130,7 @@ type Engine struct {
 	// ACL is the permission evaluator every service asks.
 	ACL *acl.Evaluator
 	// Core is the domain root.
-	Core *core.Core
+	Core *files.Core
 
 	// Revision is the git commit hash stamped into the binary at build time.
 	Revision string
@@ -387,7 +387,7 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 		OnMembership: func() { reloadMemberships(ctx, e, logger) },
 	})
 
-	coreSvc, kerr := core.New(ctx, core.Options{
+	coreSvc, kerr := files.New(ctx, files.Options{
 		State:   e.State,
 		Cache:   e.Cache,
 		Journal: e.Journal,

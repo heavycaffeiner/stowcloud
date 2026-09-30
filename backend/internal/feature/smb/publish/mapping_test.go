@@ -7,26 +7,26 @@ import (
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 )
 
 func TestSharesOfFiltersBrokenEncryptedAndNonLocal(t *testing.T) {
-	defs := []core.ShareDef{
+	defs := []files.ShareDef{
 		{ID: 1, Name: "documents", Host: "/srv/documents"},
 		{ID: 2, Name: "archive", Host: "/srv/archive", BrokenReason: "not_found"},
-		{ID: 3, Name: "bucket", Backend: core.BackendS3},
+		{ID: 3, Name: "bucket", Backend: files.BackendS3},
 		{ID: 4, Name: "secrets", Host: "/srv/secrets"},
 	}
-	got := publishShares(defs, map[core.ShareID]bool{4: true}, slog.Default())
+	got := publishShares(defs, map[files.ShareID]bool{4: true}, slog.Default())
 	if len(got) != 1 || got[0].Name != "documents" {
 		t.Fatalf("got %+v, want only documents", got)
 	}
 }
 
 func TestSharesOfCarriesModesAndPath(t *testing.T) {
-	got := publishShares([]core.ShareDef{{ID: 1, Name: "documents", Host: "/srv/documents", Policy: vfs.SharePolicy{ModeFile: 0o640, ModeDir: 0o750}, SharedExternally: true}}, nil, slog.Default())
+	got := publishShares([]files.ShareDef{{ID: 1, Name: "documents", Host: "/srv/documents", Policy: vfs.SharePolicy{ModeFile: 0o640, ModeDir: 0o750}, SharedExternally: true}}, nil, slog.Default())
 	if len(got) != 1 || got[0].ModeFile != 0o640 || got[0].ModeDir != 0o750 || !got[0].SharedExternally || got[0].Path != "/srv/documents" {
 		t.Fatalf("got %+v", got)
 	}

@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 )
 
@@ -49,13 +49,13 @@ func linksOverview(t *testing.T) string {
 	}
 
 	dir := t.TempDir()
-	sh, err := e.Core.CreateShare(ctx, core.ShareSpec{Name: "files", Host: dir})
+	sh, err := e.Core.CreateShare(ctx, files.ShareSpec{Name: "files", Host: dir})
 	if err != nil {
 		t.Fatalf("creating the share: %v", err)
 	}
 	for _, who := range []int64{admin, bob} {
 		id := who
-		if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
+		if _, gerr := e.Core.CreateGrant(ctx, files.GrantSpec{
 			User: &id, Share: sh.ID,
 			Allow:   acl.Read | acl.Write | acl.Create | acl.Download | acl.Share,
 			Inherit: true, Label: sh.Name,
@@ -71,11 +71,11 @@ func linksOverview(t *testing.T) string {
 		if werr := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o600); werr != nil {
 			t.Fatalf("writing %s: %v", name, werr)
 		}
-		r, rerr := e.Core.Resolve(core.UserID(who), vpathOf(t, sh.Name+"/"+name), acl.Share)
+		r, rerr := e.Core.Resolve(files.UserID(who), vpathOf(t, sh.Name+"/"+name), acl.Share)
 		if rerr != nil {
 			t.Fatalf("resolving %s: %v", name, rerr)
 		}
-		if _, _, cerr := e.Core.CreateLink(ctx, r, core.LinkSpec{
+		if _, _, cerr := e.Core.CreateLink(ctx, r, files.LinkSpec{
 			Perms: acl.Read | acl.Download, MaxDown: -1,
 		}); cerr != nil {
 			t.Fatalf("minting over %s: %v", name, cerr)

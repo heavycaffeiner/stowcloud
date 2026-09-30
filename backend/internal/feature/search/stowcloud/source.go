@@ -5,7 +5,7 @@
 package stowcloud
 
 import (
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	search "github.com/stowcloud/namesearch"
 )
@@ -34,7 +34,7 @@ func (r reader) Stat(path string) (search.Stat, error) {
 	return search.Stat{Dev: st.Dev, Ino: st.Ino, Size: st.Size, MTimeNs: st.MtimeNs, Kind: search.EntryKind(st.Kind)}, nil
 }
 
-func SourceOf(s core.ScanSource) search.Source {
+func SourceOf(s files.ScanSource) search.Source {
 	if s.Root == nil {
 		return search.Source{}
 	}
@@ -58,7 +58,7 @@ func SourceOf(s core.ScanSource) search.Source {
 	}
 }
 
-func SourcesOf(sources []core.ScanSource) []search.Source {
+func SourcesOf(sources []files.ScanSource) []search.Source {
 	out := make([]search.Source, 0, len(sources))
 	for _, s := range sources {
 		if src := SourceOf(s); src.Reader != nil {
@@ -68,7 +68,7 @@ func SourcesOf(sources []core.ScanSource) []search.Source {
 	return out
 }
 
-func LabelSources(c *core.Core, user core.UserID, sources []core.ScanSource) []search.Source {
+func LabelSources(c *files.Core, user files.UserID, sources []files.ScanSource) []search.Source {
 	out := make([]search.Source, 0, len(sources))
 	for _, s := range sources {
 		label := c.ShareLabel(user, s.Share)

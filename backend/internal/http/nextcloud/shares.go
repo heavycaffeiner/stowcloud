@@ -11,8 +11,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 )
 
@@ -140,7 +140,7 @@ func (s *Server) sharesUnderRoot(c *gin.Context, p Principal) []Val {
 
 // sharesAtResolved answers every link the caller owns exactly at one path
 // they have already resolved for reading.
-func (s *Server) sharesAtResolved(c *gin.Context, p Principal, res core.Resolved) []Val {
+func (s *Server) sharesAtResolved(c *gin.Context, p Principal, res files.Resolved) []Val {
 	ctx := c.Request.Context()
 	items := make([]Val, 0)
 	links, err := s.deps.Core.ListLinks(ctx, res.User(), &res)
@@ -159,7 +159,7 @@ func (s *Server) sharesAtResolved(c *gin.Context, p Principal, res core.Resolved
 // roots and still carries the Share capability. Link rows are owner-scoped in
 // the core, but owner scope alone is not enough for a restricted credential:
 // two links owned by one account can target different delegated roots.
-func (s *Server) linkInScope(ctx context.Context, p Principal, l core.Link) bool {
+func (s *Server) linkInScope(ctx context.Context, p Principal, l files.Link) bool {
 	if s.deps.VpathOf == nil {
 		return false
 	}
@@ -243,7 +243,7 @@ func (s *Server) createLinkShare(c *gin.Context, ctx context.Context, p Principa
 		}
 	}
 
-	link, _, cerr := s.deps.Core.CreateLink(ctx, res, core.LinkSpec{
+	link, _, cerr := s.deps.Core.CreateLink(ctx, res, files.LinkSpec{
 		Perms:    perms,
 		Password: password,
 		Expires:  expires,
@@ -317,7 +317,7 @@ func (s *Server) updateLinkShare(c *gin.Context, p Principal, id int64) (Val, bo
 	}
 
 	req := parseSharePatchBody(c)
-	var patch core.LinkPatch
+	var patch files.LinkPatch
 
 	switch {
 	case req.hasPermissions:
@@ -590,7 +590,7 @@ func formatShareExpiration(ns int64) string {
 // always correct, so this never leaves url empty while a token exists and
 // PublicLinkPath is wired. password is never emitted past evidence it
 // exists: no value, no hash, ever crosses this boundary.
-func (s *Server) linkShareVal(c *gin.Context, l core.Link) Val {
+func (s *Server) linkShareVal(c *gin.Context, l files.Link) Val {
 	ctx := c.Request.Context()
 	login := s.loginNameOf(ctx, Principal{UserID: int64(l.Owner)})
 

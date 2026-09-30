@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 )
 
 // LOCK and UNLOCK.
@@ -67,7 +67,7 @@ var (
 )
 
 // Lock answers LOCK, both a new lock and a refresh.
-func (h *Handler) Lock(w http.ResponseWriter, r *http.Request, res core.Resolved) {
+func (h *Handler) Lock(w http.ResponseWriter, r *http.Request, res files.Resolved) {
 	if h.taker == nil {
 		h.failAllowing(w, r, res, ErrNoLockTable)
 		return
@@ -112,7 +112,7 @@ func (h *Handler) Lock(w http.ResponseWriter, r *http.Request, res core.Resolved
 	// instead and the reservation cannot happen, leaving a client that takes a
 	// lock before each PUT unable to create anything.
 	status := http.StatusOK
-	var entry core.Entry
+	var entry files.Entry
 	if st, serr := res.Root().Stat(res.Path()); serr == nil {
 		entry = h.core.EntryAt(res, st)
 	} else {
@@ -157,12 +157,12 @@ func (h *Handler) Lock(w http.ResponseWriter, r *http.Request, res core.Resolved
 //
 // The return is a domain entry and not a filesystem stat, keeping the protocol
 // tier clear of types belonging under the domain.
-func (h *Handler) createLockNull(r *http.Request, res core.Resolved) (core.Entry, error) {
+func (h *Handler) createLockNull(r *http.Request, res files.Resolved) (files.Entry, error) {
 	if err := res.Require(acl.Write | acl.Create); err != nil {
-		return core.Entry{}, err
+		return files.Entry{}, err
 	}
 	if err := h.guard(r, res); err != nil {
-		return core.Entry{}, err
+		return files.Entry{}, err
 	}
 	// No validator: the resource does not exist, so there is nothing to
 	// compare against and a nil condition is what says "create it".
@@ -170,7 +170,7 @@ func (h *Handler) createLockNull(r *http.Request, res core.Resolved) (core.Entry
 }
 
 // refresh extends a lock the request already holds.
-func (h *Handler) refresh(w http.ResponseWriter, r *http.Request, res core.Resolved, timeout time.Duration) {
+func (h *Handler) refresh(w http.ResponseWriter, r *http.Request, res files.Resolved, timeout time.Duration) {
 	tokens, err := h.precondition(r, res)
 	if err != nil {
 		h.fail(w, r, err)
@@ -190,7 +190,7 @@ func (h *Handler) refresh(w http.ResponseWriter, r *http.Request, res core.Resol
 }
 
 // Unlock answers UNLOCK.
-func (h *Handler) Unlock(w http.ResponseWriter, r *http.Request, res core.Resolved) {
+func (h *Handler) Unlock(w http.ResponseWriter, r *http.Request, res files.Resolved) {
 	if h.taker == nil {
 		h.failAllowing(w, r, res, ErrNoLockTable)
 		return

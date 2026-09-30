@@ -15,8 +15,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/settings/runtimecfg"
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
@@ -69,7 +69,7 @@ func (e *Engine) startEvents(ctx context.Context, cfg watchSettings) {
 }
 
 // watchShare tells the watcher where a share lives on disk.
-func (e *Engine) watchShare(def core.ShareDef) {
+func (e *Engine) watchShare(def files.ShareDef) {
 	if e.watcher == nil {
 		return
 	}
@@ -78,7 +78,7 @@ func (e *Engine) watchShare(def core.ShareDef) {
 	})
 }
 
-func (e *Engine) unwatchShare(def core.ShareDef) {
+func (e *Engine) unwatchShare(def files.ShareDef) {
 	if e.watcher == nil {
 		return
 	}
@@ -116,7 +116,7 @@ func eventSources(ctx context.Context, in <-chan runtimeevents.Event) <-chan ser
 // directory marks that directory and its ancestors, leaving the rest of the
 // share's cache alone.
 func (e *Engine) invalidateCache(ctx context.Context, ev runtimeevents.Event) {
-	share := core.ShareID(ev.Share)
+	share := files.ShareID(ev.Share)
 	if ev.All {
 		if err := e.Core.InvalidateShare(ctx, share); err != nil {
 			e.logger.Warn("a share could not be invalidated after dropped events; folder sizes may read stale",
@@ -137,7 +137,7 @@ func (e *Engine) resolveForEvents(user int64, path string) (server.EventTarget, 
 	if err != nil {
 		return server.EventTarget{}, false
 	}
-	resolved, rerr := e.Core.Resolve(core.UserID(user), vp, acl.Read)
+	resolved, rerr := e.Core.Resolve(files.UserID(user), vp, acl.Read)
 	if rerr != nil {
 		return server.EventTarget{}, false
 	}

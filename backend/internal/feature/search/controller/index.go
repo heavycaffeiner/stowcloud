@@ -17,9 +17,9 @@ import (
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/search/stowcloud"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/search/svc"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/concurrency"
 	fsatomic "github.com/stowcloud/durablefs"
@@ -37,7 +37,7 @@ var (
 
 // Options supplies the durable and live dependencies for the search runtime.
 type Options struct {
-	Core       *core.Core
+	Core       *files.Core
 	State      *state.DB
 	Search     *svc.Service
 	DataDir    string
@@ -52,7 +52,7 @@ type Options struct {
 // Controller owns index attachment, freshness recovery, watcher updates, and
 // the durable index-build operation. It has no HTTP dependency.
 type Controller struct {
-	Core              *core.Core
+	Core              *files.Core
 	State             *state.DB
 	Search            *svc.Service
 	DataDir           string
@@ -215,17 +215,17 @@ func (c *Controller) Offer(share uint32, dir string, all bool) {
 
 // StartIndexBuild creates the durable operation and schedules the detached
 // build. The returned operation is the same initial row exposed by the API.
-func (c *Controller) StartIndexBuild(ctx context.Context, owner int64) (core.Operation, error) {
+func (c *Controller) StartIndexBuild(ctx context.Context, owner int64) (files.Operation, error) {
 	if !c.HasIndex() {
-		return core.Operation{}, ErrIndexDisabled
+		return files.Operation{}, ErrIndexDisabled
 	}
 	if !c.indexBuilding.CompareAndSwap(false, true) {
-		return core.Operation{}, ErrIndexBuilding
+		return files.Operation{}, ErrIndexBuilding
 	}
 	id, err := c.State.CreateOp(ctx, owner, state.OpIndexBuild, 0, c.clk().Nanos(), nil)
 	if err != nil {
 		c.indexBuilding.Store(false)
-		return core.Operation{}, err
+		return files.Operation{}, err
 	}
 	jobCtx := context.WithoutCancel(ctx)
 	sources := indexSourcesOf(c.Core.ScanSources())
@@ -233,10 +233,10 @@ func (c *Controller) StartIndexBuild(ctx context.Context, owner int64) (core.Ope
 		c.Jobs = &concurrency.Group{}
 	}
 	c.Jobs.Go(jobCtx, "index build", func() { c.runIndexBuild(jobCtx, id, sources) })
-	op, err := c.Core.Operation(ctx, core.UserID(owner), core.OperationID(id))
+	op, err := c.Core.Operation(ctx, files.UserID(owner), files.OperationID(id))
 	if err != nil {
 		c.indexBuilding.Store(false)
-		return core.Operation{}, err
+		return files.Operation{}, err
 	}
 	return op, nil
 }
@@ -313,8 +313,8 @@ func indexedCount(files uint64) int64 {
 	}
 	return int64(files)
 }
-func indexSourcesOf(scan []core.ScanSource) []searchlib.Source { return stowcloud.SourcesOf(scan) }
-func indexDir(dataDir string) string                           { return filepath.Join(dataDir, indexDirName) }
+func indexSourcesOf(scan []files.ScanSource) []searchlib.Source { return stowcloud.SourcesOf(scan) }
+func indexDir(dataDir string) string                            { return filepath.Join(dataDir, indexDirName) }
 
 type legacyIndexMigrationError struct {
 	outcome fsatomic.Outcome

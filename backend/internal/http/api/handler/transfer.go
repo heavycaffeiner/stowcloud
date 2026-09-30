@@ -6,9 +6,9 @@ package handler
 import (
 	"strconv"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/preview"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/search/svc"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	search "github.com/stowcloud/namesearch"
 )
 
@@ -33,7 +33,7 @@ type MoveView struct {
 }
 
 // MoveOf projects a completed move.
-func MoveOf(r core.MoveResult) MoveView {
+func MoveOf(r files.MoveResult) MoveView {
 	return MoveView{
 		Path:    r.Created.String(),
 		Copied:  r.WillCopy,
@@ -56,7 +56,7 @@ type CopyStartView struct {
 }
 
 // CopyStartOf projects an accepted copy.
-func CopyStartOf(s core.CopyStart) CopyStartView {
+func CopyStartOf(s files.CopyStart) CopyStartView {
 	v := CopyStartView{
 		Path:    s.Dest.Path().String(),
 		Started: s.Started,
@@ -82,7 +82,7 @@ type AggregateView struct {
 }
 
 // AggregateOf projects a rollup.
-func AggregateOf(a core.Aggregate) AggregateView {
+func AggregateOf(a files.Aggregate) AggregateView {
 	return AggregateView{
 		ETag:  a.Etag,
 		Size:  strconv.FormatUint(a.RSize, 10),
@@ -109,7 +109,7 @@ type RecentView struct {
 }
 
 // RecentOf projects one hit.
-func RecentOf(h core.RecentHit) RecentView {
+func RecentOf(h files.RecentHit) RecentView {
 	return RecentView{
 		Path:    h.Vpath.String(),
 		Name:    h.Name,
@@ -124,7 +124,7 @@ func RecentOf(h core.RecentHit) RecentView {
 //
 // Never nil: an account that has written nothing encodes as an empty array,
 // because a client iterating a null gets a runtime error rather than zero rows.
-func RecentListOf(hits []core.RecentHit) []RecentView {
+func RecentListOf(hits []files.RecentHit) []RecentView {
 	out := make([]RecentView, 0, len(hits))
 	for _, h := range hits {
 		out = append(out, RecentOf(h))

@@ -12,7 +12,7 @@ package handler
 import (
 	"strconv"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 )
 
 // OperationView is one job as a client reads it.
@@ -50,7 +50,7 @@ type OperationItemView struct {
 //
 // An empty list encodes as [] rather than null, so a client iterating the
 // field does not have to test for it first.
-func OperationsOf(ops []core.Operation) []OperationView {
+func OperationsOf(ops []files.Operation) []OperationView {
 	out := make([]OperationView, 0, len(ops))
 	for _, op := range ops {
 		out = append(out, OperationOf(op))
@@ -59,7 +59,7 @@ func OperationsOf(ops []core.Operation) []OperationView {
 }
 
 // OperationOf projects one job.
-func OperationOf(op core.Operation) OperationView {
+func OperationOf(op files.Operation) OperationView {
 	v := OperationView{
 		ID:           strconv.FormatInt(int64(op.ID), 10),
 		Kind:         op.KindName(),

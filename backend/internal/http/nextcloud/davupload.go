@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 )
 
@@ -327,7 +327,7 @@ func (s *Server) uploadAssemble(w http.ResponseWriter, r *http.Request, p Princi
 	}
 	var currentToken string
 	if existed {
-		currentToken, _ = core.FileETag(st)
+		currentToken, _ = files.FileETag(st)
 	}
 	switch header := strings.TrimSpace(r.Header.Get("If-Match")); header {
 	case "":
@@ -406,13 +406,13 @@ func (s *Server) uploadAbort(w http.ResponseWriter, r *http.Request, p Principal
 // share-relative destination back into the client-facing path; nothing here
 // trusts the alias's Share/Dest fields directly, since both came from
 // BindAlias rather than from this request.
-func (s *Server) aliasTarget(ctx context.Context, p Principal, alias upload.Alias, need acl.Perms) (core.Resolved, error) {
+func (s *Server) aliasTarget(ctx context.Context, p Principal, alias upload.Alias, need acl.Perms) (files.Resolved, error) {
 	if s.deps.VpathOf == nil {
-		return core.Resolved{}, core.ErrNotFound
+		return files.Resolved{}, files.ErrNotFound
 	}
 	vpath, err := s.deps.VpathOf(user(p), alias.Share, alias.Dest)
 	if err != nil {
-		return core.Resolved{}, core.ErrNotFound
+		return files.Resolved{}, files.ErrNotFound
 	}
 	return s.resolve(ctx, p, vpath, need)
 }
@@ -429,7 +429,7 @@ func (s *Server) aliasTarget(ctx context.Context, p Principal, alias upload.Alia
 // publish.
 func (s *Server) uploadWriteTarget(
 	ctx context.Context, p Principal, alias upload.Alias,
-) (core.Resolved, error) {
+) (files.Resolved, error) {
 	return s.aliasTarget(ctx, p, alias, acl.Write|acl.Create)
 }
 

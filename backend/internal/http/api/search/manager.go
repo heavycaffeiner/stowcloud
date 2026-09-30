@@ -6,18 +6,18 @@ import (
 	"log/slog"
 
 	"github.com/gin-gonic/gin"
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/search/controller"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
 )
 
 type Options struct {
-	Core       *core.Core
+	Core       *files.Core
 	Controller *controller.Controller
 	Clock      clock.Clock
 	Logger     *slog.Logger
-	Owner      func(*gin.Context) (core.UserID, bool)
+	Owner      func(*gin.Context) (files.UserID, bool)
 	Admin      func(*gin.Context) (int64, bool)
 	Refuse     func(*gin.Context, apierr.Classified)
 	FailKnown  func(*gin.Context, error)
@@ -25,11 +25,11 @@ type Options struct {
 }
 
 type Manager struct {
-	Core       *core.Core
+	Core       *files.Core
 	Controller *controller.Controller
 	Clock      clock.Clock
 	Logger     *slog.Logger
-	Owner      func(*gin.Context) (core.UserID, bool)
+	Owner      func(*gin.Context) (files.UserID, bool)
 	Admin      func(*gin.Context) (int64, bool)
 	Refuse     func(*gin.Context, apierr.Classified)
 	FailKnown  func(*gin.Context, error)
@@ -51,7 +51,7 @@ func (m *Manager) log() *slog.Logger {
 	}
 	return m.Logger
 }
-func (m *Manager) ownerOf(c *gin.Context) (core.UserID, bool) {
+func (m *Manager) ownerOf(c *gin.Context) (files.UserID, bool) {
 	if m.Owner == nil {
 		return 0, false
 	}

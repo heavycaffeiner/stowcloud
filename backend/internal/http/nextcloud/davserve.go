@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 )
 
@@ -34,7 +34,7 @@ const davCompliance = "1, 2, 3"
 func (s *Server) serveDav(w http.ResponseWriter, r *http.Request) {
 	target, ok := ParseTarget(r.URL.EscapedPath())
 	if !ok {
-		s.failDav(w, r, core.ErrNotFound, apierr.VisibilityHidden)
+		s.failDav(w, r, files.ErrNotFound, apierr.VisibilityHidden)
 		return
 	}
 
@@ -71,7 +71,7 @@ func (s *Server) serveDav(w http.ResponseWriter, r *http.Request) {
 		// than as a refusal: every client treats absence here as "the server
 		// does not have this feature" and stops asking, while a refusal is
 		// shown to a person as an error.
-		s.failDav(w, r, core.ErrNotFound, apierr.VisibilityHidden)
+		s.failDav(w, r, files.ErrNotFound, apierr.VisibilityHidden)
 	}
 }
 

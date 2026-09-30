@@ -15,8 +15,8 @@ import (
 	"strconv"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 )
 
 // SessionView is one live session as its owner sees it.
@@ -112,7 +112,7 @@ func AppPasswordOf(r auth.AppPasswordRow) AppPasswordView {
 	v := AppPasswordView{
 		ID:        strconv.FormatInt(r.ID, 10),
 		Name:      r.Name,
-		Perms:     core.PermNames(acl.Perms(r.ScopePerms)),
+		Perms:     files.PermNames(acl.Perms(r.ScopePerms)),
 		Shares:    append([]string(nil), r.Shares...),
 		CreatedNs: strconv.FormatInt(r.CreatedNs, 10),
 	}

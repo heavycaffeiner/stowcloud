@@ -11,7 +11,7 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/stowcloud/transfer"
 )
@@ -57,8 +57,8 @@ func ParseChecksum(s string) (Checksum, error) {
 // specific.
 type Session struct {
 	ID    SessionID
-	User  core.UserID
-	Share core.ShareID
+	User  files.UserID
+	Share files.ShareID
 	// Dest names the share-relative destination the file publishes to.
 	Dest  vfs.SafePath
 	State SessionState
@@ -79,7 +79,7 @@ type Session struct {
 // Alias is a client-chosen transfer id bound to a session.
 type Alias struct {
 	Session SessionID
-	Share   core.ShareID
+	Share   files.ShareID
 	Dest    string
 }
 

@@ -9,9 +9,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"github.com/gin-gonic/gin"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/preview"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	httpheader "github.com/heavycaffeiner/stowcloud/backend/internal/http/headers"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
@@ -97,7 +97,7 @@ func parseThumbnailWildcard(w string) (int, int, string, bool) {
 	}
 	return x, y, p, true
 }
-func (s *Server) serveSizedPreview(c *gin.Context, ctx context.Context, res core.Resolved, x, y int) (err error) {
+func (s *Server) serveSizedPreview(c *gin.Context, ctx context.Context, res files.Resolved, x, y int) (err error) {
 	t, e := s.deps.Preview.GetSized(ctx, res, x, y)
 	if e != nil {
 		c.Status(404)
@@ -124,7 +124,7 @@ func (s *Server) serveSizedPreview(c *gin.Context, ctx context.Context, res core
 	http.ServeContent(c.Writer, c.Request, "preview.png", st.ModTime(), t.File)
 	return nil
 }
-func previewETag(r core.Resolved, x, y int) string {
+func previewETag(r files.Resolved, x, y int) string {
 	h := sha256.Sum256([]byte(r.Path().String() + "\x00" + strconv.Itoa(x) + "x" + strconv.Itoa(y)))
 	return `"` + hex.EncodeToString(h[:])[:32] + `"`
 }

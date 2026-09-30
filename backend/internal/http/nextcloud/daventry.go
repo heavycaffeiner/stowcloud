@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 )
 
 // The three facts every response about a file carries, in one place: its
@@ -39,7 +39,7 @@ func (s *Server) instanceTag() string {
 // than a placeholder: a fabricated id would key a client's journal to a file
 // that does not exist, and the client already handles a missing one by
 // skipping the entry.
-func (s *Server) fileID(ctx context.Context, e core.Entry) uint64 {
+func (s *Server) fileID(ctx context.Context, e files.Entry) uint64 {
 	id, err := s.deps.Store.FileID(ctx, e)
 	if err != nil {
 		s.log.Warn("an entry has no stable identity", "name", e.Name, "error", err)
@@ -53,7 +53,7 @@ func (s *Server) fileID(ctx context.Context, e core.Entry) uint64 {
 // Best effort: a refusal, such as the cache's free-space guard, leaves the
 // response correct and the ids derived, and only a later request that names
 // a file by id alone answers absent.
-func (s *Server) recordIDs(ctx context.Context, entries []core.Entry) {
+func (s *Server) recordIDs(ctx context.Context, entries []files.Entry) {
 	if len(entries) == 0 {
 		return
 	}
@@ -64,7 +64,7 @@ func (s *Server) recordIDs(ctx context.Context, entries []core.Entry) {
 
 // davIDOf renders an entry's identity as a client stores it, or the empty
 // string when it has none.
-func (s *Server) davIDOf(ctx context.Context, e core.Entry) string {
+func (s *Server) davIDOf(ctx context.Context, e files.Entry) string {
 	id := s.fileID(ctx, e)
 	if id == 0 {
 		return ""
@@ -78,8 +78,8 @@ func (s *Server) davIDOf(ctx context.Context, e core.Entry) string {
 // header and another reads the standard one, and the identity header, without
 // which one client fails an upload that already succeeded on the ground that
 // it cannot tell what it just wrote.
-func (s *Server) setEntryHeaders(ctx context.Context, w http.ResponseWriter, e core.Entry) {
-	s.recordIDs(ctx, []core.Entry{e})
+func (s *Server) setEntryHeaders(ctx context.Context, w http.ResponseWriter, e files.Entry) {
+	s.recordIDs(ctx, []files.Entry{e})
 	if tag := ETagValue(e.ETag); tag != "" {
 		w.Header().Set("ETag", tag)
 		w.Header().Set("OC-ETag", tag)
@@ -122,7 +122,7 @@ func (s *Server) loginNameOf(ctx context.Context, p Principal) string {
 //
 // A deployment with no lock table admits the write: refusing everything
 // because a lock cannot be recorded turns an absent feature into an outage.
-func (s *Server) guardLock(ctx context.Context, res core.Resolved, p Principal) error {
+func (s *Server) guardLock(ctx context.Context, res files.Resolved, p Principal) error {
 	if s.deps.LockGuard == nil {
 		return nil
 	}

@@ -15,9 +15,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	upload "github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/server"
@@ -37,9 +37,9 @@ const (
 // was unavailable during startup.
 type Deps struct {
 	Upload    *upload.Engine
-	Core      *core.Core
-	Resolve   func(core.UserID, string, acl.Perms) (core.Resolved, error)
-	Owner     func(*gin.Context) (core.UserID, bool)
+	Core      *files.Core
+	Resolve   func(files.UserID, string, acl.Perms) (files.Resolved, error)
+	Owner     func(*gin.Context) (files.UserID, bool)
 	Admin     func(*gin.Context) (int64, bool)
 	Fail      func(*gin.Context, error)
 	Refuse    func(*gin.Context, apierr.Classified)
@@ -239,7 +239,7 @@ func (h *handlers) Patch(c *gin.Context) {
 	}
 	root, ok := h.d.Core.ShareRoot(sess.Share)
 	if !ok {
-		h.d.Fail(c, core.ErrNotFound)
+		h.d.Fail(c, files.ErrNotFound)
 		return
 	}
 	// Deferred-length sessions are quota-bounded by PatchAt while bytes arrive;
@@ -258,10 +258,10 @@ func (h *handlers) Patch(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-func (h *handlers) publish(c *gin.Context, engine *upload.Engine, sess upload.Session, id upload.SessionID, owner core.UserID) bool {
+func (h *handlers) publish(c *gin.Context, engine *upload.Engine, sess upload.Session, id upload.SessionID, owner files.UserID) bool {
 	dest, err := h.d.Core.VpathFor(owner, sess.Share, sess.Dest.Share())
 	if err != nil {
-		h.d.Fail(c, core.ErrNotFound)
+		h.d.Fail(c, files.ErrNotFound)
 		return false
 	}
 	resolved, err := h.d.Resolve(owner, dest.String(), acl.Write|acl.Create)
@@ -420,7 +420,7 @@ func uploadMetaOf(meta map[string]string) upload.Meta {
 	return out
 }
 
-func (h *handlers) notFound(c *gin.Context) { h.d.Fail(c, core.ErrNotFound) }
+func (h *handlers) notFound(c *gin.Context) { h.d.Fail(c, files.ErrNotFound) }
 
 func requestBodyReader(c *gin.Context) io.Reader {
 	if c.Request != nil && c.Request.Body != nil {

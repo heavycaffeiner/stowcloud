@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads/limits"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
@@ -74,7 +74,7 @@ type handle struct {
 
 // Engine is the upload state machine.
 type Engine struct {
-	core  *core.Core
+	core  *files.Core
 	state *state.DB
 	clk   clock.Clock
 	log   *slog.Logger
@@ -120,7 +120,7 @@ type Engine struct {
 
 // New assembles an engine atop the core and the durable half, loading the stored
 // chunk settings so a restart preserves an administrator's write.
-func New(ctx context.Context, c *core.Core, st *state.DB, opt Options) (*Engine, error) {
+func New(ctx context.Context, c *files.Core, st *state.DB, opt Options) (*Engine, error) {
 	if c == nil || st == nil {
 		return nil, errors.New("the upload engine requires a core and a state store")
 	}
@@ -565,7 +565,7 @@ func (e *Engine) spoolDirOf(r *row) (vfs.SafePath, error) {
 
 // checkAccountLimits enforces both per-account bounds before anything is
 // created.
-func (e *Engine) checkAccountLimits(ctx context.Context, user core.UserID, total *uint64) error {
+func (e *Engine) checkAccountLimits(ctx context.Context, user files.UserID, total *uint64) error {
 	count, err := e.state.CountUploadSessionsForUser(ctx, int64(user))
 	if err != nil {
 		return err
@@ -718,12 +718,12 @@ func mapVFSErr(err error) error {
 	}
 }
 
-func shareIDOf(v int64) (core.ShareID, bool) {
+func shareIDOf(v int64) (files.ShareID, bool) {
 	id, err := number.Narrow[uint32](v)
 	if err != nil {
 		return 0, false
 	}
-	return core.ShareID(id), true
+	return files.ShareID(id), true
 }
 
 // sessionIDOrZero is for a caller holding stored bytes that are a session id

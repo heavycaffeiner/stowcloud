@@ -18,15 +18,15 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/cache"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/dbfile"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
 )
 
 const (
-	testUser  = core.UserID(42)
-	testShare = core.ShareID(1)
+	testUser  = files.UserID(42)
+	testShare = files.ShareID(1)
 )
 
 // fixture is an engine over real databases and a real share, because what
@@ -34,7 +34,7 @@ const (
 // and a fake for either proves nothing about the order.
 type fixture struct {
 	engine *Engine
-	core   *core.Core
+	core   *files.Core
 	state  *state.DB
 	host   string
 	clk    *steppingClock
@@ -73,7 +73,7 @@ func newFixtureWithCache(t *testing.T, cacheDir string) *fixture {
 		t.Fatalf("wrapping the cache: %v", err)
 	}
 
-	c, err := core.New(ctx, core.Options{State: st, Cache: ca, ACL: acl.NewEvaluator(), Clock: clk})
+	c, err := files.New(ctx, files.Options{State: st, Cache: ca, ACL: acl.NewEvaluator(), Clock: clk})
 	if err != nil {
 		t.Fatalf("building the core: %v", err)
 	}
@@ -82,7 +82,7 @@ func newFixtureWithCache(t *testing.T, cacheDir string) *fixture {
 	if merr := os.MkdirAll(host, 0o755); merr != nil {
 		t.Fatalf("creating the share: %v", merr)
 	}
-	if rerr := c.RegisterShare(ctx, core.ShareDef{
+	if rerr := c.RegisterShare(ctx, files.ShareDef{
 		ID: testShare, Name: "docs", Host: host, Policy: vfs.DefaultSharePolicy(),
 	}); rerr != nil {
 		t.Skipf("this host's temp directory is on a filesystem this build refuses: %v", rerr)
@@ -124,7 +124,7 @@ func newFixtureWithCache(t *testing.T, cacheDir string) *fixture {
 }
 
 // resolve is the destination an upload publishes to.
-func (f *fixture) resolve(t *testing.T, name string) core.Resolved {
+func (f *fixture) resolve(t *testing.T, name string) files.Resolved {
 	t.Helper()
 	p, err := vfs.ParseVpath("Docs/" + name)
 	if err != nil {

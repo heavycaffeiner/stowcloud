@@ -14,7 +14,7 @@ import (
 	"testing"
 
 	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 )
 
 // The administrative listing carries the host path; nothing else does.
@@ -886,7 +886,7 @@ func TestAnUnmeasurableShareIsListedWithoutFigures(t *testing.T) {
 	if _, cerr := e.Auth.CreateAdmin(ctx, "root", "Root", pwOf(loginPassword)); cerr != nil {
 		t.Fatal(cerr)
 	}
-	if _, serr := e.Core.CreateShare(ctx, core.ShareSpec{Name: "gone", Host: host}); serr != nil {
+	if _, serr := e.Core.CreateShare(ctx, files.ShareSpec{Name: "gone", Host: host}); serr != nil {
 		t.Fatalf("creating the share: %v", serr)
 	}
 	if cerr := e.Close(); cerr != nil {
@@ -961,7 +961,7 @@ func TestSharesSurviveARestart(t *testing.T) {
 	if _, cerr := e.Auth.CreateAdmin(ctx, "root", "Root", pwOf(loginPassword)); cerr != nil {
 		t.Fatal(cerr)
 	}
-	if _, serr := e.Core.CreateShare(ctx, core.ShareSpec{Name: "docs", Host: host}); serr != nil {
+	if _, serr := e.Core.CreateShare(ctx, files.ShareSpec{Name: "docs", Host: host}); serr != nil {
 		t.Fatalf("creating the share: %v", serr)
 	}
 	if cerr := e.Close(); cerr != nil {

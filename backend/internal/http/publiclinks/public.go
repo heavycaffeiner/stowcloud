@@ -20,8 +20,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	httpheader "github.com/heavycaffeiner/stowcloud/backend/internal/http/headers"
@@ -34,7 +34,7 @@ import (
 const PublicLinkPrefix = "/s"
 
 type PublicDeps struct {
-	Core            *core.Core
+	Core            *files.Core
 	State           *state.DB
 	ClaimKey        []byte
 	Limiter         interface{ Allow(string) bool }
@@ -47,13 +47,13 @@ type PublicDeps struct {
 	Refuse          func(*gin.Context, apierr.Classified)
 	WriteJSON       func(*gin.Context, int, any)
 	Decode          func(*gin.Context, any) error
-	CloseStream     func(*core.Stream, string)
+	CloseStream     func(*files.Stream, string)
 	SendStreamRange func(c interface {
 		Header(string, string)
 		Status(int)
-	}, writer io.Writer, entry core.FidEntry, stream *core.Stream, ranged bool, rng handler.ByteRange, size int64, attachAs string, logger *slog.Logger)
+	}, writer io.Writer, entry files.FidEntry, stream *files.Stream, ranged bool, rng handler.ByteRange, size int64, attachAs string, logger *slog.Logger)
 	AcquireArchive func() (func(), bool)
-	WriteArchive   func(context.Context, io.Writer, core.Link, string, string)
+	WriteArchive   func(context.Context, io.Writer, files.Link, string, string)
 }
 type Logger interface{ Warn(string, ...any) }
 type Public struct{ d PublicDeps }
@@ -86,15 +86,15 @@ func (p *Public) Declare(app *gin.Engine, prefix string) {
 	})
 }
 
-func (p *Public) linkFor(c *gin.Context) (core.Link, error) {
+func (p *Public) linkFor(c *gin.Context) (files.Link, error) {
 	link, _, err := p.d.Core.LinkPublic(c.Request.Context(), c.Param("token"))
 	if err != nil {
 		p.d.Fail(c, err)
-		return core.Link{}, err
+		return files.Link{}, err
 	}
 	if link.HasPassword && !p.unlocked(c, link) {
 		p.d.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "fs.link_password"})
-		return core.Link{}, errors.New("link locked")
+		return files.Link{}, errors.New("link locked")
 	}
 	return link, nil
 }
@@ -106,7 +106,7 @@ func cookiePath(c *gin.Context, token string) string {
 	}
 	return prefix + "/" + token
 }
-func (p *Public) unlocked(c *gin.Context, link core.Link) bool {
+func (p *Public) unlocked(c *gin.Context, link files.Link) bool {
 	if !link.HasPassword {
 		return true
 	}
@@ -172,13 +172,13 @@ func (p *Public) Landing(c *gin.Context) {
 		return
 	}
 	sub := strings.Trim(c.Query("path"), "/")
-	var listing core.LinkListing
+	var listing files.LinkListing
 	if sub != "" && !link.Perms.Has(acl.Read) {
-		p.d.Fail(c, core.ErrNotFound)
+		p.d.Fail(c, files.ErrNotFound)
 		return
 	}
 	if sub == "" && !link.Perms.Has(acl.Read) {
-		listing = core.LinkListing{IsDir: root.IsDir, Name: root.Name, Size: root.Size}
+		listing = files.LinkListing{IsDir: root.IsDir, Name: root.Name, Size: root.Size}
 	} else {
 		listing, err = p.d.Core.LinkBrowse(c.Request.Context(), link, sub)
 		if err != nil {
@@ -239,7 +239,7 @@ func (p *Public) Unlock(c *gin.Context) {
 	}
 	hash, err := p.d.State.PasswordHash(c.Request.Context(), link.ID)
 	if err != nil || hash == nil {
-		p.d.Fail(c, core.ErrNotFound)
+		p.d.Fail(c, files.ErrNotFound)
 		return
 	}
 	exp := p.d.Now() + int64(24*time.Hour)
@@ -268,7 +268,7 @@ func (p *Public) Download(c *gin.Context) {
 	size, nerr := num.Narrow[int64](entry.Size)
 	if nerr != nil {
 		p.d.CloseStream(stream, entry.Name)
-		p.d.Fail(c, core.ErrNotFound)
+		p.d.Fail(c, files.ErrNotFound)
 		return
 	}
 	rng, ranged, rerr := handler.ParseRange(c.GetHeader("Range"), size)
@@ -288,7 +288,7 @@ func (p *Public) Download(c *gin.Context) {
 		start, serr := num.Narrow[uint64](rng.Start)
 		last, lerr := num.Narrow[uint64](rng.End - 1)
 		if serr != nil || lerr != nil {
-			p.d.Fail(c, core.ErrNotFound)
+			p.d.Fail(c, files.ErrNotFound)
 			return
 		}
 		entry, stream, err = p.d.Core.LinkStreamAt(ctx, link, path, &[2]uint64{start, last})
@@ -317,7 +317,7 @@ func (p *Public) Zip(c *gin.Context) {
 	}
 	sub := c.Query("path")
 	if strings.Trim(sub, "/") != "" && !link.Perms.Has(acl.Read) {
-		p.d.Fail(c, core.ErrNotFound)
+		p.d.Fail(c, files.ErrNotFound)
 		return
 	}
 	listing, err := p.d.Core.LinkBrowse(c.Request.Context(), link, sub)

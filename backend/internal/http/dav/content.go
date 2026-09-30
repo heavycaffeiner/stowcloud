@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	httpheader "github.com/heavycaffeiner/stowcloud/backend/internal/http/headers"
 )
 
@@ -19,7 +19,7 @@ import (
 //
 // Supplied by the assembly, which sees both tiers. Nil means no properties are
 // kept, the same as a nil store.
-type KeyOf func(core.Entry) ResourceKey
+type KeyOf func(files.Entry) ResourceKey
 
 // GET, HEAD, PUT, MKCOL and DELETE.
 //
@@ -85,10 +85,10 @@ type ResourceKey any
 // client reads to decide whether to fetch have to match what GET would send,
 // so they are produced by the same path rather than by a second one that can
 // drift.
-func (h *Handler) Get(w http.ResponseWriter, r *http.Request, res core.Resolved, body bool) {
+func (h *Handler) Get(w http.ResponseWriter, r *http.Request, res files.Resolved, body bool) {
 	st, err := res.Root().Stat(res.Path())
 	if err != nil {
-		h.fail(w, r, core.ErrNotFound)
+		h.fail(w, r, files.ErrNotFound)
 		return
 	}
 	// RFC 4918 defines no body for a GET of a collection. Refusing beats
@@ -146,7 +146,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request, res core.Resolved,
 }
 
 // notModified applies If-None-Match and reports whether it answered.
-func (h *Handler) notModified(w http.ResponseWriter, r *http.Request, e core.Entry) bool {
+func (h *Handler) notModified(w http.ResponseWriter, r *http.Request, e files.Entry) bool {
 	header := strings.TrimSpace(r.Header.Get("If-None-Match"))
 	if header == "" {
 		return false
@@ -193,7 +193,7 @@ func (h *Handler) setContentPolicy(w http.ResponseWriter, name string) {
 }
 
 // Put writes a file.
-func (h *Handler) Put(w http.ResponseWriter, r *http.Request, res core.Resolved) {
+func (h *Handler) Put(w http.ResponseWriter, r *http.Request, res files.Resolved) {
 	if err := h.guard(r, res); err != nil {
 		h.fail(w, r, err)
 		return
@@ -204,7 +204,7 @@ func (h *Handler) Put(w http.ResponseWriter, r *http.Request, res core.Resolved)
 		if st.Kind.IsDir() {
 			// Replacing a collection would mean removing it and everything
 			// under it, which the client did not ask for.
-			h.failAllowing(w, r, res, core.ErrExists)
+			h.failAllowing(w, r, res, files.ErrExists)
 			return
 		}
 		existed = true
@@ -244,7 +244,7 @@ func (h *Handler) Put(w http.ResponseWriter, r *http.Request, res core.Resolved)
 }
 
 // Mkcol creates a collection.
-func (h *Handler) Mkcol(w http.ResponseWriter, r *http.Request, res core.Resolved) {
+func (h *Handler) Mkcol(w http.ResponseWriter, r *http.Request, res files.Resolved) {
 	// RFC 4918 gives MKCOL no body format, so one that arrives cannot be
 	// honoured without inventing a meaning for it.
 	if r.ContentLength > 0 {
@@ -261,8 +261,8 @@ func (h *Handler) Mkcol(w http.ResponseWriter, r *http.Request, res core.Resolve
 		// a client: 404 says the target is missing, which is the point of
 		// creating it, while 409 says the parent is. A client that creates
 		// parents on demand branches on exactly that.
-		if errors.Is(err, core.ErrNotFound) && !parentExists(res) {
-			h.fail(w, r, core.ErrConflict)
+		if errors.Is(err, files.ErrNotFound) && !parentExists(res) {
+			h.fail(w, r, files.ErrConflict)
 			return
 		}
 		h.fail(w, r, err)
@@ -273,7 +273,7 @@ func (h *Handler) Mkcol(w http.ResponseWriter, r *http.Request, res core.Resolve
 
 // parentExists reports whether the enclosing collection is there. A share root
 // always is, so anything one level inside it has a parent.
-func parentExists(res core.Resolved) bool {
+func parentExists(res files.Resolved) bool {
 	p := res.Path()
 	if p.IsRoot() || p.Parent().IsRoot() {
 		return true
@@ -283,7 +283,7 @@ func parentExists(res core.Resolved) bool {
 }
 
 // Delete removes a resource.
-func (h *Handler) Delete(w http.ResponseWriter, r *http.Request, res core.Resolved) {
+func (h *Handler) Delete(w http.ResponseWriter, r *http.Request, res files.Resolved) {
 	if err := h.guard(r, res); err != nil {
 		h.fail(w, r, err)
 		return
@@ -291,7 +291,7 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request, res core.Resolv
 
 	st, serr := res.Root().Stat(res.Path())
 	if serr != nil {
-		h.fail(w, r, core.ErrNotFound)
+		h.fail(w, r, files.ErrNotFound)
 		return
 	}
 	entry := h.core.EntryAt(res, st)
@@ -317,7 +317,7 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request, res core.Resolv
 // A weak validator is refused rather than passed through. The core's rule is
 // that a weak tag never satisfies a precondition, so forwarding one would be a
 // check that cannot pass presented as one that might.
-func parseValidator(header string) (*core.Token, bool) {
+func parseValidator(header string) (*files.Token, bool) {
 	header = strings.TrimSpace(header)
 	switch {
 	case header == "":
@@ -328,7 +328,7 @@ func parseValidator(header string) (*core.Token, bool) {
 	case strings.HasPrefix(header, "W/"):
 		return nil, false
 	case len(header) >= 2 && header[0] == '"' && header[len(header)-1] == '"':
-		t := core.Token(header[1 : len(header)-1])
+		t := files.Token(header[1 : len(header)-1])
 		return &t, true
 	default:
 		return nil, false

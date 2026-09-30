@@ -29,10 +29,10 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/smb"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/smb/agent"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
 	fsatomic "github.com/stowcloud/durablefs"
 )
@@ -156,7 +156,7 @@ type Settings struct {
 // PublisherDeps are the narrow feature dependencies needed to adapt server
 // state into the SMB renderer and sidecar files.
 type PublisherDeps struct {
-	Core     *core.Core
+	Core     *files.Core
 	Auth     *auth.Service
 	State    *state.DB
 	Clock    clock.Clock
@@ -224,7 +224,7 @@ func (p *Publisher) Publish(ctx context.Context) (agent.Report, error) {
 	if err != nil {
 		return agent.Report{}, fmt.Errorf("smb publish: reading the encrypted share set: %w", err)
 	}
-	encrypted := make(map[core.ShareID]bool, len(encryptedIDs))
+	encrypted := make(map[files.ShareID]bool, len(encryptedIDs))
 	for _, id := range encryptedIDs {
 		encrypted[id] = true
 	}
@@ -271,13 +271,13 @@ func (p *Publisher) grants(ctx context.Context) ([]Grant, error) {
 	return grantsOf(rows, memberships), nil
 }
 
-func publishShares(defs []core.ShareDef, encrypted map[core.ShareID]bool, logger *slog.Logger) []Share {
+func publishShares(defs []files.ShareDef, encrypted map[files.ShareID]bool, logger *slog.Logger) []Share {
 	out := make([]Share, 0, len(defs))
 	for _, d := range defs {
 		if d.BrokenReason != "" {
 			continue
 		}
-		if d.Backend != "" && d.Backend != core.BackendLocal {
+		if d.Backend != "" && d.Backend != files.BackendLocal {
 			logger.Warn("a share is not published over SMB because it has no local path", "share", d.Name, "backend", d.Backend)
 			continue
 		}

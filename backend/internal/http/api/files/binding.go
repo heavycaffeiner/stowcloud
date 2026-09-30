@@ -7,8 +7,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	core "github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
@@ -17,11 +17,11 @@ import (
 
 // Resolve returns the one path gate used by authenticated file transports.
 // Malformed paths and paths outside the caller's grants have the same answer.
-func Resolve(c *core.Core) func(core.UserID, string, acl.Perms) (core.Resolved, error) {
-	return func(owner core.UserID, raw string, need acl.Perms) (core.Resolved, error) {
+func Resolve(c *files.Core) func(files.UserID, string, acl.Perms) (files.Resolved, error) {
+	return func(owner files.UserID, raw string, need acl.Perms) (files.Resolved, error) {
 		p, err := vfs.ParseVpath(raw)
 		if err != nil {
-			return core.Resolved{}, core.ErrNotFound
+			return files.Resolved{}, files.ErrNotFound
 		}
 		return c.Resolve(owner, p, need)
 	}
@@ -34,8 +34,8 @@ func Decode(c *gin.Context, into any) error {
 
 // OpenBoundClaim opens a claim for one purpose and binds it to the session
 // account. A claim narrows an authenticated session; it never authenticates.
-func OpenBoundClaim(key handler.ClaimKey, now func() int64) func(*gin.Context, handler.ClaimPurpose, core.UserID) (handler.Claim, bool) {
-	return func(c *gin.Context, purpose handler.ClaimPurpose, owner core.UserID) (handler.Claim, bool) {
+func OpenBoundClaim(key handler.ClaimKey, now func() int64) func(*gin.Context, handler.ClaimPurpose, files.UserID) (handler.Claim, bool) {
+	return func(c *gin.Context, purpose handler.ClaimPurpose, owner files.UserID) (handler.Claim, bool) {
 		value := c.Query("claim")
 		if value == "" {
 			return handler.Claim{}, false
@@ -54,7 +54,7 @@ func OpenBoundClaim(key handler.ClaimKey, now func() int64) func(*gin.Context, h
 // Projection owns the wire projection of core entries and the claims each row
 // carries. The application supplies only the deployment key, clock, and log.
 type Projection struct {
-	core *core.Core
+	core *files.Core
 	key  handler.ClaimKey
 	now  func() int64
 	log  *slog.Logger
@@ -62,7 +62,7 @@ type Projection struct {
 
 // ProjectionDeps configures a file response projection.
 type ProjectionDeps struct {
-	Core     *core.Core
+	Core     *files.Core
 	ClaimKey handler.ClaimKey
 	Now      func() int64
 	Logger   *slog.Logger
@@ -74,13 +74,13 @@ func NewProjection(d ProjectionDeps) *Projection {
 }
 
 // EntryView projects one entry with its client path and sealed references.
-func (p *Projection) EntryView(owner core.UserID, r core.Resolved, entry core.Entry) handler.EntryView {
+func (p *Projection) EntryView(owner files.UserID, r files.Resolved, entry files.Entry) handler.EntryView {
 	vpath := p.Vpath(owner, r, entry)
 	return handler.EntryOf(entry, vpath, p.refs(owner, entry, vpath))
 }
 
 // Vpath returns the client-facing path for an entry.
-func (p *Projection) Vpath(owner core.UserID, r core.Resolved, entry core.Entry) string {
+func (p *Projection) Vpath(owner files.UserID, r files.Resolved, entry files.Entry) string {
 	vp, err := p.core.VpathFor(owner, r.Share(), entry.Path)
 	if err != nil {
 		return entry.Path.String()
@@ -89,13 +89,13 @@ func (p *Projection) Vpath(owner core.UserID, r core.Resolved, entry core.Entry)
 }
 
 // Refs returns the per-row reference sealer for one account.
-func (p *Projection) Refs(owner core.UserID) func(core.Entry, string) handler.EntryRefs {
-	return func(entry core.Entry, vpath string) handler.EntryRefs {
+func (p *Projection) Refs(owner files.UserID) func(files.Entry, string) handler.EntryRefs {
+	return func(entry files.Entry, vpath string) handler.EntryRefs {
 		return p.refs(owner, entry, vpath)
 	}
 }
 
-func (p *Projection) refs(user core.UserID, entry core.Entry, vpath string) handler.EntryRefs {
+func (p *Projection) refs(user files.UserID, entry files.Entry, vpath string) handler.EntryRefs {
 	if entry.IsDir || vpath == "" || p.now == nil {
 		return handler.EntryRefs{}
 	}

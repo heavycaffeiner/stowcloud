@@ -8,7 +8,7 @@ import (
 	"fmt"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	"github.com/stowcloud/transfer"
@@ -131,7 +131,7 @@ func (e *Engine) session(r *row) (Session, error) {
 
 	out := Session{
 		ID:           id,
-		User:         core.UserID(r.sess.User),
+		User:         files.UserID(r.sess.User),
 		Share:        share,
 		Dest:         dest,
 		State:        e.effectiveState(r),
@@ -176,7 +176,7 @@ func (e *Engine) effectiveState(r *row) SessionState {
 //
 // A session id is the whole of an upload URL, so telling a stranger that one
 // is real but not theirs is an existence oracle.
-func requireOwner(r *row, user core.UserID) error {
+func requireOwner(r *row, user files.UserID) error {
 	if r.sess.User != int64(user) {
 		return ErrNotFound
 	}
