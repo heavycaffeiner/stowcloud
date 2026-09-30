@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
-	emergencyHTTP "github.com/heavycaffeiner/stowcloud/backend/internal/http/emergency"
+	emergencyHTTP "github.com/heavycaffeiner/stowcloud/backend/internal/emergency"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 )
 

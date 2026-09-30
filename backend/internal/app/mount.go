@@ -17,6 +17,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/dav"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/emergency"
 	featuretransfer "github.com/heavycaffeiner/stowcloud/backend/internal/feature/directtransfer"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	accounthttp "github.com/heavycaffeiner/stowcloud/backend/internal/http/api/account"
@@ -29,7 +30,6 @@ import (
 	previewhttp "github.com/heavycaffeiner/stowcloud/backend/internal/http/api/preview"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/setup"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/uploads"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/emergency"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/publiclinks"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/server"
