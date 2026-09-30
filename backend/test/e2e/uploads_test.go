@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // tusRequest sends one protocol request with arbitrary headers and body.

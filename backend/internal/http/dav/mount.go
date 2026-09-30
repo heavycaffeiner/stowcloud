@@ -14,12 +14,12 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // DavPrefix is the native WebDAV mount point.

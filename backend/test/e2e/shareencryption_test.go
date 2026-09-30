@@ -7,9 +7,9 @@ import (
 	"testing"
 
 	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // testEncryption is settings EnableEncryption accepts: the right scheme, a

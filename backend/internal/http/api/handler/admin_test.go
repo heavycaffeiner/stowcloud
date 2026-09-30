@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 )
 
 // The service type carries no wire tags and no wire types, so a JSON format

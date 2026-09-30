@@ -11,11 +11,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/smb/agent"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/smb/agent"
 )
 
 // Deps supplies administrator authorization and the application-owned publisher.

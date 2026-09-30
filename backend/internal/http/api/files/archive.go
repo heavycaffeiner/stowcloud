@@ -13,9 +13,9 @@ import (
 	"sync"
 	"time"
 
-	previewlimits "github.com/heavycaffeiner/stowcloud/backend/internal/feature/preview/limits"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/archive"
+	previewlimits "github.com/heavycaffeiner/stowcloud/backend/internal/preview/limits"
 )
 
 const (

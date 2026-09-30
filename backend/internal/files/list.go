@@ -8,8 +8,8 @@ import (
 	"strconv"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/ident"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // List is the default listing: by name, ascending, one default-sized page.

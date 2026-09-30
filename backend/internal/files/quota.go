@@ -7,9 +7,9 @@ import (
 	"errors"
 	"math"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // FreeSpace is what the filesystem has left, which is a different question

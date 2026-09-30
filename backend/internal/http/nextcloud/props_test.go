@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // The property vocabulary, and the multistatus shape around it.

@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // trashShare serves an engine whose share has trash enabled and holds one file

@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/journal"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // OnConflict is what a transfer does with a destination that is already

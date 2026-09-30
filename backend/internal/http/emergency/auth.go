@@ -7,7 +7,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 )
 
 // NewAuthenticator adds the one-use recovery-code fallback to ordinary login.

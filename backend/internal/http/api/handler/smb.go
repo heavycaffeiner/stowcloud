@@ -11,7 +11,7 @@
 package handler
 
 import (
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/smb/agent"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/smb/agent"
 )
 
 // SMBReportView is one apply, named for the screen that shows it.

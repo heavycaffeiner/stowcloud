@@ -9,9 +9,9 @@ import (
 	"log/slog"
 	"time"
 
+	lock "github.com/heavycaffeiner/stowcloud/backend/internal/dav/lock"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/ident"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	lock "github.com/heavycaffeiner/stowcloud/backend/internal/feature/dav/lock"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
 )

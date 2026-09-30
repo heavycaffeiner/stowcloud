@@ -33,9 +33,9 @@ import (
 	"net/netip"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/settings/check"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/settings/runtimecfg"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/check"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/runtimecfg"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
 	netzone "github.com/heavycaffeiner/stowcloud/backend/internal/platform/network/zone"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"

@@ -14,7 +14,7 @@ import (
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // fakeCipher is a reversible stand-in for the auth package's AEAD. It binds

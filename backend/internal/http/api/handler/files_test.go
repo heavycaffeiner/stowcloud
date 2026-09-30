@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // Sizes and timestamps cross as strings. A file past 2^53 bytes that comes

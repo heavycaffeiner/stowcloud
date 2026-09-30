@@ -7,7 +7,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 func TestFreeSpaceReportsTheFilesystemHoldingThePath(t *testing.T) {

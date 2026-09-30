@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // Rendering one files-tree entry into the property vocabulary.

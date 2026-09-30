@@ -20,11 +20,11 @@ import (
 	"testing"
 
 	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/preview"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/preview"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // buildJailedWorker compiles the shipped decoder once per test binary.
@@ -47,7 +47,7 @@ var buildJailedWorker = sync.OnceValues(func() (string, error) { //nolint:gochec
 	}
 	bin := filepath.Join(dir, "jailedworker")
 	cmd := exec.Command("go", "build", "-o", bin,
-		"github.com/heavycaffeiner/stowcloud/backend/internal/feature/preview/worker/jailedworker")
+		"github.com/heavycaffeiner/stowcloud/backend/internal/preview/worker/jailedworker")
 	cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
 	if out, berr := cmd.CombinedOutput(); berr != nil {
 		return "", errors.New(string(out))

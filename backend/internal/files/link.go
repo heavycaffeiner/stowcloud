@@ -11,10 +11,10 @@ import (
 	"fmt"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // A link stores both a hash and an encrypted copy of its token. The sha256

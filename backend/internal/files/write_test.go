@@ -13,10 +13,10 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/dbfile"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/journal"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // allPerms is every bit, so a mutation test resolves once and then exercises

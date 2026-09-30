@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 )
 
 // The revocation handle is derived from the stored digest, not the digest

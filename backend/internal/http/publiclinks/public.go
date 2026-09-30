@@ -20,7 +20,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
@@ -29,6 +28,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/route"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/protocol/limits"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 const PublicLinkPrefix = "/s"

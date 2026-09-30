@@ -15,10 +15,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/nextcloud"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/publiclinks"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 const frontController = "/index.php"

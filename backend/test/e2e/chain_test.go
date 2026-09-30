@@ -8,10 +8,10 @@ import (
 	"time"
 
 	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // engineWithUser opens an engine holding one account.

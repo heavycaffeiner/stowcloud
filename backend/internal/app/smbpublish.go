@@ -1,17 +1,17 @@
 //go:build linux
 
 // SMB publication composition. Rendering, grant mapping, and publication state
-// belong to feature/smb/publish; this file only wires application dependencies.
+// belong to smb/publish; this file only wires application dependencies.
 package app
 
 import (
 	"context"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/settings/runtimecfg"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/smb"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/smb/agent"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/smb/publish"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/runtimecfg"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/smb"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/smb/agent"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/smb/publish"
 )
 
 const publishTimeout = agent.DefaultTimeout + 5*time.Second

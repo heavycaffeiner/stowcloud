@@ -9,15 +9,15 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/cache"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/ident"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // StoreDeps are the durable services needed by the compatibility store.

@@ -15,11 +15,11 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/cache"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/dbfile"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/dav"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // The content methods are driven against a real core over a real directory.

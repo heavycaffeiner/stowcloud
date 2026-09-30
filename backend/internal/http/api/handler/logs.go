@@ -13,8 +13,8 @@ package handler
 import (
 	"strconv"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/logbook"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/logbook"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 )
 
 // LogRecordView is one entry, as the dashboard reads it.

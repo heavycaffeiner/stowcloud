@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // trashDir is the per-share control directory holding deleted entries. It is

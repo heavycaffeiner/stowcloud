@@ -9,9 +9,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/protocol/limits"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // The complete set of operations a token holder may perform.

@@ -8,12 +8,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/preview"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/search/svc"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/preview"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/search/svc"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/uploads"
 )
 

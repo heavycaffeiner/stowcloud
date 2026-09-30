@@ -12,8 +12,8 @@ package middleware
 import (
 	"errors"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/route"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // ErrCredentialRequired is a route that needs a credential the request did not

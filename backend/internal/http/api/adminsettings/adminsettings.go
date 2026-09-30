@@ -15,11 +15,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/catalogue"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/check"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/runtimecfg"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/settings/catalogue"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/settings/check"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/settings/runtimecfg"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"

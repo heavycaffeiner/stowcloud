@@ -12,10 +12,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	httpheader "github.com/heavycaffeiner/stowcloud/backend/internal/http/headers"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // GET, HEAD, PUT, MKCOL, DELETE, MOVE and COPY against a file or a folder.

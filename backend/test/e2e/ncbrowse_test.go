@@ -17,10 +17,10 @@ import (
 
 	search "github.com/stowcloud/namesearch"
 
-	stowcloud "github.com/heavycaffeiner/stowcloud/backend/internal/feature/search/stowcloud"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/search/svc"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/concurrency"
+	stowcloud "github.com/heavycaffeiner/stowcloud/backend/internal/search/stowcloud"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/search/svc"
 )
 
 // Browsing, as the three clients do it.

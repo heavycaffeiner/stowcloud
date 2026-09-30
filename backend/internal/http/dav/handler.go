@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // The handler every method hangs off, and the few things they all share.

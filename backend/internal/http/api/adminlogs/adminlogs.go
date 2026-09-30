@@ -12,8 +12,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/logbook"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/logbook"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/humabridge"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"

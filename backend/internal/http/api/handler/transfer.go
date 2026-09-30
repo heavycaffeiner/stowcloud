@@ -6,9 +6,9 @@ package handler
 import (
 	"strconv"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/preview"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/search/svc"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/preview"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/search/svc"
 	search "github.com/stowcloud/namesearch"
 )
 

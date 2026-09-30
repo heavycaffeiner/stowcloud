@@ -2,8 +2,8 @@ package files
 
 import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/ident"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // Entry is the one listing shape. Every protocol renders from this and

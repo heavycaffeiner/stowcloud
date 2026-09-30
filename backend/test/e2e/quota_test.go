@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // aliceID is the fixture account's own id, looked up rather than assumed: a

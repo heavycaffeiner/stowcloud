@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	securitylinux "github.com/heavycaffeiner/hanami/security/linux"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/settings/runtimecfg"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/runtimecfg"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/system/jail"
 )
 

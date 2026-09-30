@@ -17,8 +17,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	featuretransfer "github.com/heavycaffeiner/stowcloud/backend/internal/feature/directtransfer"
-	featureoidc "github.com/heavycaffeiner/stowcloud/backend/internal/feature/oidc"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/smb/agent"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	accounthttp "github.com/heavycaffeiner/stowcloud/backend/internal/http/api/account"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/adminsettings"
@@ -36,7 +34,9 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/publiclinks"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/server"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/spa"
+	featureoidc "github.com/heavycaffeiner/stowcloud/backend/internal/oidc"
 	runtimetasks "github.com/heavycaffeiner/stowcloud/backend/internal/runtime/tasks"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/smb/agent"
 )
 
 // Mount assembles the native Gin router over a constructed engine.

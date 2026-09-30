@@ -6,7 +6,7 @@ package handler
 import (
 	"strconv"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 )
 
 // OIDCConfigView is what the sign-in screen reads to decide whether to offer

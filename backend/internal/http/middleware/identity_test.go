@@ -12,9 +12,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/route"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/protocol/limits"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // The id is a UUID v4 in the canonical form, and every one differs.

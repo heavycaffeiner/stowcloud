@@ -21,8 +21,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	featurepreview "github.com/heavycaffeiner/stowcloud/backend/internal/feature/preview"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/objstore"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
@@ -33,6 +31,8 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/route"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
+	featurepreview "github.com/heavycaffeiner/stowcloud/backend/internal/preview"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // Deps are the capabilities needed by the authenticated file routes.

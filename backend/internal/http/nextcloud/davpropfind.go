@@ -8,11 +8,11 @@ import (
 	"encoding/hex"
 	"net/http"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/protocol/limits"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // PROPFIND and PROPPATCH against the files tree and the virtual root.

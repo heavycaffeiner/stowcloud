@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	emergencyHTTP "github.com/heavycaffeiner/stowcloud/backend/internal/http/emergency"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 )

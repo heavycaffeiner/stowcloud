@@ -7,9 +7,9 @@ import (
 	"encoding/xml"
 	"net/http"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/protocol/limits"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // PROPFIND: the method a sync client spends most of its time in.

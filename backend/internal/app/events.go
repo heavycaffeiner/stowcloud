@@ -14,8 +14,7 @@ import (
 	"context"
 
 	"github.com/gin-gonic/gin"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/settings/runtimecfg"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/runtimecfg"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
@@ -23,6 +22,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/server"
 	task "github.com/heavycaffeiner/stowcloud/backend/internal/platform/concurrency"
 	runtimeevents "github.com/heavycaffeiner/stowcloud/backend/internal/runtime/events"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 	storagewatch "github.com/stowcloud/storage/watch"
 )
 

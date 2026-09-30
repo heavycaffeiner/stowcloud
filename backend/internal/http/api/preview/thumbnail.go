@@ -13,12 +13,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	featurepreview "github.com/heavycaffeiner/stowcloud/backend/internal/feature/preview"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
+	featurepreview "github.com/heavycaffeiner/stowcloud/backend/internal/preview"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // ThumbnailDeps supplies the narrow application capabilities needed by the

@@ -11,9 +11,9 @@
 package handler
 
 import (
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/settings/catalogue"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/settings/check"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/smb/agent"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/catalogue"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/check"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/smb/agent"
 )
 
 // FindingView is one check result.

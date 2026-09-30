@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // Requirement is what one endpoint of a request must permit.

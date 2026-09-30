@@ -7,9 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/journal"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 	"io"
 	"math"
 )

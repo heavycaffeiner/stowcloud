@@ -16,10 +16,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	feature "github.com/heavycaffeiner/stowcloud/backend/internal/feature/directtransfer"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/objstore"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 type Handler struct {

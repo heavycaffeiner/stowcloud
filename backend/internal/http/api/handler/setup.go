@@ -12,7 +12,7 @@ package handler
 import (
 	"strconv"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/settings/check"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/check"
 )
 
 // SetupStateView is what an unauthenticated caller may learn about a server

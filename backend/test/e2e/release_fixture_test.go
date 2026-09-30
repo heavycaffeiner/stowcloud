@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/dbfile"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 )
 

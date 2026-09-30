@@ -6,7 +6,7 @@ package handler
 import (
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 )
 
 func TestDescribeUserAgentUsesSpecificBrowserPrecedence(t *testing.T) {

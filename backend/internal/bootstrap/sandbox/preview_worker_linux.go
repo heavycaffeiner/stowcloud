@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/preview/worker"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/system/jail"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/preview/worker"
 )
 
 // RunPreviewWorker runs the jailed decoder worker. Confinement is required:

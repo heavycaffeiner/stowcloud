@@ -14,11 +14,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/runtimecfg"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/sizeguard"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/settings/runtimecfg"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/oidc"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/oidc"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/concurrency"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/system/jail"
 )

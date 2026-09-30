@@ -15,11 +15,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
-	featureoidc "github.com/heavycaffeiner/stowcloud/backend/internal/feature/oidc"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
+	featureoidc "github.com/heavycaffeiner/stowcloud/backend/internal/oidc"
 )
 
 const (

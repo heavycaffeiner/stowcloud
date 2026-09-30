@@ -16,10 +16,10 @@
 package apierr
 
 import (
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/oidc"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/preview"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/oidc"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/preview"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/uploads"
 )
 

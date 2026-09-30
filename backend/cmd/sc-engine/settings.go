@@ -20,11 +20,11 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/check"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/bootstrap/args"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/dbfile"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/instance"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/settings/check"
 )
 
 func takeSettingsLock(out *log.Logger, dataDir string) (*instance.Lock, bool) {

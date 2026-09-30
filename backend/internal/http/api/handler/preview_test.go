@@ -6,8 +6,8 @@ package handler
 import (
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/preview"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/preview"
 )
 
 // decodableFormats pairs each format the decoder sniffs with the extensions a

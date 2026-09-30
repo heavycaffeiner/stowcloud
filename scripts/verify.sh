@@ -282,7 +282,7 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   # Settings saved by the client must be consumed by the runtime loader.
   run "settingscheck (a stored setting is read)" \
       ingo_host go run ./tools/settingscheck \
-        ../frontend/src/lib/api/types.ts ./internal/feature/admin/settings/runtimecfg/load.go
+        ../frontend/src/lib/api/types.ts ./internal/admin/settings/runtimecfg/load.go
   # And this keeps a byte-serving URL from being composed out of a path
   # again. Both routes take the row's own sealed reference; the one client
   # that joined a path itself joined it wrongly, and an account granted a
@@ -352,7 +352,7 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   #
   # Every raw descriptor use stays in the package that owns its *os.File.
   FD_HITS=$(go_code '\.Fd\(\)' \
-            | grep -vE '^backend/internal/(storage/vfs/root\.go|platform/system/jail/landlock\.go|feature/preview/transport\.go):')
+            | grep -vE '^backend/internal/(fs/vfs/root\.go|platform/system/jail/landlock\.go|preview/transport\.go):')
   grep_gate "raw descriptors only through a keepalive helper" "$FD_HITS" \
     "Use the descriptor helper where the owning file lives."
 
@@ -389,45 +389,15 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   grep_gate "no Go file over 1,500 lines" "$BIG" \
     "Split along a seam the problem already has, not one invented to hit a count."
 
-  # Compatibility vocabulary stays inside the Nextcloud transport adapter and
-  # its route-reservation declarations.
+  # Compatibility vocabulary stays inside the Nextcloud adapter and the
+  # server's list of reserved path prefixes.
   go_compat_isolation() {
-    vendor_terms() {
-      grep -rIn --include='*.go' -iE '\bocs\b|remote\.php|nextcloud' "$1" 2>/dev/null \
-        | grep -v '_test\.go:' \
-        | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)' || true
-    }
-    hits=""
-    for d in internal/feature internal/platform internal/runtime internal/bootstrap; do
-      [ -d "backend/$d" ] || continue
-      hits="$hits$(vendor_terms "backend/$d")"
-    done
-    for d in apierr archive dav emergency route middleware server api publiclinks; do
-      [ -d "backend/internal/http/$d" ] || continue
-      if [ "$d" = server ]; then
-        hits="$hits$(vendor_terms "backend/internal/http/$d" \
-                     | grep -vE '^backend/internal/http/server/(fallback|preflight)' || true)"
-      else
-        hits="$hits$(vendor_terms "backend/internal/http/$d")"
-      fi
-    done
-    if [ -d backend/internal/http/middleware ]; then
-      hits="$hits$(grep -rIn --include='*.go' -iE '\bocs\b|remote\.php|nextcloud' \
-                   backend/internal/http/middleware 2>/dev/null \
-                   | grep -v '_test\.go:' \
-                   | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)' || true)"
-    fi
-    # The compatibility adapter owns its store and claim bindings, so it may
-    # depend on their concrete stores and the shared claim codec. Wire terms
-    # still cannot enter those dependencies or unrelated transport packages.
-    if [ -d backend/internal/http/nextcloud ]; then
-      hits="$hits$(ingo go list -tags compat_nc -f '{{range .Imports}}{{.}}{{"\n"}}{{end}}' \
-                   ./internal/http/nextcloud/... 2>/dev/null \
-                   | grep 'stowcloud/backend/internal/' \
-                   | grep -vE 'internal/(http/(dav|apierr|middleware|route|api|publiclinks|headers)|platform/(clock|number|protocol/limits)|store/(cache|ident|state)|storage/vfs)(/|$)|feature/' || true)"
-    fi
-    printf '%s' "$hits" | grep -v '^[[:space:]]*$' || true
+    grep -rIn --include='*.go' -iE '\bocs\b|remote\.php|nextcloud' backend/internal 2>/dev/null \
+      | grep -v '_test\.go:' \
+      | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)' \
+      | grep -vE '^backend/internal/(http/nextcloud/|app/nc(_off)?\.go:|http/server/fallback\.go:)' || true
   }
+
   # The reference clients are cloned into .ref so their wire behaviour can be
   # read. Their code is under a different licence, so a line of it reaching
   # backend/ is a licensing problem rather than a style one. Long lines only: a

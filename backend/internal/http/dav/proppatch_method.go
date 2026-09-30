@@ -6,8 +6,8 @@ import (
 	"encoding/xml"
 	"net/http"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // PROPPATCH: writing the properties the server does not maintain itself.

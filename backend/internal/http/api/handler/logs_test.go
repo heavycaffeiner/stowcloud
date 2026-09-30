@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/logbook"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/logbook"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 )
 
 // The wire shape is exact: field names, their order and the string-typed

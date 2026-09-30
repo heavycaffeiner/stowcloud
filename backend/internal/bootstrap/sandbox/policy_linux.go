@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 
 	securitylinux "github.com/heavycaffeiner/hanami/security/linux"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/settings/runtimecfg"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/runtimecfg"
 )
 
 // BuildPolicy builds the server's process policy from one startup configuration

@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/search/stowcloud"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/search/svc"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/search/stowcloud"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/search/svc"
 	searchlib "github.com/stowcloud/namesearch"
 )
 
