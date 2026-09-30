@@ -1,6 +1,7 @@
 import { test, expect } from '../fixtures'
 import * as path from 'node:path'
 import * as fs from 'node:fs'
+import { fileEntry } from '../helpers/browse'
 import { assertNoUnexpectedErrors } from '../helpers/ux-invariants'
 
 test.describe('File Operations Journeys', () => {
@@ -23,27 +24,17 @@ test.describe('File Operations Journeys', () => {
 
   test('list and grid navigation journey', async ({ authedPage: page, workerApp, artifacts }) => {
     await page.goto(`${workerApp.baseURL}/b/docs`, { waitUntil: 'domcontentloaded' })
-    await expect(page.locator('.sc-shell-header')).toBeVisible()
+    const list = page.getByRole('grid', { name: 'File list' })
+    await expect(list).toBeVisible()
+    await expect(fileEntry(page, 'a.txt')).toBeVisible()
 
-    const viewToggle = page.locator('button[aria-label*="보기"], button[aria-label*="view"]').first()
-    await expect(viewToggle).toBeVisible()
+    await page.getByRole('button', { name: 'Grid view' }).click()
+    await expect(page.getByRole('grid', { name: 'File grid' })).toBeVisible({ timeout: 5000 })
+    await expect(list).toBeHidden()
+    await expect(fileEntry(page, 'a.txt')).toBeVisible({ timeout: 5000 })
 
-    // Verify list view elements
-    await expect(page.locator('.sc-browse-table, [role="table"], [role="grid"]').first()).toBeVisible()
-    await expect(page.locator('.sc-filename').filter({ hasText: 'a.txt' })).toBeVisible()
-
-    // Toggle to grid
-    await viewToggle.click()
-    await expect(page.locator('.sc-file-grid, .sc-grid').first()).toBeVisible({ timeout: 5000 })
-    await expect(page.locator('.sc-filename, .sc-file-grid-name').filter({ hasText: 'a.txt' }).first()).toBeVisible({
-      timeout: 5000
-    })
-
-    // Toggle back to list
-    await viewToggle.click()
-    await expect(page.locator('.sc-browse-table, [role="table"], [role="grid"]').first()).toBeVisible({
-      timeout: 5000
-    })
+    await page.getByRole('button', { name: 'List view' }).click()
+    await expect(list).toBeVisible({ timeout: 5000 })
 
     await assertNoUnexpectedErrors(artifacts)
   })
@@ -55,35 +46,17 @@ test.describe('File Operations Journeys', () => {
     artifacts
   }) => {
     await page.goto(`${workerApp.baseURL}/b/docs`, { waitUntil: 'domcontentloaded' })
-    await expect(page.locator('.sc-shell-header')).toBeVisible()
-
     const folderName = namespace('folder')
-    const newBtn = page
-      .locator('.sc-nav-drawer-new-btn, button[aria-label*="새로 만들기"], button[aria-label*="New"]')
-      .first()
-    await expect(newBtn).toBeVisible({ timeout: 5000 })
-    await newBtn.click()
+    await page.getByRole('navigation', { name: 'Main menu' }).getByRole('button', { name: 'New', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'New folder' }).click()
 
-    const newFolderItem = page
-      .locator('.sc-browse-new-menu button[role="menuitem"]')
-      .filter({ hasText: /새 폴더|New folder/i })
-      .first()
-    await expect(newFolderItem).toBeVisible({ timeout: 5000 })
-    await newFolderItem.click()
-
-    const dialog = page.locator('.sc-browse-dialog').filter({ hasText: /새 폴더|New Folder/i })
+    const dialog = page.getByRole('alertdialog', { name: 'New folder' })
     await expect(dialog).toBeVisible()
-
-    const input = dialog.locator('mdui-text-field input, input').first()
-    await input.fill(folderName)
-
-    const createBtn = dialog.locator('mdui-button').filter({ hasText: /만들기|Create|확인/i })
-    await createBtn.click()
+    await dialog.getByRole('textbox', { name: 'Folder name' }).fill(folderName)
+    await dialog.getByRole('button', { name: 'Create' }).click()
     await expect(dialog).toBeHidden({ timeout: 5000 })
 
-    // Verify UI shows the new folder
-    const folderLocator = page.locator('.sc-filename').filter({ hasText: folderName }).first()
-    await expect(folderLocator).toBeVisible({ timeout: 5000 })
+    await expect(fileEntry(page, folderName)).toBeVisible({ timeout: 5000 })
 
     // Verify folder on durable disk
     const diskPath = path.join(workerApp.shareDir, folderName)
@@ -99,37 +72,24 @@ test.describe('File Operations Journeys', () => {
     fs.writeFileSync(path.join(workerApp.shareDir, initialName), 'test content\n')
 
     await page.goto(`${workerApp.baseURL}/b/docs`, { waitUntil: 'domcontentloaded' })
-    await expect(page.locator('.sc-shell-header')).toBeVisible()
-
-    const initialFile = page.locator('.sc-filename').filter({ hasText: initialName }).first()
+    const initialFile = fileEntry(page, initialName)
     await expect(initialFile).toBeVisible({ timeout: 10000 })
 
-    // Rename via context menu
     await initialFile.click({ button: 'right' })
-    const renameMenuItem = page
-      .locator('.sc-browse-new-menu button[role="menuitem"]')
-      .filter({ hasText: /이름 바꾸기|Rename/i })
-      .first()
-    await expect(renameMenuItem).toBeVisible({ timeout: 5000 })
-    await renameMenuItem.click()
+    await page.getByRole('menuitem', { name: 'Rename' }).click()
 
-    const renameDialog = page.locator('.sc-browse-dialog').filter({ hasText: /이름 바꾸기|Rename/i })
+    const renameDialog = page.getByRole('alertdialog', { name: 'Rename' })
     await expect(renameDialog).toBeVisible({ timeout: 5000 })
-
     const newName = namespace('renamed') + '.txt'
-    const renameInput = renameDialog.locator('mdui-text-field input, input').first()
-    await renameInput.fill(newName)
-    const okBtn = renameDialog.locator('mdui-button').filter({ hasText: /확인|OK/i })
-    await okBtn.click()
+    await renameDialog.getByRole('textbox', { name: 'New name' }).fill(newName)
+    await renameDialog.getByRole('button', { name: 'OK' }).click()
 
     await expect(renameDialog).toBeHidden({ timeout: 5000 })
-    const renamedFile = page.locator('.sc-filename').filter({ hasText: newName }).first()
-    await expect(renamedFile).toBeVisible({ timeout: 5000 })
+    await expect(fileEntry(page, newName)).toBeVisible({ timeout: 5000 })
     await expect(initialFile).toBeHidden()
 
-    // Reload page and check persistence
     await page.reload({ waitUntil: 'domcontentloaded' })
-    await expect(page.locator('.sc-filename').filter({ hasText: newName }).first()).toBeVisible({ timeout: 10000 })
+    await expect(fileEntry(page, newName)).toBeVisible({ timeout: 10000 })
 
     // Verify durable disk state
     expect(fs.existsSync(path.join(workerApp.shareDir, newName))).toBe(true)

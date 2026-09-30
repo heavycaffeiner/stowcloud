@@ -1,6 +1,7 @@
 import type { Route } from '@playwright/test'
 import { test, expect } from '../fixtures'
 import { createTempFixtureFile } from '../helpers/files'
+import { fileEntry, uploadItem } from '../helpers/browse'
 
 test.describe('HTTP Transfer Fault Injection', () => {
   test.use({ serviceWorkers: 'block' })
@@ -23,7 +24,7 @@ test.describe('HTTP Transfer Fault Injection', () => {
 
   test('HTTP 429 rate limit with Retry-After recovery', async ({ authedPage: page, workerApp, namespace, faults }) => {
     await page.goto(`${workerApp.baseURL}/b/docs`, { waitUntil: 'domcontentloaded' })
-    await expect(page.locator('.sc-shell-header')).toBeVisible()
+    await expect(page.getByRole('banner')).toBeVisible()
 
     const fileName = `${namespace('fault-429')}.txt`
     const fixture = createTempFixtureFile(fileName, 2048)
@@ -38,7 +39,7 @@ test.describe('HTTP Transfer Fault Injection', () => {
       const fileInput = page.locator('input[type="file"][multiple]')
       await fileInput.setInputFiles(fixture.filePath)
 
-      const uploaded = page.locator('.sc-filename, .sc-file-grid-name').filter({ hasText: fileName }).first()
+      const uploaded = fileEntry(page, fileName)
       await expect(uploaded).toBeVisible({ timeout: 15000 })
     } finally {
       fixture.cleanup()
@@ -47,7 +48,7 @@ test.describe('HTTP Transfer Fault Injection', () => {
 
   test('HTTP 503 retry and recovery', async ({ authedPage: page, workerApp, namespace, faults }) => {
     await page.goto(`${workerApp.baseURL}/b/docs`, { waitUntil: 'domcontentloaded' })
-    await expect(page.locator('.sc-shell-header')).toBeVisible()
+    await expect(page.getByRole('banner')).toBeVisible()
 
     const fileName = `${namespace('fault-503')}.txt`
     const fixture = createTempFixtureFile(fileName, 2048)
@@ -61,7 +62,7 @@ test.describe('HTTP Transfer Fault Injection', () => {
       const fileInput = page.locator('input[type="file"][multiple]')
       await fileInput.setInputFiles(fixture.filePath)
 
-      const uploaded = page.locator('.sc-filename, .sc-file-grid-name').filter({ hasText: fileName }).first()
+      const uploaded = fileEntry(page, fileName)
       await expect(uploaded).toBeVisible({ timeout: 15000 })
     } finally {
       fixture.cleanup()
@@ -75,7 +76,7 @@ test.describe('HTTP Transfer Fault Injection', () => {
     faults
   }) => {
     await page.goto(`${workerApp.baseURL}/b/docs`, { waitUntil: 'domcontentloaded' })
-    await expect(page.locator('.sc-shell-header')).toBeVisible()
+    await expect(page.getByRole('banner')).toBeVisible()
 
     const fileName = `${namespace('fault-403')}.txt`
     const fixture = createTempFixtureFile(fileName, 2048)
@@ -99,11 +100,9 @@ test.describe('HTTP Transfer Fault Injection', () => {
       const fileInput = page.locator('input[type="file"][multiple]')
       await fileInput.setInputFiles(fixture.filePath)
       await injected
-      const item = page.locator('.sc-upload-tray-item').filter({
-        has: page.locator('.sc-upload-tray-name', { hasText: fileName })
-      })
+      const item = uploadItem(page, fileName)
       await expect(item).toBeVisible()
-      await expect(item.locator('.sc-upload-tray-message')).toBeVisible()
+      await expect(item.getByRole('paragraph')).toBeVisible()
     } finally {
       await page.context().unroute('**/api/v1/uploads/**', intercept)
       fixture.cleanup()
@@ -112,7 +111,7 @@ test.describe('HTTP Transfer Fault Injection', () => {
 
   test('HTTP 507 terminal quota failure surfaced in UI', async ({ authedPage: page, workerApp, namespace, faults }) => {
     await page.goto(`${workerApp.baseURL}/b/docs`, { waitUntil: 'domcontentloaded' })
-    await expect(page.locator('.sc-shell-header')).toBeVisible()
+    await expect(page.getByRole('banner')).toBeVisible()
 
     const fileName = `${namespace('fault-507')}.txt`
     const fixture = createTempFixtureFile(fileName, 2048)
@@ -136,11 +135,9 @@ test.describe('HTTP Transfer Fault Injection', () => {
       const fileInput = page.locator('input[type="file"][multiple]')
       await fileInput.setInputFiles(fixture.filePath)
       await injected
-      const item = page.locator('.sc-upload-tray-item').filter({
-        has: page.locator('.sc-upload-tray-name', { hasText: fileName })
-      })
+      const item = uploadItem(page, fileName)
       await expect(item).toBeVisible()
-      await expect(item.locator('.sc-upload-tray-message')).toBeVisible()
+      await expect(item.getByRole('paragraph')).toBeVisible()
     } finally {
       await page.context().unroute('**/api/v1/uploads/**', intercept)
       fixture.cleanup()
@@ -149,7 +146,7 @@ test.describe('HTTP Transfer Fault Injection', () => {
 
   test('connection abort recovery scenario', async ({ authedPage: page, workerApp, namespace, faults }) => {
     await page.goto(`${workerApp.baseURL}/b/docs`, { waitUntil: 'domcontentloaded' })
-    await expect(page.locator('.sc-shell-header')).toBeVisible()
+    await expect(page.getByRole('banner')).toBeVisible()
 
     const fileName = `${namespace('fault-abort')}.txt`
     const fixture = createTempFixtureFile(fileName, 2048)
@@ -160,7 +157,7 @@ test.describe('HTTP Transfer Fault Injection', () => {
       const fileInput = page.locator('input[type="file"][multiple]')
       await fileInput.setInputFiles(fixture.filePath)
 
-      const uploaded = page.locator('.sc-filename, .sc-file-grid-name').filter({ hasText: fileName }).first()
+      const uploaded = fileEntry(page, fileName)
       await expect(uploaded).toBeVisible({ timeout: 20000 })
     } finally {
       fixture.cleanup()

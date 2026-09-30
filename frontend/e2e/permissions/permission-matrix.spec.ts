@@ -1,6 +1,6 @@
-import { test, expect } from '../fixtures'
+import { test, expect, pinEnglish } from '../fixtures'
 import { ApiClient } from '../fixtures/auth'
-import { assertNoUnexpectedErrors } from '../helpers/ux-invariants'
+import { fileEntry } from '../helpers/browse'
 
 test.describe('Permission Matrix and Enforcement E2E', () => {
   test.beforeEach(async ({ filesystem, workerApp, grants }) => {
@@ -23,6 +23,7 @@ test.describe('Permission Matrix and Enforcement E2E', () => {
 
     // Login as user in isolated browser context
     const context = await browser.newContext({ ignoreHTTPSErrors: true })
+    await pinEnglish(context)
     const page = await context.newPage()
     const client = new ApiClient(workerApp.baseURL)
     await client.login(userName, userPass)
@@ -30,7 +31,9 @@ test.describe('Permission Matrix and Enforcement E2E', () => {
 
     // 1. UI: docs share should not be visible
     await page.goto(`${workerApp.baseURL}/b/docs`, { waitUntil: 'domcontentloaded' })
-    await expect(page.locator('text=a.txt')).toBeHidden({ timeout: 5000 })
+    // Wait for the page to settle, or the hidden check passes before the listing could have loaded.
+    await expect(page.getByRole('heading', { name: 'Nothing Here!' })).toBeVisible()
+    await expect(fileEntry(page, 'a.txt')).toBeHidden()
 
     // 2. Server API: direct access should return 404 (indistinguishable from missing)
     const listRes = await client.get('/api/v1/files/list?path=docs')
@@ -68,6 +71,7 @@ test.describe('Permission Matrix and Enforcement E2E', () => {
     })
 
     const context = await browser.newContext({ ignoreHTTPSErrors: true })
+    await pinEnglish(context)
     const page = await context.newPage()
     const client = new ApiClient(workerApp.baseURL)
     await client.login(userName, userPass)
@@ -75,7 +79,7 @@ test.describe('Permission Matrix and Enforcement E2E', () => {
 
     // UI: can browse
     await page.goto(`${workerApp.baseURL}/b/docs-ro`, { waitUntil: 'domcontentloaded' })
-    await expect(page.locator('text=a.txt').first()).toBeVisible({ timeout: 10000 })
+    await expect(fileEntry(page, 'a.txt')).toBeVisible({ timeout: 10000 })
 
     // Server API: write and mkdir must be refused with 403
     const mkdirRes = await client.post('/api/v1/files/mkdir', { path: '/docs-ro/forbidden-dir' })
@@ -107,6 +111,7 @@ test.describe('Permission Matrix and Enforcement E2E', () => {
 
     // User context opens browser
     const userContext = await browser.newContext({ ignoreHTTPSErrors: true })
+    await pinEnglish(userContext)
     const userPage = await userContext.newPage()
     const userClient = new ApiClient(workerApp.baseURL)
     await userClient.login(userName, userPass)
@@ -130,7 +135,7 @@ test.describe('Permission Matrix and Enforcement E2E', () => {
 
     // User UI shows content
     await userPage.goto(`${workerApp.baseURL}/b/docs-prop`, { waitUntil: 'domcontentloaded' })
-    await expect(userPage.locator('text=a.txt').first()).toBeVisible({ timeout: 10000 })
+    await expect(fileEntry(userPage, 'a.txt')).toBeVisible({ timeout: 10000 })
 
     // Admin revokes grant
     await grants.deleteGrant(String(grant.id))

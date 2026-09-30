@@ -409,8 +409,7 @@ try {
       [
         '() => {',
         '  const code = document.querySelector(\'[data-testid="webdav-base-url"]\');',
-        "  const row = code ? code.closest('.sc-webdav-token-row') : null;",
-        "  const button = row ? row.querySelector('mdui-button') : null;",
+        "  const button = code?.parentElement?.querySelector('[aria-label]') ?? null;",
         '  if (button) button.focus();',
         '  return button !== null && document.activeElement === button;',
         '}'
@@ -424,7 +423,7 @@ try {
       announcement = await evalJs(
         client,
         pageId,
-        "() => document.querySelector('.sc-webdav-announce')?.textContent ?? ''"
+        "() => document.querySelector('[data-testid=\"webdav-guide\"] [aria-live]')?.textContent ?? ''"
       )
     }
     check(

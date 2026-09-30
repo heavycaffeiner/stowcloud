@@ -1,5 +1,6 @@
 // Run: pnpm test:alignment. Uses the development fixtures and real browser layout.
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { createServer } from 'vite'
@@ -11,6 +12,8 @@ const server = await createServer({
   server: { host: '127.0.0.1', port: 0, open: false },
   logLevel: 'error'
 })
+const catalogue = (locale) =>
+  JSON.parse(readFileSync(new URL(`../src/lib/i18n/${locale}.json`, import.meta.url), 'utf8'))
 let browser
 let checks = 0
 
@@ -26,9 +29,9 @@ async function settle(page) {
   })
 }
 
-async function checkButtons(page, scope = 'body') {
+async function checkButtons(page, root = page.locator('body')) {
   await settle(page)
-  const result = await page.locator(scope).evaluateAll((roots) => {
+  const result = await root.evaluateAll((roots) => {
     const errors = []
     let count = 0
     for (const root of roots) {
@@ -41,23 +44,19 @@ async function checkButtons(page, scope = 'body') {
             const range = document.createRange()
             range.selectNodeContents(node)
             parts.push(range.getBoundingClientRect())
-          } else if (
-            node instanceof Element &&
-            node.checkVisibility() &&
-            !node.matches('.sc-sr-only, [slot="icon"]:empty')
-          ) {
+          } else if (node instanceof Element && node.checkVisibility() && !node.matches('[slot="icon"]:empty')) {
             parts.push(node.getBoundingClientRect())
           }
         }
-        const visible = parts.filter((part) => part.width > 0 && part.height > 0)
+        // Visually hidden text is clipped to a 1px box and takes no part in the layout.
+        const visible = parts.filter((part) => part.width > 1 || part.height > 1)
         const vertical = getComputedStyle(button).flexDirection === 'column'
         const target = vertical ? rect.x + rect.width / 2 : rect.y + rect.height / 2
         for (const part of visible) {
           const center = vertical ? part.x + part.width / 2 : part.y + part.height / 2
           if (Math.abs(center - target) > 1) {
-            errors.push(
-              `${button.tagName}.${button.className} ${button.textContent.trim().slice(0, 40)}: ${vertical ? 'x' : 'y'} offset ${(center - target).toFixed(2)}px`
-            )
+            const name = button.getAttribute('aria-label') ?? button.textContent.trim().slice(0, 40)
+            errors.push(`${button.tagName} ${name}: ${vertical ? 'x' : 'y'} offset ${(center - target).toFixed(2)}px`)
           }
         }
         count += 1
@@ -65,13 +64,13 @@ async function checkButtons(page, scope = 'body') {
     }
     return { errors, count }
   })
-  assert.ok(result.count > 0, `No buttons exercised in ${scope}`)
-  assert.deepEqual(result.errors, [], `Button content alignment in ${scope}`)
+  assert.ok(result.count > 0, `No buttons exercised in ${root}`)
+  assert.deepEqual(result.errors, [], `Button content alignment in ${root}`)
   checks += result.count
 }
 
-async function checkGroup(page, selector, axis, edge = 'center') {
-  const groups = await page.locator(selector).evaluateAll(
+async function checkGroup(groups, axis, edge = 'center') {
+  const positions = await groups.evaluateAll(
     (elements, { axis, edge }) =>
       elements
         .map((group) => {
@@ -86,17 +85,17 @@ async function checkGroup(page, selector, axis, edge = 'center') {
         .filter((values) => values.length > 1),
     { axis, edge }
   )
-  assert.ok(groups.length > 0, `No populated group exercised: ${selector}`)
-  for (const values of groups)
+  assert.ok(positions.length > 0, `No populated group exercised: ${groups}`)
+  for (const values of positions)
     assert.ok(
       Math.max(...values) - Math.min(...values) <= 1,
-      `${selector}: ${axis} ${edge} positions ${values.join(', ')}`
+      `${groups}: ${axis} ${edge} positions ${values.join(', ')}`
     )
-  checks += groups.length
+  checks += positions.length
 }
 
-async function checkNewCenter(page) {
-  const offsets = await page.locator('.sc-nav-drawer-new-btn').evaluate((button) => {
+async function checkNewCenter(button) {
+  const offsets = await button.evaluate((button) => {
     const rect = button.getBoundingClientRect()
     const parts = [...button.children].map((el) => el.getBoundingClientRect())
     const left = Math.min(...parts.map((r) => r.left))
@@ -114,12 +113,14 @@ async function checkNewCenter(page) {
   checks += 1
 }
 
-async function checkDateColumn(page) {
-  const geometry = await page.evaluate(() => {
-    const header = document.querySelector('.sc-file-table-header-cell-mtime').getBoundingClientRect()
-    const cells = [...document.querySelectorAll('.sc-row-cell-mtime')].map((el) => {
-      const rect = el.getBoundingClientRect()
-      return { x: rect.x, width: rect.width, text: el.textContent, clipped: el.scrollWidth > el.clientWidth }
+// The fourth column of the list view holds the modification time.
+async function checkDateColumn(list) {
+  const geometry = await list.evaluate((grid) => {
+    const header = grid.querySelectorAll('[role="columnheader"]')[3].getBoundingClientRect()
+    const cells = [...grid.querySelectorAll('[aria-selected]')].map((row) => {
+      const cell = row.querySelectorAll('[role="gridcell"]')[3]
+      const rect = cell.getBoundingClientRect()
+      return { x: rect.x, width: rect.width, text: cell.textContent, clipped: cell.scrollWidth > cell.clientWidth }
     })
     return { header: { x: header.x, width: header.width }, cells }
   })
@@ -136,11 +137,10 @@ async function checkDateColumn(page) {
   return geometry.header.width
 }
 
-async function dragBetween(page, selector) {
-  const items = page.locator(selector)
-  assert.ok((await items.count()) >= 2, `${selector}: drag selection needs two items`)
+async function dragBetween(page, items) {
+  assert.ok((await items.count()) >= 2, `${items}: drag selection needs two items`)
   const [first, second] = await Promise.all([items.nth(0).boundingBox(), items.nth(1).boundingBox()])
-  assert.ok(first && second, `${selector}: drag selection items must be visible`)
+  assert.ok(first && second, `${items}: drag selection items must be visible`)
   await page.mouse.move(first.x + first.width / 2, first.y + first.height / 2)
   await page.mouse.down()
   await page.mouse.move(second.x + second.width / 2, second.y + second.height / 2, { steps: 5 })
@@ -149,29 +149,34 @@ async function dragBetween(page, selector) {
   const selected = await items.evaluateAll(
     (elements) => elements.filter((element) => element.getAttribute('aria-selected') === 'true').length
   )
-  assert.ok(selected >= 2, `${selector}: drag selection must persist after pointerup`)
+  assert.ok(selected >= 2, `${items}: drag selection must persist after pointerup`)
   checks += 1
 }
 
-async function checkDragSelection(page) {
-  await dragBetween(page, '.sc-row')
-  await page.locator('.sc-browse-selection-close-btn').click()
-  await page.locator('.sc-browse-selection-bar').waitFor({ state: 'hidden' })
+async function clearSelection(page, t) {
+  const clear = page.getByRole('button', { name: t['browse.clear_selection'], exact: true })
+  await clear.click()
+  await clear.waitFor({ state: 'hidden' })
+}
 
-  const viewToggle = page.locator('.sc-browse-toolbar-actions > .sc-browse-action-btn').nth(1)
-  await viewToggle.click()
-  await page.locator('.sc-file-grid-card').first().waitFor()
-  await dragBetween(page, '.sc-file-grid-card')
-  const backgrounds = await page
-    .locator('.sc-file-grid-card[aria-selected="true"]')
+async function checkDragSelection(page, t) {
+  const list = page.getByRole('grid', { name: t['table.file_list'], exact: true })
+  const grid = page.getByRole('grid', { name: t['grid.file_grid'], exact: true })
+  await dragBetween(page, list.locator('[aria-selected]'))
+  await clearSelection(page, t)
+
+  await page.getByRole('button', { name: t['browse.grid_view'], exact: true }).click()
+  await grid.locator('[aria-selected]').first().waitFor()
+  await dragBetween(page, grid.locator('[aria-selected]'))
+  const backgrounds = await grid
+    .locator('[aria-selected="true"]')
     .evaluateAll((cards) => cards.map((card) => getComputedStyle(card).backgroundColor))
   assert.ok(backgrounds.length >= 2, 'Grid drag selection must include multiple cards')
   assert.equal(new Set(backgrounds).size, 1, 'Hovered selected grid card must retain its selected background')
   checks += 1
-  await page.locator('.sc-browse-selection-close-btn').click()
-  await page.locator('.sc-browse-selection-bar').waitFor({ state: 'hidden' })
-  await viewToggle.click()
-  await page.locator('.sc-row-cell-mtime').first().waitFor()
+  await clearSelection(page, t)
+  await page.getByRole('button', { name: t['browse.list_view'], exact: true }).click()
+  await list.locator('[aria-selected]').first().waitFor()
 }
 
 try {
@@ -180,68 +185,86 @@ try {
   browser = await chromium.launch()
   const widths = []
   for (const locale of ['en', 'ko']) {
+    const t = catalogue(locale)
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' })
     await context.addInitScript((locale) => {
       localStorage.setItem('sc.locale', locale)
       localStorage.setItem('sc.theme', 'light')
     }, locale)
     const page = await context.newPage()
+    const list = page.getByRole('grid', { name: t['table.file_list'], exact: true })
+    const drawer = page.getByRole('navigation', { name: t['common.main_menu'], exact: true })
+    const newButton = drawer.getByRole('button', { name: t['browse.new'], exact: true })
+    const sidebarToggle = page.getByRole('banner').getByRole('button', { name: t['nav.toggle_sidebar'], exact: true })
+
     await page.goto(`${base}b/home`)
-    await page.locator('.sc-row-cell-mtime').first().waitFor()
+    await list.locator('[aria-selected]').first().waitFor()
     await checkButtons(page)
-    await checkNewCenter(page)
-    await checkGroup(page, '.sc-browse-toolbar-actions', 'y')
-    await checkGroup(page, '.sc-nav-drawer-list', 'x', 'start')
-    widths.push(await checkDateColumn(page))
-    await checkDragSelection(page)
+    await checkNewCenter(newButton)
+    await checkGroup(page.getByRole('button', { name: t['common.refresh'], exact: true }).locator('..'), 'y')
+    await checkGroup(drawer.getByRole('list'), 'x', 'start')
+    widths.push(await checkDateColumn(list))
+    await checkDragSelection(page, t)
 
-    await page.locator('.sc-nav-drawer-new-btn').focus()
+    await newButton.focus()
     await page.keyboard.press('Enter')
-    await page.locator('.sc-browse-new-menu button').first().waitFor()
-    await checkButtons(page, '.sc-browse-new-menu')
-    await checkGroup(page, '.sc-browse-new-menu', 'x', 'start')
-    await page.locator('.sc-browse-new-menu button').first().click()
-    await page.locator('mdui-dialog[open]').waitFor()
-    await checkButtons(page, 'mdui-dialog[open]')
-    await checkGroup(page, 'mdui-dialog[open] [slot="action"]', 'y')
+    const newMenu = page.getByRole('menu')
+    await newMenu.getByRole('menuitem').first().waitFor()
+    await checkButtons(page, newMenu)
+    await checkGroup(newMenu, 'x', 'start')
+    await newMenu.getByRole('menuitem').first().click()
+    const dialog = page.getByRole('alertdialog')
+    await dialog.waitFor()
+    await checkButtons(page, dialog)
+    await checkGroup(dialog.locator('[slot="action"]'), 'y')
     await page.keyboard.press('Escape')
-    await page.locator('mdui-dialog[open]').waitFor({ state: 'hidden' })
+    await dialog.waitFor({ state: 'hidden' })
 
-    await page.locator('.sc-shell-header-menu-btn').click()
-    await page.locator('.sc-nav-drawer-collapsed').waitFor()
-    await checkNewCenter(page)
-    await checkGroup(page, '.sc-nav-drawer-body', 'x')
+    await sidebarToggle.click()
+    await page
+      .getByRole('banner')
+      .getByRole('button', { name: t['nav.toggle_sidebar'], exact: true, expanded: false })
+      .waitFor()
+    await checkNewCenter(newButton)
+    await checkGroup(drawer.locator(':scope > div'), 'x')
     await checkButtons(page)
-    await page.locator('.sc-shell-header-menu-btn').click()
+    await sidebarToggle.click()
 
     await page.goto(`${base}settings`)
-    await page.locator('.sc-settings-page').waitFor()
+    const settingsTabs = page.getByRole('navigation', { name: t['common.settings'], exact: true })
+    await settingsTabs.getByRole('button').first().waitFor()
     await checkButtons(page)
-    await checkGroup(page, '.sc-settings-page-tabs', 'y')
-    for (const tab of await page.locator('.sc-settings-page-tab').all()) {
+    await checkGroup(settingsTabs, 'y')
+    for (const tab of await settingsTabs.getByRole('button').all()) {
       await tab.click()
       await checkButtons(page)
     }
 
     await page.goto(`${base}b/home`)
-    await page.locator('.sc-row-cell-mtime').first().waitFor()
-    await page.locator('.sc-shell-header-search').click()
-    await page.locator('.sc-search-category-pill').first().waitFor()
-    await checkButtons(page, '.sc-search')
-    await checkGroup(page, '.sc-search-categories', 'y')
+    await list.locator('[aria-selected]').first().waitFor()
+    await page.getByRole('banner').getByRole('button', { name: t['common.search'], exact: true }).click()
+    const search = page.getByRole('dialog', { name: t['search.title'], exact: true })
+    const categories = search.getByRole('group', { name: t['search.kind_label'], exact: true })
+    await categories.getByRole('button').first().waitFor()
+    await checkButtons(page, search)
+    await checkGroup(categories, 'y')
     await page.keyboard.press('Escape')
 
     for (const width of [800, 390]) {
       await page.setViewportSize({ width, height: 900 })
-      await page.locator('.sc-app-shell-compact').waitFor()
+      const navBar = page.getByRole('navigation', { name: t['common.main_menu'], exact: true })
+      const more = navBar.getByRole('button', { name: t['nav.more'], exact: true })
+      await more.waitFor()
       await checkButtons(page)
-      await checkGroup(page, '.sc-nav-bar', 'y')
-      await page.locator('.sc-nav-bar-item[aria-haspopup="dialog"]').click()
-      await page.locator('.sc-nav-drawer-overlay').waitFor()
-      await checkNewCenter(page)
-      await checkButtons(page, '.sc-nav-drawer-overlay')
-      await checkGroup(page, '.sc-nav-drawer-list', 'x', 'start')
+      await checkGroup(navBar, 'y')
+      await more.click()
+      const overlay = page.getByRole('dialog', { name: t['common.main_menu'], exact: true })
+      await overlay.waitFor()
+      await checkNewCenter(overlay.getByRole('button', { name: t['browse.new'], exact: true }))
+      await checkButtons(page, overlay)
+      await checkGroup(overlay.getByRole('list'), 'x', 'start')
       await page.keyboard.press('Escape')
+      await overlay.waitFor({ state: 'hidden' })
     }
     assert.equal(
       await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),

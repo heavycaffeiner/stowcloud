@@ -5,6 +5,7 @@ import { generateDeterministicBytes } from '../helpers/files'
 import { sha256 } from '../helpers/hashes'
 import { captureAndVerifyDownload, isZipArchive } from '../helpers/downloads'
 import { assertNoUnexpectedErrors } from '../helpers/ux-invariants'
+import { fileEntry } from '../helpers/browse'
 
 test.describe('File Download E2E Journeys', () => {
   test.beforeEach(async ({ filesystem, workerApp, grants }) => {
@@ -36,17 +37,13 @@ test.describe('File Download E2E Journeys', () => {
     fs.writeFileSync(path.join(workerApp.shareDir, fileName), buffer)
 
     await page.goto(`${workerApp.baseURL}/b/docs`, { waitUntil: 'domcontentloaded' })
-    await expect(page.locator('.sc-shell-header')).toBeVisible()
+    await expect(page.getByRole('banner')).toBeVisible()
 
-    const fileItem = page.locator('.sc-filename, .sc-file-grid-name').filter({ hasText: fileName }).first()
+    const fileItem = fileEntry(page, fileName)
     await expect(fileItem).toBeVisible({ timeout: 10000 })
 
-    // Right-click file to open context menu and download
     await fileItem.click({ button: 'right' })
-    const downloadItem = page
-      .locator('.sc-browse-new-menu button[role="menuitem"]')
-      .filter({ hasText: /다운로드|Download/i })
-      .first()
+    const downloadItem = page.getByRole('menuitem', { name: 'Download' })
     await expect(downloadItem).toBeVisible({ timeout: 5000 })
 
     const downloadPromise = page.waitForEvent('download')
@@ -65,17 +62,14 @@ test.describe('File Download E2E Journeys', () => {
     artifacts
   }) => {
     await page.goto(`${workerApp.baseURL}/b/docs`, { waitUntil: 'domcontentloaded' })
-    await expect(page.locator('.sc-shell-header')).toBeVisible()
+    await expect(page.getByRole('banner')).toBeVisible()
 
     // 'sub' is a directory in workerApp.shareDir
-    const folderItem = page.locator('.sc-filename, .sc-file-grid-name').filter({ hasText: 'sub' }).first()
+    const folderItem = fileEntry(page, 'sub')
     await expect(folderItem).toBeVisible({ timeout: 10000 })
 
     await folderItem.click({ button: 'right' })
-    const downloadItem = page
-      .locator('.sc-browse-new-menu button[role="menuitem"]')
-      .filter({ hasText: /다운로드|Download/i })
-      .first()
+    const downloadItem = page.getByRole('menuitem', { name: 'Download' })
     await expect(downloadItem).toBeVisible({ timeout: 5000 })
 
     const downloadPromise = page.waitForEvent('download')

@@ -34,6 +34,9 @@ async function setupContext(theme) {
   return context
 }
 
+// List rows are the only elements in the file list that carry aria-selected.
+const fileRows = (page) => page.getByRole('grid', { name: 'File list', exact: true }).locator('[aria-selected]')
+
 async function settle(page, ms = 400) {
   await page.waitForTimeout(ms)
   await page.evaluate(async () => {
@@ -61,8 +64,9 @@ for (const theme of ['light', 'dark']) {
   console.log(`[${theme}] Capturing setup...`)
   await page.setViewportSize({ width: 1440, height: 1385 })
   await page.goto(`${base}setup`)
-  await page.locator('#sc-setup-token, input[type="text"]').first().waitFor()
-  await page.locator('#sc-setup-token, input[type="text"]').first().focus()
+  const setupToken = page.getByRole('textbox', { name: 'Setup token', exact: true })
+  await setupToken.waitFor()
+  await setupToken.focus()
   await settle(page)
   await page.screenshot({ path: path.join(OUT_DIR, `setup-${theme}.png`) })
 
@@ -72,24 +76,24 @@ for (const theme of ['light', 'dark']) {
   // 2. Browse screen (home folder)
   console.log(`[${theme}] Capturing browse...`)
   await page.goto(`${base}b/home`)
-  await page.locator('.sc-row-cell-mtime').first().waitFor()
+  await fileRows(page).first().waitFor()
   await settle(page)
   await page.screenshot({ path: path.join(OUT_DIR, `browse-${theme}.png`) })
 
   // 3. Subfolder navigation view (Documents folder)
   console.log(`[${theme}] Capturing tree / subfolder...`)
   await page.goto(`${base}b/home/Documents`)
-  await page.locator('.sc-row-cell-mtime').first().waitFor()
+  await fileRows(page).first().waitFor()
   await settle(page)
   await page.screenshot({ path: path.join(OUT_DIR, `tree-${theme}.png`) })
 
   // 4. Search sheet
   console.log(`[${theme}] Capturing search...`)
   await page.goto(`${base}b/home/Documents`)
-  await page.locator('.sc-row-cell-mtime').first().waitFor()
-  await page.locator('.sc-shell-header-search').click()
-  await page.locator('.sc-search-input').waitFor()
-  const searchInput = page.locator('.sc-search-input')
+  await fileRows(page).first().waitFor()
+  await page.getByRole('banner').getByRole('button', { name: 'Search', exact: true }).click()
+  const searchInput = page.getByRole('dialog', { name: 'Search', exact: true }).getByRole('searchbox')
+  await searchInput.waitFor()
   await searchInput.fill('2026')
   await page.keyboard.press('Enter')
   await page.waitForTimeout(800)
@@ -100,28 +104,21 @@ for (const theme of ['light', 'dark']) {
   // 5. Share link dialog
   console.log(`[${theme}] Capturing share-link...`)
   await page.goto(`${base}b/home/Documents`)
-  await page.locator('.sc-row-cell-mtime').first().waitFor()
-  const meetingRow = page.locator('.sc-row', { hasText: 'meeting-notes.txt' })
+  await fileRows(page).first().waitFor()
+  const meetingRow = fileRows(page).filter({ has: page.getByTitle('meeting-notes.txt', { exact: true }) })
   await meetingRow.waitFor()
-  await meetingRow.locator('.sc-row-cell-select').click()
+  await meetingRow.getByRole('gridcell', { name: 'Select meeting-notes.txt', exact: true }).click()
   await page.waitForTimeout(300)
-  const shareBtn = page
-    .locator('.sc-browse-selection-action-btn[title*="share" i], .sc-browse-selection-action-btn[title*="공유" i]')
-    .first()
-  await shareBtn.click()
-  await page.locator('.sc-share-dialog[open]').waitFor()
-  const createBtn = page
-    .locator('.sc-share-dialog[open] mdui-button')
-    .filter({ hasText: /Create/ })
-    .first()
+  await page.getByRole('button', { name: 'Manage share links', exact: true }).click()
+  const shareDialog = page.getByRole('dialog', { name: 'Share links: meeting-notes.txt', exact: true })
+  await shareDialog.waitFor()
+  const createBtn = shareDialog.getByRole('button', { name: 'Create a new link', exact: true })
   if (await createBtn.isVisible()) {
     await createBtn.click()
     await page.waitForTimeout(400)
-    const submitBtn = page.locator('.sc-share-dialog[open] .sc-share-edit-actions mdui-button').last()
-    await submitBtn.click()
-    await page.waitForTimeout(600)
+    await shareDialog.getByRole('button', { name: 'Create', exact: true }).click()
+    await shareDialog.getByRole('textbox', { name: 'Copy link', exact: true }).waitFor()
   }
-  await page.locator('.sc-share-issued, .sc-share-dialog[open]').first().waitFor()
   await settle(page)
   await page.screenshot({ path: path.join(OUT_DIR, `share-link-${theme}.png`) })
   await page.keyboard.press('Escape')
@@ -132,18 +129,15 @@ for (const theme of ['light', 'dark']) {
     window.history.pushState({}, '', '/s/photos')
     window.dispatchEvent(new PopStateEvent('popstate'))
   })
-  await page.locator('.sc-public-share').waitFor()
+  await page.getByRole('main').getByText('public share link').waitFor()
   await settle(page)
   await page.screenshot({ path: path.join(OUT_DIR, `share-public-${theme}.png`) })
 
   // 7. Folder grants dialog
   console.log(`[${theme}] Capturing folder-grants...`)
   await page.goto(`${base}admin#users`)
-  await page.locator('.sc-admin-row').first().waitFor()
-  const sujinRow = page.locator('.sc-admin-row', { hasText: 'sujin' }).first()
-  await sujinRow.waitFor()
-  await sujinRow.locator('.sc-admin-row-actions mdui-button, .sc-admin-row-actions button').first().click()
-  await page.locator('mdui-dialog[open]').waitFor()
+  await page.getByRole('button', { name: 'Manage folders visible to sujin', exact: true }).click()
+  await page.getByRole('alertdialog').waitFor()
   await settle(page)
   await page.screenshot({ path: path.join(OUT_DIR, `folder-grants-${theme}.png`) })
   await page.keyboard.press('Escape')
@@ -151,7 +145,7 @@ for (const theme of ['light', 'dark']) {
   // 8. Editor page
   console.log(`[${theme}] Capturing editor...`)
   await page.goto(`${base}b/home`)
-  await page.locator('.sc-row').first().waitFor()
+  await fileRows(page).first().waitFor()
   await page.evaluate(async (demoCode) => {
     const { api } = await import('/src/lib/api/client.ts')
     await api.writeFile('/home/stowcloud-editor-demo.ts', demoCode)
@@ -160,8 +154,9 @@ for (const theme of ['light', 'dark']) {
     window.history.pushState({}, '', '/edit/home/stowcloud-editor-demo.ts')
     window.dispatchEvent(new PopStateEvent('popstate'))
   })
-  await page.locator('.cm-content').first().waitFor()
-  await page.locator('.cm-content').first().focus()
+  const editor = page.getByRole('textbox', { name: 'stowcloud-editor-demo.ts', exact: true })
+  await editor.waitFor()
+  await editor.focus()
   await page.keyboard.press('End')
   await page.keyboard.type(' ')
   await settle(page)
@@ -177,7 +172,7 @@ for (const theme of ['light', 'dark']) {
     window.history.pushState({}, '', '/trash')
     window.dispatchEvent(new PopStateEvent('popstate'))
   })
-  await page.locator('.sc-trash-row').first().waitFor()
+  await page.getByRole('button', { name: 'Restore', exact: true }).first().waitFor()
   await settle(page)
   await page.screenshot({ path: path.join(OUT_DIR, `trash-${theme}.png`) })
 

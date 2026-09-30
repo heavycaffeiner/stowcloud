@@ -5,10 +5,7 @@ import { assertNoUnexpectedErrors } from '../helpers/ux-invariants'
 
 test.describe('browse actions reach the server', () => {
   test.beforeEach(async ({ page, filesystem, workerApp, grants }) => {
-    await page.addInitScript(() => {
-      localStorage.setItem('sc.locale', 'en')
-      localStorage.setItem('sc.view', 'list')
-    })
+    await page.addInitScript(() => localStorage.setItem('sc.view', 'list'))
     const shares = await filesystem.listShares()
     const docs =
       shares.find((share) => share.name === 'docs') ?? (await filesystem.createShare('docs', workerApp.shareDir))

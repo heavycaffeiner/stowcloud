@@ -21,11 +21,8 @@ describe('PathPickerDialog', () => {
 
     const file = await screen.findByRole('button', { name: 'note.txt' })
     file.dispatchEvent(new Event('click', { bubbles: true }))
-    await waitFor(() =>
-      expect(document.querySelector('mdui-button[variant="filled"]')?.hasAttribute('disabled')).toBe(false)
-    )
-    const choose = document.querySelector('mdui-button[variant="filled"]')!
-    expect(choose.hasAttribute('disabled')).toBe(false)
+    const choose = screen.getByText('Choose')
+    await waitFor(() => expect(choose.hasAttribute('disabled')).toBe(false))
     choose.dispatchEvent(new Event('click', { bubbles: true }))
     expect(onPick).toHaveBeenCalledWith('/note.txt')
     expect(fetchMock).toHaveBeenCalledWith(

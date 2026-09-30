@@ -1,4 +1,4 @@
-import { test, expect } from '../fixtures'
+import { test, expect, pinEnglish } from '../fixtures'
 import { captureAndVerifyDownload } from '../helpers/downloads'
 import { sha256 } from '../helpers/hashes'
 import { assertNoUnexpectedErrors } from '../helpers/ux-invariants'
@@ -39,16 +39,13 @@ test.describe('Public Share Download Link E2E', () => {
 
     // 2. Anonymous visitor context
     const anonContext = await browser.newContext({ ignoreHTTPSErrors: true })
+    await pinEnglish(anonContext)
     const anonPage = await anonContext.newPage()
 
     await anonPage.goto(`${workerApp.baseURL}/s/${token}`, { waitUntil: 'domcontentloaded' })
-    await expect(anonPage.locator('text=a.txt').first()).toBeVisible({ timeout: 10000 })
+    await expect(anonPage.getByRole('heading', { name: 'a.txt', exact: true })).toBeVisible({ timeout: 10000 })
 
-    // Download button
-    const downloadBtn = anonPage
-      .locator('mdui-button')
-      .filter({ hasText: /다운로드|Download/i })
-      .first()
+    const downloadBtn = anonPage.getByRole('button', { name: 'Download', exact: true })
     await expect(downloadBtn).toBeVisible({ timeout: 10000 })
 
     const downloadPromise = anonPage.waitForEvent('download')

@@ -4,6 +4,7 @@ import * as fs from 'node:fs'
 import { createTempFixtureFile } from '../helpers/files'
 import { sha256 } from '../helpers/hashes'
 import { assertNoUnexpectedErrors } from '../helpers/ux-invariants'
+import { fileEntry } from '../helpers/browse'
 
 test.describe('File Upload E2E Journeys', () => {
   test.beforeEach(async ({ filesystem, workerApp, grants }) => {
@@ -30,7 +31,7 @@ test.describe('File Upload E2E Journeys', () => {
     artifacts
   }) => {
     await page.goto(`${workerApp.baseURL}/b/docs`, { waitUntil: 'domcontentloaded' })
-    await expect(page.locator('.sc-shell-header')).toBeVisible()
+    await expect(page.getByRole('banner')).toBeVisible()
 
     const fileName = `${namespace('file')}.txt`
     const fixture = createTempFixtureFile(fileName, 4096)
@@ -41,7 +42,7 @@ test.describe('File Upload E2E Journeys', () => {
       await fileInput.setInputFiles(fixture.filePath)
 
       // Verify file appears in UI
-      const uploadedItem = page.locator('.sc-filename, .sc-file-grid-name').filter({ hasText: fileName }).first()
+      const uploadedItem = fileEntry(page, fileName)
       await expect(uploadedItem).toBeVisible({ timeout: 15000 })
 
       // Verify on durable server disk
@@ -65,7 +66,7 @@ test.describe('File Upload E2E Journeys', () => {
     artifacts
   }) => {
     await page.goto(`${workerApp.baseURL}/b/docs`, { waitUntil: 'domcontentloaded' })
-    await expect(page.locator('.sc-shell-header')).toBeVisible()
+    await expect(page.getByRole('banner')).toBeVisible()
 
     const fileName = `${namespace('chunk-5m')}.bin`
     const size = 5 * 1024 * 1024 // 5 MiB chunk boundary
@@ -75,7 +76,7 @@ test.describe('File Upload E2E Journeys', () => {
       const fileInput = page.locator('input[type="file"][multiple]')
       await fileInput.setInputFiles(fixture.filePath)
 
-      const uploadedItem = page.locator('.sc-filename, .sc-file-grid-name').filter({ hasText: fileName }).first()
+      const uploadedItem = fileEntry(page, fileName)
       await expect(uploadedItem).toBeVisible({ timeout: 30000 })
 
       const serverFilePath = path.join(workerApp.shareDir, fileName)

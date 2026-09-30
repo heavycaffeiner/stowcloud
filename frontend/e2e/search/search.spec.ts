@@ -26,27 +26,18 @@ test.describe('Search E2E and Permission Invariant', () => {
     artifacts
   }) => {
     await page.goto(`${workerApp.baseURL}/b/docs`, { waitUntil: 'domcontentloaded' })
-    await expect(page.locator('.sc-shell-header')).toBeVisible()
+    await page.getByRole('banner').getByRole('button', { name: 'Search', exact: true }).click()
 
-    // Click search trigger in shell header or press shortcut '/'
-    const searchTrigger = page
-      .locator('.sc-shell-header-search, button[aria-label*="검색"], button[aria-label*="Search"]')
-      .first()
-    await searchTrigger.click()
-
-    // Search sheet or panel opens
-    const searchInput = page
-      .locator('input[type="search"], .sc-search-input, mdui-text-field[type="search"] input')
-      .first()
+    const sheet = page.getByRole('dialog', { name: 'Search' })
+    const searchInput = sheet.getByRole('searchbox')
     await expect(searchInput).toBeVisible({ timeout: 5000 })
 
-    // Type query
     await searchInput.fill('a.txt')
     await searchInput.press('Enter')
 
-    // Observe search results
-    const resultItem = page.locator('.sc-search-row').filter({ hasText: 'a.txt' }).first()
-    await expect(resultItem).toBeVisible({ timeout: 10000 })
+    // Any hit with this exact name proves the stream delivered results.
+    const resultItem = sheet.getByRole('listitem').filter({ has: page.getByText('a.txt', { exact: true }) })
+    await expect(resultItem.first()).toBeVisible({ timeout: 10000 })
 
     await assertNoUnexpectedErrors(artifacts)
   })

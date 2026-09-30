@@ -40,12 +40,6 @@ async function wheelTo(page, width, height) {
   await page.waitForTimeout(400)
 }
 
-// The scroll owner is whichever element actually overflows. Asserting on it
-// rather than on a class name keeps this honest if the layout moves again.
-async function scrollOffset(page, selector) {
-  return page.locator(selector).evaluate((element) => element.scrollTop)
-}
-
 try {
   await server.listen()
   const base = server.resolvedUrls.local[0]
@@ -53,8 +47,6 @@ try {
 
   for (const [width, height] of VIEWPORTS) {
     for (const mode of ['list', 'grid']) {
-      const cell = mode === 'grid' ? '.sc-file-grid-card' : '.sc-row'
-      const scroller = mode === 'grid' ? '.sc-file-grid' : '.sc-file-table'
       const context = await browser.newContext({ viewport: { width, height }, reducedMotion: 'reduce' })
       await context.addInitScript((view) => {
         localStorage.setItem('sc.locale', 'en')
@@ -65,14 +57,17 @@ try {
       // The seeded bench directory holds 100,000 rows, so the window has far
       // more to move through than any one viewport can render.
       await page.goto(`${base}b/home/bench`)
-      await page.locator(cell).first().waitFor()
-      const before = await page.locator(cell).first().textContent()
+      // The view itself must own the scroll. Rows and cards are the only elements in it with aria-selected.
+      const view = page.getByRole('grid', { name: mode === 'grid' ? 'File grid' : 'File list' })
+      const cell = view.locator('[aria-selected]')
+      await cell.first().waitFor()
+      const before = await cell.first().textContent()
 
       await wheelTo(page, width, height)
 
-      const offset = await scrollOffset(page, scroller)
-      const after = await page.locator(cell).first().textContent()
-      const rendered = await page.locator(cell).count()
+      const offset = await view.evaluate((element) => element.scrollTop)
+      const after = await cell.first().textContent()
+      const rendered = await cell.count()
       const where = `${width}x${height} ${mode}`
 
       assert.ok(offset > 0, `${where}: the wheel scrolled nothing, so the view is not the scroll owner`)

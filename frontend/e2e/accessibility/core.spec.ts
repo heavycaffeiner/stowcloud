@@ -1,11 +1,12 @@
 import { test, expect } from '../fixtures'
 import AxeBuilder from '@axe-core/playwright'
 import { assertNoUnexpectedErrors } from '../helpers/ux-invariants'
+import { fileEntry } from '../helpers/browse'
 
 test.describe('Accessibility Scans and Accessible Names', () => {
   test('login page accessibility scan with axe-core', async ({ page, workerApp }) => {
     await page.goto(`${workerApp.baseURL}/login`, { waitUntil: 'domcontentloaded' })
-    await expect(page.locator('form.sc-auth-card-login')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible()
 
     const results = await new AxeBuilder({ page }).disableRules(['color-contrast']).analyze()
 
@@ -35,29 +36,18 @@ test.describe('Accessibility Scans and Accessible Names', () => {
     }
 
     await page.goto(`${workerApp.baseURL}/b/docs`, { waitUntil: 'domcontentloaded' })
-    await expect(page.locator('.sc-shell-header')).toBeVisible()
+    // Scan the loaded listing, not the loading state.
+    await expect(fileEntry(page, 'a.txt')).toBeVisible({ timeout: 10000 })
 
-    // 1. Axe accessibility scan
     const results = await new AxeBuilder({ page })
       .disableRules(['color-contrast', 'aria-allowed-role', 'empty-table-header'])
       .analyze()
     expect(results.violations).toEqual([])
 
-    // 2. Critical icon controls have accessible names
-    const searchBtn = page
-      .locator('.sc-shell-header-search, button[aria-label*="검색"], button[aria-label*="Search"]')
-      .first()
-    await expect(searchBtn).toHaveAttribute('aria-label', /.+/)
-
-    const refreshBtn = page
-      .locator('.sc-browse-action-btn[aria-label*="새로고침"], .sc-browse-action-btn[aria-label*="Refresh"]')
-      .first()
-    if (await refreshBtn.isVisible()) {
-      await expect(refreshBtn).toHaveAttribute('aria-label', /.+/)
-    }
-
-    const viewToggle = page.locator('button[aria-label*="보기"], button[aria-label*="view"]').first()
-    await expect(viewToggle).toHaveAttribute('aria-label', /.+/)
+    // Icon-only controls are reachable by their accessible names.
+    await expect(page.getByRole('banner').getByRole('button', { name: 'Search', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Refresh', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Grid view', exact: true })).toBeVisible()
 
     await assertNoUnexpectedErrors(artifacts)
   })

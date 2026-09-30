@@ -9,7 +9,7 @@ test('mdui elements removed in the task that added them raise no page error', as
   artifacts
 }) => {
   await page.goto(`${workerApp.baseURL}/login`, { waitUntil: 'domcontentloaded' })
-  await expect(page.locator('form.sc-auth-card-login')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible()
 
   await page.evaluate(() => {
     for (const make of [

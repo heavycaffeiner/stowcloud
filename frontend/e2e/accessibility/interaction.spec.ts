@@ -27,7 +27,7 @@ test.describe('Interaction and UX Invariants E2E', () => {
     // Set compact mobile viewport
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto(`${workerApp.baseURL}/b/docs`, { waitUntil: 'domcontentloaded' })
-    await expect(page.locator('.sc-shell-header')).toBeVisible()
+    await expect(page.getByRole('banner')).toBeVisible()
 
     // Verify document does not have horizontal overflow
     const hasHorizontalOverflow = await page.evaluate(() => {
@@ -45,48 +45,36 @@ test.describe('Interaction and UX Invariants E2E', () => {
     artifacts
   }) => {
     await page.goto(`${workerApp.baseURL}/b/docs`, { waitUntil: 'domcontentloaded' })
-    await expect(page.locator('.sc-shell-header')).toBeVisible()
+    await expect(page.getByRole('banner')).toBeVisible()
 
-    // Open New Folder dialog
-    const newBtn = page
-      .locator('.sc-nav-drawer-new-btn, button[aria-label*="새로 만들기"], button[aria-label*="New"]')
-      .first()
-    if (await newBtn.isVisible()) {
-      await newBtn.click()
-      const newFolderItem = page
-        .locator('.sc-browse-new-menu button[role="menuitem"]')
-        .filter({ hasText: /새 폴더|New folder/i })
-        .first()
-      await newFolderItem.click()
+    const newButton = page
+      .getByRole('navigation', { name: 'Main menu' })
+      .getByRole('button', { name: 'New', exact: true })
+    const newFolderItem = page.getByRole('menuitem', { name: 'New folder' })
+    const dialog = page.getByRole('alertdialog', { name: 'New folder' })
+    const input = dialog.getByRole('textbox', { name: 'Folder name' })
+    const cancel = dialog.getByRole('button', { name: 'Cancel' })
 
-      const dialog = page.locator('.sc-browse-dialog').filter({ hasText: /새 폴더|New Folder/i })
-      await expect(dialog).toBeVisible()
+    await newButton.click()
+    await newFolderItem.click()
+    await expect(dialog).toBeVisible()
+    await input.fill('dirty-cancelled-name')
+    await cancel.click()
+    await expect(dialog).toBeHidden({ timeout: 5000 })
 
-      // Type dirty text
-      const input = dialog.locator('mdui-text-field input, input').first()
-      await input.fill('dirty-cancelled-name')
-
-      // Click cancel
-      const cancelBtn = dialog.locator('mdui-button').filter({ hasText: /취소|Cancel/i })
-      await cancelBtn.click()
-      await expect(dialog).toBeHidden({ timeout: 5000 })
-
-      // Re-open dialog and verify input is reset to default
-      await newBtn.click()
-      await newFolderItem.click()
-      await expect(dialog).toBeVisible()
-
-      await expect(input).not.toHaveValue('dirty-cancelled-name', { timeout: 5000 })
-
-      await cancelBtn.click()
-    }
+    await newButton.click()
+    await newFolderItem.click()
+    await expect(dialog).toBeVisible()
+    await expect(input).not.toHaveValue('dirty-cancelled-name', { timeout: 5000 })
+    await cancel.click()
+    await expect(dialog).toBeHidden({ timeout: 5000 })
 
     await assertNoUnexpectedErrors(artifacts)
   })
 
   test('terminal loading state: no persistent stuck spinners', async ({ authedPage: page, workerApp, artifacts }) => {
     await page.goto(`${workerApp.baseURL}/b/docs`, { waitUntil: 'domcontentloaded' })
-    await expect(page.locator('.sc-shell-header')).toBeVisible()
+    await expect(page.getByRole('banner')).toBeVisible()
 
     // Assert spinners settle
     await assertTerminalLoadingState(page, 10000)

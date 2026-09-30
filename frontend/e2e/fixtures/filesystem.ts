@@ -51,6 +51,14 @@ export class FilesystemFixture {
     return res.data
   }
 
+  async setTrash(id: string, enabled: boolean): Promise<ShareRecord> {
+    const res = await this.api.patch<ShareRecord>(`/api/v1/admin/shares/${id}`, { trash_enabled: enabled })
+    if (res.status !== 200) {
+      throw new Error(`Failed to set trash on share ${id}: ${res.status} ${res.rawText}`)
+    }
+    return res.data
+  }
+
   async listShares(): Promise<ShareRecord[]> {
     const res = await this.api.get<{ shares?: ShareRecord[] } | ShareRecord[]>('/api/v1/admin/shares')
     if (res.status !== 200) {

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Entry } from '../../../src/lib/api/types'
 import { selection, useSelectionStore } from '../../../src/lib/store/selection.store'
-import { act, cleanup, fireEvent, render } from '../../../src/test/test-utils'
+import { act, cleanup, fireEvent, render, within } from '../../../src/test/test-utils'
 import { FileGrid } from '../../../src/features/files/FileGrid'
 import { FileTable } from '../../../src/features/files/FileTable'
 
@@ -56,9 +56,9 @@ afterEach(async () => {
 })
 
 describe.each([
-  ['list', FileTable, '.sc-row', '.sc-row-cell-select', '.sc-row-more-btn'],
-  ['grid', FileGrid, '.sc-file-grid-card', '.sc-file-grid-check', '.sc-file-grid-kebab']
-] as const)('%s file activation', (_name, View, entrySelector, checkSelector, menuSelector) => {
+  ['list', FileTable],
+  ['grid', FileGrid]
+] as const)('%s file activation', (_name, View) => {
   function renderView(initialEntries: Entry[] = [documents, pictures]) {
     const opened: { path: string; selected: string[] }[] = []
     const onOpen = vi.fn((entry: Entry) => {
@@ -77,7 +77,8 @@ describe.each([
       opened,
       onOpen,
       onContextMenu,
-      entries: () => Array.from(result.container.querySelectorAll<HTMLElement>(entrySelector)),
+      // Rows and cards are the only elements that carry aria-selected.
+      entries: () => Array.from(result.container.querySelectorAll<HTMLElement>('[aria-selected]')),
       async replaceEntries(entries: Entry[]) {
         await act(async () => {})
         result.rerender(<View {...props} entries={entries} total={entries.length} dirs={entries.length} />)
@@ -152,8 +153,8 @@ describe.each([
   it('keeps selection and more-actions independent from touch activation', () => {
     const view = renderView()
     const [row] = view.entries()
-    const check = row.querySelector<HTMLElement>(checkSelector)!
-    const menu = row.querySelector<HTMLElement>(menuSelector)!
+    const check = within(row).getByText(`Select ${documents.name}`)
+    const menu = within(row).getByRole('button', { name: /^More/ })
 
     tap(check, { pointerType: 'touch' })
     expect(row.getAttribute('aria-selected')).toBe('true')

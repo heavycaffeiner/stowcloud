@@ -33,22 +33,16 @@ test.describe('Editor Workflow E2E', () => {
 
     await page.goto(`${workerApp.baseURL}/edit/docs/${fileName}`, { waitUntil: 'domcontentloaded' })
 
-    // Verify editor mounts
-    const editor = page.locator('.cm-content, [role="textbox"]').first()
+    const editor = page.getByRole('textbox', { name: fileName, exact: true })
     await expect(editor).toBeVisible({ timeout: 10000 })
     await expect(editor).toContainText('initial content', { timeout: 10000 })
 
-    // Focus editor and type additional content
     await editor.click()
     await page.keyboard.press('End')
     await page.keyboard.type(' added by e2e')
 
-    // Save button should become enabled
-    const saveBtn = page
-      .locator('mdui-button')
-      .filter({ hasText: /저장|Save/i })
-      .first()
-    await expect(saveBtn).toBeVisible({ timeout: 5000 })
+    const saveBtn = page.getByRole('button', { name: 'Save (Ctrl+S)' })
+    await expect(saveBtn).toBeEnabled({ timeout: 5000 })
     await saveBtn.click()
 
     // Verify on disk that changes were saved

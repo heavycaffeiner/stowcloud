@@ -7,10 +7,7 @@ import { assertNoUnexpectedErrors } from '../helpers/ux-invariants'
 // the component layer and its class names change underneath them.
 test.describe('keyboard use of the file views', () => {
   test.beforeEach(async ({ page, filesystem, workerApp, grants }) => {
-    await page.addInitScript(() => {
-      localStorage.setItem('sc.locale', 'en')
-      localStorage.setItem('sc.view', 'list')
-    })
+    await page.addInitScript(() => localStorage.setItem('sc.view', 'list'))
     const shares = await filesystem.listShares()
     const docs =
       shares.find((share) => share.name === 'docs') ?? (await filesystem.createShare('docs', workerApp.shareDir))

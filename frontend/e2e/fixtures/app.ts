@@ -1,4 +1,4 @@
-import { test as base, expect, type ConsoleMessage, type Request } from '@playwright/test'
+import { test as base, expect, type BrowserContext, type ConsoleMessage, type Request } from '@playwright/test'
 import { spawn, execFileSync, execSync, type ChildProcess } from 'node:child_process'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
@@ -32,6 +32,11 @@ export interface ArtifactCollector {
 }
 
 let cachedBinPath: string | null = null
+
+// The app starts in Korean unless storage says otherwise, and specs find controls by their English names.
+export async function pinEnglish(context: BrowserContext): Promise<void> {
+  await context.addInitScript(() => localStorage.setItem('sc.locale', 'en'))
+}
 
 function resolveBinary(): string {
   if (process.env.SC_TEST_BIN && fs.existsSync(process.env.SC_TEST_BIN)) {
@@ -252,6 +257,11 @@ export const test = base.extend({
 
   baseURL: async ({ workerApp }, use) => {
     await use(workerApp.baseURL)
+  },
+
+  context: async ({ context }, use) => {
+    await pinEnglish(context)
+    await use(context)
   },
 
   namespace: async ({}, use, testInfo) => {

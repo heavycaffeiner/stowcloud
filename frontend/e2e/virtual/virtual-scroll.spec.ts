@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { createServer, type ViteDevServer } from 'vite'
 import { fileURLToPath } from 'node:url'
+import { fileEntries } from '../helpers/browse'
 
 let viteServer: ViteDevServer
 let viteBase: string
@@ -32,7 +33,8 @@ test.describe('Virtual Scrolling Invariants', () => {
     })
 
     await page.goto(`${viteBase}b/home/bench`, { waitUntil: 'domcontentloaded' })
-    const cell = page.locator('.sc-row').first()
+    const list = page.getByRole('grid', { name: 'File list' })
+    const cell = fileEntries(page).first()
     await cell.waitFor()
     const beforeText = await cell.textContent()
 
@@ -48,9 +50,9 @@ test.describe('Virtual Scrolling Invariants', () => {
     setTimeout(settleResolve, 400)
     await settlePromise
 
-    const offset = await page.locator('.sc-file-table').evaluate((el) => el.scrollTop)
-    const afterText = await page.locator('.sc-row').first().textContent()
-    const renderedCount = await page.locator('.sc-row').count()
+    const offset = await list.evaluate((el) => el.scrollTop)
+    const afterText = await fileEntries(page).first().textContent()
+    const renderedCount = await fileEntries(page).count()
 
     expect(offset).toBeGreaterThan(0)
     expect(afterText).not.toBe(beforeText)
@@ -65,7 +67,8 @@ test.describe('Virtual Scrolling Invariants', () => {
     })
 
     await page.goto(`${viteBase}b/home/bench`, { waitUntil: 'domcontentloaded' })
-    const card = page.locator('.sc-file-grid-card').first()
+    const grid = page.getByRole('grid', { name: 'File grid' })
+    const card = fileEntries(page).first()
     await card.waitFor()
     const beforeText = await card.textContent()
 
@@ -80,9 +83,9 @@ test.describe('Virtual Scrolling Invariants', () => {
     setTimeout(settleResolve, 400)
     await settlePromise
 
-    const offset = await page.locator('.sc-file-grid').evaluate((el) => el.scrollTop)
-    const afterText = await page.locator('.sc-file-grid-card').first().textContent()
-    const renderedCount = await page.locator('.sc-file-grid-card').count()
+    const offset = await grid.evaluate((el) => el.scrollTop)
+    const afterText = await fileEntries(page).first().textContent()
+    const renderedCount = await fileEntries(page).count()
 
     expect(offset).toBeGreaterThan(0)
     expect(afterText).not.toBe(beforeText)
@@ -97,7 +100,7 @@ test.describe('Virtual Scrolling Invariants', () => {
     })
 
     await page.goto(`${viteBase}b/home/bench`, { waitUntil: 'domcontentloaded' })
-    const firstRow = page.locator('.sc-row').first()
+    const firstRow = fileEntries(page).first()
     await firstRow.waitFor()
 
     await firstRow.click()
@@ -106,7 +109,7 @@ test.describe('Virtual Scrolling Invariants', () => {
 
     // Home returns to top
     await page.keyboard.press('Home')
-    const tableOffset = await page.locator('.sc-file-table').evaluate((el) => el.scrollTop)
+    const tableOffset = await page.getByRole('grid', { name: 'File list' }).evaluate((el) => el.scrollTop)
     expect(tableOffset).toBe(0)
   })
 })

@@ -2,6 +2,7 @@ import { test, expect } from '../fixtures'
 import { createTempFixtureFile } from '../helpers/files'
 import * as path from 'node:path'
 import * as fs from 'node:fs'
+import { fileEntry } from '../helpers/browse'
 
 test.describe('Network Transport Fault Invariants', () => {
   test.beforeEach(async ({ filesystem, workerApp, grants }) => {
@@ -29,7 +30,7 @@ test.describe('Network Transport Fault Invariants', () => {
   }) => {
     test.skip(browserName !== 'chromium', 'Network.emulateNetworkConditions requires Chromium CDP')
     await page.goto(`${workerApp.baseURL}/b/docs`, { waitUntil: 'domcontentloaded' })
-    await expect(page.locator('.sc-shell-header')).toBeVisible()
+    await expect(page.getByRole('banner')).toBeVisible()
 
     const fileName = `${namespace('throttled')}.bin`
     const fixture = createTempFixtureFile(fileName, 64 * 1024)
@@ -49,10 +50,7 @@ test.describe('Network Transport Fault Invariants', () => {
       const uploadStartedAt = Date.now()
       await fileInput.setInputFiles(fixture.filePath)
 
-      const uploaded = page
-        .locator('.sc-browse-content .sc-filename, .sc-file-grid-name')
-        .filter({ hasText: fileName })
-        .first()
+      const uploaded = fileEntry(page, fileName)
       await expect(uploaded).toBeVisible({ timeout: 20000 })
       expect(Date.now() - uploadStartedAt).toBeGreaterThan(1000)
     } finally {
@@ -71,7 +69,7 @@ test.describe('Network Transport Fault Invariants', () => {
     namespace
   }) => {
     await page.goto(`${workerApp.baseURL}/b/docs`, { waitUntil: 'domcontentloaded' })
-    await expect(page.locator('.sc-shell-header')).toBeVisible()
+    await expect(page.getByRole('banner')).toBeVisible()
 
     const fileName = `${namespace('outage')}.txt`
     const fixture = createTempFixtureFile(fileName, 4096)
@@ -98,10 +96,7 @@ test.describe('Network Transport Fault Invariants', () => {
       await delayPromise
 
       // Upload retries after temporary outage and completes
-      const uploaded = page
-        .locator('.sc-browse-content .sc-filename, .sc-file-grid-name')
-        .filter({ hasText: fileName })
-        .first()
+      const uploaded = fileEntry(page, fileName)
       await expect(uploaded).toBeVisible({ timeout: 25000 })
 
       await expect.poll(() => fs.existsSync(path.join(workerApp.shareDir, fileName)), { timeout: 10000 }).toBe(true)
