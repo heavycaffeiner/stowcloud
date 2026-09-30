@@ -145,7 +145,7 @@ func (e *Engine) routes(router *gin.Engine) error {
 	op(sessionAPI, http.MethodPost, "/api/v1/files/rename", "files.rename", fs.Rename)
 	op(sessionAPI, http.MethodPost, "/api/v1/files/archive", "files.archive", fs.Archive)
 	session.GET("/api/v1/files/archive/fetch", fs.ArchiveFetch)
-	session.GET("/api/v1/files/archive/list", preview.ArchiveListHandler(preview.ArchiveListDeps{
+	op(sessionAPI, http.MethodGet, "/api/v1/files/archive/list", "files.archive.list", preview.ArchiveList(preview.ArchiveListDeps{
 		Core: e.Core, Resolve: resolve, AcquireArchive: e.acquireArchive, Logger: e.logger,
 	}))
 	op(sessionAPI, http.MethodPost, "/api/v1/files/download", "files.download", fs.Download)
@@ -159,11 +159,11 @@ func (e *Engine) routes(router *gin.Engine) error {
 		RevalidateDestination: uploads.RevalidateDirectDestination(e.Core, resolve, e.guardDavLock),
 		Now:                   e.now, Logger: e.logger,
 	})
-	session.POST("/api/v1/direct-uploads", middleware.LimitJSON, transfer.Create)
-	session.GET("/api/v1/direct-uploads/:id", transfer.Status)
-	session.POST("/api/v1/direct-uploads/:id/parts", middleware.LimitJSON, transfer.Part)
-	session.POST("/api/v1/direct-uploads/:id/complete", middleware.LimitJSON, transfer.Complete)
-	session.POST("/api/v1/direct-uploads/:id/cancel", middleware.LimitJSON, transfer.Cancel)
+	op(sessionAPI, http.MethodPost, "/api/v1/direct-uploads", "direct_uploads.create", transfer.Create)
+	op(sessionAPI, http.MethodGet, "/api/v1/direct-uploads/{id}", "direct_uploads.get", transfer.Status)
+	op(sessionAPI, http.MethodPost, "/api/v1/direct-uploads/{id}/parts", "direct_uploads.parts", transfer.Part)
+	op(sessionAPI, http.MethodPost, "/api/v1/direct-uploads/{id}/complete", "direct_uploads.complete", transfer.Complete)
+	op(sessionAPI, http.MethodPost, "/api/v1/direct-uploads/{id}/cancel", "direct_uploads.cancel", transfer.Cancel)
 
 	upload := uploads.NewHandlers(uploads.Deps{
 		Upload: e.Upload, Core: e.Core, Resolve: resolve,
@@ -280,13 +280,13 @@ func (e *Engine) routes(router *gin.Engine) error {
 
 	e.publicLinks = e.newPublicLinks()
 	public.GET("/s/:token", e.publicLinks.Landing)
-	public.POST("/s/:token/auth", middleware.LimitJSON, e.publicLinks.Unlock)
+	op(publicAPI, http.MethodPost, "/s/{token}/auth", "links.unlock", e.publicLinks.Unlock(links.PublicLinkPrefix))
 	public.GET("/s/:token/download", e.publicLinks.Download)
 	public.GET("/s/:token/zip", e.publicLinks.Zip)
 	public.POST("/s/:token/drop", e.publicLinks.Drop)
 
 	dav.Mount(device, dav.Deps{Core: e.Core, State: e.State, Locks: e.davLocks, Clock: e.clk(), Logger: e.logger, Errors: e.errs, InfinityEntries: 10_000})
-	e.mountNCTagged(public, device)
+	e.mountNCTagged(public, publicAPI, device)
 	return web.Install(router)
 }
 

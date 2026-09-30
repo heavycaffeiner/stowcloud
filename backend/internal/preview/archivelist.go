@@ -3,15 +3,12 @@
 package preview
 
 import (
+	"context"
 	"log/slog"
-	"net/http"
 	"strconv"
-
-	"github.com/gin-gonic/gin"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
@@ -23,50 +20,48 @@ type ArchiveListDeps struct {
 	Logger         *slog.Logger
 }
 
-// ArchiveListHandler reads an existing archive's central directory.
-func ArchiveListHandler(d ArchiveListDeps) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		owner, ok := files.Owner(c)
-		if !ok {
-			middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
-			return
-		}
-		resolved, err := d.Resolve(owner, c.Query("path"), acl.Read|acl.Download)
+type archiveListInput struct {
+	Path string `query:"path"`
+}
+type archiveListOutput struct{ Body ArchiveListingView }
+
+// ArchiveList reads an existing archive's central directory.
+func ArchiveList(d ArchiveListDeps) func(context.Context, *archiveListInput) (*archiveListOutput, error) {
+	return func(ctx context.Context, in *archiveListInput) (*archiveListOutput, error) {
+		owner, err := files.OwnerFrom(ctx)
 		if err != nil {
-			middleware.Fail(c, err)
-			return
+			return nil, err
 		}
-		encrypted, err := d.Core.ShareEncrypted(c.Request.Context(), resolved.Share())
+		resolved, err := d.Resolve(owner, in.Path, acl.Read|acl.Download)
 		if err != nil {
-			middleware.Fail(c, err)
-			return
+			return nil, err
+		}
+		encrypted, err := d.Core.ShareEncrypted(ctx, resolved.Share())
+		if err != nil {
+			return nil, err
 		}
 		if encrypted {
-			middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
-			return
+			return nil, apierr.AsClassified(apierr.Unprocessable, "")
 		}
 		release, acquired := d.AcquireArchive()
 		if !acquired {
-			middleware.Refuse(c, apierr.Classified{Class: apierr.ResourceExhausted, Key: "archive.busy"})
-			return
+			return nil, apierr.AsClassified(apierr.ResourceExhausted, "archive.busy")
 		}
 		defer release()
-		entry, random, err := d.Core.OpenRandom(c.Request.Context(), resolved)
+		entry, random, err := d.Core.OpenRandom(ctx, resolved)
 		if err != nil {
-			middleware.Fail(c, err)
-			return
+			return nil, err
 		}
 		defer func() {
 			if closeErr := random.Close(); closeErr != nil && d.Logger != nil {
 				d.Logger.Warn("closing an archive", "name", entry.Name, "error", closeErr)
 			}
 		}()
-		listing, err := ListArchive(c.Request.Context(), random, random.Size)
+		listing, err := ListArchive(ctx, random, random.Size)
 		if err != nil {
-			middleware.Fail(c, files.ErrNotFound)
-			return
+			return nil, files.ErrNotFound
 		}
-		c.JSON(http.StatusOK, ArchiveListingOf(listing))
+		return &archiveListOutput{Body: ArchiveListingOf(listing)}, nil
 	}
 }
 

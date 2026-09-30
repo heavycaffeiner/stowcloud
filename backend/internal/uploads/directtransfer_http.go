@@ -3,6 +3,7 @@
 package uploads
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -11,11 +12,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gin-gonic/gin"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 )
 
 type DirectHandler struct {
@@ -69,80 +68,85 @@ type directPartURLView struct {
 	Headers    map[string]string `json:"headers"`
 }
 
-func (h *DirectHandler) Create(c *gin.Context) {
-	owner, ok := files.Owner(c)
-	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
-		return
+type directCreateInput struct{ Body directUploadRequest }
+type directIDInput struct {
+	ID string `path:"id"`
+}
+type directPartInput struct {
+	ID   string `path:"id"`
+	Body directPartRequest
+}
+type directCompleteInput struct {
+	ID   string `path:"id"`
+	Body directCompleteRequest
+}
+type directUploadOutput struct {
+	Status int
+	Body   directUploadView
+}
+type directPartURLOutput struct{ Body directPartURLView }
+type directNoContentOutput struct {
+	Status int
+}
+
+func (h *DirectHandler) Create(ctx context.Context, in *directCreateInput) (*directUploadOutput, error) {
+	owner, err := files.OwnerFrom(ctx)
+	if err != nil {
+		return nil, err
 	}
-	var req directUploadRequest
-	if err := middleware.DecodeJSON(c.Request.Body, &req); err != nil || strings.TrimSpace(req.Path) == "" {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
-		return
+	req := in.Body
+	if strings.TrimSpace(req.Path) == "" {
+		return nil, apierr.AsClassified(apierr.Malformed, "")
 	}
 	size, err := directUint(req.Size)
 	if err != nil {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
-		return
+		return nil, apierr.AsClassified(apierr.Malformed, "")
 	}
 	checksum, err := directChecksum(req.Checksum)
 	if err != nil {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
-		return
+		return nil, apierr.AsClassified(apierr.Malformed, "")
 	}
-	row, err := h.svc.Create(c.Request.Context(), owner, DirectCreateRequest{Path: req.Path, Size: size, Checksum: checksum, IfMatch: stripETag(req.IfMatch)})
+	row, err := h.svc.Create(ctx, owner, DirectCreateRequest{Path: req.Path, Size: size, Checksum: checksum, IfMatch: stripETag(req.IfMatch)})
 	if err != nil {
-		h.writeServiceError(c, err)
-		return
+		return nil, directErr(err)
 	}
-	c.JSON(http.StatusCreated, directUploadViewOf(row, nil))
+	return &directUploadOutput{Status: http.StatusCreated, Body: directUploadViewOf(row, nil)}, nil
 }
 
-func (h *DirectHandler) Status(c *gin.Context) {
-	owner, ok := files.Owner(c)
-	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
-		return
+func (h *DirectHandler) Status(ctx context.Context, in *directIDInput) (*directUploadOutput, error) {
+	owner, err := files.OwnerFrom(ctx)
+	if err != nil {
+		return nil, err
 	}
-	id := strings.TrimSpace(c.Param("id"))
+	id := strings.TrimSpace(in.ID)
 	if !validDirectID(id) {
-		middleware.Fail(c, files.ErrNotFound)
-		return
+		return nil, files.ErrNotFound
 	}
-	row, parts, err := h.svc.Status(c.Request.Context(), owner, id)
+	row, parts, err := h.svc.Status(ctx, owner, id)
 	if err != nil {
 		if row.ID == "" {
-			middleware.Fail(c, files.ErrNotFound)
-		} else {
-			middleware.Fail(c, err)
+			return nil, files.ErrNotFound
 		}
-		return
+		return nil, err
 	}
-	c.JSON(http.StatusOK, directUploadViewOf(row, parts))
+	return &directUploadOutput{Status: http.StatusOK, Body: directUploadViewOf(row, parts)}, nil
 }
 
-func (h *DirectHandler) Part(c *gin.Context) {
-	owner, ok := files.Owner(c)
-	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
-		return
+func (h *DirectHandler) Part(ctx context.Context, in *directPartInput) (*directPartURLOutput, error) {
+	owner, err := files.OwnerFrom(ctx)
+	if err != nil {
+		return nil, err
 	}
-	id := strings.TrimSpace(c.Param("id"))
+	id := strings.TrimSpace(in.ID)
 	if !validDirectID(id) {
-		middleware.Fail(c, files.ErrNotFound)
-		return
+		return nil, files.ErrNotFound
 	}
-	var req directPartRequest
-	if err := middleware.DecodeJSON(c.Request.Body, &req); err != nil {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
-		return
-	}
+	req := in.Body
 	part, err := directUint(req.PartNumber)
 	if err != nil || part == 0 || part > MaxParts {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
-		return
+		return nil, apierr.AsClassified(apierr.Unprocessable, "")
 	}
-	result, err := h.svc.PresignPart(c.Request.Context(), owner, id, part, func(expected uint64) (string, error) {
+	result, err := h.svc.PresignPart(ctx, owner, id, part, func(expected uint64) (string, error) {
 		checksum, checksumErr := directChecksum(req.Checksum)
 		if checksumErr != nil {
 			return "", apierr.AsClassified(apierr.Malformed, "")
@@ -155,93 +159,69 @@ func (h *DirectHandler) Part(c *gin.Context) {
 		}
 		return checksum, nil
 	})
-	if errors.Is(err, state.ErrNoSuchDirectTransfer) {
-		middleware.Fail(c, files.ErrNotFound)
-		return
-	}
 	if err != nil {
-		var parsed *apierr.ClassifiedError
-		if errors.As(err, &parsed) {
-			middleware.Refuse(c, parsed.Classified)
-		} else {
-			h.writeServiceError(c, err)
-		}
-		return
+		return nil, directErr(err)
 	}
-	c.JSON(http.StatusOK, directPartURLView{PartNumber: strconv.FormatUint(result.Number, 10), URL: result.URL, Headers: result.Headers})
+	return &directPartURLOutput{Body: directPartURLView{PartNumber: strconv.FormatUint(result.Number, 10), URL: result.URL, Headers: result.Headers}}, nil
 }
 
-func (h *DirectHandler) Complete(c *gin.Context) {
-	owner, ok := files.Owner(c)
-	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
-		return
+func (h *DirectHandler) Complete(ctx context.Context, in *directCompleteInput) (*directUploadOutput, error) {
+	owner, err := files.OwnerFrom(ctx)
+	if err != nil {
+		return nil, err
 	}
-	id := strings.TrimSpace(c.Param("id"))
+	id := strings.TrimSpace(in.ID)
 	if !validDirectID(id) {
-		middleware.Fail(c, files.ErrNotFound)
-		return
+		return nil, files.ErrNotFound
 	}
-	var req directCompleteRequest
-	if err := middleware.DecodeJSON(c.Request.Body, &req); err != nil || len(req.Parts) == 0 {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
-		return
+	if len(in.Body.Parts) == 0 {
+		return nil, apierr.AsClassified(apierr.Malformed, "")
 	}
-	row, persisted, err := h.svc.Complete(c.Request.Context(), owner, id, func() ([]DirectCompletedPart, error) {
-		return completePartsOf(req.Parts)
+	row, persisted, err := h.svc.Complete(ctx, owner, id, func() ([]DirectCompletedPart, error) {
+		return completePartsOf(in.Body.Parts)
 	})
-	if errors.Is(err, state.ErrNoSuchDirectTransfer) {
-		middleware.Fail(c, files.ErrNotFound)
-		return
-	}
 	if err != nil {
-		h.writeServiceError(c, err)
-		return
+		return nil, directErr(err)
 	}
-	c.JSON(http.StatusOK, directUploadViewOf(row, persisted))
+	return &directUploadOutput{Status: http.StatusOK, Body: directUploadViewOf(row, persisted)}, nil
 }
 
-func (h *DirectHandler) Cancel(c *gin.Context) {
-	owner, ok := files.Owner(c)
-	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
-		return
+func (h *DirectHandler) Cancel(ctx context.Context, in *directIDInput) (*directNoContentOutput, error) {
+	owner, err := files.OwnerFrom(ctx)
+	if err != nil {
+		return nil, err
 	}
-	id := strings.TrimSpace(c.Param("id"))
+	id := strings.TrimSpace(in.ID)
 	if !validDirectID(id) {
-		middleware.Fail(c, files.ErrNotFound)
-		return
+		return nil, files.ErrNotFound
 	}
-	err := h.svc.Cancel(c.Request.Context(), owner, id)
-	if errors.Is(err, state.ErrNoSuchDirectTransfer) {
-		middleware.Fail(c, files.ErrNotFound)
-		return
+	if err = h.svc.Cancel(ctx, owner, id); err != nil {
+		return nil, directErr(err)
 	}
-	if err != nil {
-		h.writeServiceError(c, err)
-		return
-	}
-	c.Status(http.StatusNoContent)
+	return &directNoContentOutput{Status: http.StatusNoContent}, nil
 }
 
-func (h *DirectHandler) writeServiceError(c *gin.Context, err error) {
+// directErr classifies a direct transfer service failure.
+func directErr(err error) error {
 	switch {
+	case errors.Is(err, state.ErrNoSuchDirectTransfer):
+		return files.ErrNotFound
 	case errors.Is(err, ErrUnsupportedSize):
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "transfer.unsupported_size"})
+		return apierr.AsClassified(apierr.Unprocessable, "transfer.unsupported_size")
 	case errors.Is(err, ErrUnsupported):
-		middleware.Refuse(c, apierr.Classified{Class: apierr.NotImplemented, Key: "direct_transfer.unsupported"})
+		return apierr.AsClassified(apierr.NotImplemented, "direct_transfer.unsupported")
 	case errors.Is(err, ErrLocked):
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Locked, Key: "dav.locked"})
+		return apierr.AsClassified(apierr.Locked, "dav.locked")
 	case errors.Is(err, ErrExpired):
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Gone, Key: "direct_transfer.expired"})
+		return apierr.AsClassified(apierr.Gone, "direct_transfer.expired")
 	case errors.Is(err, ErrPartsMismatch):
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "direct_transfer.parts_mismatch"})
+		return apierr.AsClassified(apierr.Unprocessable, "direct_transfer.parts_mismatch")
 	case errors.Is(err, files.ErrUnprocessable):
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		return apierr.AsClassified(apierr.Unprocessable, "")
 	case errors.Is(err, files.ErrPrecondition):
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Precondition, Key: "fs.precondition_failed"})
+		return apierr.AsClassified(apierr.Precondition, "fs.precondition_failed")
 	default:
-		middleware.Fail(c, err)
+		return err
 	}
 }
 

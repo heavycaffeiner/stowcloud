@@ -17,17 +17,16 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/nextcloud"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // mountNCTagged mounts the compatibility surface and its front-controller
 // spelling of the public link routes.
-func (e *Engine) mountNCTagged(public, device gin.IRoutes) {
+func (e *Engine) mountNCTagged(public gin.IRoutes, publicAPI typed, device gin.IRoutes) {
 	e.ncServer().Mount(device)
 	public.GET("/index.php/s/:token", e.publicLinks.Landing)
-	public.POST("/index.php/s/:token/auth", middleware.LimitJSON, e.publicLinks.Unlock)
+	op(publicAPI, http.MethodPost, "/index.php/s/{token}/auth", "nc.links.unlock", e.publicLinks.Unlock("/index.php"+shares.PublicLinkPrefix))
 	public.GET("/index.php/s/:token/download", e.publicLinks.Download)
 	public.GET("/index.php/s/:token/zip", e.publicLinks.Zip)
 	public.POST("/index.php/s/:token/drop", e.publicLinks.Drop)

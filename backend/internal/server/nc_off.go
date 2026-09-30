@@ -6,7 +6,7 @@ import "github.com/gin-gonic/gin"
 
 // A build without the tag carries no compatibility surface, so the mount
 // claims nothing and the paths fall through to whatever else answers them.
-func (e *Engine) mountNCTagged(gin.IRoutes, gin.IRoutes) {}
+func (e *Engine) mountNCTagged(gin.IRoutes, typed, gin.IRoutes) {}
 
 // No compatibility surface means no direct stream, so no route belongs to a
 // content host and a named one serves nothing.

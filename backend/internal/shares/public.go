@@ -65,13 +65,6 @@ func (p *Public) linkFor(c *gin.Context) (files.Link, error) {
 	return link, nil
 }
 func linkCookie(id int64) string { return "sc_link_" + strconv.FormatInt(id, 10) }
-func cookiePath(c *gin.Context, token string) string {
-	prefix := PublicLinkPrefix
-	if strings.HasPrefix(c.Request.URL.Path, "/index.php"+PublicLinkPrefix+"/") {
-		prefix = "/index.php" + PublicLinkPrefix
-	}
-	return prefix + "/" + token
-}
 func (p *Public) unlocked(c *gin.Context, link files.Link) bool {
 	if !link.HasPassword {
 		return true
@@ -166,54 +159,55 @@ func (p *Public) Landing(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, out)
 }
-func (p *Public) Unlock(c *gin.Context) {
-	link, _, err := p.d.Core.LinkPublic(c.Request.Context(), c.Param("token"))
-	if err != nil {
-		middleware.Fail(c, err)
-		return
-	}
-	key := middleware.ClientOf(c).String() + "/" + strconv.FormatInt(link.ID, 10)
-	if p.d.Limiter != nil && !p.d.Limiter.Allow(key) {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.RateLimited, Key: "auth.rate_limited"})
-		return
-	}
-	var req struct {
-		Password string `json:"password"`
-	}
-	if err = middleware.DecodeJSON(c.Request.Body, &req); err != nil {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
-		return
-	}
-	ok, err := p.d.Core.LinkCheckPassword(c.Request.Context(), link, req.Password)
-	if err != nil {
-		middleware.Fail(c, err)
-		return
-	}
-	if !ok {
+
+type unlockRequest struct {
+	Password string `json:"password"`
+}
+type unlockInput struct {
+	Token     string `path:"token"`
+	UserAgent string `header:"User-Agent"`
+	Body      unlockRequest
+}
+type unlockOutput struct {
+	Status    int
+	SetCookie string `header:"Set-Cookie"`
+}
+
+// Unlock checks a link password and sets a ticket cookie scoped to prefix
+// plus the token, so it is only sent back to that link.
+func (p *Public) Unlock(prefix string) func(context.Context, *unlockInput) (*unlockOutput, error) {
+	return func(ctx context.Context, in *unlockInput) (*unlockOutput, error) {
+		link, _, err := p.d.Core.LinkPublic(ctx, in.Token)
+		if err != nil {
+			return nil, err
+		}
+		key := middleware.ClientFrom(ctx).String() + "/" + strconv.FormatInt(link.ID, 10)
+		if p.d.Limiter != nil && !p.d.Limiter.Allow(key) {
+			return nil, apierr.AsClassified(apierr.RateLimited, "auth.rate_limited")
+		}
+		ok, err := p.d.Core.LinkCheckPassword(ctx, link, in.Body.Password)
+		if err != nil {
+			return nil, err
+		}
 		if p.d.Audit != nil {
-			if auditErr := p.d.Audit(c.Request.Context(), "link.unlock", fmt.Sprintf("link:%d", link.ID), key, c.Request.UserAgent(), false); auditErr != nil && p.d.Logger != nil {
-				p.d.Logger.Warn("recording failed link unlock audit event", "error", auditErr)
+			if auditErr := p.d.Audit(ctx, "link.unlock", fmt.Sprintf("link:%d", link.ID), key, in.UserAgent, ok); auditErr != nil && p.d.Logger != nil {
+				p.d.Logger.Warn("recording link unlock audit event", "success", ok, "error", auditErr)
 			}
 		}
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "fs.link_password"})
-		return
-	}
-	if p.d.Audit != nil {
-		if auditErr := p.d.Audit(c.Request.Context(), "link.unlock", fmt.Sprintf("link:%d", link.ID), key, c.Request.UserAgent(), true); auditErr != nil && p.d.Logger != nil {
-			p.d.Logger.Warn("recording successful link unlock audit event", "error", auditErr)
+		if !ok {
+			return nil, apierr.AsClassified(apierr.Unprocessable, "fs.link_password")
 		}
+		hash, err := p.d.State.PasswordHash(ctx, link.ID)
+		if err != nil || hash == nil {
+			return nil, files.ErrNotFound
+		}
+		exp := p.d.Now() + int64(24*time.Hour)
+		if link.Expires > 0 && link.Expires < exp {
+			exp = link.Expires
+		}
+		cookie := &http.Cookie{Name: linkCookie(link.ID), Value: ticket(p.d.ClaimKey, link.ID, *hash, exp), Path: prefix + "/" + in.Token, HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode}
+		return &unlockOutput{Status: http.StatusNoContent, SetCookie: cookie.String()}, nil
 	}
-	hash, err := p.d.State.PasswordHash(c.Request.Context(), link.ID)
-	if err != nil || hash == nil {
-		middleware.Fail(c, files.ErrNotFound)
-		return
-	}
-	exp := p.d.Now() + int64(24*time.Hour)
-	if link.Expires > 0 && link.Expires < exp {
-		exp = link.Expires
-	}
-	http.SetCookie(c.Writer, &http.Cookie{Name: linkCookie(link.ID), Value: ticket(p.d.ClaimKey, link.ID, *hash, exp), Path: cookiePath(c, c.Param("token")), HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode})
-	c.Status(http.StatusNoContent)
 }
 func (p *Public) Download(c *gin.Context) {
 	link, err := p.linkFor(c)
