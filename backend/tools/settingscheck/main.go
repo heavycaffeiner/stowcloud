@@ -41,15 +41,16 @@ func say(w io.Writer, format string, a ...any) {
 // the snapshot and is not editable from the screen, so the client has no
 // request type for it. A mapping here would check that section against nothing.
 var section = map[string]string{
-	"SmbSettingsReq":     "smb",
-	"SearchSettingsReq":  "search",
-	"ArchiveSettingsReq": "archive",
-	"RateSettingsReq":    "rate",
-	"NetworkSettingsReq": "network",
-	"DbSettingsReq":      "db",
-	"HomesSettingsReq":   "homes",
-	"WatchSettingsReq":   "watch",
-	"OidcSettingsReq":    "oidc",
+	"SmbSettingsReq":       "smb",
+	"SearchSettingsReq":    "search",
+	"ArchiveSettingsReq":   "archive",
+	"RateSettingsReq":      "rate",
+	"NetworkSettingsReq":   "network",
+	"DbSettingsReq":        "db",
+	"ThumbnailSettingsReq": "thumbnail",
+	"HomesSettingsReq":     "homes",
+	"WatchSettingsReq":     "watch",
+	"OidcSettingsReq":      "oidc",
 }
 
 // allowed names keys the client writes that no loader reads, each with the

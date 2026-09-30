@@ -155,7 +155,7 @@ func TestNoAllowedKeyIsOneTheLoaderActuallyReads(t *testing.T) {
 func TestEveryMappedInterfaceExists(t *testing.T) {
 	src, err := readFileForTest("../../../frontend/src/lib/api/types.ts")
 	if err != nil {
-		t.Skipf("the client types are not where this test expects: %v", err)
+		t.Fatalf("the client types are not where this test expects: %v", err)
 	}
 	for iface := range section {
 		if !strings.Contains(src, "export interface "+iface+" {") {
@@ -169,7 +169,7 @@ func TestEveryMappedInterfaceExists(t *testing.T) {
 func TestTheClientScanFindsTheRealInterfaces(t *testing.T) {
 	src, err := readFileForTest("../../../frontend/src/lib/api/types.ts")
 	if err != nil {
-		t.Skipf("the client types are not where this test expects: %v", err)
+		t.Fatalf("the client types are not where this test expects: %v", err)
 	}
 	got := clientKeys(src)
 	if len(got) < 20 {
@@ -186,14 +186,18 @@ func TestTheClientScanFindsTheRealInterfaces(t *testing.T) {
 func TestEverySectionTheClientPatchesIsMapped(t *testing.T) {
 	src, err := readFileForTest("../../../frontend/src/lib/api/http.ts")
 	if err != nil {
-		t.Skipf("the client is not where this test expects: %v", err)
+		t.Fatalf("the client is not where this test expects: %v", err)
 	}
 	known := map[string]bool{}
 	for _, s := range section {
 		known[s] = true
 	}
+	// Upload has its own route with a typed body, so the server refuses a
+	// field it does not know instead of storing it.
+	known["upload"] = true
+	seen := 0
 	for _, line := range strings.Split(src, "\n") {
-		const marker = "'/admin/server-settings/"
+		const marker = "'/admin/settings/"
 		i := strings.Index(line, marker)
 		if i < 0 {
 			continue
@@ -203,9 +207,13 @@ func TestEverySectionTheClientPatchesIsMapped(t *testing.T) {
 		if end < 0 {
 			continue
 		}
+		seen++
 		if name := rest[:end]; !known[name] {
 			t.Errorf("the client PATCHes %q and this tool has no mapping for it, so its keys are unchecked", name)
 		}
+	}
+	if seen == 0 {
+		t.Fatalf("no settings PATCH found in the client; the marker no longer matches how it names the route")
 	}
 }
 
