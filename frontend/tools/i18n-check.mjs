@@ -24,6 +24,10 @@ const LOCALES = ['ko', 'en']
 const SKIP =
   /(?:^|[\\/])(?:__tests__[\\/]|.*\.(?:test|spec)\.(?:ts|tsx)$|mock(?:-seed)?\.ts$|api[\\/]share\.ts$|lib[\\/]i18n(?:[\\/]|$))/
 
+/**
+ * @param {string} dir
+ * @param {string[]} out
+ */
 function walk(dir, out = []) {
   for (const name of readdirSync(dir)) {
     const path = join(dir, name)
@@ -71,7 +75,7 @@ for (const file of walk(SRC)) {
 }
 
 const catalogue = Object.fromEntries(LOCALES.map((l) => [l, JSON.parse(readFileSync(join(I18N, `${l}.json`), 'utf8'))]))
-const holes = (s) =>
+const holes = (/** @type {string} */ s) =>
   [...s.matchAll(/\{(\w+)\}/g)]
     .map((m) => m[1])
     .sort()
@@ -97,7 +101,7 @@ for (const [key, where] of used) {
 for (const l of LOCALES)
   for (const key of Object.keys(catalogue[l])) if (!used.has(key)) orphaned.push(`  ${key}  [${l}]`)
 
-const report = (title, lines) => {
+const report = (/** @type {string} */ title, /** @type {string[]} */ lines) => {
   if (lines.length === 0) return
   console.error(`\n${title} (${lines.length}):`)
   for (const l of lines) console.error(l)

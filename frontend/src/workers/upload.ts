@@ -130,7 +130,7 @@ function releasePreparedFile(f: FileState): void {
   if (f.encrypted) post({ t: 'released', id: f.id })
 }
 function post(evt: Evt): void {
-  ;(self as unknown as { postMessage(m: unknown): void }).postMessage(evt)
+  self.postMessage(evt)
 }
 
 let creatingSessions = 0

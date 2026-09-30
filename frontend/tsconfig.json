@@ -1,19 +1,9 @@
 {
-  "compilerOptions": {
-    "moduleResolution": "bundler",
-    "module": "ESNext",
-    "target": "ES2024",
-    "lib": ["ES2024", "DOM", "DOM.Iterable", "WebWorker"],
-    "jsx": "react-jsx",
-    "strict": true,
-    "resolveJsonModule": true,
-    "skipLibCheck": true,
-    "sourceMap": true,
-    "esModuleInterop": true,
-    "allowJs": true,
-    "checkJs": true,
-    "noEmit": true,
-    "types": ["vite/client", "vitest/globals", "node", "mdui/jsx.en.d.ts"]
-  },
-  "include": ["src", "tests", "vite.config.ts"]
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.worker.json" },
+    { "path": "./tsconfig.sw.json" },
+    { "path": "./tsconfig.node.json" }
+  ]
 }

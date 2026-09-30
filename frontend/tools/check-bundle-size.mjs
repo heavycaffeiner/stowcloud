@@ -36,14 +36,21 @@ const byFile = new Map(
   records.filter(([, value]) => typeof value.file === 'string').map(([key, value]) => [value.file, { key, ...value }])
 )
 
+/** @param {string} value */
 function relativeAsset(value) {
   return value.replace(/^\//, '').replace(/^\.\//, '')
 }
 
+/** @param {string} file */
 function gzipSize(file) {
   return gzipSync(readFileSync(path.join(buildDir, relativeAsset(file))), { level: 9 }).length
 }
 
+/**
+ * @param {string} key
+ * @param {Set<string>} files
+ * @param {Set<string>} seen
+ */
 function addRecordClosure(key, files = new Set(), seen = new Set(), includeDynamic = false) {
   if (seen.has(key)) return files
   seen.add(key)
@@ -62,6 +69,7 @@ function addRecordClosure(key, files = new Set(), seen = new Set(), includeDynam
   return files
 }
 
+/** @param {string} file */
 function recordKeyForFile(file) {
   return byFile.get(relativeAsset(file))?.key
 }
@@ -114,6 +122,11 @@ const initialBytes = [...initialFiles]
   .reduce((sum, file) => sum + gzipSize(file), 0)
 const shareBytes = marginalFiles.reduce((sum, file) => sum + gzipSize(file), 0)
 
+/**
+ * @param {string} name
+ * @param {number} actual
+ * @param {number} budget
+ */
 function report(name, actual, budget) {
   const ok = actual <= budget
   console.log(

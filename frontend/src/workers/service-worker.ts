@@ -1,20 +1,13 @@
-// TypeScript's `no-default-lib` exclusion is program-wide, not per-file: it
-// would drop `DOM.Iterable` for every other file in the project, not just
-// this one, so it is omitted here.
-/// <reference lib="webworker" />
-
 // frontend/src/workers/service-worker.ts answers two synthetic same-origin prefixes on
 // behalf of the page that registered them: one-shot downloads at
 // /sc-download/<id>, and seekable, Range-capable media at /sc-media/<token>.
 // See download-sw.ts for the page-side protocol. Precaches nothing.
-// `self` is declared by both DOM and webworker lib now that DOM stays in
-// the default lib set; the cast picks the worker-only shape this file uses.
-const worker = self as unknown as ServiceWorkerGlobalScope
+declare const self: ServiceWorkerGlobalScope
 
 // Do not call skipWaiting here: an older worker may still own in-memory
 // download streams. Waiting for it to become idle preserves those claims.
-worker.addEventListener('activate', (event) => {
-  event.waitUntil(worker.clients.claim())
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim())
 })
 
 const DOWNLOAD_PREFIX = '/sc-download/'
@@ -55,7 +48,7 @@ export function receiveWorkerMessage(data: unknown, clientId: string): void {
   pendingDownloads.set(data.id, { filename: data.filename, size: data.size, stream: data.stream, clientId })
 }
 
-worker.addEventListener('message', (event: ExtendableMessageEvent) => {
+self.addEventListener('message', (event: ExtendableMessageEvent) => {
   const source = event.source
   const clientId = source && 'id' in source ? source.id : ''
   receiveWorkerMessage(event.data, clientId)
@@ -213,7 +206,7 @@ async function requestMediaFromClient(
 }
 
 async function handleMedia(token: string, rangeHeader: string | null, clientId: string): Promise<Response> {
-  const client = await worker.clients.get(clientId)
+  const client = await self.clients.get(clientId)
   if (!client) return textResponse(404, 'No page is open to answer this media request.')
 
   const range = parseRangeHeader(rangeHeader)
@@ -224,7 +217,7 @@ async function handleMedia(token: string, rangeHeader: string | null, clientId: 
   return new Response(reply.stream, mediaSuccessResponseInit(reply, range !== null))
 }
 
-worker.addEventListener('fetch', (event: FetchEvent) => {
+self.addEventListener('fetch', (event: FetchEvent) => {
   const url = new URL(event.request.url)
   if (url.pathname.startsWith(DOWNLOAD_PREFIX)) {
     event.respondWith(handleDownload(url.pathname.slice(DOWNLOAD_PREFIX.length), event.clientId))

@@ -12,8 +12,6 @@ const reactRouterProduction = reactRouterDevelopment.replace(/[\\/]dist[\\/]deve
 )
 const reactRouterDomProduction = reactRouterProduction.replace(/[\\/]index\.mjs$/, '/dom-export.mjs')
 
-declare const process: { env: Record<string, string | undefined> }
-
 export default defineConfig({
   base: '/',
   plugins: [vanillaExtractPlugin({ identifiers: process.env.NODE_ENV === 'production' ? 'short' : 'debug' }), react()],

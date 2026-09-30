@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/sw.tsbuildinfo",
+    "lib": ["ES2024", "WebWorker"],
+    "types": []
+  },
+  "include": ["src/workers/service-worker.ts", "tests/workers"]
+}

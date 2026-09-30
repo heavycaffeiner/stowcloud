@@ -17,7 +17,7 @@
     "format:check": "prettier --check \"src/**/*.{ts,tsx,js,mjs,css,json,html}\" \"tests/**/*.{ts,tsx,js,mjs,css,json,html}\" \"e2e/**/*.{ts,tsx,js,mjs,css,json,html}\" \"tools/**/*.{ts,tsx,js,mjs,css,json,html}\" \"*.{ts,tsx,js,mjs,json,html}\"",
     "lint": "eslint .",
     "preview": "vite preview",
-    "check": "tsc --noEmit",
+    "check": "tsc -b",
     "test": "vitest run",
     "test:alignment": "node e2e/alignment.spec.mjs",
     "test:virtual-scroll": "node e2e/virtual-scroll.spec.mjs",
