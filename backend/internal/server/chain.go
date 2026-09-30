@@ -118,22 +118,6 @@ func (e *Engine) trustedProxies() []netip.Prefix {
 	return e.Settings.TrustedProxies()
 }
 
-// originAllowed reports whether a request Origin may read a compatibility
-// response across origins. Only an operator-listed origin is, matched exactly
-// after normalization; the list never widens the host guard.
-func (e *Engine) originAllowed(origin string) bool {
-	return e.Settings != nil && middleware.OriginAllowed(origin, e.Settings.AllowedOrigins())
-}
-
-// compatCanonicalURL is the base URL the compatibility surface falls back to
-// when a request carries no host to render one from. Empty when unset.
-func (e *Engine) compatCanonicalURL() string {
-	if e.Settings == nil {
-		return ""
-	}
-	return e.Settings.CompatCanonicalURL()
-}
-
 // csrfKey returns the deployment's durable derivation key.
 //
 // Nil until the master key is opened. The chain refuses every mutation needing

@@ -17,6 +17,7 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/nextcloud"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
@@ -69,6 +70,22 @@ func (e *Engine) ncServer() *nextcloud.Server {
 		PublicLinkPath: func(token string) string { return shares.PublicLinkPrefix + "/" + token },
 		LockGuard:      e.ncLockGuard, Clock: e.clk(), Logger: e.logger,
 	})
+}
+
+// originAllowed reports whether a request Origin may read a compatibility
+// response across origins. Only an operator-listed origin is, matched exactly
+// after normalization; the list never widens the host guard.
+func (e *Engine) originAllowed(origin string) bool {
+	return e.Settings != nil && middleware.OriginAllowed(origin, e.Settings.AllowedOrigins())
+}
+
+// compatCanonicalURL is the base URL the compatibility surface falls back to
+// when a request carries no host to render one from. Empty when unset.
+func (e *Engine) compatCanonicalURL() string {
+	if e.Settings == nil {
+		return ""
+	}
+	return e.Settings.CompatCanonicalURL()
 }
 
 func (e *Engine) ncOriginConfig() nextcloud.OriginConfig {
