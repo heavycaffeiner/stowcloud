@@ -33,8 +33,11 @@ type ModuleConfig struct {
 func Module(config ModuleConfig) fx.Option {
 	return fx.Options(
 		hanamigin.Module(hanamigin.Config{Mode: gin.ReleaseMode}),
-		fx.Provide(func(ctx context.Context) (*Engine, error) {
-			return Open(ctx, Options{
+		// The context fx supplies expires when startup's deadline does. Open
+		// hands its context to the storage watcher and the membership reload,
+		// which must outlive startup, so it gets the process's own.
+		fx.Provide(func() (*Engine, error) {
+			return Open(context.Background(), Options{
 				DataDir:                        config.DataDir,
 				Logger:                         config.Logger,
 				Hardening:                      config.Hardening,
