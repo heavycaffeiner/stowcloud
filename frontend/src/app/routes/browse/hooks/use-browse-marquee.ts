@@ -28,7 +28,8 @@ export function useBrowseMarquee({
   const dragFrame = useRef<number | null>(null)
   const marqueeActive = useRef(false)
   const controlSelector = 'button, input, a, [role="menuitem"], [role="menu"]'
-  const contentSelector = `.sc-row, .sc-file-grid-card, ${controlSelector}`
+  // File rows and grid cards are the only elements in the view that carry aria-selected.
+  const contentSelector = `[aria-selected], ${controlSelector}`
 
   const updateMarquee = () => {
     const origin = dragOrigin.current
