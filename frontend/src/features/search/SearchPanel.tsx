@@ -6,6 +6,7 @@ import { useSearchController } from './hooks/use-search-controller'
 import { useSearchNavigation } from './hooks/use-search-navigation'
 import { CATEGORIES, SORT_KEYS } from './logic/search-state'
 import { SearchResults } from './SearchResults'
+import { ProgressCircular } from '../../ui/ProgressCircular'
 import '../../styles/features/search/search-panel.css.ts'
 
 export interface SearchPanelHandle {
@@ -149,7 +150,7 @@ export const SearchPanel = forwardRef<SearchPanelHandle, SearchPanelProps>(funct
         <span className="sc-search-status-info" aria-hidden={state.running}>
           {state.running ? (
             <span className="sc-search-progress" role="img" aria-label={t('search.searching_label')}>
-              <mdui-circular-progress />
+              <ProgressCircular size={14} />
             </span>
           ) : null}
           <span>

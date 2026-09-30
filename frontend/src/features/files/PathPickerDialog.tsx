@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useI18n } from '../../hooks/use-i18n'
 import { api } from '../../lib/api/client'
 import { Button } from '../../ui/Button'
+import { Dialog } from '../../ui/Dialog'
 import '../../styles/features/files/path-picker.css.ts'
 import { Icon } from '../../ui/Icon'
 import { VirtualList } from '../../ui/VirtualList'
@@ -83,7 +84,22 @@ export function PathPickerDialog({ open, mode, start, token, onclose, onpick }: 
   }
 
   return (
-    <mdui-dialog open={open} headline={title} close-on-esc={false} close-on-overlay-click={false}>
+    <Dialog
+      open={open}
+      title={title}
+      role="dialog"
+      dismissible={false}
+      actions={
+        <>
+          <Button variant="text" onClick={onclose}>
+            {t('common.cancel')}
+          </Button>
+          <Button disabled={!canConfirm} onClick={confirm}>
+            {t('picker.choose')}
+          </Button>
+        </>
+      }
+    >
       <div className="sc-picker">
         <div className="sc-picker-nav">
           <Button
@@ -153,12 +169,6 @@ export function PathPickerDialog({ open, mode, start, token, onclose, onpick }: 
           ) : null}
         </div>
       </div>
-      <mdui-button slot="action" variant="text" onClick={onclose}>
-        {t('common.cancel')}
-      </mdui-button>
-      <mdui-button slot="action" variant="filled" disabled={!canConfirm} onClick={confirm}>
-        {t('picker.choose')}
-      </mdui-button>
-    </mdui-dialog>
+    </Dialog>
   )
 }

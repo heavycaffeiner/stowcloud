@@ -1,106 +1,61 @@
-import type { ReactNode } from 'react'
-import { useEffect, useRef } from 'react'
+import 'mdui/components/dialog.js'
+import type { KeyboardEvent, ReactNode } from 'react'
+import { useRef } from 'react'
+import { useEventListener } from '../hooks/use-event-listener'
+import { useRestoreFocus } from '../hooks/use-restore-focus'
 
 export interface DialogProps {
   open: boolean
   title: string
+  /** Keeps the title as the accessible name only, for dialogs that draw their own header. */
+  hideTitle?: boolean
+  /** Asks the owner to close: Escape, or a press on the scrim. Closing is up to the owner. */
   onClose?: () => void
-  onclose?: () => void
+  /** False keeps Escape and the scrim from asking to close. */
+  dismissible?: boolean
   children?: ReactNode
   actions?: ReactNode
   className?: string
   role?: 'dialog' | 'alertdialog'
-  closedby?: string
   ariaLabel?: string
+  /** Runs before the dialog's own Escape handling; preventDefault skips it. */
+  onKeyDown?: (event: KeyboardEvent<HTMLElement>) => void
 }
 
-type DialogElement = HTMLElement & {
-  open: boolean
-  show?: () => void
-  close?: () => void
-  updateComplete?: Promise<unknown>
-}
-
-function focusFallback(): void {
-  document.querySelector<HTMLElement>('[role="grid"][tabindex="0"], [role="tree"][tabindex="0"]')?.focus()
-}
-
+/** A modal dialog whose open state belongs to the caller; mdui never closes it on its own. */
 export function Dialog({
   open,
   title,
+  hideTitle = false,
   onClose,
-  onclose,
+  dismissible = true,
   children,
   actions,
   className,
   role = 'alertdialog',
-  closedby = 'any',
-  ariaLabel
+  ariaLabel,
+  onKeyDown
 }: DialogProps) {
-  const ref = useRef<DialogElement | null>(null)
-  const opener = useRef<HTMLElement | null>(null)
-  const wasOpen = useRef(false)
-  const closeHandler = onClose ?? onclose
-
-  useEffect(() => {
-    const element = ref.current
-    if (!element) return
-    const onNativeClose = (event: Event) => {
-      if (event.target !== element) return
-      event.stopPropagation()
-      closeHandler?.()
-      queueMicrotask(() => {
-        const target = opener.current
-        opener.current = null
-        if (target?.isConnected && !target.hasAttribute('disabled') && !target.hasAttribute('aria-hidden')) {
-          target.focus()
-          if (document.activeElement === target) return
-        }
-        focusFallback()
-      })
-    }
-    element.addEventListener('close', onNativeClose)
-    element.addEventListener('cancel', onNativeClose)
-    return () => {
-      element.removeEventListener('close', onNativeClose)
-      element.removeEventListener('cancel', onNativeClose)
-    }
-  }, [closeHandler])
-
-  useEffect(() => {
-    const element = ref.current
-    if (!element) return
-    if (open && !wasOpen.current) {
-      opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-      wasOpen.current = true
-    }
-    if (open) {
-      element.open = true
-    } else if (wasOpen.current) {
-      wasOpen.current = false
-      if (element.open) element.close?.()
-      else {
-        const target = opener.current
-        opener.current = null
-        queueMicrotask(() => {
-          if (target?.isConnected && !target.hasAttribute('disabled') && !target.hasAttribute('aria-hidden'))
-            target.focus()
-          else focusFallback()
-        })
-      }
-    }
-  }, [open])
+  const ref = useRef<HTMLElement>(null)
+  useRestoreFocus(open)
+  useEventListener(ref, 'overlay-click', () => {
+    if (dismissible) onClose?.()
+  })
 
   return (
     <mdui-dialog
       ref={ref}
       className={className}
-      headline={title}
+      headline={hideTitle ? undefined : title}
       open={open}
-      close-on-esc={closedby !== 'none'}
-      close-on-overlay-click={closedby !== 'none'}
       aria-label={ariaLabel ?? title}
       role={role}
+      onKeyDown={(event) => {
+        onKeyDown?.(event)
+        if (event.key !== 'Escape' || event.defaultPrevented || !dismissible) return
+        event.preventDefault()
+        onClose?.()
+      }}
     >
       {children}
       {actions ? <span slot="action">{actions}</span> : null}

@@ -58,15 +58,8 @@ export function Select({
       onValueChange?.(next)
       onChange?.(next)
     }
-    const handleClose = (event: Event) => {
-      event.stopPropagation()
-    }
     element.addEventListener('change', handleChange)
-    element.addEventListener('close', handleClose)
-    return () => {
-      element.removeEventListener('change', handleChange)
-      element.removeEventListener('close', handleClose)
-    }
+    return () => element.removeEventListener('change', handleChange)
   }, [onValueChange, onChange])
 
   return (
@@ -84,6 +77,11 @@ export function Select({
         aria-label={ariaLabel ?? label}
         aria-describedby={ariaDescribedby}
         style={{ width: '100%' }}
+        onKeyDown={(event) => {
+          // The open list closes on Escape by itself; marking the key handled keeps an enclosing dialog open.
+          const dropdown = ref.current?.shadowRoot?.querySelector<HTMLElement & { open?: boolean }>('mdui-dropdown')
+          if (event.key === 'Escape' && dropdown?.open) event.preventDefault()
+        }}
       >
         {options.map((option) => (
           <mdui-menu-item key={option.value} value={option.value} disabled={option.disabled}>

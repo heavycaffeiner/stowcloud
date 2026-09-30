@@ -5,6 +5,7 @@ import type { ThemePref } from '../../../lib/store/ui.store'
 import { SettingsCard } from '../../../features/settings/SettingsCard'
 import { Button } from '../../../ui/Button'
 import { Icon } from '../../../ui/Icon'
+import { SegmentedControl } from '../../../ui/SegmentedControl'
 const PasswordSection = lazy(() =>
   import('../../../features/settings/PasswordSection').then((m) => ({ default: m.PasswordSection }))
 )
@@ -190,9 +191,9 @@ type AppearancePanelProps = {
   concurrency: number
   concurrencyChoices: readonly number[]
   concurrencySaveFailed: boolean
-  onThemeChange: (value: string | string[], group: HTMLElement) => void
-  onLocaleChange: (value: string | string[], group: HTMLElement) => void
-  onConcurrencyChange: (value: string | string[], group: HTMLElement) => void
+  onThemeChange: (value: string) => void
+  onLocaleChange: (value: string) => void
+  onConcurrencyChange: (value: string) => void
   t: (key: string) => string
 }
 
@@ -219,19 +220,16 @@ export function AppearancePanel({
         description={<p className="sc-settings-card-hint">{t('settings.choosing_system_follows_your_device')}</p>}
       >
         <div className="sc-settings-row sc-settings-row-segmented">
-          <mdui-segmented-button-group
-            selects="single"
-            aria-label={t('settings.theme')}
+          <SegmentedControl
+            label={t('settings.theme')}
             value={theme}
-            onChange={(event) => {
-              const group = event.currentTarget as HTMLElement & { value: string | string[] }
-              onThemeChange(group.value, group)
-            }}
-          >
-            <mdui-segmented-button value="system">{t('common.system')}</mdui-segmented-button>
-            <mdui-segmented-button value="light">{t('settings.light')}</mdui-segmented-button>
-            <mdui-segmented-button value="dark">{t('settings.dark')}</mdui-segmented-button>
-          </mdui-segmented-button-group>
+            options={[
+              { value: 'system', label: t('common.system') },
+              { value: 'light', label: t('settings.light') },
+              { value: 'dark', label: t('settings.dark') }
+            ]}
+            onChange={onThemeChange}
+          />
         </div>
       </SettingsCard>
       <SettingsCard
@@ -244,18 +242,15 @@ export function AppearancePanel({
         description={<p className="sc-settings-card-hint">{t('settings.language_choice_stays_this_browser')}</p>}
       >
         <div className="sc-settings-row sc-settings-row-segmented">
-          <mdui-segmented-button-group
-            selects="single"
-            aria-label={t('settings.language')}
+          <SegmentedControl
+            label={t('settings.language')}
             value={locale}
-            onChange={(event) => {
-              const group = event.currentTarget as HTMLElement & { value: string | string[] }
-              onLocaleChange(group.value, group)
-            }}
-          >
-            <mdui-segmented-button value="ko">한국어</mdui-segmented-button>
-            <mdui-segmented-button value="en">English</mdui-segmented-button>
-          </mdui-segmented-button-group>
+            options={[
+              { value: 'ko', label: '한국어' },
+              { value: 'en', label: 'English' }
+            ]}
+            onChange={onLocaleChange}
+          />
         </div>
       </SettingsCard>
       <SettingsCard
@@ -268,21 +263,12 @@ export function AppearancePanel({
         description={<p className="sc-settings-card-hint">{t('settings.upload_concurrency_hint')}</p>}
       >
         <div className="sc-settings-row sc-settings-row-segmented">
-          <mdui-segmented-button-group
-            selects="single"
-            aria-label={t('settings.upload_concurrency')}
+          <SegmentedControl
+            label={t('settings.upload_concurrency')}
             value={String(concurrency)}
-            onChange={(event) => {
-              const group = event.currentTarget as HTMLElement & { value: string | string[] }
-              onConcurrencyChange(group.value, group)
-            }}
-          >
-            {concurrencyChoices.map((count) => (
-              <mdui-segmented-button key={count} value={String(count)}>
-                {count}
-              </mdui-segmented-button>
-            ))}
-          </mdui-segmented-button-group>
+            options={concurrencyChoices.map((count) => ({ value: String(count), label: count }))}
+            onChange={onConcurrencyChange}
+          />
         </div>
         {concurrencySaveFailed ? (
           <p className="sc-settings-error" role="alert">

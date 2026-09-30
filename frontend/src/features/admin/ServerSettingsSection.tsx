@@ -21,6 +21,7 @@ import { VirtualList } from '../../ui/VirtualList'
 import { RestartDialog } from './RestartDialog'
 import { ServerSettingsCard } from './ServerSettingsCard'
 import { ServerSmbCard } from './ServerSmbCard'
+import { ProgressCircular } from '../../ui/ProgressCircular'
 import '../../styles/features/admin/server-settings-section.css.ts'
 
 type Group = ServerSettingsGroup
@@ -588,7 +589,7 @@ export function ServerSettingsSection() {
     return (
       <section className="sc-admin-section">
         <h3>{t('server.server_settings')}</h3>
-        <mdui-circular-progress></mdui-circular-progress>
+        <ProgressCircular size={40} />
       </section>
     )
   if (settings.isError || !snapshot)

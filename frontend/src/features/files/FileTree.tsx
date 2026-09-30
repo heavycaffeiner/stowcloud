@@ -7,6 +7,7 @@ import { sessionQuery } from '../../lib/query/session'
 import { useI18n } from '../../hooks/use-i18n'
 import { FileTreeItem } from './FileTreeItem'
 import { VirtualList } from '../../ui/VirtualList'
+import { useRestoreFocus } from '../../hooks/use-restore-focus'
 import '../../styles/features/files/browse-ui.css.ts'
 
 export interface FileTreeProps {
@@ -436,35 +437,21 @@ export function FileTree({ currentPath, onNavigate, overlay = false, onClose }: 
   const { t } = useI18n()
   const session = useQuery(sessionQuery())
   const dialog = useRef<HTMLDialogElement>(null)
-  const wasOpen = useRef(false)
-  const opener = useRef<HTMLElement | null>(null)
   const roots = useMemo(
     () => (session.data?.roots ?? []).map((root) => ({ path: `/${root.label}`, name: root.label })),
     [session.data?.roots]
   )
 
+  useRestoreFocus(overlay)
   useEffect(() => {
     const element = dialog.current
-    if (!element) return
-    if (overlay && !wasOpen.current) {
-      opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-      wasOpen.current = true
-      if (!element.open) element.showModal()
-      queueMicrotask(() =>
-        element.querySelector<HTMLElement>('[data-tree-label][tabindex="0"], [data-tree-more][tabindex="0"]')?.focus()
-      )
-      return
-    }
-    if (!overlay && wasOpen.current) {
-      wasOpen.current = false
+    if (!overlay || !element) return
+    if (!element.open) element.showModal()
+    queueMicrotask(() =>
+      element.querySelector<HTMLElement>('[data-tree-label][tabindex="0"], [data-tree-more][tabindex="0"]')?.focus()
+    )
+    return () => {
       if (element.open) element.close()
-      const target = opener.current
-      opener.current = null
-      queueMicrotask(() => {
-        if (target?.isConnected && !target.hasAttribute('disabled') && !target.hasAttribute('aria-hidden'))
-          target.focus()
-        else document.querySelector<HTMLElement>('[role="grid"][tabindex="0"], [role="tree"][tabindex="0"]')?.focus()
-      })
     }
   }, [overlay])
 
@@ -489,9 +476,7 @@ export function FileTree({ currentPath, onNavigate, overlay = false, onClose }: 
         event.preventDefault()
         onClose?.()
       }}
-      onClose={(event) => {
-        if (!event.currentTarget.open && wasOpen.current) onClose?.()
-      }}
+      onClose={() => onClose?.()}
     >
       <div className="sc-file-tree-overlay-header">
         <button type="button" onClick={onClose} aria-label={t('tree.close_folder_tree')}>

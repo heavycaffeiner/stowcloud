@@ -130,6 +130,7 @@ export function TextField({
         min={min}
         max={max}
         autocomplete={autoComplete}
+        autofocus={autoFocus || undefined}
         disabled={disabled}
         required={required}
         name={name}

@@ -26,10 +26,8 @@ export function useSettingsTabs(featureConnections: boolean) {
     [featureConnections]
   )
 
-  function onSetConcurrency(value: number): boolean {
-    const saved = setUploadConcurrency(value)
-    setConcurrencySaveFailed(!saved)
-    return saved
+  function onSetConcurrency(value: number): void {
+    setConcurrencySaveFailed(!setUploadConcurrency(value))
   }
 
   return {

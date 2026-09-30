@@ -5,6 +5,7 @@ import { useI18n } from '../../../hooks/use-i18n'
 import { trashQuery } from '../../../lib/query/files'
 import { selection } from '../../../lib/store/selection.store'
 import { Button } from '../../../ui/Button'
+import { Dialog } from '../../../ui/Dialog'
 import { VirtualList } from '../../../ui/VirtualList'
 import { useDocumentTitle } from '../../hooks/use-document-title'
 import { SecondaryPageShell } from '../secondary/SecondaryPageShell'
@@ -20,17 +21,8 @@ export function TrashPage() {
   const entries: TrashEntry[] = trash.data ?? []
   const selected = useTrashSelection(entries)
   const actions = useTrashActions(t, selected)
-  const {
-    state,
-    setState,
-    purgeDialogRef,
-    busy,
-    restorePending,
-    purgePending,
-    restoreItems,
-    requestPurge,
-    confirmPurge
-  } = actions
+  const { state, setState, busy, restorePending, purgePending, restoreItems, requestPurge, cancelPurge, confirmPurge } =
+    actions
   const { purgeOpen, purgeSingle, operation, notice } = state
   useDocumentTitle(t('trash.trash_stowcloud'))
 
@@ -45,15 +37,21 @@ export function TrashPage() {
       refreshLabel={t('common.refresh')}
       onRefresh={() => void trash.refetch()}
       overlay={
-        <mdui-dialog ref={purgeDialogRef} open={purgeOpen} headline={t('trash.delete_permanently')} close-on-esc>
+        <Dialog
+          open={purgeOpen}
+          title={t('trash.delete_permanently')}
+          onClose={cancelPurge}
+          actions={
+            <>
+              <Button variant="text" onClick={cancelPurge}>
+                {t('common.cancel')}
+              </Button>
+              <Button onClick={() => void confirmPurge()}>{t('common.delete')}</Button>
+            </>
+          }
+        >
           <p>{t('trash.permanently_deletes_items_cannot_undone', { count: purgeCount })}</p>
-          <mdui-button slot="action" variant="text" onClick={() => setState({ purgeOpen: false })}>
-            {t('common.cancel')}
-          </mdui-button>
-          <mdui-button slot="action" variant="filled" onClick={() => void confirmPurge()}>
-            {t('common.delete')}
-          </mdui-button>
-        </mdui-dialog>
+        </Dialog>
       }
     >
       {entries.length > 0 ? (

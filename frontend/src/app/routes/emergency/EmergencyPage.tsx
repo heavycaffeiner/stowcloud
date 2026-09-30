@@ -1,8 +1,8 @@
-import { useRef } from 'react'
 import type { EmergencyFinding } from '../../../lib/api/emergency'
 import { describeApiError } from '../../../lib/api/error-text'
 import { useI18n } from '../../../hooks/use-i18n'
 import { Button } from '../../../ui/Button'
+import { Dialog } from '../../../ui/Dialog'
 import { Select } from '../../../ui/Select'
 import { TextField } from '../../../ui/TextField'
 import { useDocumentTitle } from '../../hooks/use-document-title'
@@ -37,15 +37,13 @@ export function EmergencyPage() {
     warningSection,
     restarting,
     sectionOutcome,
-    pendingSection,
     sectionDialogOpen
   } = state
-  const sectionDialogRef = useRef<HTMLElement | null>(null)
   const dirty = documentText !== baselineDocument
   const flows = useEmergencyFlows(state, actions)
   useDocumentTitle(t('emergency.emergency_settings'))
   const messageFor = (error: unknown): string => describeApiError(error, t('emergency.something_went_wrong'))
-  useEmergencyLifecycle({ sectionDialogRef, setState: actions.patch, dirty, messageFor })
+  useEmergencyLifecycle({ setState: actions.patch, dirty, messageFor })
   const findingText = (finding: EmergencyFinding): string => t(finding.reason_key, finding.reason_params ?? {})
 
   return (
@@ -210,24 +208,26 @@ export function EmergencyPage() {
           </>
         ) : null}
       </div>
-      <mdui-dialog
-        ref={sectionDialogRef}
+      <Dialog
         open={sectionDialogOpen}
-        headline={t('emergency.unsaved_section')}
-        close-on-esc
-        close-on-overlay-click
+        title={t('emergency.unsaved_section')}
+        onClose={flows.stayOnSection}
+        actions={
+          <>
+            <Button variant="text" onClick={flows.stayOnSection}>
+              {t('editor.stay')}
+            </Button>
+            <Button variant="outlined" onClick={flows.discardAndChange}>
+              {t('emergency.discard_and_change')}
+            </Button>
+            <Button loading={busy} onClick={() => void flows.saveAndChange()}>
+              {t('emergency.save_and_change')}
+            </Button>
+          </>
+        }
       >
         <p>{t('emergency.unsaved_section_prompt', { section })}</p>
-        <mdui-button slot="action" variant="text" onClick={flows.stayOnSection}>
-          {t('editor.stay')}
-        </mdui-button>
-        <mdui-button slot="action" variant="outlined" onClick={flows.discardAndChange}>
-          {t('emergency.discard_and_change')}
-        </mdui-button>
-        <mdui-button slot="action" variant="filled" loading={busy} onClick={() => void flows.saveAndChange()}>
-          {t('emergency.save_and_change')}
-        </mdui-button>
-      </mdui-dialog>
+      </Dialog>
     </main>
   )
 }

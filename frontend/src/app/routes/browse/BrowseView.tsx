@@ -28,6 +28,7 @@ import { joinPath } from '../../../lib/api/path-utils'
 import type { BrowseState, BrowseFilterDate, BrowseFilterType } from './logic/types'
 import type { RowAction } from '../../../features/files/logic/row-actions'
 import type { StatePatch } from '../../../lib/merge-state'
+import { ProgressCircular } from '../../../ui/ProgressCircular'
 
 type Patch = Dispatch<StatePatch<BrowseState>>
 type Translate = (key: string, params?: Record<string, string | number>) => string
@@ -337,7 +338,7 @@ export function BrowseContent(props: BrowseContentProps) {
           </div>
         ) : isPending ? (
           <div className="sc-browse-loading">
-            <mdui-circular-progress />
+            <ProgressCircular size={40} />
           </div>
         ) : error ? (
           <p className="sc-browse-error" role="alert">
@@ -382,7 +383,7 @@ export function BrowseContent(props: BrowseContentProps) {
             )}
             {isFetchingMore ? (
               <div className="sc-browse-loading-more" role="status" aria-live="polite">
-                <mdui-circular-progress />
+                <ProgressCircular size={40} />
                 {t('common.loading')}
               </div>
             ) : null}

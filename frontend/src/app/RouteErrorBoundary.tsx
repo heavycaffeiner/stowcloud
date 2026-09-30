@@ -1,5 +1,6 @@
 import { isRouteErrorResponse, useNavigate, useRouteError } from 'react-router-dom'
 import { useI18n } from '../hooks/use-i18n'
+import { Button } from '../ui/Button'
 
 export function RouteErrorBoundary() {
   const error = useRouteError()
@@ -17,12 +18,10 @@ export function RouteErrorBoundary() {
         <h1>Stowcloud</h1>
         <p>{message}</p>
         <div className="sc-error-page-actions">
-          <mdui-button variant="filled" onClick={() => window.location.reload()}>
-            {t('common.retry')}
-          </mdui-button>
-          <mdui-button variant="text" onClick={() => void navigate('/b/', { replace: true })}>
+          <Button onClick={() => window.location.reload()}>{t('common.retry')}</Button>
+          <Button variant="text" onClick={() => void navigate('/b/', { replace: true })}>
             {t('common.back')}
-          </mdui-button>
+          </Button>
         </div>
       </section>
     </main>

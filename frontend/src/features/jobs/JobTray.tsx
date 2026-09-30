@@ -16,6 +16,7 @@ import { jobTray, useJobTrayStore } from '../../lib/store/jobs.store'
 import { Icon } from '../../ui/Icon'
 import { IconButton } from '../../ui/IconButton'
 import { VirtualList } from '../../ui/VirtualList'
+import { ProgressLinear } from '../../ui/ProgressLinear'
 
 interface JobRow {
   id: string
@@ -286,10 +287,7 @@ export function JobTray() {
                         {item.done} / {item.total || '?'}
                       </span>
                     </div>
-                    <mdui-linear-progress
-                      value={jobProgressValue(item)}
-                      aria-label={t('job.job', { kind: label })}
-                    ></mdui-linear-progress>
+                    <ProgressLinear value={jobProgressValue(item)} label={t('job.job', { kind: label })} />
                     {item.status === 'queued' ? <p className="sc-job-tray-message">{t('job.queued')}</p> : null}
                     {item.status === 'paused' ? <p className="sc-job-tray-message">{t('job.paused')}</p> : null}
                     {item.status === 'retrying' ? (

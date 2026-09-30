@@ -57,13 +57,6 @@ export function SettingsPage() {
     void navigate('/login', { replace: true })
   }
 
-  function restoreValue(group: HTMLElement, value: string | string[]): void {
-    const target = group as HTMLElement & { value: string | string[] }
-    queueMicrotask(() => {
-      target.value = Array.isArray(value) ? (value[0] ?? '') : value
-    })
-  }
-
   return (
     <section className="sc-settings-page">
       <header>
@@ -89,22 +82,16 @@ export function SettingsPage() {
           concurrencyChoices={settings.concurrencyChoices}
           concurrencySaveFailed={settings.concurrencySaveFailed}
           t={t}
-          onThemeChange={(value, group) => {
+          onThemeChange={(value) => {
             if (value === 'system' || value === 'light' || value === 'dark') ui.setTheme(value)
-            else restoreValue(group, theme)
           }}
-          onLocaleChange={(value, group) => {
-            if (value === 'ko' || value === 'en') void setLocale(value).catch(() => restoreValue(group, locale))
-            else restoreValue(group, locale)
+          onLocaleChange={(value) => {
+            // A catalogue that fails to load leaves the current language, which the control then shows.
+            if (value === 'ko' || value === 'en') void setLocale(value).catch(() => undefined)
           }}
-          onConcurrencyChange={(value, group) => {
-            if (
-              typeof value === 'string' &&
-              settings.concurrencyChoices.some((count) => String(count) === value) &&
-              settings.onSetConcurrency(Number(value))
-            )
-              return
-            restoreValue(group, String(settings.concurrency))
+          onConcurrencyChange={(value) => {
+            const count = Number(value)
+            if (settings.concurrencyChoices.includes(count)) settings.onSetConcurrency(count)
           }}
         />
       ) : null}

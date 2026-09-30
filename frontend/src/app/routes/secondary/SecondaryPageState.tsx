@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { ProgressCircular } from '../../../ui/ProgressCircular'
 
 export interface SecondaryPageStateProps {
   loading: boolean
@@ -24,7 +25,7 @@ export function SecondaryPageState({
     <>
       {loading ? (
         <div className="sc-secondary-page-loading" role="status" aria-live="polite">
-          <mdui-circular-progress aria-label={loadingLabel}></mdui-circular-progress>
+          <ProgressCircular size={40} label={loadingLabel} />
         </div>
       ) : null}
       {error ? (

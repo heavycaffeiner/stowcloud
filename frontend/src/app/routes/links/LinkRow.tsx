@@ -2,6 +2,7 @@ import type { OwnedShareLinkInfo } from '../../../lib/api/client'
 import { useI18n } from '../../../hooks/use-i18n'
 import { Icon } from '../../../ui/Icon'
 import { isDropLink, isExpired, isExhausted, type LinkRow } from './hooks/use-link-management'
+import { ProgressCircular } from '../../../ui/ProgressCircular'
 interface LinkRowProps {
   link: LinkRow
   mine: boolean
@@ -48,7 +49,7 @@ export function LinkListRow({ link, mine, resolving, targetSummary, onOpen }: Li
             {usage} - {link.has_password ? t('links.password_protected') : t('links.no_password')}
           </span>
         </span>
-        {resolving && mine ? <mdui-circular-progress slot="end-icon"></mdui-circular-progress> : null}
+        {resolving && mine ? <ProgressCircular /> : null}
         {status ? <span className="sc-links-flag sc-links-flag-warn">{status}</span> : null}
       </button>
     </>

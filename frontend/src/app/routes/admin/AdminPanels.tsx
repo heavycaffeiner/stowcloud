@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Component, lazy, Suspense } from 'react'
 import type { AdminTab } from './hooks/use-admin-tab'
+import { ProgressCircular } from '../../../ui/ProgressCircular'
 
 // Keep each admin section lazy so inactive tabs do not load their query graphs.
 const UserManagementSection = lazy(async () => {
@@ -53,7 +54,7 @@ class SectionErrorBoundary extends Component<{ children: ReactNode; message: str
 export function SectionLoading({ label }: { label: string }) {
   return (
     <div className="sc-admin-loading" role="status" aria-live="polite">
-      <mdui-circular-progress></mdui-circular-progress>
+      <ProgressCircular size={40} />
       <span>{label}</span>
     </div>
   )

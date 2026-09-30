@@ -83,7 +83,6 @@ export function ShareManageDialog({ open, path, targetName, targetIsDir, onClose
         title={t('share.share_links', { name: targetName })}
         onClose={closeIssued}
         role="dialog"
-        closedby="any"
         actions={
           <Button variant="text" onClick={closeIssued}>
             {t('common.close')}

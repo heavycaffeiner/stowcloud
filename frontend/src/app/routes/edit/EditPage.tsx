@@ -8,6 +8,8 @@ import { formatBytes } from '../../../lib/format/bytes'
 import { useI18n } from '../../../hooks/use-i18n'
 import { fileContentQuery, shareEncryptionQuery, statQuery, writeFileMutation } from '../../../lib/query/files'
 import { Button } from '../../../ui/Button'
+import { Dialog } from '../../../ui/Dialog'
+import { ProgressCircular } from '../../../ui/ProgressCircular'
 import { CodeEditor, type CodeEditorHandle } from './CodeEditor'
 import { EditConflictDialog } from './EditConflictDialog'
 import { useEditState } from './hooks/use-edit-state'
@@ -178,7 +180,7 @@ export function EditPage() {
           </div>
         ) : loading ? (
           <div className="sc-edit-loading">
-            <mdui-circular-progress></mdui-circular-progress>
+            <ProgressCircular size={40} />
           </div>
         ) : loadError ? (
           <p className="sc-edit-error" role="alert">
@@ -224,37 +226,33 @@ export function EditPage() {
           else void navigate(`/b${parentOf(path)}`)
         }}
       />
-      <mdui-dialog
+      <Dialog
         open={leaveDialogOpen}
-        headline={t('editor.unsaved_changes')}
-        close-on-overlay-click={false}
-        close-on-esc={false}
+        title={t('editor.unsaved_changes')}
+        dismissible={false}
+        actions={
+          <>
+            <Button
+              variant="text"
+              onClick={() => {
+                blocker.reset?.()
+                actions.setLeaveDialog(false)
+                focusEditor()
+              }}
+            >
+              {t('editor.stay')}
+            </Button>
+            <Button variant="outlined" onClick={saveFlow.discardAndLeave}>
+              {t('editor.discard_and_leave')}
+            </Button>
+            <Button loading={saveMutation.isPending} disabled={!canSave} onClick={() => void saveFlow.saveAndLeave()}>
+              {t('editor.save_and_leave')}
+            </Button>
+          </>
+        }
       >
         <p>{t('editor.unsaved_changes_prompt', { name: filename })}</p>
-        <mdui-button
-          slot="action"
-          variant="text"
-          onClick={() => {
-            blocker.reset?.()
-            actions.setLeaveDialog(false)
-            focusEditor()
-          }}
-        >
-          {t('editor.stay')}
-        </mdui-button>
-        <mdui-button slot="action" variant="outlined" onClick={saveFlow.discardAndLeave}>
-          {t('editor.discard_and_leave')}
-        </mdui-button>
-        <mdui-button
-          slot="action"
-          variant="filled"
-          loading={saveMutation.isPending}
-          disabled={!canSave}
-          onClick={() => void saveFlow.saveAndLeave()}
-        >
-          {t('editor.save_and_leave')}
-        </mdui-button>
-      </mdui-dialog>
+      </Dialog>
       <Snackbar message={snackbar} onDismiss={() => actions.setSnackbar(null)} />
     </main>
   )

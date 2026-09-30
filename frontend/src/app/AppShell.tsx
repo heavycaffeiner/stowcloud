@@ -13,6 +13,8 @@ import { NavigationDrawer, type NavItem, type RootItem } from '../features/accou
 import { SearchSheet } from '../features/search/SearchSheet'
 import { Icon } from '../ui/Icon'
 import { UploadTray } from '../features/uploads/UploadTray'
+import { ProgressCircular } from '../ui/ProgressCircular'
+import { Button } from '../ui/Button'
 import '../styles/app/shell.css.ts'
 import {
   browsePathFromUrl,
@@ -207,9 +209,7 @@ export function AppShell() {
           <h1>{t('session.connection_error')}</h1>
           <p>{t('session.connection_error_hint')}</p>
           <div className="sc-error-page-actions">
-            <mdui-button variant="filled" onClick={() => void session.refetch()}>
-              {t('common.retry')}
-            </mdui-button>
+            <Button onClick={() => void session.refetch()}>{t('common.retry')}</Button>
           </div>
         </section>
       </main>
@@ -218,7 +218,7 @@ export function AppShell() {
   if (screen !== 'browser') {
     return (
       <div className="sc-app-shell-boot" role="status" aria-label={t('nav.checking_your_session')}>
-        <mdui-circular-progress></mdui-circular-progress>
+        <ProgressCircular size={40} />
       </div>
     )
   }

@@ -50,3 +50,12 @@ export function Checkbox({
     </label>
   )
 }
+
+/** Shows a selection state without taking input or focus; the surrounding control does both. */
+export function CheckboxIndicator({ checked, label }: { checked: boolean; label: string }) {
+  return (
+    <mdui-checkbox checked={checked} tabIndex={-1}>
+      <span className="sc-sr-only">{label}</span>
+    </mdui-checkbox>
+  )
+}

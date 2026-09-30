@@ -2,6 +2,7 @@ import type { AdminUser } from '../../lib/api/client'
 import { Button } from '../../ui/Button'
 import { Icon } from '../../ui/Icon'
 import { ListItem } from '../../ui/ListItem'
+import { Switch } from '../../ui/Switch'
 
 type Translator = (key: string, params?: Record<string, string | number>) => string
 
@@ -44,13 +45,15 @@ export function UserManagementRow({
       supporting={user.name}
       trailing={
         <>
-          <mdui-switch
-            checked={!user.disabled}
-            disabled={locked}
-            title={locked ? t('user.last_active_administrator_cannot_deactivated') : undefined}
-            aria-label={t('user.enable_account', { name: user.name })}
-            onChange={onToggle}
-          />
+          <span title={locked ? t('user.last_active_administrator_cannot_deactivated') : undefined}>
+            <Switch
+              checked={!user.disabled}
+              disabled={locked}
+              label={t('user.enable_account', { name: user.name })}
+              showLabel={false}
+              onChange={onToggle}
+            />
+          </span>
           <button className="sc-admin-chip sc-admin-chip-muted" type="button" onClick={onQuota}>
             {quotaLabel}
           </button>

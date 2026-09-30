@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query'
-import { useEffect, useReducer, useRef } from 'react'
+import { useReducer } from 'react'
 import type { BatchItemResult } from '../../../../lib/api/types'
 import { describeApiError } from '../../../../lib/api/error-text'
 import { tp } from '../../../../lib/i18n'
@@ -25,15 +25,6 @@ export function useTrashActions(t: Translate, selected: ReadonlySet<string>) {
     operation: null,
     notice: null
   })
-  const purgeDialogRef = useRef<HTMLElement | null>(null)
-
-  useEffect(() => {
-    const element = purgeDialogRef.current
-    if (!element) return
-    const close = () => setState({ purgeOpen: false, purgeSingle: null })
-    element.addEventListener('close', close)
-    return () => element.removeEventListener('close', close)
-  }, [setState])
 
   function summarize(results: readonly BatchItemResult[], verb: string): string {
     const failed = results.filter((result) => !result.ok).length
@@ -65,6 +56,10 @@ export function useTrashActions(t: Translate, selected: ReadonlySet<string>) {
     setState({ purgeSingle: id, purgeOpen: true })
   }
 
+  function cancelPurge(): void {
+    setState({ purgeOpen: false, purgeSingle: null })
+  }
+
   async function confirmPurge(): Promise<void> {
     const ids = state.purgeSingle === null ? [...selected] : [state.purgeSingle]
     setState({ purgeOpen: false, purgeSingle: null })
@@ -84,12 +79,12 @@ export function useTrashActions(t: Translate, selected: ReadonlySet<string>) {
   return {
     state,
     setState,
-    purgeDialogRef,
     busy: restore.isPending || purge.isPending,
     restorePending: restore.isPending,
     purgePending: purge.isPending,
     restoreItems,
     requestPurge,
+    cancelPurge,
     confirmPurge
   }
 }

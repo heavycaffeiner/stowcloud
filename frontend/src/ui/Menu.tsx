@@ -2,6 +2,8 @@ import type { ReactNode } from 'react'
 import { useEffect, useRef } from 'react'
 import { useI18n } from '../hooks/use-i18n'
 import { useOutsideDismiss } from '../hooks/use-outside-dismiss'
+import { useRestoreFocus } from '../hooks/use-restore-focus'
+
 export interface MenuProps {
   open: boolean
   onClose?: () => void
@@ -17,33 +19,15 @@ export function Menu({ open, onClose, compact = false, x, y, align = 'start', ch
   const { t } = useI18n()
   const rootRef = useRef<HTMLDivElement>(null)
   const dialogRef = useRef<HTMLDialogElement | null>(null)
-  const opener = useRef<HTMLElement | null>(null)
-  const wasOpen = useRef(false)
   const left = x === undefined ? undefined : align === 'start' ? Math.max(8, x) : undefined
   const right = x === undefined || align !== 'end' ? undefined : Math.max(8, window.innerWidth - x)
   const top = y === undefined ? undefined : Math.max(8, y)
 
-  useEffect(() => {
-    if (compact) return
-    if (open && !wasOpen.current) {
-      opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-      wasOpen.current = true
-    } else if (!open && wasOpen.current) {
-      wasOpen.current = false
-      const target = opener.current
-      opener.current = null
-      queueMicrotask(() => {
-        if (target?.isConnected && !target.hasAttribute('disabled') && !target.hasAttribute('aria-hidden'))
-          target.focus()
-      })
-    }
-  }, [compact, open])
+  useRestoreFocus(open)
 
   useEffect(() => {
     if (!compact || !open || !dialogRef.current) return
     const dialog = dialogRef.current
-    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    wasOpen.current = true
     try {
       if (!dialog.open) dialog.showModal()
     } catch {
@@ -52,14 +36,6 @@ export function Menu({ open, onClose, compact = false, x, y, align = 'start', ch
     return () => {
       if (dialog.open) dialog.close()
       else dialog.removeAttribute('open')
-      if (!wasOpen.current) return
-      wasOpen.current = false
-      const target = opener.current
-      opener.current = null
-      queueMicrotask(() => {
-        if (target?.isConnected && !target.hasAttribute('disabled') && !target.hasAttribute('aria-hidden'))
-          target.focus()
-      })
     }
   }, [compact, open])
 

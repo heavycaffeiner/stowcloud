@@ -6,6 +6,7 @@ import { type UploadItem, uploads, useUploadStore } from '../../lib/store/upload
 import { Icon } from '../../ui/Icon'
 import { IconButton } from '../../ui/IconButton'
 import { VirtualList } from '../../ui/VirtualList'
+import { ProgressLinear } from '../../ui/ProgressLinear'
 
 export function UploadTray() {
   const { t } = useI18n()
@@ -137,10 +138,7 @@ export function UploadTray() {
                         {item.status === 'paused' ? ` - ${t('upload.paused')}` : ''}
                       </span>
                     </div>
-                    <mdui-linear-progress
-                      value={item.total > 0 ? Math.min(Math.max(item.sent / item.total, 0), 1) : 0}
-                      aria-label={item.name}
-                    ></mdui-linear-progress>
+                    <ProgressLinear value={item.total > 0 ? item.sent / item.total : 0} label={item.name} />
                     {item.message ? (
                       <p className="sc-upload-tray-message">{t(item.message, item.messageParams)}</p>
                     ) : null}

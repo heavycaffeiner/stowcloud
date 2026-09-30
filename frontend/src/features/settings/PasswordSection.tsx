@@ -9,6 +9,7 @@ import { changePasswordMutation } from '../../lib/query/account'
 import { useI18n } from '../../hooks/use-i18n'
 import { Button } from '../../ui/Button'
 import { TextField } from '../../ui/TextField'
+import { ProgressLinear } from '../../ui/ProgressLinear'
 
 export function PasswordSection() {
   const { t } = useI18n()
@@ -104,10 +105,10 @@ export function PasswordSection() {
       />
       {newPassword ? (
         <div className="sc-password-form-strength">
-          <progress
-            max={1}
+          <ProgressLinear
             value={strength.ratio}
-            aria-label={t('password.new_password_strength', { level: strength.label })}
+            tone={strength.tier}
+            label={t('password.new_password_strength', { level: strength.label })}
           />
           <span className="sc-password-form-strength-label">{strength.label}</span>
         </div>

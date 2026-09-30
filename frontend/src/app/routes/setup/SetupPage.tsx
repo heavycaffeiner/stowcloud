@@ -8,6 +8,7 @@ import { useDocumentTitle } from '../../hooks/use-document-title'
 import { useSetupFlows, MIN_PASSWORD_LENGTH, toList } from './hooks/use-setup-flows'
 import { useSetupState } from './hooks/use-setup-state'
 import type { SetupFinding } from '../../../lib/api/setup'
+import { ProgressLinear } from '../../../ui/ProgressLinear'
 import '../../../styles/app/routes/auth.css.ts'
 
 function warningText(
@@ -178,11 +179,11 @@ export function SetupPage() {
                 />
                 {password ? (
                   <div className="sc-auth-card-strength">
-                    <mdui-linear-progress
+                    <ProgressLinear
                       value={strength.ratio}
-                      max={1}
-                      aria-label={t('common.password_strength', { level: strength.label })}
-                    ></mdui-linear-progress>
+                      tone={strength.tier}
+                      label={t('common.password_strength', { level: strength.label })}
+                    />
                     <span className="sc-auth-card-strength-label">{strength.label}</span>
                   </div>
                 ) : null}

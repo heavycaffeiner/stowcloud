@@ -146,7 +146,7 @@ globalStyle('.sc-auth-card-strength', {
   gap: '8px',
   marginTop: '-8px'
 })
-globalStyle('.sc-auth-card-strength mdui-linear-progress', {
+globalStyle('.sc-auth-card-strength > .sc-progress-linear', {
   flex: '1'
 })
 globalStyle('.sc-auth-card-strength-label', {

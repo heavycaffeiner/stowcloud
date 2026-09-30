@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import type { ReactNode } from 'react'
+import type { KeyboardEvent } from 'react'
 import { api, type Entry } from '../../lib/api/client'
 import type { ArchiveEntry, ArchiveListing, ShareEncryption } from '../../lib/api/types'
 import { ApiError } from '../../lib/api/types'
@@ -15,7 +15,9 @@ import { decryptDownload, isUnlocked, MAX_ENCRYPTABLE_BYTES } from '../../lib/cr
 import { encryptionForLabel, shareLabelOf } from '../../lib/crypto/encrypted-shares'
 import { listEncryptedArchive } from '../../lib/crypto/zip-listing'
 import { Button } from '../../ui/Button'
+import { Dialog } from '../../ui/Dialog'
 import { IconButton } from '../../ui/IconButton'
+import { ProgressCircular } from '../../ui/ProgressCircular'
 import { UnlockShareDialog } from '../shares/UnlockShareDialog'
 import { Icon } from '../../ui/Icon'
 import { isEditableFileName } from '../files/logic/editable-files'
@@ -38,63 +40,6 @@ interface PreviewDialogProps {
   onDownload: (entry: Entry) => void
   onEdit: (entry: Entry) => void
 }
-function DialogFrame({
-  open,
-  title,
-  className,
-  onClose,
-  children
-}: {
-  open: boolean
-  title: string
-  className?: string
-  onClose: () => void
-  children: ReactNode
-}) {
-  const ref = useRef<HTMLElement>(null)
-  const opener = useRef<HTMLElement | null>(null)
-  const wasOpen = useRef(false)
-  useEffect(() => {
-    const dialog = ref.current as unknown as {
-      open?: boolean
-      addEventListener: typeof window.addEventListener
-      removeEventListener: typeof window.removeEventListener
-    } | null
-    if (!dialog) return
-    if (open && !wasOpen.current) {
-      opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-      wasOpen.current = true
-    } else if (!open && wasOpen.current) {
-      wasOpen.current = false
-      queueMicrotask(() => {
-        const target = opener.current
-        opener.current = null
-        if (target?.isConnected && !target.hasAttribute('disabled') && !target.hasAttribute('aria-hidden'))
-          target.focus()
-        else document.querySelector<HTMLElement>('[role="grid"][tabindex="0"], [role="tree"][tabindex="0"]')?.focus()
-      })
-    }
-    dialog.open = open
-    const close = () => {
-      if (open) onClose()
-    }
-    dialog.addEventListener('close', close)
-    return () => dialog.removeEventListener('close', close)
-  }, [open, onClose])
-  return (
-    <mdui-dialog
-      ref={ref}
-      className={className}
-      role="dialog"
-      aria-label={title}
-      close-on-overlay-click={false}
-      close-on-esc={false}
-    >
-      {children}
-    </mdui-dialog>
-  )
-}
-
 function levelOf(
   entries: ArchiveEntry[],
   cwd: string
@@ -257,13 +202,11 @@ export function PreviewDialog({
     }
   }, [body.kind, encryption, encryptionQuery.isPending, entry, unlocked])
 
-  useEventListener(open ? window : null, 'keydown', (event) => {
-    if (event.defaultPrevented || document.querySelector('mdui-dialog[open]:not(.sc-preview-dialog)')) return
-    if (event.key === 'Escape') {
+  // Escape climbs out of an archive folder before it closes the preview; the arrows step through siblings.
+  const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key === 'Escape' && archiveListing && cwd) {
       event.preventDefault()
-      if (archiveListing && cwd)
-        setPreviewState((state) => ({ ...state, cwd: state.cwd.slice(0, Math.max(0, state.cwd.lastIndexOf('/'))) }))
-      else onClose()
+      setPreviewState((state) => ({ ...state, cwd: state.cwd.slice(0, Math.max(0, state.cwd.lastIndexOf('/'))) }))
     } else if (event.key === 'ArrowLeft' && hasPrev) {
       event.preventDefault()
       onPrev()
@@ -271,7 +214,7 @@ export function PreviewDialog({
       event.preventDefault()
       onNext()
     }
-  })
+  }
 
   if (!entry) return null
   const imageUrl =
@@ -327,7 +270,15 @@ export function PreviewDialog({
 
   return (
     <>
-      <DialogFrame open={open} title={entry.name} className="sc-preview-dialog" onClose={onClose}>
+      <Dialog
+        open={open}
+        title={entry.name}
+        hideTitle
+        className="sc-preview-dialog"
+        role="dialog"
+        onClose={onClose}
+        onKeyDown={onKeyDown}
+      >
         <div ref={previewRef} className="sc-preview">
           <header className="sc-preview-bar">
             <IconButton label={t('common.close')} onClick={onClose}>
@@ -351,7 +302,7 @@ export function PreviewDialog({
           <div className="sc-preview-body">
             <div className="sc-preview-stage">
               {loading ? (
-                <mdui-circular-progress></mdui-circular-progress>
+                <ProgressCircular size={40} />
               ) : videoUrl ? (
                 <div className="sc-preview-video-container">
                   <video
@@ -505,7 +456,7 @@ export function PreviewDialog({
             </div>
           ) : null}
         </div>
-      </DialogFrame>
+      </Dialog>
       <UnlockShareDialog
         open={unlockOpen}
         salt={encryption?.salt ?? ''}

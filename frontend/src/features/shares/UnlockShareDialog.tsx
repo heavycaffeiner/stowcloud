@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import { useI18n } from '../../hooks/use-i18n'
 import { unlock, WrongPassphraseError } from '../../lib/crypto/e2ee'
 import { Button } from '../../ui/Button'
+import { Dialog } from '../../ui/Dialog'
 import { TextField } from '../../ui/TextField'
 import { useUnlockShareState } from './hooks/share-manage-state'
 
@@ -15,34 +16,12 @@ export interface UnlockShareDialogProps {
 
 export function UnlockShareDialog({ open, salt, verifier, onUnlock, onClose }: UnlockShareDialogProps) {
   const { t } = useI18n()
-  const dialogRef = useRef<HTMLElement>(null)
   const [form, patch] = useUnlockShareState()
   const { passphrase, unlocking, error } = form
 
   useEffect(() => {
-    if (!open) return
-    patch({ passphrase: '', error: null })
-    queueMicrotask(() =>
-      (dialogRef.current as unknown as { querySelector?: (s: string) => HTMLElement | null })
-        ?.querySelector?.('mdui-text-field')
-        ?.focus()
-    )
+    if (open) patch({ passphrase: '', error: null })
   }, [open, patch])
-
-  useEffect(() => {
-    const dialog = dialogRef.current as unknown as {
-      open?: boolean
-      addEventListener: typeof window.addEventListener
-      removeEventListener: typeof window.removeEventListener
-    } | null
-    if (!dialog) return
-    dialog.open = open
-    const close = () => {
-      if (open) onClose()
-    }
-    dialog.addEventListener('close', close)
-    return () => dialog.removeEventListener('close', close)
-  }, [open, onClose])
 
   async function submit(): Promise<void> {
     if (!passphrase || unlocking) return
@@ -61,11 +40,21 @@ export function UnlockShareDialog({ open, salt, verifier, onUnlock, onClose }: U
   }
 
   return (
-    <mdui-dialog
-      ref={dialogRef}
-      headline={t('encryption.unlock_title')}
-      close-on-overlay-click={false}
-      close-on-esc={false}
+    <Dialog
+      open={open}
+      title={t('encryption.unlock_title')}
+      role="dialog"
+      dismissible={false}
+      actions={
+        <>
+          <Button variant="text" disabled={unlocking} onClick={onClose}>
+            {t('common.cancel')}
+          </Button>
+          <Button loading={unlocking} disabled={!passphrase} onClick={() => void submit()}>
+            {t('encryption.unlock')}
+          </Button>
+        </>
+      }
     >
       <p>{t('encryption.unlock_hint')}</p>
       <form
@@ -85,18 +74,6 @@ export function UnlockShareDialog({ open, salt, verifier, onUnlock, onClose }: U
           onValueChange={(value) => patch({ passphrase: value })}
         />
       </form>
-      <mdui-button slot="action" variant="text" disabled={unlocking} onClick={onClose}>
-        {t('common.cancel')}
-      </mdui-button>
-      <mdui-button
-        slot="action"
-        variant="filled"
-        loading={unlocking}
-        disabled={!passphrase || unlocking}
-        onClick={() => void submit()}
-      >
-        {t('encryption.unlock')}
-      </mdui-button>
-    </mdui-dialog>
+    </Dialog>
   )
 }

@@ -15,6 +15,7 @@ import { MiddleEllipsis } from './MiddleEllipsis'
 import { useFileActivation } from './hooks/use-file-activation'
 import { useFileFocusPreservation } from './hooks/use-file-focus-preservation'
 import { Icon } from '../../ui/Icon'
+import { CheckboxIndicator } from '../../ui/Checkbox'
 import '../../styles/features/files/browse-ui.css.ts'
 
 export interface FileGridProps {
@@ -76,9 +77,7 @@ function FileCardHeader({
       onPointerUp={(event) => event.stopPropagation()}
       onDoubleClick={(event) => event.stopPropagation()}
     >
-      <mdui-checkbox checked={selected} tabIndex={-1}>
-        <span className="sc-sr-only">{t('common.select', { name: entry.name })}</span>
-      </mdui-checkbox>
+      <CheckboxIndicator checked={selected} label={t('common.select', { name: entry.name })} />
     </span>
   )
   const name = <MiddleEllipsis name={entry.name} className="sc-file-grid-name" />

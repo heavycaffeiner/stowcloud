@@ -24,7 +24,7 @@ export function SettingsDialog({ open, title, onClose, children, actions, dismis
       title={title}
       onClose={onClose}
       role="dialog"
-      closedby={dismissible ? 'any' : 'none'}
+      dismissible={dismissible}
       className="sc-settings-dialog"
       actions={actions ?? defaultActions}
     >

@@ -1,33 +1,22 @@
-import { useEffect, useEffectEvent, type RefObject } from 'react'
+import { useEffect, useEffectEvent } from 'react'
 import { useBeforeUnload } from '../../../../hooks/use-before-unload'
 import { emergencyDoor } from '../../../../lib/api/emergency'
 
 type StateSetter = (patch: {
-  sectionDialogOpen?: boolean
   reason?: string
   step?: 'loading' | 'setup' | 'credentials' | 'totp' | 'editing'
   errorMessage?: string
 }) => void
 
 export function useEmergencyLifecycle({
-  sectionDialogRef,
   setState,
   dirty,
   messageFor
 }: {
-  sectionDialogRef: RefObject<HTMLElement | null>
   setState: StateSetter
   dirty: boolean
   messageFor: (error: unknown) => string
 }): void {
-  useEffect(() => {
-    const element = sectionDialogRef.current
-    if (!element) return
-    const close = () => setState({ sectionDialogOpen: false })
-    element.addEventListener('close', close)
-    return () => element.removeEventListener('close', close)
-  }, [sectionDialogRef, setState])
-
   // The caller rebuilds messageFor on every render; reading it through an effect event keeps the door fetch to one per mount.
   const describe = useEffectEvent(messageFor)
   useEffect(() => {

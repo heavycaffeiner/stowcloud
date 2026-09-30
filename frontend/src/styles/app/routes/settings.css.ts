@@ -277,7 +277,7 @@ globalStyle('.sc-password-form-strength', {
   gap: '8px',
   marginTop: '-8px'
 })
-globalStyle('.sc-password-form-strength progress', {
+globalStyle('.sc-password-form-strength > .sc-progress-linear', {
   flex: '1'
 })
 globalStyle('.sc-password-form-strength-label', {

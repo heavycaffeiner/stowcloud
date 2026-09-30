@@ -14,6 +14,8 @@ import { GrantManagementSection } from './GrantManagementSection'
 import { UserOidcDialog } from './UserOidcDialog'
 import { UserManagementRow } from './UserManagementRow'
 import { Icon } from '../../ui/Icon'
+import { ProgressCircular } from '../../ui/ProgressCircular'
+import { ProgressLinear } from '../../ui/ProgressLinear'
 import '../../styles/features/admin/admin.css.ts'
 
 const MIN_PASSWORD_LEN = 10
@@ -180,7 +182,7 @@ export function UserManagementSection() {
         </p>
       ) : null}
       {usersQuery.isPending ? (
-        <mdui-circular-progress />
+        <ProgressCircular size={40} />
       ) : usersQuery.error ? (
         <p className="sc-admin-section-error" role="alert">
           {describeApiError(usersQuery.error, t('user.could_not_load_user_list'))}
@@ -270,9 +272,10 @@ export function UserManagementSection() {
           />
           {newPassword ? (
             <div>
-              <mdui-linear-progress
+              <ProgressLinear
                 value={scorePasswordStrength(newPassword).ratio}
-                aria-label={t('common.password_strength', { level: scorePasswordStrength(newPassword).label })}
+                tone={scorePasswordStrength(newPassword).tier}
+                label={t('common.password_strength', { level: scorePasswordStrength(newPassword).label })}
               />
               <span className="sc-admin-section-field-hint">{scorePasswordStrength(newPassword).label}</span>
             </div>
@@ -426,9 +429,10 @@ export function UserManagementSection() {
           />
           {passwordInput ? (
             <div>
-              <mdui-linear-progress
+              <ProgressLinear
                 value={scorePasswordStrength(passwordInput).ratio}
-                aria-label={t('password.new_password_strength', { level: scorePasswordStrength(passwordInput).label })}
+                tone={scorePasswordStrength(passwordInput).tier}
+                label={t('password.new_password_strength', { level: scorePasswordStrength(passwordInput).label })}
               />
               <span className="sc-admin-section-field-hint">{scorePasswordStrength(passwordInput).label}</span>
             </div>
