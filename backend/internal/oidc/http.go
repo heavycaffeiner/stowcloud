@@ -4,6 +4,7 @@
 package oidc
 
 import (
+	"context"
 	"encoding/hex"
 	"errors"
 	"log/slog"
@@ -50,12 +51,11 @@ type linkStartRequest struct {
 
 // Deps are the narrow application services and request policies needed by OIDC.
 type Deps struct {
-	Auth          *auth.Service
-	Client        func() *Client
-	DisplayName   func() string
-	AppHosts      func() []string
-	RequestScheme func(*http.Request) string
-	Logger        *slog.Logger
+	Auth        *auth.Service
+	Client      func() *Client
+	DisplayName func() string
+	AppHosts    func() []string
+	Logger      *slog.Logger
 }
 
 // Handlers owns the OIDC HTTP handlers and logout URL callback.
@@ -65,93 +65,92 @@ type Handlers struct{ d Deps }
 func NewHandlers(d Deps) *Handlers { return &Handlers{d: d} }
 
 // EndSessionURL returns the provider logout URL for the request, when available.
-func (h *Handlers) EndSessionURL(c *gin.Context) (string, bool) {
+func (h *Handlers) EndSessionURL(ctx context.Context) (string, bool) {
 	client := h.d.Client()
 	if client == nil {
 		return "", false
 	}
-	origin, ok := h.requestOrigin(c)
+	origin, ok := h.requestOrigin(ctx)
 	if !ok {
 		return "", false
 	}
-	target, err := client.EndSessionURL(c.Request.Context(), "", origin+loginPath)
+	target, err := client.EndSessionURL(ctx, "", origin+loginPath)
 	if err != nil || target == "" {
 		return "", false
 	}
 	return target, true
 }
 
-func (h *Handlers) Config(c *gin.Context) {
+type configOutput struct{ Body OIDCConfigView }
+
+func (h *Handlers) Config(context.Context, *struct{}) (*configOutput, error) {
 	if h.d.Client() == nil {
-		c.JSON(http.StatusOK, OIDCConfigView{Enabled: false})
-		return
+		return &configOutput{Body: OIDCConfigView{Enabled: false}}, nil
 	}
-	c.JSON(http.StatusOK, OIDCConfigView{Enabled: true, DisplayName: h.d.DisplayName()})
+	return &configOutput{Body: OIDCConfigView{Enabled: true, DisplayName: h.d.DisplayName()}}, nil
 }
 
-func (h *Handlers) Start(c *gin.Context) {
+type startInput struct {
+	ReturnTo string `query:"return_to"`
+}
+
+type linkStartInput struct{ Body linkStartRequest }
+
+// startOutput sets the cookie that binds the provider's answer to this browser.
+type startOutput struct {
+	SetCookie string `header:"Set-Cookie"`
+	Body      OIDCStartView
+}
+
+func (h *Handlers) Start(ctx context.Context, in *startInput) (*startOutput, error) {
 	client := h.d.Client()
 	if client == nil {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
-		return
+		return nil, apierr.AsClassified(apierr.SubsystemUnavailable, "")
 	}
-	returnTo, err := httpx.SafeReturnTo(c.Query("return_to"))
+	returnTo, err := httpx.SafeReturnTo(in.ReturnTo)
 	if err != nil {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
-		return
+		return nil, apierr.AsClassified(apierr.Unprocessable, "")
 	}
-	h.begin(c, client, 0, returnTo)
+	return h.begin(ctx, client, 0, returnTo)
 }
 
-func (h *Handlers) LinkStart(c *gin.Context) {
-	owner, ok := middleware.UserOf(c)
-	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
-		return
+func (h *Handlers) LinkStart(ctx context.Context, in *linkStartInput) (*startOutput, error) {
+	owner, err := middleware.UserFrom(ctx)
+	if err != nil {
+		return nil, err
 	}
-	var req linkStartRequest
-	if err := middleware.DecodeJSON(c.Request.Body, &req); err != nil {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
-		return
-	}
-	if !auth.Reconfirm(c, h.d.Auth, owner, req.Current) {
-		return
+	if err = auth.Reconfirm(ctx, h.d.Auth, owner, in.Body.Current); err != nil {
+		return nil, err
 	}
 	client := h.d.Client()
 	if client == nil {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
-		return
+		return nil, apierr.AsClassified(apierr.SubsystemUnavailable, "")
 	}
-	returnTo, err := httpx.SafeReturnTo(req.ReturnTo)
+	returnTo, err := httpx.SafeReturnTo(in.Body.ReturnTo)
 	if err != nil {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
-		return
+		return nil, apierr.AsClassified(apierr.Unprocessable, "")
 	}
-	h.begin(c, client, owner, returnTo)
+	return h.begin(ctx, client, owner, returnTo)
 }
 
-func (h *Handlers) begin(c *gin.Context, client *Client, user int64, returnTo string) {
+func (h *Handlers) begin(ctx context.Context, client *Client, user int64, returnTo string) (*startOutput, error) {
 	flow, err := NewFlowSecrets()
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return nil, err
 	}
-	redirectURI, ok := h.redirectURI(c)
+	origin, ok := h.requestOrigin(ctx)
 	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
-		return
+		return nil, apierr.AsClassified(apierr.Unprocessable, "")
 	}
-	target, err := client.AuthorizeURL(c.Request.Context(), redirectURI, flow)
+	redirectURI := origin + "/api/v1/auth/oidc/callback"
+	target, err := client.AuthorizeURL(ctx, redirectURI, flow)
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return nil, err
 	}
-	if err := h.d.Auth.StartOIDCFlow(c.Request.Context(), user, flow.State, flow.Nonce, flow.Binding, flow.CodeVerifier, redirectURI, returnTo); err != nil {
-		middleware.Fail(c, err)
-		return
+	if err := h.d.Auth.StartOIDCFlow(ctx, user, flow.State, flow.Nonce, flow.Binding, flow.CodeVerifier, redirectURI, returnTo); err != nil {
+		return nil, err
 	}
-	h.setBinding(c, flow.Binding)
-	c.JSON(http.StatusOK, OIDCStartView{AuthorizeURL: target})
+	return &startOutput{SetCookie: bindingCookieOf(flow.Binding, int(flowWindow/time.Second)).String(), Body: OIDCStartView{AuthorizeURL: target}}, nil
 }
 
 func (h *Handlers) Callback(c *gin.Context) {
@@ -248,69 +247,70 @@ func (h *Handlers) completeSignIn(c *gin.Context, flow auth.OIDCFlow, claims *Cl
 	if err := h.d.Auth.TouchOIDCLink(c.Request.Context(), claims.Issuer, claims.Subject); err != nil {
 		h.logWarn("stamping a single-sign-on link's last use failed", "error", err)
 	}
-	auth.SetSessionCookie(c, printableToken(sess.Token))
+	http.SetCookie(c.Writer, auth.SessionCookie(printableToken(sess.Token)))
 	return redirect(c, flow.ReturnTo)
 }
 
-func (h *Handlers) LinkDelete(c *gin.Context) {
-	owner, ok := middleware.UserOf(c)
-	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
-		return
-	}
-	var req struct {
+type linkDeleteInput struct {
+	Body struct {
 		Current string `json:"current"`
 	}
-	if err := middleware.DecodeJSON(c.Request.Body, &req); err != nil {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
-		return
-	}
-	if req.Current == "" {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "auth.invalid_credentials"})
-		return
-	}
-	if !auth.Reconfirm(c, h.d.Auth, owner, req.Current) {
-		return
-	}
-	if err := h.d.Auth.RemoveOIDCLink(c.Request.Context(), owner); err != nil {
-		middleware.Fail(c, err)
-		return
-	}
-	c.Status(http.StatusNoContent)
 }
 
-func (h *Handlers) AdminGet(c *gin.Context) {
-	id, ok := pathID(c)
-	if !ok {
-		c.Status(http.StatusNotFound)
-		return
-	}
-	link, err := h.d.Auth.OIDCLinkOf(c.Request.Context(), id)
+type noContent struct{}
+
+func (h *Handlers) LinkDelete(ctx context.Context, in *linkDeleteInput) (*noContent, error) {
+	owner, err := middleware.UserFrom(ctx)
 	if err != nil {
-		if errors.Is(err, auth.ErrNoOIDCLink) {
-			c.JSON(http.StatusOK, OIDCLinkView{Linked: false})
-			return
-		}
-		middleware.Fail(c, err)
-		return
+		return nil, err
 	}
-	c.JSON(http.StatusOK, OIDCLinkOf(link))
+	if in.Body.Current == "" {
+		return nil, apierr.AsClassified(apierr.Unprocessable, "auth.invalid_credentials")
+	}
+	if err := auth.Reconfirm(ctx, h.d.Auth, owner, in.Body.Current); err != nil {
+		return nil, err
+	}
+	if err := h.d.Auth.RemoveOIDCLink(ctx, owner); err != nil {
+		return nil, err
+	}
+	return &noContent{}, nil
 }
 
-func (h *Handlers) AdminDelete(c *gin.Context) {
-	id, ok := pathID(c)
+type userIDInput struct {
+	ID string `path:"id"`
+}
+
+type linkOutput struct{ Body OIDCLinkView }
+
+func (h *Handlers) AdminGet(ctx context.Context, in *userIDInput) (*linkOutput, error) {
+	id, ok := positiveID(in.ID)
 	if !ok {
-		c.Status(http.StatusNotFound)
-		return
+		return nil, apierr.AsClassified(apierr.NotFound, "")
 	}
-	if err := h.d.Auth.RemoveOIDCLink(c.Request.Context(), id); err != nil {
-		middleware.Fail(c, err)
-		return
+	link, err := h.d.Auth.OIDCLinkOf(ctx, id)
+	if errors.Is(err, auth.ErrNoOIDCLink) {
+		return &linkOutput{Body: OIDCLinkView{Linked: false}}, nil
 	}
-	c.Status(http.StatusNoContent)
+	if err != nil {
+		return nil, err
+	}
+	return &linkOutput{Body: OIDCLinkOf(link)}, nil
 }
 
-func (h *Handlers) AdminEndpoints(c *gin.Context) {
+func (h *Handlers) AdminDelete(ctx context.Context, in *userIDInput) (*noContent, error) {
+	id, ok := positiveID(in.ID)
+	if !ok {
+		return nil, apierr.AsClassified(apierr.NotFound, "")
+	}
+	if err := h.d.Auth.RemoveOIDCLink(ctx, id); err != nil {
+		return nil, err
+	}
+	return &noContent{}, nil
+}
+
+type endpointsOutput struct{ Body OIDCEndpointsView }
+
+func (h *Handlers) AdminEndpoints(context.Context, *struct{}) (*endpointsOutput, error) {
 	hosts := h.d.AppHosts()
 	redirects := make([]string, 0, len(hosts))
 	postLogouts := make([]string, 0, len(hosts))
@@ -318,35 +318,25 @@ func (h *Handlers) AdminEndpoints(c *gin.Context) {
 		redirects = append(redirects, "https://"+host+"/api/v1/auth/oidc/callback")
 		postLogouts = append(postLogouts, "https://"+host+loginPath)
 	}
-	c.JSON(http.StatusOK, OIDCEndpointsView{RedirectURIs: redirects, PostLogoutRedirectURIs: postLogouts})
+	return &endpointsOutput{Body: OIDCEndpointsView{RedirectURIs: redirects, PostLogoutRedirectURIs: postLogouts}}, nil
 }
 
-func (h *Handlers) redirectURI(c *gin.Context) (string, bool) {
-	origin, ok := h.requestOrigin(c)
+// requestOrigin is the origin the request arrived on, when it is one this
+// deployment declares.
+func (h *Handlers) requestOrigin(ctx context.Context) (string, bool) {
+	a, ok := middleware.AuthorityFrom(ctx)
 	if !ok {
 		return "", false
 	}
-	return origin + "/api/v1/auth/oidc/callback", true
-}
-func (h *Handlers) requestOrigin(c *gin.Context) (string, bool) {
-	host := c.Request.Host
-	if host == "" {
-		return "", false
-	}
 	declared := h.d.AppHosts()
-	if len(declared) > 0 && !hostDeclared(declared, host) {
+	if len(declared) > 0 && !hostDeclared(declared, a.Host) {
 		return "", false
 	}
-	scheme := "https"
-	if h.d.RequestScheme != nil {
-		scheme = h.d.RequestScheme(c.Request)
-	} else if c.Request.URL.Scheme == "http" || c.Request.TLS == nil {
-		scheme = "http"
-	}
-	if !middleware.OriginMatchesRequest(scheme+"://"+host, scheme, host) {
+	origin := a.Scheme + "://" + a.Host
+	if !middleware.OriginMatchesRequest(origin, a.Scheme, a.Host) {
 		return "", false
 	}
-	return scheme + "://" + host, true
+	return origin, true
 }
 func hostDeclared(declared []string, host string) bool {
 	name := host
@@ -371,16 +361,17 @@ func (h *Handlers) redirectError(c *gin.Context, target, code string) error {
 	return redirect(c, target+"?oidc_error="+url.QueryEscape(code))
 }
 func printableToken(t interface{ Reveal() []byte }) string { return hex.EncodeToString(t.Reveal()) }
-func (h *Handlers) setBinding(c *gin.Context, binding string) {
-	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(bindingCookie, binding, int(flowWindow/time.Second), "/", "", true, true)
+func bindingCookieOf(value string, maxAge int) *http.Cookie {
+	return &http.Cookie{
+		Name: bindingCookie, Value: value, Path: "/",
+		MaxAge: maxAge, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode,
+	}
 }
 func (h *Handlers) clearBinding(c *gin.Context) {
-	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(bindingCookie, "", -1, "/", "", true, true)
+	http.SetCookie(c.Writer, bindingCookieOf("", -1))
 }
-func pathID(c *gin.Context) (int64, bool) {
-	n, err := strconv.ParseInt(c.Param("id"), 10, 64)
+func positiveID(raw string) (int64, bool) {
+	n, err := strconv.ParseInt(raw, 10, 64)
 	return n, err == nil && n > 0
 }
 func (h *Handlers) logInfo(msg string, args ...any) {

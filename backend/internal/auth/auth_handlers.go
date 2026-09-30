@@ -12,8 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
@@ -47,7 +45,7 @@ type AuthHandlersDeps struct {
 	CSRFKey           func() []byte
 	TOTPAllow         interface{ Allow(string) bool }
 	SessionDetails    func(context.Context, int64) (SessionDetails, error)
-	OIDCEndSessionURL func(*gin.Context) (string, bool)
+	OIDCEndSessionURL func(context.Context) (string, bool)
 }
 
 // NewAuthHandlers builds the native authentication handlers.
@@ -67,209 +65,221 @@ type totpRequest struct {
 	Code      string `json:"code"`
 }
 
-func (h *AuthHandlers) Login(c *gin.Context) {
-	var req loginRequest
-	if err := decodeAuthBody(c, &req); err != nil {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
-		return
-	}
-	if req.Login == "" || req.Password == "" {
-		middleware.Fail(c, ErrCredentials)
-		return
-	}
-	sess, err := h.d.Service.Login(c.Request.Context(), LoginRequest{
-		Name: req.Login, Password: secret.New([]byte(req.Password)),
-		IP: middleware.ClientOf(c).String(), UA: c.Request.UserAgent(), AMR: passwordAMR,
-	}, 0)
-	if errors.Is(err, ErrSecondFactor) {
-		h.askForFactor(c, req.Login)
-		return
-	}
-	if err != nil {
-		middleware.Fail(c, err)
-		return
-	}
-	h.grantSession(c, sess)
+// A sign-in body must declare JSON. A cross-site form cannot, so the check
+// keeps a page on another origin from signing a browser in.
+type loginInput struct {
+	ContentType string `header:"Content-Type"`
+	UserAgent   string `header:"User-Agent"`
+	Body        loginRequest
 }
 
-func (h *AuthHandlers) askForFactor(c *gin.Context, login string) {
-	uid, err := h.d.Service.UserIDByName(c.Request.Context(), login)
+type loginTOTPInput struct {
+	ContentType string `header:"Content-Type"`
+	UserAgent   string `header:"User-Agent"`
+	Body        totpRequest
+}
+
+// loginResult is the signed-in identity, or the challenge when a second factor
+// is still owed. Exactly one is set.
+type loginResult struct {
+	*IdentityView
+	*ChallengeView
+}
+
+type loginOutput struct {
+	SetCookie string `header:"Set-Cookie"`
+	Body      loginResult
+}
+
+type identityOutput struct {
+	SetCookie string `header:"Set-Cookie"`
+	Body      IdentityView
+}
+
+type whoAmIOutput struct{ Body WhoAmIView }
+
+// logoutOutput carries a body only when the provider session has to be ended
+// too; otherwise it answers 204.
+type logoutOutput struct {
+	SetCookie string `header:"Set-Cookie"`
+	Status    int
+	Body      *LogoutView
+}
+
+func (h *AuthHandlers) Login(ctx context.Context, in *loginInput) (*loginOutput, error) {
+	if !declaresJSON(in.ContentType) {
+		return nil, apierr.AsClassified(apierr.Malformed, "")
+	}
+	req := in.Body
+	if req.Login == "" || req.Password == "" {
+		return nil, ErrCredentials
+	}
+	sess, err := h.d.Service.Login(ctx, LoginRequest{
+		Name: req.Login, Password: secret.New([]byte(req.Password)),
+		IP: middleware.ClientFrom(ctx).String(), UA: in.UserAgent, AMR: passwordAMR,
+	}, 0)
+	if errors.Is(err, ErrSecondFactor) {
+		challenge, cerr := h.challenge(ctx, req.Login)
+		if cerr != nil {
+			return nil, cerr
+		}
+		return &loginOutput{Body: loginResult{ChallengeView: &challenge}}, nil
+	}
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return nil, err
+	}
+	identity, cookie, err := h.grantSession(ctx, sess)
+	if err != nil {
+		return nil, err
+	}
+	return &loginOutput{SetCookie: cookie, Body: loginResult{IdentityView: &identity}}, nil
+}
+
+func (h *AuthHandlers) challenge(ctx context.Context, login string) (ChallengeView, error) {
+	uid, err := h.d.Service.UserIDByName(ctx, login)
+	if err != nil {
+		return ChallengeView{}, err
 	}
 	challenge, err := MintChallenge(h.d.CSRFKey(), uid, h.d.Clock.Now().Unix())
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return ChallengeView{}, err
 	}
-	c.JSON(http.StatusOK, ChallengeView{Required: "totp", Challenge: challenge, ExpiresInSeconds: ChallengeTTL})
+	return ChallengeView{Required: "totp", Challenge: challenge, ExpiresInSeconds: ChallengeTTL}, nil
 }
 
-func (h *AuthHandlers) LoginTOTP(c *gin.Context) {
-	var req totpRequest
-	if err := decodeAuthBody(c, &req); err != nil {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
-		return
+func (h *AuthHandlers) LoginTOTP(ctx context.Context, in *loginTOTPInput) (*identityOutput, error) {
+	if !declaresJSON(in.ContentType) {
+		return nil, apierr.AsClassified(apierr.Malformed, "")
 	}
+	req := in.Body
 	uid, err := OpenChallenge(h.d.CSRFKey(), req.Challenge, h.d.Clock.Now().Unix())
 	if err != nil || req.Code == "" {
-		middleware.Fail(c, ErrCredentials)
-		return
+		return nil, ErrCredentials
 	}
-	key := middleware.ClientOf(c).String()
-	if h.d.TOTPAllow != nil && !h.d.TOTPAllow.Allow(key+"/"+strconv.FormatInt(uid, 10)) {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.RateLimited, Key: "auth.rate_limited"})
-		return
+	client := middleware.ClientFrom(ctx).String()
+	if h.d.TOTPAllow != nil && !h.d.TOTPAllow.Allow(client+"/"+strconv.FormatInt(uid, 10)) {
+		return nil, apierr.AsClassified(apierr.RateLimited, "auth.rate_limited")
 	}
-	accepted, err := h.acceptFactor(c, uid, req.Code)
+	accepted, err := h.acceptFactor(ctx, uid, req.Code)
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return nil, err
 	}
 	if !accepted {
-		middleware.Fail(c, ErrCredentials)
-		return
+		return nil, ErrCredentials
 	}
-	sess, err := h.d.Service.CreateSession(c.Request.Context(), uid, middleware.ClientOf(c).String(), c.Request.UserAgent(), passwordFactorAMR, 0)
+	sess, err := h.d.Service.CreateSession(ctx, uid, client, in.UserAgent, passwordFactorAMR, 0)
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return nil, err
 	}
-	h.grantSession(c, sess)
+	identity, cookie, err := h.grantSession(ctx, sess)
+	if err != nil {
+		return nil, err
+	}
+	return &identityOutput{SetCookie: cookie, Body: identity}, nil
 }
 
-func (h *AuthHandlers) acceptFactor(c *gin.Context, uid int64, code string) (bool, error) {
-	ok, err := h.d.Service.VerifyTOTP(c.Request.Context(), uid, code, h.d.Clock.Nanos())
+func (h *AuthHandlers) acceptFactor(ctx context.Context, uid int64, code string) (bool, error) {
+	ok, err := h.d.Service.VerifyTOTP(ctx, uid, code, h.d.Clock.Nanos())
 	if err != nil || ok {
 		return ok, err
 	}
-	return h.d.Service.UseRecoveryCode(c.Request.Context(), uid, code)
+	return h.d.Service.UseRecoveryCode(ctx, uid, code)
 }
 
-func (h *AuthHandlers) grantSession(c *gin.Context, sess Session) {
-	info, err := h.d.Service.AccountInfo(c.Request.Context(), sess.UserID)
+// grantSession projects a new session and the cookie that carries it.
+func (h *AuthHandlers) grantSession(ctx context.Context, sess Session) (IdentityView, string, error) {
+	info, err := h.d.Service.AccountInfo(ctx, sess.UserID)
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return IdentityView{}, "", err
 	}
-	admin, err := h.d.Service.IsAdmin(c.Request.Context(), sess.UserID)
+	admin, err := h.d.Service.IsAdmin(ctx, sess.UserID)
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return IdentityView{}, "", err
 	}
 	printable := hex.EncodeToString(sess.Token.Reveal())
-	SetSessionCookie(c, printable)
-	c.JSON(http.StatusOK, IdentityViewOf(sess.UserID, info.LoginName, info.DisplayName, admin, middleware.CSRFToken(h.d.CSRFKey(), printable)))
+	view := IdentityViewOf(sess.UserID, info.LoginName, info.DisplayName, admin, middleware.CSRFToken(h.d.CSRFKey(), printable))
+	return view, SessionCookie(printable).String(), nil
 }
 
-func (h *AuthHandlers) Session(c *gin.Context) {
-	owner, ok := middleware.UserOf(c)
-	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
-		return
-	}
-	info, err := h.d.Service.AccountInfo(c.Request.Context(), owner)
+func (h *AuthHandlers) Session(ctx context.Context, in *sessionCookieInput) (*whoAmIOutput, error) {
+	owner, err := middleware.UserFrom(ctx)
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return nil, err
 	}
-	admin, err := h.d.Service.IsAdmin(c.Request.Context(), owner)
+	info, err := h.d.Service.AccountInfo(ctx, owner)
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return nil, err
+	}
+	admin, err := h.d.Service.IsAdmin(ctx, owner)
+	if err != nil {
+		return nil, err
 	}
 	var csrf string
-	if cookie, cookieErr := c.Cookie(middleware.SessionCookieName); cookieErr == nil && cookie != "" {
-		csrf = middleware.CSRFToken(h.d.CSRFKey(), cookie)
+	if in.Session != "" {
+		csrf = middleware.CSRFToken(h.d.CSRFKey(), in.Session)
 	}
-	details, err := h.d.SessionDetails(c.Request.Context(), owner)
+	details, err := h.d.SessionDetails(ctx, owner)
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return nil, err
 	}
 	view := WhoAmIView{IdentityView: IdentityViewOf(owner, info.LoginName, info.DisplayName, admin, csrf), TOTPEnabled: details.TOTPEnabled, SMBOptOut: details.SMBOptOut, SMBEnabled: details.SMBEnabled, SMBCredential: details.SMBCredential, SMBUnavailableReason: details.SMBUnavailableReason, Oidc: details.Oidc, Roots: details.Roots, Limits: details.Limits, Features: details.Features}
-	c.JSON(http.StatusOK, view)
+	return &whoAmIOutput{Body: view}, nil
 }
 
-func (h *AuthHandlers) Logout(c *gin.Context) {
-	cookie, err := c.Cookie(middleware.SessionCookieName)
-	if err != nil || cookie == "" {
-		c.Status(http.StatusNoContent)
-		return
+func (h *AuthHandlers) Logout(ctx context.Context, in *sessionCookieInput) (*logoutOutput, error) {
+	if in.Session == "" {
+		return &logoutOutput{Status: http.StatusNoContent}, nil
 	}
-	raw, err := hex.DecodeString(cookie)
+	cleared := ExpiredSessionCookie().String()
+	raw, err := hex.DecodeString(in.Session)
 	if err != nil {
-		clearSessionCookieTransport(c)
-		c.Status(http.StatusNoContent)
-		return
+		return &logoutOutput{SetCookie: cleared, Status: http.StatusNoContent}, nil
 	}
 	token := secret.New(raw)
-	provider := h.d.Service.SessionAMR(c.Request.Context(), token) == providerAMR
-	if err := h.d.Service.RevokeSession(c.Request.Context(), token); err != nil && !errors.Is(err, ErrCredentials) {
-		middleware.Fail(c, err)
-		return
+	provider := h.d.Service.SessionAMR(ctx, token) == providerAMR
+	if err := h.d.Service.RevokeSession(ctx, token); err != nil && !errors.Is(err, ErrCredentials) {
+		return nil, err
 	}
-	clearSessionCookieTransport(c)
 	if provider && h.d.OIDCEndSessionURL != nil {
-		if end, ok := h.d.OIDCEndSessionURL(c); ok {
-			c.JSON(http.StatusOK, LogoutView{EndSessionURL: end})
-			return
+		if end, ok := h.d.OIDCEndSessionURL(ctx); ok {
+			return &logoutOutput{SetCookie: cleared, Status: http.StatusOK, Body: &LogoutView{EndSessionURL: end}}, nil
 		}
 	}
-	c.Status(http.StatusNoContent)
+	return &logoutOutput{SetCookie: cleared, Status: http.StatusNoContent}, nil
 }
 
-func decodeAuthBody(c *gin.Context, into any) error {
-	media, _, err := mime.ParseMediaType(c.GetHeader("Content-Type"))
-	if err != nil || !strings.EqualFold(media, "application/json") {
-		return errors.New("authentication body is not JSON")
+func declaresJSON(contentType string) bool {
+	media, _, err := mime.ParseMediaType(contentType)
+	return err == nil && strings.EqualFold(media, "application/json")
+}
+
+// SessionCookie carries a printable session token.
+func SessionCookie(value string) *http.Cookie {
+	return &http.Cookie{
+		Name: middleware.SessionCookieName, Value: value, Path: "/",
+		MaxAge: int(sessionCookieMaxAge / time.Second), Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode,
 	}
-	return middleware.DecodeJSON(c.Request.Body, into)
 }
 
-func SetSessionCookie(c *gin.Context, value string) {
-	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(middleware.SessionCookieName, value, int(sessionCookieMaxAge/time.Second), "/", "", true, true)
-}
-func clearSessionCookieTransport(c *gin.Context) {
-	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(middleware.SessionCookieName, "", -1, "/", "", true, true)
+// ExpiredSessionCookie tells the browser to drop the session cookie.
+func ExpiredSessionCookie() *http.Cookie {
+	return &http.Cookie{
+		Name: middleware.SessionCookieName, Path: "/",
+		MaxAge: -1, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode,
+	}
 }
 
 // Reconfirm checks the account password for a sensitive settings operation.
-func Reconfirm(c *gin.Context, service *Service, owner int64, password string) bool {
+func Reconfirm(ctx context.Context, service *Service, owner int64, password string) error {
 	if password == "" {
-		middleware.Fail(c, ErrCredentials)
-		return false
+		return ErrCredentials
 	}
-	ok, err := service.VerifyAccountPassword(c.Request.Context(), owner, secret.New([]byte(password)))
+	ok, err := service.VerifyAccountPassword(ctx, owner, secret.New([]byte(password)))
 	if err != nil {
-		middleware.Fail(c, err)
-		return false
+		return err
 	}
 	if !ok {
-		middleware.Fail(c, ErrCredentials)
-		return false
+		return ErrCredentials
 	}
-	return true
-}
-
-// Admin authorizes a session for an administrator-owned route.
-func Admin(c *gin.Context, service *Service) (int64, bool) {
-	owner, ok := middleware.UserOf(c)
-	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
-		return 0, false
-	}
-	isAdmin, err := service.IsAdmin(c.Request.Context(), owner)
-	if err != nil {
-		middleware.Fail(c, err)
-		return 0, false
-	}
-	if !isAdmin {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Denied})
-		return 0, false
-	}
-	return owner, true
+	return nil
 }

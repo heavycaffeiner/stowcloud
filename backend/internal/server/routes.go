@@ -17,6 +17,7 @@ import (
 	jobshttp "github.com/heavycaffeiner/stowcloud/backend/internal/jobs"
 	featureoidc "github.com/heavycaffeiner/stowcloud/backend/internal/oidc"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/preview"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 	links "github.com/heavycaffeiner/stowcloud/backend/internal/shares"
 	adminsmb "github.com/heavycaffeiner/stowcloud/backend/internal/smb"
@@ -47,8 +48,9 @@ func (e *Engine) routes(router *gin.Engine) error {
 	admin := session.Group("", e.requireAdmin)
 	device := router.Group("", middleware.Device(deps)...)
 	config := humaConfig()
-	sessionAPI := newTyped(router, session, config, e.errs)
-	adminAPI := newTyped(router, admin, config, e.errs)
+	publicAPI := newTyped(router, public, config, e.errs, true)
+	sessionAPI := newTyped(router, session, config, e.errs, false)
+	adminAPI := newTyped(router, admin, config, e.errs, false)
 
 	resolve := files.Resolve(e.Core)
 
@@ -70,12 +72,11 @@ func (e *Engine) routes(router *gin.Engine) error {
 	session.GET("/api/v1/events", e.eventsSocket())
 
 	oidcRoutes := featureoidc.NewHandlers(featureoidc.Deps{
-		Auth:          e.Auth,
-		Client:        func() *featureoidc.Client { e.settingsMu.RLock(); defer e.settingsMu.RUnlock(); return e.oidcClient },
-		DisplayName:   func() string { e.settingsMu.RLock(); defer e.settingsMu.RUnlock(); return e.oidcName },
-		AppHosts:      func() []string { return e.Settings.Hosts().App },
-		RequestScheme: func(r *http.Request) string { return middleware.RequestScheme(r, e.trustedProxies()) },
-		Logger:        e.logger,
+		Auth:        e.Auth,
+		Client:      func() *featureoidc.Client { e.settingsMu.RLock(); defer e.settingsMu.RUnlock(); return e.oidcClient },
+		DisplayName: func() string { e.settingsMu.RLock(); defer e.settingsMu.RUnlock(); return e.oidcName },
+		AppHosts:    func() []string { return e.Settings.Hosts().App },
+		Logger:      e.logger,
 	})
 	authRoutes := auth.NewAuthHandlers(auth.AuthHandlersDeps{
 		Service: e.Auth, Clock: e.clock, CSRFKey: e.csrfKey,
@@ -90,34 +91,35 @@ func (e *Engine) routes(router *gin.Engine) error {
 		},
 		OIDCEndSessionURL: oidcRoutes.EndSessionURL,
 	})
-	public.POST("/api/v1/auth/login", middleware.LimitJSON, authRoutes.Login)
-	public.POST("/api/v1/auth/login/totp", middleware.LimitJSON, authRoutes.LoginTOTP)
-	session.POST("/api/v1/auth/logout", authRoutes.Logout)
-	session.GET("/api/v1/auth/session", authRoutes.Session)
-	public.GET("/api/v1/auth/oidc/config", oidcRoutes.Config)
-	public.GET("/api/v1/auth/oidc/start", oidcRoutes.Start)
+	op(publicAPI, http.MethodPost, "/api/v1/auth/login", "auth.login", authRoutes.Login)
+	op(publicAPI, http.MethodPost, "/api/v1/auth/login/totp", "auth.login.totp", authRoutes.LoginTOTP)
+	op(sessionAPI, http.MethodPost, "/api/v1/auth/logout", "auth.logout", authRoutes.Logout)
+	op(sessionAPI, http.MethodGet, "/api/v1/auth/session", "auth.session", authRoutes.Session)
+	op(publicAPI, http.MethodGet, "/api/v1/auth/oidc/config", "auth.oidc.config", oidcRoutes.Config)
+	op(publicAPI, http.MethodGet, "/api/v1/auth/oidc/start", "auth.oidc.start", oidcRoutes.Start)
 	public.GET("/api/v1/auth/oidc/callback", oidcRoutes.Callback)
 
 	account := auth.NewAccountHandlers(auth.AccountHandlersDeps{Service: e.Auth, Clock: e.clock})
-	session.POST("/api/v1/account/password", middleware.LimitJSON, account.Password)
-	session.GET("/api/v1/account/sessions", account.Sessions)
-	session.DELETE("/api/v1/account/sessions/:id", account.SessionDelete)
-	session.GET("/api/v1/account/app-passwords", account.AppPasswords)
-	session.POST("/api/v1/account/app-passwords", middleware.LimitJSON, account.AppPasswordCreate)
-	session.DELETE("/api/v1/account/app-passwords/:id", account.AppPasswordDelete)
-	session.POST("/api/v1/account/app-passwords/:id/wipe", account.AppPasswordWipe)
-	session.POST("/api/v1/account/totp/setup", account.TOTPSetup)
-	session.POST("/api/v1/account/totp/enroll", middleware.LimitJSON, account.TOTPEnroll)
-	session.POST("/api/v1/account/totp/disable", middleware.LimitJSON, account.TOTPDisable)
-	session.GET("/api/v1/account/totp/recovery-codes", account.RecoveryList)
-	session.POST("/api/v1/account/totp/recovery-codes", middleware.LimitJSON, account.RecoveryCreate)
+	op(sessionAPI, http.MethodPost, "/api/v1/account/password", "account.password.set", account.Password)
+	op(sessionAPI, http.MethodGet, "/api/v1/account/sessions", "account.sessions.list", account.Sessions)
+	op(sessionAPI, http.MethodDelete, "/api/v1/account/sessions/{id}", "account.sessions.delete", account.SessionDelete)
+	op(sessionAPI, http.MethodGet, "/api/v1/account/app-passwords", "account.app_passwords.list", account.AppPasswords)
+	op(sessionAPI, http.MethodPost, "/api/v1/account/app-passwords", "account.app_passwords.create", account.AppPasswordCreate)
+	op(sessionAPI, http.MethodDelete, "/api/v1/account/app-passwords/{id}", "account.app_passwords.delete", account.AppPasswordDelete)
+	op(sessionAPI, http.MethodPost, "/api/v1/account/app-passwords/{id}/wipe", "account.app_passwords.wipe", account.AppPasswordWipe)
+	op(sessionAPI, http.MethodPost, "/api/v1/account/totp/setup", "account.totp.setup", account.TOTPSetup)
+	op(sessionAPI, http.MethodPost, "/api/v1/account/totp/enroll", "account.totp.enroll", account.TOTPEnroll)
+	op(sessionAPI, http.MethodPost, "/api/v1/account/totp/disable", "account.totp.disable", account.TOTPDisable)
+	op(sessionAPI, http.MethodGet, "/api/v1/account/totp/recovery-codes", "account.recovery_codes.count", account.RecoveryList)
+	op(sessionAPI, http.MethodPost, "/api/v1/account/totp/recovery-codes", "account.recovery_codes.create", account.RecoveryCreate)
 	smb := &adminsmb.AccountHandler{Auth: e.Auth}
 	op(sessionAPI, http.MethodPost, "/api/v1/account/smb", "account.smb.create", smb.Access)
 	op(sessionAPI, http.MethodPost, "/api/v1/account/smb/password", "account.smb.password.set", smb.SetPassword)
 	op(sessionAPI, http.MethodDelete, "/api/v1/account/smb/password", "account.smb.password.delete", smb.DeletePassword)
-	session.POST("/api/v1/account/oidc-link/start", middleware.LimitJSON, oidcRoutes.LinkStart)
-	session.DELETE("/api/v1/account/oidc-link", oidcRoutes.LinkDelete)
-	session.POST("/api/v1/account/roots/order", middleware.LimitJSON, auth.RootOrderHandler(auth.RootOrderDeps{State: e.State}))
+	op(sessionAPI, http.MethodPost, "/api/v1/account/oidc-link/start", "account.oidc_link.start", oidcRoutes.LinkStart)
+	op(sessionAPI, http.MethodDelete, "/api/v1/account/oidc-link", "account.oidc_link.delete", oidcRoutes.LinkDelete)
+	rootOrder := &auth.RootOrderHandler{State: e.State}
+	op(sessionAPI, http.MethodPost, "/api/v1/account/roots/order", "account.roots.order", rootOrder.Set)
 
 	openClaim := files.OpenBoundClaim(e.claimKey, e.clk().Nanos)
 	projection := files.NewProjection(files.ProjectionDeps{Core: e.Core, ClaimKey: e.claimKey, Now: e.clk().Nanos, Logger: e.logger})
@@ -214,8 +216,8 @@ func (e *Engine) routes(router *gin.Engine) error {
 	admin.POST("/api/v1/admin/users", middleware.LimitJSON, users.UsersCreate)
 	admin.PATCH("/api/v1/admin/users/:id", middleware.LimitJSON, users.UsersUpdate)
 	admin.DELETE("/api/v1/admin/users/:id", users.UsersDelete)
-	admin.GET("/api/v1/admin/users/:id/oidc", oidcRoutes.AdminGet)
-	admin.DELETE("/api/v1/admin/users/:id/oidc", oidcRoutes.AdminDelete)
+	op(adminAPI, http.MethodGet, "/api/v1/admin/users/{id}/oidc", "admin.users.oidc.get", oidcRoutes.AdminGet)
+	op(adminAPI, http.MethodDelete, "/api/v1/admin/users/{id}/oidc", "admin.users.oidc.delete", oidcRoutes.AdminDelete)
 	admin.GET("/api/v1/admin/groups", users.GroupsList)
 	admin.POST("/api/v1/admin/groups", middleware.LimitJSON, users.GroupsCreate)
 	admin.PATCH("/api/v1/admin/groups/:id", middleware.LimitJSON, users.GroupsUpdate)
@@ -271,7 +273,7 @@ func (e *Engine) routes(router *gin.Engine) error {
 		OnRestart: e.Restart.Request, Logger: e.logger,
 	})
 	admin.GET("/api/v1/admin/settings", settings.Get)
-	admin.GET("/api/v1/admin/oidc/endpoints", oidcRoutes.AdminEndpoints)
+	op(adminAPI, http.MethodGet, "/api/v1/admin/oidc/endpoints", "admin.oidc.endpoints", oidcRoutes.AdminEndpoints)
 	admin.PATCH("/api/v1/admin/settings/:section", middleware.LimitJSON, settings.Patch)
 	admin.POST("/api/v1/admin/system/restart", settings.Restart)
 	admin.GET("/api/v1/admin/openapi", func(c *gin.Context) { c.JSON(http.StatusOK, adminAPI.api.OpenAPI()) })
@@ -290,7 +292,19 @@ func (e *Engine) routes(router *gin.Engine) error {
 
 // requireAdmin stops a request from a session that is not an administrator's.
 func (e *Engine) requireAdmin(c *gin.Context) {
-	if _, ok := auth.Admin(c, e.Auth); !ok {
+	owner, ok := middleware.UserOf(c)
+	if !ok {
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		c.Abort()
+		return
+	}
+	isAdmin, err := e.Auth.IsAdmin(c.Request.Context(), owner)
+	if err != nil {
+		middleware.Fail(c, err)
+		return
+	}
+	if !isAdmin {
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Denied})
 		c.Abort()
 		return
 	}

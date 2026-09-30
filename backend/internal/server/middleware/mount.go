@@ -39,7 +39,22 @@ const (
 	KeyTrace contextKey = "sc.trace"
 	// KeyCause holds the error a handler classified into a status.
 	KeyCause contextKey = "sc.cause"
+	// KeyAuthority holds the scheme and host the boundary admitted.
+	KeyAuthority contextKey = "sc.authority"
 )
+
+// Authority is the scheme and host a request arrived on, with the scheme
+// resolved by the same trusted-proxy rule the boundary applies.
+type Authority struct {
+	Scheme string
+	Host   string
+}
+
+// AuthorityFrom reads the admitted scheme and host from a request context.
+func AuthorityFrom(ctx context.Context) (Authority, bool) {
+	a, ok := ctx.Value(KeyAuthority).(Authority)
+	return a, ok && a.Host != ""
+}
 
 // Deps is what the chain needs from the rest of the process.
 type Deps struct {
@@ -76,7 +91,9 @@ func Global(d Deps) ([]gin.HandlerFunc, error) {
 		requestID,
 		func(c *gin.Context) { logHandler(c, d) },
 		func(c *gin.Context) {
-			c.Set(string(KeyClient), resolveClient(c, d))
+			client := resolveClient(c, d)
+			c.Set(string(KeyClient), client)
+			c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), KeyClient, client))
 			c.Next()
 		},
 		func(c *gin.Context) { boundaryHandler(c, d) },
@@ -162,6 +179,15 @@ func authHandler(c *gin.Context, d Deps, sessionOnly bool) {
 func PrincipalFrom(ctx context.Context) (Principal, bool) {
 	p, ok := ctx.Value(KeyCredential).(Principal)
 	return p, ok && p.Kind != CredentialNone
+}
+
+// UserFrom returns the account the auth step resolved from a request context.
+func UserFrom(ctx context.Context) (int64, error) {
+	p, ok := PrincipalFrom(ctx)
+	if !ok || p.UserID == 0 {
+		return 0, apierr.AsClassified(apierr.AuthRequired, "")
+	}
+	return p.UserID, nil
 }
 
 // requireSession answers anything but a session as a path that is not there,
@@ -319,9 +345,10 @@ func originOf(c *gin.Context) Origin {
 
 // boundaryHandler admits or refuses, and records which origin admitted it.
 func boundaryHandler(c *gin.Context, d Deps) {
+	scheme := requestScheme(c, d)
 	dec := Decide(d.Hosts(), BoundaryRequest{
 		Host:         c.Request.Host,
-		Scheme:       requestScheme(c, d),
+		Scheme:       scheme,
 		Origin:       c.GetHeader("Origin"),
 		Method:       c.Request.Method,
 		Client:       ClientOf(c),
@@ -336,6 +363,8 @@ func boundaryHandler(c *gin.Context, d Deps) {
 		return
 	}
 	c.Set(string(KeyOrigin), dec.Origin)
+	authority := Authority{Scheme: scheme, Host: c.Request.Host}
+	c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), KeyAuthority, authority))
 	c.Next()
 }
 
@@ -399,6 +428,14 @@ func ClientOf(c *gin.Context) netip.Addr {
 		if addr, ok := v.(netip.Addr); ok {
 			return addr
 		}
+	}
+	return Unroutable()
+}
+
+// ClientFrom reads the resolved client address from a request context.
+func ClientFrom(ctx context.Context) netip.Addr {
+	if addr, ok := ctx.Value(KeyClient).(netip.Addr); ok {
+		return addr
 	}
 	return Unroutable()
 }

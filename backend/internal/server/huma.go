@@ -60,7 +60,7 @@ func humaConfig() huma.Config {
 		}
 		var class apierr.Class
 		switch problem.Status {
-		case 400:
+		case 400, 415:
 			class = apierr.Malformed
 		case 413:
 			class = apierr.BodyTooLarge
@@ -77,22 +77,28 @@ func humaConfig() huma.Config {
 	return config
 }
 
-// typed is one access group's Huma API.
+// typed is one access group's Huma API. A public group's operations are
+// documented as needing no credential.
 type typed struct {
-	api  huma.API
-	errs *apierr.Classifier
+	api    huma.API
+	errs   *apierr.Classifier
+	public bool
 }
 
-func newTyped(router *gin.Engine, group *gin.RouterGroup, config huma.Config, errs *apierr.Classifier) typed {
-	return typed{api: humagin.NewWithGroup(router, group, config), errs: errs}
+// newTyped mounts a Huma API on group. A declared body past the JSON bound is
+// refused and drained before Huma reads it, so the client can read the 413.
+func newTyped(router *gin.Engine, group *gin.RouterGroup, config huma.Config, errs *apierr.Classifier, public bool) typed {
+	return typed{api: humagin.NewWithGroup(router, group.Group("", middleware.LimitJSON), config), errs: errs, public: public}
 }
 
 // op registers a typed operation. Every handler error is classified into the
 // native envelope; Huma would otherwise answer 500 and drop it.
 func op[I, O any](t typed, method, path, id string, h func(context.Context, *I) (*O, error)) {
-	huma.Register(t.api, huma.Operation{
-		OperationID: id, Method: method, Path: path, MaxBodyBytes: limits.RequestBody,
-	}, func(ctx context.Context, in *I) (*O, error) {
+	operation := huma.Operation{OperationID: id, Method: method, Path: path, MaxBodyBytes: limits.RequestBody}
+	if t.public {
+		operation.Security = []map[string][]string{{}}
+	}
+	huma.Register(t.api, operation, func(ctx context.Context, in *I) (*O, error) {
 		out, err := h(ctx, in)
 		if err != nil {
 			return nil, t.errs.Response(err)

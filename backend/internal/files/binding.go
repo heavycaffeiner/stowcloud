@@ -7,7 +7,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 )
 
@@ -24,9 +23,6 @@ func Owner(c *gin.Context) (UserID, bool) {
 // OwnerFrom reads the signed-in account from a request context, refusing a
 // request that carries none.
 func OwnerFrom(ctx context.Context) (UserID, error) {
-	p, ok := middleware.PrincipalFrom(ctx)
-	if !ok || p.UserID == 0 {
-		return 0, &apierr.ClassifiedError{Classified: apierr.Classified{Class: apierr.AuthRequired}}
-	}
-	return UserID(p.UserID), nil
+	id, err := middleware.UserFrom(ctx)
+	return UserID(id), err
 }
