@@ -25,7 +25,6 @@ import (
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/httpx"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
@@ -143,21 +142,21 @@ func (h *Handler) Stat(ctx context.Context, in *pathQueryInput) (*entryOutput, e
 func (h *Handler) Read(c *gin.Context) {
 	owner, ok := Owner(c)
 	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	if h.d.OpenClaim == nil {
-		middleware.Fail(c, ErrNotFound)
+		httpx.Fail(c, ErrNotFound)
 		return
 	}
 	claim, ok := h.d.OpenClaim(c, PurposeContent, owner)
 	if !ok {
-		middleware.Fail(c, ErrNotFound)
+		httpx.Fail(c, ErrNotFound)
 		return
 	}
 	r, err := h.resolve(owner, claim.Path, acl.Download)
 	if err != nil {
-		middleware.Fail(c, err)
+		httpx.Fail(c, err)
 		return
 	}
 	h.StreamFile(c, r, "")
@@ -168,13 +167,13 @@ func (h *Handler) Read(c *gin.Context) {
 func (h *Handler) StreamFile(c *gin.Context, r Resolved, attachAs string) {
 	entry, stream, err := h.d.Core.OpenStream(c.Request.Context(), r, nil)
 	if err != nil {
-		middleware.Fail(c, err)
+		httpx.Fail(c, err)
 		return
 	}
 	size, nerr := num.Narrow[int64](entry.Size)
 	if nerr != nil {
 		h.closeStream(stream, entry.Name)
-		middleware.Fail(c, ErrNotFound)
+		httpx.Fail(c, ErrNotFound)
 		return
 	}
 	rng, ranged, rerr := httpx.ParseRange(c.GetHeader("Range"), size)
@@ -182,10 +181,10 @@ func (h *Handler) StreamFile(c *gin.Context, r Resolved, attachAs string) {
 		h.closeStream(stream, entry.Name)
 		if errors.Is(rerr, httpx.ErrRangeUnsatisfiable) {
 			c.Header("Content-Range", "bytes */"+strconv.FormatInt(size, 10))
-			middleware.Refuse(c, apierr.Classified{Class: apierr.RangeNotSatisfiable})
+			httpx.Refuse(c, apierr.Classified{Class: apierr.RangeNotSatisfiable})
 			return
 		}
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
 	}
 	if ranged {
@@ -193,12 +192,12 @@ func (h *Handler) StreamFile(c *gin.Context, r Resolved, attachAs string) {
 		start, serr := num.Narrow[uint64](rng.Start)
 		last, lerr := num.Narrow[uint64](rng.End - 1)
 		if serr != nil || lerr != nil {
-			middleware.Fail(c, ErrNotFound)
+			httpx.Fail(c, ErrNotFound)
 			return
 		}
 		entry, stream, err = h.d.Core.OpenStream(c.Request.Context(), r, &[2]uint64{start, last})
 		if err != nil {
-			middleware.Fail(c, err)
+			httpx.Fail(c, err)
 			return
 		}
 	}
@@ -317,21 +316,21 @@ func (h *Handler) Download(ctx context.Context, in *pathBodyInput) (*ticketOutpu
 func (h *Handler) DownloadFetch(c *gin.Context) {
 	owner, ok := Owner(c)
 	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	if h.d.Archives == nil {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.NotFound})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.NotFound})
 		return
 	}
 	ticket, ok := h.d.Archives.Get(c.Query("token"), int64(owner), TicketFile)
 	if !ok || len(ticket.Paths) != 1 {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.NotFound})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.NotFound})
 		return
 	}
 	resolved, err := h.resolve(owner, ticket.Paths[0], acl.Read|acl.Download)
 	if err != nil {
-		middleware.Fail(c, err)
+		httpx.Fail(c, err)
 		return
 	}
 	if c.GetHeader("Range") == "" {
@@ -343,7 +342,7 @@ func (h *Handler) DownloadFetch(c *gin.Context) {
 					c.Redirect(http.StatusFound, signed)
 					return
 				} else if !errors.Is(signErr, objstore.ErrDirectTransferUnsupported) {
-					middleware.Fail(c, signErr)
+					httpx.Fail(c, signErr)
 					return
 				}
 			}
@@ -402,39 +401,39 @@ func (h *Handler) Archive(ctx context.Context, in *archiveInput) (*ticketOutput,
 func (h *Handler) ArchiveFetch(c *gin.Context) {
 	owner, ok := Owner(c)
 	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	if h.d.Archives == nil {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.NotFound})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.NotFound})
 		return
 	}
 	ticket, ok := h.d.Archives.Get(c.Query("token"), int64(owner), TicketArchive)
 	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.NotFound})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.NotFound})
 		return
 	}
 	roots := make([]Resolved, 0, len(ticket.Paths))
 	for _, path := range ticket.Paths {
 		resolved, err := h.resolve(owner, path, acl.Read|acl.Download)
 		if err != nil {
-			middleware.Fail(c, err)
+			httpx.Fail(c, err)
 			return
 		}
 		encrypted, err := h.d.Core.ShareEncrypted(c.Request.Context(), resolved.Share())
 		if err != nil {
-			middleware.Fail(c, err)
+			httpx.Fail(c, err)
 			return
 		}
 		if encrypted {
-			middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+			httpx.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 			return
 		}
 		roots = append(roots, resolved)
 	}
 	release, acquired := h.d.AcquireArchive()
 	if !acquired {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.ResourceExhausted, Key: "archive.busy"})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.ResourceExhausted, Key: "archive.busy"})
 		return
 	}
 	defer release()
@@ -534,29 +533,29 @@ func (h *Handler) guardLock(ctx context.Context, owner UserID, r Resolved) error
 func (h *Handler) Write(c *gin.Context) {
 	owner, ok := Owner(c)
 	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	r, err := h.resolve(owner, c.Query("path"), acl.Write|acl.Create)
 	if err != nil {
-		middleware.Fail(c, err)
+		httpx.Fail(c, err)
 		return
 	}
 	if h.d.GuardLock != nil {
 		if lerr := h.d.GuardLock(c.Request.Context(), uint32(r.Share()), r.Path().String(), int64(owner)); lerr != nil {
-			middleware.Refuse(c, apierr.Classified{Class: apierr.Locked, Key: "dav.locked"})
+			httpx.Refuse(c, apierr.Classified{Class: apierr.Locked, Key: "dav.locked"})
 			return
 		}
 	}
 	if declared := c.Request.ContentLength; declared > 0 {
 		if qerr := h.d.Core.CheckQuota(c.Request.Context(), owner, uint64(declared)); qerr != nil {
-			middleware.Fail(c, qerr)
+			httpx.Fail(c, qerr)
 			return
 		}
 	}
 	entry, err := h.d.Core.WriteStream(c.Request.Context(), r, c.Request.Body, ifMatchOf(c))
 	if err != nil {
-		middleware.Fail(c, err)
+		httpx.Fail(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, h.d.EntryView(owner, r, entry))

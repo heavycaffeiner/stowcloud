@@ -237,19 +237,6 @@ func traceOf(c *gin.Context) string {
 	return ""
 }
 
-// Fail records err as the request's outcome and stops the chain. The
-// ErrorMapper step renders it once the handler returns.
-func Fail(c *gin.Context, err error) {
-	c.Errors = append(c.Errors, &gin.Error{Err: err, Type: gin.ErrorTypePrivate})
-	c.Abort()
-}
-
-// Refuse answers a classified refusal in the native envelope.
-func Refuse(c *gin.Context, class apierr.Classified) {
-	status, body := apierr.REST(class)
-	c.JSON(status, body)
-}
-
 // UserOf returns the account the chain authenticated, if any.
 func UserOf(c *gin.Context) (int64, bool) {
 	v, exists := c.Get(string(KeyCredential))

@@ -18,7 +18,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/httpx"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 	"github.com/stowcloud/transfer"
 )
@@ -76,12 +76,12 @@ func (h *Handlers) DiscoverOne(c *gin.Context) {
 func (h *Handlers) Create(c *gin.Context) {
 	owner, ok := files.Owner(c)
 	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	engine, ok := h.engine(c)
 	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
 		return
 	}
 	h.setTusHeaders(c)
@@ -105,7 +105,7 @@ func (h *Handlers) Create(c *gin.Context) {
 		leaf = meta["filename"]
 	}
 	if leaf == "" {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
 	}
 	if dest != "" {
@@ -115,7 +115,7 @@ func (h *Handlers) Create(c *gin.Context) {
 	}
 	r, rerr := h.d.Resolve(owner, dest, acl.Write|acl.Create)
 	if rerr != nil {
-		middleware.Fail(c, rerr)
+		httpx.Fail(c, rerr)
 		return
 	}
 	spec := SessionSpec{IfMatch: c.GetHeader("If-Match"), Meta: uploadMetaOf(meta), RandomAccess: c.GetHeader(ScRandomAccess) == "1"}
@@ -123,13 +123,13 @@ func (h *Handlers) Create(c *gin.Context) {
 		total := length.Value
 		spec.TotalLen = &total
 		if qerr := h.d.Core.CheckQuota(c.Request.Context(), owner, length.Value); qerr != nil {
-			middleware.Fail(c, qerr)
+			httpx.Fail(c, qerr)
 			return
 		}
 	}
 	sess, cerr := engine.Create(c.Request.Context(), r, spec)
 	if cerr != nil {
-		middleware.Fail(c, cerr)
+		httpx.Fail(c, cerr)
 		return
 	}
 	c.Header("Location", "/api/v1/uploads/"+sess.ID.String())
@@ -140,12 +140,12 @@ func (h *Handlers) Create(c *gin.Context) {
 func (h *Handlers) Status(c *gin.Context) {
 	owner, ok := files.Owner(c)
 	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	engine, ok := h.engine(c)
 	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
 		return
 	}
 	h.setTusHeaders(c)
@@ -155,16 +155,16 @@ func (h *Handlers) Status(c *gin.Context) {
 	}
 	id, ok := sessionIDOf(c)
 	if !ok {
-		middleware.Fail(c, files.ErrNotFound)
+		httpx.Fail(c, files.ErrNotFound)
 		return
 	}
 	sess, err := engine.Get(c.Request.Context(), id, owner)
 	if err != nil {
-		middleware.Fail(c, err)
+		httpx.Fail(c, err)
 		return
 	}
 	if terminal, _ := TerminalUploadState(sess.State.StateName()); terminal {
-		middleware.Fail(c, files.ErrNotFound)
+		httpx.Fail(c, files.ErrNotFound)
 		return
 	}
 	c.Header("Cache-Control", "no-store")
@@ -180,12 +180,12 @@ func (h *Handlers) Status(c *gin.Context) {
 func (h *Handlers) Patch(c *gin.Context) {
 	owner, ok := files.Owner(c)
 	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	engine, ok := h.engine(c)
 	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
 		return
 	}
 	h.setTusHeaders(c)
@@ -195,11 +195,11 @@ func (h *Handlers) Patch(c *gin.Context) {
 	}
 	id, ok := sessionIDOf(c)
 	if !ok {
-		middleware.Fail(c, files.ErrNotFound)
+		httpx.Fail(c, files.ErrNotFound)
 		return
 	}
 	if c.GetHeader("Content-Type") != tusChunkType {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
 	}
 	offset, err := ParseOffset(c.GetHeader(UploadOffset))
@@ -214,12 +214,12 @@ func (h *Handlers) Patch(c *gin.Context) {
 	}
 	sess, err := engine.Get(c.Request.Context(), id, owner)
 	if err != nil {
-		middleware.Fail(c, err)
+		httpx.Fail(c, err)
 		return
 	}
 	root, ok := h.d.Core.ShareRoot(sess.Share)
 	if !ok {
-		middleware.Fail(c, files.ErrNotFound)
+		httpx.Fail(c, files.ErrNotFound)
 		return
 	}
 	// Deferred-length sessions are quota-bounded by PatchAt while bytes arrive;
@@ -241,16 +241,16 @@ func (h *Handlers) Patch(c *gin.Context) {
 func (h *Handlers) publish(c *gin.Context, engine *Engine, sess Session, id SessionID, owner files.UserID) bool {
 	dest, err := h.d.Core.VpathFor(owner, sess.Share, sess.Dest.Share())
 	if err != nil {
-		middleware.Fail(c, files.ErrNotFound)
+		httpx.Fail(c, files.ErrNotFound)
 		return false
 	}
 	resolved, err := h.d.Resolve(owner, dest.String(), acl.Write|acl.Create)
 	if err != nil {
-		middleware.Fail(c, err)
+		httpx.Fail(c, err)
 		return false
 	}
 	if _, err := engine.Finalize(c.Request.Context(), resolved, id); err != nil {
-		middleware.Fail(c, err)
+		httpx.Fail(c, err)
 		return false
 	}
 	return true
@@ -259,12 +259,12 @@ func (h *Handlers) publish(c *gin.Context, engine *Engine, sess Session, id Sess
 func (h *Handlers) Abort(c *gin.Context) {
 	owner, ok := files.Owner(c)
 	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	engine, ok := h.engine(c)
 	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
 		return
 	}
 	h.setTusHeaders(c)
@@ -274,11 +274,11 @@ func (h *Handlers) Abort(c *gin.Context) {
 	}
 	id, ok := sessionIDOf(c)
 	if !ok {
-		middleware.Fail(c, files.ErrNotFound)
+		httpx.Fail(c, files.ErrNotFound)
 		return
 	}
 	if err := engine.Abort(c.Request.Context(), id, owner); err != nil {
-		middleware.Fail(c, err)
+		httpx.Fail(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -354,10 +354,10 @@ func sessionIDOf(c *gin.Context) (SessionID, bool) {
 
 func (h *Handlers) refuseTus(c *gin.Context, err error) {
 	if errors.Is(err, ErrTusVersion) {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Precondition})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.Precondition})
 		return
 	}
-	middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
+	httpx.Refuse(c, apierr.Classified{Class: apierr.Malformed})
 }
 
 func (h *Handlers) failUpload(c *gin.Context, err error) {
@@ -365,7 +365,7 @@ func (h *Handlers) failUpload(c *gin.Context, err error) {
 		c.JSON(StatusChecksumMismatch, map[string]string{"error": "checksum_mismatch"})
 		return
 	}
-	middleware.Fail(c, err)
+	httpx.Fail(c, err)
 }
 
 func chunkChecksum(header string) (*Checksum, error) {

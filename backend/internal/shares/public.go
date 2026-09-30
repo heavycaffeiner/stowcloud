@@ -56,7 +56,7 @@ func NewPublic(d PublicDeps) *Public { return &Public{d: d} }
 func (p *Public) linkFor(c *gin.Context) (files.Link, error) {
 	link, _, err := p.d.Core.LinkPublic(c.Request.Context(), c.Param("token"))
 	if err != nil {
-		middleware.Fail(c, err)
+		httpx.Fail(c, err)
 		return files.Link{}, err
 	}
 	proof, cerr := c.Cookie(linkCookie(link.ID))
@@ -64,7 +64,7 @@ func (p *Public) linkFor(c *gin.Context) (files.Link, error) {
 		proof = ""
 	}
 	if !p.unlocked(c.Request.Context(), link, proof) {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "fs.link_password"})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "fs.link_password"})
 		return files.Link{}, errors.New("link locked")
 	}
 	return link, nil
@@ -282,20 +282,20 @@ func (p *Public) Download(c *gin.Context) {
 		return
 	}
 	if !link.Perms.Has(acl.Download) {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Denied, Key: "fs.link_no_download"})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.Denied, Key: "fs.link_no_download"})
 		return
 	}
 	ctx := c.Request.Context()
 	path := c.Query("path")
 	entry, stream, err := p.d.Core.LinkStreamAt(ctx, link, path, nil)
 	if err != nil {
-		middleware.Fail(c, err)
+		httpx.Fail(c, err)
 		return
 	}
 	size, nerr := num.Narrow[int64](entry.Size)
 	if nerr != nil {
 		p.d.CloseStream(stream, entry.Name)
-		middleware.Fail(c, files.ErrNotFound)
+		httpx.Fail(c, files.ErrNotFound)
 		return
 	}
 	rng, ranged, rerr := httpx.ParseRange(c.GetHeader("Range"), size)
@@ -304,10 +304,10 @@ func (p *Public) Download(c *gin.Context) {
 		if errors.Is(rerr, httpx.ErrRangeUnsatisfiable) {
 			c.Header("Accept-Ranges", "bytes")
 			c.Header("Content-Range", httpx.UnsatisfiedRange(size))
-			middleware.Refuse(c, apierr.Classified{Class: apierr.RangeNotSatisfiable})
+			httpx.Refuse(c, apierr.Classified{Class: apierr.RangeNotSatisfiable})
 			return
 		}
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
 	}
 	if ranged {
@@ -315,18 +315,18 @@ func (p *Public) Download(c *gin.Context) {
 		start, serr := num.Narrow[uint64](rng.Start)
 		last, lerr := num.Narrow[uint64](rng.End - 1)
 		if serr != nil || lerr != nil {
-			middleware.Fail(c, files.ErrNotFound)
+			httpx.Fail(c, files.ErrNotFound)
 			return
 		}
 		entry, stream, err = p.d.Core.LinkStreamAt(ctx, link, path, &[2]uint64{start, last})
 		if err != nil {
-			middleware.Fail(c, err)
+			httpx.Fail(c, err)
 			return
 		}
 	}
 	if err = p.d.Core.NoteLinkDownload(ctx, link); err != nil {
 		p.d.CloseStream(stream, entry.Name)
-		middleware.Fail(c, err)
+		httpx.Fail(c, err)
 		return
 	}
 	// Always an attachment: a stranger's download must never render inline
@@ -339,31 +339,31 @@ func (p *Public) Zip(c *gin.Context) {
 		return
 	}
 	if !link.Perms.Has(acl.Download) {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Denied, Key: "fs.link_no_download"})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.Denied, Key: "fs.link_no_download"})
 		return
 	}
 	sub := c.Query("path")
 	if strings.Trim(sub, "/") != "" && !link.Perms.Has(acl.Read) {
-		middleware.Fail(c, files.ErrNotFound)
+		httpx.Fail(c, files.ErrNotFound)
 		return
 	}
 	listing, err := p.d.Core.LinkBrowse(c.Request.Context(), link, sub)
 	if err != nil {
-		middleware.Fail(c, err)
+		httpx.Fail(c, err)
 		return
 	}
 	if !listing.IsDir {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "fs.link_not_a_folder"})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "fs.link_not_a_folder"})
 		return
 	}
 	release, ok := p.d.AcquireArchive()
 	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.ResourceExhausted, Key: "archive.busy"})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.ResourceExhausted, Key: "archive.busy"})
 		return
 	}
 	defer release()
 	if err = p.d.Core.NoteLinkDownload(c.Request.Context(), link); err != nil {
-		middleware.Fail(c, err)
+		httpx.Fail(c, err)
 		return
 	}
 	c.Header("Content-Type", "application/zip")
@@ -377,32 +377,32 @@ func (p *Public) Drop(c *gin.Context) {
 		return
 	}
 	if !link.Perms.Has(acl.Create) {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Denied, Key: "fs.link_no_upload"})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.Denied, Key: "fs.link_no_upload"})
 		return
 	}
 	name := c.Query("name")
 	if name == "" {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "fs.link_no_name"})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "fs.link_no_name"})
 		return
 	}
 	if cl := c.GetHeader("Content-Length"); cl != "" {
 		if n, e := strconv.ParseInt(cl, 10, 64); e == nil && n > limits.RequestBody {
-			middleware.Refuse(c, apierr.Classified{Class: apierr.BodyTooLarge, Key: "http.body_too_large"})
+			httpx.Refuse(c, apierr.Classified{Class: apierr.BodyTooLarge, Key: "http.body_too_large"})
 			return
 		}
 	}
 	body, e := io.ReadAll(io.LimitReader(c.Request.Body, limits.RequestBody+1))
 	if e != nil {
-		middleware.Fail(c, e)
+		httpx.Fail(c, e)
 		return
 	}
 	if len(body) > limits.RequestBody {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.BodyTooLarge, Key: "http.body_too_large"})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.BodyTooLarge, Key: "http.body_too_large"})
 		return
 	}
 	entry, e := p.d.Core.LinkDropFile(c.Request.Context(), link, name, bytes.NewReader(body))
 	if e != nil {
-		middleware.Fail(c, e)
+		httpx.Fail(c, e)
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"name": entry.Name, "size": strconv.FormatUint(entry.Size, 10)})

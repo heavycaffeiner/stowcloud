@@ -16,7 +16,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/httpx"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
@@ -36,44 +36,44 @@ func ThumbnailHandler(d ThumbnailDeps) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		lease, ok := d.PreviewLease()
 		if !ok {
-			middleware.Refuse(c, apierr.Classified{Class: apierr.NotFound})
+			httpx.Refuse(c, apierr.Classified{Class: apierr.NotFound})
 			return
 		}
 		defer lease.Close()
 
 		owner, ok := files.Owner(c)
 		if !ok {
-			middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+			httpx.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 			return
 		}
 
 		preset, err := presetOf(c.Query("size"))
 		if err != nil {
-			middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+			httpx.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 			return
 		}
 
 		claim, ok := d.OpenClaim(c, files.PurposeThumb, owner)
 		if !ok {
-			middleware.Fail(c, files.ErrNotFound)
+			httpx.Fail(c, files.ErrNotFound)
 			return
 		}
 		r, err := d.Resolve(owner, claim.Path, acl.Read|acl.Download)
 		if err != nil {
-			middleware.Fail(c, err)
+			httpx.Fail(c, err)
 			return
 		}
 		if enc, eerr := d.Core.ShareEncrypted(c.Request.Context(), r.Share()); eerr != nil {
-			middleware.Fail(c, eerr)
+			httpx.Fail(c, eerr)
 			return
 		} else if enc {
-			middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+			httpx.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 			return
 		}
 
 		thumb, err := lease.Get(c.Request.Context(), r, preset)
 		if err != nil {
-			middleware.Fail(c, err)
+			httpx.Fail(c, err)
 			return
 		}
 		sendThumb(c, thumb, d.Logger)
@@ -84,7 +84,7 @@ func sendThumb(c *gin.Context, thumb Thumb, logger *slog.Logger) {
 	size, err := thumbSize(thumb.File)
 	if err != nil {
 		closeThumb(thumb, logger)
-		middleware.Fail(c, err)
+		httpx.Fail(c, err)
 		return
 	}
 

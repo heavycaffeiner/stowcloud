@@ -18,6 +18,7 @@ import (
 	featureoidc "github.com/heavycaffeiner/stowcloud/backend/internal/oidc"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/preview"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/httpx"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 	links "github.com/heavycaffeiner/stowcloud/backend/internal/shares"
 	adminsmb "github.com/heavycaffeiner/stowcloud/backend/internal/smb"
@@ -297,17 +298,17 @@ func (e *Engine) routes(router *gin.Engine) error {
 func (e *Engine) requireAdmin(c *gin.Context) {
 	owner, ok := middleware.UserOf(c)
 	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		c.Abort()
 		return
 	}
 	isAdmin, err := e.Auth.IsAdmin(c.Request.Context(), owner)
 	if err != nil {
-		middleware.Fail(c, err)
+		httpx.Fail(c, err)
 		return
 	}
 	if !isAdmin {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Denied})
+		httpx.Refuse(c, apierr.Classified{Class: apierr.Denied})
 		c.Abort()
 		return
 	}
