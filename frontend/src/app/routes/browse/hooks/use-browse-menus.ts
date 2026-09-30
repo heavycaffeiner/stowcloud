@@ -1,5 +1,5 @@
 import type { Dispatch, MouseEvent as ReactMouseEvent } from 'react'
-import { useEffect } from 'react'
+import { useEventListener } from '../../../../hooks/use-event-listener'
 import type { NewActionAnchor } from '../../../AppShell'
 import type { BrowseState } from '../logic/types'
 import type { StatePatch } from '../../../../lib/merge-state'
@@ -18,13 +18,17 @@ export function useBrowseMenus({
   canCreate: boolean
   t: Translate
 }) {
-  const { newMenuOpen, overflowOpen, newMenuTrigger, overflowTrigger, sortMenuTrigger } = state
+  const { newMenuOpen, overflowOpen, sortMenuOpen, newMenuTrigger, overflowTrigger, sortMenuTrigger } = state
   const closeSort = () => {
     patch({ sortMenuOpen: false })
     sortMenuTrigger?.focus()
     patch({ sortMenuTrigger: null })
   }
   const openSort = (event: ReactMouseEvent<HTMLElement>) => {
+    if (sortMenuOpen) {
+      closeSort()
+      return
+    }
     event.stopPropagation()
     const trigger = event.currentTarget
     const rect = trigger.getBoundingClientRect()
@@ -65,6 +69,10 @@ export function useBrowseMenus({
     patch({ overflowTrigger: trigger, overflowPosition: { x: rect.right, y: rect.bottom + 4 }, overflowOpen: true })
   }
   const openFilterMenu = (kind: 'type' | 'date', event: ReactMouseEvent<HTMLElement>) => {
+    if (kind === 'type' ? state.typeMenuOpen : state.dateMenuOpen) {
+      patch(kind === 'type' ? { typeMenuOpen: false } : { dateMenuOpen: false })
+      return
+    }
     const rect = event.currentTarget.getBoundingClientRect()
     patch(
       kind === 'type'
@@ -72,42 +80,13 @@ export function useBrowseMenus({
         : { dateMenuPosition: { x: rect.left, y: rect.bottom + 4 }, dateMenuOpen: true }
     )
   }
-  useEffect(() => {
-    const handleNew = (event: Event) => {
-      if (!canCreate) {
-        patch({ snackbar: t('error.acl_denied') })
-        return
-      }
-      const anchor = (event as CustomEvent<NewActionAnchor | undefined>).detail
-      patch({ newMenuTrigger: null, newMenuPosition: anchor ?? { x: 80, y: 120, align: 'start' }, newMenuOpen: true })
+  useEventListener(window, 'stowcloud:new', (event) => {
+    if (!canCreate) {
+      patch({ snackbar: t('error.acl_denied') })
+      return
     }
-    window.addEventListener('stowcloud:new', handleNew)
-    return () => window.removeEventListener('stowcloud:new', handleNew)
-  }, [canCreate, patch, t])
-  useEffect(() => {
-    if (!newMenuOpen && !overflowOpen) return
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      if (newMenuOpen) closeNewMenu()
-      else closeOverflow()
-    }
-    const onPointerDown = (event: PointerEvent) => {
-      const target = event.target as Element | null
-      if (target?.closest('.sc-browse-new-menu, [aria-expanded="true"]')) return
-      if (newMenuOpen) closeNewMenu()
-      if (overflowOpen) closeOverflow()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    window.addEventListener('pointerdown', onPointerDown, true)
-    return () => {
-      window.removeEventListener('keydown', onKeyDown)
-      window.removeEventListener('pointerdown', onPointerDown, true)
-    }
-  }, [newMenuOpen, overflowOpen, newMenuTrigger, overflowTrigger])
-  useEffect(() => {
-    if (!newMenuOpen && !overflowOpen && state.contextMenu === null && state.blankMenu === null) return
-    queueMicrotask(() => document.querySelector<HTMLElement>('.sc-browse-new-menu button')?.focus())
-  }, [newMenuOpen, overflowOpen, state.contextMenu, state.blankMenu])
+    const anchor = (event as CustomEvent<NewActionAnchor | undefined>).detail
+    patch({ newMenuTrigger: null, newMenuPosition: anchor ?? { x: 80, y: 120, align: 'start' }, newMenuOpen: true })
+  })
   return { openSort, closeSort, openNewMenu, closeNewMenu, openOverflow, closeOverflow, openFilterMenu }
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MutableRefObject, RefObject } from 'react'
+import { useEventListener } from '../../../hooks/use-event-listener'
 import type { SearchDone, SearchHit, SearchProgress } from '../../../lib/api/client'
 import { resolveExtensions } from '../../../lib/search/filters'
 import { search, type SearchSnapshot } from '../../../lib/store/search.store'
@@ -196,17 +197,18 @@ export function useSearchController({
     queueMicrotask(() => inputRef.current?.focus())
   }, [cancelStream, set])
 
-  useEffect(() => {
-    const strip = categoriesRef.current
-    if (!strip) return
-    const onWheel = (event: WheelEvent): void => {
-      if (event.deltaX !== 0 || strip.scrollWidth <= strip.clientWidth) return
+  // Vertical wheel scrolls the category strip sideways; React's onWheel is passive and cannot prevent the page scroll.
+  useEventListener(
+    categoriesRef,
+    'wheel',
+    (event) => {
+      const strip = categoriesRef.current
+      if (!strip || event.deltaX !== 0 || strip.scrollWidth <= strip.clientWidth) return
       event.preventDefault()
       strip.scrollLeft += event.deltaY
-    }
-    strip.addEventListener('wheel', onWheel, { passive: false })
-    return () => strip.removeEventListener('wheel', onWheel)
-  }, [categoriesRef])
+    },
+    { passive: false }
+  )
 
   useEffect(() => {
     const next = `${state.kind}|${state.presets.join(',')}|${state.extQuery.trim().toLowerCase()}`

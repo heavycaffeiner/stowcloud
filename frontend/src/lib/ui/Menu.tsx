@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { useEffect, useRef } from 'react'
 import { useI18n } from '../../hooks/use-i18n'
+import { useOutsideDismiss } from '../../hooks/use-outside-dismiss'
 export interface MenuProps {
   open: boolean
   onClose?: () => void
@@ -62,28 +63,19 @@ export function Menu({ open, onClose, compact = false, x, y, align = 'start', ch
     }
   }, [compact, open])
 
+  useOutsideDismiss(open && !compact, rootRef, close)
+
+  // mdui-menu shows its items through a slot that exists only after its first render.
   useEffect(() => {
-    if (!open) return
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        event.stopPropagation()
-        close()
-      }
-    }
-    const onPointer = (event: PointerEvent) => {
-      const target = event.target as Element | null
-      if (!compact && rootRef.current?.contains(target)) return
-      if (!compact && target?.closest('[aria-expanded="true"]')) return
-      if (!compact && rootRef.current) close()
-    }
-    window.addEventListener('keydown', onKey)
-    window.addEventListener('pointerdown', onPointer, true)
+    if (!open || compact) return
+    let cancelled = false
+    void Promise.resolve(rootRef.current?.querySelector('mdui-menu')?.updateComplete).then(() => {
+      if (!cancelled) rootRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
+    })
     return () => {
-      window.removeEventListener('keydown', onKey)
-      window.removeEventListener('pointerdown', onPointer, true)
+      cancelled = true
     }
-  }, [close, compact, open])
+  }, [compact, open])
 
   if (!open) return null
   if (compact) {
@@ -94,6 +86,10 @@ export function Menu({ open, onClose, compact = false, x, y, align = 'start', ch
           ref={dialogRef}
           className="sc-sheet"
           aria-label={t('common.main_menu')}
+          onClick={(event) => {
+            // A press on the backdrop lands on the dialog itself.
+            if (event.target === event.currentTarget) close()
+          }}
           onCancel={(event) => {
             event.preventDefault()
             close()

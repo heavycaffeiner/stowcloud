@@ -4,7 +4,7 @@ import type { Entry, Perms } from '../../lib/api/types'
 import { formatEntrySize } from '../../lib/format/entry-size'
 import { useI18n } from '../../hooks/use-i18n'
 import { selection, useSelectionStore } from '../../lib/store/selection.store'
-import { useUiStore } from '../../lib/store/ui.store'
+import { useCompact } from '../../lib/ui/use-compact'
 import { useViewStore } from '../../lib/store/view.store'
 import { computeScaleMapping, computeWindow, rowIndexToScrollTop } from '../../lib/virtual/windowing'
 import { cellPos, sectionRows, verticalTarget } from '../../lib/virtual/grid-sections'
@@ -92,6 +92,7 @@ function FileCardHeader({
       type="button"
       className="sc-file-grid-kebab"
       tabIndex={-1}
+      aria-haspopup="menu"
       aria-expanded={menuFor === entry.name}
       aria-label={t('grid.more_actions', { name: entry.name })}
       onClick={(event) => {
@@ -144,7 +145,7 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
   ref
 ) {
   const { t } = useI18n()
-  const compact = useUiStore((state) => state.compact)
+  const compact = useCompact()
   const density = useViewStore((state) => state.density)
   const names = useSelectionStore((state) => state.names)
   const focused = useSelectionStore((state) => state.focused)

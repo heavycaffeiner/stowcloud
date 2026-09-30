@@ -8,6 +8,7 @@ import { fileContentQuery, archiveEntriesQuery } from '../../lib/query/files'
 import { formatBytes } from '../../lib/format/bytes'
 import { formatEntrySize } from '../../lib/format/entry-size'
 import { useI18n } from '../../hooks/use-i18n'
+import { useEventListener } from '../../hooks/use-event-listener'
 import { IMAGE_EXT, VIDEO_EXT, extensionOf, mimeTypeOf } from './logic/media-utils'
 import { registerMediaSource, releaseMediaSource, swReady } from '../../lib/crypto/download-sw'
 import { decryptDownload, isUnlocked, MAX_ENCRYPTABLE_BYTES } from '../../lib/crypto/e2ee'
@@ -188,15 +189,9 @@ export function PreviewDialog({
   useEffect(() => {
     if (locked) setPreviewState((state) => ({ ...state, unlockOpen: true }))
   }, [locked])
-  useEffect(() => {
-    const bump = () => setPreviewState((state) => ({ ...state, unlockGeneration: state.unlockGeneration + 1 }))
-    window.addEventListener('sc:unlock', bump)
-    window.addEventListener('sc:lock', bump)
-    return () => {
-      window.removeEventListener('sc:unlock', bump)
-      window.removeEventListener('sc:lock', bump)
-    }
-  }, [])
+  const bumpUnlock = () => setPreviewState((state) => ({ ...state, unlockGeneration: state.unlockGeneration + 1 }))
+  useEventListener(window, 'sc:unlock', bumpUnlock)
+  useEventListener(window, 'sc:lock', bumpUnlock)
   useEffect(() => {
     if (!open || !entry) return
     queueMicrotask(() => previewRef.current?.querySelector<HTMLButtonElement>('button')?.focus())
@@ -262,26 +257,21 @@ export function PreviewDialog({
     }
   }, [body.kind, encryption, encryptionQuery.isPending, entry, unlocked])
 
-  useEffect(() => {
-    if (!open) return
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || document.querySelector('mdui-dialog[open]:not(.sc-preview-dialog)')) return
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        if (archiveListing && cwd)
-          setPreviewState((state) => ({ ...state, cwd: state.cwd.slice(0, Math.max(0, state.cwd.lastIndexOf('/'))) }))
-        else onClose()
-      } else if (event.key === 'ArrowLeft' && hasPrev) {
-        event.preventDefault()
-        onPrev()
-      } else if (event.key === 'ArrowRight' && hasNext) {
-        event.preventDefault()
-        onNext()
-      }
+  useEventListener(open ? window : null, 'keydown', (event) => {
+    if (event.defaultPrevented || document.querySelector('mdui-dialog[open]:not(.sc-preview-dialog)')) return
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      if (archiveListing && cwd)
+        setPreviewState((state) => ({ ...state, cwd: state.cwd.slice(0, Math.max(0, state.cwd.lastIndexOf('/'))) }))
+      else onClose()
+    } else if (event.key === 'ArrowLeft' && hasPrev) {
+      event.preventDefault()
+      onPrev()
+    } else if (event.key === 'ArrowRight' && hasNext) {
+      event.preventDefault()
+      onNext()
     }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [archiveListing, cwd, hasNext, hasPrev, onClose, onNext, onPrev, open])
+  })
 
   if (!entry) return null
   const imageUrl =

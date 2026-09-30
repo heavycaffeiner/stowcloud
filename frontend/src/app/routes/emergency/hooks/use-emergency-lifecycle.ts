@@ -1,5 +1,6 @@
 import { useEffect, type RefObject } from 'react'
 import type { NavigateFunction } from 'react-router-dom'
+import { useBeforeUnload } from '../../../../hooks/use-before-unload'
 import { emergencyDoor } from '../../../../lib/api/emergency'
 
 type StateSetter = (patch: {
@@ -44,12 +45,5 @@ export function useEmergencyLifecycle({
     }
   }, [messageFor, setState])
 
-  useEffect(() => {
-    const beforeUnload = (event: BeforeUnloadEvent) => {
-      if (!dirty) return
-      event.preventDefault()
-    }
-    window.addEventListener('beforeunload', beforeUnload)
-    return () => window.removeEventListener('beforeunload', beforeUnload)
-  }, [dirty])
+  useBeforeUnload(dirty)
 }

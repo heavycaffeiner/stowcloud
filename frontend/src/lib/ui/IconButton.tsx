@@ -1,5 +1,6 @@
 import type { MouseEventHandler, ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
+import { useEventListener } from '../../hooks/use-event-listener'
 import { Icon } from './Icon'
 
 interface IconButtonElement extends HTMLElement {
@@ -88,58 +89,40 @@ export function IconButton({
     }, delay)
   }
 
-  useEffect(() => {
-    const wrapper = wrapperRef.current
-    if (!wrapper) return
-    const onFocusIn = (event: FocusEvent) => {
-      const target = event.target
-      if (target instanceof Element) {
-        try {
-          if (target.matches(':focus-visible')) show(0)
-        } catch {
-          // Older DOM implementations do not expose :focus-visible.
-        }
-      }
+  const showOnKeyboardFocus = (target: EventTarget): void => {
+    if (!(target instanceof Element)) return
+    try {
+      if (target.matches(':focus-visible')) show(0)
+    } catch {
+      // Older DOM implementations do not expose :focus-visible.
     }
-    const onFocusOut = () => hide()
-    const onPointerEnter = () => show(HOVER_DELAY_MS)
-    const onPointerLeave = () => hide()
-    const onPointerDown = () => hide()
-    wrapper.addEventListener('focusin', onFocusIn)
-    wrapper.addEventListener('focusout', onFocusOut)
-    wrapper.addEventListener('pointerenter', onPointerEnter)
-    wrapper.addEventListener('pointerleave', onPointerLeave)
-    wrapper.addEventListener('pointerdown', onPointerDown)
-    return () => {
-      wrapper.removeEventListener('focusin', onFocusIn)
-      wrapper.removeEventListener('focusout', onFocusOut)
-      wrapper.removeEventListener('pointerenter', onPointerEnter)
-      wrapper.removeEventListener('pointerleave', onPointerLeave)
-      wrapper.removeEventListener('pointerdown', onPointerDown)
-      clearTimer()
-    }
-  }, [disabled])
+  }
+  useEffect(
+    () => () => {
+      if (timerRef.current !== null) clearTimeout(timerRef.current)
+    },
+    []
+  )
 
-  useEffect(() => {
-    if (!shown) return
-    const onScroll = () => hide()
-    const onResize = () => hide()
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') hide()
-    }
-    window.addEventListener('scroll', onScroll, { passive: true, capture: true })
-    window.addEventListener('resize', onResize)
-    window.addEventListener('keydown', onKeyDown)
-    return () => {
-      window.removeEventListener('scroll', onScroll, { capture: true })
-      window.removeEventListener('resize', onResize)
-      window.removeEventListener('keydown', onKeyDown)
-    }
-  }, [shown])
+  const tipTarget = shown ? window : null
+  useEventListener(tipTarget, 'scroll', hide, { capture: true, passive: true })
+  useEventListener(tipTarget, 'resize', hide)
+  useEventListener(tipTarget, 'keydown', (event) => {
+    if (event.key === 'Escape') hide()
+  })
 
   const currentIcon = selected && selectedIcon ? selectedIcon : icon
   return (
-    <span ref={wrapperRef} className="sc-icon-button" role="none">
+    <span
+      ref={wrapperRef}
+      className="sc-icon-button"
+      role="none"
+      onFocus={(event) => showOnKeyboardFocus(event.target)}
+      onBlur={hide}
+      onPointerEnter={() => show(HOVER_DELAY_MS)}
+      onPointerLeave={hide}
+      onPointerDown={hide}
+    >
       <mdui-button-icon
         ref={buttonRef}
         variant={selected ? 'tonal' : 'standard'}

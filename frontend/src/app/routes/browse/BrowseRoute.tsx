@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useI18n } from '../../../hooks/use-i18n'
 import { ui, useUiStore } from '../../../lib/store/ui.store'
+import { useCompact } from '../../../lib/ui/use-compact'
 import { useViewStore, view } from '../../../lib/store/view.store'
 import { selection } from '../../../lib/store/selection.store'
 import { search, searchTarget } from '../../../lib/store/search.store'
@@ -33,7 +34,7 @@ function BrowsePageContent({ path }: { path: string }) {
   const { t } = useI18n()
   const navigate = useNavigate()
   const location = useLocation()
-  const compact = useUiStore((state) => state.compact)
+  const compact = useCompact()
   const details = useUiStore((state) => state.details)
   const mode = useViewStore((state) => state.mode)
   const density = useViewStore((state) => state.density)
@@ -228,7 +229,14 @@ function BrowsePageContent({ path }: { path: string }) {
           external: Boolean(root?.shared_externally),
           encrypted,
           unlocked,
-          broken: Boolean(root?.broken_reason)
+          broken: Boolean(root?.broken_reason),
+          openMenus: {
+            type: state.typeMenuOpen,
+            date: state.dateMenuOpen,
+            sort: state.sortMenuOpen,
+            new: state.newMenuOpen,
+            overflow: state.overflowOpen
+          }
         }}
         actions={{
           onNavigate: (next) => void navigate(`/b${next}`),

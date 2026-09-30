@@ -2,9 +2,11 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useMemo, useReducer, useRef } from 'react'
 import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useI18n } from '../hooks/use-i18n'
+import { useOutsideDismiss } from '../hooks/use-outside-dismiss'
 import { isUnauthenticated, logoutMutation, screenOf, sessionQuery, setupRequiredQuery } from '../lib/query/session'
 import { search, searchTarget, useSearchStore } from '../lib/store/search.store'
 import { ui, useUiStore } from '../lib/store/ui.store'
+import { useCompact } from '../lib/ui/use-compact'
 import { JobTray } from '../features/jobs/JobTray'
 import { NavigationBar, type NavigationBarItem } from '../lib/ui/NavigationBar'
 import { NavigationDrawer, type NavItem, type RootItem } from '../features/account/navigation/NavigationDrawer'
@@ -14,9 +16,7 @@ import { UploadTray } from '../features/uploads/UploadTray'
 import '../styles/app/shell.css.ts'
 import {
   browsePathFromUrl,
-  useAccountMenuDismissal,
   useBrowsePathState,
-  useCompactResize,
   useShellKeyboardShortcuts,
   useShellLiveInvalidation,
   useShellRouteTransitions,
@@ -38,7 +38,7 @@ export function AppShell() {
   const { t } = useI18n()
   const location = useLocation()
   const navigate = useNavigate()
-  const compact = useUiStore((state) => state.compact)
+  const compact = useCompact()
   const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed)
   const searchOpen = useSearchStore((state) => state.open)
   const searchScope = useSearchStore((state) => state.scope)
@@ -63,8 +63,7 @@ export function AppShell() {
   const accountMenuRef = useRef<HTMLDivElement | null>(null)
   const logout = useMutation(logoutMutation())
 
-  useCompactResize()
-  useAccountMenuDismissal(accountMenuOpen, accountMenuRef, setShell)
+  useOutsideDismiss(accountMenuOpen, accountMenuRef, () => setShell({ accountMenuOpen: false }))
   useShellRouteTransitions(compact, location.pathname, location.search, screen, setShell)
   useBrowsePathState(location.pathname, location.search, setShell)
   useShellLiveInvalidation(screen)

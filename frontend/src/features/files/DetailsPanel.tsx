@@ -8,7 +8,7 @@ import { formatBytes } from '../../lib/format/bytes'
 import { formatEntrySize } from '../../lib/format/entry-size'
 import { formatModifiedDateNs } from '../../lib/i18n'
 import { useI18n } from '../../hooks/use-i18n'
-import { useUiStore } from '../../lib/store/ui.store'
+import { useCompact } from '../../lib/ui/use-compact'
 import { Button } from '../../lib/ui/Button'
 import { IconButton } from '../../lib/ui/IconButton'
 import { Icon } from '../../lib/ui/Icon'
@@ -62,7 +62,7 @@ export function DetailsPanel({
   onContextMenu
 }: DetailsPanelProps) {
   const { t } = useI18n()
-  const compact = useUiStore((state) => state.compact)
+  const compact = useCompact()
   const panel = useRef<HTMLElement>(null)
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose

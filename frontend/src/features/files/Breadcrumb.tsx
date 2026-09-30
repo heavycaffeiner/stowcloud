@@ -1,7 +1,7 @@
-import { Fragment, useEffect, useId, useRef, useState } from 'react'
+import { Fragment, useId, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import { useI18n } from '../../hooks/use-i18n'
-import { useUiStore } from '../../lib/store/ui.store'
+import { useCompact } from '../../lib/ui/use-compact'
 import { Menu } from '../../lib/ui/Menu'
 import { Icon } from '../../lib/ui/Icon'
 
@@ -17,23 +17,9 @@ export interface BreadcrumbProps {
 
 export function Breadcrumb({ crumbs, onNavigate }: BreadcrumbProps) {
   const { t } = useI18n()
-  const compact = useUiStore((state) => state.compact)
+  const compact = useCompact()
   const menuId = useId()
-  const menuRef = useRef<HTMLDivElement>(null)
   const [menu, setMenu] = useState({ open: false, pos: { x: 0, y: 0 } })
-
-  useEffect(() => {
-    if (!menu.open) return
-    let cancelled = false
-    const menuElement = menuRef.current?.closest('mdui-menu') as
-      (HTMLElement & { updateComplete?: Promise<boolean> }) | null
-    void Promise.resolve(menuElement?.updateComplete).then(() => {
-      if (!cancelled) menuRef.current?.querySelector<HTMLButtonElement>('button')?.focus()
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [menu.open])
 
   const shouldCollapse = crumbs.length > (compact ? 2 : 4)
   const collapsedCrumbs = shouldCollapse ? crumbs.slice(compact ? 0 : 1, compact ? -1 : -2) : []
@@ -106,7 +92,6 @@ export function Breadcrumb({ crumbs, onNavigate }: BreadcrumbProps) {
           y={menu.pos.y}
         >
           <div
-            ref={menuRef}
             id={menuId}
             className="sc-browse-new-menu sc-breadcrumb-menu"
             role="menu"

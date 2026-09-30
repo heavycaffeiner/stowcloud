@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { useBeforeUnload } from '../../../../hooks/use-before-unload'
 import type { Blocker } from 'react-router-dom'
 import type { EditActions } from './use-edit-state'
 
@@ -13,13 +14,5 @@ export function useEditNavigation({ dirty, blocker, actions }: EditNavigationOpt
     actions.setLeaveDialog(blocker.state === 'blocked')
   }, [actions, blocker.state])
 
-  useEffect(() => {
-    if (!dirty) return
-    const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault()
-      event.returnValue = ''
-    }
-    window.addEventListener('beforeunload', onBeforeUnload)
-    return () => window.removeEventListener('beforeunload', onBeforeUnload)
-  }, [dirty])
+  useBeforeUnload(dirty)
 }

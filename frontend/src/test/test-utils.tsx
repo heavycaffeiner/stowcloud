@@ -32,38 +32,20 @@ if (typeof Range.prototype.getBoundingClientRect !== 'function') {
   Range.prototype.getBoundingClientRect = () => new DOMRect()
 }
 
-function normalizeMediaQuery(query: MediaQueryList): MediaQueryList {
-  const addEventListener = typeof query.addEventListener === 'function' ? query.addEventListener.bind(query) : undefined
-  const removeEventListener =
-    typeof query.removeEventListener === 'function' ? query.removeEventListener.bind(query) : undefined
-  return Object.assign(query, {
-    addListener(listener: (event: MediaQueryListEvent) => void): void {
-      addEventListener?.('change', listener)
-    },
-    removeListener(listener: (event: MediaQueryListEvent) => void): void {
-      removeEventListener?.('change', listener)
+// jsdom has no matchMedia, and the one mdui's ssr-window fills in returns an empty object.
+globalThis.matchMedia = (media: string) =>
+  ({
+    matches: false,
+    media,
+    onchange: null,
+    addListener(): void {},
+    removeListener(): void {},
+    addEventListener(): void {},
+    removeEventListener(): void {},
+    dispatchEvent(): boolean {
+      return false
     }
-  })
-}
-
-if (typeof globalThis.matchMedia !== 'function') {
-  globalThis.matchMedia = (media: string) =>
-    normalizeMediaQuery({
-      matches: false,
-      media,
-      onchange: null,
-      addListener(): void {},
-      removeListener(): void {},
-      addEventListener(): void {},
-      removeEventListener(): void {},
-      dispatchEvent(): boolean {
-        return false
-      }
-    } as MediaQueryList)
-} else {
-  const nativeMatchMedia = globalThis.matchMedia.bind(globalThis)
-  globalThis.matchMedia = (media: string) => normalizeMediaQuery(nativeMatchMedia(media))
-}
+  }) as MediaQueryList
 
 import { setLocale } from '../lib/i18n'
 import { I18nextProvider } from 'react-i18next'

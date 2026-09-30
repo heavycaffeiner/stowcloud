@@ -1,7 +1,7 @@
 import { useEffect, type Dispatch, type RefObject } from 'react'
 import { swReady } from '../../lib/crypto/download-sw'
 import { startLiveInvalidation } from '../../lib/query/live'
-import { COMPACT_MAX_PX, ui } from '../../lib/store/ui.store'
+import { useEventListener } from '../../hooks/use-event-listener'
 import type { StatePatch } from '../../lib/merge-state'
 
 /** State that belongs to the mounted application shell, not to a route. */
@@ -25,39 +25,6 @@ export function browsePathFromUrl(pathname: string): string | null {
   } catch {
     return pathname.slice('/b'.length) || '/'
   }
-}
-
-/** Keeps the compact layout flag synchronized with the viewport. */
-export function useCompactResize(): void {
-  useEffect(() => {
-    const resize = (): void => ui.setCompact(window.innerWidth < COMPACT_MAX_PX)
-    window.addEventListener('resize', resize)
-    resize()
-    return () => window.removeEventListener('resize', resize)
-  }, [])
-}
-
-/** Closes the account menu when focus moves outside it or Escape is pressed. */
-export function useAccountMenuDismissal(
-  open: boolean,
-  menuRef: RefObject<HTMLDivElement | null>,
-  setShell: SetShellState
-): void {
-  useEffect(() => {
-    if (!open) return
-    const onPointerDown = (event: PointerEvent): void => {
-      if (!menuRef.current?.contains(event.target as Node)) setShell({ accountMenuOpen: false })
-    }
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setShell({ accountMenuOpen: false })
-    }
-    window.addEventListener('pointerdown', onPointerDown, true)
-    window.addEventListener('keydown', onKeyDown)
-    return () => {
-      window.removeEventListener('pointerdown', onPointerDown, true)
-      window.removeEventListener('keydown', onKeyDown)
-    }
-  }, [menuRef, open, setShell])
 }
 
 /** Resets transient drawers when navigation or the layout mode changes. */
@@ -93,24 +60,19 @@ export function useShellLiveInvalidation(screen: string): void {
 
 /** Binds the global search shortcuts while the browser shell is active. */
 export function useShellKeyboardShortcuts(screen: string, openSearch: () => void): void {
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (screen !== 'browser') return
-      const isInput =
-        event.target instanceof HTMLInputElement ||
-        event.target instanceof HTMLTextAreaElement ||
-        (event.target instanceof HTMLElement && event.target.isContentEditable)
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
-        event.preventDefault()
-        openSearch()
-      } else if (!isInput && event.key === '/' && !event.ctrlKey && !event.metaKey && !event.altKey) {
-        event.preventDefault()
-        openSearch()
-      }
+  useEventListener(screen === 'browser' ? window : null, 'keydown', (event) => {
+    const isInput =
+      event.target instanceof HTMLInputElement ||
+      event.target instanceof HTMLTextAreaElement ||
+      (event.target instanceof HTMLElement && event.target.isContentEditable)
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+      event.preventDefault()
+      openSearch()
+    } else if (!isInput && event.key === '/' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      event.preventDefault()
+      openSearch()
     }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [openSearch, screen])
+  })
 }
 
 /** Publishes the tray stack's top edge for overlays that need to clear it. */

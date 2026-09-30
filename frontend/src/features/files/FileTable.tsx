@@ -2,7 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 import type { KeyboardEvent, MouseEvent as ReactMouseEvent } from 'react'
 import type { Entry, Perms, SortKey } from '../../lib/api/types'
 import { selection, useSelectionStore } from '../../lib/store/selection.store'
-import { useUiStore } from '../../lib/store/ui.store'
+import { useCompact } from '../../lib/ui/use-compact'
 import { useViewStore, view } from '../../lib/store/view.store'
 import { useI18n } from '../../hooks/use-i18n'
 import {
@@ -59,7 +59,7 @@ export const FileTable = forwardRef<FileViewHandle, FileTableProps>(function Fil
   ref
 ) {
   const { t } = useI18n()
-  const compact = useUiStore((state) => state.compact)
+  const compact = useCompact()
   const density = useViewStore((state) => state.density)
   const sortKey = useViewStore((state) => state.sortKey)
   const sortOrder = useViewStore((state) => state.sortOrder)

@@ -47,6 +47,7 @@ type BrowseToolbarModel = {
   encrypted: boolean
   unlocked: boolean
   broken: boolean
+  openMenus: { type: boolean; date: boolean; sort: boolean; new: boolean; overflow: boolean }
 }
 
 type BrowseToolbarActions = {
@@ -79,7 +80,8 @@ export function BrowseToolbar(props: ToolbarProps) {
     external,
     encrypted,
     unlocked,
-    broken
+    broken,
+    openMenus
   } = model
   const { onNavigate, onUnlock, onFilter, onRefresh, onToggleView, onToggleDetails, onSort, onNew, onOverflow } =
     actions
@@ -125,6 +127,8 @@ export function BrowseToolbar(props: ToolbarProps) {
               type="button"
               className={`sc-browse-filter-pill${filterType !== 'all' ? ' sc-browse-filter-pill-active' : ''}`}
               aria-label={t('browse.filter_type')}
+              aria-haspopup="menu"
+              aria-expanded={openMenus.type}
               onClick={(event) => onFilter('type', event)}
             >
               <span>{filterTypeLabel}</span>
@@ -134,6 +138,8 @@ export function BrowseToolbar(props: ToolbarProps) {
               type="button"
               className={`sc-browse-filter-pill${filterDate !== 'any' ? ' sc-browse-filter-pill-active' : ''}`}
               aria-label={t('browse.filter_date')}
+              aria-haspopup="menu"
+              aria-expanded={openMenus.date}
               onClick={(event) => onFilter('date', event)}
             >
               <span>{filterDateLabel}</span>
@@ -167,6 +173,8 @@ export function BrowseToolbar(props: ToolbarProps) {
               type="button"
               className="sc-browse-action-btn sc-icon-button"
               aria-label={sortLabel}
+              aria-haspopup="menu"
+              aria-expanded={openMenus.sort}
               onClick={onSort}
             >
               <Icon name="sort" size={18} />
@@ -175,7 +183,14 @@ export function BrowseToolbar(props: ToolbarProps) {
         ) : (
           <>
             {canCreate ? (
-              <button type="button" className="sc-browse-fab-btn" aria-label={t('browse.new')} onClick={onNew}>
+              <button
+                type="button"
+                className="sc-browse-fab-btn"
+                aria-label={t('browse.new')}
+                aria-haspopup="menu"
+                aria-expanded={openMenus.new}
+                onClick={onNew}
+              >
                 <Icon name="add" size={20} />
               </button>
             ) : null}
@@ -183,6 +198,8 @@ export function BrowseToolbar(props: ToolbarProps) {
               type="button"
               className="sc-browse-action-btn sc-icon-button"
               aria-label={sortLabel}
+              aria-haspopup="menu"
+              aria-expanded={openMenus.sort}
               onClick={onSort}
             >
               <Icon name="sort" size={20} />
@@ -191,6 +208,8 @@ export function BrowseToolbar(props: ToolbarProps) {
               type="button"
               className="sc-browse-action-btn sc-icon-button"
               aria-label={t('browse.more')}
+              aria-haspopup="menu"
+              aria-expanded={openMenus.overflow}
               onClick={onOverflow}
             >
               <Icon name="more-vert" size={20} />
