@@ -78,7 +78,7 @@ function supportsTransferableStreams(): boolean {
   if (transferableStreamsSupported !== null) return transferableStreamsSupported
   try {
     const probe = new ReadableStream()
-    new MessageChannel().port1.postMessage(probe, [probe as unknown as Transferable])
+    new MessageChannel().port1.postMessage(probe, [probe])
     transferableStreamsSupported = true
   } catch {
     transferableStreamsSupported = false
