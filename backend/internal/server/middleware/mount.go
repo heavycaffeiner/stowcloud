@@ -41,6 +41,8 @@ const (
 	KeyCause contextKey = "sc.cause"
 	// KeyAuthority holds the scheme and host the boundary admitted.
 	KeyAuthority contextKey = "sc.authority"
+	// KeyPeer holds the transport peer, before any forwarding header is read.
+	KeyPeer contextKey = "sc.peer"
 )
 
 // Authority is the scheme and host a request arrived on, with the scheme
@@ -93,7 +95,11 @@ func Global(d Deps) ([]gin.HandlerFunc, error) {
 		func(c *gin.Context) {
 			client := resolveClient(c, d)
 			c.Set(string(KeyClient), client)
-			c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), KeyClient, client))
+			ctx := context.WithValue(c.Request.Context(), KeyClient, client)
+			if peer, err := remoteAddr(c.Request.RemoteAddr); err == nil {
+				ctx = context.WithValue(ctx, KeyPeer, peer)
+			}
+			c.Request = c.Request.WithContext(ctx)
 			c.Next()
 		},
 		func(c *gin.Context) { boundaryHandler(c, d) },
@@ -430,6 +436,12 @@ func ClientOf(c *gin.Context) netip.Addr {
 		}
 	}
 	return Unroutable()
+}
+
+// PeerFrom reads the transport peer from a request context.
+func PeerFrom(ctx context.Context) (netip.Addr, bool) {
+	peer, ok := ctx.Value(KeyPeer).(netip.Addr)
+	return peer, ok
 }
 
 // ClientFrom reads the resolved client address from a request context.

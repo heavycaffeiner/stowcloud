@@ -9,8 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/config"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
@@ -47,18 +45,18 @@ func NewSetupHandlers(d SetupDeps) *SetupHandlers {
 
 type SetupHandlers struct{ d SetupDeps }
 
-func (h *SetupHandlers) Get(c *gin.Context) {
+type setupStateOutput struct{ Body SetupStateView }
+
+func (h *SetupHandlers) Get(ctx context.Context, _ *struct{}) (*setupStateOutput, error) {
 	if h.d.Gate == nil {
-		c.JSON(http.StatusOK, SetupStateOf(false))
-		return
+		return &setupStateOutput{Body: SetupStateOf(false)}, nil
 	}
-	open, err := h.d.Gate.Open(c.Request.Context())
+	open, err := h.d.Gate.Open(ctx)
 	if err != nil {
 		h.d.Logger.Warn("the setup state could not be read", "error", err)
-		c.JSON(http.StatusOK, SetupStateOf(false))
-		return
+		return &setupStateOutput{Body: SetupStateOf(false)}, nil
 	}
-	c.JSON(http.StatusOK, SetupStateOf(open))
+	return &setupStateOutput{Body: SetupStateOf(open)}, nil
 }
 
 type setupRequest struct {
@@ -75,31 +73,46 @@ type setupShareRequest struct {
 	Host string `json:"host"`
 }
 
-func (h *SetupHandlers) Post(c *gin.Context) {
+type setupInput struct{ Body setupRequest }
+
+// setupResult is the created account, or the check results when the network
+// settings were refused. Exactly one is set.
+type setupResult struct {
+	*SetupOutcomeView
+	*ApplyOutcomeView
+}
+
+type setupOutput struct {
+	Status int
+	Body   setupResult
+}
+
+func (h *SetupHandlers) Post(ctx context.Context, in *setupInput) (*setupOutput, error) {
 	if h.d.Gate == nil {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.SetupComplete, Key: "setup.complete"})
-		return
+		return nil, apierr.AsClassified(apierr.SetupComplete, "setup.complete")
+	}
+	req := in.Body
+	if req.Username == "" || req.Password == "" {
+		return nil, apierr.AsClassified(apierr.Malformed, "")
 	}
 
-	var req setupRequest
-	if err := middleware.DecodeJSON(c.Request.Body, &req); err != nil || req.Username == "" || req.Password == "" {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
-		return
+	var selfHost string
+	if a, ok := middleware.AuthorityFrom(ctx); ok {
+		selfHost = config.HostOnly(a.Host)
 	}
-
 	network := networkOf(req)
 	findings := config.Section(config.Input{
 		Section: "network", Body: network,
-		SelfHost: config.HostOnly(c.Request.Host), DataDir: h.d.DataDir,
+		SelfHost: selfHost, DataDir: h.d.DataDir,
 		Lockout: config.LockoutWarns,
 	})
 	if Blocking(findings) {
-		c.JSON(http.StatusUnprocessableEntity, ApplyOutcomeOf(false, false, false, findings))
-		return
+		refused := ApplyOutcomeOf(false, false, false, findings)
+		return &setupOutput{Status: http.StatusUnprocessableEntity, Body: setupResult{ApplyOutcomeView: &refused}}, nil
 	}
 
 	var userID int64
-	err := h.d.Gate.Use(c.Request.Context(), req.Token, func(ctx context.Context) error {
+	err := h.d.Gate.Use(ctx, req.Token, func(ctx context.Context) error {
 		id, err := h.d.Auth.CreateAdmin(ctx, req.Username, "", secret.New([]byte(req.Password)))
 		if err != nil {
 			return err
@@ -111,16 +124,15 @@ func (h *SetupHandlers) Post(c *gin.Context) {
 		return h.d.GrantEveryShare(ctx, id)
 	})
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return nil, err
 	}
 
 	out := SetupOutcomeOf(userID, req.Username, findings)
 	if h.d.State != nil {
-		if err := h.d.State.MergeSettings(c.Request.Context(), "network", network); err != nil {
+		if err := h.d.State.MergeSettings(ctx, "network", network); err != nil {
 			h.d.Logger.Error("the first-run network settings were not stored", "error", err)
 		} else if h.d.Apply != nil {
-			h.d.Apply(c.Request.Context())
+			h.d.Apply(ctx)
 		}
 	}
 
@@ -129,13 +141,13 @@ func (h *SetupHandlers) Post(c *gin.Context) {
 			h.d.Logger.Warn("the first share was not created", "error", errors.New("share creation unavailable"))
 			out.ShareFailed = true
 		} else {
-			share, err := h.d.CreateShare(c.Request.Context(), files.ShareSpec{Name: req.FirstShare.Name, Host: req.FirstShare.Host})
+			share, err := h.d.CreateShare(ctx, files.ShareSpec{Name: req.FirstShare.Name, Host: req.FirstShare.Host})
 			if err != nil {
 				h.d.Logger.Warn("the first share was not created", "error", err)
 				out.ShareFailed = true
 			} else {
 				if h.d.GrantEveryShare != nil {
-					if err := h.d.GrantEveryShare(c.Request.Context(), userID); err != nil {
+					if err := h.d.GrantEveryShare(ctx, userID); err != nil {
 						h.d.Logger.Warn("the first share was created without a grant", "error", err)
 					}
 				}
@@ -144,7 +156,7 @@ func (h *SetupHandlers) Post(c *gin.Context) {
 			}
 		}
 	}
-	c.JSON(http.StatusOK, out)
+	return &setupOutput{Status: http.StatusOK, Body: setupResult{SetupOutcomeView: &out}}, nil
 }
 
 func networkOf(req setupRequest) map[string]any {

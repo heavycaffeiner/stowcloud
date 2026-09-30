@@ -7,12 +7,12 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/jobs"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/web"
@@ -75,10 +75,12 @@ func (e *Engine) acquireArchive() (func(), bool) {
 // the loopback. To anyone else the address is not there, for the reason the
 // rest of this API is not there to them. Liveness is a small thing to leak,
 // and a surface that answers one stranger answers every scanner.
-func (e *Engine) health(c *gin.Context) {
-	if !middleware.IsPrivateClient(middleware.ClientOf(c)) {
-		c.AbortWithStatus(http.StatusNotFound)
-		return
+type healthOutput struct{ Body Health }
+
+// health answers only a client on a private address; anyone else sees a 404.
+func (e *Engine) health(ctx context.Context, _ *struct{}) (*healthOutput, error) {
+	if !middleware.IsPrivateClient(middleware.ClientFrom(ctx)) {
+		return nil, apierr.AsClassified(apierr.NotFound, "")
 	}
 
 	var reasons []HealthReason
@@ -90,7 +92,7 @@ func (e *Engine) health(c *gin.Context) {
 
 	h := HealthOf(status, reasons)
 	h.Revision = e.Revision
-	c.JSON(http.StatusOK, h)
+	return &healthOutput{Body: h}, nil
 }
 
 func (e *Engine) guardDavLock(ctx context.Context, share uint32, path string, principal int64) error {

@@ -9,8 +9,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
@@ -52,219 +50,214 @@ type adminMemberRequest struct {
 	User string `json:"user"`
 }
 
-func (h *AdminUsersHandlers) UsersList(c *gin.Context) {
-	rows, err := h.d.Auth.ListUsers(c.Request.Context())
-	if err != nil {
-		adminFail(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, UsersOf(rows))
+type userPathInput struct {
+	ID string `path:"id"`
 }
-func (h *AdminUsersHandlers) UsersCreate(c *gin.Context) {
-	var req adminCreateUserRequest
-	if !adminDecode(c, &req) {
-		return
-	}
-	id, err := h.d.Auth.CreateUser(c.Request.Context(), req.Login, req.Display, secret.New([]byte(req.Password)))
-	if err != nil {
-		adminFail(c, err)
-		return
-	}
-	row, err := h.d.Auth.UserByID(c.Request.Context(), id)
-	if err != nil {
-		adminFail(c, err)
-		return
-	}
-	c.JSON(http.StatusCreated, UserOf(row))
+type userCreateInput struct{ Body adminCreateUserRequest }
+type userUpdateInput struct {
+	ID   string `path:"id"`
+	Body adminUpdateUserRequest
 }
-func (h *AdminUsersHandlers) UsersUpdate(c *gin.Context) {
-	caller, _ := middleware.UserOf(c)
-	target, ok := adminPathID(c)
+type groupCreateInput struct{ Body groupRequest }
+type groupUpdateInput struct {
+	ID   string `path:"id"`
+	Body groupRequest
+}
+type memberAddInput struct {
+	ID   string `path:"id"`
+	Body adminMemberRequest
+}
+type memberRemoveInput struct {
+	ID   string `path:"id"`
+	User string `path:"user"`
+}
+type auditInput struct {
+	Event  string `query:"event"`
+	Before string `query:"before"`
+	Limit  string `query:"limit"`
+}
+
+type usersOutput struct{ Body []UserView }
+type userOutput struct {
+	Status int
+	Body   UserView
+}
+type groupsOutput struct{ Body []GroupView }
+type groupOutput struct {
+	Status int
+	Body   GroupView
+}
+type auditOutput struct{ Body AuditPageView }
+
+func (h *AdminUsersHandlers) UsersList(ctx context.Context, _ *struct{}) (*usersOutput, error) {
+	rows, err := h.d.Auth.ListUsers(ctx)
+	if err != nil {
+		return nil, adminErr(err)
+	}
+	return &usersOutput{Body: UsersOf(rows)}, nil
+}
+
+func (h *AdminUsersHandlers) UsersCreate(ctx context.Context, in *userCreateInput) (*userOutput, error) {
+	req := in.Body
+	id, err := h.d.Auth.CreateUser(ctx, req.Login, req.Display, secret.New([]byte(req.Password)))
+	if err != nil {
+		return nil, adminErr(err)
+	}
+	row, err := h.d.Auth.UserByID(ctx, id)
+	if err != nil {
+		return nil, adminErr(err)
+	}
+	return &userOutput{Status: http.StatusCreated, Body: UserOf(row)}, nil
+}
+
+func (h *AdminUsersHandlers) UsersUpdate(ctx context.Context, in *userUpdateInput) (*userOutput, error) {
+	caller, err := middleware.UserFrom(ctx)
+	if err != nil {
+		return nil, err
+	}
+	target, ok := positiveID(in.ID)
 	if !ok {
-		adminNotFound(c)
-		return
+		return nil, errNotFound()
 	}
-	var req adminUpdateUserRequest
-	if !adminDecode(c, &req) {
-		return
-	}
+	req := in.Body
 	if req.Disabled != nil && *req.Disabled && target == caller {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Denied})
-		return
+		return nil, apierr.AsClassified(apierr.Denied, "")
 	}
-	ctx := c.Request.Context()
 	if req.Password != nil {
-		if err := h.d.Auth.SetPassword(ctx, target, secret.New([]byte(*req.Password))); err != nil {
-			adminFail(c, err)
-			return
+		if err = h.d.Auth.SetPassword(ctx, target, secret.New([]byte(*req.Password))); err != nil {
+			return nil, adminErr(err)
 		}
 	}
 	if req.ClearQuota {
-		if err := h.d.Auth.SetQuota(ctx, target, nil); err != nil {
-			adminFail(c, err)
-			return
-		}
+		err = h.d.Auth.SetQuota(ctx, target, nil)
 	} else if req.Quota != nil {
-		if err := h.d.Auth.SetQuota(ctx, target, req.Quota); err != nil {
-			adminFail(c, err)
-			return
-		}
+		err = h.d.Auth.SetQuota(ctx, target, req.Quota)
+	}
+	if err != nil {
+		return nil, adminErr(err)
 	}
 	if req.Disabled != nil {
-		var err error
 		if *req.Disabled {
 			err = h.d.Auth.DisableAccount(ctx, target)
 		} else {
 			err = h.d.Auth.EnableAccount(ctx, target)
 		}
 		if err != nil {
-			adminFail(c, err)
-			return
+			return nil, adminErr(err)
 		}
 	}
 	row, err := h.d.Auth.UserByID(ctx, target)
 	if err != nil {
-		adminFail(c, err)
-		return
+		return nil, adminErr(err)
 	}
-	c.JSON(http.StatusOK, UserOf(row))
+	return &userOutput{Status: http.StatusOK, Body: UserOf(row)}, nil
 }
-func (h *AdminUsersHandlers) UsersDelete(c *gin.Context) {
-	caller, _ := middleware.UserOf(c)
-	target, ok := adminPathID(c)
+
+func (h *AdminUsersHandlers) UsersDelete(ctx context.Context, in *userPathInput) (*noContentOutput, error) {
+	caller, err := middleware.UserFrom(ctx)
+	if err != nil {
+		return nil, err
+	}
+	target, ok := positiveID(in.ID)
 	if !ok {
-		adminNotFound(c)
-		return
+		return nil, errNotFound()
 	}
 	if target == caller {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Denied})
-		return
+		return nil, apierr.AsClassified(apierr.Denied, "")
 	}
 	if h.d.CleanupHome != nil {
-		if err := h.d.CleanupHome(c.Request.Context(), files.UserID(target)); err != nil {
+		if err = h.d.CleanupHome(ctx, files.UserID(target)); err != nil {
 			h.d.Logger.Warn("cleaning up deleted user home failed", "user", target, "error", err)
 		}
 	}
-	if err := h.d.Auth.DeleteUser(c.Request.Context(), target); err != nil {
-		adminFail(c, err)
-		return
+	if err = h.d.Auth.DeleteUser(ctx, target); err != nil {
+		return nil, adminErr(err)
 	}
-	c.Status(http.StatusNoContent)
-}
-func (h *AdminUsersHandlers) GroupsList(c *gin.Context) {
-	rows, err := h.d.Auth.ListGroups(c.Request.Context())
-	if err != nil {
-		adminFail(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, GroupsOf(rows))
-}
-func (h *AdminUsersHandlers) GroupsCreate(c *gin.Context) {
-	var req groupRequest
-	if !adminDecode(c, &req) {
-		return
-	}
-	id, err := h.d.Auth.CreateGroup(c.Request.Context(), req.Name)
-	if err != nil {
-		adminFail(c, err)
-		return
-	}
-	c.JSON(http.StatusCreated, GroupView{ID: strconv.FormatInt(id, 10), Name: req.Name, Members: []string{}})
-}
-func (h *AdminUsersHandlers) GroupsUpdate(c *gin.Context) {
-	id, ok := adminPathID(c)
-	if !ok {
-		adminNotFound(c)
-		return
-	}
-	var req groupRequest
-	if !adminDecode(c, &req) {
-		return
-	}
-	row, err := h.d.Auth.RenameGroup(c.Request.Context(), id, req.Name)
-	if err != nil {
-		adminFail(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, GroupOf(row))
-}
-func (h *AdminUsersHandlers) GroupsDelete(c *gin.Context) {
-	id, ok := adminPathID(c)
-	if !ok {
-		adminNotFound(c)
-		return
-	}
-	if err := h.d.Auth.DeleteGroup(c.Request.Context(), id); err != nil {
-		adminFail(c, err)
-		return
-	}
-	c.Status(http.StatusNoContent)
-}
-func (h *AdminUsersHandlers) MemberAdd(c *gin.Context) {
-	group, ok := adminPathID(c)
-	if !ok {
-		adminNotFound(c)
-		return
-	}
-	var req adminMemberRequest
-	if !adminDecode(c, &req) {
-		return
-	}
-	user, err := strconv.ParseInt(req.User, 10, 64)
-	if err != nil || user <= 0 {
-		adminNotFound(c)
-		return
-	}
-	if err = h.d.Auth.AddToGroup(c.Request.Context(), user, group); err != nil {
-		adminFail(c, err)
-		return
-	}
-	c.Status(http.StatusNoContent)
-}
-func (h *AdminUsersHandlers) MemberRemove(c *gin.Context) {
-	group, ok := adminPathID(c)
-	if !ok {
-		adminNotFound(c)
-		return
-	}
-	user, err := strconv.ParseInt(c.Param("user"), 10, 64)
-	if err != nil || user <= 0 {
-		adminNotFound(c)
-		return
-	}
-	if err = h.d.Auth.RemoveFromGroup(c.Request.Context(), user, group); err != nil {
-		adminFail(c, err)
-		return
-	}
-	c.Status(http.StatusNoContent)
-}
-func (h *AdminUsersHandlers) Audit(c *gin.Context) {
-	rows, next, err := h.d.Auth.AuditPage(c.Request.Context(), auth.AuditFilter{Event: c.Query("event"), Before: adminQueryInt(c.Query("before")), Limit: adminAuditLimit(c.Query("limit"))})
-	if err != nil {
-		adminFail(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, AuditPageOf(rows, next))
+	return &noContentOutput{Status: http.StatusNoContent}, nil
 }
 
-func adminDecode(c *gin.Context, v any) bool {
-	if err := middleware.DecodeJSON(c.Request.Body, v); err != nil {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
-		return false
+func (h *AdminUsersHandlers) GroupsList(ctx context.Context, _ *struct{}) (*groupsOutput, error) {
+	rows, err := h.d.Auth.ListGroups(ctx)
+	if err != nil {
+		return nil, adminErr(err)
 	}
-	return true
+	return &groupsOutput{Body: GroupsOf(rows)}, nil
 }
-func adminPathID(c *gin.Context) (int64, bool) {
-	n, err := strconv.ParseInt(c.Param("id"), 10, 64)
+
+func (h *AdminUsersHandlers) GroupsCreate(ctx context.Context, in *groupCreateInput) (*groupOutput, error) {
+	id, err := h.d.Auth.CreateGroup(ctx, in.Body.Name)
+	if err != nil {
+		return nil, adminErr(err)
+	}
+	return &groupOutput{Status: http.StatusCreated, Body: GroupView{ID: strconv.FormatInt(id, 10), Name: in.Body.Name, Members: []string{}}}, nil
+}
+
+func (h *AdminUsersHandlers) GroupsUpdate(ctx context.Context, in *groupUpdateInput) (*groupOutput, error) {
+	id, ok := positiveID(in.ID)
+	if !ok {
+		return nil, errNotFound()
+	}
+	row, err := h.d.Auth.RenameGroup(ctx, id, in.Body.Name)
+	if err != nil {
+		return nil, adminErr(err)
+	}
+	return &groupOutput{Status: http.StatusOK, Body: GroupOf(row)}, nil
+}
+
+func (h *AdminUsersHandlers) GroupsDelete(ctx context.Context, in *userPathInput) (*noContentOutput, error) {
+	id, ok := positiveID(in.ID)
+	if !ok {
+		return nil, errNotFound()
+	}
+	if err := h.d.Auth.DeleteGroup(ctx, id); err != nil {
+		return nil, adminErr(err)
+	}
+	return &noContentOutput{Status: http.StatusNoContent}, nil
+}
+
+func (h *AdminUsersHandlers) MemberAdd(ctx context.Context, in *memberAddInput) (*noContentOutput, error) {
+	group, ok := positiveID(in.ID)
+	if !ok {
+		return nil, errNotFound()
+	}
+	user, ok := positiveID(in.Body.User)
+	if !ok {
+		return nil, errNotFound()
+	}
+	if err := h.d.Auth.AddToGroup(ctx, user, group); err != nil {
+		return nil, adminErr(err)
+	}
+	return &noContentOutput{Status: http.StatusNoContent}, nil
+}
+
+func (h *AdminUsersHandlers) MemberRemove(ctx context.Context, in *memberRemoveInput) (*noContentOutput, error) {
+	group, ok := positiveID(in.ID)
+	if !ok {
+		return nil, errNotFound()
+	}
+	user, ok := positiveID(in.User)
+	if !ok {
+		return nil, errNotFound()
+	}
+	if err := h.d.Auth.RemoveFromGroup(ctx, user, group); err != nil {
+		return nil, adminErr(err)
+	}
+	return &noContentOutput{Status: http.StatusNoContent}, nil
+}
+
+func (h *AdminUsersHandlers) Audit(ctx context.Context, in *auditInput) (*auditOutput, error) {
+	rows, next, err := h.d.Auth.AuditPage(ctx, auth.AuditFilter{Event: in.Event, Before: queryInt(in.Before), Limit: adminAuditLimit(in.Limit)})
+	if err != nil {
+		return nil, adminErr(err)
+	}
+	return &auditOutput{Body: AuditPageOf(rows, next)}, nil
+}
+
+func positiveID(raw string) (int64, bool) {
+	n, err := strconv.ParseInt(raw, 10, 64)
 	return n, err == nil && n > 0
 }
-func adminQueryInt(raw string) int64 {
-	n, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil || n < 0 {
-		return 0
-	}
-	return n
-}
+
 func adminAuditLimit(raw string) int {
 	n, err := strconv.Atoi(raw)
 	if err != nil || n <= 0 {
@@ -275,14 +268,14 @@ func adminAuditLimit(raw string) int {
 	}
 	return n
 }
-func adminNotFound(c *gin.Context) { middleware.Refuse(c, apierr.Classified{Class: apierr.NotFound}) }
 
-// adminFail answers a missing file as a bare not-found, without the file
+func errNotFound() error { return apierr.AsClassified(apierr.NotFound, "") }
+
+// adminErr answers a missing file as a bare not-found, without the file
 // surface's reason key.
-func adminFail(c *gin.Context, err error) {
+func adminErr(err error) error {
 	if errors.Is(err, files.ErrNotFound) {
-		adminNotFound(c)
-		return
+		return errNotFound()
 	}
-	middleware.Fail(c, err)
+	return err
 }

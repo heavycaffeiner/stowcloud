@@ -3,44 +3,51 @@
 package search
 
 import (
+	"context"
+	"errors"
 	"net/http"
 
-	"github.com/gin-gonic/gin"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/search/controller"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 )
 
-func (m *Manager) IndexEstimate(c *gin.Context) {
-	result, estimate, err := m.Controller.Estimate(c.Request.Context())
+type indexEstimateOutput struct{ Body IndexEstimateView }
+type indexStatusOutput struct{ Body IndexStatusView }
+type indexBuildOutput struct {
+	Status int
+	Body   files.OperationView
+}
+
+func (m *Manager) IndexEstimate(ctx context.Context, _ *struct{}) (*indexEstimateOutput, error) {
+	result, estimate, err := m.Controller.Estimate(ctx)
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return nil, err
 	}
-	c.JSON(http.StatusOK, IndexEstimateOf(result, estimate))
+	return &indexEstimateOutput{Body: IndexEstimateOf(result, estimate)}, nil
 }
-func (m *Manager) IndexStatus(c *gin.Context) {
-	c.JSON(http.StatusOK, IndexStatusOf(m.Controller.IndexState()))
+
+func (m *Manager) IndexStatus(context.Context, *struct{}) (*indexStatusOutput, error) {
+	return &indexStatusOutput{Body: IndexStatusOf(m.Controller.IndexState())}, nil
 }
-func (m *Manager) IndexBuild(c *gin.Context) {
-	owner, _ := middleware.UserOf(c)
+
+func (m *Manager) IndexBuild(ctx context.Context, _ *struct{}) (*indexBuildOutput, error) {
+	owner, err := middleware.UserFrom(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if m.Controller == nil {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
-		return
+		return nil, apierr.AsClassified(apierr.SubsystemUnavailable, "")
 	}
-	op, err := m.Controller.StartIndexBuild(c.Request.Context(), owner)
-	if err == controller.ErrIndexDisabled {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable, Key: "search.index_disabled"})
-		return
+	op, err := m.Controller.StartIndexBuild(ctx, owner)
+	switch {
+	case errors.Is(err, controller.ErrIndexDisabled):
+		return nil, apierr.AsClassified(apierr.SubsystemUnavailable, "search.index_disabled")
+	case errors.Is(err, controller.ErrIndexBuilding):
+		return nil, apierr.AsClassified(apierr.Conflict, "search.index_building")
+	case err != nil:
+		return nil, err
 	}
-	if err == controller.ErrIndexBuilding {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Conflict, Key: "search.index_building"})
-		return
-	}
-	if err != nil {
-		middleware.Fail(c, err)
-		return
-	}
-	c.JSON(http.StatusAccepted, files.OperationOf(op))
+	return &indexBuildOutput{Status: http.StatusAccepted, Body: files.OperationOf(op)}, nil
 }

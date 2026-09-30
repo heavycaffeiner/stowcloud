@@ -8,12 +8,9 @@ package admin
 import (
 	"context"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/netip"
 	"time"
-
-	"github.com/gin-gonic/gin"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/config"
@@ -45,7 +42,6 @@ type SettingsDeps struct {
 	Settings     Settings
 	DataDir      string
 	Hardening    jail.Policy
-	UploadPatch  gin.HandlerFunc
 	SMBAgentView func() *SMBAgentView
 	PublishSMB   func(context.Context)
 	OnRestart    func()
@@ -59,64 +55,71 @@ func NewSettingsHandlers(d SettingsDeps) *SettingsHandlers {
 
 type SettingsHandlers struct{ d SettingsDeps }
 
-func (h *SettingsHandlers) Get(c *gin.Context) {
-	stored, err := h.d.State.Settings(c.Request.Context())
+type settingsGetInput struct {
+	CFConnectingIP string `header:"CF-Connecting-IP"`
+	XForwardedFor  string `header:"X-Forwarded-For"`
+}
+
+type settingsOutput struct{ Body SettingsView }
+
+func (h *SettingsHandlers) Get(ctx context.Context, in *settingsGetInput) (*settingsOutput, error) {
+	stored, err := h.d.State.Settings(ctx)
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return nil, err
 	}
 	if stored == nil {
 		stored = map[string]any{}
 	}
-	values := h.d.Settings.Values(c.Request.Context())
+	values := h.d.Settings.Values(ctx)
 	values.DataDir = h.d.DataDir
-	c.JSON(http.StatusOK, SettingsOf(config.Of(values, stored), h.hopOf(c), h.d.SMBAgentView()))
+	hop := h.hopOf(ctx, in.CFConnectingIP != "" || in.XForwardedFor != "")
+	return &settingsOutput{Body: SettingsOf(config.Of(values, stored), hop, h.d.SMBAgentView())}, nil
 }
 
-func (h *SettingsHandlers) Patch(c *gin.Context) {
-	section := c.Param("section")
-	if section == "upload" {
-		if h.d.UploadPatch == nil {
-			middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
-			return
-		}
-		h.d.UploadPatch(c)
-		return
-	}
+type settingsPatchInput struct {
+	Section string `path:"section"`
+	Body    map[string]any
+}
+
+// applyOutput answers 200 when the change was stored and 422 with the
+// findings that refused it.
+type applyOutput struct {
+	Status int
+	Body   ApplyOutcomeView
+}
+
+func (h *SettingsHandlers) Patch(ctx context.Context, in *settingsPatchInput) (*applyOutput, error) {
+	section, body := in.Section, in.Body
 	if !config.Known(section) {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
-		return
+		return nil, apierr.AsClassified(apierr.Unprocessable, "")
 	}
-	var body map[string]any
-	if err := middleware.DecodeJSON(c.Request.Body, &body); err != nil {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
-		return
+	if err := h.extractSecrets(ctx, section, body); err != nil {
+		return nil, err
 	}
-	if !h.extractSecrets(c, section, body) {
-		return
+	var selfHost string
+	if a, ok := middleware.AuthorityFrom(ctx); ok {
+		selfHost = config.HostOnly(a.Host)
 	}
 	findings := config.Section(config.Input{
 		Section:   section,
 		Body:      body,
-		SelfHost:  config.HostOnly(string(c.Request.Host)),
+		SelfHost:  selfHost,
 		DataDir:   h.d.DataDir,
-		HasSecret: section == "oidc" && h.d.Settings.HasConfigSecret(c.Request.Context(), secretOIDCClient),
+		HasSecret: section == "oidc" && h.d.Settings.HasConfigSecret(ctx, secretOIDCClient),
 		Lockout:   config.LockoutBlocks,
 	})
 	if Blocking(findings) {
-		c.JSON(http.StatusUnprocessableEntity, ApplyOutcomeOf(false, false, false, findings))
-		return
+		return &applyOutput{Status: http.StatusUnprocessableEntity, Body: ApplyOutcomeOf(false, false, false, findings)}, nil
 	}
-	if err := h.d.State.MergeSettings(c.Request.Context(), section, body); err != nil {
-		middleware.Fail(c, err)
-		return
+	if err := h.d.State.MergeSettings(ctx, section, body); err != nil {
+		return nil, err
 	}
 	restart := config.RestartRequiredFor(section, body)
 	if !restart {
-		h.d.Settings.Load(c.Request.Context())
+		h.d.Settings.Load(ctx)
 	}
 	if section == "smb" && h.d.PublishSMB != nil {
-		h.d.PublishSMB(c.Request.Context())
+		h.d.PublishSMB(ctx)
 	}
 	applied := !restart
 	if pin := h.pinnedBindFinding(section, body); pin != nil {
@@ -125,22 +128,26 @@ func (h *SettingsHandlers) Patch(c *gin.Context) {
 	}
 	out := ApplyOutcomeOf(true, applied, restart, findings)
 	if restart {
-		uploads, jobs := h.activeWork(c)
+		uploads, jobs := h.activeWork(ctx)
 		out = out.WithActiveWork(uploads, jobs)
 	}
-	c.JSON(http.StatusOK, out)
+	return &applyOutput{Status: http.StatusOK, Body: out}, nil
 }
 
-func (h *SettingsHandlers) Restart(c *gin.Context) {
-	if h.d.Settings.WouldLoosenHardening(c.Request.Context(), h.d.Hardening) {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Conflict, Key: "system.hardening_cannot_loosen"})
-		return
+type restartOutput struct {
+	Status int
+	Body   restartResult
+}
+
+func (h *SettingsHandlers) Restart(ctx context.Context, _ *struct{}) (*restartOutput, error) {
+	if h.d.Settings.WouldLoosenHardening(ctx, h.d.Hardening) {
+		return nil, apierr.AsClassified(apierr.Conflict, "system.hardening_cannot_loosen")
 	}
-	uploads, jobs := h.activeWork(c)
-	c.JSON(http.StatusAccepted, restartResult{Restarting: true, ActiveUploads: uploads, ActiveJobs: jobs})
+	uploads, jobs := h.activeWork(ctx)
 	if h.d.OnRestart != nil {
 		time.AfterFunc(restartGrace, h.d.OnRestart)
 	}
+	return &restartOutput{Status: http.StatusAccepted, Body: restartResult{Restarting: true, ActiveUploads: uploads, ActiveJobs: jobs}}, nil
 }
 
 type restartResult struct {
@@ -149,8 +156,8 @@ type restartResult struct {
 	ActiveJobs    int  `json:"active_jobs"`
 }
 
-func (h *SettingsHandlers) activeWork(c *gin.Context) (uploads, jobs int) {
-	w, err := h.d.State.CountActiveWork(c.Request.Context())
+func (h *SettingsHandlers) activeWork(ctx context.Context) (uploads, jobs int) {
+	w, err := h.d.State.CountActiveWork(ctx)
 	if err != nil {
 		if h.d.Logger != nil {
 			h.d.Logger.Warn("could not count the work a restart would interrupt", "error", err)
@@ -171,43 +178,31 @@ func (h *SettingsHandlers) pinnedBindFinding(section string, body map[string]any
 	return &config.Finding{Section: section, Field: "bind", ReasonKey: "settings.bind_pinned_by_flag", Args: []string{"stored", stored}}
 }
 
-func (h *SettingsHandlers) extractSecrets(c *gin.Context, section string, body map[string]any) bool {
+// extractSecrets moves the OIDC client secret out of the body into the secret
+// store, so it is never merged into the plain settings.
+func (h *SettingsHandlers) extractSecrets(ctx context.Context, section string, body map[string]any) error {
 	if section != "oidc" {
-		return true
+		return nil
 	}
 	raw, present := body["client_secret"]
 	if !present {
-		return true
+		return nil
 	}
 	delete(body, "client_secret")
 	plain, ok := raw.(string)
 	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
-		return false
+		return apierr.AsClassified(apierr.Unprocessable, "")
 	}
-	if err := h.d.Settings.StoreConfigSecret(c.Request.Context(), secretOIDCClient, plain); err != nil {
-		middleware.Fail(c, err)
-		return false
-	}
-	return true
+	return h.d.Settings.StoreConfigSecret(ctx, secretOIDCClient, plain)
 }
 
-func (h *SettingsHandlers) hopOf(c *gin.Context) HopView {
-	peer, err := peerAddress(c.Request.RemoteAddr)
-	client := middleware.ClientOf(c)
-	hop := HopView{Client: client.String(), ForwardedSeen: c.GetHeader("CF-Connecting-IP") != "" || c.GetHeader("X-Forwarded-For") != ""}
-	if err != nil {
+func (h *SettingsHandlers) hopOf(ctx context.Context, forwardedSeen bool) HopView {
+	hop := HopView{Client: middleware.ClientFrom(ctx).String(), ForwardedSeen: forwardedSeen}
+	peer, ok := middleware.PeerFrom(ctx)
+	if !ok {
 		return hop
 	}
 	hop.Peer = peer.String()
 	hop.PeerTrusted = middleware.PeerTrusted(peer, h.d.Settings.TrustedProxies())
 	return hop
-}
-
-func peerAddress(raw string) (netip.Addr, error) {
-	host, _, err := net.SplitHostPort(raw)
-	if err == nil {
-		return netip.ParseAddr(host)
-	}
-	return netip.ParseAddr(raw)
 }

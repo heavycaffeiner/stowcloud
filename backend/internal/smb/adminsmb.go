@@ -6,13 +6,9 @@ package smb
 import (
 	"context"
 	"log/slog"
-	"net/http"
 	"time"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/smb/agent"
 )
 
@@ -32,22 +28,23 @@ func NewAdminHandlers(d AdminDeps) *AdminHandlers {
 	return &AdminHandlers{d: d}
 }
 
-func (h *AdminHandlers) Apply(c *gin.Context) {
+type reportOutput struct{ Body SMBReportView }
+
+// Apply publishes the current shares to the SMB agent and answers its report.
+// The agent call outlives a dropped request so a half-applied state is not left.
+func (h *AdminHandlers) Apply(ctx context.Context, _ *struct{}) (*reportOutput, error) {
 	if h.d.Apply == nil {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable, Key: "smb.not_configured"})
-		return
+		return nil, apierr.AsClassified(apierr.SubsystemUnavailable, "smb.not_configured")
 	}
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), h.d.Timeout)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), h.d.Timeout)
 	defer cancel()
 	report, configured, err := h.d.Apply(ctx)
 	if !configured {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable, Key: "smb.not_configured"})
-		return
+		return nil, apierr.AsClassified(apierr.SubsystemUnavailable, "smb.not_configured")
 	}
 	if err != nil {
 		h.d.Logger.Warn("the SMB agent did not answer an apply", "error", err)
-		middleware.Refuse(c, apierr.Classified{Class: apierr.BadGateway, Key: "smb.agent_unreachable"})
-		return
+		return nil, apierr.AsClassified(apierr.BadGateway, "smb.agent_unreachable")
 	}
-	c.JSON(http.StatusOK, SMBReportOf(report))
+	return &reportOutput{Body: SMBReportOf(report)}, nil
 }

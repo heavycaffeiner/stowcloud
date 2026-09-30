@@ -95,11 +95,6 @@ func humaShareID(raw string) (files.ShareID, bool) {
 	return files.ShareID(narrowed), true
 }
 
-func humaGrantID(raw string) (int64, bool) {
-	n, err := strconv.ParseInt(raw, 10, 64)
-	return n, err == nil && n > 0
-}
-
 func adminUser(ctx context.Context) (int64, error) {
 	admin, err := files.OwnerFrom(ctx)
 	return int64(admin), err
@@ -248,7 +243,7 @@ func (h *SharesHandler) CreateGrant(ctx context.Context, in *grantCreateInput) (
 
 // UpdateGrant changes a grant's permissions.
 func (h *SharesHandler) UpdateGrant(ctx context.Context, in *grantUpdateInput) (*grantOutput, error) {
-	id, ok := humaGrantID(in.ID)
+	id, ok := positiveID(in.ID)
 	if !ok {
 		return nil, files.ErrNotFound
 	}
@@ -269,7 +264,7 @@ func (h *SharesHandler) UpdateGrant(ctx context.Context, in *grantUpdateInput) (
 
 // DeleteGrant removes a grant.
 func (h *SharesHandler) DeleteGrant(ctx context.Context, in *grantPathInput) (*noContentOutput, error) {
-	id, ok := humaGrantID(in.ID)
+	id, ok := positiveID(in.ID)
 	if !ok {
 		return nil, files.ErrNotFound
 	}

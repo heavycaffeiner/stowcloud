@@ -54,21 +54,21 @@ func (e *Engine) routes(router *gin.Engine) error {
 
 	resolve := files.Resolve(e.Core)
 
-	public.GET("/api/v1/system/health", e.health)
+	op(publicAPI, http.MethodGet, "/api/v1/system/health", "system.health", e.health)
 	setupRoutes := adminhttp.NewSetupHandlers(adminhttp.SetupDeps{
 		Auth: e.Auth, State: e.State, Gate: e.setup,
 		GrantEveryShare: e.Core.GrantEveryShare, CreateShare: e.Core.CreateShare,
 		Apply: e.Settings.Load, DataDir: e.dataDir, Logger: e.logger,
 	})
-	public.GET("/api/v1/system/setup", setupRoutes.Get)
-	public.POST("/api/v1/system/setup", middleware.LimitJSON, setupRoutes.Post)
+	op(publicAPI, http.MethodGet, "/api/v1/system/setup", "system.setup.state", setupRoutes.Get)
+	op(publicAPI, http.MethodPost, "/api/v1/system/setup", "system.setup.complete", setupRoutes.Post)
 	fsDeps := adminhttp.AdminFSDeps{Auth: e.Auth, Core: e.Core, DataDir: e.dataDir}
 	if e.setup != nil {
 		fsDeps.SetupVerify = e.setup.Verify
 	}
 	adminFS := adminhttp.NewAdminFSHandlers(fsDeps)
-	public.POST("/api/v1/system/setup/browse", middleware.LimitJSON, adminFS.SetupBrowse)
-	admin.GET("/api/v1/admin/fs", adminFS.Browse)
+	op(publicAPI, http.MethodPost, "/api/v1/system/setup/browse", "system.setup.browse", adminFS.SetupBrowse)
+	op(adminAPI, http.MethodGet, "/api/v1/admin/fs", "admin.fs.browse", adminFS.Browse)
 	session.GET("/api/v1/events", e.eventsSocket())
 
 	oidcRoutes := featureoidc.NewHandlers(featureoidc.Deps{
@@ -212,19 +212,19 @@ func (e *Engine) routes(router *gin.Engine) error {
 	op(adminAPI, http.MethodDelete, "/api/v1/encryption/{id}", "admin.encryption.disable", enc.Disable)
 
 	users := adminhttp.NewAdminUsersHandlers(adminhttp.AdminUsersDeps{Auth: e.Auth, CleanupHome: e.Core.CleanupHome, Logger: e.logger})
-	admin.GET("/api/v1/admin/users", users.UsersList)
-	admin.POST("/api/v1/admin/users", middleware.LimitJSON, users.UsersCreate)
-	admin.PATCH("/api/v1/admin/users/:id", middleware.LimitJSON, users.UsersUpdate)
-	admin.DELETE("/api/v1/admin/users/:id", users.UsersDelete)
+	op(adminAPI, http.MethodGet, "/api/v1/admin/users", "admin.users.list", users.UsersList)
+	op(adminAPI, http.MethodPost, "/api/v1/admin/users", "admin.users.create", users.UsersCreate)
+	op(adminAPI, http.MethodPatch, "/api/v1/admin/users/{id}", "admin.users.update", users.UsersUpdate)
+	op(adminAPI, http.MethodDelete, "/api/v1/admin/users/{id}", "admin.users.delete", users.UsersDelete)
 	op(adminAPI, http.MethodGet, "/api/v1/admin/users/{id}/oidc", "admin.users.oidc.get", oidcRoutes.AdminGet)
 	op(adminAPI, http.MethodDelete, "/api/v1/admin/users/{id}/oidc", "admin.users.oidc.delete", oidcRoutes.AdminDelete)
-	admin.GET("/api/v1/admin/groups", users.GroupsList)
-	admin.POST("/api/v1/admin/groups", middleware.LimitJSON, users.GroupsCreate)
-	admin.PATCH("/api/v1/admin/groups/:id", middleware.LimitJSON, users.GroupsUpdate)
-	admin.DELETE("/api/v1/admin/groups/:id", users.GroupsDelete)
-	admin.POST("/api/v1/admin/groups/:id/members", middleware.LimitJSON, users.MemberAdd)
-	admin.DELETE("/api/v1/admin/groups/:id/members/:user", users.MemberRemove)
-	admin.GET("/api/v1/admin/audit", users.Audit)
+	op(adminAPI, http.MethodGet, "/api/v1/admin/groups", "admin.groups.list", users.GroupsList)
+	op(adminAPI, http.MethodPost, "/api/v1/admin/groups", "admin.groups.create", users.GroupsCreate)
+	op(adminAPI, http.MethodPatch, "/api/v1/admin/groups/{id}", "admin.groups.update", users.GroupsUpdate)
+	op(adminAPI, http.MethodDelete, "/api/v1/admin/groups/{id}", "admin.groups.delete", users.GroupsDelete)
+	op(adminAPI, http.MethodPost, "/api/v1/admin/groups/{id}/members", "admin.groups.members.add", users.MemberAdd)
+	op(adminAPI, http.MethodDelete, "/api/v1/admin/groups/{id}/members/{user}", "admin.groups.members.remove", users.MemberRemove)
+	op(adminAPI, http.MethodGet, "/api/v1/admin/audit", "admin.audit", users.Audit)
 
 	shares := &adminhttp.SharesHandler{
 		Core: e.Core, MarkSearchIncomplete: e.searchController.MarkIncomplete,
@@ -254,15 +254,14 @@ func (e *Engine) routes(router *gin.Engine) error {
 		r, err := p.Publish(ctx)
 		return r, true, err
 	}, Logger: e.logger})
-	admin.POST("/api/v1/admin/smb/apply", smbAdmin.Apply)
-	admin.POST("/api/v1/admin/index/build", middleware.LimitJSON, e.searchHTTP.IndexBuild)
-	admin.GET("/api/v1/admin/index/estimate", e.searchHTTP.IndexEstimate)
-	admin.GET("/api/v1/admin/index/status", e.searchHTTP.IndexStatus)
+	op(adminAPI, http.MethodPost, "/api/v1/admin/smb/apply", "admin.smb.apply", smbAdmin.Apply)
+	op(adminAPI, http.MethodPost, "/api/v1/admin/index/build", "admin.index.build", e.searchHTTP.IndexBuild)
+	op(adminAPI, http.MethodGet, "/api/v1/admin/index/estimate", "admin.index.estimate", e.searchHTTP.IndexEstimate)
+	op(adminAPI, http.MethodGet, "/api/v1/admin/index/status", "admin.index.status", e.searchHTTP.IndexStatus)
 
 	settings := adminhttp.NewSettingsHandlers(adminhttp.SettingsDeps{
 		State: e.State, Auth: e.Auth, Settings: e.Settings,
 		DataDir: e.dataDir, Hardening: e.hardening,
-		UploadPatch: upload.SettingsPatch,
 		SMBAgentView: func() *adminhttp.SMBAgentView {
 			p := e.smbPublisherOf()
 			if p == nil {
@@ -272,10 +271,11 @@ func (e *Engine) routes(router *gin.Engine) error {
 		}, PublishSMB: e.publishSMBSettings,
 		OnRestart: e.Restart.Request, Logger: e.logger,
 	})
-	admin.GET("/api/v1/admin/settings", settings.Get)
+	op(adminAPI, http.MethodGet, "/api/v1/admin/settings", "admin.settings.get", settings.Get)
 	op(adminAPI, http.MethodGet, "/api/v1/admin/oidc/endpoints", "admin.oidc.endpoints", oidcRoutes.AdminEndpoints)
-	admin.PATCH("/api/v1/admin/settings/:section", middleware.LimitJSON, settings.Patch)
-	admin.POST("/api/v1/admin/system/restart", settings.Restart)
+	op(adminAPI, http.MethodPatch, "/api/v1/admin/settings/upload", "admin.settings.upload", upload.SettingsPatch)
+	op(adminAPI, http.MethodPatch, "/api/v1/admin/settings/{section}", "admin.settings.update", settings.Patch)
+	op(adminAPI, http.MethodPost, "/api/v1/admin/system/restart", "admin.system.restart", settings.Restart)
 	admin.GET("/api/v1/admin/openapi", func(c *gin.Context) { c.JSON(http.StatusOK, adminAPI.api.OpenAPI()) })
 
 	e.publicLinks = e.newPublicLinks()

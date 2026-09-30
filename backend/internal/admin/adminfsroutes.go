@@ -7,19 +7,15 @@ import (
 	"errors"
 	"io"
 	"io/fs"
-	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vault"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 )
 
 const adminHostFSEntryCap = 2000
@@ -44,13 +40,18 @@ func NewAdminFSHandlers(d AdminFSDeps) *AdminFSHandlers {
 
 type AdminFSHandlers struct{ d AdminFSDeps }
 
-func (h *AdminFSHandlers) Browse(c *gin.Context) {
-	listing, err := h.browseHost(c.Query("path"))
+type hostBrowseInput struct {
+	Path string `query:"path"`
+}
+
+type hostListingOutput struct{ Body HostListingView }
+
+func (h *AdminFSHandlers) Browse(_ context.Context, in *hostBrowseInput) (*hostListingOutput, error) {
+	listing, err := h.browseHost(in.Path)
 	if err != nil {
-		adminHostFSFail(c, err)
-		return
+		return nil, hostFSErr(err)
 	}
-	c.JSON(http.StatusOK, listing)
+	return &hostListingOutput{Body: listing}, nil
 }
 
 type adminSetupFSRequest struct {
@@ -58,25 +59,20 @@ type adminSetupFSRequest struct {
 	Path  string `json:"path"`
 }
 
-func (h *AdminFSHandlers) SetupBrowse(c *gin.Context) {
+type setupBrowseInput struct{ Body adminSetupFSRequest }
+
+func (h *AdminFSHandlers) SetupBrowse(ctx context.Context, in *setupBrowseInput) (*hostListingOutput, error) {
 	if h.d.SetupVerify == nil {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.SetupComplete, Key: "setup.complete"})
-		return
+		return nil, apierr.AsClassified(apierr.SetupComplete, "setup.complete")
 	}
-	var req adminSetupFSRequest
-	if !adminDecode(c, &req) {
-		return
+	if err := h.d.SetupVerify(ctx, in.Body.Token); err != nil {
+		return nil, err
 	}
-	if err := h.d.SetupVerify(c.Request.Context(), req.Token); err != nil {
-		middleware.Fail(c, err)
-		return
-	}
-	listing, err := h.browseHost(req.Path)
+	listing, err := h.browseHost(in.Body.Path)
 	if err != nil {
-		adminHostFSFail(c, err)
-		return
+		return nil, hostFSErr(err)
 	}
-	c.JSON(http.StatusOK, listing)
+	return &hostListingOutput{Body: listing}, nil
 }
 
 func (h *AdminFSHandlers) browseHost(path string) (HostListingView, error) {
@@ -197,19 +193,19 @@ func adminProbeOpenable(dir string) bool {
 	return (rerr == nil || errors.Is(rerr, io.EOF)) && cerr == nil
 }
 
-// adminHostFSFail reports a host path failure. The host filesystem's own
-// errors are classified here because elsewhere they are internal faults.
-func adminHostFSFail(c *gin.Context, err error) {
+// hostFSErr classifies a host path failure. The host filesystem's own errors
+// are classified here because elsewhere they are internal faults.
+func hostFSErr(err error) error {
 	switch {
 	case errors.Is(err, errAdminHostFSNotAbsolute):
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "settings.path_must_be_absolute"})
+		return apierr.AsClassified(apierr.Unprocessable, "settings.path_must_be_absolute")
 	case errors.Is(err, errAdminHostFSNotDirectory):
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "settings.path_is_not_a_directory"})
+		return apierr.AsClassified(apierr.Unprocessable, "settings.path_is_not_a_directory")
 	case errors.Is(err, fs.ErrNotExist):
-		middleware.Refuse(c, apierr.Classified{Class: apierr.NotFound})
+		return errNotFound()
 	case errors.Is(err, fs.ErrPermission):
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Denied, Key: "admin.fs_denied"})
+		return apierr.AsClassified(apierr.Denied, "admin.fs_denied")
 	default:
-		middleware.Fail(c, err)
+		return err
 	}
 }

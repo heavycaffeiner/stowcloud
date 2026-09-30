@@ -7,6 +7,7 @@
 package uploads
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -289,61 +290,53 @@ type SettingsRequest struct {
 	CacheEnabled *bool  `json:"cache_enabled"`
 }
 
-// SettingsPatch handles the upload section of the administrator settings
-// route. It is exposed separately because the settings transport owns section
-// dispatch while this package owns the upload-specific state and validation.
-func (h *Handlers) SettingsPatch(c *gin.Context) {
-	engine, ok := h.engine(c)
-	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
-		return
+type settingsPatchInput struct{ Body SettingsRequest }
+
+type settingsOutput struct{ Body UploadSettingsView }
+
+// SettingsPatch handles the upload section of the administrator settings. It
+// is served here because this package owns the upload state and validation.
+func (h *Handlers) SettingsPatch(ctx context.Context, in *settingsPatchInput) (*settingsOutput, error) {
+	engine := h.d.Upload
+	if engine == nil {
+		return nil, apierr.AsClassified(apierr.Unprocessable, "")
 	}
-	var req SettingsRequest
-	if err := middleware.DecodeJSON(c.Request.Body, &req); err != nil {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
-		return
-	}
+	req := in.Body
 	var minBytes, defaultBytes *uint64
 	if req.ChunkMin != nil {
 		v, err := num.Narrow[uint64](*req.ChunkMin)
 		if err != nil {
-			middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
-			return
+			return nil, apierr.AsClassified(apierr.Unprocessable, "")
 		}
 		minBytes = &v
 	}
 	if req.ChunkDefault != nil {
 		v, err := num.Narrow[uint64](*req.ChunkDefault)
 		if err != nil {
-			middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
-			return
+			return nil, apierr.AsClassified(apierr.Unprocessable, "")
 		}
 		defaultBytes = &v
 	}
 	if minBytes != nil || defaultBytes != nil {
-		if err := engine.ApplySettings(c.Request.Context(), minBytes, defaultBytes); err != nil {
-			middleware.Fail(c, err)
-			return
+		if err := engine.ApplySettings(ctx, minBytes, defaultBytes); err != nil {
+			return nil, err
 		}
 	}
 	if req.CacheEnabled != nil && *req.CacheEnabled != engine.CacheEnabled() {
-		if err := engine.SetCacheEnabled(c.Request.Context(), *req.CacheEnabled); err != nil {
-			middleware.Fail(c, err)
-			return
+		if err := engine.SetCacheEnabled(ctx, *req.CacheEnabled); err != nil {
+			return nil, err
 		}
 	}
 	storedMin, storedDefault := engine.Settings().Snapshot()
-	viewMin, minErr := num.Narrow[int64](storedMin)
-	viewDefault, defErr := num.Narrow[int64](storedDefault)
-	if minErr != nil || defErr != nil {
-		if minErr != nil {
-			middleware.Fail(c, minErr)
-		} else {
-			middleware.Fail(c, defErr)
-		}
-		return
+	viewMin, err := num.Narrow[int64](storedMin)
+	if err != nil {
+		return nil, err
 	}
-	c.JSON(http.StatusOK, UploadSettingsView{ChunkMin: viewMin, ChunkDefault: viewDefault, CacheEnabled: engine.CacheEnabled(), CacheAvailable: engine.CacheAvailable()})
+	viewDefault, err := num.Narrow[int64](storedDefault)
+	if err != nil {
+		return nil, err
+	}
+	return &settingsOutput{Body: UploadSettingsView{ChunkMin: viewMin, ChunkDefault: viewDefault, CacheEnabled: engine.CacheEnabled(), CacheAvailable: engine.CacheAvailable()}}, nil
 }
 
 func (h *Handlers) engine(c *gin.Context) (*Engine, bool) {
