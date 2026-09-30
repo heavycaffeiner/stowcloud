@@ -15,35 +15,36 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/search/stowcloud"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/search/svc"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 	searchlib "github.com/stowcloud/namesearch"
 )
 
 const searchQueryMax = 512
 const searchProgressEvery = 400 * time.Millisecond
 
-func (m *Manager) searchStream(c *gin.Context) {
-	owner, ok := m.ownerOf(c)
+func (m *Manager) SearchStream(c *gin.Context) {
+	owner, ok := handler.Owner(c)
 	if !ok {
-		m.refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	if m.Controller == nil || m.Core == nil {
-		m.refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
 		return
 	}
 	query := strings.TrimSpace(c.Query("q"))
 	if query == "" {
-		m.refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
 	}
 	if len(query) > searchQueryMax {
-		m.refuse(c, apierr.Classified{Class: apierr.LimitExceeded})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.LimitExceeded})
 		return
 	}
 	kind, kindOK := searchlib.ParseKind(c.Query("kind"))
 	exts, extOK := searchlib.ParseExts(c.Query("ext"))
 	if !kindOK || !extOK || (kind == searchlib.KindDir && len(exts) > 0) {
-		m.refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
 	}
 	sources := stowcloud.LabelSources(m.Core, owner, m.Core.UserScanSources(owner))

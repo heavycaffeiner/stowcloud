@@ -51,22 +51,12 @@ type linkStartRequest struct {
 
 // Deps are the narrow application services and request policies needed by OIDC.
 type Deps struct {
-	Auth             *auth.Service
-	Client           func() *featureoidc.Client
-	DisplayName      func() string
-	AppHosts         func() []string
-	RequestScheme    func(*http.Request) string
-	Logger           *slog.Logger
-	Owner            func(*gin.Context) (int64, bool)
-	Admin            func(*gin.Context) (int64, bool)
-	Reconfirm        func(*gin.Context, int64, string) bool
-	Decode           func(*gin.Context, any) error
-	Fail             func(*gin.Context, error)
-	FailKnown        func(*gin.Context, error)
-	Refuse           func(*gin.Context, apierr.Classified)
-	WriteJSON        func(*gin.Context, int, any)
-	ClientAddr       func(*gin.Context) string
-	SetSessionCookie func(*gin.Context, string)
+	Auth          *auth.Service
+	Client        func() *featureoidc.Client
+	DisplayName   func() string
+	AppHosts      func() []string
+	RequestScheme func(*http.Request) string
+	Logger        *slog.Logger
 }
 
 // Handlers owns the OIDC HTTP handlers and logout URL callback.
@@ -94,48 +84,48 @@ func (h *Handlers) EndSessionURL(c *gin.Context) (string, bool) {
 
 func (h *Handlers) Config(c *gin.Context) {
 	if h.d.Client() == nil {
-		h.d.WriteJSON(c, http.StatusOK, handler.OIDCConfigView{Enabled: false})
+		c.JSON(http.StatusOK, handler.OIDCConfigView{Enabled: false})
 		return
 	}
-	h.d.WriteJSON(c, http.StatusOK, handler.OIDCConfigView{Enabled: true, DisplayName: h.d.DisplayName()})
+	c.JSON(http.StatusOK, handler.OIDCConfigView{Enabled: true, DisplayName: h.d.DisplayName()})
 }
 
 func (h *Handlers) Start(c *gin.Context) {
 	client := h.d.Client()
 	if client == nil {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
 		return
 	}
 	returnTo, err := handler.SafeReturnTo(c.Query("return_to"))
 	if err != nil {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
 	}
 	h.begin(c, client, 0, returnTo)
 }
 
 func (h *Handlers) LinkStart(c *gin.Context) {
-	owner, ok := h.d.Owner(c)
+	owner, ok := middleware.UserOf(c)
 	if !ok {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	var req linkStartRequest
-	if err := h.d.Decode(c, &req); err != nil {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Malformed})
+	if err := middleware.DecodeJSON(c.Request.Body, &req); err != nil {
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
 		return
 	}
-	if !h.d.Reconfirm(c, owner, req.Current) {
+	if !handler.Reconfirm(c, h.d.Auth, owner, req.Current) {
 		return
 	}
 	client := h.d.Client()
 	if client == nil {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
 		return
 	}
 	returnTo, err := handler.SafeReturnTo(req.ReturnTo)
 	if err != nil {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
 	}
 	h.begin(c, client, owner, returnTo)
@@ -144,25 +134,25 @@ func (h *Handlers) LinkStart(c *gin.Context) {
 func (h *Handlers) begin(c *gin.Context, client *featureoidc.Client, user int64, returnTo string) {
 	flow, err := featureoidc.NewFlowSecrets()
 	if err != nil {
-		h.d.FailKnown(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	redirectURI, ok := h.redirectURI(c)
 	if !ok {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
 	}
 	target, err := client.AuthorizeURL(c.Request.Context(), redirectURI, flow)
 	if err != nil {
-		h.d.FailKnown(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	if err := h.d.Auth.StartOIDCFlow(c.Request.Context(), user, flow.State, flow.Nonce, flow.Binding, flow.CodeVerifier, redirectURI, returnTo); err != nil {
-		h.d.FailKnown(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	h.setBinding(c, flow.Binding)
-	h.d.WriteJSON(c, http.StatusOK, handler.OIDCStartView{AuthorizeURL: target})
+	c.JSON(http.StatusOK, handler.OIDCStartView{AuthorizeURL: target})
 }
 
 func (h *Handlers) Callback(c *gin.Context) {
@@ -231,7 +221,7 @@ func (h *Handlers) Callback(c *gin.Context) {
 }
 
 func (h *Handlers) completeLink(c *gin.Context, flow auth.OIDCFlow, claims *featureoidc.Claims) error {
-	owner, ok := h.d.Owner(c)
+	owner, ok := middleware.UserOf(c)
 	if !ok || owner != flow.User {
 		return h.redirectError(c, linkErrorPath, errLinkSessionChanged)
 	}
@@ -251,7 +241,7 @@ func (h *Handlers) completeSignIn(c *gin.Context, flow auth.OIDCFlow, claims *fe
 		h.logInfo("a provider identity is not linked to any account", "issuer", claims.Issuer)
 		return h.redirectError(c, loginPath, errNotLinked)
 	}
-	sess, err := h.d.Auth.CreateSession(c.Request.Context(), user, h.d.ClientAddr(c), c.Request.UserAgent(), providerAMR, sessionTTL)
+	sess, err := h.d.Auth.CreateSession(c.Request.Context(), user, middleware.ClientOf(c).String(), c.Request.UserAgent(), providerAMR, sessionTTL)
 	if err != nil {
 		h.logError("establishing a single-sign-on session failed", "error", err)
 		return h.redirectError(c, loginPath, errInternal)
@@ -259,41 +249,38 @@ func (h *Handlers) completeSignIn(c *gin.Context, flow auth.OIDCFlow, claims *fe
 	if err := h.d.Auth.TouchOIDCLink(c.Request.Context(), claims.Issuer, claims.Subject); err != nil {
 		h.logWarn("stamping a single-sign-on link's last use failed", "error", err)
 	}
-	h.d.SetSessionCookie(c, printableToken(sess.Token))
+	handler.SetSessionCookie(c, printableToken(sess.Token))
 	return redirect(c, flow.ReturnTo)
 }
 
 func (h *Handlers) LinkDelete(c *gin.Context) {
-	owner, ok := h.d.Owner(c)
+	owner, ok := middleware.UserOf(c)
 	if !ok {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	var req struct {
 		Current string `json:"current"`
 	}
-	if err := h.d.Decode(c, &req); err != nil {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Malformed})
+	if err := middleware.DecodeJSON(c.Request.Body, &req); err != nil {
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
 		return
 	}
 	if req.Current == "" {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "auth.invalid_credentials"})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "auth.invalid_credentials"})
 		return
 	}
-	if !h.d.Reconfirm(c, owner, req.Current) {
+	if !handler.Reconfirm(c, h.d.Auth, owner, req.Current) {
 		return
 	}
 	if err := h.d.Auth.RemoveOIDCLink(c.Request.Context(), owner); err != nil {
-		h.d.FailKnown(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
 }
 
 func (h *Handlers) AdminGet(c *gin.Context) {
-	if _, ok := h.d.Admin(c); !ok {
-		return
-	}
 	id, ok := pathID(c)
 	if !ok {
 		c.Status(http.StatusNotFound)
@@ -302,35 +289,29 @@ func (h *Handlers) AdminGet(c *gin.Context) {
 	link, err := h.d.Auth.OIDCLinkOf(c.Request.Context(), id)
 	if err != nil {
 		if errors.Is(err, auth.ErrNoOIDCLink) {
-			h.d.WriteJSON(c, http.StatusOK, handler.OIDCLinkView{Linked: false})
+			c.JSON(http.StatusOK, handler.OIDCLinkView{Linked: false})
 			return
 		}
-		h.d.FailKnown(c, err)
+		middleware.Fail(c, err)
 		return
 	}
-	h.d.WriteJSON(c, http.StatusOK, handler.OIDCLinkOf(link))
+	c.JSON(http.StatusOK, handler.OIDCLinkOf(link))
 }
 
 func (h *Handlers) AdminDelete(c *gin.Context) {
-	if _, ok := h.d.Admin(c); !ok {
-		return
-	}
 	id, ok := pathID(c)
 	if !ok {
 		c.Status(http.StatusNotFound)
 		return
 	}
 	if err := h.d.Auth.RemoveOIDCLink(c.Request.Context(), id); err != nil {
-		h.d.FailKnown(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
 }
 
 func (h *Handlers) AdminEndpoints(c *gin.Context) {
-	if _, ok := h.d.Admin(c); !ok {
-		return
-	}
 	hosts := h.d.AppHosts()
 	redirects := make([]string, 0, len(hosts))
 	postLogouts := make([]string, 0, len(hosts))
@@ -338,7 +319,7 @@ func (h *Handlers) AdminEndpoints(c *gin.Context) {
 		redirects = append(redirects, "https://"+host+"/api/v1/auth/oidc/callback")
 		postLogouts = append(postLogouts, "https://"+host+loginPath)
 	}
-	h.d.WriteJSON(c, http.StatusOK, handler.OIDCEndpointsView{RedirectURIs: redirects, PostLogoutRedirectURIs: postLogouts})
+	c.JSON(http.StatusOK, handler.OIDCEndpointsView{RedirectURIs: redirects, PostLogoutRedirectURIs: postLogouts})
 }
 
 func (h *Handlers) redirectURI(c *gin.Context) (string, bool) {
@@ -381,7 +362,7 @@ func hostDeclared(declared []string, host string) bool {
 	return false
 }
 func (h *Handlers) ambiguousPath(c *gin.Context) string {
-	if _, ok := h.d.Owner(c); ok {
+	if _, ok := middleware.UserOf(c); ok {
 		return linkErrorPath
 	}
 	return loginPath

@@ -38,21 +38,16 @@ func (e *Engine) Mount(router *gin.Engine) error {
 
 func (e *Engine) newPublicLinks() *publiclinks.Public {
 	return publiclinks.NewPublic(publiclinks.PublicDeps{
-		Core:       e.Core,
-		State:      e.State,
-		ClaimKey:   e.claimKey.Key,
-		Limiter:    e.linkLimiter,
-		Now:        e.now,
-		ClientAddr: handler.ClientAddr,
+		Core:     e.Core,
+		State:    e.State,
+		ClaimKey: e.claimKey.Key,
+		Limiter:  e.linkLimiter,
+		Now:      e.now,
 		Audit: func(ctx context.Context, event, target, ip, ua string, ok bool) error {
 			return e.Auth.Audit(ctx, nil, event, target, ip, ua, ok)
 		},
 		Logger:          e.log(),
 		Frontend:        web.Page(),
-		Fail:            handler.Fail,
-		Refuse:          handler.Refuse,
-		WriteJSON:       func(c *gin.Context, status int, v any) { c.JSON(status, v) },
-		Decode:          filehttp.Decode,
 		CloseStream:     func(stream *files.Stream, name string) { filehttp.CloseStream(stream, name, e.log()) },
 		SendStreamRange: filehttp.SendStreamRange,
 		AcquireArchive: func() (func(), bool) {

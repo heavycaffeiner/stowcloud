@@ -71,7 +71,7 @@ type totpRequest struct {
 func (h *AuthHandlers) Login(c *gin.Context) {
 	var req loginRequest
 	if err := decodeAuthBody(c, &req); err != nil {
-		refuseTransport(c, apierr.Classified{Class: apierr.Malformed})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
 		return
 	}
 	if req.Login == "" || req.Password == "" {
@@ -87,7 +87,7 @@ func (h *AuthHandlers) Login(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		failKnownTransport(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	h.grantSession(c, sess)
@@ -96,21 +96,21 @@ func (h *AuthHandlers) Login(c *gin.Context) {
 func (h *AuthHandlers) askForFactor(c *gin.Context, login string) {
 	uid, err := h.d.Service.UserIDByName(c.Request.Context(), login)
 	if err != nil {
-		failKnownTransport(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	challenge, err := MintChallenge(h.d.CSRFKey(), uid, h.d.Clock.Now().Unix())
 	if err != nil {
-		failKnownTransport(c, err)
+		middleware.Fail(c, err)
 		return
 	}
-	writeTransportJSON(c, http.StatusOK, ChallengeView{Required: "totp", Challenge: challenge, ExpiresInSeconds: ChallengeTTL})
+	c.JSON(http.StatusOK, ChallengeView{Required: "totp", Challenge: challenge, ExpiresInSeconds: ChallengeTTL})
 }
 
 func (h *AuthHandlers) LoginTOTP(c *gin.Context) {
 	var req totpRequest
 	if err := decodeAuthBody(c, &req); err != nil {
-		refuseTransport(c, apierr.Classified{Class: apierr.Malformed})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
 		return
 	}
 	uid, err := OpenChallenge(h.d.CSRFKey(), req.Challenge, h.d.Clock.Now().Unix())
@@ -120,12 +120,12 @@ func (h *AuthHandlers) LoginTOTP(c *gin.Context) {
 	}
 	key := middleware.ClientOf(c).String()
 	if h.d.TOTPAllow != nil && !h.d.TOTPAllow.Allow(key+"/"+strconv.FormatInt(uid, 10)) {
-		refuseTransport(c, apierr.Classified{Class: apierr.RateLimited, Key: "auth.rate_limited"})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.RateLimited, Key: "auth.rate_limited"})
 		return
 	}
 	accepted, err := h.acceptFactor(c, uid, req.Code)
 	if err != nil {
-		failKnownTransport(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	if !accepted {
@@ -134,7 +134,7 @@ func (h *AuthHandlers) LoginTOTP(c *gin.Context) {
 	}
 	sess, err := h.d.Service.CreateSession(c.Request.Context(), uid, middleware.ClientOf(c).String(), c.Request.UserAgent(), passwordFactorAMR, 0)
 	if err != nil {
-		failKnownTransport(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	h.grantSession(c, sess)
@@ -151,33 +151,33 @@ func (h *AuthHandlers) acceptFactor(c *gin.Context, uid int64, code string) (boo
 func (h *AuthHandlers) grantSession(c *gin.Context, sess auth.Session) {
 	info, err := h.d.Service.AccountInfo(c.Request.Context(), sess.UserID)
 	if err != nil {
-		failKnownTransport(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	admin, err := h.d.Service.IsAdmin(c.Request.Context(), sess.UserID)
 	if err != nil {
-		failKnownTransport(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	printable := hex.EncodeToString(sess.Token.Reveal())
 	SetSessionCookie(c, printable)
-	writeTransportJSON(c, http.StatusOK, IdentityViewOf(sess.UserID, info.LoginName, info.DisplayName, admin, middleware.CSRFToken(h.d.CSRFKey(), printable)))
+	c.JSON(http.StatusOK, IdentityViewOf(sess.UserID, info.LoginName, info.DisplayName, admin, middleware.CSRFToken(h.d.CSRFKey(), printable)))
 }
 
 func (h *AuthHandlers) Session(c *gin.Context) {
-	owner, ok := ownerTransport(c)
+	owner, ok := middleware.UserOf(c)
 	if !ok {
-		refuseTransport(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	info, err := h.d.Service.AccountInfo(c.Request.Context(), owner)
 	if err != nil {
-		failKnownTransport(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	admin, err := h.d.Service.IsAdmin(c.Request.Context(), owner)
 	if err != nil {
-		failKnownTransport(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	var csrf string
@@ -186,11 +186,11 @@ func (h *AuthHandlers) Session(c *gin.Context) {
 	}
 	details, err := h.d.SessionDetails(c.Request.Context(), owner)
 	if err != nil {
-		failKnownTransport(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	view := WhoAmIView{IdentityView: IdentityViewOf(owner, info.LoginName, info.DisplayName, admin, csrf), TOTPEnabled: details.TOTPEnabled, SMBOptOut: details.SMBOptOut, SMBEnabled: details.SMBEnabled, SMBCredential: details.SMBCredential, SMBUnavailableReason: details.SMBUnavailableReason, Oidc: details.Oidc, Roots: details.Roots, Limits: details.Limits, Features: details.Features}
-	writeTransportJSON(c, http.StatusOK, view)
+	c.JSON(http.StatusOK, view)
 }
 
 func (h *AuthHandlers) Logout(c *gin.Context) {
@@ -208,13 +208,13 @@ func (h *AuthHandlers) Logout(c *gin.Context) {
 	token := secret.New(raw)
 	provider := h.d.Service.SessionAMR(c.Request.Context(), token) == providerAMR
 	if err := h.d.Service.RevokeSession(c.Request.Context(), token); err != nil && !errors.Is(err, auth.ErrCredentials) {
-		failKnownTransport(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	clearSessionCookieTransport(c)
 	if provider && h.d.OIDCEndSessionURL != nil {
 		if end, ok := h.d.OIDCEndSessionURL(c); ok {
-			writeTransportJSON(c, http.StatusOK, LogoutView{EndSessionURL: end})
+			c.JSON(http.StatusOK, LogoutView{EndSessionURL: end})
 			return
 		}
 	}
@@ -229,27 +229,6 @@ func decodeAuthBody(c *gin.Context, into any) error {
 	return middleware.DecodeJSON(c.Request.Body, into)
 }
 
-func ownerTransport(c *gin.Context) (int64, bool) {
-	v, ok := c.Get(string(middleware.KeyCredential))
-	if !ok {
-		return 0, false
-	}
-	p, ok := v.(middleware.Principal)
-	if !ok || p.UserID == 0 {
-		return 0, false
-	}
-	return p.UserID, true
-}
-func writeTransportJSON(c *gin.Context, status int, value any) { c.JSON(status, value) }
-func failKnownTransport(c *gin.Context, err error)             { middleware.Fail(c, err) }
-func FailKnown(c *gin.Context, err error)                      { failKnownTransport(c, err) }
-
-func ClientAddr(c *gin.Context) string { return middleware.ClientOf(c).String() }
-
-func refuseTransport(c *gin.Context, class apierr.Classified) {
-	status, body := apierr.REST(class)
-	writeTransportJSON(c, status, body)
-}
 func SetSessionCookie(c *gin.Context, value string) {
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie(middleware.SessionCookieName, value, int(sessionCookieMaxAge/time.Second), "/", "", true, true)

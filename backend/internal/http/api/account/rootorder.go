@@ -9,48 +9,45 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 )
 
-// RootOrderDeps supplies the authorization and durable operation for root ordering.
+// RootOrderDeps supplies the durable store for root ordering.
 type RootOrderDeps struct {
-	State  *state.DB
-	Owner  func(*gin.Context) (int64, bool)
-	Fail   func(*gin.Context, error)
-	Refuse func(*gin.Context, apierr.Classified)
-	Decode func(*gin.Context, any) error
+	State *state.DB
 }
 
 // RootOrderHandler stores the caller's preferred order for account roots.
 func RootOrderHandler(d RootOrderDeps) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		owner, ok := d.Owner(c)
+		owner, ok := middleware.UserOf(c)
 		if !ok {
-			d.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+			middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 			return
 		}
 		var req rootOrderRequest
-		if err := d.Decode(c, &req); err != nil {
-			d.Refuse(c, apierr.Classified{Class: apierr.Malformed})
+		if err := middleware.DecodeJSON(c.Request.Body, &req); err != nil {
+			middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
 			return
 		}
 		if len(req.Order) > rootOrderMaxEntries {
-			d.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+			middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 			return
 		}
 		seen := make(map[string]struct{}, len(req.Order))
 		for _, label := range req.Order {
 			if len(label) > rootOrderMaxLabelBytes {
-				d.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+				middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 				return
 			}
 			if _, dup := seen[label]; dup {
-				d.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+				middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 				return
 			}
 			seen[label] = struct{}{}
 		}
 		if err := d.State.SetRootOrder(c.Request.Context(), owner, req.Order); err != nil {
-			d.Fail(c, err)
+			middleware.Fail(c, err)
 			return
 		}
 		c.Status(http.StatusNoContent)

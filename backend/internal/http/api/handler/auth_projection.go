@@ -150,7 +150,7 @@ func Reconfirm(c *gin.Context, service *auth.Service, owner int64, password stri
 	}
 	ok, err := service.VerifyAccountPassword(c.Request.Context(), owner, secret.New([]byte(password)))
 	if err != nil {
-		failKnownTransport(c, err)
+		middleware.Fail(c, err)
 		return false
 	}
 	if !ok {
@@ -162,18 +162,18 @@ func Reconfirm(c *gin.Context, service *auth.Service, owner int64, password stri
 
 // Admin authorizes a session for an administrator-owned route.
 func Admin(c *gin.Context, service *auth.Service) (int64, bool) {
-	owner, ok := ownerTransport(c)
+	owner, ok := middleware.UserOf(c)
 	if !ok {
-		refuseTransport(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return 0, false
 	}
 	isAdmin, err := service.IsAdmin(c.Request.Context(), owner)
 	if err != nil {
-		failKnownTransport(c, err)
+		middleware.Fail(c, err)
 		return 0, false
 	}
 	if !isAdmin {
-		refuseTransport(c, apierr.Classified{Class: apierr.Denied})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Denied})
 		return 0, false
 	}
 	return owner, true

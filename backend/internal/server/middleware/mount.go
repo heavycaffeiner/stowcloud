@@ -212,6 +212,22 @@ func Fail(c *gin.Context, err error) {
 	c.Abort()
 }
 
+// Refuse answers a classified refusal in the native envelope.
+func Refuse(c *gin.Context, class apierr.Classified) {
+	status, body := apierr.REST(class)
+	c.JSON(status, body)
+}
+
+// UserOf returns the account the chain authenticated, if any.
+func UserOf(c *gin.Context) (int64, bool) {
+	v, exists := c.Get(string(KeyCredential))
+	p, ok := v.(Principal)
+	if !exists || !ok || p.UserID == 0 {
+		return 0, false
+	}
+	return p.UserID, true
+}
+
 // errorHandler renders the last recorded error, unless the handler already
 // answered.
 func errorHandler(c *gin.Context, errs *apierr.Classifier) {

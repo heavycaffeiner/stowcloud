@@ -18,7 +18,9 @@ import (
 	feature "github.com/heavycaffeiner/stowcloud/backend/internal/feature/directtransfer"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/objstore"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
@@ -29,17 +31,12 @@ type Handler struct {
 
 type Deps struct {
 	State                 *state.DB
-	Owner                 func(*gin.Context) (files.UserID, bool)
 	Resolve               func(files.UserID, string, acl.Perms) (files.Resolved, error)
 	ShareEncrypted        func(context.Context, files.ShareID) (bool, error)
 	GuardLock             func(context.Context, uint32, string, int64) error
 	ProviderForRow        func(context.Context, state.DirectTransferReservation) (objstore.DirectTransferProvider, bool, error)
 	RevalidateDestination func(context.Context, state.DirectTransferReservation) error
 	Now                   func() int64
-	Decode                func(*gin.Context, any) error
-	Fail                  func(*gin.Context, error)
-	Refuse                func(*gin.Context, apierr.Classified)
-	NotFound              func(*gin.Context)
 	Logger                *slog.Logger
 }
 
@@ -94,24 +91,24 @@ type directPartURLView struct {
 }
 
 func (h *Handler) Create(c *gin.Context) {
-	owner, ok := h.d.Owner(c)
+	owner, ok := handler.Owner(c)
 	if !ok {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	var req directUploadRequest
-	if err := h.d.Decode(c, &req); err != nil || strings.TrimSpace(req.Path) == "" {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Malformed})
+	if err := middleware.DecodeJSON(c.Request.Body, &req); err != nil || strings.TrimSpace(req.Path) == "" {
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
 		return
 	}
 	size, err := directUint(req.Size)
 	if err != nil {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Malformed})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
 		return
 	}
 	checksum, err := directChecksum(req.Checksum)
 	if err != nil {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Malformed})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
 		return
 	}
 	row, err := h.svc.Create(c.Request.Context(), owner, feature.CreateRequest{Path: req.Path, Size: size, Checksum: checksum, IfMatch: stripETag(req.IfMatch)})
@@ -123,22 +120,22 @@ func (h *Handler) Create(c *gin.Context) {
 }
 
 func (h *Handler) Status(c *gin.Context) {
-	owner, ok := h.d.Owner(c)
+	owner, ok := handler.Owner(c)
 	if !ok {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	id := strings.TrimSpace(c.Param("id"))
 	if !validDirectID(id) {
-		h.d.NotFound(c)
+		middleware.Fail(c, files.ErrNotFound)
 		return
 	}
 	row, parts, err := h.svc.Status(c.Request.Context(), owner, id)
 	if err != nil {
 		if row.ID == "" {
-			h.d.NotFound(c)
+			middleware.Fail(c, files.ErrNotFound)
 		} else {
-			h.d.Fail(c, err)
+			middleware.Fail(c, err)
 		}
 		return
 	}
@@ -146,24 +143,24 @@ func (h *Handler) Status(c *gin.Context) {
 }
 
 func (h *Handler) Part(c *gin.Context) {
-	owner, ok := h.d.Owner(c)
+	owner, ok := handler.Owner(c)
 	if !ok {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	id := strings.TrimSpace(c.Param("id"))
 	if !validDirectID(id) {
-		h.d.NotFound(c)
+		middleware.Fail(c, files.ErrNotFound)
 		return
 	}
 	var req directPartRequest
-	if err := h.d.Decode(c, &req); err != nil {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Malformed})
+	if err := middleware.DecodeJSON(c.Request.Body, &req); err != nil {
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
 		return
 	}
 	part, err := directUint(req.PartNumber)
 	if err != nil || part == 0 || part > feature.MaxParts {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
 	}
 	result, err := h.svc.PresignPart(c.Request.Context(), owner, id, part, func(expected uint64) (string, error) {
@@ -180,13 +177,13 @@ func (h *Handler) Part(c *gin.Context) {
 		return checksum, nil
 	})
 	if errors.Is(err, state.ErrNoSuchDirectTransfer) {
-		h.d.NotFound(c)
+		middleware.Fail(c, files.ErrNotFound)
 		return
 	}
 	if err != nil {
 		var parsed *apierr.ClassifiedError
 		if errors.As(err, &parsed) {
-			h.d.Refuse(c, parsed.Classified)
+			middleware.Refuse(c, parsed.Classified)
 		} else {
 			h.writeServiceError(c, err)
 		}
@@ -196,26 +193,26 @@ func (h *Handler) Part(c *gin.Context) {
 }
 
 func (h *Handler) Complete(c *gin.Context) {
-	owner, ok := h.d.Owner(c)
+	owner, ok := handler.Owner(c)
 	if !ok {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	id := strings.TrimSpace(c.Param("id"))
 	if !validDirectID(id) {
-		h.d.NotFound(c)
+		middleware.Fail(c, files.ErrNotFound)
 		return
 	}
 	var req directCompleteRequest
-	if err := h.d.Decode(c, &req); err != nil || len(req.Parts) == 0 {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Malformed})
+	if err := middleware.DecodeJSON(c.Request.Body, &req); err != nil || len(req.Parts) == 0 {
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
 		return
 	}
 	row, persisted, err := h.svc.Complete(c.Request.Context(), owner, id, func() ([]feature.CompletePart, error) {
 		return completePartsOf(req.Parts)
 	})
 	if errors.Is(err, state.ErrNoSuchDirectTransfer) {
-		h.d.NotFound(c)
+		middleware.Fail(c, files.ErrNotFound)
 		return
 	}
 	if err != nil {
@@ -226,19 +223,19 @@ func (h *Handler) Complete(c *gin.Context) {
 }
 
 func (h *Handler) Cancel(c *gin.Context) {
-	owner, ok := h.d.Owner(c)
+	owner, ok := handler.Owner(c)
 	if !ok {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	id := strings.TrimSpace(c.Param("id"))
 	if !validDirectID(id) {
-		h.d.NotFound(c)
+		middleware.Fail(c, files.ErrNotFound)
 		return
 	}
 	err := h.svc.Cancel(c.Request.Context(), owner, id)
 	if errors.Is(err, state.ErrNoSuchDirectTransfer) {
-		h.d.NotFound(c)
+		middleware.Fail(c, files.ErrNotFound)
 		return
 	}
 	if err != nil {
@@ -251,21 +248,21 @@ func (h *Handler) Cancel(c *gin.Context) {
 func (h *Handler) writeServiceError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, feature.ErrUnsupportedSize):
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "transfer.unsupported_size"})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "transfer.unsupported_size"})
 	case errors.Is(err, feature.ErrUnsupported):
-		h.d.Refuse(c, apierr.Classified{Class: apierr.NotImplemented, Key: "direct_transfer.unsupported"})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.NotImplemented, Key: "direct_transfer.unsupported"})
 	case errors.Is(err, feature.ErrLocked):
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Locked, Key: "dav.locked"})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Locked, Key: "dav.locked"})
 	case errors.Is(err, feature.ErrExpired):
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Gone, Key: "direct_transfer.expired"})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Gone, Key: "direct_transfer.expired"})
 	case errors.Is(err, feature.ErrPartsMismatch):
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "direct_transfer.parts_mismatch"})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "direct_transfer.parts_mismatch"})
 	case errors.Is(err, files.ErrUnprocessable):
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 	case errors.Is(err, files.ErrPrecondition):
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Precondition, Key: "fs.precondition_failed"})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Precondition, Key: "fs.precondition_failed"})
 	default:
-		h.d.Fail(c, err)
+		middleware.Fail(c, err)
 	}
 }
 

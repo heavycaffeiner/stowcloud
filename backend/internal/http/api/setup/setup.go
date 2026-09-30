@@ -78,13 +78,13 @@ type shareRequest struct {
 
 func (h *Handlers) Post(c *gin.Context) {
 	if h.d.Gate == nil {
-		h.refuse(c, apierr.Classified{Class: apierr.SetupComplete, Key: "setup.complete"})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.SetupComplete, Key: "setup.complete"})
 		return
 	}
 
 	var req request
-	if err := decode(c, &req); err != nil || req.Username == "" || req.Password == "" {
-		h.refuse(c, apierr.Classified{Class: apierr.Malformed})
+	if err := middleware.DecodeJSON(c.Request.Body, &req); err != nil || req.Username == "" || req.Password == "" {
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
 		return
 	}
 
@@ -162,15 +162,6 @@ func anyList(in []string) []any {
 		out = append(out, item)
 	}
 	return out
-}
-
-func decode(c *gin.Context, into any) error {
-	return middleware.DecodeJSON(c.Request.Body, into)
-}
-
-func (h *Handlers) refuse(c *gin.Context, class apierr.Classified) {
-	status, body := apierr.REST(class)
-	c.JSON(status, body)
 }
 
 func (h *Handlers) logger() *slog.Logger {

@@ -22,6 +22,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/jobs"
 	task "github.com/heavycaffeiner/stowcloud/backend/internal/platform/concurrency"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 	storagewatch "github.com/stowcloud/storage/watch"
 )
@@ -185,7 +186,7 @@ func watchSettingsOf(ctx context.Context, e *Engine) watchSettings {
 func (e *Engine) eventsSocket() gin.HandlerFunc {
 	if e.events == nil {
 		return func(c *gin.Context) {
-			handler.Refuse(c, apierr.Classified{
+			middleware.Refuse(c, apierr.Classified{
 				Class: apierr.SubsystemUnavailable, Key: "events.unavailable",
 			})
 		}

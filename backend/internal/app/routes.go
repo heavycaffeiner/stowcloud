@@ -63,9 +63,6 @@ func (e *Engine) routes(router *gin.Engine) error {
 	adminAPI := newTyped(router, admin, config, e.errs)
 
 	resolve := filehttp.Resolve(e.Core)
-	adminOf := func(c *gin.Context) (int64, bool) { return handler.Admin(c, e.Auth) }
-	ownerOf := func(c *gin.Context) (int64, bool) { owner, ok := handler.Owner(c); return int64(owner), ok }
-	writeJSON := func(c *gin.Context, status int, v any) { c.JSON(status, v) }
 
 	public.GET("/api/v1/system/health", e.health)
 	setupRoutes := setup.NewHandlers(setup.Deps{
@@ -91,13 +88,6 @@ func (e *Engine) routes(router *gin.Engine) error {
 		AppHosts:      func() []string { return e.Settings.Hosts().App },
 		RequestScheme: func(r *http.Request) string { return middleware.RequestScheme(r, e.trustedProxies()) },
 		Logger:        e.log(),
-		Owner:         ownerOf,
-		Admin:         adminOf,
-		Reconfirm: func(c *gin.Context, owner int64, password string) bool {
-			return handler.Reconfirm(c, e.Auth, owner, password)
-		},
-		Decode: filehttp.Decode, Fail: handler.Fail, FailKnown: handler.FailKnown, Refuse: handler.Refuse,
-		WriteJSON: writeJSON, ClientAddr: handler.ClientAddr, SetSessionCookie: handler.SetSessionCookie,
 	})
 	auth := handler.NewAuthHandlers(handler.AuthHandlersDeps{
 		Service: e.Auth, Clock: e.clock, CSRFKey: e.csrfKey,
@@ -139,27 +129,23 @@ func (e *Engine) routes(router *gin.Engine) error {
 	op(sessionAPI, http.MethodDelete, "/api/v1/account/smb/password", "account.smb.password.delete", smb.DeletePassword)
 	session.POST("/api/v1/account/oidc-link/start", middleware.LimitJSON, oidcRoutes.LinkStart)
 	session.DELETE("/api/v1/account/oidc-link", oidcRoutes.LinkDelete)
-	session.POST("/api/v1/account/roots/order", middleware.LimitJSON, accounthttp.RootOrderHandler(accounthttp.RootOrderDeps{
-		State: e.State, Owner: ownerOf, Fail: handler.Fail, Refuse: handler.Refuse, Decode: filehttp.Decode,
-	}))
+	session.POST("/api/v1/account/roots/order", middleware.LimitJSON, accounthttp.RootOrderHandler(accounthttp.RootOrderDeps{State: e.State}))
 
 	openClaim := filehttp.OpenBoundClaim(e.claimKey, e.clk().Nanos)
 	projection := filehttp.NewProjection(filehttp.ProjectionDeps{Core: e.Core, ClaimKey: e.claimKey, Now: e.clk().Nanos, Logger: e.log()})
 	fs := filehttp.NewHandler(filehttp.Deps{
 		Core: e.Core, Archives: e.Archives, Gate: e.archiveGate,
-		Owner: handler.Owner, Resolve: resolve, OpenClaim: openClaim,
+		Resolve: resolve, OpenClaim: openClaim,
 		EntryView: projection.EntryView, Vpath: projection.Vpath, Refs: projection.Refs,
-		Fail: handler.Fail, Refuse: handler.Refuse, NotFound: handler.NotFound, Decode: filehttp.Decode,
-		Body: handler.Body, GuardLock: e.guardDavLock,
-		Now: e.clk().Now, Journal: e.Journal != nil, Logger: e.log(),
+		GuardLock: e.guardDavLock,
+		Now:       e.clk().Now, Journal: e.Journal != nil, Logger: e.log(),
 	})
 	session.GET("/api/v1/files/list", fs.List)
 	session.GET("/api/v1/files/stat", fs.Stat)
 	session.GET("/api/v1/files/read", fs.Read)
 	session.GET("/api/v1/files/size", fs.Size)
 	session.GET("/api/v1/files/thumbnail", previewhttp.ThumbnailHandler(previewhttp.ThumbnailDeps{
-		Core: e.Core, Owner: handler.Owner, Resolve: resolve, OpenClaim: openClaim,
-		PreviewLease: e.previewLease, Fail: handler.Fail, Refuse: handler.Refuse, Logger: e.logger,
+		Core: e.Core, Resolve: resolve, OpenClaim: openClaim, PreviewLease: e.previewLease, Logger: e.logger,
 	}))
 	session.POST("/api/v1/files/mkdir", middleware.LimitJSON, fs.Mkdir)
 	session.POST("/api/v1/files/write", fs.Write)
@@ -175,12 +161,11 @@ func (e *Engine) routes(router *gin.Engine) error {
 	session.GET("/api/v1/files/recent", fs.Recent)
 
 	transfer := directtransfer.NewHandler(directtransfer.Deps{
-		State: e.State, Owner: handler.Owner, Resolve: resolve,
+		State: e.State, Resolve: resolve,
 		ShareEncrypted: e.Core.ShareEncrypted, GuardLock: e.guardDavLock,
 		ProviderForRow:        featuretransfer.ProviderForRow(e.Core, resolve),
 		RevalidateDestination: featuretransfer.RevalidateDestination(e.Core, resolve, e.guardDavLock),
-		Now:                   e.now, Decode: filehttp.Decode, Fail: handler.Fail, Refuse: handler.Refuse, NotFound: handler.NotFound,
-		Logger: e.log(),
+		Now:                   e.now, Logger: e.log(),
 	})
 	session.POST("/api/v1/direct-uploads", middleware.LimitJSON, transfer.Create)
 	session.GET("/api/v1/direct-uploads/:id", transfer.Status)
@@ -190,8 +175,6 @@ func (e *Engine) routes(router *gin.Engine) error {
 
 	upload := uploads.NewHandlers(uploads.Deps{
 		Upload: e.Upload, Core: e.Core, Resolve: resolve,
-		Owner: handler.Owner, Admin: adminOf, Fail: handler.Fail, Refuse: handler.Refuse,
-		Decode: filehttp.Decode, WriteJSON: writeJSON,
 	})
 	public.OPTIONS("/api/v1/uploads", upload.Discover)
 	session.POST("/api/v1/uploads", upload.Create)
@@ -271,7 +254,7 @@ func (e *Engine) routes(router *gin.Engine) error {
 	storage := &adminstorage.Handler{Core: e.Core, State: e.State}
 	op(adminAPI, http.MethodGet, "/api/v1/admin/storage", "admin.storage", storage.Get)
 
-	smbAdmin := adminsmb.NewHandlers(adminsmb.Deps{Auth: e.Auth, Apply: func(ctx context.Context) (agent.Report, bool, error) {
+	smbAdmin := adminsmb.NewHandlers(adminsmb.Deps{Apply: func(ctx context.Context) (agent.Report, bool, error) {
 		p := e.smbPublisherOf()
 		if p == nil {
 			return agent.Report{}, false, nil
@@ -286,7 +269,7 @@ func (e *Engine) routes(router *gin.Engine) error {
 
 	settings := adminsettings.NewHandlers(adminsettings.Deps{
 		State: e.State, Auth: e.Auth, Settings: e.Settings,
-		DataDir: e.dataDir, Hardening: e.hardening, Admin: adminOf,
+		DataDir: e.dataDir, Hardening: e.hardening,
 		UploadPatch: upload.SettingsPatch,
 		SMBAgentView: func() *handler.SMBAgentView {
 			p := e.smbPublisherOf()

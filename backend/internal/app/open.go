@@ -21,7 +21,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/logbook"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/runtimecfg"
 	live "github.com/heavycaffeiner/stowcloud/backend/internal/app/settings"
@@ -503,11 +502,7 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 		Clock: clk, Logger: logger, Jobs: &e.jobs, JobsCtx: jobsCtx, JobsStop: jobsStop,
 		HasWatcher: func() bool { return e.watcher != nil },
 	})
-	e.searchHTTP = searchhttp.NewManager(searchhttp.Options{
-		Core: e.Core, Controller: e.searchController, Clock: clk, Logger: logger,
-		Owner: handler.Owner, Admin: func(c *gin.Context) (int64, bool) { return handler.Admin(c, e.Auth) },
-		Refuse: handler.Refuse, FailKnown: handler.FailKnown, WriteJSON: func(c *gin.Context, status int, v any) { c.JSON(status, v) },
-	})
+	e.searchHTTP = &searchhttp.Manager{Core: e.Core, Controller: e.searchController, Clock: clk, Logger: logger}
 
 	// The name index, when the operator asked for one, is attached inside
 	// loadSettings below rather than here: that is the same call a save

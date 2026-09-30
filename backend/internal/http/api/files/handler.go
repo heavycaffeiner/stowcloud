@@ -1,12 +1,11 @@
 //go:build linux
 
 // Package files contains the HTTP protocol adapters for the authenticated file
-// surface. Resolution and identity are supplied as narrow callbacks: this
+// surface. Resolution and claims are supplied as narrow callbacks: this
 // package does not receive the application engine or any app-shaped bundle.
 package files
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -35,23 +34,16 @@ import (
 )
 
 // Deps are the capabilities needed by the authenticated file routes.
-// Callbacks keep application policy such as identity, path parsing, claims,
-// and error projection outside this transport package.
+// Callbacks keep path parsing and claims outside this transport package.
 type Deps struct {
 	Core           *files.Core
 	Refs           func(files.UserID) func(files.Entry, string) handler.EntryRefs
 	Archives       *archive.Tickets
 	Gate           *ArchiveGate
-	Owner          func(*gin.Context) (files.UserID, bool)
 	Resolve        func(files.UserID, string, acl.Perms) (files.Resolved, error)
 	OpenClaim      func(*gin.Context, handler.ClaimPurpose, files.UserID) (handler.Claim, bool)
 	EntryView      func(files.UserID, files.Resolved, files.Entry) handler.EntryView
 	Vpath          func(files.UserID, files.Resolved, files.Entry) string
-	Fail           func(*gin.Context, error)
-	Refuse         func(*gin.Context, apierr.Classified)
-	NotFound       func(*gin.Context)
-	Decode         func(*gin.Context, any) error
-	Body           func(*gin.Context) io.Reader
 	GuardLock      func(context.Context, uint32, string, int64) error
 	AcquireArchive func() (release func(), ok bool)
 	Now            func() time.Time
@@ -79,41 +71,7 @@ func NewHandler(d Deps) *Handler {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
-	if d.Body == nil {
-		d.Body = requestBodyReader
-	}
 	return &Handler{d: d}
-}
-
-func (h *Handler) owner(c *gin.Context) (files.UserID, bool) {
-	if h.d.Owner == nil {
-		return 0, false
-	}
-	return h.d.Owner(c)
-}
-
-func (h *Handler) fail(c *gin.Context, err error) {
-	if h.d.Fail != nil {
-		h.d.Fail(c, err)
-		return
-	}
-	fail(c, err)
-}
-
-func (h *Handler) refuse(c *gin.Context, class apierr.Classified) {
-	if h.d.Refuse != nil {
-		h.d.Refuse(c, class)
-		return
-	}
-	refuse(c, class)
-}
-
-func (h *Handler) notFound(c *gin.Context) {
-	if h.d.NotFound != nil {
-		h.d.NotFound(c)
-		return
-	}
-	h.refuse(c, apierr.Classified{Class: apierr.NotFound})
 }
 
 func (h *Handler) resolve(owner files.UserID, raw string, need acl.Perms) (files.Resolved, error) {
@@ -123,18 +81,11 @@ func (h *Handler) resolve(owner files.UserID, raw string, need acl.Perms) (files
 	return h.d.Resolve(owner, raw, need)
 }
 
-func (h *Handler) decode(c *gin.Context, into any) error {
-	if h.d.Decode != nil {
-		return h.d.Decode(c, into)
-	}
-	return middleware.DecodeJSON(c.Request.Body, into)
-}
-
 // List serves the virtual grant root or a permission-checked directory page.
 func (h *Handler) List(c *gin.Context) {
-	owner, ok := h.owner(c)
+	owner, ok := handler.Owner(c)
 	if !ok {
-		h.refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	raw := c.Query("path")
@@ -144,12 +95,12 @@ func (h *Handler) List(c *gin.Context) {
 		for _, root := range roots {
 			entries = append(entries, handler.EntryView{Name: root.Label, Path: "/" + root.Label, IsDir: true})
 		}
-		writeJSON(c, http.StatusOK, handler.PageView{Entries: entries})
+		c.JSON(http.StatusOK, handler.PageView{Entries: entries})
 		return
 	}
 	r, err := h.resolve(owner, raw, acl.Read)
 	if err != nil {
-		h.fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	limit, parseErr := strconv.Atoi(c.Query("limit"))
@@ -158,51 +109,51 @@ func (h *Handler) List(c *gin.Context) {
 	}
 	page, err := h.d.Core.ListSorted(c.Request.Context(), r, files.Cursor(c.Query("cursor")), files.ListOptions{Sort: files.ParseSortKey(c.Query("sort")), Desc: c.Query("order") == "desc", Limit: limit})
 	if err != nil {
-		h.fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
-	writeJSON(c, http.StatusOK, handler.PageOf(page, func(entry files.Entry) string { return h.d.Vpath(owner, r, entry) }, h.d.Refs(owner)))
+	c.JSON(http.StatusOK, handler.PageOf(page, func(entry files.Entry) string { return h.d.Vpath(owner, r, entry) }, h.d.Refs(owner)))
 }
 
 // Stat serves one permission-checked entry and its content references.
 func (h *Handler) Stat(c *gin.Context) {
-	owner, ok := h.owner(c)
+	owner, ok := handler.Owner(c)
 	if !ok {
-		h.refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	r, err := h.resolve(owner, c.Query("path"), acl.Read)
 	if err != nil {
-		h.fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	entry, err := h.d.Core.Stat(c.Request.Context(), r)
 	if err != nil {
-		h.fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
-	writeJSON(c, http.StatusOK, h.d.EntryView(owner, r, entry))
+	c.JSON(http.StatusOK, h.d.EntryView(owner, r, entry))
 }
 
 // Read serves a sealed content claim with inline disposition rules.
 func (h *Handler) Read(c *gin.Context) {
-	owner, ok := h.owner(c)
+	owner, ok := handler.Owner(c)
 	if !ok {
-		h.refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	if h.d.OpenClaim == nil {
-		h.notFound(c)
+		middleware.Fail(c, files.ErrNotFound)
 		return
 	}
 	claim, ok := h.d.OpenClaim(c, handler.PurposeContent, owner)
 	if !ok {
-		h.notFound(c)
+		middleware.Fail(c, files.ErrNotFound)
 		return
 	}
 	r, err := h.resolve(owner, claim.Path, acl.Download)
 	if err != nil {
-		h.fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	h.StreamFile(c, r, "")
@@ -213,13 +164,13 @@ func (h *Handler) Read(c *gin.Context) {
 func (h *Handler) StreamFile(c *gin.Context, r files.Resolved, attachAs string) {
 	entry, stream, err := h.d.Core.OpenStream(c.Request.Context(), r, nil)
 	if err != nil {
-		h.fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	size, nerr := num.Narrow[int64](entry.Size)
 	if nerr != nil {
 		h.closeStream(stream, entry.Name)
-		h.fail(c, files.ErrNotFound)
+		middleware.Fail(c, files.ErrNotFound)
 		return
 	}
 	rng, ranged, rerr := handler.ParseRange(c.GetHeader("Range"), size)
@@ -227,10 +178,10 @@ func (h *Handler) StreamFile(c *gin.Context, r files.Resolved, attachAs string) 
 		h.closeStream(stream, entry.Name)
 		if errors.Is(rerr, handler.ErrRangeUnsatisfiable) {
 			c.Header("Content-Range", "bytes */"+strconv.FormatInt(size, 10))
-			h.refuse(c, apierr.Classified{Class: apierr.RangeNotSatisfiable})
+			middleware.Refuse(c, apierr.Classified{Class: apierr.RangeNotSatisfiable})
 			return
 		}
-		h.refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
 	}
 	if ranged {
@@ -238,12 +189,12 @@ func (h *Handler) StreamFile(c *gin.Context, r files.Resolved, attachAs string) 
 		start, serr := num.Narrow[uint64](rng.Start)
 		last, lerr := num.Narrow[uint64](rng.End - 1)
 		if serr != nil || lerr != nil {
-			h.fail(c, files.ErrNotFound)
+			middleware.Fail(c, files.ErrNotFound)
 			return
 		}
 		entry, stream, err = h.d.Core.OpenStream(c.Request.Context(), r, &[2]uint64{start, last})
 		if err != nil {
-			h.fail(c, err)
+			middleware.Fail(c, err)
 			return
 		}
 	}
@@ -330,63 +281,63 @@ func (h *Handler) closeStream(stream *files.Stream, name string) {
 
 // Download mints a browser-navigation ticket for one file.
 func (h *Handler) Download(c *gin.Context) {
-	owner, ok := h.owner(c)
+	owner, ok := handler.Owner(c)
 	if !ok {
-		h.refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	var req struct {
 		Path string `json:"path"`
 	}
-	if err := h.decode(c, &req); err != nil {
-		h.refuse(c, apierr.Classified{Class: apierr.Malformed})
+	if err := middleware.DecodeJSON(c.Request.Body, &req); err != nil {
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
 		return
 	}
 	r, err := h.resolve(owner, req.Path, acl.Read|acl.Download)
 	if err != nil {
-		h.fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	st, err := r.Root().Stat(r.Path())
 	if err != nil {
-		h.fail(c, files.ErrNotFound)
+		middleware.Fail(c, files.ErrNotFound)
 		return
 	}
 	if st.Kind.IsDir() {
-		h.refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
 	}
 	token, err := archiveToken()
 	if err != nil {
-		h.fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	if h.d.Archives == nil || !h.d.Archives.Put(token, &archive.Ticket{Kind: archive.KindFile, Name: r.Path().Name(), Paths: []string{req.Path}, Owner: int64(owner)}) {
-		h.refuse(c, apierr.Classified{Class: apierr.LimitExceeded})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.LimitExceeded})
 		return
 	}
-	writeJSON(c, http.StatusOK, handler.TicketView{Token: token, Name: r.Path().Name(), URL: "/api/v1/files/download/fetch?token=" + url.QueryEscape(token)})
+	c.JSON(http.StatusOK, handler.TicketView{Token: token, Name: r.Path().Name(), URL: "/api/v1/files/download/fetch?token=" + url.QueryEscape(token)})
 }
 
 // DownloadFetch resolves and streams a previously minted file ticket.
 func (h *Handler) DownloadFetch(c *gin.Context) {
-	owner, ok := h.owner(c)
+	owner, ok := handler.Owner(c)
 	if !ok {
-		h.refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	if h.d.Archives == nil {
-		h.refuse(c, apierr.Classified{Class: apierr.NotFound})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.NotFound})
 		return
 	}
 	ticket, ok := h.d.Archives.Get(c.Query("token"), int64(owner), archive.KindFile)
 	if !ok || len(ticket.Paths) != 1 {
-		h.refuse(c, apierr.Classified{Class: apierr.NotFound})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.NotFound})
 		return
 	}
 	resolved, err := h.resolve(owner, ticket.Paths[0], acl.Read|acl.Download)
 	if err != nil {
-		h.fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	if c.GetHeader("Range") == "" {
@@ -398,7 +349,7 @@ func (h *Handler) DownloadFetch(c *gin.Context) {
 					c.Redirect(http.StatusFound, signed)
 					return
 				} else if !errors.Is(signErr, objstore.ErrDirectTransferUnsupported) {
-					h.fail(c, signErr)
+					middleware.Fail(c, signErr)
 					return
 				}
 			}
@@ -409,97 +360,97 @@ func (h *Handler) DownloadFetch(c *gin.Context) {
 
 // Archive mints a ticket for a validated selection.
 func (h *Handler) Archive(c *gin.Context) {
-	owner, ok := h.owner(c)
+	owner, ok := handler.Owner(c)
 	if !ok {
-		h.refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	var req struct {
 		Paths []string `json:"paths"`
 		Name  string   `json:"name"`
 	}
-	if err := h.decode(c, &req); err != nil {
-		h.refuse(c, apierr.Classified{Class: apierr.Malformed})
+	if err := middleware.DecodeJSON(c.Request.Body, &req); err != nil {
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
 		return
 	}
 	if len(req.Paths) == 0 {
-		h.refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
 	}
 	if len(req.Paths) > archiveMaxRoots {
-		h.refuse(c, apierr.Classified{Class: apierr.LimitExceeded})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.LimitExceeded})
 		return
 	}
 	for _, p := range req.Paths {
 		r, err := h.resolve(owner, p, acl.Read|acl.Download)
 		if err != nil {
-			h.fail(c, err)
+			middleware.Fail(c, err)
 			return
 		}
 		encrypted, err := h.d.Core.ShareEncrypted(c.Request.Context(), r.Share())
 		if err != nil {
-			h.fail(c, err)
+			middleware.Fail(c, err)
 			return
 		}
 		if encrypted {
-			h.refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+			middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 			return
 		}
 	}
 	name, ok := archiveFilename(req.Name)
 	if !ok {
-		h.refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
 	}
 	token, err := archiveToken()
 	if err != nil {
-		h.fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	if h.d.Archives == nil || !h.d.Archives.Put(token, &archive.Ticket{Kind: archive.KindArchive, Name: name, Paths: req.Paths, Owner: int64(owner)}) {
-		h.refuse(c, apierr.Classified{Class: apierr.LimitExceeded})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.LimitExceeded})
 		return
 	}
-	writeJSON(c, http.StatusOK, handler.TicketView{Token: token, Name: name, URL: "/api/v1/files/archive/fetch?token=" + url.QueryEscape(token)})
+	c.JSON(http.StatusOK, handler.TicketView{Token: token, Name: name, URL: "/api/v1/files/archive/fetch?token=" + url.QueryEscape(token)})
 }
 
 // ArchiveFetch streams a validated archive ticket.
 func (h *Handler) ArchiveFetch(c *gin.Context) {
-	owner, ok := h.owner(c)
+	owner, ok := handler.Owner(c)
 	if !ok {
-		h.refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	if h.d.Archives == nil {
-		h.refuse(c, apierr.Classified{Class: apierr.NotFound})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.NotFound})
 		return
 	}
 	ticket, ok := h.d.Archives.Get(c.Query("token"), int64(owner), archive.KindArchive)
 	if !ok {
-		h.refuse(c, apierr.Classified{Class: apierr.NotFound})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.NotFound})
 		return
 	}
 	roots := make([]files.Resolved, 0, len(ticket.Paths))
 	for _, path := range ticket.Paths {
 		resolved, err := h.resolve(owner, path, acl.Read|acl.Download)
 		if err != nil {
-			h.fail(c, err)
+			middleware.Fail(c, err)
 			return
 		}
 		encrypted, err := h.d.Core.ShareEncrypted(c.Request.Context(), resolved.Share())
 		if err != nil {
-			h.fail(c, err)
+			middleware.Fail(c, err)
 			return
 		}
 		if encrypted {
-			h.refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+			middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 			return
 		}
 		roots = append(roots, resolved)
 	}
 	release, acquired := h.d.AcquireArchive()
 	if !acquired {
-		h.refuse(c, apierr.Classified{Class: apierr.ResourceExhausted, Key: "archive.busy"})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.ResourceExhausted, Key: "archive.busy"})
 		return
 	}
 	defer release()
@@ -521,34 +472,34 @@ func (h *Handler) ArchiveFetch(c *gin.Context) {
 
 // ArchiveList reads an existing archive's central directory.
 func (h *Handler) ArchiveList(c *gin.Context) {
-	owner, ok := h.owner(c)
+	owner, ok := handler.Owner(c)
 	if !ok {
-		h.refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	resolved, err := h.resolve(owner, c.Query("path"), acl.Read|acl.Download)
 	if err != nil {
-		h.fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	encrypted, err := h.d.Core.ShareEncrypted(c.Request.Context(), resolved.Share())
 	if err != nil {
-		h.fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	if encrypted {
-		h.refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
 	}
 	release, acquired := h.d.AcquireArchive()
 	if !acquired {
-		h.refuse(c, apierr.Classified{Class: apierr.ResourceExhausted, Key: "archive.busy"})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.ResourceExhausted, Key: "archive.busy"})
 		return
 	}
 	defer release()
 	entry, random, err := h.d.Core.OpenRandom(c.Request.Context(), resolved)
 	if err != nil {
-		h.fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	defer func() {
@@ -558,62 +509,62 @@ func (h *Handler) ArchiveList(c *gin.Context) {
 	}()
 	listing, err := featurepreview.ListArchive(c.Request.Context(), random, random.Size)
 	if err != nil {
-		h.notFound(c)
+		middleware.Fail(c, files.ErrNotFound)
 		return
 	}
-	writeJSON(c, http.StatusOK, handler.ArchiveListingOf(listing))
+	c.JSON(http.StatusOK, handler.ArchiveListingOf(listing))
 }
 
 // Mkdir creates one directory.
 func (h *Handler) Mkdir(c *gin.Context) {
-	owner, ok := h.owner(c)
+	owner, ok := handler.Owner(c)
 	if !ok {
-		h.refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	var req pathRequest
-	if err := h.decode(c, &req); err != nil {
-		h.refuse(c, apierr.Classified{Class: apierr.Malformed})
+	if err := middleware.DecodeJSON(c.Request.Body, &req); err != nil {
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
 		return
 	}
 	r, err := h.resolve(owner, req.Path, acl.Create)
 	if err != nil {
-		h.fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	entry, err := h.d.Core.Mkdir(c.Request.Context(), r)
 	if err != nil {
-		h.fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
-	writeJSON(c, http.StatusCreated, h.d.EntryView(owner, r, entry))
+	c.JSON(http.StatusCreated, h.d.EntryView(owner, r, entry))
 }
 
 // Delete removes one entry, respecting DAV locks and share trash policy.
 func (h *Handler) Delete(c *gin.Context) {
-	owner, ok := h.owner(c)
+	owner, ok := handler.Owner(c)
 	if !ok {
-		h.refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	var req pathRequest
-	if err := h.decode(c, &req); err != nil {
-		h.refuse(c, apierr.Classified{Class: apierr.Malformed})
+	if err := middleware.DecodeJSON(c.Request.Body, &req); err != nil {
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
 		return
 	}
 	r, err := h.resolve(owner, req.Path, acl.Delete)
 	if err != nil {
-		h.fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	if h.d.GuardLock != nil {
 		if lerr := h.d.GuardLock(c.Request.Context(), uint32(r.Share()), r.Path().String(), int64(owner)); lerr != nil {
-			h.refuse(c, apierr.Classified{Class: apierr.Locked, Key: "dav.locked"})
+			middleware.Refuse(c, apierr.Classified{Class: apierr.Locked, Key: "dav.locked"})
 			return
 		}
 	}
 	if err := h.d.Core.Delete(c.Request.Context(), r, false); err != nil {
-		h.fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -629,65 +580,65 @@ type renameRequest struct {
 
 // Rename changes one entry name in place.
 func (h *Handler) Rename(c *gin.Context) {
-	owner, ok := h.owner(c)
+	owner, ok := handler.Owner(c)
 	if !ok {
-		h.refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	var req renameRequest
-	if err := h.decode(c, &req); err != nil {
-		h.refuse(c, apierr.Classified{Class: apierr.Malformed})
+	if err := middleware.DecodeJSON(c.Request.Body, &req); err != nil {
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
 		return
 	}
 	r, err := h.resolve(owner, req.Path, acl.Rename)
 	if err != nil {
-		h.fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	if h.d.GuardLock != nil {
 		if lerr := h.d.GuardLock(c.Request.Context(), uint32(r.Share()), r.Path().String(), int64(owner)); lerr != nil {
-			h.refuse(c, apierr.Classified{Class: apierr.Locked, Key: "dav.locked"})
+			middleware.Refuse(c, apierr.Classified{Class: apierr.Locked, Key: "dav.locked"})
 			return
 		}
 	}
 	entry, err := h.d.Core.Rename(c.Request.Context(), r, req.Name, nil)
 	if err != nil {
-		h.fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
-	writeJSON(c, http.StatusOK, h.d.EntryView(owner, r, entry))
+	c.JSON(http.StatusOK, h.d.EntryView(owner, r, entry))
 }
 
 // Write durably replaces one file from the request body.
 func (h *Handler) Write(c *gin.Context) {
-	owner, ok := h.owner(c)
+	owner, ok := handler.Owner(c)
 	if !ok {
-		h.refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	r, err := h.resolve(owner, c.Query("path"), acl.Write|acl.Create)
 	if err != nil {
-		h.fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	if h.d.GuardLock != nil {
 		if lerr := h.d.GuardLock(c.Request.Context(), uint32(r.Share()), r.Path().String(), int64(owner)); lerr != nil {
-			h.refuse(c, apierr.Classified{Class: apierr.Locked, Key: "dav.locked"})
+			middleware.Refuse(c, apierr.Classified{Class: apierr.Locked, Key: "dav.locked"})
 			return
 		}
 	}
 	if declared := c.Request.ContentLength; declared > 0 {
 		if qerr := h.d.Core.CheckQuota(c.Request.Context(), owner, uint64(declared)); qerr != nil {
-			h.fail(c, qerr)
+			middleware.Fail(c, qerr)
 			return
 		}
 	}
-	entry, err := h.d.Core.WriteStream(c.Request.Context(), r, h.d.Body(c), ifMatchOf(c))
+	entry, err := h.d.Core.WriteStream(c.Request.Context(), r, c.Request.Body, ifMatchOf(c))
 	if err != nil {
-		h.fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
-	writeJSON(c, http.StatusOK, h.d.EntryView(owner, r, entry))
+	c.JSON(http.StatusOK, h.d.EntryView(owner, r, entry))
 }
 
 func ifMatchOf(c *gin.Context) *files.Token {
@@ -719,9 +670,9 @@ func (t transferRequest) policy() (files.OnConflict, bool) {
 
 // Move relocates an entry.
 func (h *Handler) Move(c *gin.Context) {
-	owner, ok := h.owner(c)
+	owner, ok := handler.Owner(c)
 	if !ok {
-		h.refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	req, from, to, proceed := h.transferEnds(c, owner, acl.Read|acl.Move)
@@ -730,22 +681,22 @@ func (h *Handler) Move(c *gin.Context) {
 	}
 	policy, known := req.policy()
 	if !known {
-		h.refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
 	}
 	result, err := h.d.Core.Move(c.Request.Context(), from, to, files.MoveOpts{OnConflict: policy})
 	if err != nil {
-		h.fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
-	writeJSON(c, http.StatusOK, handler.MoveOf(result))
+	c.JSON(http.StatusOK, handler.MoveOf(result))
 }
 
 // Copy starts a detached copy operation.
 func (h *Handler) Copy(c *gin.Context) {
-	owner, ok := h.owner(c)
+	owner, ok := handler.Owner(c)
 	if !ok {
-		h.refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	req, from, to, proceed := h.transferEnds(c, owner, acl.Read|acl.Download)
@@ -754,34 +705,34 @@ func (h *Handler) Copy(c *gin.Context) {
 	}
 	policy, known := req.policy()
 	if !known {
-		h.refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
 	}
 	start, err := h.d.Core.StartCopy(c.Request.Context(), owner, from, to, policy)
 	if err != nil {
-		h.fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	if start.Skipped {
-		writeJSON(c, http.StatusOK, handler.CopyStartOf(start))
+		c.JSON(http.StatusOK, handler.CopyStartOf(start))
 		return
 	}
-	writeJSON(c, http.StatusAccepted, handler.CopyStartOf(start))
+	c.JSON(http.StatusAccepted, handler.CopyStartOf(start))
 }
 
 func (h *Handler) transferEnds(c *gin.Context, owner files.UserID, sourceNeed acl.Perms) (req transferRequest, from, to files.Resolved, ok bool) {
-	if err := h.decode(c, &req); err != nil {
-		h.refuse(c, apierr.Classified{Class: apierr.Malformed})
+	if err := middleware.DecodeJSON(c.Request.Body, &req); err != nil {
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
 		return req, from, to, false
 	}
 	from, err := h.resolve(owner, req.From, sourceNeed)
 	if err != nil {
-		h.fail(c, err)
+		middleware.Fail(c, err)
 		return req, files.Resolved{}, files.Resolved{}, false
 	}
 	to, err = h.resolveDest(owner, req.To)
 	if err != nil {
-		h.fail(c, err)
+		middleware.Fail(c, err)
 		return req, files.Resolved{}, files.Resolved{}, false
 	}
 	return req, from, to, true
@@ -815,33 +766,33 @@ func splitDest(raw string) (parent, name string, ok bool) {
 
 // Size returns a recursive subtree aggregate.
 func (h *Handler) Size(c *gin.Context) {
-	owner, ok := h.owner(c)
+	owner, ok := handler.Owner(c)
 	if !ok {
-		h.refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	r, err := h.resolve(owner, c.Query("path"), acl.Read)
 	if err != nil {
-		h.fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	agg, err := h.d.Core.Aggregate(c.Request.Context(), r.Share(), r.Path())
 	if err != nil {
-		h.fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
-	writeJSON(c, http.StatusOK, handler.AggregateOf(agg))
+	c.JSON(http.StatusOK, handler.AggregateOf(agg))
 }
 
 // Recent returns the account's recent writes. A nil journal is an empty listing.
 func (h *Handler) Recent(c *gin.Context) {
-	owner, ok := h.owner(c)
+	owner, ok := handler.Owner(c)
 	if !ok {
-		h.refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	if !h.d.Journal {
-		writeJSON(c, http.StatusOK, []handler.RecentView{})
+		c.JSON(http.StatusOK, []handler.RecentView{})
 		return
 	}
 	since, err := strconv.ParseInt(c.Query("since"), 10, 64)
@@ -854,21 +805,8 @@ func (h *Handler) Recent(c *gin.Context) {
 	}
 	hits, err := h.d.Core.Recent(c.Request.Context(), owner, files.RecentQuery{SinceNs: files.RecentSinceOf(since, h.d.Now()), Limit: files.RecentLimitOf(limit), Scope: c.Query("path")})
 	if err != nil {
-		h.fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
-	writeJSON(c, http.StatusOK, handler.RecentListOf(hits))
+	c.JSON(http.StatusOK, handler.RecentListOf(hits))
 }
-
-func requestBodyReader(c *gin.Context) io.Reader {
-	if c.Request != nil && c.Request.Body != nil {
-		return c.Request.Body
-	}
-	return bytes.NewReader(nil)
-}
-func writeJSON(c *gin.Context, status int, value any) { c.JSON(status, value) }
-func refuse(c *gin.Context, class apierr.Classified) {
-	status, body := apierr.REST(class)
-	writeJSON(c, status, body)
-}
-func fail(c *gin.Context, err error) { middleware.Fail(c, err) }

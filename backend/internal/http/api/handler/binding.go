@@ -4,8 +4,6 @@ package handler
 
 import (
 	"context"
-	"io"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -32,21 +30,4 @@ func OwnerFrom(ctx context.Context) (files.UserID, error) {
 		return 0, &apierr.ClassifiedError{Classified: apierr.Classified{Class: apierr.AuthRequired}}
 	}
 	return files.UserID(p.UserID), nil
-}
-
-// Fail records a service error for the chain to classify and render.
-func Fail(c *gin.Context, err error) { middleware.Fail(c, err) }
-
-func NotFound(c *gin.Context) { Fail(c, files.ErrNotFound) }
-
-func Refuse(c *gin.Context, class apierr.Classified) {
-	status, body := apierr.REST(class)
-	c.JSON(status, body)
-}
-
-func Body(c *gin.Context) io.Reader {
-	if c.Request != nil && c.Request.Body != nil {
-		return c.Request.Body
-	}
-	return strings.NewReader("")
 }

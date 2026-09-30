@@ -18,6 +18,7 @@ import (
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	featurepreview "github.com/heavycaffeiner/stowcloud/backend/internal/preview"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
@@ -26,12 +27,9 @@ import (
 // policy; framing and preview service use belong to this transport package.
 type ThumbnailDeps struct {
 	Core         *files.Core
-	Owner        func(*gin.Context) (files.UserID, bool)
 	Resolve      func(files.UserID, string, acl.Perms) (files.Resolved, error)
 	OpenClaim    func(*gin.Context, handler.ClaimPurpose, files.UserID) (handler.Claim, bool)
 	PreviewLease func() (*featurepreview.Lease, bool)
-	Fail         func(*gin.Context, error)
-	Refuse       func(*gin.Context, apierr.Classified)
 	Logger       *slog.Logger
 }
 
@@ -40,55 +38,55 @@ func ThumbnailHandler(d ThumbnailDeps) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		lease, ok := d.PreviewLease()
 		if !ok {
-			d.Refuse(c, apierr.Classified{Class: apierr.NotFound})
+			middleware.Refuse(c, apierr.Classified{Class: apierr.NotFound})
 			return
 		}
 		defer lease.Close()
 
-		owner, ok := d.Owner(c)
+		owner, ok := handler.Owner(c)
 		if !ok {
-			d.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+			middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 			return
 		}
 
 		preset, err := presetOf(c.Query("size"))
 		if err != nil {
-			d.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+			middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 			return
 		}
 
 		claim, ok := d.OpenClaim(c, handler.PurposeThumb, owner)
 		if !ok {
-			d.Fail(c, files.ErrNotFound)
+			middleware.Fail(c, files.ErrNotFound)
 			return
 		}
 		r, err := d.Resolve(owner, claim.Path, acl.Read|acl.Download)
 		if err != nil {
-			d.Fail(c, err)
+			middleware.Fail(c, err)
 			return
 		}
 		if enc, eerr := d.Core.ShareEncrypted(c.Request.Context(), r.Share()); eerr != nil {
-			d.Fail(c, eerr)
+			middleware.Fail(c, eerr)
 			return
 		} else if enc {
-			d.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+			middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 			return
 		}
 
 		thumb, err := lease.Get(c.Request.Context(), r, preset)
 		if err != nil {
-			d.Fail(c, err)
+			middleware.Fail(c, err)
 			return
 		}
-		sendThumb(c, thumb, d.Logger, d.Fail)
+		sendThumb(c, thumb, d.Logger)
 	}
 }
 
-func sendThumb(c *gin.Context, thumb featurepreview.Thumb, logger *slog.Logger, fail func(*gin.Context, error)) {
+func sendThumb(c *gin.Context, thumb featurepreview.Thumb, logger *slog.Logger) {
 	size, err := thumbSize(thumb.File)
 	if err != nil {
 		closeThumb(thumb, logger)
-		fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 

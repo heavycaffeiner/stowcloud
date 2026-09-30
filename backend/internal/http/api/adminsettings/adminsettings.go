@@ -1,8 +1,8 @@
 //go:build linux
 
 // Package adminsettings serves administrator settings and restart intent.
-// It owns request authorization, validation and response projection while the
-// application supplies the settings coordinator through a narrow interface.
+// It owns validation and response projection; the application supplies the
+// settings coordinator through a narrow interface.
 package adminsettings
 
 import (
@@ -48,7 +48,6 @@ type Deps struct {
 	Settings     Settings
 	DataDir      string
 	Hardening    jail.Policy
-	Admin        func(*gin.Context) (int64, bool)
 	UploadPatch  gin.HandlerFunc
 	SMBAgentView func() *handler.SMBAgentView
 	PublishSMB   func(context.Context)
@@ -64,12 +63,9 @@ func NewHandlers(d Deps) *Handlers {
 type Handlers struct{ d Deps }
 
 func (h *Handlers) Get(c *gin.Context) {
-	if _, ok := h.d.Admin(c); !ok {
-		return
-	}
 	stored, err := h.d.State.Settings(c.Request.Context())
 	if err != nil {
-		h.failKnown(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	if stored == nil {
@@ -77,29 +73,26 @@ func (h *Handlers) Get(c *gin.Context) {
 	}
 	values := h.d.Settings.Values(c.Request.Context())
 	values.DataDir = h.d.DataDir
-	h.json(c, http.StatusOK, handler.SettingsOf(catalogue.Of(values, stored), h.hopOf(c), h.d.SMBAgentView()))
+	c.JSON(http.StatusOK, handler.SettingsOf(catalogue.Of(values, stored), h.hopOf(c), h.d.SMBAgentView()))
 }
 
 func (h *Handlers) Patch(c *gin.Context) {
-	if _, ok := h.d.Admin(c); !ok {
-		return
-	}
 	section := c.Param("section")
 	if section == "upload" {
 		if h.d.UploadPatch == nil {
-			h.refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+			middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 			return
 		}
 		h.d.UploadPatch(c)
 		return
 	}
 	if !check.Known(section) {
-		h.refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
 	}
 	var body map[string]any
-	if err := decode(c, &body); err != nil {
-		h.refuse(c, apierr.Classified{Class: apierr.Malformed})
+	if err := middleware.DecodeJSON(c.Request.Body, &body); err != nil {
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
 		return
 	}
 	if !h.extractSecrets(c, section, body) {
@@ -114,11 +107,11 @@ func (h *Handlers) Patch(c *gin.Context) {
 		Lockout:   check.LockoutBlocks,
 	})
 	if handler.Blocking(findings) {
-		h.json(c, http.StatusUnprocessableEntity, handler.ApplyOutcomeOf(false, false, false, findings))
+		c.JSON(http.StatusUnprocessableEntity, handler.ApplyOutcomeOf(false, false, false, findings))
 		return
 	}
 	if err := h.d.State.MergeSettings(c.Request.Context(), section, body); err != nil {
-		h.failKnown(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	restart := catalogue.RestartRequiredFor(section, body)
@@ -138,19 +131,16 @@ func (h *Handlers) Patch(c *gin.Context) {
 		uploads, jobs := h.activeWork(c)
 		out = out.WithActiveWork(uploads, jobs)
 	}
-	h.json(c, http.StatusOK, out)
+	c.JSON(http.StatusOK, out)
 }
 
 func (h *Handlers) Restart(c *gin.Context) {
-	if _, ok := h.d.Admin(c); !ok {
-		return
-	}
 	if h.d.Settings.WouldLoosenHardening(c.Request.Context(), h.d.Hardening) {
-		h.refuse(c, apierr.Classified{Class: apierr.Conflict, Key: "system.hardening_cannot_loosen"})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Conflict, Key: "system.hardening_cannot_loosen"})
 		return
 	}
 	uploads, jobs := h.activeWork(c)
-	h.json(c, http.StatusAccepted, restartResult{Restarting: true, ActiveUploads: uploads, ActiveJobs: jobs})
+	c.JSON(http.StatusAccepted, restartResult{Restarting: true, ActiveUploads: uploads, ActiveJobs: jobs})
 	if h.d.OnRestart != nil {
 		time.AfterFunc(restartGrace, h.d.OnRestart)
 	}
@@ -195,11 +185,11 @@ func (h *Handlers) extractSecrets(c *gin.Context, section string, body map[strin
 	delete(body, "client_secret")
 	plain, ok := raw.(string)
 	if !ok {
-		h.refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return false
 	}
 	if err := h.d.Settings.StoreConfigSecret(c.Request.Context(), secretOIDCClient, plain); err != nil {
-		h.failKnown(c, err)
+		middleware.Fail(c, err)
 		return false
 	}
 	return true
@@ -224,13 +214,3 @@ func peerAddress(raw string) (netip.Addr, error) {
 	}
 	return netip.ParseAddr(raw)
 }
-
-func decode(c *gin.Context, into any) error {
-	return middleware.DecodeJSON(c.Request.Body, into)
-}
-func (h *Handlers) json(c *gin.Context, status int, value any) { c.JSON(status, value) }
-func (h *Handlers) refuse(c *gin.Context, class apierr.Classified) {
-	status, body := apierr.REST(class)
-	h.json(c, status, body)
-}
-func (h *Handlers) failKnown(c *gin.Context, err error) { middleware.Fail(c, err) }

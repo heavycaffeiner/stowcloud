@@ -8,7 +8,6 @@ package uploads
 
 import (
 	"errors"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -19,6 +18,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/uploads"
 	"github.com/stowcloud/transfer"
@@ -31,19 +31,12 @@ const (
 	tusChunkType         = "application/offset+octet-stream"
 )
 
-// Deps supplies the product services and common response/authentication seams
-// needed by the upload transport. Upload may be nil when the spool subsystem
-// was unavailable during startup.
+// Deps supplies the product services needed by the upload transport. Upload
+// is nil when the spool subsystem was unavailable during startup.
 type Deps struct {
-	Upload    *uploads.Engine
-	Core      *files.Core
-	Resolve   func(files.UserID, string, acl.Perms) (files.Resolved, error)
-	Owner     func(*gin.Context) (files.UserID, bool)
-	Admin     func(*gin.Context) (int64, bool)
-	Fail      func(*gin.Context, error)
-	Refuse    func(*gin.Context, apierr.Classified)
-	Decode    func(*gin.Context, any) error
-	WriteJSON func(*gin.Context, int, any)
+	Upload  *uploads.Engine
+	Core    *files.Core
+	Resolve func(files.UserID, string, acl.Perms) (files.Resolved, error)
 }
 
 // NewHandlers builds the resumable upload handlers.
@@ -82,14 +75,14 @@ func (h *Handlers) DiscoverOne(c *gin.Context) {
 }
 
 func (h *Handlers) Create(c *gin.Context) {
-	owner, ok := h.d.Owner(c)
+	owner, ok := handler.Owner(c)
 	if !ok {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	engine, ok := h.engine(c)
 	if !ok {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
 		return
 	}
 	h.setTusHeaders(c)
@@ -113,7 +106,7 @@ func (h *Handlers) Create(c *gin.Context) {
 		leaf = meta["filename"]
 	}
 	if leaf == "" {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
 	}
 	if dest != "" {
@@ -123,7 +116,7 @@ func (h *Handlers) Create(c *gin.Context) {
 	}
 	r, rerr := h.d.Resolve(owner, dest, acl.Write|acl.Create)
 	if rerr != nil {
-		h.d.Fail(c, rerr)
+		middleware.Fail(c, rerr)
 		return
 	}
 	spec := uploads.SessionSpec{IfMatch: c.GetHeader("If-Match"), Meta: uploadMetaOf(meta), RandomAccess: c.GetHeader(handler.ScRandomAccess) == "1"}
@@ -131,13 +124,13 @@ func (h *Handlers) Create(c *gin.Context) {
 		total := length.Value
 		spec.TotalLen = &total
 		if qerr := h.d.Core.CheckQuota(c.Request.Context(), owner, length.Value); qerr != nil {
-			h.d.Fail(c, qerr)
+			middleware.Fail(c, qerr)
 			return
 		}
 	}
 	sess, cerr := engine.Create(c.Request.Context(), r, spec)
 	if cerr != nil {
-		h.d.Fail(c, cerr)
+		middleware.Fail(c, cerr)
 		return
 	}
 	c.Header("Location", "/api/v1/uploads/"+sess.ID.String())
@@ -146,14 +139,14 @@ func (h *Handlers) Create(c *gin.Context) {
 }
 
 func (h *Handlers) Status(c *gin.Context) {
-	owner, ok := h.d.Owner(c)
+	owner, ok := handler.Owner(c)
 	if !ok {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	engine, ok := h.engine(c)
 	if !ok {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
 		return
 	}
 	h.setTusHeaders(c)
@@ -163,16 +156,16 @@ func (h *Handlers) Status(c *gin.Context) {
 	}
 	id, ok := sessionIDOf(c)
 	if !ok {
-		h.notFound(c)
+		middleware.Fail(c, files.ErrNotFound)
 		return
 	}
 	sess, err := engine.Get(c.Request.Context(), id, owner)
 	if err != nil {
-		h.d.Fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	if terminal, _ := handler.TerminalUploadState(sess.State.StateName()); terminal {
-		h.notFound(c)
+		middleware.Fail(c, files.ErrNotFound)
 		return
 	}
 	c.Header("Cache-Control", "no-store")
@@ -186,14 +179,14 @@ func (h *Handlers) Status(c *gin.Context) {
 }
 
 func (h *Handlers) Patch(c *gin.Context) {
-	owner, ok := h.d.Owner(c)
+	owner, ok := handler.Owner(c)
 	if !ok {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	engine, ok := h.engine(c)
 	if !ok {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
 		return
 	}
 	h.setTusHeaders(c)
@@ -203,11 +196,11 @@ func (h *Handlers) Patch(c *gin.Context) {
 	}
 	id, ok := sessionIDOf(c)
 	if !ok {
-		h.notFound(c)
+		middleware.Fail(c, files.ErrNotFound)
 		return
 	}
 	if c.GetHeader("Content-Type") != tusChunkType {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
 	}
 	offset, err := handler.ParseOffset(c.GetHeader(handler.UploadOffset))
@@ -222,17 +215,17 @@ func (h *Handlers) Patch(c *gin.Context) {
 	}
 	sess, err := engine.Get(c.Request.Context(), id, owner)
 	if err != nil {
-		h.d.Fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	root, ok := h.d.Core.ShareRoot(sess.Share)
 	if !ok {
-		h.d.Fail(c, files.ErrNotFound)
+		middleware.Fail(c, files.ErrNotFound)
 		return
 	}
 	// Deferred-length sessions are quota-bounded by PatchAt while bytes arrive;
 	// the handler must not wait for Upload-Length because it is intentionally absent.
-	next, err := engine.PatchAt(c.Request.Context(), root, id, owner, offset, requestBodyReader(c), sum)
+	next, err := engine.PatchAt(c.Request.Context(), root, id, owner, offset, c.Request.Body, sum)
 	if err != nil {
 		h.failUpload(c, err)
 		return
@@ -249,30 +242,30 @@ func (h *Handlers) Patch(c *gin.Context) {
 func (h *Handlers) publish(c *gin.Context, engine *uploads.Engine, sess uploads.Session, id uploads.SessionID, owner files.UserID) bool {
 	dest, err := h.d.Core.VpathFor(owner, sess.Share, sess.Dest.Share())
 	if err != nil {
-		h.d.Fail(c, files.ErrNotFound)
+		middleware.Fail(c, files.ErrNotFound)
 		return false
 	}
 	resolved, err := h.d.Resolve(owner, dest.String(), acl.Write|acl.Create)
 	if err != nil {
-		h.d.Fail(c, err)
+		middleware.Fail(c, err)
 		return false
 	}
 	if _, err := engine.Finalize(c.Request.Context(), resolved, id); err != nil {
-		h.d.Fail(c, err)
+		middleware.Fail(c, err)
 		return false
 	}
 	return true
 }
 
 func (h *Handlers) Abort(c *gin.Context) {
-	owner, ok := h.d.Owner(c)
+	owner, ok := handler.Owner(c)
 	if !ok {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	engine, ok := h.engine(c)
 	if !ok {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
 		return
 	}
 	h.setTusHeaders(c)
@@ -282,11 +275,11 @@ func (h *Handlers) Abort(c *gin.Context) {
 	}
 	id, ok := sessionIDOf(c)
 	if !ok {
-		h.notFound(c)
+		middleware.Fail(c, files.ErrNotFound)
 		return
 	}
 	if err := engine.Abort(c.Request.Context(), id, owner); err != nil {
-		h.d.Fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -302,24 +295,21 @@ type SettingsRequest struct {
 // route. It is exposed separately because the settings transport owns section
 // dispatch while this package owns the upload-specific state and validation.
 func (h *Handlers) SettingsPatch(c *gin.Context) {
-	if _, ok := h.d.Admin(c); !ok {
-		return
-	}
 	engine, ok := h.engine(c)
 	if !ok {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
 	}
 	var req SettingsRequest
-	if err := h.d.Decode(c, &req); err != nil {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Malformed})
+	if err := middleware.DecodeJSON(c.Request.Body, &req); err != nil {
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
 		return
 	}
 	var minBytes, defaultBytes *uint64
 	if req.ChunkMin != nil {
 		v, err := num.Narrow[uint64](*req.ChunkMin)
 		if err != nil {
-			h.d.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+			middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 			return
 		}
 		minBytes = &v
@@ -327,20 +317,20 @@ func (h *Handlers) SettingsPatch(c *gin.Context) {
 	if req.ChunkDefault != nil {
 		v, err := num.Narrow[uint64](*req.ChunkDefault)
 		if err != nil {
-			h.d.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+			middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 			return
 		}
 		defaultBytes = &v
 	}
 	if minBytes != nil || defaultBytes != nil {
 		if err := engine.ApplySettings(c.Request.Context(), minBytes, defaultBytes); err != nil {
-			h.d.Fail(c, err)
+			middleware.Fail(c, err)
 			return
 		}
 	}
 	if req.CacheEnabled != nil && *req.CacheEnabled != engine.CacheEnabled() {
 		if err := engine.SetCacheEnabled(c.Request.Context(), *req.CacheEnabled); err != nil {
-			h.d.Fail(c, err)
+			middleware.Fail(c, err)
 			return
 		}
 	}
@@ -349,13 +339,13 @@ func (h *Handlers) SettingsPatch(c *gin.Context) {
 	viewDefault, defErr := num.Narrow[int64](storedDefault)
 	if minErr != nil || defErr != nil {
 		if minErr != nil {
-			h.d.Fail(c, minErr)
+			middleware.Fail(c, minErr)
 		} else {
-			h.d.Fail(c, defErr)
+			middleware.Fail(c, defErr)
 		}
 		return
 	}
-	h.d.WriteJSON(c, http.StatusOK, handler.UploadSettingsView{ChunkMin: viewMin, ChunkDefault: viewDefault, CacheEnabled: engine.CacheEnabled(), CacheAvailable: engine.CacheAvailable()})
+	c.JSON(http.StatusOK, handler.UploadSettingsView{ChunkMin: viewMin, ChunkDefault: viewDefault, CacheEnabled: engine.CacheEnabled(), CacheAvailable: engine.CacheAvailable()})
 }
 
 func (h *Handlers) engine(c *gin.Context) (*uploads.Engine, bool) {
@@ -373,18 +363,18 @@ func sessionIDOf(c *gin.Context) (uploads.SessionID, bool) {
 
 func (h *Handlers) refuseTus(c *gin.Context, err error) {
 	if errors.Is(err, handler.ErrTusVersion) {
-		h.d.Refuse(c, apierr.Classified{Class: apierr.Precondition})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Precondition})
 		return
 	}
-	h.d.Refuse(c, apierr.Classified{Class: apierr.Malformed})
+	middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
 }
 
 func (h *Handlers) failUpload(c *gin.Context, err error) {
 	if errors.Is(err, uploads.ErrChecksum) {
-		h.d.WriteJSON(c, handler.StatusChecksumMismatch, map[string]string{"error": "checksum_mismatch"})
+		c.JSON(handler.StatusChecksumMismatch, map[string]string{"error": "checksum_mismatch"})
 		return
 	}
-	h.d.Fail(c, err)
+	middleware.Fail(c, err)
 }
 
 func chunkChecksum(header string) (*uploads.Checksum, error) {
@@ -406,13 +396,4 @@ func uploadMetaOf(meta map[string]string) uploads.Meta {
 		}
 	}
 	return out
-}
-
-func (h *Handlers) notFound(c *gin.Context) { h.d.Fail(c, files.ErrNotFound) }
-
-func requestBodyReader(c *gin.Context) io.Reader {
-	if c.Request != nil && c.Request.Body != nil {
-		return c.Request.Body
-	}
-	return strings.NewReader("")
 }

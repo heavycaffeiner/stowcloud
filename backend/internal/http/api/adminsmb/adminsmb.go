@@ -11,16 +11,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/smb/agent"
 )
 
-// Deps supplies administrator authorization and the application-owned publisher.
+// Deps supplies the application-owned publisher.
 type Deps struct {
-	Auth    *auth.Service
 	Apply   func(context.Context) (agent.Report, bool, error)
 	Timeout time.Duration
 	Logger  *slog.Logger
@@ -39,52 +37,21 @@ func NewHandlers(d Deps) *Handlers {
 }
 
 func (h *Handlers) Apply(c *gin.Context) {
-	if !h.admin(c) {
-		return
-	}
 	if h.d.Apply == nil {
-		refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable, Key: "smb.not_configured"})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable, Key: "smb.not_configured"})
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), h.d.Timeout)
 	defer cancel()
 	report, configured, err := h.d.Apply(ctx)
 	if !configured {
-		refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable, Key: "smb.not_configured"})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable, Key: "smb.not_configured"})
 		return
 	}
 	if err != nil {
 		h.d.Logger.Warn("the SMB agent did not answer an apply", "error", err)
-		refuse(c, apierr.Classified{Class: apierr.BadGateway, Key: "smb.agent_unreachable"})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.BadGateway, Key: "smb.agent_unreachable"})
 		return
 	}
-	json(c, http.StatusOK, handler.SMBReportOf(report))
+	c.JSON(http.StatusOK, handler.SMBReportOf(report))
 }
-
-func (h *Handlers) admin(c *gin.Context) bool {
-	v, ok := c.Get(string(middleware.KeyCredential))
-	p, okp := v.(middleware.Principal)
-	if !ok || !okp || p.UserID == 0 {
-		refuse(c, apierr.Classified{Class: apierr.AuthRequired})
-		return false
-	}
-	is, err := h.d.Auth.IsAdmin(c.Request.Context(), p.UserID)
-	if err != nil {
-		fail(c, err)
-		return false
-	}
-	if !is {
-		refuse(c, apierr.Classified{Class: apierr.Denied})
-		return false
-	}
-	return true
-}
-
-func json(c *gin.Context, status int, value any) { c.JSON(status, value) }
-
-func refuse(c *gin.Context, class apierr.Classified) {
-	status, body := apierr.REST(class)
-	json(c, status, body)
-}
-
-func fail(c *gin.Context, err error) { middleware.Fail(c, err) }

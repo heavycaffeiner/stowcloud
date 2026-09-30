@@ -45,15 +45,12 @@ func NewAdminFSHandlers(d AdminFSDeps) *AdminFSHandlers {
 type AdminFSHandlers struct{ d AdminFSDeps }
 
 func (h *AdminFSHandlers) Browse(c *gin.Context) {
-	if _, ok := adminPrincipal(c, h.d.Auth); !ok {
-		return
-	}
 	listing, err := h.browseHost(c.Query("path"))
 	if err != nil {
 		adminHostFSFail(c, err)
 		return
 	}
-	adminJSON(c, http.StatusOK, listing)
+	c.JSON(http.StatusOK, listing)
 }
 
 type adminSetupFSRequest struct {
@@ -63,7 +60,7 @@ type adminSetupFSRequest struct {
 
 func (h *AdminFSHandlers) SetupBrowse(c *gin.Context) {
 	if h.d.SetupVerify == nil {
-		adminRefuse(c, apierr.Classified{Class: apierr.SetupComplete, Key: "setup.complete"})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.SetupComplete, Key: "setup.complete"})
 		return
 	}
 	var req adminSetupFSRequest
@@ -79,34 +76,7 @@ func (h *AdminFSHandlers) SetupBrowse(c *gin.Context) {
 		adminHostFSFail(c, err)
 		return
 	}
-	adminJSON(c, http.StatusOK, listing)
-}
-
-func adminPrincipal(c *gin.Context, svc *auth.Service) (int64, bool) {
-	v, ok := c.Get(string(middleware.KeyCredential))
-	if !ok {
-		adminRefuse(c, apierr.Classified{Class: apierr.AuthRequired})
-		return 0, false
-	}
-	p, ok := v.(middleware.Principal)
-	if !ok || p.UserID == 0 {
-		adminRefuse(c, apierr.Classified{Class: apierr.AuthRequired})
-		return 0, false
-	}
-	if svc == nil {
-		adminRefuse(c, apierr.Classified{Class: apierr.Internal})
-		return 0, false
-	}
-	is, err := svc.IsAdmin(c.Request.Context(), p.UserID)
-	if err != nil {
-		adminFail(c, err)
-		return 0, false
-	}
-	if !is {
-		adminRefuse(c, apierr.Classified{Class: apierr.Denied})
-		return 0, false
-	}
-	return p.UserID, true
+	c.JSON(http.StatusOK, listing)
 }
 
 func (h *AdminFSHandlers) browseHost(path string) (HostListingView, error) {
@@ -232,13 +202,13 @@ func adminProbeOpenable(dir string) bool {
 func adminHostFSFail(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, errAdminHostFSNotAbsolute):
-		adminRefuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "settings.path_must_be_absolute"})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "settings.path_must_be_absolute"})
 	case errors.Is(err, errAdminHostFSNotDirectory):
-		adminRefuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "settings.path_is_not_a_directory"})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "settings.path_is_not_a_directory"})
 	case errors.Is(err, fs.ErrNotExist):
-		adminRefuse(c, apierr.Classified{Class: apierr.NotFound})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.NotFound})
 	case errors.Is(err, fs.ErrPermission):
-		adminRefuse(c, apierr.Classified{Class: apierr.Denied, Key: "admin.fs_denied"})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Denied, Key: "admin.fs_denied"})
 	default:
 		middleware.Fail(c, err)
 	}

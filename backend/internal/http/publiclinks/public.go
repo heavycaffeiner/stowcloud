@@ -26,6 +26,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/protocol/limits"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/httpx"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
@@ -37,14 +38,9 @@ type PublicDeps struct {
 	ClaimKey        []byte
 	Limiter         interface{ Allow(string) bool }
 	Now             func() int64
-	ClientAddr      func(*gin.Context) string
 	Audit           func(context.Context, string, string, string, string, bool) error
 	Logger          Logger
 	Frontend        http.Handler
-	Fail            func(*gin.Context, error)
-	Refuse          func(*gin.Context, apierr.Classified)
-	WriteJSON       func(*gin.Context, int, any)
-	Decode          func(*gin.Context, any) error
 	CloseStream     func(*files.Stream, string)
 	SendStreamRange func(c interface {
 		Header(string, string)
@@ -61,11 +57,11 @@ func NewPublic(d PublicDeps) *Public { return &Public{d: d} }
 func (p *Public) linkFor(c *gin.Context) (files.Link, error) {
 	link, _, err := p.d.Core.LinkPublic(c.Request.Context(), c.Param("token"))
 	if err != nil {
-		p.d.Fail(c, err)
+		middleware.Fail(c, err)
 		return files.Link{}, err
 	}
 	if link.HasPassword && !p.unlocked(c, link) {
-		p.d.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "fs.link_password"})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "fs.link_password"})
 		return files.Link{}, errors.New("link locked")
 	}
 	return link, nil
@@ -136,17 +132,17 @@ func (p *Public) Landing(c *gin.Context) {
 	}
 	link, root, err := p.d.Core.LinkPublic(c.Request.Context(), c.Param("token"))
 	if err != nil {
-		p.d.Fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	if link.HasPassword && !p.unlocked(c, link) {
-		p.d.WriteJSON(c, http.StatusOK, gin.H{"protected": true})
+		c.JSON(http.StatusOK, gin.H{"protected": true})
 		return
 	}
 	sub := strings.Trim(c.Query("path"), "/")
 	var listing files.LinkListing
 	if sub != "" && !link.Perms.Has(acl.Read) {
-		p.d.Fail(c, files.ErrNotFound)
+		middleware.Fail(c, files.ErrNotFound)
 		return
 	}
 	if sub == "" && !link.Perms.Has(acl.Read) {
@@ -154,7 +150,7 @@ func (p *Public) Landing(c *gin.Context) {
 	} else {
 		listing, err = p.d.Core.LinkBrowse(c.Request.Context(), link, sub)
 		if err != nil {
-			p.d.Fail(c, err)
+			middleware.Fail(c, err)
 			return
 		}
 	}
@@ -170,29 +166,29 @@ func (p *Public) Landing(c *gin.Context) {
 		}
 		out["entries"] = entries
 	}
-	p.d.WriteJSON(c, http.StatusOK, out)
+	c.JSON(http.StatusOK, out)
 }
 func (p *Public) Unlock(c *gin.Context) {
 	link, _, err := p.d.Core.LinkPublic(c.Request.Context(), c.Param("token"))
 	if err != nil {
-		p.d.Fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
-	key := p.d.ClientAddr(c) + "/" + strconv.FormatInt(link.ID, 10)
+	key := middleware.ClientOf(c).String() + "/" + strconv.FormatInt(link.ID, 10)
 	if p.d.Limiter != nil && !p.d.Limiter.Allow(key) {
-		p.d.Refuse(c, apierr.Classified{Class: apierr.RateLimited, Key: "auth.rate_limited"})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.RateLimited, Key: "auth.rate_limited"})
 		return
 	}
 	var req struct {
 		Password string `json:"password"`
 	}
-	if err = p.d.Decode(c, &req); err != nil {
-		p.d.Refuse(c, apierr.Classified{Class: apierr.Malformed})
+	if err = middleware.DecodeJSON(c.Request.Body, &req); err != nil {
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
 		return
 	}
 	ok, err := p.d.Core.LinkCheckPassword(c.Request.Context(), link, req.Password)
 	if err != nil {
-		p.d.Fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	if !ok {
@@ -201,7 +197,7 @@ func (p *Public) Unlock(c *gin.Context) {
 				p.d.Logger.Warn("recording failed link unlock audit event", "error", auditErr)
 			}
 		}
-		p.d.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "fs.link_password"})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "fs.link_password"})
 		return
 	}
 	if p.d.Audit != nil {
@@ -211,7 +207,7 @@ func (p *Public) Unlock(c *gin.Context) {
 	}
 	hash, err := p.d.State.PasswordHash(c.Request.Context(), link.ID)
 	if err != nil || hash == nil {
-		p.d.Fail(c, files.ErrNotFound)
+		middleware.Fail(c, files.ErrNotFound)
 		return
 	}
 	exp := p.d.Now() + int64(24*time.Hour)
@@ -227,20 +223,20 @@ func (p *Public) Download(c *gin.Context) {
 		return
 	}
 	if !link.Perms.Has(acl.Download) {
-		p.d.Refuse(c, apierr.Classified{Class: apierr.Denied, Key: "fs.link_no_download"})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Denied, Key: "fs.link_no_download"})
 		return
 	}
 	ctx := c.Request.Context()
 	path := c.Query("path")
 	entry, stream, err := p.d.Core.LinkStreamAt(ctx, link, path, nil)
 	if err != nil {
-		p.d.Fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	size, nerr := num.Narrow[int64](entry.Size)
 	if nerr != nil {
 		p.d.CloseStream(stream, entry.Name)
-		p.d.Fail(c, files.ErrNotFound)
+		middleware.Fail(c, files.ErrNotFound)
 		return
 	}
 	rng, ranged, rerr := handler.ParseRange(c.GetHeader("Range"), size)
@@ -249,10 +245,10 @@ func (p *Public) Download(c *gin.Context) {
 		if errors.Is(rerr, handler.ErrRangeUnsatisfiable) {
 			c.Header("Accept-Ranges", "bytes")
 			c.Header("Content-Range", handler.UnsatisfiedRange(size))
-			p.d.Refuse(c, apierr.Classified{Class: apierr.RangeNotSatisfiable})
+			middleware.Refuse(c, apierr.Classified{Class: apierr.RangeNotSatisfiable})
 			return
 		}
-		p.d.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
 	}
 	if ranged {
@@ -260,18 +256,18 @@ func (p *Public) Download(c *gin.Context) {
 		start, serr := num.Narrow[uint64](rng.Start)
 		last, lerr := num.Narrow[uint64](rng.End - 1)
 		if serr != nil || lerr != nil {
-			p.d.Fail(c, files.ErrNotFound)
+			middleware.Fail(c, files.ErrNotFound)
 			return
 		}
 		entry, stream, err = p.d.Core.LinkStreamAt(ctx, link, path, &[2]uint64{start, last})
 		if err != nil {
-			p.d.Fail(c, err)
+			middleware.Fail(c, err)
 			return
 		}
 	}
 	if err = p.d.Core.NoteLinkDownload(ctx, link); err != nil {
 		p.d.CloseStream(stream, entry.Name)
-		p.d.Fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	// Always an attachment: a stranger's download must never render inline
@@ -284,31 +280,31 @@ func (p *Public) Zip(c *gin.Context) {
 		return
 	}
 	if !link.Perms.Has(acl.Download) {
-		p.d.Refuse(c, apierr.Classified{Class: apierr.Denied, Key: "fs.link_no_download"})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Denied, Key: "fs.link_no_download"})
 		return
 	}
 	sub := c.Query("path")
 	if strings.Trim(sub, "/") != "" && !link.Perms.Has(acl.Read) {
-		p.d.Fail(c, files.ErrNotFound)
+		middleware.Fail(c, files.ErrNotFound)
 		return
 	}
 	listing, err := p.d.Core.LinkBrowse(c.Request.Context(), link, sub)
 	if err != nil {
-		p.d.Fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	if !listing.IsDir {
-		p.d.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "fs.link_not_a_folder"})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "fs.link_not_a_folder"})
 		return
 	}
 	release, ok := p.d.AcquireArchive()
 	if !ok {
-		p.d.Refuse(c, apierr.Classified{Class: apierr.ResourceExhausted, Key: "archive.busy"})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.ResourceExhausted, Key: "archive.busy"})
 		return
 	}
 	defer release()
 	if err = p.d.Core.NoteLinkDownload(c.Request.Context(), link); err != nil {
-		p.d.Fail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	c.Header("Content-Type", "application/zip")
@@ -322,33 +318,33 @@ func (p *Public) Drop(c *gin.Context) {
 		return
 	}
 	if !link.Perms.Has(acl.Create) {
-		p.d.Refuse(c, apierr.Classified{Class: apierr.Denied, Key: "fs.link_no_upload"})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Denied, Key: "fs.link_no_upload"})
 		return
 	}
 	name := c.Query("name")
 	if name == "" {
-		p.d.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "fs.link_no_name"})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "fs.link_no_name"})
 		return
 	}
 	if cl := c.GetHeader("Content-Length"); cl != "" {
 		if n, e := strconv.ParseInt(cl, 10, 64); e == nil && n > limits.RequestBody {
-			p.d.Refuse(c, apierr.Classified{Class: apierr.BodyTooLarge, Key: "http.body_too_large"})
+			middleware.Refuse(c, apierr.Classified{Class: apierr.BodyTooLarge, Key: "http.body_too_large"})
 			return
 		}
 	}
 	body, e := io.ReadAll(io.LimitReader(c.Request.Body, limits.RequestBody+1))
 	if e != nil {
-		p.d.Fail(c, e)
+		middleware.Fail(c, e)
 		return
 	}
 	if len(body) > limits.RequestBody {
-		p.d.Refuse(c, apierr.Classified{Class: apierr.BodyTooLarge, Key: "http.body_too_large"})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.BodyTooLarge, Key: "http.body_too_large"})
 		return
 	}
 	entry, e := p.d.Core.LinkDropFile(c.Request.Context(), link, name, bytes.NewReader(body))
 	if e != nil {
-		p.d.Fail(c, e)
+		middleware.Fail(c, e)
 		return
 	}
-	p.d.WriteJSON(c, http.StatusCreated, gin.H{"name": entry.Name, "size": strconv.FormatUint(entry.Size, 10)})
+	c.JSON(http.StatusCreated, gin.H{"name": entry.Name, "size": strconv.FormatUint(entry.Size, 10)})
 }

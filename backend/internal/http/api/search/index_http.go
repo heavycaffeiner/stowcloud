@@ -9,46 +9,38 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/search/controller"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 )
 
-func (m *Manager) adminIndexEstimate(c *gin.Context) {
-	if _, ok := m.admin(c); !ok {
-		return
-	}
+func (m *Manager) IndexEstimate(c *gin.Context) {
 	result, estimate, err := m.Controller.Estimate(c.Request.Context())
 	if err != nil {
-		m.failKnown(c, err)
+		middleware.Fail(c, err)
 		return
 	}
-	m.writeJSON(c, http.StatusOK, handler.IndexEstimateOf(result, estimate))
+	c.JSON(http.StatusOK, handler.IndexEstimateOf(result, estimate))
 }
-func (m *Manager) adminIndexStatus(c *gin.Context) {
-	if _, ok := m.admin(c); !ok {
-		return
-	}
-	m.writeJSON(c, http.StatusOK, handler.IndexStatusOf(m.Controller.IndexState()))
+func (m *Manager) IndexStatus(c *gin.Context) {
+	c.JSON(http.StatusOK, handler.IndexStatusOf(m.Controller.IndexState()))
 }
-func (m *Manager) adminIndexBuild(c *gin.Context) {
-	owner, ok := m.admin(c)
-	if !ok {
-		return
-	}
+func (m *Manager) IndexBuild(c *gin.Context) {
+	owner, _ := middleware.UserOf(c)
 	if m.Controller == nil {
-		m.refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
 		return
 	}
 	op, err := m.Controller.StartIndexBuild(c.Request.Context(), owner)
 	if err == controller.ErrIndexDisabled {
-		m.refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable, Key: "search.index_disabled"})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable, Key: "search.index_disabled"})
 		return
 	}
 	if err == controller.ErrIndexBuilding {
-		m.refuse(c, apierr.Classified{Class: apierr.Conflict, Key: "search.index_building"})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Conflict, Key: "search.index_building"})
 		return
 	}
 	if err != nil {
-		m.failKnown(c, err)
+		middleware.Fail(c, err)
 		return
 	}
-	m.writeJSON(c, http.StatusAccepted, handler.OperationOf(op))
+	c.JSON(http.StatusAccepted, handler.OperationOf(op))
 }

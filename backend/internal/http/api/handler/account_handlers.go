@@ -56,43 +56,43 @@ type appPasswordScopeTransport struct {
 }
 
 func (h *AccountHandlers) Password(c *gin.Context) {
-	owner, ok := ownerTransport(c)
+	owner, ok := middleware.UserOf(c)
 	if !ok {
-		accountRefuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	var req passwordRequestTransport
 	if err := accountDecode(c, &req); err != nil {
-		accountRefuse(c, apierr.Classified{Class: apierr.Malformed})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
 		return
 	}
 	if !h.reconfirm(c, owner, req.Current) {
 		return
 	}
 	if err := h.d.Service.SetPassword(c.Request.Context(), owner, secret.New([]byte(req.New))); err != nil {
-		accountFail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
 }
 
 func (h *AccountHandlers) Sessions(c *gin.Context) {
-	owner, ok := ownerTransport(c)
+	owner, ok := middleware.UserOf(c)
 	if !ok {
-		accountRefuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	rows, err := h.d.Service.Sessions(c.Request.Context(), owner)
 	if err != nil {
-		accountFail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	accountJSON(c, http.StatusOK, SessionsOf(rows, currentDigestTransport(c)))
 }
 func (h *AccountHandlers) SessionDelete(c *gin.Context) {
-	owner, ok := ownerTransport(c)
+	owner, ok := middleware.UserOf(c)
 	if !ok {
-		accountRefuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	wanted := c.Param("id")
@@ -102,7 +102,7 @@ func (h *AccountHandlers) SessionDelete(c *gin.Context) {
 	}
 	rows, err := h.d.Service.Sessions(c.Request.Context(), owner)
 	if err != nil {
-		accountFail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	for _, row := range rows {
@@ -111,7 +111,7 @@ func (h *AccountHandlers) SessionDelete(c *gin.Context) {
 			continue
 		}
 		if err := h.d.Service.RevokeSessionByHash(c.Request.Context(), owner, row.IDHash); err != nil {
-			accountFail(c, err)
+			middleware.Fail(c, err)
 			return
 		}
 		c.Status(http.StatusNoContent)
@@ -120,22 +120,22 @@ func (h *AccountHandlers) SessionDelete(c *gin.Context) {
 	c.Status(http.StatusNotFound)
 }
 func (h *AccountHandlers) AppPasswords(c *gin.Context) {
-	owner, ok := ownerTransport(c)
+	owner, ok := middleware.UserOf(c)
 	if !ok {
-		accountRefuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	rows, err := h.d.Service.AppPasswords(c.Request.Context(), owner)
 	if err != nil {
-		accountFail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	accountJSON(c, http.StatusOK, AppPasswordsOf(rows))
 }
 func (h *AccountHandlers) AppPasswordDelete(c *gin.Context) {
-	owner, ok := ownerTransport(c)
+	owner, ok := middleware.UserOf(c)
 	if !ok {
-		accountRefuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	id, ok := accountPathID(c)
@@ -144,15 +144,15 @@ func (h *AccountHandlers) AppPasswordDelete(c *gin.Context) {
 		return
 	}
 	if err := h.d.Service.RevokeAppPassword(c.Request.Context(), owner, id); err != nil {
-		accountFail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
 }
 func (h *AccountHandlers) AppPasswordWipe(c *gin.Context) {
-	owner, ok := ownerTransport(c)
+	owner, ok := middleware.UserOf(c)
 	if !ok {
-		accountRefuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	id, ok := accountPathID(c)
@@ -161,29 +161,29 @@ func (h *AccountHandlers) AppPasswordWipe(c *gin.Context) {
 		return
 	}
 	if err := h.d.Service.RequestWipe(c.Request.Context(), owner, id); err != nil {
-		accountFail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
 }
 func (h *AccountHandlers) AppPasswordCreate(c *gin.Context) {
-	owner, ok := ownerTransport(c)
+	owner, ok := middleware.UserOf(c)
 	if !ok {
-		accountRefuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	var req appPasswordRequestTransport
 	if err := accountDecode(c, &req); err != nil {
-		accountRefuse(c, apierr.Classified{Class: apierr.Malformed})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
 		return
 	}
 	if req.Name == "" || req.ExpiresInDays < 0 || req.ExpiresInDays > 36500 {
-		accountRefuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
 	}
 	scope, ok := accountScope(req.Scope)
 	if !ok {
-		accountRefuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
 	}
 	if !h.reconfirm(c, owner, req.Current) {
@@ -191,20 +191,20 @@ func (h *AccountHandlers) AppPasswordCreate(c *gin.Context) {
 	}
 	token, err := h.d.Service.CreateAppPassword(c.Request.Context(), owner, req.Name, scope, time.Duration(req.ExpiresInDays)*24*time.Hour)
 	if err != nil {
-		accountFail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	accountJSON(c, http.StatusCreated, map[string]string{"name": req.Name, "token": token})
 }
 func (h *AccountHandlers) TOTPSetup(c *gin.Context) {
-	owner, ok := ownerTransport(c)
+	owner, ok := middleware.UserOf(c)
 	if !ok {
-		accountRefuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	var req reconfirmRequestTransport
 	if err := accountDecode(c, &req); err != nil {
-		accountRefuse(c, apierr.Classified{Class: apierr.Malformed})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
 		return
 	}
 	if !h.reconfirm(c, owner, req.Current) {
@@ -212,29 +212,29 @@ func (h *AccountHandlers) TOTPSetup(c *gin.Context) {
 	}
 	secretB32, err := h.d.Service.GenerateTOTPSecret()
 	if err != nil {
-		accountFail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	info, err := h.d.Service.AccountInfo(c.Request.Context(), owner)
 	if err != nil {
-		accountFail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	accountJSON(c, http.StatusOK, TOTPSetupOf(secretB32, info.LoginName))
 }
 func (h *AccountHandlers) TOTPEnroll(c *gin.Context) {
-	owner, ok := ownerTransport(c)
+	owner, ok := middleware.UserOf(c)
 	if !ok {
-		accountRefuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	var req enrollRequestTransport
 	if err := accountDecode(c, &req); err != nil {
-		accountRefuse(c, apierr.Classified{Class: apierr.Malformed})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
 		return
 	}
 	if req.Secret == "" || req.Code == "" {
-		accountRefuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
 	}
 	if !h.reconfirm(c, owner, req.Current) {
@@ -242,7 +242,7 @@ func (h *AccountHandlers) TOTPEnroll(c *gin.Context) {
 	}
 	accepted, err := h.d.Service.VerifyCandidateTOTP(req.Secret, req.Code, h.d.Clock.Nanos())
 	if err != nil {
-		accountFail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	if !accepted {
@@ -250,62 +250,62 @@ func (h *AccountHandlers) TOTPEnroll(c *gin.Context) {
 		return
 	}
 	if enrollErr := h.d.Service.EnrollTOTP(c.Request.Context(), owner, req.Secret); enrollErr != nil {
-		accountFail(c, enrollErr)
+		middleware.Fail(c, enrollErr)
 		return
 	}
 	if _, verifyErr := h.d.Service.VerifyTOTP(c.Request.Context(), owner, req.Code, h.d.Clock.Nanos()); verifyErr != nil {
-		accountFail(c, verifyErr)
+		middleware.Fail(c, verifyErr)
 		return
 	}
 	codes, err := h.d.Service.GenerateRecoveryCodes(c.Request.Context(), owner, 10)
 	if err != nil {
-		accountFail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	accountJSON(c, http.StatusOK, map[string]any{"recovery_codes": codes})
 }
 func (h *AccountHandlers) TOTPDisable(c *gin.Context) {
-	owner, ok := ownerTransport(c)
+	owner, ok := middleware.UserOf(c)
 	if !ok {
-		accountRefuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	var req reconfirmRequestTransport
 	if err := accountDecode(c, &req); err != nil {
-		accountRefuse(c, apierr.Classified{Class: apierr.Malformed})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
 		return
 	}
 	if !h.reconfirm(c, owner, req.Current) {
 		return
 	}
 	if err := h.d.Service.DisableTOTPWithPassword(c.Request.Context(), owner, secret.New([]byte(req.Current))); err != nil {
-		accountFail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
 }
 func (h *AccountHandlers) RecoveryList(c *gin.Context) {
-	owner, ok := ownerTransport(c)
+	owner, ok := middleware.UserOf(c)
 	if !ok {
-		accountRefuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	remaining, err := h.d.Service.RecoveryCodesRemaining(c.Request.Context(), owner)
 	if err != nil {
-		accountFail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	accountJSON(c, http.StatusOK, map[string]int{"remaining": remaining})
 }
 func (h *AccountHandlers) RecoveryCreate(c *gin.Context) {
-	owner, ok := ownerTransport(c)
+	owner, ok := middleware.UserOf(c)
 	if !ok {
-		accountRefuse(c, apierr.Classified{Class: apierr.AuthRequired})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
 	}
 	var req reconfirmRequestTransport
 	if err := accountDecode(c, &req); err != nil {
-		accountRefuse(c, apierr.Classified{Class: apierr.Malformed})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
 		return
 	}
 	if !h.reconfirm(c, owner, req.Current) {
@@ -313,7 +313,7 @@ func (h *AccountHandlers) RecoveryCreate(c *gin.Context) {
 	}
 	codes, err := h.d.Service.GenerateRecoveryCodes(c.Request.Context(), owner, 10)
 	if err != nil {
-		accountFail(c, err)
+		middleware.Fail(c, err)
 		return
 	}
 	accountJSON(c, http.StatusOK, map[string]any{"recovery_codes": codes})
@@ -325,7 +325,7 @@ func (h *AccountHandlers) reconfirm(c *gin.Context, owner int64, password string
 	}
 	ok, err := h.d.Service.VerifyAccountPassword(c.Request.Context(), owner, secret.New([]byte(password)))
 	if err != nil {
-		accountFail(c, err)
+		middleware.Fail(c, err)
 		return false
 	}
 	if !ok {
@@ -375,8 +375,3 @@ func accountPathID(c *gin.Context) (int64, bool) {
 	return n, err == nil && n > 0
 }
 func accountJSON(c *gin.Context, status int, value any) { c.JSON(status, value) }
-func accountFail(c *gin.Context, err error)             { middleware.Fail(c, err) }
-func accountRefuse(c *gin.Context, class apierr.Classified) {
-	status, body := apierr.REST(class)
-	accountJSON(c, status, body)
-}

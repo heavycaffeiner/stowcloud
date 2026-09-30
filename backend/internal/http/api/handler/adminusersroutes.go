@@ -37,29 +37,6 @@ func NewAdminUsersHandlers(d AdminUsersDeps) *AdminUsersHandlers {
 
 type AdminUsersHandlers struct{ d AdminUsersDeps }
 
-func (h *AdminUsersHandlers) admin(c *gin.Context) (int64, bool) {
-	v, ok := c.Get(string(middleware.KeyCredential))
-	if !ok {
-		adminRefuse(c, apierr.Classified{Class: apierr.AuthRequired})
-		return 0, false
-	}
-	p, ok := v.(middleware.Principal)
-	if !ok || p.UserID == 0 {
-		adminRefuse(c, apierr.Classified{Class: apierr.AuthRequired})
-		return 0, false
-	}
-	is, err := h.d.Auth.IsAdmin(c.Request.Context(), p.UserID)
-	if err != nil {
-		adminFail(c, err)
-		return 0, false
-	}
-	if !is {
-		adminRefuse(c, apierr.Classified{Class: apierr.Denied})
-		return 0, false
-	}
-	return p.UserID, true
-}
-
 type adminCreateUserRequest struct {
 	Login    string `json:"login"`
 	Display  string `json:"display"`
@@ -79,20 +56,14 @@ type adminMemberRequest struct {
 }
 
 func (h *AdminUsersHandlers) UsersList(c *gin.Context) {
-	if _, ok := h.admin(c); !ok {
-		return
-	}
 	rows, err := h.d.Auth.ListUsers(c.Request.Context())
 	if err != nil {
 		adminFail(c, err)
 		return
 	}
-	adminJSON(c, http.StatusOK, UsersOf(rows))
+	c.JSON(http.StatusOK, UsersOf(rows))
 }
 func (h *AdminUsersHandlers) UsersCreate(c *gin.Context) {
-	if _, ok := h.admin(c); !ok {
-		return
-	}
 	var req adminCreateUserRequest
 	if !adminDecode(c, &req) {
 		return
@@ -107,13 +78,10 @@ func (h *AdminUsersHandlers) UsersCreate(c *gin.Context) {
 		adminFail(c, err)
 		return
 	}
-	adminJSON(c, http.StatusCreated, UserOf(row))
+	c.JSON(http.StatusCreated, UserOf(row))
 }
 func (h *AdminUsersHandlers) UsersUpdate(c *gin.Context) {
-	caller, ok := h.admin(c)
-	if !ok {
-		return
-	}
+	caller, _ := middleware.UserOf(c)
 	target, ok := adminPathID(c)
 	if !ok {
 		adminNotFound(c)
@@ -124,7 +92,7 @@ func (h *AdminUsersHandlers) UsersUpdate(c *gin.Context) {
 		return
 	}
 	if req.Disabled != nil && *req.Disabled && target == caller {
-		adminRefuse(c, apierr.Classified{Class: apierr.Denied})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Denied})
 		return
 	}
 	ctx := c.Request.Context()
@@ -162,20 +130,17 @@ func (h *AdminUsersHandlers) UsersUpdate(c *gin.Context) {
 		adminFail(c, err)
 		return
 	}
-	adminJSON(c, http.StatusOK, UserOf(row))
+	c.JSON(http.StatusOK, UserOf(row))
 }
 func (h *AdminUsersHandlers) UsersDelete(c *gin.Context) {
-	caller, ok := h.admin(c)
-	if !ok {
-		return
-	}
+	caller, _ := middleware.UserOf(c)
 	target, ok := adminPathID(c)
 	if !ok {
 		adminNotFound(c)
 		return
 	}
 	if target == caller {
-		adminRefuse(c, apierr.Classified{Class: apierr.Denied})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Denied})
 		return
 	}
 	if h.d.CleanupHome != nil {
@@ -190,20 +155,14 @@ func (h *AdminUsersHandlers) UsersDelete(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 func (h *AdminUsersHandlers) GroupsList(c *gin.Context) {
-	if _, ok := h.admin(c); !ok {
-		return
-	}
 	rows, err := h.d.Auth.ListGroups(c.Request.Context())
 	if err != nil {
 		adminFail(c, err)
 		return
 	}
-	adminJSON(c, http.StatusOK, GroupsOf(rows))
+	c.JSON(http.StatusOK, GroupsOf(rows))
 }
 func (h *AdminUsersHandlers) GroupsCreate(c *gin.Context) {
-	if _, ok := h.admin(c); !ok {
-		return
-	}
 	var req groupRequest
 	if !adminDecode(c, &req) {
 		return
@@ -213,12 +172,9 @@ func (h *AdminUsersHandlers) GroupsCreate(c *gin.Context) {
 		adminFail(c, err)
 		return
 	}
-	adminJSON(c, http.StatusCreated, GroupView{ID: strconv.FormatInt(id, 10), Name: req.Name, Members: []string{}})
+	c.JSON(http.StatusCreated, GroupView{ID: strconv.FormatInt(id, 10), Name: req.Name, Members: []string{}})
 }
 func (h *AdminUsersHandlers) GroupsUpdate(c *gin.Context) {
-	if _, ok := h.admin(c); !ok {
-		return
-	}
 	id, ok := adminPathID(c)
 	if !ok {
 		adminNotFound(c)
@@ -233,12 +189,9 @@ func (h *AdminUsersHandlers) GroupsUpdate(c *gin.Context) {
 		adminFail(c, err)
 		return
 	}
-	adminJSON(c, http.StatusOK, GroupOf(row))
+	c.JSON(http.StatusOK, GroupOf(row))
 }
 func (h *AdminUsersHandlers) GroupsDelete(c *gin.Context) {
-	if _, ok := h.admin(c); !ok {
-		return
-	}
 	id, ok := adminPathID(c)
 	if !ok {
 		adminNotFound(c)
@@ -251,9 +204,6 @@ func (h *AdminUsersHandlers) GroupsDelete(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 func (h *AdminUsersHandlers) MemberAdd(c *gin.Context) {
-	if _, ok := h.admin(c); !ok {
-		return
-	}
 	group, ok := adminPathID(c)
 	if !ok {
 		adminNotFound(c)
@@ -275,9 +225,6 @@ func (h *AdminUsersHandlers) MemberAdd(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 func (h *AdminUsersHandlers) MemberRemove(c *gin.Context) {
-	if _, ok := h.admin(c); !ok {
-		return
-	}
 	group, ok := adminPathID(c)
 	if !ok {
 		adminNotFound(c)
@@ -295,20 +242,17 @@ func (h *AdminUsersHandlers) MemberRemove(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 func (h *AdminUsersHandlers) Audit(c *gin.Context) {
-	if _, ok := h.admin(c); !ok {
-		return
-	}
 	rows, next, err := h.d.Auth.AuditPage(c.Request.Context(), auth.AuditFilter{Event: c.Query("event"), Before: adminQueryInt(c.Query("before")), Limit: adminAuditLimit(c.Query("limit"))})
 	if err != nil {
 		adminFail(c, err)
 		return
 	}
-	adminJSON(c, http.StatusOK, AuditPageOf(rows, next))
+	c.JSON(http.StatusOK, AuditPageOf(rows, next))
 }
 
 func adminDecode(c *gin.Context, v any) bool {
 	if err := middleware.DecodeJSON(c.Request.Body, v); err != nil {
-		adminRefuse(c, apierr.Classified{Class: apierr.Malformed})
+		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
 		return false
 	}
 	return true
@@ -334,15 +278,13 @@ func adminAuditLimit(raw string) int {
 	}
 	return n
 }
-func adminJSON(c *gin.Context, status int, v any) { c.JSON(status, v) }
-func adminNotFound(c *gin.Context)                { adminFail(c, files.ErrNotFound) }
-func adminRefuse(c *gin.Context, class apierr.Classified) {
-	status, body := apierr.REST(class)
-	adminJSON(c, status, body)
-}
+func adminNotFound(c *gin.Context) { middleware.Refuse(c, apierr.Classified{Class: apierr.NotFound}) }
+
+// adminFail answers a missing file as a bare not-found, without the file
+// surface's reason key.
 func adminFail(c *gin.Context, err error) {
 	if errors.Is(err, files.ErrNotFound) {
-		adminRefuse(c, apierr.Classified{Class: apierr.NotFound})
+		adminNotFound(c)
 		return
 	}
 	middleware.Fail(c, err)
