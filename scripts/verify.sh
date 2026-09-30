@@ -277,7 +277,7 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   # by a person clicking something that then did nothing.
   run "contractcheck (the client's fields are sent)" \
       ingo_host go run ./tools/contractcheck \
-        ../frontend/src/lib/api/types.ts ./internal/http/api/handler ./internal/app
+        ../frontend/src/lib/api/types.ts ./internal/files ./internal/admin ./internal/shares
   # Settings saved by the client must be consumed by the runtime loader.
   run "settingscheck (a stored setting is read)" \
       ingo_host go run ./tools/settingscheck \

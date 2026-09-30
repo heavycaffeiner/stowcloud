@@ -126,8 +126,8 @@ func sendPairs() []sendPair {
 }
 
 func main() {
-	if len(os.Args) != 4 {
-		say(os.Stderr, "usage: contractcheck <types.ts> <handler-dir> <request-dir>"+"\n")
+	if len(os.Args) < 3 {
+		say(os.Stderr, "usage: contractcheck <types.ts> <go-dir>...\n")
 		os.Exit(2)
 	}
 	ts, err := os.ReadFile(os.Args[1])
@@ -135,29 +135,17 @@ func main() {
 		say(os.Stderr, "contractcheck: reading the client types: %v\n", err)
 		os.Exit(2)
 	}
-	goSrc, err := readGo(os.Args[2])
-	if err != nil {
-		say(os.Stderr, "contractcheck: reading the handlers: %v\n", err)
-		os.Exit(2)
+	// Views and request decoders live in the feature packages that serve them.
+	var srcs []string
+	for _, dir := range os.Args[2:] {
+		src, rerr := readGo(dir)
+		if rerr != nil {
+			say(os.Stderr, "contractcheck: reading %s: %v\n", dir, rerr)
+			os.Exit(2)
+		}
+		srcs = append(srcs, src)
 	}
-	// Request decoders live in the generic handlers, application, administrator
-	// shares, and native link transport packages.
-	appSrc, err := readGo(os.Args[3])
-	if err != nil {
-		say(os.Stderr, "contractcheck: reading application decoders: %v\n", err)
-		os.Exit(2)
-	}
-	shareSrc, err := readGo(os.Args[2] + "/../adminshares")
-	if err != nil {
-		say(os.Stderr, "contractcheck: reading administrator share decoders: %v\n", err)
-		os.Exit(2)
-	}
-	linkSrc, err := readGo(os.Args[2] + "/../links")
-	if err != nil {
-		say(os.Stderr, "contractcheck: reading link decoders: %v\n", err)
-		os.Exit(2)
-	}
-	reqSrc := goSrc + "\n" + appSrc + "\n" + shareSrc + "\n" + linkSrc
+	goSrc := strings.Join(srcs, "\n")
 
 	bad := 0
 	for _, p := range pairs() {
@@ -226,7 +214,7 @@ func main() {
 			bad++
 			continue
 		}
-		decoded, ok := jsonFields(reqSrc, p.goType)
+		decoded, ok := jsonFields(goSrc, p.goType)
 		if !ok {
 			say(os.Stdout, "contractcheck: no struct %s in the request decoders\n", p.goType)
 			bad++
