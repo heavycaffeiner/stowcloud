@@ -3,6 +3,7 @@ package e2e_test
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -64,7 +65,7 @@ func TestReleaseV0191StateAndKeyRingUpgrade(t *testing.T) {
 	}
 
 	store := state.New(file)
-	authSvc := auth.New(auth.Config{Store: store, StoreDir: dir, Logger: discard()})
+	authSvc := auth.New(auth.Config{Store: store, StoreDir: dir, Logger: slog.New(slog.DiscardHandler)})
 	if _, keyErr := authSvc.OpenMasterKey(ctx); keyErr != nil {
 		t.Fatalf("opening the release key ring: %v", keyErr)
 	}

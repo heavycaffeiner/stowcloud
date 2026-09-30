@@ -15,6 +15,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	fsatomic "github.com/stowcloud/durablefs"
+
+	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
 )
 
 func TestClassifyDurableResultsAcceptsOnlyFullyPublishedPair(t *testing.T) {
@@ -80,12 +82,12 @@ func TestServeReturnsWhenARestartIsRequested(t *testing.T) {
 	go func() { done <- l.Serve(t.Context()) }()
 
 	probe := filepath.Join(dir, ".probe.json")
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := clock.System().Now().Add(5 * time.Second)
 	for {
 		if _, serr := os.Stat(probe); serr == nil {
 			break
 		}
-		if time.Now().After(deadline) {
+		if clock.System().Now().After(deadline) {
 			t.Fatal("the listener never published its address")
 		}
 		time.Sleep(10 * time.Millisecond)
