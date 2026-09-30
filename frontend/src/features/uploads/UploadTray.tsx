@@ -8,6 +8,7 @@ import { IconButton } from '../../ui/IconButton'
 import { VirtualList } from '../../ui/VirtualList'
 import { ProgressLinear } from '../../ui/ProgressLinear'
 import * as styles from './UploadTray.css'
+import * as utilitiesStyles from '../../ui/utilities.css'
 
 export function UploadTray() {
   const { t } = useI18n()
@@ -77,8 +78,14 @@ export function UploadTray() {
 
   return (
     <>
-      <div ref={politeRef} className={styles.srOnly} role="status" aria-live="polite" aria-atomic="true"></div>
-      <div ref={assertiveRef} className={styles.srOnly} role="alert" aria-live="assertive" aria-atomic="true"></div>
+      <div ref={politeRef} className={utilitiesStyles.srOnly} role="status" aria-live="polite" aria-atomic="true"></div>
+      <div
+        ref={assertiveRef}
+        className={utilitiesStyles.srOnly}
+        role="alert"
+        aria-live="assertive"
+        aria-atomic="true"
+      ></div>
       {items.length > 0 ? (
         <section className={styles.root} aria-label={t('common.upload')}>
           <header className={styles.header}>

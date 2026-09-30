@@ -31,7 +31,7 @@ export const srOnly = style({
   padding: '0',
   margin: '-1px',
   overflow: 'hidden',
-  clip: 'rect(0,0,0,0)',
+  clipPath: 'inset(50%)',
   whiteSpace: 'nowrap',
   border: '0'
 })

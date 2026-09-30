@@ -18,6 +18,7 @@ import { IconButton } from '../../ui/IconButton'
 import { VirtualList } from '../../ui/VirtualList'
 import { ProgressLinear } from '../../ui/ProgressLinear'
 import * as styles from './JobTray.css'
+import * as utilitiesStyles from '../../ui/utilities.css'
 
 interface JobRow {
   id: string
@@ -217,15 +218,33 @@ export function JobTray() {
   if (rows.length === 0 && !list.isError) {
     return (
       <>
-        <div ref={politeRef} className={styles.srOnly} role="status" aria-live="polite" aria-atomic="true"></div>
-        <div ref={assertiveRef} className={styles.srOnly} role="alert" aria-live="assertive" aria-atomic="true"></div>
+        <div
+          ref={politeRef}
+          className={utilitiesStyles.srOnly}
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        ></div>
+        <div
+          ref={assertiveRef}
+          className={utilitiesStyles.srOnly}
+          role="alert"
+          aria-live="assertive"
+          aria-atomic="true"
+        ></div>
       </>
     )
   }
   return (
     <>
-      <div ref={politeRef} className={styles.srOnly} role="status" aria-live="polite" aria-atomic="true"></div>
-      <div ref={assertiveRef} className={styles.srOnly} role="alert" aria-live="assertive" aria-atomic="true"></div>
+      <div ref={politeRef} className={utilitiesStyles.srOnly} role="status" aria-live="polite" aria-atomic="true"></div>
+      <div
+        ref={assertiveRef}
+        className={utilitiesStyles.srOnly}
+        role="alert"
+        aria-live="assertive"
+        aria-atomic="true"
+      ></div>
       <section className={styles.root} aria-label={t('job.jobs')}>
         <header className={styles.header}>
           <button className={styles.title} type="button" onClick={() => jobTray.setOpen(!open)} aria-expanded={open}>

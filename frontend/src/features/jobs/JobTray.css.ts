@@ -14,14 +14,6 @@ export const root = style({
   border: `1px solid ${vars.outline.variant}`
 })
 
-export const srOnly = style({
-  position: 'absolute',
-  width: '1px',
-  height: '1px',
-  overflow: 'hidden',
-  clip: 'rect(0 0 0 0)'
-})
-
 export const header = style({
   minHeight: '48px',
   display: 'flex',

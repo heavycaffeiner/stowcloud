@@ -8,6 +8,7 @@ import { CATEGORIES, SORT_KEYS } from './logic/search-state'
 import { SearchResults } from './SearchResults'
 import { ProgressCircular } from '../../ui/ProgressCircular'
 import * as styles from './SearchPanel.css'
+import * as utilitiesStyles from '../../ui/utilities.css'
 import * as iconButtonStyles from '../../ui/IconButton.css'
 import { cx } from '../../ui/cx'
 
@@ -153,7 +154,7 @@ export function SearchPanel({ scope = '', autoFocus = false, onNavigated, traili
             {state.running && state.scanned ? `, ${t('search.scanning', { dirs: String(state.scanned.dirs) })}` : ''}
           </span>
         </span>
-        <span className={styles.spoken} role="status" aria-live="polite">
+        <span className={utilitiesStyles.srOnly} role="status" aria-live="polite">
           {spokenStatus}
         </span>
         <span className={styles.statusActions}>
