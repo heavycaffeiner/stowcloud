@@ -1,5 +1,4 @@
-import { useEffect, type RefObject } from 'react'
-import type { NavigateFunction } from 'react-router-dom'
+import { useEffect, useEffectEvent, type RefObject } from 'react'
 import { useBeforeUnload } from '../../../../hooks/use-before-unload'
 import { emergencyDoor } from '../../../../lib/api/emergency'
 
@@ -29,6 +28,8 @@ export function useEmergencyLifecycle({
     return () => element.removeEventListener('close', close)
   }, [sectionDialogRef, setState])
 
+  // The caller rebuilds messageFor on every render; reading it through an effect event keeps the door fetch to one per mount.
+  const describe = useEffectEvent(messageFor)
   useEffect(() => {
     let cancelled = false
     void emergencyDoor()
@@ -38,12 +39,12 @@ export function useEmergencyLifecycle({
       })
       .catch((error: unknown) => {
         if (cancelled) return
-        setState({ errorMessage: messageFor(error), step: 'credentials' })
+        setState({ errorMessage: describe(error), step: 'credentials' })
       })
     return () => {
       cancelled = true
     }
-  }, [messageFor, setState])
+  }, [setState])
 
   useBeforeUnload(dirty)
 }
