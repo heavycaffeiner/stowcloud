@@ -16,8 +16,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/nextcloud"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/publiclinks"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/nextcloud"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
@@ -37,35 +37,37 @@ func (e *Engine) mountNCTagged(app *gin.Engine) {
 }
 
 func (e *Engine) contentRoute(method, path string) bool {
-	return (method == http.MethodGet || method == http.MethodHead) && nc.IsDirectPath(path)
+	return (method == http.MethodGet || method == http.MethodHead) && nextcloud.IsDirectPath(path)
 }
 
-func (e *Engine) ncServer() *nc.Server {
+func (e *Engine) ncServer() *nextcloud.Server {
 	e.thumbnailMu.RLock()
 	previewSvc := e.Preview
 	e.thumbnailMu.RUnlock()
-	seal, open := nc.Claims(e.claimKey, func() int64 { return e.clk().Nanos() })
-	return nc.New(nc.Deps{
+	seal, open := nextcloud.Claims(e.claimKey, func() int64 { return e.clk().Nanos() })
+	return nextcloud.New(nextcloud.Deps{
 		Core: e.Core, Auth: e.Auth,
-		Store:   nc.NewStore(nc.StoreDeps{Core: e.Core, State: e.State, Cache: e.Cache}),
-		Uploads: e.Upload, Preview: previewSvc, Search: e.Search, Flow: nc.NewFlow(e.Flow),
-		Features: func() nc.Features { return nc.FeaturesFor(e.instanceID, e.thumbnailEnabled(), e.Upload != nil) },
-		Origin: func(r nc.OriginRequest) string {
-			return nc.Origin(func() nc.OriginConfig { return e.ncOriginConfig() }, r)
+		Store:   nextcloud.NewStore(nextcloud.StoreDeps{Core: e.Core, State: e.State, Cache: e.Cache}),
+		Uploads: e.Upload, Preview: previewSvc, Search: e.Search, Flow: nextcloud.NewFlow(e.Flow),
+		Features: func() nextcloud.Features {
+			return nextcloud.FeaturesFor(e.instanceID, e.thumbnailEnabled(), e.Upload != nil)
 		},
-		ContentOrigin: func(r nc.OriginRequest) string {
-			return nc.ContentOrigin(func() nc.OriginConfig { return e.ncOriginConfig() }, r)
+		Origin: func(r nextcloud.OriginRequest) string {
+			return nextcloud.Origin(func() nextcloud.OriginConfig { return e.ncOriginConfig() }, r)
+		},
+		ContentOrigin: func(r nextcloud.OriginRequest) string {
+			return nextcloud.ContentOrigin(func() nextcloud.OriginConfig { return e.ncOriginConfig() }, r)
 		},
 		OriginAllowed: e.originAllowed,
-		ConsentPage:   nc.ConsentPage(e.csrfKey),
+		ConsentPage:   nextcloud.ConsentPage(e.csrfKey),
 		Resolve: func(user files.UserID, path string, need acl.Perms) (files.Resolved, error) {
-			return nc.Resolve(e.Core, user, path, need)
+			return nextcloud.Resolve(e.Core, user, path, need)
 		},
 		VpathOf: func(user files.UserID, share files.ShareID, path string) (string, error) {
-			return nc.VpathOf(e.Core, user, share, path)
+			return nextcloud.VpathOf(e.Core, user, share, path)
 		},
 		LocateFile: func(ctx context.Context, user files.UserID, id uint64) (string, error) {
-			return nc.LocateFile(ctx, e.Core, e.Cache, user, id)
+			return nextcloud.LocateFile(ctx, e.Core, e.Cache, user, id)
 		},
 		SealClaim: seal, OpenClaim: open,
 		PublicLinkPath: func(token string) string { return publiclinks.PublicLinkPrefix + "/" + token },
@@ -73,9 +75,9 @@ func (e *Engine) ncServer() *nc.Server {
 	})
 }
 
-func (e *Engine) ncOriginConfig() nc.OriginConfig {
+func (e *Engine) ncOriginConfig() nextcloud.OriginConfig {
 	h := e.hosts()
-	return nc.OriginConfig{CanonicalURL: e.compatCanonicalURL(), ContentHosts: h.Content, Trusted: e.trustedProxies()}
+	return nextcloud.OriginConfig{CanonicalURL: e.compatCanonicalURL(), ContentHosts: h.Content, Trusted: e.trustedProxies()}
 }
 
 func (e *Engine) ncLockGuard(ctx context.Context, res files.Resolved, principal int64) error {

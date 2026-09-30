@@ -395,7 +395,7 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
     grep -rIn --include='*.go' -iE '\bocs\b|remote\.php|nextcloud' backend/internal 2>/dev/null \
       | grep -v '_test\.go:' \
       | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)' \
-      | grep -vE '^backend/internal/(http/nextcloud/|app/nc(_off)?\.go:|http/server/fallback\.go:)' || true
+      | grep -vE '^backend/internal/(nextcloud/|app/nc(_off)?\.go:|http/server/fallback\.go:)' || true
   }
 
   # The reference clients are cloned into .ref so their wire behaviour can be
@@ -451,13 +451,13 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
     skipped "no reference source copied into backend/" "no .ref checkout" 0
   fi
 
-  if [ -d backend/internal/http/nextcloud ]; then
+  if [ -d backend/internal/nextcloud ]; then
     NC_HITS=$(go_compat_isolation)
     grep_gate "compat isolation (import graph, seam, text)" "$NC_HITS" \
       "Compat wire vocabulary belongs behind the compat layer."
   else
     skipped "compat isolation (import graph, seam, text)" \
-            "backend/internal/http/nextcloud does not exist yet" "${VERIFY_REQUIRE_COMPAT:-0}"
+            "backend/internal/nextcloud does not exist yet" "${VERIFY_REQUIRE_COMPAT:-0}"
   fi
 
   # --- everything above is text, and everything below compiles -------------
@@ -519,7 +519,7 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
 
   # The compat layer builds both ways. With no tag its packages are not
   # compiled at all, which is stronger than the feature flag it replaces.
-  if [ -d backend/internal/http/nextcloud ]; then
+  if [ -d backend/internal/nextcloud ]; then
     run "go build (compat stripped)" ingo go build ./...
     run "go build -tags compat_nc"   ingo go build -tags compat_nc ./...
   fi
@@ -549,7 +549,7 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   # with no tag those files are not compiled at all, so a build that only
   # checks the stripped tree checks none of that phase's behaviour. Both
   # packages, because the vocabulary and the mount are tested in different
-  # places: `http/nc` holds the wire format and `lifecycle` holds the routes
+  # places: `nextcloud` holds the wire format and `lifecycle` holds the routes
   # and the client flows. Naming only the first left every mounted route
   # untested, which is how an Engine assembled without a clock reached a
   # released handler.
@@ -566,13 +566,13 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   # like everything it wraps, so off Linux the pattern matches no packages
   # and go reports that as an error: a step failing because the code it names
   # does not exist on this OS says nothing about the code.
-  if [ -d backend/internal/http/nextcloud ]; then
+  if [ -d backend/internal/nextcloud ]; then
     if [ "$HOST" = linux ]; then
       if [ "${VERIFY_SKIP_COMPAT_TEST:-0}" = 1 ]; then
         skipped "go test -tags compat_nc" "already ran through just test" 0
       else
         run "go test -tags compat_nc" \
-            ingo_host go test -tags compat_nc -count=1 ./internal/http/nextcloud/... ./test/...
+            ingo_host go test -tags compat_nc -count=1 ./internal/nextcloud/... ./test/...
       fi
     else
       skipped "go test -tags compat_nc" "the compat layer is Linux only" 0
