@@ -101,16 +101,16 @@ func (m *Manager) writeSearchStream(ctx context.Context, cancel context.CancelFu
 		return
 	}
 	if err != nil {
-		m.log().Warn("a search failed after its stream was committed", "error", err)
+		m.Logger.Warn("a search failed after its stream was committed", "error", err)
 		writeSSEEvent(w, "done", map[string]any{"error": searchErrorName(err), "count": count}, m)
 		if ferr := w.Flush(); ferr != nil {
-			m.log().Warn("flushing a failed search stream", "error", ferr)
+			m.Logger.Warn("flushing a failed search stream", "error", ferr)
 		}
 		return
 	}
 	writeSSEEvent(w, "done", map[string]any{"count": count, "tier": results.Tier.String(), "elapsed_ms": results.Elapsed.Milliseconds(), "truncated": results.Truncated}, m)
 	if err := w.Flush(); err != nil {
-		m.log().Warn("flushing a search stream", "error", err)
+		m.Logger.Warn("flushing a search stream", "error", err)
 	}
 }
 
@@ -124,7 +124,7 @@ func searchErrorName(err error) string {
 func writeSSEEvent(w *bufio.Writer, name string, payload any, m *Manager) {
 	frame, err := httpx.SSEFrame(name, payload)
 	if err != nil {
-		m.log().Warn("a search event could not be framed and is dropped", "event", name, "error", err)
+		m.Logger.Warn("a search event could not be framed and is dropped", "event", name, "error", err)
 		return
 	}
 	writeSSE(w, frame, m)
@@ -132,10 +132,10 @@ func writeSSEEvent(w *bufio.Writer, name string, payload any, m *Manager) {
 
 func writeSSE(w *bufio.Writer, frame string, m *Manager) {
 	if _, err := w.WriteString(frame); err != nil {
-		m.log().Warn("writing a search event", "error", err)
+		m.Logger.Warn("writing a search event", "error", err)
 		return
 	}
 	if err := w.Flush(); err != nil {
-		m.log().Warn("flushing a search event", "error", err)
+		m.Logger.Warn("flushing a search event", "error", err)
 	}
 }

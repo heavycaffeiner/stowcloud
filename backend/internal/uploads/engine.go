@@ -124,14 +124,14 @@ func New(ctx context.Context, c *files.Core, st *state.DB, opt Options) (*Engine
 	if c == nil || st == nil {
 		return nil, errors.New("the upload engine requires a core and a state store")
 	}
+	if opt.Logger == nil {
+		return nil, errors.New("the upload engine requires a logger")
+	}
 	clk := opt.Clock
 	if clk == nil {
 		clk = clock.System()
 	}
 	log := opt.Logger
-	if log == nil {
-		log = slog.Default()
-	}
 	settings, err := loadSettings(ctx, st, opt.ChunkMin, opt.ChunkDefault)
 	if err != nil {
 		return nil, err

@@ -17,7 +17,7 @@ import (
 
 // mounted builds the transport-owned mount around the fixture handler.
 func (f *fixture) mounted() http.Handler {
-	return dav.NewMount(dav.Deps{Core: f.core, Handler: f.h, Errors: server.ErrorClassifier()})
+	return dav.NewMount(dav.Deps{Core: f.core, Handler: f.h, Errors: server.ErrorClassifier(), Logger: discard()})
 }
 
 // asDavUser attaches the principal the chain would have put there.

@@ -130,7 +130,7 @@ func build(t *testing.T, held []string, infinityEntries int) *fixture {
 		t.Fatalf("preparing the cache: %v", cerr)
 	}
 
-	c, kerr := files.New(ctx, files.Options{State: st, Cache: ca, ACL: acl.NewEvaluator()})
+	c, kerr := files.New(ctx, files.Options{State: st, Cache: ca, ACL: acl.NewEvaluator(), Logger: discard()})
 	if kerr != nil {
 		t.Fatalf("building the core: %v", kerr)
 	}
@@ -177,7 +177,7 @@ func build(t *testing.T, held []string, infinityEntries int) *fixture {
 
 	locks := &stubLocks{}
 	props := dav.NewStateProps(st)
-	real := dav.NewStateLocks(st, clock.System(), nil)
+	real := dav.NewStateLocks(st, clock.System(), discard())
 
 	return &fixture{
 		h: dav.New(dav.Options{
@@ -194,6 +194,7 @@ func build(t *testing.T, held []string, infinityEntries int) *fixture {
 			InfinityEntries: infinityEntries,
 			Store:           props,
 			KeyOf:           dav.EntryKey,
+			Logger:          discard(),
 		}),
 		core:  c,
 		dir:   shareDir,

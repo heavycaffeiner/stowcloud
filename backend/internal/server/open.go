@@ -235,19 +235,6 @@ func (e *Engine) clk() clock.Clock {
 
 func (e *Engine) now() int64 { return e.clk().Now().UnixNano() }
 
-// log is the engine's logger.
-//
-// An accessor for the reason clk is one: an Engine assembled field by field
-// carries none, and a line written on a refusal path would panic instead of
-// reporting the refusal. The default is construction's own for a nil
-// Options.Logger.
-func (e *Engine) log() *slog.Logger {
-	if e.logger == nil {
-		return slog.Default()
-	}
-	return e.logger
-}
-
 // Open constructs the engine.
 //
 // The order is the dependency order and not a preference: the evaluator is
@@ -263,10 +250,10 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	if clk == nil {
 		clk = clock.System()
 	}
-	logger := opt.Logger
-	if logger == nil {
-		logger = slog.Default()
+	if opt.Logger == nil {
+		return nil, errors.New("the engine needs a logger")
 	}
+	logger := opt.Logger
 
 	jobsCtx, jobsStop := context.WithCancel(context.Background())
 	e := &Engine{
@@ -426,7 +413,7 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	if id, ierr := e.State.InstanceID(ctx); ierr == nil {
 		e.instanceID = id
 	} else {
-		e.log().Warn("the instance identity could not be read", "error", ierr)
+		e.logger.Warn("the instance identity could not be read", "error", ierr)
 	}
 
 	// The master key is opened before anything that mints or reads a secret.
@@ -538,7 +525,7 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 				Issuer: cfg.Issuer, ClientID: cfg.ClientID, Scopes: cfg.Scopes,
 				AllowPrivateEndpoints: cfg.AllowPrivateEndpoints, CACertFile: cfg.CACertFile,
 				PublicClient: cfg.PublicClient,
-			}, e.Settings.ConfigSecret, e.log(), e.clk())
+			}, e.Settings.ConfigSecret, e.logger, e.clk())
 		},
 		SetOIDC: func(client *oidc.Client, name string) {
 			e.settingsMu.Lock()

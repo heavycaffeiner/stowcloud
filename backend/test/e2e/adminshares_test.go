@@ -879,7 +879,7 @@ func TestAnUnmeasurableShareIsListedWithoutFigures(t *testing.T) {
 	dir := t.TempDir()
 	host := t.TempDir()
 
-	e, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	e, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams(), Logger: discard()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -954,7 +954,7 @@ func TestSharesSurviveARestart(t *testing.T) {
 	dir := t.TempDir()
 	host := t.TempDir()
 
-	e, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	e, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams(), Logger: discard()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}

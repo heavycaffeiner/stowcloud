@@ -10,6 +10,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -61,7 +62,7 @@ func newService(t *testing.T) *fixture {
 	}
 
 	evaluator := acl.NewEvaluator()
-	c, err := files.New(ctx, files.Options{State: st, Cache: ca, ACL: evaluator})
+	c, err := files.New(ctx, files.Options{State: st, Cache: ca, ACL: evaluator, Logger: slog.New(slog.DiscardHandler)})
 	if err != nil {
 		t.Fatalf("building the core: %v", err)
 	}

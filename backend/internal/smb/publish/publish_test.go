@@ -5,6 +5,7 @@ package publish
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -349,7 +350,7 @@ func TestPublisherDisablesWhenSettingsAreUnconfigured(t *testing.T) {
 	}
 	p := New(PublisherDeps{Settings: func(context.Context) Settings {
 		return Settings{ConfigDir: dir}
-	}})
+	}, Logger: slog.New(slog.DiscardHandler)})
 	if _, err := p.Publish(t.Context()); err != nil {
 		t.Fatalf("disabling a fallback configuration: %v", err)
 	}

@@ -128,9 +128,6 @@ func New(cfg Config) *Service {
 		clk = clock.System()
 	}
 	log := cfg.Logger
-	if log == nil {
-		log = slog.Default()
-	}
 	return &Service{
 		store:        cfg.Store,
 		dir:          cfg.StoreDir,

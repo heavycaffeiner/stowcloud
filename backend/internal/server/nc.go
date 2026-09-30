@@ -68,7 +68,7 @@ func (e *Engine) ncServer() *nextcloud.Server {
 		},
 		SealClaim: seal, OpenClaim: open,
 		PublicLinkPath: func(token string) string { return shares.PublicLinkPrefix + "/" + token },
-		LockGuard:      e.ncLockGuard, Clock: e.clk(), Logger: e.log(),
+		LockGuard:      e.ncLockGuard, Clock: e.clk(), Logger: e.logger,
 	})
 }
 

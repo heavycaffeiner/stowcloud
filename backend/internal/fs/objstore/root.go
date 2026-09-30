@@ -51,6 +51,9 @@ type Root struct {
 var _ vfs.Root = (*Root)(nil)
 
 func Open(ctx context.Context, opt Options) (*Root, error) {
+	if opt.Logger == nil {
+		return nil, errors.New("objstore: logger is required")
+	}
 	scratch, err := vfs.OpenScratchRoot(opt.ScratchDir, opt.Policy)
 	if err != nil {
 		return nil, fmt.Errorf("objstore: open scratch root: %w", err)
@@ -59,11 +62,7 @@ func Open(ctx context.Context, opt Options) (*Root, error) {
 	if err != nil {
 		return nil, errors.Join(fmt.Errorf("objstore: open %s: %w", opt.Config.Describe(), err), scratch.Close())
 	}
-	logger := opt.Logger
-	if logger == nil {
-		logger = slog.Default()
-	}
-	return &Root{share: opt.Share, cfg: opt.Config, policy: opt.Policy, scratch: scratch, backend: backend, dev: syntheticDevice(opt.Share), logger: logger}, nil
+	return &Root{share: opt.Share, cfg: opt.Config, policy: opt.Policy, scratch: scratch, backend: backend, dev: syntheticDevice(opt.Share), logger: opt.Logger}, nil
 }
 
 func (r *Root) ID() vfs.ShareID                         { return r.share }

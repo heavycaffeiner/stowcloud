@@ -23,7 +23,7 @@ func TestTheEngineOpensOnAnEmptyDirectory(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 
-	e, err := server.Open(context.Background(), server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	e, err := server.Open(context.Background(), server.Options{DataDir: dir, PasswordParams: fastPasswordParams(), Logger: discard()})
 	if err != nil {
 		t.Fatalf("the engine did not open: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestASecondOpenFindsTheSameDeployment(t *testing.T) {
 	dir := t.TempDir()
 	ctx := context.Background()
 
-	first, ferr := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	first, ferr := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams(), Logger: discard()})
 	if ferr != nil {
 		t.Fatalf("the first open failed: %v", ferr)
 	}
@@ -74,7 +74,7 @@ func TestASecondOpenFindsTheSameDeployment(t *testing.T) {
 		t.Fatalf("closing the first: %v", cerr)
 	}
 
-	second, serr := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	second, serr := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams(), Logger: discard()})
 	if serr != nil {
 		t.Fatalf("the second open failed: %v", serr)
 	}
@@ -96,7 +96,7 @@ func TestAnUnwritableDirectoryIsRefused(t *testing.T) {
 		t.Fatalf("preparing the directory: %v", err)
 	}
 
-	e, err := server.Open(context.Background(), server.Options{DataDir: locked, PasswordParams: fastPasswordParams()})
+	e, err := server.Open(context.Background(), server.Options{DataDir: locked, PasswordParams: fastPasswordParams(), Logger: discard()})
 	if err == nil {
 		if cerr := e.Close(); cerr != nil {
 			t.Errorf("closing: %v", cerr)
@@ -109,7 +109,7 @@ func TestAnUnwritableDirectoryIsRefused(t *testing.T) {
 // databases wherever the process happened to be started.
 func TestAnEmptyDataDirectoryIsRefused(t *testing.T) {
 	t.Parallel()
-	e, err := server.Open(context.Background(), server.Options{PasswordParams: fastPasswordParams()})
+	e, err := server.Open(context.Background(), server.Options{PasswordParams: fastPasswordParams(), Logger: discard()})
 	if err == nil {
 		if cerr := e.Close(); cerr != nil {
 			t.Errorf("closing: %v", cerr)
@@ -122,7 +122,7 @@ func TestAnEmptyDataDirectoryIsRefused(t *testing.T) {
 // same defer twice.
 func TestClosingTwiceIsSafe(t *testing.T) {
 	t.Parallel()
-	e, err := server.Open(context.Background(), server.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
+	e, err := server.Open(context.Background(), server.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams(), Logger: discard()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func TestASecondEngineOnTheSameDataDirectoryIsRefused(t *testing.T) {
 
 	openEngineAt(t, dir)
 
-	_, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	_, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams(), Logger: discard()})
 	if err == nil {
 		t.Fatal("a second engine opened the same data directory")
 	}
@@ -176,6 +176,7 @@ func TestExternalInstanceOwnershipSkipsDuplicateLock(t *testing.T) {
 		DataDir:                        dir,
 		InstanceLockAcquiredExternally: true,
 		PasswordParams:                 fastPasswordParams(),
+		Logger:                         discard(),
 	})
 	if err != nil {
 		t.Fatalf("opening with external ownership: %v", err)
@@ -184,7 +185,7 @@ func TestExternalInstanceOwnershipSkipsDuplicateLock(t *testing.T) {
 		t.Fatalf("closing externally owned engine: %v", err)
 	}
 
-	if _, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()}); err == nil {
+	if _, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams(), Logger: discard()}); err == nil {
 		t.Fatal("ordinary open ignored the host-owned instance lock")
 	}
 }
@@ -197,7 +198,7 @@ func TestClosingReleasesTheDataDirectory(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	first, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	first, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams(), Logger: discard()})
 	if err != nil {
 		t.Fatalf("the first engine: %v", err)
 	}
@@ -205,7 +206,7 @@ func TestClosingReleasesTheDataDirectory(t *testing.T) {
 		t.Fatalf("closing the first engine: %v", cerr)
 	}
 
-	second, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	second, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams(), Logger: discard()})
 	if err != nil {
 		t.Fatalf("reopening the same directory: %v", err)
 	}

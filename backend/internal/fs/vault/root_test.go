@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -19,6 +20,7 @@ func openTestRoot(t *testing.T, containerPath string, create bool, sizeMiB uint6
 	t.Helper()
 	scratchDir := t.TempDir()
 	root, err := Open(context.Background(), Options{
+		Logger:     slog.New(slog.DiscardHandler),
 		Share:      vfs.ShareID(1),
 		Config:     Config{Container: containerPath, CreateSizeMiB: sizeMiB},
 		Password:   secret.New([]byte("end to end test password")),
@@ -267,6 +269,7 @@ func TestOpenWrongPasswordRefused(t *testing.T) {
 	// wrong passphrase otherwise pays for every derivation this build
 	// implements, and the refusal is what this test is about.
 	_, err := Open(context.Background(), Options{
+		Logger:     slog.New(slog.DiscardHandler),
 		Share:      vfs.ShareID(1),
 		Config:     Config{Container: containerPath, Hash: "sha512"},
 		Password:   secret.New([]byte("not the right password")),
@@ -286,6 +289,7 @@ func TestOpenExternalVeraCryptFixture(t *testing.T) {
 		t.Skip("external VeraCrypt fixture adapter gate is run by CI with VAULT_INTEROP_FIXTURE")
 	}
 	root, err := Open(context.Background(), Options{
+		Logger:     slog.New(slog.DiscardHandler),
 		Share:      vfs.ShareID(1),
 		Config:     Config{Container: fixture, Hash: "sha512"},
 		Password:   secret.New([]byte("veracrypt interop fixture password")),
@@ -344,7 +348,8 @@ func mustPartPath(t *testing.T, suffix string) vfs.SafePath {
 func openTestRootWithScratch(t *testing.T, containerPath, scratch string, create bool) *Root {
 	t.Helper()
 	root, err := Open(context.Background(), Options{
-		Share: vfs.ShareID(1), Config: Config{Container: containerPath, CreateSizeMiB: minContainerDataMiB},
+		Logger: slog.New(slog.DiscardHandler),
+		Share:  vfs.ShareID(1), Config: Config{Container: containerPath, CreateSizeMiB: minContainerDataMiB},
 		Password: secret.New([]byte("end to end test password")), Create: create, ScratchDir: scratch, Policy: vfs.DefaultSharePolicy(),
 	})
 	if err != nil {

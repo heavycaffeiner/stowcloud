@@ -26,9 +26,6 @@ type StateLocks struct {
 
 // NewStateLocks wraps a state database.
 func NewStateLocks(db *state.DB, clk clock.Clock, log *slog.Logger) *StateLocks {
-	if log == nil {
-		log = slog.Default()
-	}
 	return &StateLocks{locks: lock.New(db, clk), log: log}
 }
 

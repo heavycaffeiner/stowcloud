@@ -178,9 +178,6 @@ func New(d PublisherDeps) *Publisher {
 	if d.Clock == nil {
 		d.Clock = clock.System()
 	}
-	if d.Logger == nil {
-		d.Logger = slog.Default()
-	}
 	return &Publisher{deps: d}
 }
 

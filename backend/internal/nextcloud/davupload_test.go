@@ -3,6 +3,7 @@
 package nextcloud
 
 import (
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -16,7 +17,7 @@ import (
 // holding it reads whatever came back.
 func TestTheUploadCollectionSaysWhenItIsAbsent(t *testing.T) {
 	t.Parallel()
-	s := New(Deps{Features: func() Features { return Features{} }, Errors: apierr.NewClassifier(nil)})
+	s := New(Deps{Features: func() Features { return Features{} }, Errors: apierr.NewClassifier(nil), Logger: slog.New(slog.DiscardHandler)})
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("MKCOL", "/remote.php/dav/uploads/alice/session", nil)

@@ -1018,7 +1018,7 @@ func TestClosingTheEngineWaitsForACopyToRecordItsOutcome(t *testing.T) {
 	ctx := context.Background()
 	dataDir := t.TempDir()
 
-	e, err := server.Open(ctx, server.Options{DataDir: dataDir, PasswordParams: fastPasswordParams()})
+	e, err := server.Open(ctx, server.Options{DataDir: dataDir, PasswordParams: fastPasswordParams(), Logger: discard()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}

@@ -28,7 +28,7 @@ func indexEngine(t *testing.T) (base, dataDir string, cookie *http.Cookie, csrf 
 	ctx := context.Background()
 	dataDir = t.TempDir()
 
-	first, err := server.Open(ctx, server.Options{DataDir: dataDir, PasswordParams: fastPasswordParams()})
+	first, err := server.Open(ctx, server.Options{DataDir: dataDir, PasswordParams: fastPasswordParams(), Logger: discard()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -42,7 +42,7 @@ func indexEngine(t *testing.T) (base, dataDir string, cookie *http.Cookie, csrf 
 		t.Fatalf("closing: %v", cerr)
 	}
 
-	opened, oerr := server.Open(ctx, server.Options{DataDir: dataDir, PasswordParams: fastPasswordParams()})
+	opened, oerr := server.Open(ctx, server.Options{DataDir: dataDir, PasswordParams: fastPasswordParams(), Logger: discard()})
 	if oerr != nil {
 		t.Fatalf("reopening: %v", oerr)
 	}
@@ -218,7 +218,7 @@ func TestTheLegacyIndexDirectoryMovesToTheHiddenName(t *testing.T) {
 	ctx := context.Background()
 	dataDir := t.TempDir()
 
-	first, err := server.Open(ctx, server.Options{DataDir: dataDir, PasswordParams: fastPasswordParams()})
+	first, err := server.Open(ctx, server.Options{DataDir: dataDir, PasswordParams: fastPasswordParams(), Logger: discard()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}

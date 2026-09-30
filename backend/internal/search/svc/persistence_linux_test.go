@@ -479,7 +479,7 @@ func TestAFreshlyOpenedIndexDoesNotAnswer(t *testing.T) {
 	src, _ := corpus(t, 1, equivalenceCorpus()...)
 	dir := filepath.Join(t.TempDir(), "index")
 
-	ix, st := OpenIndex(dir, index.DefaultConfig(), nil)
+	ix, st := OpenIndex(dir, index.DefaultConfig(), slog.New(slog.DiscardHandler))
 	if st != OpenAbsent {
 		t.Fatalf("a directory nothing built into reported %v, want absent", st)
 	}

@@ -29,9 +29,6 @@ type AdminUsersDeps struct {
 
 // NewAdminUsersHandlers builds administrator account, group and audit routes.
 func NewAdminUsersHandlers(d AdminUsersDeps) *AdminUsersHandlers {
-	if d.Logger == nil {
-		d.Logger = slog.Default()
-	}
 	return &AdminUsersHandlers{d: d}
 }
 

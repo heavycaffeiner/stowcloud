@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -319,7 +320,8 @@ func (b *fakeBucket) handleCopy(w http.ResponseWriter, r *http.Request, destKey 
 func openTestRoot(t *testing.T, endpoint, bucket, prefix string) *Root {
 	t.Helper()
 	root, err := Open(context.Background(), Options{
-		Share: vfs.ShareID(7),
+		Logger: slog.New(slog.DiscardHandler),
+		Share:  vfs.ShareID(7),
 		Config: Config{
 			Endpoint:  endpoint,
 			Region:    "us-east-1",
@@ -749,6 +751,7 @@ func hasEntry(entries []vfs.DirEntry, name string, kind vfs.Kind) bool {
 func openTestRootWithScratch(t *testing.T, endpoint, bucket, prefix, scratch string) *Root {
 	t.Helper()
 	root, err := Open(context.Background(), Options{
+		Logger: slog.New(slog.DiscardHandler),
 		Share:  vfs.ShareID(7),
 		Config: Config{Endpoint: endpoint, Region: "us-east-1", Bucket: bucket, Prefix: prefix, AccessKey: "AKIAEXAMPLE", PathStyle: true},
 		Secret: secret.New([]byte("supersecretkey")), ScratchDir: scratch, Policy: vfs.DefaultSharePolicy(), Clock: fixedTestClock(),

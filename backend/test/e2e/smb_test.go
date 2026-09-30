@@ -264,7 +264,7 @@ func TestTheStoredSecondFactorPolicyBlocksTheProtocol(t *testing.T) {
 
 	// Saved before the engine that serves it opens, which is the ordinary
 	// order: an operator configures, the server restarts, the value applies.
-	first, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	first, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams(), Logger: discard()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -335,7 +335,7 @@ func TestAnUnknownSecondFactorPolicyBlocks(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	first, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	first, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams(), Logger: discard()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -394,7 +394,7 @@ func TestThePermissivePolicyKeepsProtocolAccess(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	first, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	first, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams(), Logger: discard()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -456,7 +456,7 @@ func bootWithSidecar(t *testing.T) (*server.Engine, string) {
 	dir := t.TempDir()
 	configDir := filepath.Join(t.TempDir(), "smb")
 
-	first, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	first, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams(), Logger: discard()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -493,7 +493,7 @@ func TestTurningFileSharingOffReachesTheSidecar(t *testing.T) {
 	dir := t.TempDir()
 	configDir := filepath.Join(t.TempDir(), "smb")
 
-	first, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	first, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams(), Logger: discard()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -564,7 +564,7 @@ func TestEnablingSharingLaterStillWritesCredentials(t *testing.T) {
 	configDir := filepath.Join(t.TempDir(), "smb")
 
 	// Configured but off, which is what makes the path empty at startup.
-	first, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	first, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams(), Logger: discard()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}

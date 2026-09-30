@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -56,7 +57,7 @@ func newCore(t *testing.T) (*Core, *state.DB) {
 		t.Fatalf("wrapping the cache: %v", err)
 	}
 
-	c, err := New(ctx, Options{State: st, Cache: ca, ACL: acl.NewEvaluator()})
+	c, err := New(ctx, Options{State: st, Cache: ca, ACL: acl.NewEvaluator(), Logger: slog.New(slog.DiscardHandler)})
 	if err != nil {
 		t.Fatalf("building the core: %v", err)
 	}

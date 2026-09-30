@@ -38,7 +38,7 @@ func newSMBPublisher(e *Engine, s smbSettings) *publish.Publisher {
 		Auth:   e.Auth,
 		State:  e.State,
 		Clock:  e.clk(),
-		Logger: e.log(),
+		Logger: e.logger,
 		Settings: func(ctx context.Context) publish.Settings {
 			current := smbSettingsOf(ctx, e)
 			return publish.Settings{Config: current.Config, ConfigDir: current.ConfigDir, Socket: current.Socket, ServiceGID: current.GID, Configured: current.Configured}
@@ -51,7 +51,7 @@ func (e *Engine) publishSMBAtBoot(ctx context.Context) {
 		return
 	}
 	if _, err := e.smb.Publish(ctx); err != nil {
-		e.log().Warn("the SMB configuration could not be published at startup", "error", err)
+		e.logger.Warn("the SMB configuration could not be published at startup", "error", err)
 	}
 }
 
@@ -79,8 +79,8 @@ func (e *Engine) publishSMBSettings(ctx context.Context) {
 	report, err := p.Publish(pctx)
 	switch {
 	case err != nil:
-		e.log().Warn("a file-sharing settings change did not reach the SMB sidecar", "error", err)
+		e.logger.Warn("a file-sharing settings change did not reach the SMB sidecar", "error", err)
 	case !report.OK:
-		e.log().Warn("the SMB sidecar applied the settings change with a warning", "error", report.Error)
+		e.logger.Warn("the SMB sidecar applied the settings change with a warning", "error", report.Error)
 	}
 }

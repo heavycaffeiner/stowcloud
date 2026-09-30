@@ -90,6 +90,6 @@ func (e *Engine) sweepUploads(ctx context.Context) error {
 
 // sweepDirectTransfers delegates durable transfer recovery to its feature owner.
 func (e *Engine) sweepDirectTransfers(ctx context.Context) error {
-	_, err := uploads.SweepDirect(ctx, e.State, e.now(), uploads.DirectProviderForRow(e.Core, files.Resolve(e.Core)), e.log())
+	_, err := uploads.SweepDirect(ctx, e.State, e.now(), uploads.DirectProviderForRow(e.Core, files.Resolve(e.Core)), e.logger)
 	return err
 }

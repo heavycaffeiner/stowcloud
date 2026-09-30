@@ -292,7 +292,7 @@ func TestTheFirstAdministratorIsGrantedTheExistingShares(t *testing.T) {
 
 	// A share registered before the first account, which is the order an
 	// operator restoring a configuration lands in.
-	first, err := server.Open(ctx, server.Options{DataDir: dataDir, PasswordParams: fastPasswordParams()})
+	first, err := server.Open(ctx, server.Options{DataDir: dataDir, PasswordParams: fastPasswordParams(), Logger: discard()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}

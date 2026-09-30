@@ -733,7 +733,7 @@ func TestALogoutWhoseRevokeFailsIsReported(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	e, err := server.Open(ctx, server.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
+	e, err := server.Open(ctx, server.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams(), Logger: discard()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}

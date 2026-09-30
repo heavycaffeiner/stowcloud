@@ -54,10 +54,10 @@ type Options struct {
 // settings, and discovers filesystem roots before the runtime is constructed.
 // The returned Config holds the lock; a failed Load releases it.
 func Load(ctx context.Context, options Options) (Config, error) {
-	logger := options.Logger
-	if logger == nil {
-		logger = slog.Default()
+	if options.Logger == nil {
+		return Config{}, errors.New("preflight needs a logger")
 	}
+	logger := options.Logger
 	abs, err := filepath.Abs(options.DataDir)
 	if err != nil {
 		return Config{}, fmt.Errorf("resolving the data directory: %w", err)

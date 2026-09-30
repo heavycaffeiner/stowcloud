@@ -48,7 +48,7 @@ func encryptedShare(t *testing.T, perms acl.Perms, previewWorker string) (
 	t.Helper()
 	ctx := context.Background()
 
-	e, err := server.Open(ctx, server.Options{DataDir: t.TempDir(), PreviewWorker: previewWorker, PasswordParams: fastPasswordParams()})
+	e, err := server.Open(ctx, server.Options{DataDir: t.TempDir(), PreviewWorker: previewWorker, PasswordParams: fastPasswordParams(), Logger: discard()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}

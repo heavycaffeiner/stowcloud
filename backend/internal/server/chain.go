@@ -82,7 +82,7 @@ func (a accessLog) Access(e middleware.AccessEvent) {
 		attrs = append(attrs, "error", e.Cause)
 	}
 
-	log := a.e.log()
+	log := a.e.logger
 	switch {
 	case e.Status >= 500:
 		log.Error("the request failed", attrs...)

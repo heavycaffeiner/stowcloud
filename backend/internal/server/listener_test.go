@@ -5,6 +5,7 @@ package server
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -71,7 +72,7 @@ func TestServeReturnsWhenARestartIsRequested(t *testing.T) {
 	dir := t.TempDir()
 	router := gin.New()
 	router.GET("/ping", func(c *gin.Context) { c.String(http.StatusOK, "pong") })
-	l, err := NewListener(ListenerConfig{DataDir: dir, Address: "127.0.0.1:0", Plain: true}, fixedApp{}, router)
+	l, err := NewListener(ListenerConfig{DataDir: dir, Address: "127.0.0.1:0", Plain: true, Logger: slog.New(slog.DiscardHandler)}, fixedApp{}, router)
 	if err != nil {
 		t.Fatalf("NewListener: %v", err)
 	}
@@ -117,7 +118,7 @@ func TestServeReturnsWhenARestartIsRequested(t *testing.T) {
 
 // Cancelling the context stops Serve without an error.
 func TestServeStopsWithItsContext(t *testing.T) {
-	l, err := NewListener(ListenerConfig{DataDir: t.TempDir(), Address: "127.0.0.1:0", Plain: true}, fixedApp{}, gin.New())
+	l, err := NewListener(ListenerConfig{DataDir: t.TempDir(), Address: "127.0.0.1:0", Plain: true, Logger: slog.New(slog.DiscardHandler)}, fixedApp{}, gin.New())
 	if err != nil {
 		t.Fatalf("NewListener: %v", err)
 	}

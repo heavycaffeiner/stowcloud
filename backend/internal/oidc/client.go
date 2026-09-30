@@ -81,9 +81,6 @@ func BuildFromSettings(ctx context.Context, cfg Config, readSecret SecretReader,
 	if cfg.Issuer == "" || cfg.ClientID == "" || readSecret == nil {
 		return nil
 	}
-	if logger == nil {
-		logger = slog.Default()
-	}
 	plain, ok, err := readSecret(ctx, "oidc_client_secret")
 	if err != nil {
 		logger.Error("the single sign-on secret could not be opened; sign-on stays off", "error", err)

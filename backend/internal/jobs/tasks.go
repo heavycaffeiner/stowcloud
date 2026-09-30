@@ -29,9 +29,9 @@ type Task struct {
 
 // Runner starts a set of recurring tasks once and drains them at shutdown.
 //
-// The zero value is usable except that it logs through slog.Default. A runner
-// cannot be restarted after Stop: recurring work belongs to one engine
-// lifetime, and allowing a second start would make a close race the old set.
+// Build one with NewRunner. A runner cannot be restarted after Stop: recurring
+// work belongs to one engine lifetime, and allowing a second start would make
+// a close race the old set.
 type Runner struct {
 	start sync.Once
 	group kitTask.Group
@@ -43,11 +43,7 @@ type Runner struct {
 }
 
 // NewRunner constructs a runner using logger for task failures and shutdown warnings.
-// A nil logger uses the process default.
 func NewRunner(logger *slog.Logger) *Runner {
-	if logger == nil {
-		logger = slog.Default()
-	}
 	return &Runner{logger: logger}
 }
 
@@ -86,7 +82,7 @@ func (r *Runner) Stop(ctx context.Context) error {
 	}
 	stop()
 	if err := r.group.Wait(ctx); err != nil {
-		r.log().Warn("periodic tasks did not stop before shutdown", "error", err)
+		r.logger.Warn("periodic tasks did not stop before shutdown", "error", err)
 		return err
 	}
 	return nil
@@ -95,7 +91,7 @@ func (r *Runner) Stop(ctx context.Context) error {
 func (r *Runner) run(ctx context.Context, item Task) {
 	for {
 		if err := item.Run(ctx); err != nil && ctx.Err() == nil {
-			r.log().Warn("a periodic task failed", "task", item.Name, "error", err)
+			r.logger.Warn("a periodic task failed", "task", item.Name, "error", err)
 		}
 		timer := time.NewTimer(item.Every)
 		select {
@@ -105,13 +101,6 @@ func (r *Runner) run(ctx context.Context, item Task) {
 		case <-timer.C:
 		}
 	}
-}
-
-func (r *Runner) log() *slog.Logger {
-	if r.logger != nil {
-		return r.logger
-	}
-	return slog.Default()
 }
 
 // Policy contains the application-owned operations used by the recurring

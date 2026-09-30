@@ -212,14 +212,9 @@ type Server struct {
 	clk  clock.Clock
 }
 
-// New builds the server. A missing logger or clock is filled in rather than
-// refused: neither is a deployment decision, and a nil one is a panic in a
-// request path instead of a configuration error at boot.
+// New builds the server. A missing clock is filled in; the logger is required.
 func New(d Deps) *Server {
 	log := d.Logger
-	if log == nil {
-		log = slog.Default()
-	}
 	clk := d.Clock
 	if clk == nil {
 		clk = clock.System()

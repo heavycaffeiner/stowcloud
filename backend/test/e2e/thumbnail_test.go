@@ -106,6 +106,7 @@ func thumbShare(t *testing.T, perms acl.Perms, img []byte) (base string, sess se
 		DataDir:        t.TempDir(),
 		PreviewWorker:  jailedWorker(t),
 		PasswordParams: fastPasswordParams(),
+		Logger:         discard(),
 	})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
@@ -421,6 +422,7 @@ func TestThumbnailSettingCanBeToggledOff(t *testing.T) {
 		DataDir:        t.TempDir(),
 		PreviewWorker:  jailedWorker(t),
 		PasswordParams: fastPasswordParams(),
+		Logger:         discard(),
 	})
 	if err != nil {
 		t.Fatalf("opening: %v", err)

@@ -26,9 +26,6 @@ type AdminHandlers struct{ d AdminDeps }
 
 // NewAdminHandlers builds administrator SMB routes.
 func NewAdminHandlers(d AdminDeps) *AdminHandlers {
-	if d.Logger == nil {
-		d.Logger = slog.Default()
-	}
 	if d.Timeout <= 0 {
 		d.Timeout = agent.DefaultTimeout + 5*time.Second
 	}

@@ -88,9 +88,6 @@ type Updater struct {
 // NewUpdater constructs one. sources is consulted per event rather than captured
 // up front, so shares added or removed after startup are noticed.
 func NewUpdater(svc *Service, sources func() []search.Source, log *slog.Logger) *Updater {
-	if log == nil {
-		log = slog.Default()
-	}
 	return &Updater{
 		svc:     svc,
 		sources: sources,

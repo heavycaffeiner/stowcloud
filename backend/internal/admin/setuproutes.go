@@ -54,7 +54,7 @@ func (h *SetupHandlers) Get(c *gin.Context) {
 	}
 	open, err := h.d.Gate.Open(c.Request.Context())
 	if err != nil {
-		h.logger().Warn("the setup state could not be read", "error", err)
+		h.d.Logger.Warn("the setup state could not be read", "error", err)
 		c.JSON(http.StatusOK, SetupStateOf(false))
 		return
 	}
@@ -118,7 +118,7 @@ func (h *SetupHandlers) Post(c *gin.Context) {
 	out := SetupOutcomeOf(userID, req.Username, findings)
 	if h.d.State != nil {
 		if err := h.d.State.MergeSettings(c.Request.Context(), "network", network); err != nil {
-			h.logger().Error("the first-run network settings were not stored", "error", err)
+			h.d.Logger.Error("the first-run network settings were not stored", "error", err)
 		} else if h.d.Apply != nil {
 			h.d.Apply(c.Request.Context())
 		}
@@ -126,17 +126,17 @@ func (h *SetupHandlers) Post(c *gin.Context) {
 
 	if req.FirstShare != nil && req.FirstShare.Name != "" && req.FirstShare.Host != "" {
 		if h.d.CreateShare == nil {
-			h.logger().Warn("the first share was not created", "error", errors.New("share creation unavailable"))
+			h.d.Logger.Warn("the first share was not created", "error", errors.New("share creation unavailable"))
 			out.ShareFailed = true
 		} else {
 			share, err := h.d.CreateShare(c.Request.Context(), files.ShareSpec{Name: req.FirstShare.Name, Host: req.FirstShare.Host})
 			if err != nil {
-				h.logger().Warn("the first share was not created", "error", err)
+				h.d.Logger.Warn("the first share was not created", "error", err)
 				out.ShareFailed = true
 			} else {
 				if h.d.GrantEveryShare != nil {
 					if err := h.d.GrantEveryShare(c.Request.Context(), userID); err != nil {
-						h.logger().Warn("the first share was created without a grant", "error", err)
+						h.d.Logger.Warn("the first share was created without a grant", "error", err)
 					}
 				}
 				view := ShareOf(share)
@@ -161,11 +161,4 @@ func anyList(in []string) []any {
 		out = append(out, item)
 	}
 	return out
-}
-
-func (h *SetupHandlers) logger() *slog.Logger {
-	if h.d.Logger != nil {
-		return h.d.Logger
-	}
-	return slog.Default()
 }

@@ -146,9 +146,6 @@ func NewEventHub(ctx context.Context, deps EventDeps, events <-chan EventSource)
 	if deps.Clock == nil {
 		deps.Clock = clock.System()
 	}
-	if deps.Logger == nil {
-		deps.Logger = slog.Default()
-	}
 	h := &EventHub{
 		deps:      deps,
 		conns:     map[*eventConn]struct{}{},

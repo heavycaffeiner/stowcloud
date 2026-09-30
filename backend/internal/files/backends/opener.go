@@ -30,9 +30,6 @@ var _ files.BackendOpener = opener{}
 
 // New returns the opener used by the application composition boundary.
 func New(dataDir string, logger *slog.Logger) files.BackendOpener {
-	if logger == nil {
-		logger = slog.Default()
-	}
 	return opener{dataDir: dataDir, logger: logger}
 }
 

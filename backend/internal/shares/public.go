@@ -38,7 +38,7 @@ type PublicDeps struct {
 	Limiter         interface{ Allow(string) bool }
 	Now             func() int64
 	Audit           func(context.Context, string, string, string, string, bool) error
-	Logger          Logger
+	Logger          *slog.Logger
 	Frontend        http.Handler
 	CloseStream     func(*files.Stream, string)
 	SendStreamRange func(c interface {
@@ -48,7 +48,6 @@ type PublicDeps struct {
 	AcquireArchive func() (func(), bool)
 	WriteArchive   func(context.Context, io.Writer, files.Link, string, string)
 }
-type Logger interface{ Warn(string, ...any) }
 type Public struct{ d PublicDeps }
 
 func NewPublic(d PublicDeps) *Public { return &Public{d: d} }

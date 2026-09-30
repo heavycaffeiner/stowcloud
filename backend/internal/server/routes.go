@@ -56,7 +56,7 @@ func (e *Engine) routes(router *gin.Engine) error {
 	setupRoutes := adminhttp.NewSetupHandlers(adminhttp.SetupDeps{
 		Auth: e.Auth, State: e.State, Gate: e.setup,
 		GrantEveryShare: e.Core.GrantEveryShare, CreateShare: e.Core.CreateShare,
-		Apply: e.Settings.Load, DataDir: e.dataDir, Logger: e.log(),
+		Apply: e.Settings.Load, DataDir: e.dataDir, Logger: e.logger,
 	})
 	public.GET("/api/v1/system/setup", setupRoutes.Get)
 	public.POST("/api/v1/system/setup", middleware.LimitJSON, setupRoutes.Post)
@@ -75,7 +75,7 @@ func (e *Engine) routes(router *gin.Engine) error {
 		DisplayName:   func() string { e.settingsMu.RLock(); defer e.settingsMu.RUnlock(); return e.oidcName },
 		AppHosts:      func() []string { return e.Settings.Hosts().App },
 		RequestScheme: func(r *http.Request) string { return middleware.RequestScheme(r, e.trustedProxies()) },
-		Logger:        e.log(),
+		Logger:        e.logger,
 	})
 	authRoutes := auth.NewAuthHandlers(auth.AuthHandlersDeps{
 		Service: e.Auth, Clock: e.clock, CSRFKey: e.csrfKey,
@@ -120,13 +120,13 @@ func (e *Engine) routes(router *gin.Engine) error {
 	session.POST("/api/v1/account/roots/order", middleware.LimitJSON, auth.RootOrderHandler(auth.RootOrderDeps{State: e.State}))
 
 	openClaim := files.OpenBoundClaim(e.claimKey, e.clk().Nanos)
-	projection := files.NewProjection(files.ProjectionDeps{Core: e.Core, ClaimKey: e.claimKey, Now: e.clk().Nanos, Logger: e.log()})
+	projection := files.NewProjection(files.ProjectionDeps{Core: e.Core, ClaimKey: e.claimKey, Now: e.clk().Nanos, Logger: e.logger})
 	fs := files.NewHandler(files.Deps{
 		Core: e.Core, Archives: e.Archives, Gate: e.archiveGate,
 		Resolve: resolve, OpenClaim: openClaim,
 		EntryView: projection.EntryView, Vpath: projection.Vpath, Refs: projection.Refs,
 		GuardLock: e.guardDavLock,
-		Now:       e.clk().Now, Journal: e.Journal != nil, Logger: e.log(),
+		Now:       e.clk().Now, Journal: e.Journal != nil, Logger: e.logger,
 	})
 	session.GET("/api/v1/files/list", fs.List)
 	session.GET("/api/v1/files/stat", fs.Stat)
@@ -144,7 +144,7 @@ func (e *Engine) routes(router *gin.Engine) error {
 	session.POST("/api/v1/files/archive", middleware.LimitJSON, fs.Archive)
 	session.GET("/api/v1/files/archive/fetch", fs.ArchiveFetch)
 	session.GET("/api/v1/files/archive/list", preview.ArchiveListHandler(preview.ArchiveListDeps{
-		Core: e.Core, Resolve: resolve, AcquireArchive: e.acquireArchive, Logger: e.log(),
+		Core: e.Core, Resolve: resolve, AcquireArchive: e.acquireArchive, Logger: e.logger,
 	}))
 	session.POST("/api/v1/files/download", middleware.LimitJSON, fs.Download)
 	session.GET("/api/v1/files/download/fetch", fs.DownloadFetch)
@@ -155,7 +155,7 @@ func (e *Engine) routes(router *gin.Engine) error {
 		ShareEncrypted: e.Core.ShareEncrypted, GuardLock: e.guardDavLock,
 		ProviderForRow:        uploads.DirectProviderForRow(e.Core, resolve),
 		RevalidateDestination: uploads.RevalidateDirectDestination(e.Core, resolve, e.guardDavLock),
-		Now:                   e.now, Logger: e.log(),
+		Now:                   e.now, Logger: e.logger,
 	})
 	session.POST("/api/v1/direct-uploads", middleware.LimitJSON, transfer.Create)
 	session.GET("/api/v1/direct-uploads/:id", transfer.Status)
@@ -251,7 +251,7 @@ func (e *Engine) routes(router *gin.Engine) error {
 		}
 		r, err := p.Publish(ctx)
 		return r, true, err
-	}, Logger: e.log()})
+	}, Logger: e.logger})
 	admin.POST("/api/v1/admin/smb/apply", smbAdmin.Apply)
 	admin.POST("/api/v1/admin/index/build", middleware.LimitJSON, e.searchHTTP.IndexBuild)
 	admin.GET("/api/v1/admin/index/estimate", e.searchHTTP.IndexEstimate)
@@ -268,7 +268,7 @@ func (e *Engine) routes(router *gin.Engine) error {
 			}
 			return adminhttp.SMBAgentOf(p.LastReport())
 		}, PublishSMB: e.publishSMBSettings,
-		OnRestart: e.Restart.Request, Logger: e.log(),
+		OnRestart: e.Restart.Request, Logger: e.logger,
 	})
 	admin.GET("/api/v1/admin/settings", settings.Get)
 	admin.GET("/api/v1/admin/oidc/endpoints", oidcRoutes.AdminEndpoints)
@@ -283,7 +283,7 @@ func (e *Engine) routes(router *gin.Engine) error {
 	public.GET("/s/:token/zip", e.publicLinks.Zip)
 	public.POST("/s/:token/drop", e.publicLinks.Drop)
 
-	dav.Mount(device, dav.Deps{Core: e.Core, State: e.State, Locks: e.davLocks, Clock: e.clk(), Logger: e.log(), Errors: e.errs, InfinityEntries: 10_000})
+	dav.Mount(device, dav.Deps{Core: e.Core, State: e.State, Locks: e.davLocks, Clock: e.clk(), Logger: e.logger, Errors: e.errs, InfinityEntries: 10_000})
 	e.mountNCTagged(public, device)
 	return web.Install(router)
 }

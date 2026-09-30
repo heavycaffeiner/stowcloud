@@ -44,16 +44,16 @@ func (e *Engine) newPublicLinks() *shares.Public {
 		Audit: func(ctx context.Context, event, target, ip, ua string, ok bool) error {
 			return e.Auth.Audit(ctx, nil, event, target, ip, ua, ok)
 		},
-		Logger:          e.log(),
+		Logger:          e.logger,
 		Frontend:        web.Page(),
-		CloseStream:     func(stream *files.Stream, name string) { files.CloseStream(stream, name, e.log()) },
+		CloseStream:     func(stream *files.Stream, name string) { files.CloseStream(stream, name, e.logger) },
 		SendStreamRange: files.SendStreamRange,
 		AcquireArchive:  e.acquireArchive,
 		WriteArchive: func(ctx context.Context, w io.Writer, link files.Link, sub, name string) {
 			if err := files.BuildArchive(ctx, w, name, func(ctx context.Context, visit files.ArchiveVisit) error {
 				return e.Core.LinkArchiveWalk(ctx, link, sub, visit)
-			}, e.log()); err != nil {
-				e.log().Warn("a link archive ended early", "name", name, "error", err)
+			}, e.logger); err != nil {
+				e.logger.Warn("a link archive ended early", "name", name, "error", err)
 			}
 		},
 	})

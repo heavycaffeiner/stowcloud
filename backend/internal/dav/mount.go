@@ -66,9 +66,6 @@ func handlerOf(d Deps) *Handler {
 func NewMount(d Deps) http.Handler {
 	handler := handlerOf(d)
 	logger := d.Logger
-	if logger == nil {
-		logger = slog.Default()
-	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.EscapedPath()
 		for strings.Contains(path, "//") {

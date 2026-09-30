@@ -39,7 +39,7 @@ func eventsEngine(t *testing.T) (base string, admin, plain *http.Cookie, e *serv
 
 	// Saved before the engine that serves it opens: the host list is read at
 	// construction, which is the order an operator configures in anyway.
-	first, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	first, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams(), Logger: discard()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -61,7 +61,7 @@ func eventsEngine(t *testing.T) (base string, admin, plain *http.Cookie, e *serv
 	// Not closed by a cleanup: one test closes it itself, and a second close
 	// of an engine whose files are already released reports an error the test
 	// did not cause.
-	opened, oerr := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	opened, oerr := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams(), Logger: discard()})
 	if oerr != nil {
 		t.Fatalf("reopening: %v", oerr)
 	}

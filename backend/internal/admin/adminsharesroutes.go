@@ -135,9 +135,6 @@ func (h *SharesHandler) CreateShare(ctx context.Context, in *sharesCreateInput) 
 		h.WatchShare(share)
 	}
 	if err := h.grantShareToContext(ctx, admin, share); err != nil {
-		if h.Logger == nil {
-			h.Logger = slog.Default()
-		}
 		h.Logger.Warn("the new share was registered without a grant for its creator", "share", int64(share.ID), "error", err)
 	}
 	return &shareCreatedOutput{Body: ShareOf(share), Status: http.StatusCreated}, nil

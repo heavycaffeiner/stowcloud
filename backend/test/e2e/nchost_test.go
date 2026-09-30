@@ -36,7 +36,7 @@ func namedNCFixture(t *testing.T, content []byte) ncFixture {
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	first, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	first, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams(), Logger: discard()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}

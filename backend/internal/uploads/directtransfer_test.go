@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"log/slog"
 	"path/filepath"
 	"testing"
 	"time"
@@ -96,8 +97,9 @@ func addDirectTransferRow(t *testing.T, d *state.DB, row state.DirectTransferRes
 
 func serviceForProvider(d *state.DB, p objstore.DirectTransferProvider) *DirectService {
 	return NewDirectService(DirectDependencies{
-		State: d,
-		Now:   func() int64 { return 2 },
+		State:  d,
+		Now:    func() int64 { return 2 },
+		Logger: slog.New(slog.DiscardHandler),
 		ProviderForRow: func(context.Context, state.DirectTransferReservation) (objstore.DirectTransferProvider, bool, error) {
 			return p, true, nil
 		},
@@ -227,7 +229,7 @@ func TestCancelDoesNotAbortACompletingTransfer(t *testing.T) {
 
 func TestCreateRejectsUnsupportedSizes(t *testing.T) {
 	t.Parallel()
-	svc := NewDirectService(DirectDependencies{})
+	svc := NewDirectService(DirectDependencies{Logger: slog.New(slog.DiscardHandler)})
 	for _, size := range []uint64{0, PartSize*MaxParts + 1} {
 		_, err := svc.Create(context.Background(), 1, DirectCreateRequest{Path: "files/object.bin", Size: size})
 		if !errors.Is(err, ErrUnsupportedSize) {

@@ -75,10 +75,10 @@ func NewListener(config ListenerConfig, app listenerApp, router *gin.Engine) (*L
 	if router == nil {
 		return nil, errors.New("listener Gin engine is nil")
 	}
-	logger := config.Logger
-	if logger == nil {
-		logger = slog.Default()
+	if config.Logger == nil {
+		return nil, errors.New("listener logger is nil")
 	}
+	logger := config.Logger
 
 	protocol := hanamihttp.ProtocolHTTPS
 	var cert *tls.Certificate

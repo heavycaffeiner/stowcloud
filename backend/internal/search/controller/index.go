@@ -79,12 +79,6 @@ func (c *Controller) clk() clock.Clock {
 	}
 	return c.Clock
 }
-func (c *Controller) log() *slog.Logger {
-	if c.Logger == nil {
-		return slog.Default()
-	}
-	return c.Logger
-}
 func (c *Controller) hasWatcher() bool  { return c.HasWatcher != nil && c.HasWatcher() }
 func (c *Controller) jobsStopped() bool { return c.JobsCtx != nil && c.JobsCtx.Err() != nil }
 
@@ -121,7 +115,7 @@ func (c *Controller) Estimate(ctx context.Context) (searchlib.ScanResult, search
 func (c *Controller) OpenIndex(ctx context.Context) {
 	on, err := c.State.IndexNameEnabled(ctx)
 	if err != nil {
-		c.log().Warn("the search index setting could not be read; search runs on the walk", "error", err)
+		c.Logger.Warn("the search index setting could not be read; search runs on the walk", "error", err)
 		return
 	}
 	if !on {
@@ -131,17 +125,17 @@ func (c *Controller) OpenIndex(ctx context.Context) {
 		return
 	}
 	if err := migrateLegacyIndexDir(c.DataDir); err != nil {
-		c.log().Warn("the legacy search index directory could not be migrated; search runs on the walk", "error", err)
+		c.Logger.Warn("the legacy search index directory could not be migrated; search runs on the walk", "error", err)
 		return
 	}
-	ix, opened := svc.OpenIndex(indexDir(c.DataDir), index.DefaultConfig(), c.log())
+	ix, opened := svc.OpenIndex(indexDir(c.DataDir), index.DefaultConfig(), c.Logger)
 	if ix == nil {
 		return
 	}
 	ix.SetIncomplete(true)
 	c.indexRecovery.Store(true)
 	if opened == svc.OpenAbsent {
-		c.log().Info("the search index is enabled and empty; build it to use it", "dir", indexDir(c.DataDir))
+		c.Logger.Info("the search index is enabled and empty; build it to use it", "dir", indexDir(c.DataDir))
 	}
 	c.Search.SetIndex(ix)
 	c.startSearchUpdater(ctx)
@@ -179,7 +173,7 @@ func (c *Controller) Recover(ctx context.Context) error {
 		return fmt.Errorf("recovering the search index: %w", err)
 	}
 	if !progress.Partial {
-		c.log().Info("the search index recovered current coverage", "files", progress.Files)
+		c.Logger.Info("the search index recovered current coverage", "files", progress.Files)
 	}
 	return nil
 }
@@ -187,7 +181,7 @@ func (c *Controller) Recover(ctx context.Context) error {
 func (c *Controller) startSearchUpdater(ctx context.Context) {
 	c.StopUpdater()
 	loop, stop := context.WithCancel(context.WithoutCancel(ctx))
-	u := svc.NewUpdater(c.Search, func() []searchlib.Source { return indexSourcesOf(c.Core.ScanSources()) }, c.log())
+	u := svc.NewUpdater(c.Search, func() []searchlib.Source { return indexSourcesOf(c.Core.ScanSources()) }, c.Logger)
 	u.SetIncompleteCallback(func() { c.indexRecovery.Store(true) })
 	c.searchUpdaterMu.Lock()
 	c.searchUpdater, c.searchUpdaterStop = u, stop
@@ -253,14 +247,14 @@ func (c *Controller) runIndexBuild(ctx context.Context, id int64, sources []sear
 	started := c.clk().Now()
 	progress, err := c.Search.Build(ctx, sources, gate, func(p svc.BuildProgress) {
 		if perr := c.State.SetOpProgress(ctx, id, indexedCount(p.Files), ""); perr != nil {
-			c.log().Warn("the index build's progress could not be recorded", "error", perr)
+			c.Logger.Warn("the index build's progress could not be recorded", "error", perr)
 		}
 	})
 	now := c.clk().Nanos()
 	if err != nil {
-		c.log().Warn("the index build failed", "error", err, "files", progress.Files)
+		c.Logger.Warn("the index build failed", "error", err, "files", progress.Files)
 		if ferr := c.State.FinishOp(ctx, id, state.OpFailed, indexedCount(progress.Files), err.Error(), now, nil); ferr != nil {
-			c.log().Warn("recording a failed index build failed", "error", ferr)
+			c.Logger.Warn("recording a failed index build failed", "error", ferr)
 		}
 		return
 	}
@@ -271,18 +265,18 @@ func (c *Controller) runIndexBuild(ctx context.Context, id int64, sources []sear
 	if elapsed := c.clk().Now().Sub(started); progress.Files > 0 && elapsed >= time.Second {
 		rate := uint64(float64(progress.Files) / elapsed.Seconds())
 		if rerr := c.State.SetIndexBuildRate(ctx, rate); rerr != nil {
-			c.log().Warn("recording the index build rate failed", "error", rerr)
+			c.Logger.Warn("recording the index build rate failed", "error", rerr)
 		}
 	}
 	indexed := indexedCount(progress.Files)
 	switch {
 	case c.jobsStopped():
 		if ierr := c.State.InterruptOp(ctx, id, now); ierr != nil {
-			c.log().Warn("interrupting an index build failed", "error", ierr)
+			c.Logger.Warn("interrupting an index build failed", "error", ierr)
 		}
 	case c.buildCancelled(ctx, id):
 		if ferr := c.State.FinishOp(ctx, id, state.OpCancelled, indexed, "cancelled; the index holds what the walk reached", now, nil); ferr != nil {
-			c.log().Warn("recording a cancelled index build failed", "error", ferr)
+			c.Logger.Warn("recording a cancelled index build failed", "error", ferr)
 		}
 	default:
 		message := ""
@@ -290,7 +284,7 @@ func (c *Controller) runIndexBuild(ctx context.Context, id int64, sources []sear
 			message = "the corpus is larger than one build covers; a query beyond it falls back to a walk"
 		}
 		if ferr := c.State.FinishOp(ctx, id, state.OpDone, indexed, message, now, nil); ferr != nil {
-			c.log().Warn("recording a completed index build failed", "error", ferr)
+			c.Logger.Warn("recording a completed index build failed", "error", ferr)
 		}
 	}
 }

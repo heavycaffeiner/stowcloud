@@ -23,9 +23,3 @@ func (m *Manager) clk() clock.Clock {
 	}
 	return m.Clock
 }
-func (m *Manager) log() *slog.Logger {
-	if m.Logger == nil {
-		return slog.Default()
-	}
-	return m.Logger
-}

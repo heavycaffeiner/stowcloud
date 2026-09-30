@@ -29,9 +29,6 @@ type Store interface {
 // base supplies values for keys that were never saved. Every caller in the
 // product passes Defaults.
 func Load(ctx context.Context, st Store, base Values, log *slog.Logger) Values {
-	if log == nil {
-		log = slog.Default()
-	}
 	all, err := st.Settings(ctx)
 	if err != nil {
 		log.Warn("the stored settings could not be read; running with the compiled-in defaults",

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -34,7 +35,7 @@ func openEngine(t *testing.T) *server.Engine {
 // openEngineAt opens an engine on dir and closes it when the test ends.
 func openEngineAt(t *testing.T, dir string) *server.Engine {
 	t.Helper()
-	e, err := server.Open(context.Background(), server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	e, err := server.Open(context.Background(), server.Options{DataDir: dir, PasswordParams: fastPasswordParams(), Logger: discard()})
 	if err != nil {
 		t.Fatalf("opening the engine: %v", err)
 	}
@@ -53,6 +54,9 @@ func openEngineAt(t *testing.T, dir string) *server.Engine {
 func fastPasswordParams() auth.Params {
 	return auth.Params{MemoryKiB: 8192, Iterations: 1, Parallelism: 1, KeyLen: 32}
 }
+
+// discard is the logger every engine under test writes to.
+func discard() *slog.Logger { return slog.New(slog.DiscardHandler) }
 
 // boot opens an engine and serves it on a real socket.
 func boot(t *testing.T) string {

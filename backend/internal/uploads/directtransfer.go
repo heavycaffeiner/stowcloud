@@ -59,9 +59,6 @@ func NewDirectService(d DirectDependencies) *DirectService {
 	if d.Now == nil {
 		d.Now = clock.System().Nanos
 	}
-	if d.Logger == nil {
-		d.Logger = slog.Default()
-	}
 	return &DirectService{d: d}
 }
 
@@ -450,9 +447,6 @@ type DirectSweepReport struct {
 }
 
 func SweepDirect(ctx context.Context, db *state.DB, now int64, resolve func(context.Context, state.DirectTransferReservation) (objstore.DirectTransferProvider, bool, error), logger *slog.Logger) (DirectSweepReport, error) {
-	if logger == nil {
-		logger = slog.Default()
-	}
 	rows, err := db.ListExpiredDirectTransfers(ctx, now, 100)
 	if err != nil {
 		return DirectSweepReport{}, fmt.Errorf("listing expired direct transfers: %w", err)

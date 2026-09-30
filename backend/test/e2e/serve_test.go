@@ -122,7 +122,7 @@ func TestEveryAnswerIsJSON(t *testing.T) {
 // A correct assembly mounts without error.
 func TestMountingACorrectAssembly(t *testing.T) {
 	t.Parallel()
-	e, err := server.Open(context.Background(), server.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
+	e, err := server.Open(context.Background(), server.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams(), Logger: discard()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func TestClosingReleasesTheDatabases(t *testing.T) {
 	dir := t.TempDir()
 	ctx := context.Background()
 
-	e, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	e, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams(), Logger: discard()})
 	if err != nil {
 		t.Fatal(err)
 	}

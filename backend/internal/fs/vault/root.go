@@ -71,10 +71,10 @@ func Open(ctx context.Context, opt Options) (*Root, error) {
 	if opt.ScratchDir == "" {
 		return nil, fmt.Errorf("vault: scratch dir is required")
 	}
-	logger := opt.Logger
-	if logger == nil {
-		logger = slog.Default()
+	if opt.Logger == nil {
+		return nil, fmt.Errorf("vault: logger is required")
 	}
+	logger := opt.Logger
 	clk := opt.Clock
 	if clk == nil {
 		clk = clock.System()

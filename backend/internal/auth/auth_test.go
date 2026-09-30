@@ -3,6 +3,7 @@ package auth_test
 import (
 	"context"
 	"database/sql"
+	"log/slog"
 	"path/filepath"
 	"testing"
 
@@ -50,7 +51,7 @@ func newFixtureWithClock(t *testing.T, clk clock.Clock) fixture {
 	})
 	store := state.New(f)
 	sink := &countingSink{}
-	svc := auth.New(auth.Config{Store: store, StoreDir: dir, Clock: clk})
+	svc := auth.New(auth.Config{Store: store, StoreDir: dir, Clock: clk, Logger: slog.New(slog.DiscardHandler)})
 	svc.SetAccessChangeSink(sink)
 	if _, err := svc.OpenMasterKey(context.Background()); err != nil {
 		t.Fatalf("OpenMasterKey: %v", err)
@@ -101,6 +102,7 @@ func newServiceWithMembership(t *testing.T, f fixture, onMembership func()) *aut
 		Store:        f.store,
 		StoreDir:     f.dir,
 		OnMembership: onMembership,
+		Logger:       slog.New(slog.DiscardHandler),
 	})
 	if _, err := svc.OpenMasterKey(context.Background()); err != nil {
 		t.Fatalf("OpenMasterKey: %v", err)

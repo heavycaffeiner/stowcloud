@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -73,7 +74,7 @@ func newFixtureWithCache(t *testing.T, cacheDir string) *fixture {
 		t.Fatalf("wrapping the cache: %v", err)
 	}
 
-	c, err := files.New(ctx, files.Options{State: st, Cache: ca, ACL: acl.NewEvaluator(), Clock: clk})
+	c, err := files.New(ctx, files.Options{State: st, Cache: ca, ACL: acl.NewEvaluator(), Clock: clk, Logger: slog.New(slog.DiscardHandler)})
 	if err != nil {
 		t.Fatalf("building the core: %v", err)
 	}
@@ -111,7 +112,7 @@ func newFixtureWithCache(t *testing.T, cacheDir string) *fixture {
 		t.Fatalf("reloading grants: %v", rerr)
 	}
 
-	e, err := New(ctx, c, st, Options{Clock: clk, CacheDir: cacheDir})
+	e, err := New(ctx, c, st, Options{Clock: clk, CacheDir: cacheDir, Logger: slog.New(slog.DiscardHandler)})
 	if err != nil {
 		t.Fatalf("building the upload engine: %v", err)
 	}

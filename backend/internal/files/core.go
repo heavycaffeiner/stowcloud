@@ -56,7 +56,7 @@ type Options struct {
 	Clock clock.Clock
 
 	// Logger receives the best-effort failures the domain must not fail an
-	// operation over. Nil takes the default logger.
+	// operation over. Required.
 	Logger *slog.Logger
 }
 
@@ -127,6 +127,8 @@ func New(ctx context.Context, opt Options) (*Core, error) {
 		return nil, errors.New("core requires a cache database")
 	case opt.ACL == nil:
 		return nil, errors.New("core requires an ACL evaluator")
+	case opt.Logger == nil:
+		return nil, errors.New("core requires a logger")
 	}
 
 	clk := opt.Clock
@@ -134,9 +136,6 @@ func New(ctx context.Context, opt Options) (*Core, error) {
 		clk = clock.System()
 	}
 	logger := opt.Logger
-	if logger == nil {
-		logger = slog.Default()
-	}
 
 	backend := opt.Backend
 	if backend == nil {

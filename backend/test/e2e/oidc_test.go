@@ -266,7 +266,7 @@ func TestAConfiguredProviderBuildsAClient(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	e, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	e, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams(), Logger: discard()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}
@@ -317,7 +317,7 @@ func TestAProviderWithoutASecretStaysOff(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	e, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams()})
+	e, err := server.Open(ctx, server.Options{DataDir: dir, PasswordParams: fastPasswordParams(), Logger: discard()})
 	if err != nil {
 		t.Fatalf("opening: %v", err)
 	}

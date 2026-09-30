@@ -87,9 +87,6 @@ type Handler struct {
 // New builds a handler.
 func New(opt Options) *Handler {
 	logger := opt.Logger
-	if logger == nil {
-		logger = slog.Default()
-	}
 	limits := opt.Limits
 	if limits == (Limits{}) {
 		limits = DefaultLimits()

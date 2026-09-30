@@ -59,9 +59,6 @@ func (s OpenState) String() string {
 // belongs to the rebuild, and an operator investigating why search slowed down
 // wants the evidence still present on disk.
 func OpenIndex(dir string, cfg index.Config, log *slog.Logger) (*index.NameIndex, OpenState) {
-	if log == nil {
-		log = slog.Default()
-	}
 
 	// Asked before opening, because Open creates the directory: after it, the
 	// never-built case is indistinguishable from a built one.
