@@ -130,27 +130,27 @@ func (e *Engine) routes(router *gin.Engine) error {
 		GuardLock: e.guardDavLock,
 		Now:       e.clk().Now, Journal: e.Journal != nil, Logger: e.logger,
 	})
-	session.GET("/api/v1/files/list", fs.List)
-	session.GET("/api/v1/files/stat", fs.Stat)
+	op(sessionAPI, http.MethodGet, "/api/v1/files/list", "files.list", fs.List)
+	op(sessionAPI, http.MethodGet, "/api/v1/files/stat", "files.stat", fs.Stat)
 	session.GET("/api/v1/files/read", fs.Read)
-	session.GET("/api/v1/files/size", fs.Size)
+	op(sessionAPI, http.MethodGet, "/api/v1/files/size", "files.size", fs.Size)
 	session.GET("/api/v1/files/thumbnail", preview.ThumbnailHandler(preview.ThumbnailDeps{
 		Core: e.Core, Resolve: resolve, OpenClaim: openClaim, PreviewLease: e.previewLease, Logger: e.logger,
 	}))
-	session.POST("/api/v1/files/mkdir", middleware.LimitJSON, fs.Mkdir)
+	op(sessionAPI, http.MethodPost, "/api/v1/files/mkdir", "files.mkdir", fs.Mkdir)
 	session.POST("/api/v1/files/write", fs.Write)
-	session.POST("/api/v1/files/delete", middleware.LimitJSON, fs.Delete)
-	session.POST("/api/v1/files/move", middleware.LimitJSON, fs.Move)
-	session.POST("/api/v1/files/copy", middleware.LimitJSON, fs.Copy)
-	session.POST("/api/v1/files/rename", middleware.LimitJSON, fs.Rename)
-	session.POST("/api/v1/files/archive", middleware.LimitJSON, fs.Archive)
+	op(sessionAPI, http.MethodPost, "/api/v1/files/delete", "files.delete", fs.Delete)
+	op(sessionAPI, http.MethodPost, "/api/v1/files/move", "files.move", fs.Move)
+	op(sessionAPI, http.MethodPost, "/api/v1/files/copy", "files.copy", fs.Copy)
+	op(sessionAPI, http.MethodPost, "/api/v1/files/rename", "files.rename", fs.Rename)
+	op(sessionAPI, http.MethodPost, "/api/v1/files/archive", "files.archive", fs.Archive)
 	session.GET("/api/v1/files/archive/fetch", fs.ArchiveFetch)
 	session.GET("/api/v1/files/archive/list", preview.ArchiveListHandler(preview.ArchiveListDeps{
 		Core: e.Core, Resolve: resolve, AcquireArchive: e.acquireArchive, Logger: e.logger,
 	}))
-	session.POST("/api/v1/files/download", middleware.LimitJSON, fs.Download)
+	op(sessionAPI, http.MethodPost, "/api/v1/files/download", "files.download", fs.Download)
 	session.GET("/api/v1/files/download/fetch", fs.DownloadFetch)
-	session.GET("/api/v1/files/recent", fs.Recent)
+	op(sessionAPI, http.MethodGet, "/api/v1/files/recent", "files.recent", fs.Recent)
 
 	transfer := uploads.NewDirectHandler(uploads.DirectDependencies{
 		State: e.State, Resolve: resolve,

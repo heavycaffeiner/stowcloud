@@ -77,58 +77,66 @@ func (h *Handler) resolve(owner UserID, raw string, need acl.Perms) (Resolved, e
 	return h.d.Resolve(owner, raw, need)
 }
 
+type listPageInput struct {
+	Path   string `query:"path"`
+	Cursor string `query:"cursor"`
+	Sort   string `query:"sort"`
+	Order  string `query:"order"`
+	Limit  string `query:"limit"`
+}
+type pathQueryInput struct {
+	Path string `query:"path"`
+}
+type pageOutput struct{ Body PageView }
+type entryOutput struct {
+	Status int
+	Body   EntryView
+}
+
 // List serves the virtual grant root or a permission-checked directory page.
-func (h *Handler) List(c *gin.Context) {
-	owner, ok := Owner(c)
-	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
-		return
+func (h *Handler) List(ctx context.Context, in *listPageInput) (*pageOutput, error) {
+	owner, err := OwnerFrom(ctx)
+	if err != nil {
+		return nil, err
 	}
-	raw := c.Query("path")
-	if raw == "" || raw == "/" {
+	if in.Path == "" || in.Path == "/" {
 		roots := h.d.Core.Roots(owner)
 		entries := make([]EntryView, 0, len(roots))
 		for _, root := range roots {
 			entries = append(entries, EntryView{Name: root.Label, Path: "/" + root.Label, IsDir: true})
 		}
-		c.JSON(http.StatusOK, PageView{Entries: entries})
-		return
+		return &pageOutput{Body: PageView{Entries: entries}}, nil
 	}
-	r, err := h.resolve(owner, raw, acl.Read)
+	r, err := h.resolve(owner, in.Path, acl.Read)
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return nil, err
 	}
-	limit, parseErr := strconv.Atoi(c.Query("limit"))
-	if parseErr != nil {
+	limit, perr := strconv.Atoi(in.Limit)
+	if perr != nil {
 		limit = 0
 	}
-	page, err := h.d.Core.ListSorted(c.Request.Context(), r, Cursor(c.Query("cursor")), ListOptions{Sort: ParseSortKey(c.Query("sort")), Desc: c.Query("order") == "desc", Limit: limit})
+	page, err := h.d.Core.ListSorted(ctx, r, Cursor(in.Cursor), ListOptions{Sort: ParseSortKey(in.Sort), Desc: in.Order == "desc", Limit: limit})
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return nil, err
 	}
-	c.JSON(http.StatusOK, PageOf(page, func(entry Entry) string { return h.d.Vpath(owner, r, entry) }, h.d.Refs(owner)))
+	return &pageOutput{Body: PageOf(page, func(entry Entry) string { return h.d.Vpath(owner, r, entry) }, h.d.Refs(owner))}, nil
 }
 
 // Stat serves one permission-checked entry and its content references.
-func (h *Handler) Stat(c *gin.Context) {
-	owner, ok := Owner(c)
-	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
-		return
-	}
-	r, err := h.resolve(owner, c.Query("path"), acl.Read)
+func (h *Handler) Stat(ctx context.Context, in *pathQueryInput) (*entryOutput, error) {
+	owner, err := OwnerFrom(ctx)
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return nil, err
 	}
-	entry, err := h.d.Core.Stat(c.Request.Context(), r)
+	r, err := h.resolve(owner, in.Path, acl.Read)
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return nil, err
 	}
-	c.JSON(http.StatusOK, h.d.EntryView(owner, r, entry))
+	entry, err := h.d.Core.Stat(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	return &entryOutput{Status: http.StatusOK, Body: h.d.EntryView(owner, r, entry)}, nil
 }
 
 // Read serves a sealed content claim with inline disposition rules.
@@ -275,44 +283,34 @@ func (h *Handler) closeStream(stream *Stream, name string) {
 	}
 }
 
+type pathBodyInput struct{ Body pathRequest }
+type ticketOutput struct{ Body TicketView }
+
 // Download mints a browser-navigation ticket for one file.
-func (h *Handler) Download(c *gin.Context) {
-	owner, ok := Owner(c)
-	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
-		return
-	}
-	var req struct {
-		Path string `json:"path"`
-	}
-	if err := middleware.DecodeJSON(c.Request.Body, &req); err != nil {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
-		return
-	}
-	r, err := h.resolve(owner, req.Path, acl.Read|acl.Download)
+func (h *Handler) Download(ctx context.Context, in *pathBodyInput) (*ticketOutput, error) {
+	owner, err := OwnerFrom(ctx)
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return nil, err
+	}
+	r, err := h.resolve(owner, in.Body.Path, acl.Read|acl.Download)
+	if err != nil {
+		return nil, err
 	}
 	st, err := r.Root().Stat(r.Path())
 	if err != nil {
-		middleware.Fail(c, ErrNotFound)
-		return
+		return nil, ErrNotFound
 	}
 	if st.Kind.IsDir() {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
-		return
+		return nil, apierr.AsClassified(apierr.Unprocessable, "")
 	}
 	token, err := archiveToken()
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return nil, err
 	}
-	if h.d.Archives == nil || !h.d.Archives.Put(token, &Ticket{Kind: TicketFile, Name: r.Path().Name(), Paths: []string{req.Path}, Owner: int64(owner)}) {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.LimitExceeded})
-		return
+	if h.d.Archives == nil || !h.d.Archives.Put(token, &Ticket{Kind: TicketFile, Name: r.Path().Name(), Paths: []string{in.Body.Path}, Owner: int64(owner)}) {
+		return nil, apierr.AsClassified(apierr.LimitExceeded, "")
 	}
-	c.JSON(http.StatusOK, TicketView{Token: token, Name: r.Path().Name(), URL: "/api/v1/files/download/fetch?token=" + url.QueryEscape(token)})
+	return &ticketOutput{Body: TicketView{Token: token, Name: r.Path().Name(), URL: "/api/v1/files/download/fetch?token=" + url.QueryEscape(token)}}, nil
 }
 
 // DownloadFetch resolves and streams a previously minted file ticket.
@@ -354,60 +352,50 @@ func (h *Handler) DownloadFetch(c *gin.Context) {
 	h.StreamFile(c, resolved, ticket.Name)
 }
 
+type archiveRequest struct {
+	Paths []string `json:"paths"`
+	Name  string   `json:"name"`
+}
+type archiveInput struct{ Body archiveRequest }
+
 // Archive mints a ticket for a validated selection.
-func (h *Handler) Archive(c *gin.Context) {
-	owner, ok := Owner(c)
-	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
-		return
+func (h *Handler) Archive(ctx context.Context, in *archiveInput) (*ticketOutput, error) {
+	owner, err := OwnerFrom(ctx)
+	if err != nil {
+		return nil, err
 	}
-	var req struct {
-		Paths []string `json:"paths"`
-		Name  string   `json:"name"`
-	}
-	if err := middleware.DecodeJSON(c.Request.Body, &req); err != nil {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
-		return
-	}
+	req := in.Body
 	if len(req.Paths) == 0 {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
-		return
+		return nil, apierr.AsClassified(apierr.Unprocessable, "")
 	}
 	if len(req.Paths) > archiveMaxRoots {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.LimitExceeded})
-		return
+		return nil, apierr.AsClassified(apierr.LimitExceeded, "")
 	}
 	for _, p := range req.Paths {
-		r, err := h.resolve(owner, p, acl.Read|acl.Download)
-		if err != nil {
-			middleware.Fail(c, err)
-			return
+		r, rerr := h.resolve(owner, p, acl.Read|acl.Download)
+		if rerr != nil {
+			return nil, rerr
 		}
-		encrypted, err := h.d.Core.ShareEncrypted(c.Request.Context(), r.Share())
-		if err != nil {
-			middleware.Fail(c, err)
-			return
+		encrypted, eerr := h.d.Core.ShareEncrypted(ctx, r.Share())
+		if eerr != nil {
+			return nil, eerr
 		}
 		if encrypted {
-			middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
-			return
+			return nil, apierr.AsClassified(apierr.Unprocessable, "")
 		}
 	}
 	name, ok := archiveFilename(req.Name)
 	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
-		return
+		return nil, apierr.AsClassified(apierr.Unprocessable, "")
 	}
 	token, err := archiveToken()
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return nil, err
 	}
 	if h.d.Archives == nil || !h.d.Archives.Put(token, &Ticket{Kind: TicketArchive, Name: name, Paths: req.Paths, Owner: int64(owner)}) {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.LimitExceeded})
-		return
+		return nil, apierr.AsClassified(apierr.LimitExceeded, "")
 	}
-	c.JSON(http.StatusOK, TicketView{Token: token, Name: name, URL: "/api/v1/files/archive/fetch?token=" + url.QueryEscape(token)})
+	return &ticketOutput{Body: TicketView{Token: token, Name: name, URL: "/api/v1/files/archive/fetch?token=" + url.QueryEscape(token)}}, nil
 }
 
 // ArchiveFetch streams a validated archive ticket.
@@ -467,58 +455,39 @@ func (h *Handler) ArchiveFetch(c *gin.Context) {
 }
 
 // Mkdir creates one directory.
-func (h *Handler) Mkdir(c *gin.Context) {
-	owner, ok := Owner(c)
-	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
-		return
-	}
-	var req pathRequest
-	if err := middleware.DecodeJSON(c.Request.Body, &req); err != nil {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
-		return
-	}
-	r, err := h.resolve(owner, req.Path, acl.Create)
+func (h *Handler) Mkdir(ctx context.Context, in *pathBodyInput) (*entryOutput, error) {
+	owner, err := OwnerFrom(ctx)
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return nil, err
 	}
-	entry, err := h.d.Core.Mkdir(c.Request.Context(), r)
+	r, err := h.resolve(owner, in.Body.Path, acl.Create)
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return nil, err
 	}
-	c.JSON(http.StatusCreated, h.d.EntryView(owner, r, entry))
+	entry, err := h.d.Core.Mkdir(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	return &entryOutput{Status: http.StatusCreated, Body: h.d.EntryView(owner, r, entry)}, nil
 }
 
 // Delete removes one entry, respecting DAV locks and share trash policy.
-func (h *Handler) Delete(c *gin.Context) {
-	owner, ok := Owner(c)
-	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
-		return
-	}
-	var req pathRequest
-	if err := middleware.DecodeJSON(c.Request.Body, &req); err != nil {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
-		return
-	}
-	r, err := h.resolve(owner, req.Path, acl.Delete)
+func (h *Handler) Delete(ctx context.Context, in *pathBodyInput) (*noContentOutput, error) {
+	owner, err := OwnerFrom(ctx)
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return nil, err
 	}
-	if h.d.GuardLock != nil {
-		if lerr := h.d.GuardLock(c.Request.Context(), uint32(r.Share()), r.Path().String(), int64(owner)); lerr != nil {
-			middleware.Refuse(c, apierr.Classified{Class: apierr.Locked, Key: "dav.locked"})
-			return
-		}
+	r, err := h.resolve(owner, in.Body.Path, acl.Delete)
+	if err != nil {
+		return nil, err
 	}
-	if err := h.d.Core.Delete(c.Request.Context(), r, false); err != nil {
-		middleware.Fail(c, err)
-		return
+	if err = h.guardLock(ctx, owner, r); err != nil {
+		return nil, err
 	}
-	c.Status(http.StatusNoContent)
+	if err = h.d.Core.Delete(ctx, r, false); err != nil {
+		return nil, err
+	}
+	return &noContentOutput{Status: http.StatusNoContent}, nil
 }
 
 type pathRequest struct {
@@ -528,36 +497,37 @@ type renameRequest struct {
 	Path string `json:"path"`
 	Name string `json:"new_name"`
 }
+type renameInput struct{ Body renameRequest }
 
 // Rename changes one entry name in place.
-func (h *Handler) Rename(c *gin.Context) {
-	owner, ok := Owner(c)
-	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
-		return
-	}
-	var req renameRequest
-	if err := middleware.DecodeJSON(c.Request.Body, &req); err != nil {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
-		return
-	}
-	r, err := h.resolve(owner, req.Path, acl.Rename)
+func (h *Handler) Rename(ctx context.Context, in *renameInput) (*entryOutput, error) {
+	owner, err := OwnerFrom(ctx)
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return nil, err
 	}
-	if h.d.GuardLock != nil {
-		if lerr := h.d.GuardLock(c.Request.Context(), uint32(r.Share()), r.Path().String(), int64(owner)); lerr != nil {
-			middleware.Refuse(c, apierr.Classified{Class: apierr.Locked, Key: "dav.locked"})
-			return
-		}
-	}
-	entry, err := h.d.Core.Rename(c.Request.Context(), r, req.Name, nil)
+	r, err := h.resolve(owner, in.Body.Path, acl.Rename)
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return nil, err
 	}
-	c.JSON(http.StatusOK, h.d.EntryView(owner, r, entry))
+	if err = h.guardLock(ctx, owner, r); err != nil {
+		return nil, err
+	}
+	entry, err := h.d.Core.Rename(ctx, r, in.Body.Name, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &entryOutput{Status: http.StatusOK, Body: h.d.EntryView(owner, r, entry)}, nil
+}
+
+// guardLock refuses a change under a DAV lock another client holds.
+func (h *Handler) guardLock(ctx context.Context, owner UserID, r Resolved) error {
+	if h.d.GuardLock == nil {
+		return nil
+	}
+	if err := h.d.GuardLock(ctx, uint32(r.Share()), r.Path().String(), int64(owner)); err != nil {
+		return apierr.AsClassified(apierr.Locked, "dav.locked")
+	}
+	return nil
 }
 
 // Write durably replaces one file from the request body.
@@ -619,75 +589,71 @@ func (t transferRequest) policy() (OnConflict, bool) {
 	return ParseOnConflict(t.OnConflict)
 }
 
+type transferInput struct{ Body transferRequest }
+type moveOutput struct{ Body MoveView }
+type copyStartOutput struct {
+	Status int
+	Body   CopyStartView
+}
+
 // Move relocates an entry.
-func (h *Handler) Move(c *gin.Context) {
-	owner, ok := Owner(c)
-	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
-		return
-	}
-	req, from, to, proceed := h.transferEnds(c, owner, acl.Read|acl.Move)
-	if !proceed {
-		return
-	}
-	policy, known := req.policy()
-	if !known {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
-		return
-	}
-	result, err := h.d.Core.Move(c.Request.Context(), from, to, MoveOpts{OnConflict: policy})
+func (h *Handler) Move(ctx context.Context, in *transferInput) (*moveOutput, error) {
+	owner, err := OwnerFrom(ctx)
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return nil, err
 	}
-	c.JSON(http.StatusOK, MoveOf(result))
+	from, to, err := h.transferEnds(owner, in.Body, acl.Read|acl.Move)
+	if err != nil {
+		return nil, err
+	}
+	policy, known := in.Body.policy()
+	if !known {
+		return nil, apierr.AsClassified(apierr.Unprocessable, "")
+	}
+	result, err := h.d.Core.Move(ctx, from, to, MoveOpts{OnConflict: policy})
+	if err != nil {
+		return nil, err
+	}
+	return &moveOutput{Body: MoveOf(result)}, nil
 }
 
 // Copy starts a detached copy operation.
-func (h *Handler) Copy(c *gin.Context) {
-	owner, ok := Owner(c)
-	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
-		return
-	}
-	req, from, to, proceed := h.transferEnds(c, owner, acl.Read|acl.Download)
-	if !proceed {
-		return
-	}
-	policy, known := req.policy()
-	if !known {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
-		return
-	}
-	start, err := h.d.Core.StartCopy(c.Request.Context(), owner, from, to, policy)
+func (h *Handler) Copy(ctx context.Context, in *transferInput) (*copyStartOutput, error) {
+	owner, err := OwnerFrom(ctx)
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return nil, err
 	}
+	from, to, err := h.transferEnds(owner, in.Body, acl.Read|acl.Download)
+	if err != nil {
+		return nil, err
+	}
+	policy, known := in.Body.policy()
+	if !known {
+		return nil, apierr.AsClassified(apierr.Unprocessable, "")
+	}
+	start, err := h.d.Core.StartCopy(ctx, owner, from, to, policy)
+	if err != nil {
+		return nil, err
+	}
+	status := http.StatusAccepted
 	if start.Skipped {
-		c.JSON(http.StatusOK, CopyStartOf(start))
-		return
+		status = http.StatusOK
 	}
-	c.JSON(http.StatusAccepted, CopyStartOf(start))
+	return &copyStartOutput{Status: status, Body: CopyStartOf(start)}, nil
 }
 
-func (h *Handler) transferEnds(c *gin.Context, owner UserID, sourceNeed acl.Perms) (req transferRequest, from, to Resolved, ok bool) {
-	if err := middleware.DecodeJSON(c.Request.Body, &req); err != nil {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
-		return req, from, to, false
-	}
-	from, err := h.resolve(owner, req.From, sourceNeed)
+func (h *Handler) transferEnds(owner UserID, req transferRequest, sourceNeed acl.Perms) (from, to Resolved, err error) {
+	from, err = h.resolve(owner, req.From, sourceNeed)
 	if err != nil {
-		middleware.Fail(c, err)
-		return req, Resolved{}, Resolved{}, false
+		return Resolved{}, Resolved{}, err
 	}
 	to, err = h.resolveDest(owner, req.To)
 	if err != nil {
-		middleware.Fail(c, err)
-		return req, Resolved{}, Resolved{}, false
+		return Resolved{}, Resolved{}, err
 	}
-	return req, from, to, true
+	return from, to, nil
 }
+
 func (h *Handler) resolveDest(owner UserID, raw string) (Resolved, error) {
 	if r, err := h.resolve(owner, raw, acl.Write|acl.Create); err == nil {
 		return r, nil
@@ -715,49 +681,52 @@ func splitDest(raw string) (parent, name string, ok bool) {
 	return trimmed[:i], trimmed[i+1:], true
 }
 
+type aggregateOutput struct{ Body AggregateView }
+
 // Size returns a recursive subtree aggregate.
-func (h *Handler) Size(c *gin.Context) {
-	owner, ok := Owner(c)
-	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
-		return
-	}
-	r, err := h.resolve(owner, c.Query("path"), acl.Read)
+func (h *Handler) Size(ctx context.Context, in *pathQueryInput) (*aggregateOutput, error) {
+	owner, err := OwnerFrom(ctx)
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return nil, err
 	}
-	agg, err := h.d.Core.Aggregate(c.Request.Context(), r.Share(), r.Path())
+	r, err := h.resolve(owner, in.Path, acl.Read)
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return nil, err
 	}
-	c.JSON(http.StatusOK, AggregateOf(agg))
+	agg, err := h.d.Core.Aggregate(ctx, r.Share(), r.Path())
+	if err != nil {
+		return nil, err
+	}
+	return &aggregateOutput{Body: AggregateOf(agg)}, nil
 }
 
+type recentInput struct {
+	Path  string `query:"path"`
+	Since string `query:"since"`
+	Limit string `query:"limit"`
+}
+type recentOutput struct{ Body []RecentView }
+
 // Recent returns the account's recent writes. A nil journal is an empty listing.
-func (h *Handler) Recent(c *gin.Context) {
-	owner, ok := Owner(c)
-	if !ok {
-		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
-		return
+func (h *Handler) Recent(ctx context.Context, in *recentInput) (*recentOutput, error) {
+	owner, err := OwnerFrom(ctx)
+	if err != nil {
+		return nil, err
 	}
 	if !h.d.Journal {
-		c.JSON(http.StatusOK, []RecentView{})
-		return
+		return &recentOutput{Body: []RecentView{}}, nil
 	}
-	since, err := strconv.ParseInt(c.Query("since"), 10, 64)
-	if err != nil || since < 0 {
+	since, perr := strconv.ParseInt(in.Since, 10, 64)
+	if perr != nil || since < 0 {
 		since = 0
 	}
-	limit, err := strconv.Atoi(c.Query("limit"))
-	if err != nil {
+	limit, perr := strconv.Atoi(in.Limit)
+	if perr != nil {
 		limit = 0
 	}
-	hits, err := h.d.Core.Recent(c.Request.Context(), owner, RecentQuery{SinceNs: RecentSinceOf(since, h.d.Now()), Limit: RecentLimitOf(limit), Scope: c.Query("path")})
+	hits, err := h.d.Core.Recent(ctx, owner, RecentQuery{SinceNs: RecentSinceOf(since, h.d.Now()), Limit: RecentLimitOf(limit), Scope: in.Path})
 	if err != nil {
-		middleware.Fail(c, err)
-		return
+		return nil, err
 	}
-	c.JSON(http.StatusOK, RecentListOf(hits))
+	return &recentOutput{Body: RecentListOf(hits)}, nil
 }
