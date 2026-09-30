@@ -1,0 +1,39 @@
+diff --git a/mixins/focusable.js b/mixins/focusable.js
+index 34bbcadd49a2d7394f9d83710d32c5be42c89907..d0ea3ceab79f75fab0d40cb9c86967f8a1315976 100644
+--- a/mixins/focusable.js
++++ b/mixins/focusable.js
+@@ -110,6 +110,9 @@ export const FocusableMixin = (superclass) => {
+         }
+         connectedCallback() {
+             super.connectedCallback();
++            if (this.hasUpdated) {
++                this.listenFocusElement();
++            }
+             this.updateComplete.then(() => {
+                 requestAnimationFrame(() => {
+                     this.manageAutoFocus();
+@@ -161,11 +164,22 @@ export const FocusableMixin = (superclass) => {
+         }
+         firstUpdated(changedProperties) {
+             super.firstUpdated(changedProperties);
+-            this.focusElement.addEventListener('focus', () => {
++            this.listenFocusElement();
++        }
++        // A first update that runs after the element was already removed finds
++        // no focus element, since a ref is cleared on disconnect. The listeners
++        // then wait for the element to be connected again.
++        listenFocusElement() {
++            const focusElement = this.focusElement;
++            if (!focusElement || this._focusListened) {
++                return;
++            }
++            this._focusListened = true;
++            focusElement.addEventListener('focus', () => {
+                 this.focused = true;
+                 this.focusVisible = !isClick;
+             });
+-            this.focusElement.addEventListener('blur', () => {
++            focusElement.addEventListener('blur', () => {
+                 this.focused = false;
+                 this.focusVisible = false;
+             });

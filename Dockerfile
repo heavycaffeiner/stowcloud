@@ -95,6 +95,7 @@ ARG PGID=1000
 FROM ${NODE_IMAGE} AS frontend
 WORKDIR /src/frontend
 COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
+COPY frontend/patches ./patches
 RUN corepack enable && pnpm install --frozen-lockfile
 COPY frontend/ ./
 RUN pnpm build \

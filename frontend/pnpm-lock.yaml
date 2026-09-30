@@ -7,6 +7,9 @@ settings:
 overrides:
   cookie: ^0.7.2
 
+patchedDependencies:
+  '@mdui/shared@1.0.9': 337fe6a02c20c264c958d0cef164bc2c51f36fe0b60c4c047bbc3cc40f3375e1
+
 importers:
 
   .:
@@ -2897,7 +2900,7 @@ snapshots:
       ssr-window: 5.0.1
       tslib: 2.8.1
 
-  '@mdui/shared@1.0.9':
+  '@mdui/shared@1.0.9(patch_hash=337fe6a02c20c264c958d0cef164bc2c51f36fe0b60c4c047bbc3cc40f3375e1)':
     dependencies:
       '@lit/reactive-element': 2.1.2
       '@mdui/jq': 3.0.3
@@ -3839,7 +3842,7 @@ snapshots:
       '@material/material-color-utilities': 0.3.0
       '@mdui/icons-shared': 1.0.1
       '@mdui/jq': 3.0.3
-      '@mdui/shared': 1.0.9
+      '@mdui/shared': 1.0.9(patch_hash=337fe6a02c20c264c958d0cef164bc2c51f36fe0b60c4c047bbc3cc40f3375e1)
       classcat: 5.0.5
       is-promise: 4.0.0
       lit: 3.3.3
