@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { useI18n } from '../../hooks/use-i18n'
+import { ErrorBoundary } from '../../ui/ErrorBoundary'
 import { Icon } from '../../ui/Icon'
 import { IconButton } from '../../ui/IconButton'
 import { Modal } from '../../ui/Modal'
@@ -27,7 +28,9 @@ export function SearchSheet({ open, scope = '', onClose }: SearchSheetProps) {
       initialFocus={(dialog) => dialog.querySelector<HTMLElement>('input[type="search"]')}
     >
       <div className="sc-search-sheet-body">
-        <SearchPanel scope={scope} autoFocus onNavigated={onClose} trailing={trailing} />
+        <ErrorBoundary>
+          <SearchPanel scope={scope} autoFocus onNavigated={onClose} trailing={trailing} />
+        </ErrorBoundary>
       </div>
     </Modal>
   )

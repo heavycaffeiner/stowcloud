@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react'
-import { Component, lazy, Suspense } from 'react'
+import { lazy, Suspense } from 'react'
 import type { AdminTab } from './hooks/use-admin-tab'
+import { ErrorBoundary } from '../../../ui/ErrorBoundary'
 import { ProgressCircular } from '../../../ui/ProgressCircular'
 
 // Keep each admin section lazy so inactive tabs do not load their query graphs.
@@ -33,24 +33,6 @@ const LogsSection = lazy(async () => {
   return { default: module.LogsSection }
 })
 
-class SectionErrorBoundary extends Component<{ children: ReactNode; message: string }, { error: Error | null }> {
-  state = { error: null as Error | null }
-
-  static getDerivedStateFromError(error: Error) {
-    return { error }
-  }
-
-  render() {
-    if (this.state.error)
-      return (
-        <p className="sc-admin-page-error" role="alert">
-          {this.props.message}
-        </p>
-      )
-    return this.props.children
-  }
-}
-
 export function SectionLoading({ label }: { label: string }) {
   return (
     <div className="sc-admin-loading" role="status" aria-live="polite">
@@ -62,16 +44,15 @@ export function SectionLoading({ label }: { label: string }) {
 
 interface AdminPanelsProps {
   tab: AdminTab
-  errorMessage: string
   loadingLabel: string
   usersLabel: string
   groupsLabel: string
 }
 
-export function AdminPanels({ tab, errorMessage, loadingLabel, usersLabel, groupsLabel }: AdminPanelsProps) {
+export function AdminPanels({ tab, loadingLabel, usersLabel, groupsLabel }: AdminPanelsProps) {
   return (
     <div className="sc-admin-inner">
-      <SectionErrorBoundary key={tab} message={errorMessage}>
+      <ErrorBoundary resetKey={tab}>
         <Suspense fallback={<SectionLoading label={loadingLabel} />}>
           {tab === 'users' ? (
             <>
@@ -107,7 +88,7 @@ export function AdminPanels({ tab, errorMessage, loadingLabel, usersLabel, group
             </section>
           ) : null}
         </Suspense>
-      </SectionErrorBoundary>
+      </ErrorBoundary>
     </div>
   )
 }

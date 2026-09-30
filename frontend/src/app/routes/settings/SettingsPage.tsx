@@ -9,6 +9,7 @@ import { useDocumentTitle } from '../../hooks/use-document-title'
 import { PageTabs } from '../PageTabs'
 import { AccountPanel, AppearancePanel, ConnectionsPanel, SecurityPanel } from './SettingsPanels'
 import { useSettingsTabs, type SettingsTab } from './hooks/use-settings-tabs'
+import { ErrorBoundary } from '../../../ui/ErrorBoundary'
 import '../../../styles/app/routes/settings.css.ts'
 
 export function SettingsPage() {
@@ -69,32 +70,39 @@ export function SettingsPage() {
         onSelect={settings.selectTab}
       />
 
-      {settings.tab === 'account' ? (
-        <AccountPanel session={session.data} signOutPending={logout.isPending} onSignOut={() => void signOut()} t={t} />
-      ) : null}
-      {settings.tab === 'security' ? <SecurityPanel oidcVisible={oidcVisible} t={t} /> : null}
-      {settings.tab === 'connections' ? <ConnectionsPanel session={session.data} t={t} /> : null}
-      {settings.tab === 'appearance' ? (
-        <AppearancePanel
-          theme={theme}
-          locale={locale}
-          concurrency={settings.concurrency}
-          concurrencyChoices={settings.concurrencyChoices}
-          concurrencySaveFailed={settings.concurrencySaveFailed}
-          t={t}
-          onThemeChange={(value) => {
-            if (value === 'system' || value === 'light' || value === 'dark') ui.setTheme(value)
-          }}
-          onLocaleChange={(value) => {
-            // A catalogue that fails to load leaves the current language, which the control then shows.
-            if (value === 'ko' || value === 'en') void setLocale(value).catch(() => undefined)
-          }}
-          onConcurrencyChange={(value) => {
-            const count = Number(value)
-            if (settings.concurrencyChoices.includes(count)) settings.onSetConcurrency(count)
-          }}
-        />
-      ) : null}
+      <ErrorBoundary resetKey={settings.tab}>
+        {settings.tab === 'account' ? (
+          <AccountPanel
+            session={session.data}
+            signOutPending={logout.isPending}
+            onSignOut={() => void signOut()}
+            t={t}
+          />
+        ) : null}
+        {settings.tab === 'security' ? <SecurityPanel oidcVisible={oidcVisible} t={t} /> : null}
+        {settings.tab === 'connections' ? <ConnectionsPanel session={session.data} t={t} /> : null}
+        {settings.tab === 'appearance' ? (
+          <AppearancePanel
+            theme={theme}
+            locale={locale}
+            concurrency={settings.concurrency}
+            concurrencyChoices={settings.concurrencyChoices}
+            concurrencySaveFailed={settings.concurrencySaveFailed}
+            t={t}
+            onThemeChange={(value) => {
+              if (value === 'system' || value === 'light' || value === 'dark') ui.setTheme(value)
+            }}
+            onLocaleChange={(value) => {
+              // A catalogue that fails to load leaves the current language, which the control then shows.
+              if (value === 'ko' || value === 'en') void setLocale(value).catch(() => undefined)
+            }}
+            onConcurrencyChange={(value) => {
+              const count = Number(value)
+              if (settings.concurrencyChoices.includes(count)) settings.onSetConcurrency(count)
+            }}
+          />
+        ) : null}
+      </ErrorBoundary>
     </section>
   )
 }

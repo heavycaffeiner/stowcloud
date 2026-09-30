@@ -13,6 +13,9 @@ import type { FileGridHandle } from '../../../features/files/FileGrid'
 import type { FileViewHandle } from '../../../features/files/FileTable'
 import type { MenuAnchor } from '../../../features/files/logic/row-actions'
 import { PreviewDialog } from '../../../features/preview/PreviewDialog'
+import { Button } from '../../../ui/Button'
+import { Dialog } from '../../../ui/Dialog'
+import { ErrorBoundary } from '../../../ui/ErrorBoundary'
 import { useDocumentTitle } from '../../hooks/use-document-title'
 import { useBrowseState } from './hooks/use-browse-state'
 import { useBrowseListing } from './hooks/use-browse-listing'
@@ -145,6 +148,9 @@ function BrowsePageContent({ path }: { path: string }) {
             ? t('browse.date_this_year')
             : t('browse.date_any')
   const previewEntry = previewIndex >= 0 ? (entries[previewIndex] ?? null) : null
+  const previewOpen = state.previewOpen && previewEntry !== null
+  const previewPath = previewEntry ? joinPath(path, previewEntry.name) : ''
+  const closePreview = () => patch({ previewOpen: false })
   const hasPreviewNeighbour = (delta: number) => {
     let index = previewIndex + delta
     while (index >= 0 && index < entries.length) {
@@ -345,18 +351,32 @@ function BrowsePageContent({ path }: { path: string }) {
         }}
         t={t}
       />
-      <PreviewDialog
-        open={state.previewOpen && previewEntry !== null}
-        entry={previewEntry}
-        path={previewEntry ? joinPath(path, previewEntry.name) : ''}
-        hasPrev={hasPreviewNeighbour(-1)}
-        hasNext={hasPreviewNeighbour(1)}
-        onClose={() => patch({ previewOpen: false })}
-        onPrev={() => stepPreview(-1)}
-        onNext={() => stepPreview(1)}
-        onDownload={actions.downloadEntry}
-        onEdit={(entry) => void actions.openEditor(entry)}
-      />
+      <ErrorBoundary
+        resetKey={previewOpen ? previewPath : ''}
+        fallback={
+          <Dialog
+            open={previewOpen}
+            title={t('preview.cannot_preview')}
+            onClose={closePreview}
+            actions={<Button onClick={closePreview}>{t('common.close')}</Button>}
+          >
+            <p>{t('preview.failed')}</p>
+          </Dialog>
+        }
+      >
+        <PreviewDialog
+          open={previewOpen}
+          entry={previewEntry}
+          path={previewPath}
+          hasPrev={hasPreviewNeighbour(-1)}
+          hasNext={hasPreviewNeighbour(1)}
+          onClose={closePreview}
+          onPrev={() => stepPreview(-1)}
+          onNext={() => stepPreview(1)}
+          onDownload={actions.downloadEntry}
+          onEdit={(entry) => void actions.openEditor(entry)}
+        />
+      </ErrorBoundary>
     </div>
   )
 }

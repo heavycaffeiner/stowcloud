@@ -391,6 +391,10 @@ globalStyle('.sc-loading-page, .sc-error-page', {
   padding: 'var(--sc-page-pad)',
   background: 'var(--sc-page-surface)'
 })
+globalStyle('.sc-error-page-embedded', {
+  minHeight: '100%',
+  background: 'transparent'
+})
 globalStyle('.sc-error-page-card', {
   width: 'min(100%, 34rem)',
   padding: '24px',

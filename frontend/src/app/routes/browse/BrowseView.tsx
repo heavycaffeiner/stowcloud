@@ -15,6 +15,7 @@ import { DestinationPickerDialog } from '../../../features/files/DestinationPick
 import { VirtualList } from '../../../ui/VirtualList'
 import { UnlockShareDialog } from '../../../features/shares/UnlockShareDialog'
 import { Button } from '../../../ui/Button'
+import { ErrorBoundary } from '../../../ui/ErrorBoundary'
 import { Icon } from '../../../ui/Icon'
 import { ShareManageDialog } from '../../../features/shares/ShareManageDialog'
 import { Menu } from '../../../ui/Menu'
@@ -404,17 +405,19 @@ export function BrowseContent(props: BrowseContentProps) {
         />
       ) : null}
       {details ? (
-        <DetailsPanel
-          path={path}
-          selected={selected}
-          total={directory.total}
-          dirs={directory.dirs}
-          encrypted={encrypted}
-          onClose={onDetailsClose}
-          onDownload={onDownload}
-          onShare={onShare}
-          onContextMenu={onDetailsContext}
-        />
+        <ErrorBoundary resetKey={path}>
+          <DetailsPanel
+            path={path}
+            selected={selected}
+            total={directory.total}
+            dirs={directory.dirs}
+            encrypted={encrypted}
+            onClose={onDetailsClose}
+            onDownload={onDownload}
+            onShare={onShare}
+            onContextMenu={onDetailsContext}
+          />
+        </ErrorBoundary>
       ) : null}
     </div>
   )

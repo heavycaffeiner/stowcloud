@@ -4,7 +4,13 @@ import { useEffect } from 'react'
 const FALLBACK = '[role="grid"][tabindex="0"], [role="tree"][tabindex="0"]'
 
 function usable(element: HTMLElement | null): element is HTMLElement {
-  return !!element?.isConnected && !element.hasAttribute('disabled') && !element.hasAttribute('aria-hidden')
+  return (
+    !!element?.isConnected &&
+    // Focus on the body means the opener was already gone.
+    element !== document.body &&
+    !element.hasAttribute('disabled') &&
+    !element.hasAttribute('aria-hidden')
+  )
 }
 
 /**

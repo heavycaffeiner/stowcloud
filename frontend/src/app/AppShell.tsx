@@ -15,6 +15,7 @@ import { Icon } from '../ui/Icon'
 import { UploadTray } from '../features/uploads/UploadTray'
 import { ProgressCircular } from '../ui/ProgressCircular'
 import { Button } from '../ui/Button'
+import { ErrorBoundary } from '../ui/ErrorBoundary'
 import '../styles/app/shell.css.ts'
 import {
   browsePathFromUrl,
@@ -406,8 +407,12 @@ export function AppShell() {
       </div>
 
       <div ref={trayStackRef} className={compact ? 'sc-tray-stack sc-tray-stack-compact' : 'sc-tray-stack'}>
-        <JobTray />
-        <UploadTray />
+        <ErrorBoundary>
+          <JobTray />
+        </ErrorBoundary>
+        <ErrorBoundary>
+          <UploadTray />
+        </ErrorBoundary>
       </div>
       <SearchSheet open={searchOpen && !compact} scope={searchScope} onClose={() => search.close()} />
     </>

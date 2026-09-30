@@ -75,7 +75,6 @@ export function AdminPage() {
       <PageTabs label={t('admin.admin_sections')} items={tabs} active={tab} onSelect={selectTab} />
       <AdminPanels
         tab={tab}
-        errorMessage={t('common.could_not_load_list')}
         loadingLabel={t('common.loading')}
         usersLabel={t('admin.users')}
         groupsLabel={t('admin.groups')}
