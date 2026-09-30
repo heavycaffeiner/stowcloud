@@ -2,38 +2,6 @@ import { style } from '@vanilla-extract/css'
 import { iconButtonSize } from '../../ui/IconButton.css'
 import { vars } from '../../ui/theme.css'
 
-export const dialog = style({
-  padding:
-    'max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px))',
-  boxSizing: 'border-box',
-  vars: {
-    '--shape-corner': vars.shape.cornerExtraLarge
-  },
-  selectors: {
-    '&::part(panel)': {
-      width: 'min(75rem, 100%)',
-      height: '100%',
-      minWidth: '0',
-      maxWidth: '100%',
-      maxHeight: '56rem',
-      padding: '0',
-      overflow: 'hidden'
-    },
-    '&::part(body)': {
-      display: 'flex',
-      flex: '1',
-      minHeight: '0',
-      margin: '0',
-      overflow: 'hidden'
-    }
-  },
-  '@media': {
-    '(min-width: 840px)': {
-      padding: '32px'
-    }
-  }
-})
-
 export const root = style({
   display: 'flex',
   flex: '1',

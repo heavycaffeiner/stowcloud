@@ -78,7 +78,7 @@ export function ShareManageDialog({ open, path, targetName, targetIsDir, onClose
   return (
     <>
       <Dialog
-        className={styles.dialog}
+        size="wide"
         open={dialogOpen}
         title={t('share.share_links', { name: targetName })}
         onClose={closeIssued}
@@ -327,7 +327,7 @@ export function ShareManageDialog({ open, path, targetName, targetIsDir, onClose
         )}
       </Dialog>
       <Dialog
-        className={styles.dialog}
+        size="wide"
         open={revokeTarget !== null}
         title={t('share.revoke_share_link')}
         onClose={() => patch({ revokeTarget: null })}

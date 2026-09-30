@@ -1,29 +1,6 @@
 import { style } from '@vanilla-extract/css'
 import { vars } from '../../ui/theme.css'
 
-export const dialog = style({
-  vars: {
-    '--width': 'min(42rem, calc(100vw - 32px))'
-  },
-  selectors: {
-    '&::part(panel)': {
-      maxInlineSize: 'calc(100vw - 32px)'
-    }
-  },
-  '@media': {
-    '(max-width: 599.98px)': {
-      vars: {
-        '--width': 'calc(100vw - 16px)'
-      },
-      selectors: {
-        '&::part(panel)': {
-          maxInlineSize: 'calc(100vw - 16px)'
-        }
-      }
-    }
-  }
-})
-
 export const issued = style({
   padding: '16px',
   marginBottom: '16px',

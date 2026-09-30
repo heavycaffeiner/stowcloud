@@ -18,6 +18,8 @@ export interface DialogProps {
   children?: ReactNode
   actions?: ReactNode
   className?: string
+  /** wide: grows with its content up to the viewport. viewer: fills the viewport for media. */
+  size?: 'wide' | 'viewer'
   role?: 'dialog' | 'alertdialog'
   ariaLabel?: string
   /** Runs before the dialog's own Escape handling; preventDefault skips it. */
@@ -34,6 +36,7 @@ export function Dialog({
   children,
   actions,
   className,
+  size,
   role = 'alertdialog',
   ariaLabel,
   onKeyDown
@@ -47,7 +50,7 @@ export function Dialog({
   return (
     <mdui-dialog
       ref={ref}
-      className={cx(styles.root, className)}
+      className={cx(styles.root, size && styles[size], className)}
       headline={hideTitle ? undefined : title}
       open={open}
       aria-label={ariaLabel ?? title}

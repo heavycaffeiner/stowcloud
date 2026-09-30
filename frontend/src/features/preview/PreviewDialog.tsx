@@ -276,7 +276,7 @@ export function PreviewDialog({
         open={open}
         title={entry.name}
         hideTitle
-        className={styles.dialog}
+        size="viewer"
         role="dialog"
         onClose={onClose}
         onKeyDown={onKeyDown}
