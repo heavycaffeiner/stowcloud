@@ -179,7 +179,9 @@ export interface Transport {
 // ── Real transport ──
 
 function b64(s: string): string {
-  return btoa(unescape(encodeURIComponent(s)))
+  let binary = ''
+  for (const byte of new TextEncoder().encode(s)) binary += String.fromCharCode(byte)
+  return btoa(binary)
 }
 
 export class HttpTransport implements Transport {
