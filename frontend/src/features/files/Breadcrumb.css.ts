@@ -96,10 +96,10 @@ export const link = style({
   transition: 'background-color 120ms ease, color 120ms ease',
   selectors: {
     '&:hover': {
-      background: `rgb(${vars.color.primary} / 0.08)`
+      background: `rgba(${vars.color.primary}, 0.08)`
     },
     '&:active': {
-      background: `rgb(${vars.color.primary} / 0.14)`
+      background: `rgba(${vars.color.primary}, 0.14)`
     },
     '&:focus-visible': {
       outline: `${vars.focusRing.width} solid ${vars.state.focus}`,

@@ -5,8 +5,8 @@ export const issued = style({
   padding: '16px',
   marginBottom: '16px',
   borderRadius: vars.shape.cornerMedium,
-  background: vars.color.secondaryContainer,
-  color: vars.color.onSecondaryContainer,
+  background: `rgb(${vars.color.secondaryContainer})`,
+  color: `rgb(${vars.color.onSecondaryContainer})`,
   '@media': {
     '(max-width: 599.98px)': {
       padding: '12px'
@@ -35,8 +35,8 @@ export const url = style({
   padding: '8px',
   border: '0',
   borderRadius: vars.shape.cornerExtraSmall,
-  background: vars.color.surface,
-  color: vars.color.onSurface,
+  background: `rgb(${vars.color.surface})`,
+  color: `rgb(${vars.color.onSurface})`,
   font: 'inherit',
   overflowWrap: 'anywhere',
   resize: 'vertical',
@@ -56,12 +56,12 @@ export const copyFeedback = style({
 })
 
 export const copyFeedbackError = style({
-  color: vars.color.error,
+  color: `rgb(${vars.color.error})`,
   overflowWrap: 'anywhere'
 })
 
 export const error = style({
-  color: vars.color.error,
+  color: `rgb(${vars.color.error})`,
   overflowWrap: 'anywhere'
 })
 
@@ -72,7 +72,7 @@ export const loading = style({
 })
 
 export const empty = style({
-  color: vars.color.onSurfaceVariant,
+  color: `rgb(${vars.color.onSurfaceVariant})`,
   overflowWrap: 'anywhere'
 })
 
@@ -131,13 +131,13 @@ export const itemMain = style({
 })
 
 export const itemLabel = style({
-  color: vars.color.onSurface,
+  color: `rgb(${vars.color.onSurface})`,
   fontWeight: '500',
   overflowWrap: 'anywhere'
 })
 
 export const itemMeta = style({
-  color: vars.color.onSurfaceVariant,
+  color: `rgb(${vars.color.onSurfaceVariant})`,
   fontSize: vars.typescale.bodySmall.size,
   overflowWrap: 'anywhere'
 })
@@ -163,7 +163,7 @@ export const createForm = style({
   minWidth: '0',
   padding: '12px',
   borderRadius: vars.shape.cornerMedium,
-  background: vars.color.surfaceContainerLow,
+  background: `rgb(${vars.color.surfaceContainerLow})`,
   '@media': {
     '(max-width: 599.98px)': {
       padding: '12px'
@@ -178,7 +178,7 @@ export const editForm = style({
   minWidth: '0',
   padding: '12px',
   borderRadius: vars.shape.cornerMedium,
-  background: vars.color.surfaceContainerLow,
+  background: `rgb(${vars.color.surfaceContainerLow})`,
   '@media': {
     '(max-width: 599.98px)': {
       padding: '12px'
@@ -202,7 +202,7 @@ export const permRow = style({
 
 export const hint = style({
   margin: '0',
-  color: vars.color.onSurfaceVariant,
+  color: `rgb(${vars.color.onSurfaceVariant})`,
   fontSize: vars.typescale.bodySmall.size,
   overflowWrap: 'anywhere'
 })

@@ -26,10 +26,10 @@ export const root = style({
   border: `1px solid rgb(${vars.color.outlineVariant})`,
   borderRadius: vars.shape.cornerLarge,
   background: `rgb(${vars.color.surface})`,
-  boxShadow: `0 1px 3px rgb(${vars.color.shadow} / .08)`,
+  boxShadow: `0 1px 3px rgba(${vars.color.shadow}, 0.08)`,
   transition: 'border-color 120ms ease, box-shadow 120ms ease',
   vars: {
-    [codeVars.activeLine]: `rgb(${vars.color.primary} / .06)`,
+    [codeVars.activeLine]: `rgba(${vars.color.primary}, 0.06)`,
     [codeVars.caret]: `rgb(${vars.color.primary})`,
     [codeVars.comment]: `rgb(${vars.color.onSurfaceVariant})`,
     [codeVars.definition]: `rgb(${vars.color.tertiary})`,
@@ -41,14 +41,14 @@ export const root = style({
     [codeVars.keyword]: `rgb(${vars.color.primary})`,
     [codeVars.link]: `rgb(${vars.color.primary})`,
     [codeVars.number]: `rgb(${vars.color.secondary})`,
-    [codeVars.selection]: `rgb(${vars.color.primary} / .18)`,
+    [codeVars.selection]: `rgba(${vars.color.primary}, 0.18)`,
     [codeVars.string]: `rgb(${vars.color.tertiary})`,
     [codeVars.type]: `rgb(${vars.color.secondary})`
   },
   selectors: {
     '&:focus-within': {
       borderColor: `rgb(${vars.color.primary})`,
-      boxShadow: `0 0 0 2px rgb(${vars.color.primary} / .16)`
+      boxShadow: `0 0 0 2px rgba(${vars.color.primary}, 0.16)`
     }
   },
   '@media': {

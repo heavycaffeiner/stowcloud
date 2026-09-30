@@ -103,7 +103,7 @@ export const operationClose = style({
   border: '0',
   padding: '4px 12px',
   borderRadius: '20px',
-  color: vars.color.primary,
+  color: `rgb(${vars.color.primary})`,
   background: 'transparent',
   cursor: 'pointer',
   font: 'inherit',
@@ -120,8 +120,8 @@ export const snackbar = style({
   boxSizing: 'border-box',
   padding: '12px 16px',
   borderRadius: vars.shape.cornerSmall,
-  background: vars.color.inverseSurface,
-  color: vars.color.inverseOnSurface,
+  background: `rgb(${vars.color.inverseSurface})`,
+  color: `rgb(${vars.color.inverseOnSurface})`,
   fontSize: vars.typescale.bodyMedium.size,
   boxShadow: '0 4px 16px rgba(0, 0, 0, 0.28)',
   animation: `${snackbarEnter} 200ms cubic-bezier(0.2, 0, 0, 1)`,
@@ -240,7 +240,7 @@ export const operationItem = style({
 })
 
 export const operationError = style({
-  color: vars.color.error
+  color: `rgb(${vars.color.error})`
 })
 
 export const externalBadge = style({
@@ -293,7 +293,7 @@ export const encryptedBadge = style({
   overflowWrap: 'anywhere',
   transition: 'background-color 150ms ease, color 150ms ease, transform 120ms ease',
   flexShrink: '0',
-  background: vars.color.surfaceContainerHighest,
+  background: `rgb(${vars.color.surfaceContainerHighest})`,
   color: vars.content.secondary
 })
 
@@ -302,8 +302,8 @@ export const encryptedBadgeLocked = style({
   paddingInline: '12px',
   border: 'none',
   cursor: 'pointer',
-  background: vars.color.secondaryContainer,
-  color: vars.color.onSecondaryContainer,
+  background: `rgb(${vars.color.secondaryContainer})`,
+  color: `rgb(${vars.color.onSecondaryContainer})`,
   selectors: {
     '&:active': {
       transform: 'scale(0.95)'
@@ -325,7 +325,7 @@ export const marquee = style({
   zIndex: '15',
   pointerEvents: 'none',
   border: `1px solid ${vars.state.focus}`,
-  background: `color-mix(in srgb, ${vars.color.primary} 18%, transparent)`,
+  background: `rgba(${vars.color.primary}, 0.18)`,
   borderRadius: '2px'
 })
 
@@ -346,7 +346,7 @@ export const tableWrap = style({
 })
 
 export const tableWrapDragover = style({
-  outline: `2px dashed ${vars.color.primary}`,
+  outline: `2px dashed rgb(${vars.color.primary})`,
   outlineOffset: '-2px'
 })
 
@@ -417,7 +417,7 @@ export const nothingHint = style({
 
 export const error = style({
   padding: '24px',
-  color: vars.color.error
+  color: `rgb(${vars.color.error})`
 })
 
 export const dropOverlay = style({
@@ -426,8 +426,8 @@ export const dropOverlay = style({
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  background: `color-mix(in srgb, ${vars.color.primary} 12%, transparent)`,
-  color: vars.color.primary,
+  background: `rgba(${vars.color.primary}, 0.12)`,
+  color: `rgb(${vars.color.primary})`,
   fontSize: vars.typescale.titleMedium.size,
   fontWeight: vars.typescale.titleMedium.weight,
   pointerEvents: 'none'

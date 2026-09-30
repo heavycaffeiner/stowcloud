@@ -29,7 +29,7 @@ export const sheetScrim = style({
   position: 'fixed',
   inset: '0',
   zIndex: '49',
-  background: `color-mix(in srgb, ${vars.color.scrim} 36%, transparent)`,
+  background: `rgba(${vars.color.scrim}, 0.36)`,
   animation: `${fadeIn} 150ms ease`,
   WebkitTapHighlightColor: 'transparent'
 })
@@ -56,7 +56,7 @@ export const sheet = style({
       translate: '0 0'
     },
     '&::backdrop': {
-      background: `rgb(${vars.color.scrim} / 0.32)`
+      background: `rgba(${vars.color.scrim}, 0.32)`
     }
   },
   '@media': {

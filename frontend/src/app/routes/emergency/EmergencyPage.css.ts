@@ -168,7 +168,7 @@ export const error = style({
 
 export const ok = style({
   margin: '0',
-  color: vars.color.primary,
+  color: `rgb(${vars.color.primary})`,
   overflowWrap: 'anywhere'
 })
 
