@@ -840,7 +840,7 @@ export function BrowseDialogs(props: BrowseDialogsProps) {
         type="file"
         hidden
         aria-label={t('browse.choose_folder_upload')}
-        {...{ webkitdirectory: '', directory: '' }}
+        {...{ webkitdirectory: '' }}
         onChange={(event: ChangeEvent<HTMLInputElement>) => {
           onUploadEntries(filesFromWebkitDirectoryInput(event.currentTarget))
           event.currentTarget.value = ''

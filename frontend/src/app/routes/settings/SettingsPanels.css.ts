@@ -72,11 +72,6 @@ export const rowSegmented = style({
   overflowX: 'auto',
   paddingBlock: '2px',
   scrollbarWidth: 'none',
-  selectors: {
-    '&::-webkit-scrollbar': {
-      display: 'none'
-    }
-  },
   '@media': {
     '(max-width: 599.98px)': {
       maxWidth: `calc(100vw - (2 * ${vars.layout.contentPad}))`

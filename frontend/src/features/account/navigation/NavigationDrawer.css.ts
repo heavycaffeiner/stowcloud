@@ -32,19 +32,6 @@ export const body = style({
   scrollbarWidth: 'thin',
   scrollbarColor: `color-mix(in srgb, ${vars.content.secondary} 35%, transparent) transparent`,
   selectors: {
-    '&::-webkit-scrollbar': {
-      width: '6px'
-    },
-    '&::-webkit-scrollbar-track': {
-      background: 'transparent'
-    },
-    '&::-webkit-scrollbar-thumb': {
-      borderRadius: '3px',
-      background: `color-mix(in srgb, ${vars.content.secondary} 30%, transparent)`
-    },
-    '&::-webkit-scrollbar-thumb:hover': {
-      background: `color-mix(in srgb, ${vars.content.secondary} 50%, transparent)`
-    },
     [`${collapsed} &`]: {
       paddingTop: '12px'
     }

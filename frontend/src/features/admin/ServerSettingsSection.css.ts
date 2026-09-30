@@ -33,12 +33,7 @@ export const navItems = style({
   gap: '8px',
   overflowX: 'auto',
   padding: '2px',
-  scrollbarWidth: 'none',
-  selectors: {
-    '&::-webkit-scrollbar': {
-      display: 'none'
-    }
-  }
+  scrollbarWidth: 'none'
 })
 
 export const navButton = style({

@@ -182,11 +182,6 @@ export const filterBar = style({
   padding: '2px 0 4px',
   overflow: 'visible',
   scrollbarWidth: 'none',
-  selectors: {
-    '&::-webkit-scrollbar': {
-      display: 'none'
-    }
-  },
   '@media': {
     '(max-width: 599.98px)': {
       alignItems: 'stretch',
@@ -204,11 +199,6 @@ export const categories = style({
   flex: '1 1 auto',
   overflowX: 'auto',
   scrollbarWidth: 'none',
-  selectors: {
-    '&::-webkit-scrollbar': {
-      display: 'none'
-    }
-  },
   '@media': {
     '(max-width: 599.98px)': {
       width: '100%',
