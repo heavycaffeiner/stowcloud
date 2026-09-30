@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent, ReactNode } from 'react'
 import { useI18n } from '../../hooks/use-i18n'
 import { Icon } from '../../ui/Icon'
@@ -9,10 +9,6 @@ import { SearchResults } from './SearchResults'
 import { ProgressCircular } from '../../ui/ProgressCircular'
 import '../../styles/features/search/search-panel.css.ts'
 
-export interface SearchPanelHandle {
-  focus: () => void
-}
-
 export interface SearchPanelProps {
   readonly scope?: string
   readonly autofocus?: boolean
@@ -20,17 +16,13 @@ export interface SearchPanelProps {
   readonly trailing?: ReactNode
 }
 
-export const SearchPanel = forwardRef<SearchPanelHandle, SearchPanelProps>(function SearchPanel(
-  { scope = '', autofocus = false, onnavigated, trailing },
-  ref
-) {
+export function SearchPanel({ scope = '', autofocus = false, onnavigated, trailing }: SearchPanelProps) {
   const { t } = useI18n()
   const resultsContainer = useRef<HTMLDivElement | null>(null)
   const categoriesRef = useRef<HTMLDivElement | null>(null)
   const controller = useSearchController({ scope, resultsContainer, categoriesRef })
   const navigation = useSearchNavigation({ scope, state: controller.state, onNavigated: onnavigated })
   const { state } = controller
-  useImperativeHandle(ref, () => ({ focus: () => controller.inputRef.current?.focus() }), [controller.inputRef])
   const [spokenStatus, setSpokenStatus] = useState('')
   const lastSpokenAt = useRef(0)
   useEffect(() => {
@@ -191,4 +183,4 @@ export const SearchPanel = forwardRef<SearchPanelHandle, SearchPanelProps>(funct
       />
     </div>
   )
-})
+}

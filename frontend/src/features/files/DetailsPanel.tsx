@@ -7,7 +7,9 @@ import { folderSizeQuery } from '../../lib/query/files'
 import { formatBytes } from '../../lib/format/bytes'
 import { formatEntrySize } from '../../lib/format/entry-size'
 import { formatModifiedDateNs } from '../../lib/i18n'
+import { useEventListener } from '../../hooks/use-event-listener'
 import { useI18n } from '../../hooks/use-i18n'
+import { useRestoreFocus } from '../../hooks/use-restore-focus'
 import { useCompact } from '../../ui/use-compact'
 import { Button } from '../../ui/Button'
 import { IconButton } from '../../ui/IconButton'
@@ -64,8 +66,6 @@ export function DetailsPanel({
   const { t } = useI18n()
   const compact = useCompact()
   const panel = useRef<HTMLElement>(null)
-  const onCloseRef = useRef(onClose)
-  onCloseRef.current = onClose
   const one = selected.length === 1 ? selected[0] : null
   const many = selected.length > 1
   const location = path.startsWith('/') ? path : `/${path}`
@@ -89,39 +89,34 @@ export function DetailsPanel({
     (many ? selected.filter((entry) => entry.kind !== 'dir').length : 0) +
     queries.reduce((sum, query) => sum + (query.data?.files ?? 0), 0)
 
+  useRestoreFocus(compact)
   useEffect(() => {
-    if (!compact || !panel.current) return
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    queueMicrotask(() => panel.current?.querySelector<HTMLElement>('button')?.focus())
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.stopPropagation()
-        onCloseRef.current()
-        return
-      }
-      if (event.key !== 'Tab' || !panel.current) return
-      const focusable = [
-        ...panel.current.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-        )
-      ].filter((element) => !element.hasAttribute('disabled'))
-      if (focusable.length === 0) return
-      const first = focusable[0]
-      const last = focusable[focusable.length - 1]
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault()
-        last.focus()
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault()
-        first.focus()
-      }
-    }
-    panel.current.addEventListener('keydown', onKeyDown)
-    return () => {
-      panel.current?.removeEventListener('keydown', onKeyDown)
-      previous?.focus()
-    }
+    if (compact) queueMicrotask(() => panel.current?.querySelector<HTMLElement>('button')?.focus())
   }, [compact])
+  // In compact mode the panel covers the list, so Escape closes it and Tab stays inside it.
+  useEventListener(compact ? panel : null, 'keydown', (event) => {
+    if (event.key === 'Escape') {
+      event.stopPropagation()
+      onClose()
+      return
+    }
+    if (event.key !== 'Tab' || !panel.current) return
+    const focusable = [
+      ...panel.current.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      )
+    ].filter((element) => !element.hasAttribute('disabled'))
+    if (focusable.length === 0) return
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault()
+      last.focus()
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault()
+      first.focus()
+    }
+  })
 
   const permissionSummary = (entry: Entry) => {
     const granted = [

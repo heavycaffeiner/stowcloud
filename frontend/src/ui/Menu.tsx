@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react'
 import { useI18n } from '../hooks/use-i18n'
 import { useOutsideDismiss } from '../hooks/use-outside-dismiss'
 import { useRestoreFocus } from '../hooks/use-restore-focus'
+import { Modal } from './Modal'
 
 export interface MenuProps {
   open: boolean
@@ -18,26 +19,11 @@ export function Menu({ open, onClose, compact = false, x, y, align = 'start', ch
   const close = onClose ?? (() => undefined)
   const { t } = useI18n()
   const rootRef = useRef<HTMLDivElement>(null)
-  const dialogRef = useRef<HTMLDialogElement | null>(null)
   const left = x === undefined ? undefined : align === 'start' ? Math.max(8, x) : undefined
   const right = x === undefined || align !== 'end' ? undefined : Math.max(8, window.innerWidth - x)
   const top = y === undefined ? undefined : Math.max(8, y)
 
-  useRestoreFocus(open)
-
-  useEffect(() => {
-    if (!compact || !open || !dialogRef.current) return
-    const dialog = dialogRef.current
-    try {
-      if (!dialog.open) dialog.showModal()
-    } catch {
-      dialog.setAttribute('open', '')
-    }
-    return () => {
-      if (dialog.open) dialog.close()
-      else dialog.removeAttribute('open')
-    }
-  }, [compact, open])
+  useRestoreFocus(open && !compact)
 
   useOutsideDismiss(open && !compact, rootRef, close)
 
@@ -58,24 +44,12 @@ export function Menu({ open, onClose, compact = false, x, y, align = 'start', ch
     return (
       <>
         <div className="sc-sheet-scrim" onClick={close} aria-hidden="true" />
-        <dialog
-          ref={dialogRef}
-          className="sc-sheet"
-          aria-label={t('common.main_menu')}
-          onClick={(event) => {
-            // A press on the backdrop lands on the dialog itself.
-            if (event.target === event.currentTarget) close()
-          }}
-          onCancel={(event) => {
-            event.preventDefault()
-            close()
-          }}
-        >
+        <Modal open className="sc-sheet" label={t('common.main_menu')} onClose={close}>
           <div className="sc-sheet-handle-wrap" aria-hidden="true">
             <div className="sc-sheet-handle" />
           </div>
           <div className="sc-sheet-content">{children}</div>
-        </dialog>
+        </Modal>
       </>
     )
   }

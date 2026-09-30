@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { describeApiError } from '../../../lib/api/error-text'
 import { useI18n } from '../../../hooks/use-i18n'
 import { setRootOrderMutation } from '../../../lib/query/account'
 import { Icon } from '../../../ui/Icon'
 import { IconButton } from '../../../ui/IconButton'
+import { Modal } from '../../../ui/Modal'
 import { VirtualList } from '../../../ui/VirtualList'
 
 export interface NavItem {
@@ -53,7 +54,6 @@ export function NavigationDrawer({
   userInitial = 'S'
 }: NavigationDrawerProps) {
   const { t } = useI18n()
-  const dialogRef = useRef<HTMLDialogElement | null>(null)
   const orderMutation = useMutation(setRootOrderMutation())
   const [orderState, setOrderState] = useState<{
     reordering: boolean
@@ -66,22 +66,6 @@ export function NavigationDrawer({
   useEffect(() => {
     setOrderState((state) => (state.pendingOrder === null ? state : { ...state, pendingOrder: null }))
   }, [items, setOrderState])
-
-  useEffect(() => {
-    if (!overlay || !dialogRef.current) return
-    const dialog = dialogRef.current
-    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    try {
-      if (!dialog.open) dialog.showModal()
-    } catch {
-      dialog.setAttribute('open', '')
-    }
-    return () => {
-      if (dialog.open) dialog.close()
-      else dialog.removeAttribute('open')
-      trigger?.focus()
-    }
-  }, [overlay])
 
   const destinations = useMemo(() => {
     const fallback: NavItem[] = [
@@ -326,23 +310,14 @@ export function NavigationDrawer({
   }
 
   return (
-    <dialog
+    <Modal
+      open
       id={folderSelectorOnly ? 'sc-folder-selector' : 'sc-shell-drawer'}
-      ref={dialogRef}
       className={drawerClass}
-      aria-label={folderSelectorOnly ? t('nav.folder_selector') : t('common.main_menu')}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onclose?.()
-      }}
-      onCancel={(event) => {
-        event.preventDefault()
-        onclose?.()
-      }}
-      onClose={() => {
-        if (!dialogRef.current?.open) onclose?.()
-      }}
+      label={folderSelectorOnly ? t('nav.folder_selector') : t('common.main_menu')}
+      onClose={() => onclose?.()}
     >
       {content}
-    </dialog>
+    </Modal>
   )
 }

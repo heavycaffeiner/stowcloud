@@ -7,7 +7,7 @@ import { sessionQuery } from '../../lib/query/session'
 import { useI18n } from '../../hooks/use-i18n'
 import { FileTreeItem } from './FileTreeItem'
 import { VirtualList } from '../../ui/VirtualList'
-import { useRestoreFocus } from '../../hooks/use-restore-focus'
+import { Modal } from '../../ui/Modal'
 import '../../styles/features/files/browse-ui.css.ts'
 
 export interface FileTreeProps {
@@ -436,24 +436,10 @@ export function FileTreeList({
 export function FileTree({ currentPath, onNavigate, overlay = false, onClose }: FileTreeProps) {
   const { t } = useI18n()
   const session = useQuery(sessionQuery())
-  const dialog = useRef<HTMLDialogElement>(null)
   const roots = useMemo(
     () => (session.data?.roots ?? []).map((root) => ({ path: `/${root.label}`, name: root.label })),
     [session.data?.roots]
   )
-
-  useRestoreFocus(overlay)
-  useEffect(() => {
-    const element = dialog.current
-    if (!overlay || !element) return
-    if (!element.open) element.showModal()
-    queueMicrotask(() =>
-      element.querySelector<HTMLElement>('[data-tree-label][tabindex="0"], [data-tree-more][tabindex="0"]')?.focus()
-    )
-    return () => {
-      if (element.open) element.close()
-    }
-  }, [overlay])
 
   const tree = (
     <FileTreeList roots={roots} currentPath={currentPath} onNavigate={onNavigate} rowSize={overlay ? 44 : 40} />
@@ -465,18 +451,14 @@ export function FileTree({ currentPath, onNavigate, overlay = false, onClose }: 
       </nav>
     )
   return (
-    <dialog
-      ref={dialog}
+    <Modal
+      open
       className="sc-file-tree sc-file-tree-overlay"
-      aria-label={t('tree.folder_tree')}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose?.()
-      }}
-      onCancel={(event) => {
-        event.preventDefault()
-        onClose?.()
-      }}
+      label={t('tree.folder_tree')}
       onClose={() => onClose?.()}
+      initialFocus={(dialog) =>
+        dialog.querySelector<HTMLElement>('[data-tree-label][tabindex="0"], [data-tree-more][tabindex="0"]')
+      }
     >
       <div className="sc-file-tree-overlay-header">
         <button type="button" onClick={onClose} aria-label={t('tree.close_folder_tree')}>
@@ -484,6 +466,6 @@ export function FileTree({ currentPath, onNavigate, overlay = false, onClose }: 
         </button>
       </div>
       <nav aria-label={t('tree.folder_tree')}>{tree}</nav>
-    </dialog>
+    </Modal>
   )
 }
