@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -16,19 +17,19 @@ import (
 	securitylinux "github.com/heavycaffeiner/hanami/security/linux"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/bootstrap/preflight"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/bootstrap/sandbox"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/config"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server"
 )
 
 func main() {
-	// The subcommands run without a listener. The decoder re-exec is one of
-	// them: it arrives with no argv to parse, which is why the dispatch
-	// precedes the flags rather than following them.
+	// The subcommands other than serve run without a listener. The decoder
+	// re-exec is one of them. A command line naming no subcommand serves.
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "settings":
 			os.Exit(runSettings(os.Args[2:]))
 		case "serve":
-			os.Exit(runServeCmd(os.Args[2:]))
+			os.Exit(runServe("sc-engine serve", os.Args[2:]))
 		case "healthcheck":
 			os.Exit(runHealthcheck(os.Args[2:]))
 		case "preview-worker":
@@ -38,17 +39,7 @@ func main() {
 		}
 	}
 
-	var (
-		addr    = flag.String("addr", "", "listen address; overrides the stored one")
-		dataDir = flag.String("data", ".dev/data", "data directory")
-		plain   = flag.Bool("plain", false, "serve HTTP instead of HTTPS")
-	)
-	flag.Parse()
-
-	if err := run(*addr, *dataDir, *plain); err != nil {
-		slog.Error("sc-engine failed", "error", err)
-		os.Exit(1)
-	}
+	os.Exit(runServe("sc-engine", os.Args[1:]))
 }
 
 // revision is stamped into the binary at build time with -ldflags="-X main.revision=...".
@@ -75,17 +66,35 @@ func runVersion() int {
 	return 0
 }
 
-func run(addr, dataDir string, plain bool) error {
+// runServe parses the serve flags and serves until the process stops.
+//
+//	[serve] [--data-dir DIR] [--addr HOST:PORT] [--plain]
+func runServe(name string, argv []string) int {
+	parsed, err := config.ParseServeArgs(name, argv, os.Stderr)
+	switch {
+	case errors.Is(err, flag.ErrHelp):
+		return 0
+	case err != nil:
+		return 2
+	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	if rerr := run(logger, parsed); rerr != nil {
+		logger.Error("the server failed", "error", rerr)
+		return 1
+	}
+	return 0
+}
+
+func run(logger *slog.Logger, args config.ServeArgs) error {
 	handoff := os.Getenv(securitylinux.HandoffEnvironment) != ""
-	config, err := preflight.Load(context.Background(), preflight.Options{
-		Addr: addr, DataDir: dataDir, Plain: plain, Logger: logger,
+	loaded, err := preflight.Load(context.Background(), preflight.Options{
+		Addr: args.Addr, DataDir: args.DataDir, Plain: args.Plain, Logger: logger,
 		SkipRootDiscovery: false,
 	})
 	if err != nil {
 		return err
 	}
-	policy := sandbox.BuildPolicy(config.Values, config.DataDir, config.Roots, config.ShareHosts, config.ExactPaths)
+	policy := sandbox.BuildPolicy(loaded.Values, loaded.DataDir, loaded.Roots, loaded.ShareHosts, loaded.ExactPaths)
 	if !handoff {
 		if securityErr := securitylinux.MaybeReexec(policy); securityErr != nil {
 			return fmt.Errorf("applying process security: %w", securityErr)
@@ -97,13 +106,13 @@ func run(addr, dataDir string, plain bool) error {
 		return fmt.Errorf("applying process security: %w", err)
 	}
 	return server.Run(context.Background(), server.Config{
-		DataDir:      config.DataDir,
-		Address:      config.Address,
-		Pinned:       config.Pinned,
-		Plain:        config.Plain,
-		Hardening:    config.Values.Hardening,
+		DataDir:      loaded.DataDir,
+		Address:      loaded.Address,
+		Pinned:       loaded.Pinned,
+		Plain:        loaded.Plain,
+		Hardening:    loaded.Values.Hardening,
 		Revision:     buildRevision(),
 		Logger:       logger,
-		InstanceLock: config.Lock,
+		InstanceLock: loaded.Lock,
 	})
 }

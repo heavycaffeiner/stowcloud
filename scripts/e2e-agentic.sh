@@ -59,7 +59,7 @@ echo '{"hardening":"off"}' | seed security
 
 # 4. Start sc-engine server
 echo "==> Starting isolated sc-engine on port $PORT"
-"$BIN" -data "$DIR/data" > "$DIR/log" 2>&1 &
+"$BIN" --data-dir "$DIR/data" > "$DIR/log" 2>&1 &
 SERVER_PID=$!
 
 cleanup() {

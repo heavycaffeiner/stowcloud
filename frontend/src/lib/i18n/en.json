@@ -746,7 +746,7 @@
   "server.add_observed_address_to_trusted": "Add {address} to trusted proxies",
   "server.all_apply_immediately_no_restart": "All apply immediately; no restart needed.",
   "server.allow_access_from_outside_private": "Allow access from outside the private network",
-  "server.anything_settable_config_toml_can": "Server configuration is stored in the database. Most changes apply immediately without a restart; items that require a restart are marked below.",
+  "server.settings_stored_in_database": "Server configuration is stored in the database. Most changes apply immediately without a restart; items that require a restart are marked below.",
   "server.app_hosts_comma_separated": "App hosts (comma-separated)",
   "server.app_hosts_hint": "The names this server answers on. A request arriving with any other Host is refused, and so is a state-changing request whose Origin is not one of these, so this list is the origin check rather than a display setting.",
   "server.applies_immediately_no_restart_needed": "Applies immediately; no restart needed.",

@@ -73,7 +73,7 @@ echo '{"per_sec":2000,"burst":5000}' | seed rate
 echo '{"hardening":"off"}' | seed security
 
 echo "==> serving"
-"$BIN" -data "$DIR/data" > "$DIR/log" 2>&1 &
+"$BIN" --data-dir "$DIR/data" > "$DIR/log" 2>&1 &
 SERVER=$!
 trap 'kill "$SERVER" 2>/dev/null || true' EXIT
 # Ready when it answers, not after a fixed wait. Six seconds was a guess with

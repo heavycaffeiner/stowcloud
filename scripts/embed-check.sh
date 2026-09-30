@@ -74,7 +74,7 @@ echo '{"bind":"127.0.0.1:18500","app_hosts":["localhost"]}' \
 echo '{"hardening":"off"}' \
   | "$BIN" settings set security --data-dir "$DIR/data" >/dev/null
 
-"$BIN" -data "$DIR/data" > "$DIR/log" 2>&1 &
+"$BIN" --data-dir "$DIR/data" > "$DIR/log" 2>&1 &
 SERVER=$!
 trap 'kill "$SERVER" 2>/dev/null || true' EXIT
 # Ready when it answers, not after a fixed wait. Four seconds was tuned on one

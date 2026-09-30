@@ -1,7 +1,6 @@
 //go:build linux
 
-// The deployment subcommands: serve, and the health probe the container
-// orchestrator runs.
+// The health probe the container orchestrator runs.
 package main
 
 import (
@@ -20,23 +19,6 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server"
 )
 
-// runServeCmd is the `serve` spelling of the default behaviour: it accepts
-// the flags a deployment's entrypoint spells out longhand, so the container
-// command line reads the same way it always has.
-//
-//	serve --data-dir DIR [--addr HOST:PORT] [--plain]
-func runServeCmd(argv []string) int {
-	parsed, err := config.ParseServeArgs(argv)
-	if err != nil {
-		log.New(os.Stderr, "", 0).Printf("sc-engine serve: %v\n", err)
-		return 2
-	}
-	if rerr := run(parsed.Addr, parsed.DataDir, parsed.Plain); rerr != nil {
-		return 1
-	}
-	return 0
-}
-
 const healthExitNoAnswer = int(server.HealthExitUnhealthy)
 
 // runHealthcheck probes the TLS listener over 127.0.0.1 and verifies the
@@ -45,9 +27,14 @@ const healthExitNoAnswer = int(server.HealthExitUnhealthy)
 // Verifying properly rather than skipping verification is the point: a cert
 // that no longer matches what the server holds is a server answering with
 // material a healthcheck cannot account for.
+//
+//	healthcheck [--data-dir DIR]
 func runHealthcheck(argv []string) int {
 	errOut := log.New(os.Stderr, "", 0)
-	dataDir := config.DataDir(argv)
+	dataDir, rest, perr := config.ParseDataDirArgs("sc-engine healthcheck", argv, os.Stderr)
+	if perr != nil || len(rest) > 0 {
+		return healthExitNoAnswer
+	}
 
 	// Where to dial and what name to ask under. The settings live in a
 	// database the running server holds, so this reads the snapshot that

@@ -141,7 +141,7 @@ echo "==> serving"
 # Truncated, so the readiness check below reads this run rather than matching
 # a "listening" line the previous one left behind.
 : > "$DIR/log"
-"$BIN" -data "$PWD/$DIR/data" >> "$DIR/log" 2>&1 &
+"$BIN" --data-dir "$PWD/$DIR/data" >> "$DIR/log" 2>&1 &
 SERVER=$!
 echo "$SERVER" > "$DIR/pid"
 

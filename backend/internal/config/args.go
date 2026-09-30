@@ -1,13 +1,18 @@
-// Command-line arguments for the deployment commands.
+// Command-line arguments for the deployment commands. Every command spells a
+// flag the same way: --data-dir, --addr and --plain.
 
 package config
 
-import "fmt"
+import (
+	"flag"
+	"fmt"
+	"io"
+)
 
 // DefaultDataDir is the deployment data directory used when no directory is named.
 const DefaultDataDir = "/var/lib/stowcloud"
 
-// ServeArgs is the command line for the serve deployment command.
+// ServeArgs is the command line for serving.
 type ServeArgs struct {
 	// Addr is empty when the server should use its stored bind address.
 	Addr string
@@ -17,69 +22,39 @@ type ServeArgs struct {
 	Plain bool
 }
 
-// ParseServeArgs parses the longhand flags accepted by the serve command.
-func ParseServeArgs(argv []string) (ServeArgs, error) {
-	out := ServeArgs{DataDir: DefaultDataDir}
-
-	for i := 0; i < len(argv); {
-		flag := argv[i]
-		value := func() (string, bool) {
-			if i+1 >= len(argv) {
-				return "", false
-			}
-			return argv[i+1], true
-		}
-		switch flag {
-		case "--data-dir", "-data":
-			v, ok := value()
-			if !ok {
-				return ServeArgs{}, fmt.Errorf("%s needs a directory", flag)
-			}
-			out.DataDir = v
-			i += 2
-		case "--addr", "-addr":
-			v, ok := value()
-			if !ok {
-				return ServeArgs{}, fmt.Errorf("%s needs an address", flag)
-			}
-			out.Addr = v
-			i += 2
-		case "--plain":
-			out.Plain = true
-			i++
-		default:
-			return ServeArgs{}, fmt.Errorf("unknown argument %q", flag)
-		}
+// ParseServeArgs parses the serve flags. Usage and errors go to out.
+func ParseServeArgs(name string, argv []string, out io.Writer) (ServeArgs, error) {
+	var args ServeArgs
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs.SetOutput(out)
+	fs.StringVar(&args.DataDir, "data-dir", DefaultDataDir, "data directory")
+	fs.StringVar(&args.Addr, "addr", "", "listen address; overrides the stored one")
+	fs.BoolVar(&args.Plain, "plain", false, "serve HTTP instead of HTTPS")
+	if err := fs.Parse(argv); err != nil {
+		return ServeArgs{}, err
 	}
-
-	return out, nil
+	if fs.NArg() > 0 {
+		return ServeArgs{}, fmt.Errorf("unexpected argument %q", fs.Arg(0))
+	}
+	return args, nil
 }
 
-// ParseSettingsArgs extracts the section and data directory from settings args.
-// The section and data-directory flag may occur in either order.
-func ParseSettingsArgs(argv []string) (section, dataDir string) {
-	dataDir = DefaultDataDir
-	for i := 0; i < len(argv); i++ {
-		if argv[i] == "-data" || argv[i] == "--data-dir" {
-			if i+1 < len(argv) {
-				dataDir = argv[i+1]
-				i++
-			}
-			continue
+// ParseDataDirArgs parses a command line whose one flag is --data-dir, which
+// may come before or after the positional arguments. It returns the directory
+// and the positional arguments in order.
+func ParseDataDirArgs(name string, argv []string, out io.Writer) (string, []string, error) {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs.SetOutput(out)
+	dataDir := fs.String("data-dir", DefaultDataDir, "data directory")
+	var positional []string
+	for {
+		if err := fs.Parse(argv); err != nil {
+			return "", nil, err
 		}
-		if section == "" {
-			section = argv[i]
+		if fs.NArg() == 0 {
+			return *dataDir, positional, nil
 		}
+		positional = append(positional, fs.Arg(0))
+		argv = fs.Args()[1:]
 	}
-	return section, dataDir
-}
-
-// DataDir extracts a data directory from a flat argument list.
-func DataDir(argv []string) string {
-	for i, arg := range argv {
-		if (arg == "-data" || arg == "--data-dir") && i+1 < len(argv) {
-			return argv[i+1]
-		}
-	}
-	return DefaultDataDir
 }

@@ -15,6 +15,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -58,17 +59,16 @@ func runSettings(argv []string) int {
 
 func settingsUsage() int {
 	out := log.New(os.Stderr, "", 0)
-	out.Println("usage: sc-engine settings get [-data DIR]")
-	out.Println("       sc-engine settings set <section> [-data DIR] < document.json")
+	out.Println("usage: sc-engine settings get [--data-dir DIR]")
+	out.Println("       sc-engine settings set <section> [--data-dir DIR] < document.json")
 	out.Println()
 	out.Println("  Reads or writes the stored settings directly, for a deployment whose")
 	out.Println("  stored configuration stops the server answering. The document is one")
 	out.Println("  section's JSON object on standard input, and it replaces that section")
 	out.Println("  whole. Every other section is left alone.")
 	out.Println()
-	out.Println("  Nothing here validates the document. The server clamps or drops what")
-	out.Println("  it cannot use and logs why, which is what makes this a way back in")
-	out.Println("  rather than a second place to get it wrong.")
+	out.Println("  The document passes the same checks as a save from the settings screen.")
+	out.Println("  Both commands refuse while a server holds the data directory.")
 	return 2
 }
 
@@ -77,10 +77,11 @@ func settingsUsage() int {
 // the write takes the data-directory lock, so it refuses while a server runs.
 func runSettingsSet(argv []string) int {
 	out := log.New(os.Stderr, "", 0)
-	section, dataDir := config.ParseSettingsArgs(argv)
-	if section == "" {
+	dataDir, rest, perr := config.ParseDataDirArgs("sc-engine settings set", argv, os.Stderr)
+	if perr != nil || len(rest) != 1 {
 		return settingsUsage()
 	}
+	section := rest[0]
 
 	raw, rerr := io.ReadAll(io.LimitReader(os.Stdin, 1<<20))
 	if rerr != nil {
@@ -127,7 +128,10 @@ func runSettingsSet(argv []string) int {
 
 func runSettingsGet(argv []string) int {
 	out := log.New(os.Stderr, "", 0)
-	dataDir := config.DataDir(argv)
+	dataDir, rest, perr := config.ParseDataDirArgs("sc-engine settings get", argv, os.Stderr)
+	if perr != nil || len(rest) > 0 {
+		return settingsUsage()
+	}
 	lock, ok := takeSettingsLock(out, dataDir)
 	if !ok {
 		return 1
@@ -155,6 +159,9 @@ func runSettingsGet(argv []string) int {
 		out.Printf("sc-engine settings: rendering them: %v\n", jerr)
 		return 1
 	}
-	out.Println(string(body))
+	if _, werr := fmt.Fprintln(os.Stdout, string(body)); werr != nil {
+		out.Printf("sc-engine settings: writing them out: %v\n", werr)
+		return 1
+	}
 	return 0
 }

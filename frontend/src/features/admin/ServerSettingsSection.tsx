@@ -619,7 +619,7 @@ export function ServerSettingsSection() {
     <>
       <section className="sc-admin-section">
         <h3>{t('server.server_settings')}</h3>
-        <p className="sc-admin-section-hint">{t('server.anything_settable_config_toml_can')}</p>
+        <p className="sc-admin-section-hint">{t('server.settings_stored_in_database')}</p>
         <nav className="sc-server-settings-nav" aria-label={t('admin.server_settings_navigation')}>
           <div className="sc-server-settings-nav-items">
             {[

@@ -132,7 +132,7 @@ export const test = base.extend({
       seed('security', { hardening: 'off' })
 
       const logFd = fs.openSync(logPath, 'w')
-      const proc: ChildProcess = spawn(binPath, ['-data', dataDir], {
+      const proc: ChildProcess = spawn(binPath, ['--data-dir', dataDir], {
         stdio: ['ignore', logFd, logFd]
       })
 

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"io"
 	"reflect"
 	"testing"
 )
@@ -15,10 +16,11 @@ func TestParseServeArgs(t *testing.T) {
 		{name: "value flag and switch", args: []string{"--data-dir", "/d", "--plain"}, want: ServeArgs{DataDir: "/d", Plain: true}},
 		{name: "switch and value flag", args: []string{"--plain", "--addr", ":9000"}, want: ServeArgs{DataDir: DefaultDataDir, Plain: true, Addr: ":9000"}},
 		{name: "all flags", args: []string{"--addr", ":9000", "--data-dir", "/d", "--plain"}, want: ServeArgs{Addr: ":9000", DataDir: "/d", Plain: true}},
+		{name: "equals form", args: []string{"--data-dir=/d"}, want: ServeArgs{DataDir: "/d"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got, err := ParseServeArgs(c.args)
+			got, err := ParseServeArgs("serve", c.args, io.Discard)
 			if err != nil {
 				t.Fatalf("parsing %v: %v", c.args, err)
 			}
@@ -30,35 +32,32 @@ func TestParseServeArgs(t *testing.T) {
 }
 
 func TestParseServeArgsRejectsInvalidArguments(t *testing.T) {
-	for _, args := range [][]string{{"--data-dir"}, {"--addr"}, {"--plain", "--data-dir"}, {"--nosuch"}} {
-		if _, err := ParseServeArgs(args); err == nil {
+	for _, args := range [][]string{{"--data-dir"}, {"--addr"}, {"--plain", "--data-dir"}, {"--nosuch"}, {"-data", "/d"}, {"stray"}} {
+		if _, err := ParseServeArgs("serve", args, io.Discard); err == nil {
 			t.Errorf("%v parsed without an error", args)
 		}
 	}
 }
 
-func TestParseSettingsArgs(t *testing.T) {
+func TestParseDataDirArgs(t *testing.T) {
 	for _, c := range []struct {
-		args    []string
-		section string
-		dataDir string
+		args       []string
+		dataDir    string
+		positional []string
 	}{
-		{args: []string{"shares", "--data-dir", "/d"}, section: "shares", dataDir: "/d"},
-		{args: []string{"--data-dir", "/d", "shares"}, section: "shares", dataDir: "/d"},
+		{args: []string{"shares", "--data-dir", "/d"}, dataDir: "/d", positional: []string{"shares"}},
+		{args: []string{"--data-dir", "/d", "shares"}, dataDir: "/d", positional: []string{"shares"}},
 		{args: nil, dataDir: DefaultDataDir},
 	} {
-		section, dataDir := ParseSettingsArgs(c.args)
-		if section != c.section || dataDir != c.dataDir {
-			t.Errorf("ParseSettingsArgs(%v) = %q, %q; want %q, %q", c.args, section, dataDir, c.section, c.dataDir)
+		dataDir, positional, err := ParseDataDirArgs("settings", c.args, io.Discard)
+		if err != nil {
+			t.Fatalf("parsing %v: %v", c.args, err)
+		}
+		if dataDir != c.dataDir || !reflect.DeepEqual(positional, c.positional) {
+			t.Errorf("ParseDataDirArgs(%v) = %q, %q; want %q, %q", c.args, dataDir, positional, c.dataDir, c.positional)
 		}
 	}
-}
-
-func TestDataDir(t *testing.T) {
-	if got := DataDir([]string{"--data-dir", "/d"}); got != "/d" {
-		t.Errorf("DataDir returned %q", got)
-	}
-	if got := DataDir(nil); got != DefaultDataDir {
-		t.Errorf("DataDir default = %q", got)
+	if _, _, err := ParseDataDirArgs("settings", []string{"-data", "/d"}, io.Discard); err == nil {
+		t.Error("the old -data spelling parsed without an error")
 	}
 }
