@@ -1,9 +1,8 @@
 // Linux only, because the engine it serves is Linux only.
 //go:build linux
 
-// The product command selects Hanami bootstrap integrations and composes the
-// Stowcloud application graph. Hanami owns process lifecycle and managed HTTP
-// generations; the product owns routes, policy, and feature services.
+// The engine command: load the deployment settings, seal the process, then
+// hand the settled configuration to server.Run.
 package main
 
 import (
@@ -14,12 +13,10 @@ import (
 	"os"
 	"runtime/debug"
 
-	"github.com/heavycaffeiner/hanami"
 	securitylinux "github.com/heavycaffeiner/hanami/security/linux"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/bootstrap/preflight"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/bootstrap/sandbox"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server"
-	"go.uber.org/fx"
 )
 
 func main() {
@@ -94,30 +91,19 @@ func run(addr, dataDir string, plain bool) error {
 			return fmt.Errorf("applying process security: %w", securityErr)
 		}
 	}
-	spec := hanami.Spec[preflight.Config]{
-		Name: "sc-engine",
-		Load: func(context.Context) (preflight.Config, error) {
-			return config, nil
-		},
-		Modules: func(config preflight.Config) fx.Option {
-			return server.Module(server.ModuleConfig{
-				DataDir:      config.DataDir,
-				Address:      config.Address,
-				Pinned:       config.Pinned,
-				Plain:        config.Plain,
-				Hardening:    config.Values.Hardening,
-				Revision:     buildRevision(),
-				Logger:       logger,
-				InstanceLock: config.Lock,
-			})
-		},
+	// Past the re-exec this verifies the handoff and installs the syscall
+	// filter, before any service opens a file.
+	if _, err := securitylinux.Apply(policy); err != nil {
+		return fmt.Errorf("applying process security: %w", err)
 	}
-	options := []hanami.Option[preflight.Config]{
-		securitylinux.WithPolicy(func(config preflight.Config) (securitylinux.Policy, error) {
-			return sandbox.BuildPolicy(config.Values, config.DataDir, config.Roots, config.ShareHosts, config.ExactPaths), nil
-		}),
-		hanami.WithLogger[preflight.Config](logger),
-	}
-	_, err = hanami.Run(context.Background(), spec, options...)
-	return err
+	return server.Run(context.Background(), server.Config{
+		DataDir:      config.DataDir,
+		Address:      config.Address,
+		Pinned:       config.Pinned,
+		Plain:        config.Plain,
+		Hardening:    config.Values.Hardening,
+		Revision:     buildRevision(),
+		Logger:       logger,
+		InstanceLock: config.Lock,
+	})
 }

@@ -2,15 +2,10 @@
 
 package server
 
-import (
-	"errors"
-	"sync"
+import "sync"
 
-	hanamiprocess "github.com/heavycaffeiner/hanami/process"
-)
-
-// RestartSignal carries a product restart request to the process supervisor.
-// The product does not replace its own process.
+// RestartSignal carries a product restart request to the listener, which
+// ends the process so its supervisor starts a fresh one.
 type RestartSignal struct {
 	mu        sync.Mutex
 	onRestart func()
@@ -29,19 +24,4 @@ func (s *RestartSignal) Request() {
 	if fn != nil {
 		fn()
 	}
-}
-
-// restartSource reports a product restart request without naming the process host.
-type restartSource interface {
-	OnRestart(func())
-}
-
-// bindRestart connects product restart intent to Hanami's external restart protocol.
-func bindRestart(source restartSource, controller *hanamiprocess.Controller) {
-	if source == nil || controller == nil {
-		return
-	}
-	source.OnRestart(func() {
-		controller.RequestExternalRestart(errors.New("product restart requested"))
-	})
 }

@@ -2,7 +2,8 @@
 
 // The listener adapts the product application to Hanami's managed HTTP
 // generations. It owns the listener lifecycle, TLS material, and probe file;
-// the application owns routes and product policy.
+// the application owns routes and product policy. Nothing else in the tree
+// imports Hanami's lifecycle types.
 
 package server
 
@@ -36,8 +37,7 @@ type ListenerConfig struct {
 	Logger  *slog.Logger
 }
 
-// listenerApp is the product surface the listener needs. It deliberately
-// carries no Hanami or Fx types: those remain at the process assembly edge.
+// listenerApp is the product surface the listener needs.
 type listenerApp interface {
 	ProbeHost() string
 	OnAppHostChange(func())
@@ -46,16 +46,23 @@ type listenerApp interface {
 
 // Listener owns one managed HTTP endpoint and its generation transitions.
 type Listener struct {
-	manager *hanamihttp.Manager
-	server  hanamihttp.ServerConfig
-	config  ListenerConfig
-	app     listenerApp
-	logger  *slog.Logger
-	mu      sync.Mutex
+	manager    *hanamihttp.Manager
+	admission  *hanamibootstrap.Admission
+	controller *hanamiprocess.Controller
+	server     hanamihttp.ServerConfig
+	config     ListenerConfig
+	app        listenerApp
+	logger     *slog.Logger
+	mu         sync.Mutex
 }
 
+const (
+	listenerStartTimeout = 15 * time.Second
+	shutdownTimeout      = 30 * time.Second
+)
+
 // NewListener prepares the managed HTTP endpoint for an already mounted router.
-func NewListener(config ListenerConfig, app listenerApp, router *gin.Engine, admission *hanamibootstrap.Admission, controller *hanamiprocess.Controller) (*Listener, error) {
+func NewListener(config ListenerConfig, app listenerApp, router *gin.Engine) (*Listener, error) {
 	if config.DataDir == "" {
 		return nil, errors.New("listener data directory is empty")
 	}
@@ -94,62 +101,86 @@ func NewListener(config ListenerConfig, app listenerApp, router *gin.Engine, adm
 		ProbePath:         "/health/ready",
 		ProbeIdentity:     "sc-engine",
 	}
+	admission := hanamibootstrap.NewAdmission()
+	controller := hanamiprocess.NewController()
 	manager, err := hanamihttp.NewManager(hanamihttp.ManagerConfig{
 		Server: serverConfig, Admission: admission, Controller: controller,
 	})
 	if err != nil {
 		return nil, err
 	}
-	runtime := &Listener{manager: manager, server: serverConfig, config: config, app: app, logger: logger}
+	l := &Listener{
+		manager: manager, admission: admission, controller: controller,
+		server: serverConfig, config: config, app: app, logger: logger,
+	}
 	app.OnAppHostChange(func() {
-		if err := runtime.publish(); err != nil {
+		if err := l.publish(); err != nil {
 			logger.Error("the health probe snapshot could not be updated", "error", err)
 		}
 	})
 	app.OnBindChange(config.Address, config.Pinned, func(next string) {
-		if _, err := runtime.replaceAddress(context.Background(), next); err != nil {
+		if _, err := l.replaceAddress(context.Background(), next); err != nil {
 			logger.Error("the bind address could not be moved", "address", next, "error", err)
 			return
 		}
-		if err := runtime.publish(); err != nil {
+		if err := l.publish(); err != nil {
 			logger.Error("the health probe snapshot could not be updated", "error", err)
 		}
 	})
-	return runtime, nil
+	return l, nil
 }
 
-// Start begins the initial managed generation and publishes its settled address.
-func (runtime *Listener) Start(ctx context.Context) error {
-	if err := runtime.manager.Start(ctx); err != nil {
+// Serve starts the first generation and admits requests until ctx ends or a
+// stop is requested, then drains every generation. A requested stop's reason
+// is returned, so a restart request ends the process with an error.
+func (l *Listener) Serve(ctx context.Context) error {
+	startup, cancel := context.WithTimeout(ctx, listenerStartTimeout)
+	err := l.manager.Start(startup)
+	cancel()
+	if err == nil {
+		err = l.publish()
+	}
+	if err != nil {
 		return err
 	}
-	return runtime.publish()
+	l.admission.Open()
+	var reason error
+	select {
+	case <-ctx.Done():
+	case <-l.controller.Done():
+		reason = l.controller.Request().Err
+	}
+	l.admission.Close()
+	shutdown, cancelShutdown := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancelShutdown()
+	return errors.Join(reason, l.manager.Stop(shutdown))
 }
 
-// Stop drains and closes all managed generations.
-func (runtime *Listener) Stop(ctx context.Context) error {
-	return runtime.manager.Stop(ctx)
+// RequestRestart ends Serve so the supervisor starts a fresh process. The
+// product never replaces its own image.
+func (l *Listener) RequestRestart() {
+	l.controller.RequestExternalRestart(errors.New("product restart requested"))
 }
 
-func (runtime *Listener) replaceAddress(ctx context.Context, address string) (hanamihttp.ReplaceResult, error) {
-	runtime.mu.Lock()
-	defer runtime.mu.Unlock()
-	next := runtime.server
+func (l *Listener) replaceAddress(ctx context.Context, address string) (hanamihttp.ReplaceResult, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	next := l.server
 	next.Address = address
-	result, err := runtime.manager.Replace(ctx, hanamihttp.ReplaceRequest{Server: next})
+	result, err := l.manager.Replace(ctx, hanamihttp.ReplaceRequest{Server: next})
 	if err == nil {
-		runtime.server = next
+		l.server = next
 	}
 	return result, err
 }
 
-func (runtime *Listener) publish() error {
-	current := runtime.manager.Current()
+func (l *Listener) publish() error {
+	current := l.manager.Current()
 	if current.Address == "" {
 		return errors.New("publishing the health probe without a listener")
 	}
-	return WriteProbe(filepath.Join(runtime.config.DataDir, ".probe.json"), Probe{
-		Addr: current.Address, Host: runtime.app.ProbeHost(), Plain: runtime.config.Plain,
+	return WriteProbe(filepath.Join(l.config.DataDir, ".probe.json"), Probe{
+		Addr: current.Address, Host: l.app.ProbeHost(), Plain: l.config.Plain,
 	}, durableWriter)
 }
 
