@@ -30,8 +30,7 @@ export const sheetScrim = style({
   inset: '0',
   zIndex: '49',
   background: `rgba(${vars.color.scrim}, 0.36)`,
-  animation: `${fadeIn} 150ms ease`,
-  WebkitTapHighlightColor: 'transparent'
+  animation: `${fadeIn} 150ms ease`
 })
 
 export const sheet = style({

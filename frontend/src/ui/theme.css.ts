@@ -214,8 +214,7 @@ globalStyle(':root:not(.mdui-theme-light)', {
 })
 
 globalStyle('*', {
-  boxSizing: 'border-box',
-  WebkitTapHighlightColor: 'transparent'
+  boxSizing: 'border-box'
 })
 
 globalStyle('html, body, #root', {
