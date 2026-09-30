@@ -6,7 +6,7 @@ The Linux server starts at `backend/cmd/stowcloud/main.go`. Preflight loads the 
 
 Tests that boot a whole engine and drive it over HTTP live in `backend/test/e2e`, with the shared boot and sign-in helpers in `harness_test.go`. Tests beside the code in `backend/internal` are unit tests of that package.
 
-The browser application lives in `frontend/src`. It currently uses React Router, React Query, Zustand, and mdui. The planned frontend restructure moves server data into React Query, URL state into the router, and mdui imports into one UI directory.
+The browser application lives in `frontend/src`. It uses React Router, React Query, Zustand, and mdui. Every mdui element and import sits behind the components in `src/ui`, which also owns the theme and the only global styles. Everything else is styled by a vanilla-extract file next to its component. `src/hooks` holds hooks that know nothing about a feature. Route errors render inside the app shell, and the trays, the details panel, the file preview, the settings and admin tabs, and the search sheet each have their own error boundary. `frontend/tsconfig.json` references separate projects for the app, the upload worker, the service worker, the Node tooling, and the e2e specs. The planned frontend restructure still moves server data into React Query and URL state into the router.
 
 ## Contracts retained during the restructure
 
