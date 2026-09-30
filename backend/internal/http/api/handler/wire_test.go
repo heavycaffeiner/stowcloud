@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	httpheader "github.com/heavycaffeiner/stowcloud/backend/internal/http/headers"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/httpx"
 )
 
 // A return path stays on this origin. The protocol-relative form is the case a
@@ -48,7 +48,7 @@ func TestContentDispositionCannotEscapeEitherForm(t *testing.T) {
 		"\u00e9t\u00e9.pdf",
 		"файл.pdf",
 	} {
-		got := httpheader.Attachment(name)
+		got := httpx.Attachment(name)
 
 		// The header is one line: a CR or LF anywhere in it is a second header
 		// the caller did not write.
@@ -69,7 +69,7 @@ func TestContentDispositionCannotEscapeEitherForm(t *testing.T) {
 // The RFC 5987 form carries the real name, so a client that reads it gets the
 // characters the fallback could not represent.
 func TestTheEncodedFilenameRoundTrips(t *testing.T) {
-	got := httpheader.Attachment("été.pdf")
+	got := httpx.Attachment("été.pdf")
 	// é is C3 A9 in UTF-8.
 	if !strings.Contains(got, "%C3%A9t%C3%A9.pdf") {
 		t.Errorf("the encoded form is wrong: %q", got)

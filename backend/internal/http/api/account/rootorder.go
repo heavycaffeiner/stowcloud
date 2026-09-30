@@ -8,7 +8,7 @@ import (
 	"net/http"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 )
 
 // RootOrderDeps supplies the authorization and durable operation for root ordering.

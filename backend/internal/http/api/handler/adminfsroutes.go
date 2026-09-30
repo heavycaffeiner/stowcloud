@@ -18,8 +18,8 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vault"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 )
 
 const adminHostFSEntryCap = 2000

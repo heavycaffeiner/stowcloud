@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/route"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/route"
 )
 
 // tableRoutes is the same shape, from the table this package builds.

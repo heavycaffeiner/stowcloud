@@ -1,8 +1,8 @@
 //go:build linux
 
-// Package httpheader builds security-sensitive response header values shared
-// by protocol adapters.
-package headers
+// Package httpx holds the HTTP helpers shared by every surface: response
+// header values that must be built the same way on each of them.
+package httpx
 
 import (
 	"fmt"

@@ -11,8 +11,8 @@ import (
 	"context"
 	"net/netip"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/web"
 )

@@ -13,8 +13,8 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
-	httpheader "github.com/heavycaffeiner/stowcloud/backend/internal/http/headers"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/httpx"
 )
 
 // CloseStream closes a stream and records a close failure when a logger is supplied.
@@ -48,14 +48,14 @@ func SendStreamRange(c interface {
 	}
 	c.Header("Content-Length", strconv.FormatInt(length, 10))
 	if attachAs == "" {
-		if httpheader.IsExecutableMIME(contentType) {
+		if httpx.IsExecutableMIME(contentType) {
 			attachAs = entry.Name
-			c.Header("Content-Disposition", httpheader.Attachment(attachAs))
+			c.Header("Content-Disposition", httpx.Attachment(attachAs))
 		} else {
-			c.Header("Content-Security-Policy", httpheader.SafeInlineCSP)
+			c.Header("Content-Security-Policy", httpx.SafeInlineCSP)
 		}
 	} else {
-		c.Header("Content-Disposition", httpheader.Attachment(attachAs))
+		c.Header("Content-Disposition", httpx.Attachment(attachAs))
 	}
 	c.Header("X-Content-Type-Options", "nosniff")
 	status := http.StatusOK

@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 )
 
 // The DAV dispatch: what a method means for each of the trees, and the two

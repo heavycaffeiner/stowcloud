@@ -14,8 +14,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/route"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/protocol/limits"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/route"
 )
 
 // ErrBodyTooLarge is a body past its class's bound. It carries the bound so a

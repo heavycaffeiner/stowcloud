@@ -11,7 +11,7 @@
 
 package server
 
-import "github.com/heavycaffeiner/stowcloud/backend/internal/http/route"
+import "github.com/heavycaffeiner/stowcloud/backend/internal/server/route"
 
 // Base is the prefix every route here carries. The version is in the path so
 // the next breaking change is a v2 mounted beside v1 rather than another flag

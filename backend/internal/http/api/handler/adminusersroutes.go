@@ -13,10 +13,10 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/route"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/route"
 )
 
 // AdminUsersDeps are the explicit services used by the administrator account

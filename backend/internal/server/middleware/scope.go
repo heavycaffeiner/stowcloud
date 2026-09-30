@@ -12,7 +12,7 @@ package middleware
 import (
 	"errors"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/route"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/route"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 

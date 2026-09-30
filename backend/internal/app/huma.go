@@ -23,9 +23,9 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/links"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/smbaccount"
 	trashhttp "github.com/heavycaffeiner/stowcloud/backend/internal/http/api/trash"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/server"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 )
 
 // humaNames declares the typed part of the native route table. The server

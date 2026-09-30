@@ -12,8 +12,8 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/objstore"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/uploads"
 	uploadlimits "github.com/heavycaffeiner/stowcloud/backend/internal/uploads/limits"
 )

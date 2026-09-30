@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 

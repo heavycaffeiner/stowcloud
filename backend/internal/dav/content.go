@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
-	httpheader "github.com/heavycaffeiner/stowcloud/backend/internal/http/headers"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/httpx"
 )
 
 // KeyOf is how a caller turns an entry into the key its store understands.
@@ -185,11 +185,11 @@ func (h *Handler) setContentPolicy(w http.ResponseWriter, name string) {
 	contentType := ContentTypeOf(name)
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	if httpheader.IsExecutableMIME(contentType) {
-		w.Header().Set("Content-Disposition", httpheader.Attachment(name))
+	if httpx.IsExecutableMIME(contentType) {
+		w.Header().Set("Content-Disposition", httpx.Attachment(name))
 		return
 	}
-	w.Header().Set("Content-Security-Policy", httpheader.SafeInlineCSP)
+	w.Header().Set("Content-Security-Policy", httpx.SafeInlineCSP)
 }
 
 // Put writes a file.

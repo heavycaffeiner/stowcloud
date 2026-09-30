@@ -18,10 +18,10 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/server"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/jobs"
 	task "github.com/heavycaffeiner/stowcloud/backend/internal/platform/concurrency"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 	storagewatch "github.com/stowcloud/storage/watch"
 )

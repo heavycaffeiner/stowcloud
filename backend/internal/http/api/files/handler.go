@@ -25,13 +25,13 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/objstore"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/archive"
-	httpheader "github.com/heavycaffeiner/stowcloud/backend/internal/http/headers"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/route"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	featurepreview "github.com/heavycaffeiner/stowcloud/backend/internal/preview"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/httpx"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/route"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
@@ -267,14 +267,14 @@ func (h *Handler) SendStream(c *gin.Context, entry files.FidEntry, stream *files
 	}
 	c.Header("Content-Length", strconv.FormatInt(length, 10))
 	if attachAs == "" {
-		if httpheader.IsExecutableMIME(contentType) {
+		if httpx.IsExecutableMIME(contentType) {
 			attachAs = entry.Name
-			c.Header("Content-Disposition", httpheader.Attachment(attachAs))
+			c.Header("Content-Disposition", httpx.Attachment(attachAs))
 		} else {
-			c.Header("Content-Security-Policy", httpheader.SafeInlineCSP)
+			c.Header("Content-Security-Policy", httpx.SafeInlineCSP)
 		}
 	} else {
-		c.Header("Content-Disposition", httpheader.Attachment(attachAs))
+		c.Header("Content-Disposition", httpx.Attachment(attachAs))
 	}
 	c.Header("X-Content-Type-Options", "nosniff")
 	status := http.StatusOK
@@ -395,7 +395,7 @@ func (h *Handler) DownloadFetch(c *gin.Context) {
 			if keyer, keyOK := resolved.Root().(interface{ ObjectKey(vfs.SafePath) string }); keyOK {
 				key := keyer.ObjectKey(resolved.Path())
 				if signed, signErr := provider.PresignGet(c.Request.Context(), key, 5*time.Minute); signErr == nil {
-					c.Header("Content-Disposition", httpheader.Attachment(ticket.Name))
+					c.Header("Content-Disposition", httpx.Attachment(ticket.Name))
 					c.Redirect(http.StatusFound, signed)
 					return
 				} else if !errors.Is(signErr, objstore.ErrDirectTransferUnsupported) {
@@ -505,7 +505,7 @@ func (h *Handler) ArchiveFetch(c *gin.Context) {
 	}
 	defer release()
 	c.Header("Content-Type", "application/zip")
-	c.Header("Content-Disposition", httpheader.Attachment(ticket.Name))
+	c.Header("Content-Disposition", httpx.Attachment(ticket.Name))
 	c.Status(http.StatusOK)
 	c.Writer.Flush()
 	if err := BuildArchive(c.Request.Context(), c.Writer, ticket.Name, func(ctx context.Context, visit ArchiveVisit) error {

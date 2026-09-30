@@ -6,7 +6,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 )
 
 // The status ladder.

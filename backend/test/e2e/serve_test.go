@@ -14,8 +14,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/server"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 )
 
 // The rebuilt engine comes up on a real socket and answers a real request.

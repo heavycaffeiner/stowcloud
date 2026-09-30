@@ -11,7 +11,7 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/dav"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 )
 
 // mounted builds the transport-owned mount around the fixture handler.

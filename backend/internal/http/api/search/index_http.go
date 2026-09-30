@@ -7,8 +7,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/search/controller"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 )
 
 func (m *Manager) adminIndexEstimate(c *gin.Context) {

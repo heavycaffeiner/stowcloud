@@ -13,8 +13,8 @@ import (
 	"strings"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
-	httpheader "github.com/heavycaffeiner/stowcloud/backend/internal/http/headers"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/httpx"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
@@ -87,10 +87,10 @@ func (s *Server) davGet(w http.ResponseWriter, r *http.Request, p Principal, t T
 	contentType := ContentTypeOf(false, entry.Name)
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	if httpheader.IsExecutableMIME(contentType) {
-		w.Header().Set("Content-Disposition", httpheader.Attachment(entry.Name))
+	if httpx.IsExecutableMIME(contentType) {
+		w.Header().Set("Content-Disposition", httpx.Attachment(entry.Name))
 	} else {
-		w.Header().Set("Content-Security-Policy", httpheader.SafeInlineCSP)
+		w.Header().Set("Content-Security-Policy", httpx.SafeInlineCSP)
 	}
 	w.Header().Set("Content-Length", strconv.FormatUint(stream.Remaining(), 10))
 	w.Header().Set("Accept-Ranges", "bytes")

@@ -30,11 +30,11 @@ import (
 	previewhttp "github.com/heavycaffeiner/stowcloud/backend/internal/http/api/preview"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/setup"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/uploads"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/publiclinks"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/server"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/jobs"
 	featureoidc "github.com/heavycaffeiner/stowcloud/backend/internal/oidc"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/smb/agent"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/web"
 )

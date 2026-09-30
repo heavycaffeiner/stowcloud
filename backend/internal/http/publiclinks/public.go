@@ -22,12 +22,12 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
-	httpheader "github.com/heavycaffeiner/stowcloud/backend/internal/http/headers"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/route"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/protocol/limits"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/httpx"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/route"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
@@ -340,7 +340,7 @@ func (p *Public) Zip(c *gin.Context) {
 		return
 	}
 	c.Header("Content-Type", "application/zip")
-	c.Header("Content-Disposition", httpheader.Attachment(listing.Name+".zip"))
+	c.Header("Content-Disposition", httpx.Attachment(listing.Name+".zip"))
 	c.Status(http.StatusOK)
 	p.d.WriteArchive(c.Request.Context(), c.Writer, link, sub, listing.Name)
 }

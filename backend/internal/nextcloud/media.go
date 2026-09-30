@@ -10,10 +10,10 @@ import (
 	"errors"
 	"github.com/gin-gonic/gin"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
-	httpheader "github.com/heavycaffeiner/stowcloud/backend/internal/http/headers"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/preview"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/httpx"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/basicfont"
@@ -297,10 +297,10 @@ func (s *Server) directStream(c *gin.Context) (err error) {
 	ct := ContentTypeOf(false, fid.Name)
 	c.Header("Content-Type", ct)
 	c.Header("Accept-Ranges", "bytes")
-	if httpheader.IsExecutableMIME(ct) {
-		c.Header("Content-Disposition", httpheader.Attachment(fid.Name))
+	if httpx.IsExecutableMIME(ct) {
+		c.Header("Content-Disposition", httpx.Attachment(fid.Name))
 	} else {
-		c.Header("Content-Security-Policy", httpheader.SafeInlineCSP)
+		c.Header("Content-Security-Policy", httpx.SafeInlineCSP)
 	}
 	status := 200
 	if rng != nil {
