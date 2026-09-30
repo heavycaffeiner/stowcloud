@@ -1,6 +1,6 @@
 //go:build linux
 
-package upload
+package uploads
 
 import (
 	"context"
@@ -9,10 +9,10 @@ import (
 	"io"
 	"slices"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads/limits"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/uploads/limits"
 )
 
 // The name-ordered spool mode. The difference from the offset-addressed one

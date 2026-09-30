@@ -1,6 +1,6 @@
 //go:build linux
 
-package upload
+package uploads
 
 import (
 	"bytes"
@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads/limits"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/uploads/limits"
 )
 
 // The wire spelling round-trips, an unknown algorithm refuses rather than

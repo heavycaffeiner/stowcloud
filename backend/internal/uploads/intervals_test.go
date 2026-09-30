@@ -1,12 +1,12 @@
 //go:build linux
 
-package upload
+package uploads
 
 import (
 	"errors"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads/limits"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/uploads/limits"
 )
 
 // permutations is every ordering of a small slice, so a normal-form property

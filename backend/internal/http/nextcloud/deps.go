@@ -12,9 +12,9 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/preview"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/search/svc"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/uploads"
 )
 
 // What this surface needs from the rest of the engine, and the one type that
@@ -123,7 +123,7 @@ type Deps struct {
 	// Uploads is nil in a deployment without a resumable upload engine, and
 	// the chunked upload collection then refuses every method rather than
 	// accepting chunks it could never assemble.
-	Uploads *upload.Engine
+	Uploads *uploads.Engine
 	// Preview is nil where no decoder is configured. A thumbnail request then
 	// answers 404, which every client renders as its own placeholder icon.
 	Preview *preview.Service

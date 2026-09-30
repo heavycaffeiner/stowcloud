@@ -10,9 +10,9 @@ import (
 	"strings"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/uploads"
 )
 
 // The chunked upload collection: MKCOL opens a session, PUT appends a
@@ -82,7 +82,7 @@ func (s *Server) uploadCreate(w http.ResponseWriter, r *http.Request, p Principa
 	if _, err := s.deps.Uploads.LookupAlias(ctx, t.Session, user(p)); err == nil {
 		w.WriteHeader(http.StatusCreated)
 		return
-	} else if !errors.Is(err, upload.ErrNotFound) {
+	} else if !errors.Is(err, uploads.ErrNotFound) {
 		s.failDav(w, r, err, apierr.VisibilityHidden)
 		return
 	}
@@ -100,8 +100,8 @@ func (s *Server) uploadCreate(w http.ResponseWriter, r *http.Request, p Principa
 	}
 
 	zero := uint64(0)
-	sess, cerr := s.deps.Uploads.Create(ctx, res, upload.SessionSpec{
-		Mode:      upload.SpoolNameOrdered,
+	sess, cerr := s.deps.Uploads.Create(ctx, res, uploads.SessionSpec{
+		Mode:      uploads.SpoolNameOrdered,
 		TotalLen:  totalLenPtr(r.Header.Get("OC-Total-Length")),
 		ChunkSize: &zero,
 	})
@@ -110,7 +110,7 @@ func (s *Server) uploadCreate(w http.ResponseWriter, r *http.Request, p Principa
 		return
 	}
 	if berr := s.deps.Uploads.BindAlias(ctx, t.Session, user(p), sess.ID); berr != nil {
-		if errors.Is(berr, upload.ErrAliasTaken) {
+		if errors.Is(berr, uploads.ErrAliasTaken) {
 			// Lost a race with a concurrent retry of this same MKCOL: the
 			// name is bound to whichever request won it, and this session
 			// is an orphan nothing will ever address again.
@@ -406,7 +406,7 @@ func (s *Server) uploadAbort(w http.ResponseWriter, r *http.Request, p Principal
 // share-relative destination back into the client-facing path; nothing here
 // trusts the alias's Share/Dest fields directly, since both came from
 // BindAlias rather than from this request.
-func (s *Server) aliasTarget(ctx context.Context, p Principal, alias upload.Alias, need acl.Perms) (files.Resolved, error) {
+func (s *Server) aliasTarget(ctx context.Context, p Principal, alias uploads.Alias, need acl.Perms) (files.Resolved, error) {
 	if s.deps.VpathOf == nil {
 		return files.Resolved{}, files.ErrNotFound
 	}
@@ -428,7 +428,7 @@ func (s *Server) aliasTarget(ctx context.Context, p Principal, alias upload.Alia
 // the client start a fresh transfer instead of filling one that can never
 // publish.
 func (s *Server) uploadWriteTarget(
-	ctx context.Context, p Principal, alias upload.Alias,
+	ctx context.Context, p Principal, alias uploads.Alias,
 ) (files.Resolved, error) {
 	return s.aliasTarget(ctx, p, alias, acl.Write|acl.Create)
 }

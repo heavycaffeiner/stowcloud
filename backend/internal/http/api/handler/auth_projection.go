@@ -10,12 +10,12 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
-	upload "github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads"
-	uploadlimits "github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads/limits"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/objstore"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/uploads"
+	uploadlimits "github.com/heavycaffeiner/stowcloud/backend/internal/uploads/limits"
 )
 
 // SessionDetailsDeps are the explicit application capabilities needed to
@@ -23,7 +23,7 @@ import (
 type SessionDetailsDeps struct {
 	Auth     *auth.Service
 	Core     *files.Core
-	Upload   *upload.Engine
+	Upload   *uploads.Engine
 	Features FeaturesInputs
 }
 
@@ -94,7 +94,7 @@ func RootViews(fc *files.Core, owner files.UserID) []RootView {
 const defaultUploadParallel = 4
 
 // LimitsViewOf projects the live upload limits for a client plan.
-func LimitsViewOf(engine *upload.Engine) LimitsView {
+func LimitsViewOf(engine *uploads.Engine) LimitsView {
 	if engine == nil {
 		return LimitsView{ChunkSize: uploadlimits.UploadChunkSizeDefault, ChunkMin: uploadlimits.UploadChunkMinDefault, Parallel: defaultUploadParallel}
 	}

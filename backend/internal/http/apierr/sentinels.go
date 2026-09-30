@@ -19,8 +19,8 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/oidc"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/preview"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/uploads"
 )
 
 func sentinels() []classifier {
@@ -151,28 +151,28 @@ func authSentinels() []classifier {
 // class is what the error means, and the protocol decides how to say it.
 func uploadSentinels() []classifier {
 	return []classifier{
-		{upload.ErrDestMissing, NotFound, "upload.dest_missing"},
-		{upload.ErrNotFound, NotFound, "upload.no_such_session"},
+		{uploads.ErrDestMissing, NotFound, "upload.dest_missing"},
+		{uploads.ErrNotFound, NotFound, "upload.no_such_session"},
 
-		{upload.ErrSessionExpired, Gone, "upload.session_expired"},
-		{upload.ErrSessionState, Conflict, "upload.session_state"},
-		{upload.ErrOffsetConflict, Conflict, "upload.offset_conflict"},
-		{upload.ErrAliasTaken, Conflict, "upload.alias_taken"},
+		{uploads.ErrSessionExpired, Gone, "upload.session_expired"},
+		{uploads.ErrSessionState, Conflict, "upload.session_state"},
+		{uploads.ErrOffsetConflict, Conflict, "upload.offset_conflict"},
+		{uploads.ErrAliasTaken, Conflict, "upload.alias_taken"},
 
-		{upload.ErrChecksum, Unprocessable, "upload.checksum_mismatch"},
-		{upload.ErrVerify, Unprocessable, "upload.verify_failed"},
-		{upload.ErrIncomplete, Unprocessable, "upload.incomplete"},
-		{upload.ErrChunkTooSmall, Unprocessable, "upload.chunk_too_small"},
-		{upload.ErrBadRequest, Malformed, "upload.bad_request"},
+		{uploads.ErrChecksum, Unprocessable, "upload.checksum_mismatch"},
+		{uploads.ErrVerify, Unprocessable, "upload.verify_failed"},
+		{uploads.ErrIncomplete, Unprocessable, "upload.incomplete"},
+		{uploads.ErrChunkTooSmall, Unprocessable, "upload.chunk_too_small"},
+		{uploads.ErrBadRequest, Malformed, "upload.bad_request"},
 
-		{upload.ErrTooLarge, BodyTooLarge, "upload.too_large"},
-		{upload.ErrFragmented, LimitExceeded, "upload.too_fragmented"},
+		{uploads.ErrTooLarge, BodyTooLarge, "upload.too_large"},
+		{uploads.ErrFragmented, LimitExceeded, "upload.too_fragmented"},
 		// Both clear as the account's own uploads finish, so they answer 429
 		// and a client waits. As 422 they told every client to give up, which
 		// is what lost files from a batch that briefly crossed the bound.
-		{upload.ErrExhausted, ResourceExhausted, "upload.limit_exceeded"},
-		{upload.ErrCacheFull, ResourceExhausted, "upload.cache_full"},
-		{upload.ErrNoCache, SubsystemUnavailable, "upload.cache_unavailable"},
+		{uploads.ErrExhausted, ResourceExhausted, "upload.limit_exceeded"},
+		{uploads.ErrCacheFull, ResourceExhausted, "upload.cache_full"},
+		{uploads.ErrNoCache, SubsystemUnavailable, "upload.cache_unavailable"},
 	}
 }
 

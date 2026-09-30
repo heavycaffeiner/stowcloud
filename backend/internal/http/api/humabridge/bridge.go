@@ -10,9 +10,9 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humagin"
 	"github.com/gin-gonic/gin"
-	upload "github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/uploads"
 	"strconv"
 )
 
@@ -52,7 +52,7 @@ func Refusal(class apierr.Classified) error {
 
 func Failure(ctx context.Context, err error) error {
 	c := Gin(ctx)
-	var full *upload.CacheFullError
+	var full *uploads.CacheFullError
 	if errors.As(err, &full) && full.RetryAfterSeconds > 0 {
 		c.Header("Retry-After", strconv.Itoa(full.RetryAfterSeconds))
 	}

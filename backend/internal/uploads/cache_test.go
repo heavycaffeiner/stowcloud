@@ -1,6 +1,6 @@
 //go:build linux
 
-package upload
+package uploads
 
 import (
 	"bytes"
@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads/limits"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/uploads/limits"
 )
 
 // cached is a fixture whose spool exists and is switched on.

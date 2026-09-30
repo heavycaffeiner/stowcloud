@@ -1,6 +1,6 @@
 //go:build linux
 
-package upload
+package uploads
 
 import (
 	"bytes"
@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads/limits"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/uploads/limits"
 )
 
 // An expired session takes its part file with it.

@@ -10,7 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/uploads"
 )
 
 // A refusal that knows how long to wait says so on the wire.
@@ -24,7 +24,7 @@ func TestASpoolRefusalCarriesItsOwnDelay(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	app := gin.New()
 	app.GET("/full", func(c *gin.Context) {
-		Fail(c, &upload.CacheFullError{RetryAfterSeconds: 7})
+		Fail(c, &uploads.CacheFullError{RetryAfterSeconds: 7})
 	})
 	app.GET("/other", func(c *gin.Context) {
 		Fail(c, errors.New("something else"))

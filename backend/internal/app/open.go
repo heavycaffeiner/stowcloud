@@ -38,7 +38,6 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/search/svc"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/smb/publish"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files/backends"
 	filehttp "github.com/heavycaffeiner/stowcloud/backend/internal/http/api/files"
@@ -57,6 +56,7 @@ import (
 	runtimeevents "github.com/heavycaffeiner/stowcloud/backend/internal/runtime/events"
 	runtimerestart "github.com/heavycaffeiner/stowcloud/backend/internal/runtime/restart"
 	runtimetasks "github.com/heavycaffeiner/stowcloud/backend/internal/runtime/tasks"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/uploads"
 )
 
 // The request rate the limiter holds between construction and the settings
@@ -151,7 +151,7 @@ type Engine struct {
 	lock *instance.Lock
 	// Upload is the resumable transfer engine. May be nil: a deployment
 	// without one serves everything except a resumable upload.
-	Upload *upload.Engine
+	Upload *uploads.Engine
 
 	// Logs is the durable log store, which the admin dashboard queries. Nil
 	// is a deployment whose data directory could not take it, which costs
@@ -584,7 +584,7 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	// The upload engine is last because it needs the core it uploads into.
 	// Its absence is a degradation rather than a failure: a deployment whose
 	// spool directory is unusable still serves everything else.
-	up, uerr := upload.New(ctx, coreSvc, e.State, upload.Options{
+	up, uerr := uploads.New(ctx, coreSvc, e.State, uploads.Options{
 		Clock: clk, Logger: logger, CacheDir: filepath.Join(opt.DataDir, "uploads"),
 	})
 	if uerr != nil {

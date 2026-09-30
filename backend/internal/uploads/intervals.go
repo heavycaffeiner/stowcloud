@@ -1,9 +1,9 @@
 //go:build linux
 
-package upload
+package uploads
 
 import (
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads/limits"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/uploads/limits"
 	"github.com/stowcloud/transfer"
 )
 

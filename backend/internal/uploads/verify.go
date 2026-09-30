@@ -1,6 +1,6 @@
 //go:build linux
 
-package upload
+package uploads
 
 import (
 	"crypto/subtle"

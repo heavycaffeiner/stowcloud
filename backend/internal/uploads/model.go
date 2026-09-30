@@ -4,7 +4,7 @@
 // Package upload is the resumable-upload state machine every protocol drives.
 // The TUS surface, the chunked compatibility surface and the native API all
 // create sessions, append bytes and finalize through one engine.
-package upload
+package uploads
 
 import (
 	"encoding/binary"

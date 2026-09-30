@@ -10,10 +10,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/uploads"
 )
 
 // Owner reads the principal already selected by the middleware chain.
@@ -28,7 +28,7 @@ func Owner(c *gin.Context) (files.UserID, bool) {
 
 // Fail sends a classified service error and preserves retry advice.
 func Fail(c *gin.Context, err error) {
-	var full *upload.CacheFullError
+	var full *uploads.CacheFullError
 	if errors.As(err, &full) && full.RetryAfterSeconds > 0 {
 		c.Header("Retry-After", strconv.Itoa(full.RetryAfterSeconds))
 	}

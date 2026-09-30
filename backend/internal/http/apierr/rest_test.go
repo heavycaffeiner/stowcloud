@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/uploads"
 )
 
 // The existence rule, which is the reason this package has a visibility input.
@@ -162,9 +162,9 @@ func TestATemporaryBoundAsksTheCallerToWaitAndAPermanentOneDoesNot(t *testing.T)
 		err  error
 		want int
 	}{
-		{"sessions in flight", &upload.ExhaustedError{Limit: "sessions"}, http.StatusTooManyRequests},
-		{"the spool at its budget", &upload.CacheFullError{RetryAfterSeconds: 3}, http.StatusTooManyRequests},
-		{"a session fragmented past its run cap", upload.ErrFragmented, http.StatusUnprocessableEntity},
+		{"sessions in flight", &uploads.ExhaustedError{Limit: "sessions"}, http.StatusTooManyRequests},
+		{"the spool at its budget", &uploads.CacheFullError{RetryAfterSeconds: 3}, http.StatusTooManyRequests},
+		{"a session fragmented past its run cap", uploads.ErrFragmented, http.StatusUnprocessableEntity},
 	} {
 		status, body := REST(Classify(c.err, VisibilityHidden))
 		if status != c.want {

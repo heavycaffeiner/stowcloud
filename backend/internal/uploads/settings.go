@@ -1,6 +1,6 @@
 //go:build linux
 
-package upload
+package uploads
 
 import (
 	"context"
@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads/limits"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/uploads/limits"
 )
 
 // Settings holds the live chunk floor and default, the two values that can

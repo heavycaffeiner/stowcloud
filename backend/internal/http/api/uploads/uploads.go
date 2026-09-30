@@ -16,12 +16,12 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/shares/acl"
-	upload "github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/server"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/uploads"
 	"github.com/stowcloud/transfer"
 )
 
@@ -36,7 +36,7 @@ const (
 // needed by the upload transport. Upload may be nil when the spool subsystem
 // was unavailable during startup.
 type Deps struct {
-	Upload    *upload.Engine
+	Upload    *uploads.Engine
 	Core      *files.Core
 	Resolve   func(files.UserID, string, acl.Perms) (files.Resolved, error)
 	Owner     func(*gin.Context) (files.UserID, bool)
@@ -138,7 +138,7 @@ func (h *handlers) Create(c *gin.Context) {
 		h.d.Fail(c, rerr)
 		return
 	}
-	spec := upload.SessionSpec{IfMatch: c.GetHeader("If-Match"), Meta: uploadMetaOf(meta), RandomAccess: c.GetHeader(handler.ScRandomAccess) == "1"}
+	spec := uploads.SessionSpec{IfMatch: c.GetHeader("If-Match"), Meta: uploadMetaOf(meta), RandomAccess: c.GetHeader(handler.ScRandomAccess) == "1"}
 	if !length.Deferred {
 		total := length.Value
 		spec.TotalLen = &total
@@ -258,7 +258,7 @@ func (h *handlers) Patch(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-func (h *handlers) publish(c *gin.Context, engine *upload.Engine, sess upload.Session, id upload.SessionID, owner files.UserID) bool {
+func (h *handlers) publish(c *gin.Context, engine *uploads.Engine, sess uploads.Session, id uploads.SessionID, owner files.UserID) bool {
 	dest, err := h.d.Core.VpathFor(owner, sess.Share, sess.Dest.Share())
 	if err != nil {
 		h.d.Fail(c, files.ErrNotFound)
@@ -370,15 +370,15 @@ func (h *handlers) SettingsPatch(c *gin.Context) {
 	h.d.WriteJSON(c, http.StatusOK, handler.UploadSettingsView{ChunkMin: viewMin, ChunkDefault: viewDefault, CacheEnabled: engine.CacheEnabled(), CacheAvailable: engine.CacheAvailable()})
 }
 
-func (h *handlers) engine(c *gin.Context) (*upload.Engine, bool) {
+func (h *handlers) engine(c *gin.Context) (*uploads.Engine, bool) {
 	_ = c
 	return h.d.Upload, h.d.Upload != nil
 }
 
-func sessionIDOf(c *gin.Context) (upload.SessionID, bool) {
+func sessionIDOf(c *gin.Context) (uploads.SessionID, bool) {
 	id, err := transfer.ParseSessionID(c.Param("id"))
 	if err != nil {
-		return upload.SessionID{}, false
+		return uploads.SessionID{}, false
 	}
 	return id, true
 }
@@ -392,26 +392,26 @@ func (h *handlers) refuseTus(c *gin.Context, err error) {
 }
 
 func (h *handlers) failUpload(c *gin.Context, err error) {
-	if errors.Is(err, upload.ErrChecksum) {
+	if errors.Is(err, uploads.ErrChecksum) {
 		h.d.WriteJSON(c, handler.StatusChecksumMismatch, map[string]string{"error": "checksum_mismatch"})
 		return
 	}
 	h.d.Fail(c, err)
 }
 
-func chunkChecksum(header string) (*upload.Checksum, error) {
+func chunkChecksum(header string) (*uploads.Checksum, error) {
 	if header == "" {
 		return nil, nil
 	}
-	sum, err := upload.ParseChecksum(header)
+	sum, err := uploads.ParseChecksum(header)
 	if err != nil {
 		return nil, err
 	}
 	return &sum, nil
 }
 
-func uploadMetaOf(meta map[string]string) upload.Meta {
-	out := upload.Meta{Filename: meta["filename"], RelativePath: meta["relativePath"], Mime: meta["filetype"]}
+func uploadMetaOf(meta map[string]string) uploads.Meta {
+	out := uploads.Meta{Filename: meta["filename"], RelativePath: meta["relativePath"], Mime: meta["filetype"]}
 	if raw := meta["mtime"]; raw != "" {
 		if ns, err := strconv.ParseInt(raw, 10, 64); err == nil {
 			out.MtimeNs = &ns

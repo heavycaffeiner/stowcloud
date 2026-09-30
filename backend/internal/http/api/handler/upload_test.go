@@ -6,14 +6,14 @@ package handler
 import (
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/uploads"
 )
 
 // The two terminal answers agree, name by name. The service reads the stored
 // number and this tier reads the name, so two lists exist and this is what
 // keeps them one.
 func TestBothUploadTerminalChecksAgree(t *testing.T) {
-	published := upload.StateNames()
+	published := uploads.StateNames()
 	if len(published) < 5 {
 		t.Fatalf("the service publishes only %d names: %v", len(published), published)
 	}

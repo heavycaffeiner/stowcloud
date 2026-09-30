@@ -1,6 +1,6 @@
 //go:build linux
 
-package upload
+package uploads
 
 import (
 	"context"
@@ -11,11 +11,11 @@ import (
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads/limits"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/uploads/limits"
 	"github.com/stowcloud/transfer"
 )
 

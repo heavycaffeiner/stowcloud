@@ -1,6 +1,6 @@
 //go:build linux
 
-package upload
+package uploads
 
 import (
 	"context"
@@ -8,9 +8,9 @@ import (
 	"fmt"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/uploads/limits"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	protocolimits "github.com/heavycaffeiner/stowcloud/backend/internal/platform/protocol/limits"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/uploads/limits"
 	"github.com/stowcloud/transfer"
 )
 
