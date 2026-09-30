@@ -288,8 +288,7 @@ globalStyle('*, *::before, *::after', {
       scrollBehavior: 'auto !important' as 'auto',
       animationDuration: '.01ms !important',
       animationIterationCount: '1 !important',
-      transitionDuration: '.01ms !important',
-      transform: 'none !important'
+      transitionDuration: '.01ms !important'
     }
   }
 })
