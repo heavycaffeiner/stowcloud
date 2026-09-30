@@ -1,6 +1,6 @@
 //go:build embed_ui
 
-package spa
+package web
 
 import (
 	"crypto/sha256"

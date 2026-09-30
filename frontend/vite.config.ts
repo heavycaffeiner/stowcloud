@@ -25,7 +25,7 @@ export default defineConfig({
     conditions: ['module', 'browser', 'production', 'import', 'default']
   },
   build: {
-    outDir: '../backend/internal/http/spa/build',
+    outDir: '../backend/internal/web/build',
     emptyOutDir: true,
     manifest: true,
     chunkSizeWarningLimit: 1024,

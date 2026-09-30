@@ -6,7 +6,7 @@
 // application: every real route matches before the fallback does, and the
 // fallback refuses the prefixes that own their own protocols, so an unknown
 // API path can never come back as an HTML document.
-package spa
+package web
 
 import (
 	"fmt"

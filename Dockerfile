@@ -98,8 +98,8 @@ COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml 
 RUN corepack enable && pnpm install --frozen-lockfile
 COPY frontend/ ./
 RUN pnpm build \
-    && test -f ../backend/internal/http/spa/build/index.html \
-    && test -d ../backend/internal/http/spa/build/app
+    && test -f ../backend/internal/web/build/index.html \
+    && test -d ../backend/internal/web/build/app
 
 # ----------------------------------------------------------------------------
 # Stage: builder
@@ -114,7 +114,7 @@ COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 
 COPY backend/ ./
-COPY --from=frontend /src/backend/internal/http/spa/build ./internal/http/spa/build
+COPY --from=frontend /src/backend/internal/web/build ./internal/web/build
 
 # The tag is what turns the embed on. A build without it links a server that
 # serves no frontend, which is the correct behaviour for a build that has no

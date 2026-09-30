@@ -7,8 +7,8 @@ venv/
 # path outside its own package directory, and refuses a symlink out of one.
 # Contents are ignored but the directory itself is kept (a .gitkeep), because
 # //go:embed all:build needs the directory to exist at compile time.
-backend/internal/http/spa/build/*
-!backend/internal/http/spa/build/.gitkeep
+backend/internal/web/build/*
+!backend/internal/web/build/.gitkeep
 # Where it used to build, kept ignored so an old checkout does not commit one.
 frontend/build
 /checks/consumers/web/dist/

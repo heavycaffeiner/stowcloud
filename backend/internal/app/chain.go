@@ -12,9 +12,9 @@ import (
 	"net/netip"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/spa"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/web"
 )
 
 // everyPermission is the full mask a session carries.
@@ -40,7 +40,7 @@ func (e *Engine) deps() middleware.Deps {
 		// The interface's own inline bootstrap, admitted by hash. Empty in a
 		// build without the bundle, which keeps the policy as strict as a
 		// server with no pages to serve should be.
-		ScriptHashes: spa.InlineScriptHashList(),
+		ScriptHashes: web.InlineScriptHashList(),
 	}
 }
 

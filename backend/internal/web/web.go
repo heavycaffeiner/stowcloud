@@ -1,6 +1,6 @@
 //go:build linux
 
-// Package spa answers browser requests for the built interface.
+// Package web answers browser requests for the built interface.
 //
 // The interface's compiled output rides inside the binary when the embed_ui
 // tag is set, and without the tag the server starts normally and simply has
@@ -10,7 +10,7 @@
 // Nothing a user uploaded is ever served here. Uploads are reachable only on
 // the content origin through capability URLs, which is what keeps a stored
 // HTML or SVG file from running inside a page that holds session cookies.
-package spa
+package web
 
 import "net/http"
 

@@ -33,10 +33,10 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/publiclinks"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/server"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/spa"
 	featureoidc "github.com/heavycaffeiner/stowcloud/backend/internal/oidc"
 	runtimetasks "github.com/heavycaffeiner/stowcloud/backend/internal/runtime/tasks"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/smb/agent"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/web"
 )
 
 // Mount assembles the native Gin router over a constructed engine.
@@ -58,7 +58,7 @@ func (e *Engine) Mount(router *gin.Engine) error {
 	dav.Mount(router, dav.Deps{Core: e.Core, State: e.State, Locks: e.davLocks, Clock: e.clk(), Logger: e.log(), InfinityEntries: 10_000})
 	e.publicLinks.Mount(router)
 	e.mountNCTagged(router)
-	if err := spa.Install(router); err != nil {
+	if err := web.Install(router); err != nil {
 		return err
 	}
 	e.startTasks(periodic)
@@ -85,7 +85,7 @@ func (e *Engine) mountNative(router *gin.Engine) error {
 		BeforeAnnounce: func(app *gin.Engine) {
 			emergency.Mount(app, emergency.Deps{
 				Auth: emergency.NewAuthenticator(e.Auth, e.clk().Nanos), State: e.State, Settings: e.Settings,
-				Page: spa.Page(), DataDir: e.dataDir, Reason: func() string { return "" },
+				Page: web.Page(), DataDir: e.dataDir, Reason: func() string { return "" },
 				ClientAddr: emergency.ClientAddr(e.trustedProxies), TrustedProxies: e.trustedProxies,
 			})
 		},
@@ -107,7 +107,7 @@ func (e *Engine) newPublicLinks() *publiclinks.Public {
 			return e.Auth.Audit(ctx, nil, event, target, ip, ua, ok)
 		},
 		Logger:          e.log(),
-		Frontend:        spa.Page(),
+		Frontend:        web.Page(),
 		Fail:            handler.Fail,
 		Refuse:          handler.Refuse,
 		WriteJSON:       func(c *gin.Context, status int, v any) { c.JSON(status, v) },

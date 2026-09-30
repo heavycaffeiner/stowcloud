@@ -1,6 +1,6 @@
 node_modules
 build
-../backend/internal/http/spa/build
+../backend/internal/web/build
 coverage
 test-results
 playwright-report

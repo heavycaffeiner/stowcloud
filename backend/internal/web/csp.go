@@ -1,6 +1,6 @@
 //go:build linux
 
-package spa
+package web
 
 // The CSP sources for the bundle's own inline scripts.
 //

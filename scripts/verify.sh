@@ -628,7 +628,7 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   # to compile, so there is no stale-bundle hazard to clean around. The bundle
   # lives inside the embedding package because //go:embed cannot name a path
   # outside it, and refuses a symlink that points out.
-  if [ -f backend/internal/http/spa/build/index.html ]; then
+  if [ -f backend/internal/web/build/index.html ]; then
     # One bundle build for the two checks below, which each used to run their
     # own. `SC_BUNDLE_FRESH` tells them the tree's bundle is the current
     # build, so they serve it instead of rebuilding it; CI sets it too,
