@@ -29,6 +29,17 @@ interface SelectElement extends HTMLElement {
   updateComplete?: Promise<unknown>
 }
 
+// The host's aria-label does not reach the input mdui nests two shadow roots deep, so name that input directly.
+async function syncSelectAria(element: SelectElement, label: string | undefined): Promise<void> {
+  await element.updateComplete
+  const field = element.shadowRoot?.querySelector<SelectElement>('[part="text-field"]')
+  await field?.updateComplete
+  const control = field?.shadowRoot?.querySelector<HTMLElement>('[part="input"]')
+  if (!control) return
+  if (label) control.setAttribute('aria-label', label)
+  else control.removeAttribute('aria-label')
+}
+
 export function Select({
   value = '',
   label,
@@ -51,6 +62,11 @@ export function Select({
       element.value = value
     }
   }, [value])
+
+  const accessibleName = ariaLabel ?? label
+  useEffect(() => {
+    if (ref.current) void syncSelectAria(ref.current, accessibleName)
+  }, [accessibleName])
 
   useEffect(() => {
     const element = ref.current
@@ -76,7 +92,7 @@ export function Select({
         disabled={disabled}
         required={required}
         data-testid={testid}
-        aria-label={ariaLabel ?? label}
+        aria-label={accessibleName}
         aria-describedby={ariaDescribedby}
         style={{ width: '100%' }}
         onKeyDown={(event) => {

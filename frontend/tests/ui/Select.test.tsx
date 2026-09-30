@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render } from '../../src/test/test-utils'
+import { fireEvent, render, waitFor } from '../../src/test/test-utils'
 import { Dialog } from '../../src/ui/Dialog'
 import { Select } from '../../src/ui/Select'
 
@@ -26,5 +26,14 @@ describe('Select', () => {
 
     expect(onClose).not.toHaveBeenCalled()
     expect((document.querySelector('mdui-dialog') as HTMLElement & { open: boolean }).open).toBe(true)
+  })
+
+  it('names the input nested inside the mdui shadow roots', async () => {
+    render(<Select label="Share" value="home" options={[{ value: 'home', text: 'Home' }]} />)
+
+    await waitFor(() => {
+      const field = document.querySelector('mdui-select')?.shadowRoot?.querySelector('[part="text-field"]')
+      expect(field?.shadowRoot?.querySelector('[part="input"]')?.getAttribute('aria-label')).toBe('Share')
+    })
   })
 })

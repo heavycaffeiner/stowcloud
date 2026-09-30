@@ -195,6 +195,8 @@ export const CodeEditor = forwardRef(function CodeEditor(
               languageMod.syntaxHighlighting(syntaxTheme),
               EditorView.editable.of(!readOnly),
               EditorState.readOnly.of(readOnly),
+              // The content element is the textbox, and it has no name of its own.
+              EditorView.contentAttributes.of({ 'aria-label': filename }),
               byteLimitFilter,
               updateListener,
               EditorView.theme({

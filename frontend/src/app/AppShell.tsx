@@ -234,6 +234,7 @@ export function AppShell() {
                 type="button"
                 className="sc-shell-header-menu-btn sc-icon-button"
                 aria-label={t('nav.toggle_sidebar')}
+                aria-expanded={!sidebarCollapsed}
                 onClick={() => ui.toggleSidebar()}
               >
                 <Icon name="menu" size={22} />

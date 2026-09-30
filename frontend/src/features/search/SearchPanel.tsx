@@ -81,7 +81,7 @@ export function SearchPanel({ scope = '', autoFocus = false, onNavigated, traili
       </form>
 
       <div className="sc-search-filter-bar">
-        <div className="sc-search-categories" role="tablist" aria-label={t('search.kind_label')} ref={categoriesRef}>
+        <div className="sc-search-categories" role="group" aria-label={t('search.kind_label')} ref={categoriesRef}>
           {CATEGORIES.map((cat) => {
             const isSelected = controller.activeCategory === cat.id
             return (
