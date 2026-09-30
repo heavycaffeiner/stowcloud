@@ -1,5 +1,6 @@
-import { style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { fallbackVar, style } from '@vanilla-extract/css'
+import * as appShellStyles from '../../AppShell.css'
+import { trayStackTop, vars } from '../../../ui/theme.css'
 
 export const root = style({
   display: 'flex',
@@ -182,4 +183,13 @@ export const error = style({
   margin: '0',
   padding: '24px',
   color: `rgb(${vars.color.error})`
+})
+
+// mdui sets the snackbar's bottom inline, so lifting it above the compact nav bar needs !important.
+export const snackbar = style({
+  selectors: {
+    [`${appShellStyles.compact} &`]: {
+      bottom: `max(calc(16px + ${vars.layout.navBarHeight} + env(safe-area-inset-bottom, 0px)), ${fallbackVar(trayStackTop, '0px')}) !important`
+    }
+  }
 })

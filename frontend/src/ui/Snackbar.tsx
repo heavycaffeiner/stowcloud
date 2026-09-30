@@ -1,15 +1,17 @@
 import 'mdui/components/snackbar.js'
 import { useEffect, useRef } from 'react'
 import * as styles from './Snackbar.css'
+import { cx } from './cx'
 
 export interface SnackbarProps {
   message: string | null
   actionLabel?: string
   onAction?: () => void
   onDismiss?: () => void
+  className?: string
 }
 
-export function Snackbar({ message, actionLabel, onAction, onDismiss }: SnackbarProps) {
+export function Snackbar({ message, actionLabel, onAction, onDismiss, className }: SnackbarProps) {
   const ref = useRef<HTMLElement | null>(null)
   useEffect(() => {
     const element = ref.current
@@ -25,7 +27,7 @@ export function Snackbar({ message, actionLabel, onAction, onDismiss }: Snackbar
   }, [onAction, onDismiss])
   if (!message) return null
   return (
-    <mdui-snackbar ref={ref} className={styles.root} open action={actionLabel} closeable>
+    <mdui-snackbar ref={ref} className={cx(styles.root, className)} open action={actionLabel} closeable>
       {message}
     </mdui-snackbar>
   )

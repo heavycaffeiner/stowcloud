@@ -254,7 +254,7 @@ export function EditPage() {
       >
         <p>{t('editor.unsaved_changes_prompt', { name: filename })}</p>
       </Dialog>
-      <Snackbar message={snackbar} onDismiss={() => actions.setSnackbar(null)} />
+      <Snackbar className={styles.snackbar} message={snackbar} onDismiss={() => actions.setSnackbar(null)} />
     </main>
   )
 }
