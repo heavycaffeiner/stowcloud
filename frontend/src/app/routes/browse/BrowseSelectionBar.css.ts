@@ -1,6 +1,11 @@
-import { fallbackVar, style } from '@vanilla-extract/css'
+import { fallbackVar, keyframes, style } from '@vanilla-extract/css'
 import * as appShellStyles from '../../AppShell.css'
 import { trayStackTop, vars } from '../../../ui/theme.css'
+
+const barEnter = keyframes({
+  from: { opacity: '0', transform: 'translate(-50%, 16px) scale(0.96)' },
+  to: { opacity: '1', transform: 'translate(-50%, 0) scale(1)' }
+})
 
 export const closeBtn = style({
   selectors: {
@@ -63,6 +68,7 @@ export const bar = style({
   background: vars.surface.overlay,
   border: `1px solid ${vars.outline.variant}`,
   boxShadow: '0 8px 32px rgba(0, 0, 0, 0.32)',
+  animation: `${barEnter} 180ms cubic-bezier(0.2, 0, 0, 1)`,
   selectors: {
     [`${appShellStyles.compact} &`]: {
       bottom: `max(calc(16px + ${vars.layout.navBarHeight} + env(safe-area-inset-bottom, 0px)), ${fallbackVar(trayStackTop, '0px')})`
