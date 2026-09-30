@@ -12,7 +12,7 @@ package admin
 import (
 	"strconv"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/check"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/config"
 )
 
 // SetupStateView is what an unauthenticated caller may learn about a server
@@ -70,9 +70,9 @@ type SetupOutcomeView struct {
 // The id is rendered decimal rather than numeric because ids run past what a
 // double holds exactly, and a client that rounded one would name a different
 // account.
-func SetupOutcomeOf(id int64, name string, findings []check.Finding) SetupOutcomeView {
+func SetupOutcomeOf(id int64, name string, findings []config.Finding) SetupOutcomeView {
 	return SetupOutcomeView{
 		User:     SetupAccountView{ID: strconv.FormatInt(id, 10), Name: name},
-		Warnings: FindingsOf(check.Advisory(findings)),
+		Warnings: FindingsOf(config.Advisory(findings)),
 	}
 }

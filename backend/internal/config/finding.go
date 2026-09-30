@@ -2,7 +2,7 @@
 // renderer this package calls into exist.
 //go:build linux
 
-// Package check probes a proposed settings change by trying it, rather than by
+// The checker probes a proposed settings change by trying it, rather than by
 // describing it.
 //
 // Declared ranges answer only what a number may be. They cannot answer whether
@@ -11,14 +11,15 @@
 // those needs the value tried against the running system, which is what the
 // probes here do.
 //
-// Separated into a package because the settings screen, the first-run form and
-// the emergency editor all save the same document. Sharing one implementation
-// is what stops them accepting different things.
+// The settings screen, the first-run form and the emergency editor all save the
+// same document. Sharing one checker is what stops them accepting different
+// things.
 //
 // Nothing here chooses a transport. A finding carries a reason key and its
 // arguments, the presentation layer maps the refusal to a status exactly once
-// in its own error table, and this package imports nothing presentation.
-package check
+// in its own error table, and nothing here imports presentation.
+
+package config
 
 // Finding is a single observation a probe made about a proposed value.
 type Finding struct {

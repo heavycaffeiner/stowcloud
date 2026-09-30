@@ -1,6 +1,6 @@
 //go:build linux
 
-package runtimecfg
+package config
 
 import (
 	"context"

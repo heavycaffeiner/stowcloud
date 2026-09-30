@@ -9,13 +9,13 @@ import (
 	"path/filepath"
 
 	securitylinux "github.com/heavycaffeiner/hanami/security/linux"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/runtimecfg"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/config"
 )
 
 // BuildPolicy builds the server's process policy from one startup configuration
 // snapshot. Parent directories and discovered mounts are granted writable so
 // shares can be added without a restart, which weakens per-share confinement.
-func BuildPolicy(values runtimecfg.Values, dataDir string, roots, shareHosts, exactPaths []string) securitylinux.Policy {
+func BuildPolicy(values config.Values, dataDir string, roots, shareHosts, exactPaths []string) securitylinux.Policy {
 	mode := policyMode(values.Hardening)
 	policy := securitylinux.Policy{
 		Mode:       mode,

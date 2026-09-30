@@ -14,7 +14,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/runtimecfg"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/config"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/dbfile"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/instance"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
@@ -31,7 +31,7 @@ const DefaultListen = "127.0.0.1:8081"
 // Config is the complete result of the startup read.
 type Config struct {
 	DataDir    string
-	Values     runtimecfg.Values
+	Values     config.Values
 	Roots      []string
 	ShareHosts []string
 	ExactPaths []string
@@ -111,14 +111,14 @@ func Load(ctx context.Context, options Options) (Config, error) {
 // bootSettings reads persisted settings and every path a registered share
 // makes the process open. The probe is closed before runtime construction.
 func bootSettings(ctx context.Context, dataDir string, log *slog.Logger) (
-	values runtimecfg.Values, shareHosts, exactPaths []string, err error,
+	values config.Values, shareHosts, exactPaths []string, err error,
 ) {
 	stateFile, err := dbfile.Open(ctx, state.Spec(filepath.Join(dataDir, "state.db")))
 	if err != nil {
 		if _, statErr := os.Stat(filepath.Join(dataDir, "state.db")); errors.Is(statErr, os.ErrNotExist) {
-			return runtimecfg.Defaults(), nil, nil, nil
+			return config.Defaults(), nil, nil, nil
 		}
-		return runtimecfg.Values{}, nil, nil, fmt.Errorf("opening the state database: %w", err)
+		return config.Values{}, nil, nil, fmt.Errorf("opening the state database: %w", err)
 	}
 	defer func() {
 		if closeErr := stateFile.Close(); closeErr != nil {
@@ -129,7 +129,7 @@ func bootSettings(ctx context.Context, dataDir string, log *slog.Logger) (
 		}
 	}()
 	st := state.New(stateFile)
-	values = runtimecfg.Load(ctx, st, runtimecfg.Defaults(), log)
+	values = config.Load(ctx, st, config.Defaults(), log)
 	rows, err := st.ListShares(ctx)
 	if err != nil {
 		return values, nil, nil, fmt.Errorf("reading registered shares: %w", err)

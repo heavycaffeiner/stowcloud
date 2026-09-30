@@ -23,8 +23,8 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/admin"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/logbook"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/runtimecfg"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/config"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/dav"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/cache"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/dbfile"
@@ -495,7 +495,7 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	// cache directory that cannot be created, leaves a deployment serving
 	// every file and no thumbnail of one.
 	e.previewWorker = opt.PreviewWorker
-	values := runtimecfg.Load(ctx, e.State, runtimecfg.Defaults(), logger)
+	values := config.Load(ctx, e.State, config.Defaults(), logger)
 	thumbsDir := filepath.Join(opt.DataDir, "thumbs")
 	if values.ThumbnailDir != "" {
 		thumbsDir = values.ThumbnailDir
@@ -520,7 +520,7 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 		OpenIndex: e.searchController.OpenIndex, SetSMBTOTPPolicy: e.Auth.SetSMBTOTPPolicy,
 		ApplyHomes: e.applyHomes, ApplyThumbnails: e.applyThumbnailSettings,
 		SetRateLimits: e.limiter.SetLimits,
-		BuildOIDC: func(ctx context.Context, cfg *runtimecfg.OIDC) *oidc.Client {
+		BuildOIDC: func(ctx context.Context, cfg *config.OIDC) *oidc.Client {
 			return oidc.BuildFromSettings(ctx, oidc.Config{
 				Issuer: cfg.Issuer, ClientID: cfg.ClientID, Scopes: cfg.Scopes,
 				AllowPrivateEndpoints: cfg.AllowPrivateEndpoints, CACertFile: cfg.CACertFile,
@@ -752,7 +752,7 @@ func (e *Engine) Close() (err error) {
 // A failure is logged rather than returned. Homes are one surface among
 // several, and a homes root that cannot be created must not stop a deployment
 // from serving the shares it already had.
-func (e *Engine) applyHomes(ctx context.Context, values runtimecfg.Values) {
+func (e *Engine) applyHomes(ctx context.Context, values config.Values) {
 	if !values.HomesEnabled || values.HomesRoot == "" {
 		e.Core.DisableHomes()
 		return
@@ -762,7 +762,7 @@ func (e *Engine) applyHomes(ctx context.Context, values runtimecfg.Values) {
 			"root", values.HomesRoot, "error", err)
 	}
 }
-func (e *Engine) applyThumbnailSettings(_ context.Context, values runtimecfg.Values) {
+func (e *Engine) applyThumbnailSettings(_ context.Context, values config.Values) {
 	e.thumbnailMu.Lock()
 	current := e.Preview
 	if values.ThumbnailEnabled == e.thumbnailOn && values.ThumbnailDir == e.thumbnailDir && current != nil {

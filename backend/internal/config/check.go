@@ -1,6 +1,6 @@
 //go:build linux
 
-package check
+package config
 
 import (
 	"errors"
@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/runtimecfg"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/system/jail"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/smb"
 )
@@ -88,11 +87,11 @@ func Section(in Input) []Finding {
 // checkBounds runs the numeric bounds first, so a value that cannot be stored
 // is reported beside the ones that can.
 //
-// The bounds come from runtimecfg's own table, so the screen, the checker and
+// The bounds come from the loader's own table, so the screen, the checker and
 // the loader cannot disagree about what is acceptable.
 func checkBounds(in Input) []Finding {
 	var out []Finding
-	bounds := runtimecfg.Bounds()
+	bounds := Bounds()
 
 	for key, raw := range in.Body {
 		b, governed := bounds[in.Section+"."+key]
@@ -104,7 +103,7 @@ func checkBounds(in Input) []Finding {
 			out = append(out, blocking(in.Section, key, keyMustBeAtLeastOne, "field", key))
 			continue
 		}
-		if err := runtimecfg.Check(key, int64(n), b); err != nil {
+		if err := Check(key, int64(n), b); err != nil {
 			out = append(out, blocking(in.Section, key, keyOutOfRange,
 				"field", key,
 				"min", strconv.FormatInt(b.Min, 10),
@@ -240,7 +239,7 @@ func checkHostRoles(in Input, appHosts, contentHosts []string) []Finding {
 		{"content_hosts", contentHosts},
 	} {
 		for _, h := range role.hosts {
-			if err := runtimecfg.CheckHost(h); err != nil {
+			if err := CheckHost(h); err != nil {
 				out = append(out, blocking(in.Section, role.field, keyInvalidHost,
 					"value", h, "field", role.field))
 				continue
@@ -269,13 +268,13 @@ func checkOrigins(in Input, appHosts []string) []Finding {
 	var out []Finding
 	if origins, present, err := stringList(in.Body, "allowed_origins"); err == nil && present {
 		for _, o := range origins {
-			if oerr := runtimecfg.CheckOrigin(o); oerr != nil {
+			if oerr := CheckOrigin(o); oerr != nil {
 				out = append(out, blocking(in.Section, "allowed_origins", keyInvalidOrigin, "value", o))
 			}
 		}
 	}
 	if v, ok := in.Body["compat_canonical_url"].(string); ok && v != "" {
-		if err := runtimecfg.CheckCanonicalURL(v, appHosts); err != nil {
+		if err := CheckCanonicalURL(v, appHosts); err != nil {
 			out = append(out, blocking(in.Section, "compat_canonical_url",
 				keyCanonicalNotAppHost, "value", v))
 		}
@@ -290,7 +289,7 @@ func checkBind(in Input) []Finding {
 	if !ok || v == "" {
 		return nil
 	}
-	if err := runtimecfg.CheckListen(v); err != nil {
+	if err := CheckListen(v); err != nil {
 		return []Finding{blocking(in.Section, "bind", keyInvalidBindAddress, "value", v)}
 	}
 	return nil
@@ -326,7 +325,7 @@ func checkProxies(in Input) []Finding {
 	var out []Finding
 	for _, c := range cidrs {
 		entry := strings.TrimSpace(c)
-		if cerr := runtimecfg.CheckCIDR(entry); cerr != nil {
+		if cerr := CheckCIDR(entry); cerr != nil {
 			out = append(out, blocking(in.Section, "trusted_proxies", keyInvalidCIDR, "value", c))
 			continue
 		}

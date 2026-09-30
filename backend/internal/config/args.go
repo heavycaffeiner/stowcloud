@@ -1,5 +1,6 @@
-// Package args parses command-line arguments for deployment commands.
-package args
+// Command-line arguments for the deployment commands.
+
+package config
 
 import "fmt"
 

@@ -11,8 +11,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/check"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/config"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
@@ -88,10 +88,10 @@ func (h *SetupHandlers) Post(c *gin.Context) {
 	}
 
 	network := networkOf(req)
-	findings := check.Section(check.Input{
+	findings := config.Section(config.Input{
 		Section: "network", Body: network,
-		SelfHost: check.HostOnly(c.Request.Host), DataDir: h.d.DataDir,
-		Lockout: check.LockoutWarns,
+		SelfHost: config.HostOnly(c.Request.Host), DataDir: h.d.DataDir,
+		Lockout: config.LockoutWarns,
 	})
 	if Blocking(findings) {
 		c.JSON(http.StatusUnprocessableEntity, ApplyOutcomeOf(false, false, false, findings))

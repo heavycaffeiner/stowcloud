@@ -281,7 +281,7 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   # Settings saved by the client must be consumed by the runtime loader.
   run "settingscheck (a stored setting is read)" \
       ingo_host go run ./tools/settingscheck \
-        ../frontend/src/lib/api/types.ts ./internal/admin/settings/runtimecfg/load.go
+        ../frontend/src/lib/api/types.ts ./internal/config/load.go
   # And this keeps a byte-serving URL from being composed out of a path
   # again. Both routes take the row's own sealed reference; the one client
   # that joined a path itself joined it wrongly, and an account granted a

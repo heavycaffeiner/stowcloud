@@ -1422,7 +1422,7 @@ let mockUploadCacheEnabled = false
 
 // Server settings (`go/internal/httpapi/handler/settings.go`): mirrors
 // `http.ts`'s real-server surface, same convention as every other section of
-// this file. Field keys match `go/internal/runtimecfg`'s dotted paths exactly,
+// this file. Field keys match `backend/internal/config`'s dotted paths exactly,
 // since each admin settings screen groups by those literal strings regardless
 // of which backend answered them.
 

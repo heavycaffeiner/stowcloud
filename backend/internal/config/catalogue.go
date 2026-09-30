@@ -6,16 +6,15 @@
 // compiled its own copy of any of that would offer values the server refuses,
 // so this is the one description and the screen reads it.
 //
-// The list here is exactly what runtimecfg.Load reads. A field it loads and
+// The list here is exactly what Load reads. A field it loads and
 // this omits is one an operator cannot see; a field here that Load ignores is
 // a control that stores a value nothing acts on. Both failures are silent from
 // the screen's side, which is why they are declared together.
-package catalogue
+
+package config
 
 import (
 	"math"
-
-	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/runtimecfg"
 )
 
 // Source says where a field's present value came from.
@@ -95,8 +94,8 @@ type Snapshot struct {
 // stored value outside its bound is clamped at load, and showing the raw
 // stored number would tell an operator the server is running on something it
 // is not.
-func Of(values runtimecfg.Values, stored map[string]any) Snapshot {
-	bounds := runtimecfg.Bounds()
+func Of(values Values, stored map[string]any) Snapshot {
+	bounds := Bounds()
 	src := sourceLookup(stored)
 
 	intField := func(key string, value int64, restart bool) Field {
@@ -171,7 +170,7 @@ func Of(values runtimecfg.Values, stored map[string]any) Snapshot {
 		// default, so displaying the raw value would tell an operator the
 		// server rescans everything on the first change, which it does not.
 		intField("watch.hot_set_max",
-			positiveOr(int64(values.WatchHotSetMax), defaultWatchHotSet), false),
+			positiveOr(int64(values.WatchHotSetMax), DefaultWatchHotSet), false),
 		intField("watch.full_threshold",
 			positiveOr(int64(values.WatchFullThreshold), defaultWatchFullThreshold), false),
 
@@ -244,16 +243,16 @@ func Of(values runtimecfg.Values, stored map[string]any) Snapshot {
 		// unrecognised one is read as blocking: the names are the contract
 		// rather than a suggestion, so the screen offers exactly them.
 		choice("smb.totp_policy", values.SMBTOTPPolicy,
-			[]string{runtimecfg.DefaultSMBTOTPPolicy, "block"}, false),
+			[]string{DefaultSMBTOTPPolicy, "block"}, false),
 
 		// The provider is rebuilt when settings load, so these apply without a
 		// restart. The switch is what makes the rest take effect: the loader
 		// reads nothing else in this section while it is off.
 		boolean("oidc.enabled", values.OIDC != nil, false),
-		str("oidc.issuer", oidcString(values, func(o *runtimecfg.OIDC) string { return o.Issuer }), false, ""),
-		str("oidc.client_id", oidcString(values, func(o *runtimecfg.OIDC) string { return o.ClientID }), false, ""),
+		str("oidc.issuer", oidcString(values, func(o *OIDC) string { return o.Issuer }), false, ""),
+		str("oidc.client_id", oidcString(values, func(o *OIDC) string { return o.ClientID }), false, ""),
 		str("oidc.display_name", values.OIDCDisplayName, false, ""),
-		str("oidc.ca_cert_file", oidcString(values, func(o *runtimecfg.OIDC) string { return o.CACertFile }), false, ""),
+		str("oidc.ca_cert_file", oidcString(values, func(o *OIDC) string { return o.CACertFile }), false, ""),
 		list("oidc.scopes", oidcScopes(values), false, ""),
 		boolean("oidc.allow_private_endpoints",
 			values.OIDC != nil && values.OIDC.AllowPrivateEndpoints, false),
@@ -328,7 +327,7 @@ func RestartRequiredFor(section string, body map[string]any) bool {
 // above is judged by the flag written beside it rather than by a second list
 // somebody has to remember to update.
 func restartByKey() map[string]bool {
-	fields := Of(runtimecfg.Defaults(), map[string]any{}).Fields
+	fields := Of(Defaults(), map[string]any{}).Fields
 	out := make(map[string]bool, len(fields))
 	for _, f := range fields {
 		out[f.Key] = f.RestartRequired
@@ -353,7 +352,7 @@ func indexEnabled(stored map[string]any) bool {
 
 // oidcString reads one provider field, answering empty where no provider is
 // configured. A nil provider is the ordinary case, not a failure.
-func oidcString(values runtimecfg.Values, get func(*runtimecfg.OIDC) string) string {
+func oidcString(values Values, get func(*OIDC) string) string {
 	if values.OIDC == nil {
 		return ""
 	}
@@ -362,20 +361,17 @@ func oidcString(values runtimecfg.Values, get func(*runtimecfg.OIDC) string) str
 
 // oidcScopes reads the scope list, answering nil where no provider is
 // configured. A nil provider is the ordinary case, not a failure.
-func oidcScopes(values runtimecfg.Values) []string {
+func oidcScopes(values Values) []string {
 	if values.OIDC == nil {
 		return nil
 	}
 	return values.OIDC.Scopes
 }
 
-// The watcher's own fallbacks, for the two fields it substitutes when they
-// arrive unset. Named here so the screen reports what the watcher will use
-// rather than the zero that stands for "nothing chosen".
-const (
-	defaultWatchHotSet        = 4096
-	defaultWatchFullThreshold = 50_000
-)
+// The watcher's full-scan fallback, substituted when the field arrives unset.
+// Named so the screen reports what the watcher will use rather than the zero
+// that stands for "nothing chosen".
+const defaultWatchFullThreshold = 50_000
 
 // byteCount narrows a stored size for display. Saturating rather than
 // wrapping: a size past the signed range is not one any disk holds, and a

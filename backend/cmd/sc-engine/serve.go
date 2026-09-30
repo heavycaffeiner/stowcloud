@@ -16,7 +16,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/bootstrap/args"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/config"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server"
 )
 
@@ -26,7 +26,7 @@ import (
 //
 //	serve --data-dir DIR [--addr HOST:PORT] [--plain]
 func runServeCmd(argv []string) int {
-	parsed, err := args.ParseServeArgs(argv)
+	parsed, err := config.ParseServeArgs(argv)
 	if err != nil {
 		log.New(os.Stderr, "", 0).Printf("sc-engine serve: %v\n", err)
 		return 2
@@ -47,7 +47,7 @@ const healthExitNoAnswer = int(server.HealthExitUnhealthy)
 // material a healthcheck cannot account for.
 func runHealthcheck(argv []string) int {
 	errOut := log.New(os.Stderr, "", 0)
-	dataDir := args.DataDir(argv)
+	dataDir := config.DataDir(argv)
 
 	// Where to dial and what name to ask under. The settings live in a
 	// database the running server holds, so this reads the snapshot that

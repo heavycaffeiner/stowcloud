@@ -33,9 +33,8 @@ import (
 	"net/netip"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/check"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/runtimecfg"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/config"
 	netzone "github.com/heavycaffeiner/stowcloud/backend/internal/platform/network/zone"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
@@ -330,7 +329,7 @@ func readSettings(d Deps) http.HandlerFunc {
 		if oidc, ok := doc["oidc"].(map[string]any); ok {
 			delete(oidc, "client_secret")
 		}
-		listen := runtimecfg.DefaultListen
+		listen := config.DefaultListen
 		appHosts := []string{}
 		if net, ok := doc["network"].(map[string]any); ok {
 			if b, ok := net["bind"].(string); ok && b != "" {
@@ -349,7 +348,7 @@ func readSettings(d Deps) http.HandlerFunc {
 			}
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"stored": doc, "sections": check.Sections(), "listen": listen, "app_hosts": appHosts,
+			"stored": doc, "sections": config.Sections(), "listen": listen, "app_hosts": appHosts,
 		})
 	}
 }
@@ -360,7 +359,7 @@ func writeSettings(d Deps) http.HandlerFunc {
 			return
 		}
 		section := r.PathValue("section")
-		if !check.Known(section) {
+		if !config.Known(section) {
 			refuse(w, http.StatusNotFound, "not_found", "no such settings section")
 			return
 		}
@@ -382,13 +381,13 @@ func writeSettings(d Deps) http.HandlerFunc {
 				delete(body, "client_secret")
 			}
 		}
-		findings := check.Section(check.Input{
+		findings := config.Section(config.Input{
 			Section: section, Body: body,
-			SelfHost: check.HostOnly(r.Host), DataDir: d.DataDir,
-			Lockout: check.LockoutWarns,
+			SelfHost: config.HostOnly(r.Host), DataDir: d.DataDir,
+			Lockout: config.LockoutWarns,
 		})
-		if check.Blocked(findings) {
-			writeFindings(w, http.StatusUnprocessableEntity, check.Blocking(findings))
+		if config.Blocked(findings) {
+			writeFindings(w, http.StatusUnprocessableEntity, config.Blocking(findings))
 			return
 		}
 		ip := clientAddr(d, r).String()
@@ -400,7 +399,7 @@ func writeSettings(d Deps) http.HandlerFunc {
 		d.Auth.Record(r.Context(), uid, EventSave, section, ip, r.UserAgent(), true)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"applied":  "restart_required",
-			"warnings": renderFindings(check.Advisory(findings)),
+			"warnings": renderFindings(config.Advisory(findings)),
 		})
 	}
 }
@@ -473,7 +472,7 @@ func refuse(w http.ResponseWriter, status int, code, msg string) {
 
 // renderFindings turns findings into what the screen draws. The key and its
 // arguments travel separately, because the rendering contract is the client's.
-func renderFindings(fs []check.Finding) []map[string]any {
+func renderFindings(fs []config.Finding) []map[string]any {
 	out := make([]map[string]any, 0, len(fs))
 	for _, f := range fs {
 		level := "warn"
@@ -493,7 +492,7 @@ func renderFindings(fs []check.Finding) []map[string]any {
 	return out
 }
 
-func writeFindings(w http.ResponseWriter, status int, fs []check.Finding) {
+func writeFindings(w http.ResponseWriter, status int, fs []config.Finding) {
 	writeJSON(w, status, map[string]any{
 		"error":    "settings_refused",
 		"findings": renderFindings(fs),

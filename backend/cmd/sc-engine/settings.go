@@ -20,8 +20,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/check"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/bootstrap/args"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/config"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/dbfile"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/instance"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
@@ -78,7 +77,7 @@ func settingsUsage() int {
 // the write takes the data-directory lock, so it refuses while a server runs.
 func runSettingsSet(argv []string) int {
 	out := log.New(os.Stderr, "", 0)
-	section, dataDir := args.ParseSettingsArgs(argv)
+	section, dataDir := config.ParseSettingsArgs(argv)
 	if section == "" {
 		return settingsUsage()
 	}
@@ -93,12 +92,12 @@ func runSettingsSet(argv []string) int {
 		out.Printf("sc-engine settings: the document is not a JSON object: %v\n", jerr)
 		return 1
 	}
-	if !check.Known(section) {
+	if !config.Known(section) {
 		out.Printf("sc-engine settings: unknown section %q\n", section)
 		return 1
 	}
-	findings := check.Section(check.Input{Section: section, Body: sectionBody, DataDir: dataDir, Lockout: check.LockoutWarns})
-	if check.Blocked(findings) {
+	findings := config.Section(config.Input{Section: section, Body: sectionBody, DataDir: dataDir, Lockout: config.LockoutWarns})
+	if config.Blocked(findings) {
 		out.Printf("sc-engine settings: settings refused: %v\n", findings)
 		return 1
 	}
@@ -128,7 +127,7 @@ func runSettingsSet(argv []string) int {
 
 func runSettingsGet(argv []string) int {
 	out := log.New(os.Stderr, "", 0)
-	dataDir := args.DataDir(argv)
+	dataDir := config.DataDir(argv)
 	lock, ok := takeSettingsLock(out, dataDir)
 	if !ok {
 		return 1

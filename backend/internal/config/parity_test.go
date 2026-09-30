@@ -1,13 +1,11 @@
 //go:build linux
 
-package check
+package config
 
 import (
 	"strconv"
 	"strings"
 	"testing"
-
-	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/runtimecfg"
 )
 
 // A repeat within one list is named by its own field, so the screen puts the
@@ -58,7 +56,7 @@ func TestARoleConflictNamesBothFields(t *testing.T) {
 // The bounds a refusal reports are the ones the loader clamps to, so the range
 // in the message is the range that is actually enforced.
 func TestTheReportedRangeIsTheEnforcedRange(t *testing.T) {
-	for field, b := range runtimecfg.Bounds() {
+	for field, b := range Bounds() {
 		section, key, ok := strings.Cut(field, ".")
 		if !ok {
 			t.Fatalf("the bound key %q is not section.field", field)

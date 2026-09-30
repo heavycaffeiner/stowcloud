@@ -15,10 +15,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/catalogue"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/check"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/runtimecfg"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/config"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/system/jail"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
@@ -31,7 +29,7 @@ const restartGrace = 250 * time.Millisecond
 
 // Settings is the application settings boundary used by these routes.
 type Settings interface {
-	Values(context.Context) runtimecfg.Values
+	Values(context.Context) config.Values
 	Load(context.Context)
 	HasConfigSecret(context.Context, string) bool
 	WouldLoosenHardening(context.Context, jail.Policy) bool
@@ -72,7 +70,7 @@ func (h *SettingsHandlers) Get(c *gin.Context) {
 	}
 	values := h.d.Settings.Values(c.Request.Context())
 	values.DataDir = h.d.DataDir
-	c.JSON(http.StatusOK, SettingsOf(catalogue.Of(values, stored), h.hopOf(c), h.d.SMBAgentView()))
+	c.JSON(http.StatusOK, SettingsOf(config.Of(values, stored), h.hopOf(c), h.d.SMBAgentView()))
 }
 
 func (h *SettingsHandlers) Patch(c *gin.Context) {
@@ -85,7 +83,7 @@ func (h *SettingsHandlers) Patch(c *gin.Context) {
 		h.d.UploadPatch(c)
 		return
 	}
-	if !check.Known(section) {
+	if !config.Known(section) {
 		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
 	}
@@ -97,13 +95,13 @@ func (h *SettingsHandlers) Patch(c *gin.Context) {
 	if !h.extractSecrets(c, section, body) {
 		return
 	}
-	findings := check.Section(check.Input{
+	findings := config.Section(config.Input{
 		Section:   section,
 		Body:      body,
-		SelfHost:  check.HostOnly(string(c.Request.Host)),
+		SelfHost:  config.HostOnly(string(c.Request.Host)),
 		DataDir:   h.d.DataDir,
 		HasSecret: section == "oidc" && h.d.Settings.HasConfigSecret(c.Request.Context(), secretOIDCClient),
-		Lockout:   check.LockoutBlocks,
+		Lockout:   config.LockoutBlocks,
 	})
 	if Blocking(findings) {
 		c.JSON(http.StatusUnprocessableEntity, ApplyOutcomeOf(false, false, false, findings))
@@ -113,7 +111,7 @@ func (h *SettingsHandlers) Patch(c *gin.Context) {
 		middleware.Fail(c, err)
 		return
 	}
-	restart := catalogue.RestartRequiredFor(section, body)
+	restart := config.RestartRequiredFor(section, body)
 	if !restart {
 		h.d.Settings.Load(c.Request.Context())
 	}
@@ -162,7 +160,7 @@ func (h *SettingsHandlers) activeWork(c *gin.Context) (uploads, jobs int) {
 	return w.Uploads, w.Jobs
 }
 
-func (h *SettingsHandlers) pinnedBindFinding(section string, body map[string]any) *check.Finding {
+func (h *SettingsHandlers) pinnedBindFinding(section string, body map[string]any) *config.Finding {
 	if section != "network" || !h.d.Settings.BindPinned() {
 		return nil
 	}
@@ -170,7 +168,7 @@ func (h *SettingsHandlers) pinnedBindFinding(section string, body map[string]any
 	if !named || stored == "" {
 		return nil
 	}
-	return &check.Finding{Section: section, Field: "bind", ReasonKey: "settings.bind_pinned_by_flag", Args: []string{"stored", stored}}
+	return &config.Finding{Section: section, Field: "bind", ReasonKey: "settings.bind_pinned_by_flag", Args: []string{"stored", stored}}
 }
 
 func (h *SettingsHandlers) extractSecrets(c *gin.Context, section string, body map[string]any) bool {

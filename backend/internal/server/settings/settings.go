@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/runtimecfg"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/config"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/sizeguard"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/oidc"
@@ -43,10 +43,10 @@ type Options struct {
 	WatchBounds      func(hotSet, fullThreshold int)
 	OpenIndex        func(context.Context)
 	SetSMBTOTPPolicy func(auth.TOTPPolicy)
-	ApplyHomes       func(context.Context, runtimecfg.Values)
-	ApplyThumbnails  func(context.Context, runtimecfg.Values)
+	ApplyHomes       func(context.Context, config.Values)
+	ApplyThumbnails  func(context.Context, config.Values)
 	SetRateLimits    func(perSecond float64, burst float64)
-	BuildOIDC        func(context.Context, *runtimecfg.OIDC) *oidc.Client
+	BuildOIDC        func(context.Context, *config.OIDC) *oidc.Client
 	SetOIDC          func(*oidc.Client, string)
 	SetHosts         func(Hosts)
 }
@@ -60,7 +60,7 @@ type Coordinator struct {
 	trusted         []netip.Prefix
 	allowedOrigins  []string
 	compatCanonical string
-	values          runtimecfg.Values
+	values          config.Values
 
 	bindMu     sync.Mutex
 	boundAddr  string
@@ -79,7 +79,7 @@ func New(opts Options) *Coordinator {
 	if opts.Logger == nil {
 		opts.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	return &Coordinator{opts: opts, values: runtimecfg.Defaults()}
+	return &Coordinator{opts: opts, values: config.Defaults()}
 }
 
 // Load reads the stored document and applies it to the running services.
@@ -152,15 +152,15 @@ func (c *Coordinator) Load(ctx context.Context) {
 
 // Values resolves the stored document over defaults without changing live
 // services. This is used by the settings GET and restart policy checks.
-func (c *Coordinator) Values(ctx context.Context) runtimecfg.Values {
+func (c *Coordinator) Values(ctx context.Context) config.Values {
 	if c.opts.State == nil {
-		return runtimecfg.Defaults()
+		return config.Defaults()
 	}
-	return runtimecfg.Load(ctx, c.opts.State, runtimecfg.Defaults(), c.opts.Logger)
+	return config.Load(ctx, c.opts.State, config.Defaults(), c.opts.Logger)
 }
 
 // Live returns a snapshot of the values most recently applied.
-func (c *Coordinator) Live() runtimecfg.Values {
+func (c *Coordinator) Live() config.Values {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.values
@@ -243,7 +243,7 @@ func (c *Coordinator) StopSizeGuard() {
 	guard.Unblock()
 }
 
-func (c *Coordinator) applySizeGuard(ctx context.Context, values runtimecfg.Values) {
+func (c *Coordinator) applySizeGuard(ctx context.Context, values config.Values) {
 	c.guardMu.Lock()
 	defer c.guardMu.Unlock()
 	if c.guardStop != nil {
@@ -328,7 +328,7 @@ func parsePrefixes(raw []string, logger *slog.Logger) []netip.Prefix {
 
 func smbTOTPPolicyOf(name string, logger *slog.Logger) auth.TOTPPolicy {
 	switch name {
-	case runtimecfg.DefaultSMBTOTPPolicy:
+	case config.DefaultSMBTOTPPolicy:
 		return auth.TOTPRequireSeparate
 	case "block":
 		return auth.TOTPBlock

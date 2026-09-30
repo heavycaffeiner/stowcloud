@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/check"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/config"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 )
 
@@ -750,21 +750,21 @@ func containsValue(t *testing.T, args any, want string) bool {
 // above a deliberate difference rather than a missing check. This asserts the
 // checker really does have two modes, so the door's choice of one is a choice.
 func TestTheSameRepairWouldBeRefusedWithBlockingLockout(t *testing.T) {
-	blocked := check.Section(check.Input{
+	blocked := config.Section(config.Input{
 		Section:  "network",
 		Body:     map[string]any{"app_hosts": []any{"stowcloud.example"}},
-		SelfHost: "192.168.1.50", Lockout: check.LockoutBlocks,
+		SelfHost: "192.168.1.50", Lockout: config.LockoutBlocks,
 	})
-	warned := check.Section(check.Input{
+	warned := config.Section(config.Input{
 		Section:  "network",
 		Body:     map[string]any{"app_hosts": []any{"stowcloud.example"}},
-		SelfHost: "192.168.1.50", Lockout: check.LockoutWarns,
+		SelfHost: "192.168.1.50", Lockout: config.LockoutWarns,
 	})
 
-	if !check.Blocked(blocked) {
+	if !config.Blocked(blocked) {
 		t.Error("the settings screen would allow a save that strands the operator")
 	}
-	if check.Blocked(warned) {
+	if config.Blocked(warned) {
 		t.Error("the door blocks the repair it exists to perform")
 	}
 }

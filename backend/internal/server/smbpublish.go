@@ -8,7 +8,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/runtimecfg"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/config"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/smb"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/smb/agent"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/smb/publish"
@@ -25,7 +25,7 @@ type smbSettings struct {
 }
 
 func smbSettingsOf(ctx context.Context, e *Engine) smbSettings {
-	values := runtimecfg.Load(ctx, e.State, runtimecfg.Defaults(), e.logger)
+	values := config.Load(ctx, e.State, config.Defaults(), e.logger)
 	return smbSettings{Config: values.SMB, ConfigDir: values.SMBConfigDir, Socket: values.SMBSocket, GID: values.SMBServiceGID, Configured: values.SMBConfigured}
 }
 

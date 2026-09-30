@@ -1,5 +1,6 @@
-// Package runtimecfg holds the operator-adjustable settings, kept live in
-// memory and written to the database so they outlast a restart.
+// Package config holds the process arguments and the operator-adjustable
+// settings. The settings are kept live in memory and written to the database
+// so they outlast a restart.
 //
 // Configuration happens through the web interface and nowhere else; the
 // deployment ships no configuration file. Compiled-in defaults form the base
@@ -26,7 +27,7 @@
 // Storing and applying are reported separately. Each setting states whether it
 // is in effect, and those that require a restart say so instead of appearing
 // live.
-package runtimecfg
+package config
 
 import (
 	"time"
@@ -178,10 +179,10 @@ const (
 	// factor. A string because it is the client's own vocabulary.
 	DefaultSMBTOTPPolicy = "require_separate"
 
-	// defaultWatchHotSet mirrors the watcher's own default. The watcher sits
+	// DefaultWatchHotSet mirrors the watcher's own default. The watcher sits
 	// lower in the dependency graph and receives its configuration by value, so
 	// this constant is what the wiring passes in, not a competing definition.
-	defaultWatchHotSet = 4096
+	DefaultWatchHotSet = 4096
 )
 
 // Defaults returns the compiled-in values, which also anchor the outer bounds.
@@ -193,7 +194,7 @@ func Defaults() Values {
 		SearchConcurrentSSD:  limits.ConcurrentSearches,
 		SearchDeadlineSSD:    limits.SearchWalkDeadline,
 		ArchiveMaxConcurrent: previewlimits.ConcurrentArchives,
-		WatchHotSetMax:       defaultWatchHotSet,
+		WatchHotSetMax:       DefaultWatchHotSet,
 		RatePerSec:           defaultRatePerSec,
 		RateBurst:            defaultRateBurst,
 		Listen:               DefaultListen,

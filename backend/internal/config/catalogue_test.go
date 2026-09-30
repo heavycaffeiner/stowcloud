@@ -1,17 +1,15 @@
-package catalogue
+package config
 
 import (
 	"slices"
 	"strings"
 	"testing"
-
-	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/runtimecfg"
 )
 
 // Every key resolves to a section, which is what the patch route writes under.
 // A key resolving nowhere would save into nothing and report success.
 func TestEveryKeyResolvesToASection(t *testing.T) {
-	for _, f := range Of(runtimecfg.Defaults(), map[string]any{}).Fields {
+	for _, f := range Of(Defaults(), map[string]any{}).Fields {
 		section, name, ok := splitKey(f.Key)
 		if !ok {
 			// The unprefixed network fields, which the lookup files under the
@@ -27,9 +25,9 @@ func TestEveryKeyResolvesToASection(t *testing.T) {
 // Numeric fields carry the bounds the checker enforces, so the form refuses
 // what the save would refuse rather than sending it and reporting an error.
 func TestNumericFieldsCarryTheBoundsTheCheckerUses(t *testing.T) {
-	fields := byKey(Of(runtimecfg.Defaults(), map[string]any{}).Fields)
+	fields := byKey(Of(Defaults(), map[string]any{}).Fields)
 
-	for key, bound := range runtimecfg.Bounds() {
+	for key, bound := range Bounds() {
 		f, ok := fields[key]
 		if !ok {
 			t.Errorf("%q is bounded and not described", key)
@@ -54,7 +52,7 @@ func TestNumericFieldsCarryTheBoundsTheCheckerUses(t *testing.T) {
 // watcher substitutes its own default for an unset threshold, and reporting
 // the zero would say the server rescans everything on the first change.
 func TestEveryNumericValueIsInsideItsOwnBound(t *testing.T) {
-	for _, f := range Of(runtimecfg.Defaults(), map[string]any{}).Fields {
+	for _, f := range Of(Defaults(), map[string]any{}).Fields {
 		if f.Range.Kind != KindInt || f.Range.Min == nil || f.Range.Max == nil {
 			continue
 		}
@@ -73,7 +71,7 @@ func TestEveryNumericValueIsInsideItsOwnBound(t *testing.T) {
 // A list field is never null, so the screen draws an empty control rather than
 // testing the field first.
 func TestListFieldsAreEmptyRatherThanNull(t *testing.T) {
-	for _, f := range Of(runtimecfg.Defaults(), map[string]any{}).Fields {
+	for _, f := range Of(Defaults(), map[string]any{}).Fields {
 		if f.Range.Kind != KindStrings {
 			continue
 		}
@@ -91,7 +89,7 @@ func TestListFieldsAreEmptyRatherThanNull(t *testing.T) {
 // A choice field's present value is one of the choices it offers. A form whose
 // select has no matching option shows a blank where a real setting is.
 func TestAChoiceFieldsValueIsOneOfItsChoices(t *testing.T) {
-	for _, f := range Of(runtimecfg.Defaults(), map[string]any{}).Fields {
+	for _, f := range Of(Defaults(), map[string]any{}).Fields {
 		if f.Range.Kind != KindChoice {
 			continue
 		}
@@ -112,7 +110,7 @@ func TestAChoiceFieldsValueIsOneOfItsChoices(t *testing.T) {
 // that reported them as live would tell an operator a change had taken effect
 // when the running server was still on the old value.
 func TestStartupOnlyFieldsAreMarkedRestartRequired(t *testing.T) {
-	fields := byKey(Of(runtimecfg.Defaults(), map[string]any{}).Fields)
+	fields := byKey(Of(Defaults(), map[string]any{}).Fields)
 
 	for _, key := range []string{
 		// Landlock and seccomp have no syscall that undoes an installed
@@ -204,7 +202,7 @@ func TestARestartIsJudgedByTheFieldsAPatchNames(t *testing.T) {
 // and whichever is saved second wins.
 func TestNoKeyIsDescribedTwice(t *testing.T) {
 	seen := map[string]int{}
-	for _, f := range Of(runtimecfg.Defaults(), map[string]any{}).Fields {
+	for _, f := range Of(Defaults(), map[string]any{}).Fields {
 		seen[f.Key]++
 	}
 	for key, times := range seen {
@@ -217,7 +215,7 @@ func TestNoKeyIsDescribedTwice(t *testing.T) {
 // An empty-means key is a catalogue key rather than a sentence, so the screen
 // can translate it.
 func TestEmptyMeansKeysAreCatalogueKeys(t *testing.T) {
-	for _, f := range Of(runtimecfg.Defaults(), map[string]any{}).Fields {
+	for _, f := range Of(Defaults(), map[string]any{}).Fields {
 		if f.EmptyMeansKey == "" {
 			continue
 		}

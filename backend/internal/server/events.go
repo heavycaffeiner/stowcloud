@@ -14,7 +14,7 @@ import (
 	"context"
 
 	"github.com/gin-gonic/gin"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/runtimecfg"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/config"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/jobs"
@@ -172,7 +172,7 @@ type watchSettings struct {
 }
 
 func watchSettingsOf(ctx context.Context, e *Engine) watchSettings {
-	values := runtimecfg.Load(ctx, e.State, runtimecfg.Defaults(), e.logger)
+	values := config.Load(ctx, e.State, config.Defaults(), e.logger)
 	return watchSettings{Backend: storagewatch.BackendInotify, HotSetMax: values.WatchHotSetMax, FullThreshold: values.WatchFullThreshold}
 }
 

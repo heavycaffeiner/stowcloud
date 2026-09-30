@@ -11,8 +11,7 @@
 package admin
 
 import (
-	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/catalogue"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/check"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/config"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/smb/agent"
 )
 
@@ -57,8 +56,8 @@ type HopView struct {
 // SettingsView is the settings resource: every settable field, plus what the
 // server observed about the request that asked for them.
 type SettingsView struct {
-	Fields []catalogue.Field `json:"fields"`
-	Hop    HopView           `json:"hop"`
+	Fields []config.Field `json:"fields"`
+	Hop    HopView        `json:"hop"`
 
 	// SMBAgent is what the sidecar said about the last push, absent when
 	// sharing is off or nothing has been pushed. Without it the screen shows
@@ -128,12 +127,12 @@ func listOf(in []string) []string {
 }
 
 // SettingsOf projects the resource.
-func SettingsOf(snap catalogue.Snapshot, hop HopView, smb *SMBAgentView) SettingsView {
+func SettingsOf(snap config.Snapshot, hop HopView, smb *SMBAgentView) SettingsView {
 	fields := snap.Fields
 	if fields == nil {
 		// Never null: the screen iterates this, and a null is a third state it
 		// would have to test for before drawing an empty form.
-		fields = []catalogue.Field{}
+		fields = []config.Field{}
 	}
 	return SettingsView{Fields: fields, Hop: hop, SMBAgent: smb}
 }
@@ -165,7 +164,7 @@ type ApplyOutcomeView struct {
 //
 // An empty list rather than null, so a client iterating the findings does not
 // have to test the field first.
-func FindingsOf(findings []check.Finding) []FindingView {
+func FindingsOf(findings []config.Finding) []FindingView {
 	out := make([]FindingView, 0, len(findings))
 	for _, f := range findings {
 		v := FindingView{
@@ -192,7 +191,7 @@ func FindingsOf(findings []check.Finding) []FindingView {
 //
 // One place decides, because "was this refused" answered in two places is how
 // a save is refused by one and reported as stored by the other.
-func Blocking(findings []check.Finding) bool {
+func Blocking(findings []config.Finding) bool {
 	for _, f := range findings {
 		if f.Blocking {
 			return true
@@ -207,7 +206,7 @@ func Blocking(findings []check.Finding) bool {
 // whatever the caller passed for those: a refused save that reported itself
 // stored would be the worst of the three failures this projection exists to
 // prevent.
-func ApplyOutcomeOf(stored, applied, restartRequired bool, findings []check.Finding) ApplyOutcomeView {
+func ApplyOutcomeOf(stored, applied, restartRequired bool, findings []config.Finding) ApplyOutcomeView {
 	if Blocking(findings) {
 		stored, applied, restartRequired = false, false, false
 	}
