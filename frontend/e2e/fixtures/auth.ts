@@ -1,4 +1,5 @@
-import { test as baseTest, expect, type Page } from './app'
+import type { Page } from '@playwright/test'
+import { test as baseTest, expect } from './app'
 import * as https from 'node:https'
 
 export interface ApiResponse<T = unknown> {

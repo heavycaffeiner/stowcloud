@@ -112,7 +112,7 @@ function pollHealth(port: number, deadlineMs: number): Promise<boolean> {
   return promise
 }
 
-export const test = base.extend({
+export const test = base.extend<{ namespace: TestNamespace; artifacts: ArtifactCollector }, { workerApp: WorkerApp }>({
   workerApp: [
     async ({}, use, workerInfo) => {
       const binPath = resolveBinary()

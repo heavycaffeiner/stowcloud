@@ -1,4 +1,4 @@
-import { test as authBaseTest, expect, type Page } from './auth'
+import { test as authBaseTest, expect } from './auth'
 import { AccountsFixture } from './accounts'
 import { FilesystemFixture } from './filesystem'
 import { PermissionsFixture } from './permissions'
