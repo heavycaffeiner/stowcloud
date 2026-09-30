@@ -52,7 +52,10 @@ export function Modal({ open, label, onClose, id, className, initialFocus, child
         onClose()
       }}
       // The browser can close a modal without a cancelable cancel event, such as on a back gesture.
-      onClose={onClose}
+      // A close queued by an effect cleanup can land after the dialog is shown again, so it is ignored.
+      onClose={(event) => {
+        if (!event.currentTarget.open) onClose()
+      }}
     >
       {children}
     </dialog>
