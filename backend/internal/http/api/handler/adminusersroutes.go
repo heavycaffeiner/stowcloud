@@ -354,5 +354,5 @@ func adminFail(c *gin.Context, err error) {
 		adminRefuse(c, apierr.Classified{Class: apierr.NotFound})
 		return
 	}
-	adminRefuse(c, apierr.Classify(err, apierr.VisibilityKnown))
+	middleware.Fail(c, err)
 }

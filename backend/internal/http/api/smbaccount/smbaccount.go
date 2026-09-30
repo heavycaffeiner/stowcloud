@@ -71,14 +71,14 @@ func (h *handlers) humaOwner(ctx context.Context) (int64, error) {
 
 func (h *handlers) reconfirmHuma(ctx context.Context, owner int64, password string) error {
 	if password == "" {
-		return humabridge.Refusal(apierr.Classify(auth.ErrCredentials, apierr.VisibilityKnown))
+		return humabridge.Failure(ctx, auth.ErrCredentials)
 	}
 	ok, err := h.d.Auth.VerifyAccountPassword(ctx, owner, secret.New([]byte(password)))
 	if err != nil {
 		return humabridge.Failure(ctx, err)
 	}
 	if !ok {
-		return humabridge.Refusal(apierr.Classify(auth.ErrCredentials, apierr.VisibilityKnown))
+		return humabridge.Failure(ctx, auth.ErrCredentials)
 	}
 	return nil
 }

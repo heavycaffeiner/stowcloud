@@ -88,7 +88,4 @@ func refuse(c *gin.Context, class apierr.Classified) {
 	json(c, status, body)
 }
 
-func fail(c *gin.Context, err error) {
-	middleware.SetCause(c, err)
-	refuse(c, apierr.Classify(err, apierr.VisibilityKnown))
-}
+func fail(c *gin.Context, err error) { middleware.Fail(c, err) }

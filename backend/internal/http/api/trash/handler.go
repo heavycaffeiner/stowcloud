@@ -30,6 +30,7 @@ type Deps struct {
 	Core    *files.Core
 	Owner   func(*gin.Context) (files.UserID, bool)
 	Resolve func(files.UserID, string, acl.Perms) (files.Resolved, error)
+	Errors  *apierr.Classifier
 }
 
 // Handler implements the authenticated trash HTTP routes.
@@ -127,7 +128,7 @@ func (h *Handler) batchHuma(ctx context.Context, ids []string, need acl.Perms, r
 		item := trashBatchItem{Path: raw}
 		r, id, err := h.resolveTrashID(owner, raw, need)
 		if err != nil {
-			wire := apierr.WireOf(err, apierr.VisibilityKnown)
+			wire := h.d.Errors.WireOf(err, apierr.VisibilityKnown)
 			item.Error = &wire
 			results = append(results, item)
 			continue
@@ -135,7 +136,7 @@ func (h *Handler) batchHuma(ctx context.Context, ids []string, need acl.Perms, r
 		if restore {
 			restored, rerr := h.d.Core.TrashRestore(ctx, r, id)
 			if rerr != nil {
-				wire := apierr.WireOf(rerr, apierr.VisibilityKnown)
+				wire := h.d.Errors.WireOf(rerr, apierr.VisibilityKnown)
 				item.Error = &wire
 				results = append(results, item)
 				continue
@@ -145,7 +146,7 @@ func (h *Handler) batchHuma(ctx context.Context, ids []string, need acl.Perms, r
 				item.Path = vp.String()
 			}
 		} else if perr := h.d.Core.TrashPurge(ctx, r, &id); perr != nil {
-			wire := apierr.WireOf(perr, apierr.VisibilityKnown)
+			wire := h.d.Errors.WireOf(perr, apierr.VisibilityKnown)
 			item.Error = &wire
 			results = append(results, item)
 			continue

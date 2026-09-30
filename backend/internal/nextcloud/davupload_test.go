@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 )
 
 // A deployment without a resumable upload engine has no chunked collection.
@@ -14,7 +16,7 @@ import (
 // holding it reads whatever came back.
 func TestTheUploadCollectionSaysWhenItIsAbsent(t *testing.T) {
 	t.Parallel()
-	s := New(Deps{Features: func() Features { return Features{} }})
+	s := New(Deps{Features: func() Features { return Features{} }, Errors: apierr.NewClassifier(nil)})
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("MKCOL", "/remote.php/dav/uploads/alice/session", nil)

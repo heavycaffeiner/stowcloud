@@ -236,7 +236,7 @@ func (s *Server) recentFiles(c *gin.Context, p Principal) (Val, bool, *Error) {
 	ctx := c.Request.Context()
 	hits, err := s.deps.Core.Recent(ctx, user(p), files.RecentQuery{})
 	if err != nil {
-		return Val{}, false, ocsErrorOf(err, apierr.VisibilityHidden)
+		return Val{}, false, s.ocsErrorOf(err, apierr.VisibilityHidden)
 	}
 	items := make([]Val, 0, len(hits))
 	for _, h := range hits {
@@ -253,7 +253,7 @@ func (s *Server) favoriteFiles(c *gin.Context, p Principal) (Val, bool, *Error) 
 	ctx := c.Request.Context()
 	set, err := s.deps.Store.Favorites(ctx, user(p))
 	if err != nil {
-		return Val{}, false, ocsErrorOf(err, apierr.VisibilityHidden)
+		return Val{}, false, s.ocsErrorOf(err, apierr.VisibilityHidden)
 	}
 	favs := set.List()
 	items := make([]Val, 0, len(favs))

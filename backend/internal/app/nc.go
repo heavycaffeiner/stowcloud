@@ -46,7 +46,7 @@ func (e *Engine) ncServer() *nextcloud.Server {
 	e.thumbnailMu.RUnlock()
 	seal, open := nextcloud.Claims(e.claimKey, func() int64 { return e.clk().Nanos() })
 	return nextcloud.New(nextcloud.Deps{
-		Core: e.Core, Auth: e.Auth,
+		Core: e.Core, Auth: e.Auth, Errors: e.errs,
 		Store:   nextcloud.NewStore(nextcloud.StoreDeps{Core: e.Core, State: e.State, Cache: e.Cache}),
 		Uploads: e.Upload, Preview: previewSvc, Search: e.Search, Flow: nextcloud.NewFlow(e.Flow),
 		Features: func() nextcloud.Features {

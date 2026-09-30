@@ -55,7 +55,7 @@ func (e *Engine) Mount(router *gin.Engine) error {
 	if err := e.mountNative(router); err != nil {
 		return err
 	}
-	dav.Mount(router, dav.Deps{Core: e.Core, State: e.State, Locks: e.davLocks, Clock: e.clk(), Logger: e.log(), InfinityEntries: 10_000})
+	dav.Mount(router, dav.Deps{Core: e.Core, State: e.State, Locks: e.davLocks, Clock: e.clk(), Logger: e.log(), Errors: e.errs, InfinityEntries: 10_000})
 	e.publicLinks.Mount(router)
 	e.mountNCTagged(router)
 	if err := web.Install(router); err != nil {
@@ -278,7 +278,6 @@ func (e *Engine) handlers() server.Handlers {
 	}
 	fsDeps := handler.AdminFSDeps{
 		Auth: e.Auth, Core: e.Core, DataDir: e.dataDir,
-		SetupRefusal: setup.Refusal,
 	}
 	if e.setup != nil {
 		fsDeps.SetupVerify = e.setup.Verify

@@ -77,10 +77,10 @@ func (s *Server) Mount(app *gin.Engine) {
 	get(loginFlowPath, s.loginConsent)
 	handle := func(h func(*gin.Context) error) gin.HandlerFunc {
 		return func(c *gin.Context) {
+			// These handlers fail only after the response has started, so the
+			// error is kept for the access log rather than rendered.
 			if err := h(c); err != nil {
-				if err := c.Error(err); err != nil {
-					c.Abort()
-				}
+				middleware.SetCause(c, err)
 			}
 		}
 	}

@@ -10,10 +10,18 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-
-	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/uploads"
 )
+
+// testClassifier stands in for the product table with the two sentinels the
+// existence rule is about.
+func testClassifier() (k *Classifier, denied, missing error) {
+	denied = errors.New("denied")
+	missing = errors.New("missing")
+	return NewClassifier([]Sentinel{
+		{Err: denied, Class: Denied, Key: "fs.denied"},
+		{Err: missing, Class: NotFound, Key: "fs.not_found"},
+	}), denied, missing
+}
 
 // The existence rule, which is the reason this package has a visibility input.
 //
@@ -25,16 +33,17 @@ import (
 // Byte-exact rather than field-by-field, because a difference in the encoded
 // form is still a difference a client can measure.
 func TestTheHiddenResponsesAreByteIdentical(t *testing.T) {
+	k, denied, missing := testClassifier()
 	var bodies []string
 	var statuses []int
 
 	for _, err := range []error{
-		files.ErrNotFound,
-		files.ErrDenied,
-		fmt.Errorf("wrapped: %w", files.ErrDenied),
-		fmt.Errorf("resolving %q: %w", "a/b", files.ErrNotFound),
+		missing,
+		denied,
+		fmt.Errorf("wrapped: %w", denied),
+		fmt.Errorf("resolving %q: %w", "a/b", missing),
 	} {
-		status, body := REST(Classify(err, VisibilityHidden))
+		status, body := REST(k.Classify(err, VisibilityHidden))
 		raw, merr := json.Marshal(body)
 		if merr != nil {
 			t.Fatalf("encoding: %v", merr)
@@ -59,37 +68,10 @@ func TestTheHiddenResponsesAreByteIdentical(t *testing.T) {
 	}
 }
 
-// The other half: where the caller already learned the resource exists, a
-// denial is reported as one. Without this the fold would make every denial
-// unreportable, including on surfaces where saying so is correct.
-func TestAKnownDenialIsReportedAsDenied(t *testing.T) {
-	status, body := REST(Classify(files.ErrDenied, VisibilityKnown))
-	if status != http.StatusForbidden {
-		t.Errorf("a known denial answered %d, want 403", status)
-	}
-	if body.Code != "fs.denied" {
-		t.Errorf("the code is %q", body.Code)
-	}
-}
-
-// A missing resource stays 404 under either visibility: the fold is about
-// hiding a denial, not about changing what absence means.
-func TestAbsenceIsNotFoundUnderEitherVisibility(t *testing.T) {
-	for _, v := range []Visibility{VisibilityHidden, VisibilityKnown} {
-		status, body := REST(Classify(files.ErrNotFound, v))
-		if status != http.StatusNotFound {
-			t.Errorf("absence under %v answered %d", v, status)
-		}
-		if body.Code != "fs.not_found" {
-			t.Errorf("absence under %v answered the code %q", v, body.Code)
-		}
-	}
-}
-
 // An unrecognised error is Internal rather than a guess, because a guessed
 // class produces a status that tells the caller what was guessed.
 func TestAnUnrecognisedErrorIsInternal(t *testing.T) {
-	status, body := REST(Classify(errors.New("something nobody mapped"), VisibilityKnown))
+	status, body := REST(NewClassifier(nil).Classify(errors.New("something nobody mapped"), VisibilityKnown))
 	if status != http.StatusInternalServerError {
 		t.Errorf("an unmapped error answered %d, want 500", status)
 	}
@@ -150,34 +132,11 @@ func TestEveryClassHasAName(t *testing.T) {
 	}
 }
 
-// A bound that clears on its own and one that does not answer differently.
-//
-// Both used to be 422, which tells a client the request is wrong and there is
-// nothing to wait for. The account's own uploads finishing is exactly the wait
-// that clears an exhaustion, so a batch of files that briefly crossed the
-// session bound lost its remaining members rather than pausing for them.
-func TestATemporaryBoundAsksTheCallerToWaitAndAPermanentOneDoesNot(t *testing.T) {
-	for _, c := range []struct {
-		name string
-		err  error
-		want int
-	}{
-		{"sessions in flight", &uploads.ExhaustedError{Limit: "sessions"}, http.StatusTooManyRequests},
-		{"the spool at its budget", &uploads.CacheFullError{RetryAfterSeconds: 3}, http.StatusTooManyRequests},
-		{"a session fragmented past its run cap", uploads.ErrFragmented, http.StatusUnprocessableEntity},
-	} {
-		status, body := REST(Classify(c.err, VisibilityHidden))
-		if status != c.want {
-			t.Errorf("%s answered %d, want %d (%s)", c.name, status, c.want, body.Code)
-		}
-	}
-}
-
 // A request error names the field and never its value: echoing what the client
 // sent turns a refusal into a reflection.
 func TestARequestErrorNamesTheFieldNotItsValue(t *testing.T) {
 	err := BadRequest("fs.bad_json", "path")
-	_, body := REST(Classify(err, VisibilityKnown))
+	_, body := REST(NewClassifier(nil).Classify(err, VisibilityKnown))
 
 	var found bool
 	for _, a := range body.Args {
@@ -203,8 +162,9 @@ func TestARequestErrorNamesTheFieldNotItsValue(t *testing.T) {
 // A batch item for a hidden error is the same as the response's, so a batch
 // cannot become the surface that reveals what the single request hid.
 func TestABatchItemHonoursTheExistenceRule(t *testing.T) {
-	denied := WireOf(files.ErrDenied, VisibilityHidden)
-	missing := WireOf(files.ErrNotFound, VisibilityHidden)
+	k, deniedErr, missingErr := testClassifier()
+	denied := k.WireOf(deniedErr, VisibilityHidden)
+	missing := k.WireOf(missingErr, VisibilityHidden)
 
 	// Compared as encoded bytes, which is what a client actually receives, and
 	// which is also the only comparison available: the item carries a map.

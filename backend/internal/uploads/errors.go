@@ -148,3 +148,6 @@ func (e *CacheFullError) Error() string {
 }
 
 func (e *CacheFullError) Is(target error) bool { return target == ErrCacheFull }
+
+// RetryAfter is the delay a refusal advertises to the client.
+func (e *CacheFullError) RetryAfter() int { return e.RetryAfterSeconds }

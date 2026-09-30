@@ -240,7 +240,4 @@ func (h *handlers) refuse(c *gin.Context, class apierr.Classified) {
 	status, body := apierr.REST(class)
 	h.json(c, status, body)
 }
-func (h *handlers) failKnown(c *gin.Context, err error) {
-	middleware.SetCause(c, err)
-	h.refuse(c, apierr.Classify(err, apierr.VisibilityKnown))
-}
+func (h *handlers) failKnown(c *gin.Context, err error) { middleware.Fail(c, err) }

@@ -36,8 +36,8 @@ type DavStatus struct {
 // Visibility is the caller's decision, not this function's: a path reached
 // through a listing the caller may read can be told it was denied, and a path
 // the caller guessed may not learn the difference between denied and absent.
-func davStatusOf(err error, vis apierr.Visibility) DavStatus {
-	c := apierr.Classify(err, vis)
+func (s *Server) davStatusOf(err error, vis apierr.Visibility) DavStatus {
+	c := s.deps.Errors.Classify(err, vis)
 	switch c.Class {
 	case apierr.Hidden, apierr.NotFound:
 		return DavStatus{http.StatusNotFound, "Sabre\\DAV\\Exception\\NotFound", "File not found"}
@@ -90,7 +90,7 @@ func davStatusOf(err error, vis apierr.Visibility) DavStatus {
 // quiet, since a sync client probes for absent paths constantly and logging
 // those buries the line that matters.
 func (s *Server) failDav(w http.ResponseWriter, r *http.Request, err error, vis apierr.Visibility) {
-	st := davStatusOf(err, vis)
+	st := s.davStatusOf(err, vis)
 	switch r.Method {
 	case http.MethodGet, http.MethodHead, http.MethodOptions, "PROPFIND", "REPORT", "SEARCH":
 	default:
@@ -111,8 +111,8 @@ func (s *Server) failDav(w http.ResponseWriter, r *http.Request, err error, vis 
 // The codes are the four a client branches on. Everything else is a failure,
 // because a code a client does not know is shown to a person as whatever text
 // came with it, and a wrong one sends them to the wrong place.
-func ocsErrorOf(err error, vis apierr.Visibility) *Error {
-	c := apierr.Classify(err, vis)
+func (s *Server) ocsErrorOf(err error, vis apierr.Visibility) *Error {
+	c := s.deps.Errors.Classify(err, vis)
 	switch c.Class {
 	case apierr.Hidden, apierr.NotFound, apierr.Gone:
 		return NotFound("The requested resource could not be found")

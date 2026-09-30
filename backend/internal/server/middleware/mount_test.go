@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 )
 
 type replay struct {
@@ -53,6 +55,7 @@ func newHarness(t *testing.T, hosts Hosts) *harness {
 		Hosts:   func() Hosts { return hosts },
 		Trusted: func() []netip.Prefix { return []netip.Prefix{mustPrefix(t, "10.0.0.0/8")} },
 		Limiter: h.lim,
+		Errors:  apierr.NewClassifier(nil),
 	}, h.rec); err != nil {
 		t.Fatalf("Mount: %v", err)
 	}
@@ -166,7 +169,7 @@ func TestBrowserAuthenticationIsBoundThroughTheChain(t *testing.T) {
 
 func TestMountRefusesAMisassembledChain(t *testing.T) {
 	app := gin.New()
-	deps := Deps{Hosts: func() Hosts { return namedHosts() }, Trusted: func() []netip.Prefix { return nil }, Limiter: NewLimiter(newStepClock(), 1, 1)}
+	deps := Deps{Hosts: func() Hosts { return namedHosts() }, Trusted: func() []netip.Prefix { return nil }, Limiter: NewLimiter(newStepClock(), 1, 1), Errors: apierr.NewClassifier(nil)}
 	if err := Mount(app, []Step{StepAuth, StepCSRF}, deps, nil); err == nil {
 		t.Error("invalid chain mounted")
 	}
@@ -185,6 +188,7 @@ func TestHostsAreReadPerRequest(t *testing.T) {
 	if err := Mount(app, Chain(), Deps{
 		Hosts:   func() Hosts { mu.Lock(); defer mu.Unlock(); return hosts },
 		Trusted: func() []netip.Prefix { return nil }, Limiter: NewLimiter(newStepClock(), 1000, 1000),
+		Errors: apierr.NewClassifier(nil),
 	}, nil); err != nil {
 		t.Fatal(err)
 	}

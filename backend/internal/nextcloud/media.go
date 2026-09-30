@@ -239,7 +239,7 @@ func (s *Server) directLink(c *gin.Context, p Principal) (Val, bool, *Error) {
 		return Val{}, false, NotFound("The requested resource could not be found")
 	}
 	if _, e = s.resolve(ctx, p, path, filePermission); e != nil {
-		return Val{}, false, ocsErrorOf(e, apierr.VisibilityHidden)
+		return Val{}, false, s.ocsErrorOf(e, apierr.VisibilityHidden)
 	}
 	tok, e := s.deps.SealClaim(user(p), path)
 	if e != nil {

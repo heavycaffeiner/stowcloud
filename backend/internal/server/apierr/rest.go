@@ -162,8 +162,8 @@ func restTable() map[Class]restEntry {
 //
 // visibility travels from the caller because only the handler knows whether the
 // caller reached this resource through a parent it may read.
-func Write(w http.ResponseWriter, err error, visibility Visibility) {
-	WriteClassified(w, Classify(err, visibility))
+func (k *Classifier) Write(w http.ResponseWriter, err error, visibility Visibility) {
+	WriteClassified(w, k.Classify(err, visibility))
 }
 
 // WriteClassified answers with an outcome the caller already decided.
@@ -189,8 +189,8 @@ type Wire struct {
 }
 
 // WireOf renders an error as a batch item outcome.
-func WireOf(err error, visibility Visibility) Wire {
-	_, body := REST(Classify(err, visibility))
+func (k *Classifier) WireOf(err error, visibility Visibility) Wire {
+	_, body := REST(k.Classify(err, visibility))
 	out := Wire{Code: body.Code, Message: body.Message, Key: body.Key}
 	if len(body.Args) > 0 && body.Key != "" {
 		out.Params = make(map[string]string, len(body.Args))

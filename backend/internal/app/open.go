@@ -52,6 +52,7 @@ import (
 	runtimerestart "github.com/heavycaffeiner/stowcloud/backend/internal/runtime/restart"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/search/controller"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/search/svc"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/smb/publish"
@@ -157,6 +158,9 @@ type Engine struct {
 	// the dashboard and nothing else: every other logger still writes to the
 	// console.
 	Logs *logbook.Sink
+
+	// errs classifies every service error a protocol reports.
+	errs *apierr.Classifier
 
 	// Settings owns the applied document and live process callbacks.
 	Settings    *live.Coordinator
@@ -286,6 +290,7 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 		// boundary admits only a private client in that state.
 		limiter:     middleware.NewLimiter(clk, defaultRatePerSecond, defaultBurst),
 		archiveGate: filehttp.NewArchiveGate(),
+		errs:        ErrorClassifier(),
 	}
 
 	// A failure past this point closes what is already open. Leaving a

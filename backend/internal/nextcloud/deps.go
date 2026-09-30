@@ -13,6 +13,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/preview"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/search/svc"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/uploads"
 )
@@ -196,6 +197,9 @@ type Deps struct {
 	// admits every write, which is what a deployment without a lock table
 	// answers.
 	LockGuard func(ctx context.Context, res files.Resolved, principal int64) error
+
+	// Errors classifies every service error this surface reports.
+	Errors *apierr.Classifier
 
 	Clock  clock.Clock
 	Logger *slog.Logger

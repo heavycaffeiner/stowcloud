@@ -16,13 +16,18 @@ import (
 	"strconv"
 )
 
-type ginKey struct{}
+type (
+	ginKey    struct{}
+	errorsKey struct{}
+)
 
-// Install makes the Gin context selected by the product middleware available
-// to typed operations, without storing request state in a global variable.
-func Install(api huma.API) {
+// Install makes the Gin context selected by the product middleware and the
+// error classifier available to typed operations, without storing request
+// state in a global variable.
+func Install(api huma.API, errs *apierr.Classifier) {
 	api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
-		next(huma.WithValue(ctx, ginKey{}, humagin.Unwrap(ctx)))
+		ctx = huma.WithValue(ctx, ginKey{}, humagin.Unwrap(ctx))
+		next(huma.WithValue(ctx, errorsKey{}, errs))
 	})
 }
 
@@ -57,5 +62,9 @@ func Failure(ctx context.Context, err error) error {
 		c.Header("Retry-After", strconv.Itoa(full.RetryAfterSeconds))
 	}
 	middleware.SetCause(c, err)
-	return Refusal(apierr.Classify(err, apierr.VisibilityKnown))
+	errs, ok := ctx.Value(errorsKey{}).(*apierr.Classifier)
+	if !ok {
+		panic("Huma operation requires the error classifier middleware")
+	}
+	return Refusal(errs.Classify(err, apierr.VisibilityKnown))
 }

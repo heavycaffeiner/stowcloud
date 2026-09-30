@@ -15,6 +15,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/route"
 )
 
@@ -49,6 +50,7 @@ func accessServer(t *testing.T, req route.Requirement, answer gin.HandlerFunc) (
 		Hosts:   func() Hosts { return namedHosts() },
 		Trusted: func() []netip.Prefix { return nil },
 		Limiter: NewLimiter(newStepClock(), 1000, 1000),
+		Errors:  apierr.NewClassifier(nil),
 		Access:  rec,
 	}, nil); err != nil {
 		t.Fatalf("Mount: %v", err)
@@ -282,6 +284,7 @@ func TestNoAccessSinkIsNotAFailure(t *testing.T) {
 		Hosts:   func() Hosts { return namedHosts() },
 		Trusted: func() []netip.Prefix { return nil },
 		Limiter: NewLimiter(newStepClock(), 1000, 1000),
+		Errors:  apierr.NewClassifier(nil),
 	}, nil); err != nil {
 		t.Fatalf("Mount: %v", err)
 	}

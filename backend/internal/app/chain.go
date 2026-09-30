@@ -37,6 +37,7 @@ func (e *Engine) deps() middleware.Deps {
 		CSRFKey:      e.csrfKey,
 		Audit:        nil,
 		Access:       accessLog{e},
+		Errors:       e.errs,
 		// The interface's own inline bootstrap, admitted by hash. Empty in a
 		// build without the bundle, which keeps the policy as strict as a
 		// server with no pages to serve should be.

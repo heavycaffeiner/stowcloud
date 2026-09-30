@@ -84,7 +84,7 @@ func (h *authHandlers) login(c *gin.Context) {
 		return
 	}
 	if req.Login == "" || req.Password == "" {
-		refuseTransport(c, apierr.Classify(auth.ErrCredentials, apierr.VisibilityKnown))
+		middleware.Fail(c, auth.ErrCredentials)
 		return
 	}
 	sess, err := h.d.Service.Login(c.Request.Context(), auth.LoginRequest{
@@ -124,7 +124,7 @@ func (h *authHandlers) loginTOTP(c *gin.Context) {
 	}
 	uid, err := OpenChallenge(h.d.CSRFKey(), req.Challenge, h.d.Clock.Now().Unix())
 	if err != nil || req.Code == "" {
-		refuseTransport(c, apierr.Classify(auth.ErrCredentials, apierr.VisibilityKnown))
+		middleware.Fail(c, auth.ErrCredentials)
 		return
 	}
 	key := middleware.ClientOf(c).String()
@@ -138,7 +138,7 @@ func (h *authHandlers) loginTOTP(c *gin.Context) {
 		return
 	}
 	if !accepted {
-		refuseTransport(c, apierr.Classify(auth.ErrCredentials, apierr.VisibilityKnown))
+		middleware.Fail(c, auth.ErrCredentials)
 		return
 	}
 	sess, err := h.d.Service.CreateSession(c.Request.Context(), uid, middleware.ClientOf(c).String(), c.Request.UserAgent(), passwordFactorAMR, 0)
@@ -250,10 +250,8 @@ func ownerTransport(c *gin.Context) (int64, bool) {
 	return p.UserID, true
 }
 func writeTransportJSON(c *gin.Context, status int, value any) { c.JSON(status, value) }
-func failKnownTransport(c *gin.Context, err error) {
-	refuseTransport(c, apierr.Classify(err, apierr.VisibilityKnown))
-}
-func FailKnown(c *gin.Context, err error) { failKnownTransport(c, err) }
+func failKnownTransport(c *gin.Context, err error)             { middleware.Fail(c, err) }
+func FailKnown(c *gin.Context, err error)                      { failKnownTransport(c, err) }
 
 func ClientAddr(c *gin.Context) string { return middleware.ClientOf(c).String() }
 

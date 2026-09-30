@@ -31,11 +31,10 @@ var (
 
 // AdminFSDeps supplies the registry and host paths used by the browse dialog.
 type AdminFSDeps struct {
-	Auth         *auth.Service
-	Core         *files.Core
-	DataDir      string
-	SetupVerify  func(context.Context, string) error
-	SetupRefusal func(error) apierr.Classified
+	Auth        *auth.Service
+	Core        *files.Core
+	DataDir     string
+	SetupVerify func(context.Context, string) error
 }
 
 // NewAdminFSHandlers builds administrator and first-run host filesystem routes.
@@ -52,7 +51,7 @@ func (h *adminFSHandlers) browse(c *gin.Context) {
 	}
 	listing, err := h.browseHost(c.Query("path"))
 	if err != nil {
-		adminRefuse(c, adminHostFSRefusal(err))
+		adminHostFSFail(c, err)
 		return
 	}
 	adminJSON(c, http.StatusOK, listing)
@@ -73,16 +72,12 @@ func (h *adminFSHandlers) setupBrowse(c *gin.Context) {
 		return
 	}
 	if err := h.d.SetupVerify(c.Request.Context(), req.Token); err != nil {
-		if h.d.SetupRefusal != nil {
-			adminRefuse(c, h.d.SetupRefusal(err))
-		} else {
-			adminRefuse(c, apierr.Classify(err, apierr.VisibilityKnown))
-		}
+		middleware.Fail(c, err)
 		return
 	}
 	listing, err := h.browseHost(req.Path)
 	if err != nil {
-		adminRefuse(c, adminHostFSRefusal(err))
+		adminHostFSFail(c, err)
 		return
 	}
 	adminJSON(c, http.StatusOK, listing)
@@ -233,17 +228,19 @@ func adminProbeOpenable(dir string) bool {
 	return (rerr == nil || errors.Is(rerr, io.EOF)) && cerr == nil
 }
 
-func adminHostFSRefusal(err error) apierr.Classified {
+// adminHostFSFail reports a host path failure. The host filesystem's own
+// errors are classified here because elsewhere they are internal faults.
+func adminHostFSFail(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, errAdminHostFSNotAbsolute):
-		return apierr.Classified{Class: apierr.Unprocessable, Key: "settings.path_must_be_absolute"}
+		adminRefuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "settings.path_must_be_absolute"})
 	case errors.Is(err, errAdminHostFSNotDirectory):
-		return apierr.Classified{Class: apierr.Unprocessable, Key: "settings.path_is_not_a_directory"}
+		adminRefuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "settings.path_is_not_a_directory"})
 	case errors.Is(err, fs.ErrNotExist):
-		return apierr.Classified{Class: apierr.NotFound}
+		adminRefuse(c, apierr.Classified{Class: apierr.NotFound})
 	case errors.Is(err, fs.ErrPermission):
-		return apierr.Classified{Class: apierr.Denied, Key: "admin.fs_denied"}
+		adminRefuse(c, apierr.Classified{Class: apierr.Denied, Key: "admin.fs_denied"})
 	default:
-		return apierr.Classify(err, apierr.VisibilityKnown)
+		middleware.Fail(c, err)
 	}
 }

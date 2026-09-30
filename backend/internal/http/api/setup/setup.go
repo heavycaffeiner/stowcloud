@@ -15,7 +15,6 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
-	setupserver "github.com/heavycaffeiner/stowcloud/backend/internal/http/server"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
@@ -118,7 +117,7 @@ func (h *handlers) post(c *gin.Context) {
 		return h.d.GrantEveryShare(ctx, id)
 	})
 	if err != nil {
-		h.refuse(c, Refusal(err))
+		middleware.Fail(c, err)
 		return
 	}
 
@@ -168,20 +167,6 @@ func anyList(in []string) []any {
 		out = append(out, item)
 	}
 	return out
-}
-
-// Refusal maps setup-gate outcomes onto the wire.
-func Refusal(err error) apierr.Classified {
-	switch {
-	case errors.Is(err, setupserver.ErrSetupClosed):
-		return apierr.Classified{Class: apierr.SetupComplete, Key: "setup.complete"}
-	case errors.Is(err, setupserver.ErrSetupNotIssued):
-		return apierr.Classified{Class: apierr.SetupExpired, Key: "setup.not_issued"}
-	case errors.Is(err, setupserver.ErrSetupToken):
-		return apierr.Classified{Class: apierr.SetupInvalidToken, Key: "setup.invalid_token"}
-	default:
-		return apierr.Classify(err, apierr.VisibilityKnown)
-	}
 }
 
 func decode(c *gin.Context, into any) error {

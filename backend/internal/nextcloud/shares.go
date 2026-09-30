@@ -83,7 +83,7 @@ func (s *Server) listShares(c *gin.Context, p Principal) (Val, bool, *Error) {
 		items := make([]Val, 0)
 		links, err := s.deps.Core.ListLinks(ctx, owner, nil)
 		if err != nil {
-			return Val{}, false, ocsErrorOf(err, apierr.VisibilityHidden)
+			return Val{}, false, s.ocsErrorOf(err, apierr.VisibilityHidden)
 		}
 		for _, l := range links {
 			if s.linkInScope(ctx, p, l) {
@@ -95,7 +95,7 @@ func (s *Server) listShares(c *gin.Context, p Principal) (Val, bool, *Error) {
 
 	res, err := s.resolve(ctx, p, path, acl.Read)
 	if err != nil {
-		return Val{}, false, ocsErrorOf(err, apierr.VisibilityHidden)
+		return Val{}, false, s.ocsErrorOf(err, apierr.VisibilityHidden)
 	}
 
 	if !queryBool(c.Query("subfiles")) {
@@ -104,7 +104,7 @@ func (s *Server) listShares(c *gin.Context, p Principal) (Val, bool, *Error) {
 
 	page, err := s.deps.Core.List(ctx, res, "")
 	if err != nil {
-		return Val{}, false, ocsErrorOf(err, apierr.VisibilityHidden)
+		return Val{}, false, s.ocsErrorOf(err, apierr.VisibilityHidden)
 	}
 	items := make([]Val, 0)
 	for _, e := range page.Entries {
@@ -204,7 +204,7 @@ func (s *Server) createShare(c *gin.Context, p Principal) (Val, bool, *Error) {
 func (s *Server) createLinkShare(c *gin.Context, ctx context.Context, p Principal, path string) (Val, bool, *Error) {
 	res, err := s.resolve(ctx, p, path, acl.Share)
 	if err != nil {
-		return Val{}, false, ocsErrorOf(err, apierr.VisibilityHidden)
+		return Val{}, false, s.ocsErrorOf(err, apierr.VisibilityHidden)
 	}
 
 	features := s.deps.Features()
@@ -254,7 +254,7 @@ func (s *Server) createLinkShare(c *gin.Context, ctx context.Context, p Principa
 	if cerr != nil {
 		// The caller demonstrably reached this path through their own
 		// resolve above, so a refusal here may say what it refused.
-		return Val{}, false, ocsErrorOf(cerr, apierr.VisibilityKnown)
+		return Val{}, false, s.ocsErrorOf(cerr, apierr.VisibilityKnown)
 	}
 	return s.linkShareVal(c, link), true, nil
 }
@@ -371,7 +371,7 @@ func (s *Server) updateLinkShare(c *gin.Context, p Principal, id int64) (Val, bo
 
 	link, uerr := s.deps.Core.UpdateLink(ctx, owner, id, patch)
 	if uerr != nil {
-		return Val{}, false, ocsErrorOf(uerr, apierr.VisibilityKnown)
+		return Val{}, false, s.ocsErrorOf(uerr, apierr.VisibilityKnown)
 	}
 	return s.linkShareVal(c, link), true, nil
 }
@@ -388,7 +388,7 @@ func (s *Server) deleteShare(c *gin.Context, p Principal, id string) (Val, bool,
 		return Val{}, false, NotFound("The requested share could not be found")
 	}
 	if derr := s.deps.Core.DeleteLink(ctx, user(p), storeID); derr != nil {
-		return Val{}, false, ocsErrorOf(derr, apierr.VisibilityHidden)
+		return Val{}, false, s.ocsErrorOf(derr, apierr.VisibilityHidden)
 	}
 	return Obj(), true, nil
 }

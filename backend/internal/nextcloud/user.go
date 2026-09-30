@@ -29,7 +29,7 @@ func (s *Server) currentUser(c *gin.Context, p Principal) (Val, bool, *Error) {
 	ctx := c.Request.Context()
 	info, err := s.deps.Auth.AccountInfo(ctx, p.UserID)
 	if err != nil {
-		return Val{}, false, ocsErrorOf(err, apierr.VisibilityHidden)
+		return Val{}, false, s.ocsErrorOf(err, apierr.VisibilityHidden)
 	}
 	return s.accountValOf(c, p.UserID, info), true, nil
 }
@@ -42,7 +42,7 @@ func (s *Server) otherUser(c *gin.Context, p Principal, login string) (Val, bool
 	ctx := c.Request.Context()
 	info, visible, err := s.deps.Auth.AccountInfoByLogin(ctx, p.UserID, login)
 	if err != nil {
-		return Val{}, false, ocsErrorOf(err, apierr.VisibilityHidden)
+		return Val{}, false, s.ocsErrorOf(err, apierr.VisibilityHidden)
 	}
 	if !visible {
 		return Val{}, false, NotFound("The requested user could not be found")
@@ -208,7 +208,7 @@ func (s *Server) appPassword(c *gin.Context, p Principal) (Val, bool, *Error) {
 	}
 	token, _, err := s.deps.Auth.CreateSyncCredential(c.Request.Context(), p.UserID, "device login")
 	if err != nil {
-		return Val{}, false, ocsErrorOf(err, apierr.VisibilityHidden)
+		return Val{}, false, s.ocsErrorOf(err, apierr.VisibilityHidden)
 	}
 	return Obj(P("apppassword", Str(token))), true, nil
 }
@@ -221,7 +221,7 @@ func (s *Server) revokeAppPassword(c *gin.Context, p Principal) (Val, bool, *Err
 		return Val{}, false, BadRequest("this session holds no app password to revoke")
 	}
 	if err := s.deps.Auth.RevokeAppPassword(c.Request.Context(), p.UserID, p.AppPasswordID); err != nil {
-		return Val{}, false, ocsErrorOf(err, apierr.VisibilityHidden)
+		return Val{}, false, s.ocsErrorOf(err, apierr.VisibilityHidden)
 	}
 	return Obj(), true, nil
 }

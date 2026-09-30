@@ -7,7 +7,7 @@
 // The old tree carried three complete errors.Is ladders, one per protocol, and
 // they drifted: the same service sentinel could become a 404 on one surface and
 // a 403 on another, which is a disclosure difference nobody chose. Here a
-// sentinel is recognised once, in Classify, and each protocol renders the
+// sentinel is recognised once, by a Classifier, and each protocol renders the
 // resulting class through a thin adapter that never repeats the ladder.
 //
 // The classification lives in presentation rather than in service on purpose.
@@ -19,6 +19,7 @@ package apierr
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -188,15 +189,28 @@ type Classified struct {
 	Args []Arg
 }
 
-// classifier is one sentinel and the class it means.
+// Sentinel is one service error and the class it means.
 //
-// A slice rather than a map because errors.Is is not equality: a wrapped error
-// matches its sentinel, and order decides which of two overlapping sentinels
-// wins. The order here is specific-before-general.
-type classifier struct {
-	err   error
-	class Class
-	key   string
+// The table is a slice rather than a map because errors.Is is not equality: a
+// wrapped error matches its sentinel, and order decides which of two
+// overlapping sentinels wins. The order is specific-before-general.
+type Sentinel struct {
+	Err   error
+	Class Class
+	Key   string
+}
+
+// Classifier reduces errors to classes against one sentinel table.
+//
+// The table is supplied by the composition root, so this package names no
+// service and every service can depend on it.
+type Classifier struct {
+	table []Sentinel
+}
+
+// NewClassifier returns a classifier over a copy of table.
+func NewClassifier(table []Sentinel) *Classifier {
+	return &Classifier{table: slices.Clone(table)}
 }
 
 // Classify reduces any error to a class, once.
@@ -204,7 +218,7 @@ type classifier struct {
 // This is the only place in the presentation tier that consults a service
 // sentinel. The protocol adapters take the result; a second ladder anywhere
 // else is the drift this package exists to end.
-func Classify(err error, visibility Visibility) Classified {
+func (k *Classifier) Classify(err error, visibility Visibility) Classified {
 	if err == nil {
 		return Classified{Class: Internal, Key: "internal"}
 	}
@@ -222,9 +236,9 @@ func Classify(err error, visibility Visibility) Classified {
 		return applyVisibility(Classified{Class: req.Class, Key: req.Key, Args: req.Args}, visibility)
 	}
 
-	for _, c := range sentinels() {
-		if errors.Is(err, c.err) {
-			return applyVisibility(Classified{Class: c.class, Key: c.key}, visibility)
+	for _, s := range k.table {
+		if errors.Is(err, s.Err) {
+			return applyVisibility(Classified{Class: s.Class, Key: s.Key}, visibility)
 		}
 	}
 	// Unrecognised. Internal rather than a guess: a guessed class produces a

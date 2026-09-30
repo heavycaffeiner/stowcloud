@@ -14,6 +14,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/objstore"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/uploads"
 	uploadlimits "github.com/heavycaffeiner/stowcloud/backend/internal/uploads/limits"
 )
@@ -144,7 +145,7 @@ func FeaturesViewOf(fc *files.Core, in FeaturesInputs) FeaturesView {
 // Reconfirm checks the account password for a sensitive settings operation.
 func Reconfirm(c *gin.Context, service *auth.Service, owner int64, password string) bool {
 	if password == "" {
-		refuseTransport(c, apierr.Classify(auth.ErrCredentials, apierr.VisibilityKnown))
+		middleware.Fail(c, auth.ErrCredentials)
 		return false
 	}
 	ok, err := service.VerifyAccountPassword(c.Request.Context(), owner, secret.New([]byte(password)))
@@ -153,7 +154,7 @@ func Reconfirm(c *gin.Context, service *auth.Service, owner int64, password stri
 		return false
 	}
 	if !ok {
-		refuseTransport(c, apierr.Classify(auth.ErrCredentials, apierr.VisibilityKnown))
+		middleware.Fail(c, auth.ErrCredentials)
 		return false
 	}
 	return true

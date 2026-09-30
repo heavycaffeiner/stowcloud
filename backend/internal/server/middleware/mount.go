@@ -9,11 +9,13 @@
 package middleware
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/netip"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -58,6 +60,9 @@ type Deps struct {
 	Audit  AuditSink
 	Access AccessSink
 
+	// Errors classifies what a handler recorded with Fail.
+	Errors *apierr.Classifier
+
 	ContentRoute func(method, path string) bool
 }
 
@@ -82,8 +87,8 @@ func Mount(app *gin.Engine, steps []Step, d Deps, rec Recorder) error {
 	if app == nil {
 		return fmt.Errorf("middleware: the chain needs an application")
 	}
-	if d.Hosts == nil || d.Trusted == nil || d.Limiter == nil {
-		return fmt.Errorf("middleware: the chain needs hosts, trusted proxies and a limiter")
+	if d.Hosts == nil || d.Trusted == nil || d.Limiter == nil || d.Errors == nil {
+		return fmt.Errorf("middleware: the chain needs hosts, trusted proxies, a limiter and an error classifier")
 	}
 
 	for _, s := range steps {
@@ -156,7 +161,9 @@ func stepHandler(s Step, d Deps) gin.HandlerFunc {
 		return func(c *gin.Context) { csrfHandler(c, d) }
 	case StepAuditSink:
 		return func(c *gin.Context) { auditHandler(c, d) }
-	case StepErrorMapper, StepUnset:
+	case StepErrorMapper:
+		return func(c *gin.Context) { errorHandler(c, d.Errors) }
+	case StepUnset:
 		return func(c *gin.Context) { c.Next() }
 	default:
 		return func(c *gin.Context) { c.Next() }
@@ -242,6 +249,29 @@ func traceOf(c *gin.Context) string {
 		}
 	}
 	return ""
+}
+
+// Fail records err as the request's outcome and stops the chain. The
+// ErrorMapper step renders it once the handler returns.
+func Fail(c *gin.Context, err error) {
+	c.Errors = append(c.Errors, &gin.Error{Err: err, Type: gin.ErrorTypePrivate})
+	c.Abort()
+}
+
+// errorHandler renders the last recorded error, unless the handler already
+// answered.
+func errorHandler(c *gin.Context, errs *apierr.Classifier) {
+	c.Next()
+	if len(c.Errors) == 0 || c.Writer.Written() {
+		return
+	}
+	err := c.Errors.Last().Err
+	var wait interface{ RetryAfter() int }
+	if errors.As(err, &wait) && wait.RetryAfter() > 0 {
+		c.Header("Retry-After", strconv.Itoa(wait.RetryAfter()))
+	}
+	status, body := apierr.REST(errs.Classify(err, apierr.VisibilityKnown))
+	c.JSON(status, body)
 }
 
 // SetCause records the error a handler turned into a status for the access log.

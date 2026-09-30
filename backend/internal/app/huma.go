@@ -98,7 +98,7 @@ func (e *Engine) mountHuma(router *gin.Engine) (huma.API, error) {
 	}}
 	config.CreateHooks = nil
 	api := hanamiapi.New(router, config, server.Base)
-	humabridge.Install(api)
+	humabridge.Install(api, e.errs)
 	api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
 		c := humagin.Unwrap(ctx)
 		if name, ok := middleware.RouteNameOf(c); ok && strings.HasPrefix(name, "admin.") {
@@ -110,7 +110,7 @@ func (e *Engine) mountHuma(router *gin.Engine) (huma.API, error) {
 	})
 
 	jobs.Register(api, jobs.Deps{Core: e.Core, State: e.State, Owner: handler.Owner, StartJobs: e.Core.StartJobs, NowNs: e.now})
-	trashhttp.Register(api, trashhttp.Deps{Core: e.Core, Owner: handler.Owner, Resolve: filehttp.Resolve(e.Core)})
+	trashhttp.Register(api, trashhttp.Deps{Core: e.Core, Owner: handler.Owner, Resolve: filehttp.Resolve(e.Core), Errors: e.errs})
 	adminlogs.Register(api, adminlogs.Deps{Logs: e.Logs, Auth: e.Auth})
 	adminstorage.Register(api, adminstorage.Deps{Core: e.Core, State: e.State})
 	adminshares.Register(api, adminshares.Deps{

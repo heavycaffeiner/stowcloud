@@ -34,6 +34,7 @@ type Deps struct {
 	Handler         *Handler
 	Clock           clock.Clock
 	Logger          *slog.Logger
+	Errors          *apierr.Classifier
 	InfinityEntries int
 }
 
@@ -101,14 +102,14 @@ func NewMount(d Deps) http.Handler {
 		res, err := resolve(d.Core, r, user, path, acl.Read)
 		if err != nil {
 			refused(logger, r, path, err)
-			apierr.Write(w, err, apierr.VisibilityHidden)
+			d.Errors.Write(w, err, apierr.VisibilityHidden)
 			return
 		}
 		switch r.Method {
 		case "MOVE", "COPY":
 			target, terr := destination(d.Core, r, user)
 			if terr != nil {
-				apierr.Write(w, terr, apierr.VisibilityHidden)
+				d.Errors.Write(w, terr, apierr.VisibilityHidden)
 				return
 			}
 			if r.Method == "MOVE" {

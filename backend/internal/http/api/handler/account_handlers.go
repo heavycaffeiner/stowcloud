@@ -261,7 +261,7 @@ func (h *accountHandlers) totpEnroll(c *gin.Context) {
 		return
 	}
 	if !accepted {
-		accountRefuse(c, apierr.Classify(auth.ErrCredentials, apierr.VisibilityKnown))
+		middleware.Fail(c, auth.ErrCredentials)
 		return
 	}
 	if enrollErr := h.d.Service.EnrollTOTP(c.Request.Context(), owner, req.Secret); enrollErr != nil {
@@ -335,7 +335,7 @@ func (h *accountHandlers) recoveryCreate(c *gin.Context) {
 }
 func (h *accountHandlers) reconfirm(c *gin.Context, owner int64, password string) bool {
 	if password == "" {
-		accountRefuse(c, apierr.Classify(auth.ErrCredentials, apierr.VisibilityKnown))
+		middleware.Fail(c, auth.ErrCredentials)
 		return false
 	}
 	ok, err := h.d.Service.VerifyAccountPassword(c.Request.Context(), owner, secret.New([]byte(password)))
@@ -344,7 +344,7 @@ func (h *accountHandlers) reconfirm(c *gin.Context, owner int64, password string
 		return false
 	}
 	if !ok {
-		accountRefuse(c, apierr.Classify(auth.ErrCredentials, apierr.VisibilityKnown))
+		middleware.Fail(c, auth.ErrCredentials)
 		return false
 	}
 	return true
@@ -390,9 +390,7 @@ func accountPathID(c *gin.Context) (int64, bool) {
 	return n, err == nil && n > 0
 }
 func accountJSON(c *gin.Context, status int, value any) { c.JSON(status, value) }
-func accountFail(c *gin.Context, err error) {
-	accountRefuse(c, apierr.Classify(err, apierr.VisibilityKnown))
-}
+func accountFail(c *gin.Context, err error)             { middleware.Fail(c, err) }
 func accountRefuse(c *gin.Context, class apierr.Classified) {
 	status, body := apierr.REST(class)
 	accountJSON(c, status, body)

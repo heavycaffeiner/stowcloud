@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/protocol/limits"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/route"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
@@ -117,6 +118,7 @@ func TestTheTraceHeaderIsOnEveryResponse(t *testing.T) {
 		Hosts:   func() Hosts { return namedHosts() },
 		Trusted: func() []netip.Prefix { return nil },
 		Limiter: NewLimiter(newStepClock(), 1000, 1000),
+		Errors:  apierr.NewClassifier(nil),
 	}, nil); err != nil {
 		t.Fatalf("Mount: %v", err)
 	}
@@ -150,6 +152,7 @@ func TestScopeRefusesThroughTheChain(t *testing.T) {
 			Hosts:     func() Hosts { return namedHosts() },
 			Trusted:   func() []netip.Prefix { return nil },
 			Limiter:   NewLimiter(newStepClock(), 1000, 1000),
+			Errors:    apierr.NewClassifier(nil),
 			Principal: func(Credential) (Principal, bool) { return p, true },
 		}, nil); err != nil {
 			t.Fatalf("Mount: %v", err)
@@ -194,6 +197,7 @@ func chainWith(t *testing.T, req route.Requirement, body route.BodyClass, p Prin
 		Hosts:     func() Hosts { return namedHosts() },
 		Trusted:   func() []netip.Prefix { return nil },
 		Limiter:   NewLimiter(newStepClock(), 1000, 1000),
+		Errors:    apierr.NewClassifier(nil),
 		Principal: func(Credential) (Principal, bool) { return p, true },
 		CSRFKey:   func() []byte { return key },
 	}, nil); err != nil {
@@ -286,6 +290,7 @@ func TestNoCSRFKeyRefusesTheMutation(t *testing.T) {
 		d.Hosts = func() Hosts { return namedHosts() }
 		d.Trusted = func() []netip.Prefix { return nil }
 		d.Limiter = NewLimiter(newStepClock(), 1000, 1000)
+		d.Errors = apierr.NewClassifier(nil)
 		d.Principal = func(Credential) (Principal, bool) { return session, true }
 		if err := Mount(app, Chain(), d, nil); err != nil {
 			t.Fatalf("Mount: %v", err)
