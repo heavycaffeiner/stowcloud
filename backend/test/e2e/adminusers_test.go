@@ -96,11 +96,35 @@ func TestNoAdminRouteAnswersAnOrdinaryAccount(t *testing.T) {
 	}
 }
 
-// The generated specification covers only the typed native operations and is
-// available through the existing administrator-owned route.
-func TestTheAdminOpenAPIDescribesTypedRoutes(t *testing.T) {
+// The specification describes every native JSON route and none of the raw
+// ones, and only an administrator can read it.
+func TestTheAdminOpenAPIDescribesEveryJSONRoute(t *testing.T) {
 	t.Parallel()
 	base, adminCookie, _, plainCookie, _ := adminEngine(t)
+
+	// The native routes that stream bytes, upgrade the connection, redirect a
+	// browser or serve the specification itself. Every other native route
+	// answers JSON and belongs in the specification.
+	rawRoutes := map[string]bool{
+		"GET /api/v1/events":               true,
+		"GET /api/v1/auth/oidc/callback":   true,
+		"GET /api/v1/files/read":           true,
+		"GET /api/v1/files/thumbnail":      true,
+		"POST /api/v1/files/write":         true,
+		"GET /api/v1/files/archive/fetch":  true,
+		"GET /api/v1/files/download/fetch": true,
+		"OPTIONS /api/v1/uploads":          true,
+		"POST /api/v1/uploads":             true,
+		"OPTIONS /api/v1/uploads/:id":      true,
+		"HEAD /api/v1/uploads/:id":         true,
+		"PATCH /api/v1/uploads/:id":        true,
+		"DELETE /api/v1/uploads/:id":       true,
+		"GET /api/v1/search/stream":        true,
+		"GET /api/v1/admin/openapi":        true,
+		"GET /s/:token/download":           true,
+		"GET /s/:token/zip":                true,
+		"POST /s/:token/drop":              true,
+	}
 
 	if status, body := withCookie(t, http.MethodGet, base+"/api/v1/admin/openapi", plainCookie); status != http.StatusForbidden {
 		t.Fatalf("an ordinary account read the specification: %d %s", status, body)
@@ -110,21 +134,47 @@ func TestTheAdminOpenAPIDescribesTypedRoutes(t *testing.T) {
 		t.Fatalf("the specification answered %d: %s", status, body)
 	}
 	var doc struct {
-		Paths map[string]json.RawMessage `json:"paths"`
+		Paths map[string]map[string]json.RawMessage `json:"paths"`
 	}
 	if err := json.Unmarshal(body, &doc); err != nil {
 		t.Fatalf("the specification does not parse: %v\n%s", err, body)
 	}
-	for _, path := range []string{"/api/v1/jobs", "/api/v1/trash", "/api/v1/admin/shares", "/api/v1/links", "/api/v1/encryption", "/api/v1/account/smb", "/api/v1/auth/login", "/api/v1/account/sessions", "/api/v1/admin/oidc/endpoints", "/api/v1/admin/users", "/api/v1/system/setup", "/api/v1/files/list", "/api/v1/files/move", "/api/v1/files/archive/list", "/api/v1/direct-uploads/{id}", "/s/{token}", "/s/{token}/auth"} {
-		if _, ok := doc.Paths[path]; !ok {
-			t.Errorf("the specification omits %s", path)
+
+	router := gin.New()
+	if err := openEngine(t).Mount(router); err != nil {
+		t.Fatalf("mounting: %v", err)
+	}
+	mounted := map[string]bool{}
+	for _, r := range router.Routes() {
+		if !strings.HasPrefix(r.Path, "/api/v1/") && !strings.HasPrefix(r.Path, "/s/") {
+			continue
+		}
+		key := r.Method + " " + r.Path
+		mounted[key] = true
+		_, described := doc.Paths[openAPIPath(r.Path)][strings.ToLower(r.Method)]
+		switch {
+		case rawRoutes[key] && described:
+			t.Errorf("the specification describes raw route %s", key)
+		case !rawRoutes[key] && !described:
+			t.Errorf("the specification omits %s", key)
 		}
 	}
-	for _, path := range []string{"/api/v1/files/read", "/api/v1/uploads", "/api/v1/events"} {
-		if _, ok := doc.Paths[path]; ok {
-			t.Errorf("the typed specification includes protocol route %s", path)
+	for key := range rawRoutes {
+		if !mounted[key] {
+			t.Errorf("raw route %s is not mounted", key)
 		}
 	}
+}
+
+// openAPIPath spells a router pattern the way the specification does.
+func openAPIPath(pattern string) string {
+	segments := strings.Split(pattern, "/")
+	for i, segment := range segments {
+		if strings.HasPrefix(segment, ":") || strings.HasPrefix(segment, "*") {
+			segments[i] = "{" + segment[1:] + "}"
+		}
+	}
+	return strings.Join(segments, "/")
 }
 
 // concretePath fills a route's parameters with a value that parses, so the
