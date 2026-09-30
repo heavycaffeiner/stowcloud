@@ -11,10 +11,12 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/search"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/search/stowcloud"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/search/svc"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/httpx"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 	searchlib "github.com/stowcloud/namesearch"
 )
@@ -23,7 +25,7 @@ const searchQueryMax = 512
 const searchProgressEvery = 400 * time.Millisecond
 
 func (m *Manager) SearchStream(c *gin.Context) {
-	owner, ok := handler.Owner(c)
+	owner, ok := files.Owner(c)
 	if !ok {
 		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
@@ -59,7 +61,7 @@ func (m *Manager) SearchStream(c *gin.Context) {
 }
 
 func (m *Manager) writeSearchStream(ctx context.Context, cancel context.CancelFunc, w *bufio.Writer, sources []searchlib.Source, opt svc.QueryOptions) {
-	writeSSE(w, handler.SSEComment(), m)
+	writeSSE(w, httpx.SSEComment(), m)
 	if err := w.Flush(); err != nil {
 		cancel()
 		return
@@ -71,7 +73,7 @@ func (m *Manager) writeSearchStream(ctx context.Context, cancel context.CancelFu
 			return
 		}
 		for _, hit := range hits {
-			writeSSEEvent(w, "hit", handler.SearchHitViewOf(hit), m)
+			writeSSEEvent(w, "hit", search.SearchHitViewOf(hit), m)
 			count++
 		}
 		if err := w.Flush(); err != nil {
@@ -121,7 +123,7 @@ func searchErrorName(err error) string {
 }
 
 func writeSSEEvent(w *bufio.Writer, name string, payload any, m *Manager) {
-	frame, err := handler.SSEFrame(name, payload)
+	frame, err := httpx.SSEFrame(name, payload)
 	if err != nil {
 		m.log().Warn("a search event could not be framed and is dropped", "event", name, "error", err)
 		return

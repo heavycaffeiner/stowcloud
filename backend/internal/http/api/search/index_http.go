@@ -6,7 +6,8 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/search"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/search/controller"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
@@ -18,10 +19,10 @@ func (m *Manager) IndexEstimate(c *gin.Context) {
 		middleware.Fail(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, handler.IndexEstimateOf(result, estimate))
+	c.JSON(http.StatusOK, search.IndexEstimateOf(result, estimate))
 }
 func (m *Manager) IndexStatus(c *gin.Context) {
-	c.JSON(http.StatusOK, handler.IndexStatusOf(m.Controller.IndexState()))
+	c.JSON(http.StatusOK, search.IndexStatusOf(m.Controller.IndexState()))
 }
 func (m *Manager) IndexBuild(c *gin.Context) {
 	owner, _ := middleware.UserOf(c)
@@ -42,5 +43,5 @@ func (m *Manager) IndexBuild(c *gin.Context) {
 		middleware.Fail(c, err)
 		return
 	}
-	c.JSON(http.StatusAccepted, handler.OperationOf(op))
+	c.JSON(http.StatusAccepted, files.OperationOf(op))
 }

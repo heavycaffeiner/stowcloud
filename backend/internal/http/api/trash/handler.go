@@ -12,7 +12,6 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
@@ -31,7 +30,7 @@ type listInput struct {
 }
 
 type listOutput struct {
-	Body []handler.TrashView
+	Body []files.TrashView
 }
 
 type batchBody struct {
@@ -50,14 +49,14 @@ type batchOutput struct {
 
 // List answers the trash under a path, or under every root.
 func (h *Handler) List(ctx context.Context, in *listInput) (*listOutput, error) {
-	owner, err := handler.OwnerFrom(ctx)
+	owner, err := files.OwnerFrom(ctx)
 	if err != nil {
 		return nil, err
 	}
-	views := make([]handler.TrashView, 0, 8)
+	views := make([]files.TrashView, 0, 8)
 	qualify := func(share files.ShareID, entries []files.TrashEntry) {
 		for _, entry := range entries {
-			view := handler.TrashOf(entry)
+			view := files.TrashOf(entry)
 			view.ID = strconv.FormatUint(uint64(share), 10) + ":" + entry.ID
 			views = append(views, view)
 		}
@@ -89,7 +88,7 @@ func (h *Handler) List(ctx context.Context, in *listInput) (*listOutput, error) 
 }
 
 func (h *Handler) batch(ctx context.Context, ids []string, need acl.Perms, restore bool) (*batchOutput, error) {
-	owner, err := handler.OwnerFrom(ctx)
+	owner, err := files.OwnerFrom(ctx)
 	if err != nil {
 		return nil, err
 	}

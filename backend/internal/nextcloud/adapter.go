@@ -15,7 +15,6 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
@@ -236,13 +235,13 @@ func FeaturesFor(instanceID string, thumbnails, chunking bool) Features {
 }
 
 // Claims returns the content claim codec used by direct media URLs.
-func Claims(key handler.ClaimKey, now func() int64) (func(files.UserID, string) (string, error), func(string) (files.UserID, string, error)) {
+func Claims(key files.ClaimKey, now func() int64) (func(files.UserID, string) (string, error), func(string) (files.UserID, string, error)) {
 	seal := func(user files.UserID, path string) (string, error) {
-		return handler.SealClaim(key, handler.Claim{Purpose: handler.PurposeDownload, UserID: int64(user), Path: path}, now())
+		return files.SealClaim(key, files.Claim{Purpose: files.PurposeDownload, UserID: int64(user), Path: path}, now())
 	}
 	open := func(token string) (files.UserID, string, error) {
 		keys := map[uint32][]byte{key.Version: key.Key}
-		cl, err := handler.OpenClaim(keys, handler.PurposeDownload, token, now())
+		cl, err := files.OpenClaim(keys, files.PurposeDownload, token, now())
 		if err != nil {
 			return 0, "", err
 		}

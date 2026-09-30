@@ -24,9 +24,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
 	task "github.com/heavycaffeiner/stowcloud/backend/internal/platform/concurrency"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/httpx"
 )
 
 // The bounds one connection is held to.
@@ -313,7 +313,7 @@ func (c *eventConn) readLoop() {
 		if err != nil {
 			return
 		}
-		frame, perr := handler.ParseWSFrame(raw, maxFrameBytes, maxPathsPerFrame)
+		frame, perr := httpx.ParseWSFrame(raw, maxFrameBytes, maxPathsPerFrame)
 		if perr != nil {
 			// A frame this server cannot read is the end of the conversation.
 			// Continuing would be answering a peer whose next frame is just as
@@ -321,16 +321,16 @@ func (c *eventConn) readLoop() {
 			return
 		}
 		switch frame.Type {
-		case handler.WSPing:
-			if !c.send(handler.WSFrame{Type: handler.WSPong}) {
+		case httpx.WSPing:
+			if !c.send(httpx.WSFrame{Type: httpx.WSPong}) {
 				return
 			}
-		case handler.WSPong:
+		case httpx.WSPong:
 			// The deadline moved in the pong handler above. A pong arriving as
 			// a text frame rather than a control frame is the same statement.
-		case handler.WSSubscribe:
+		case httpx.WSSubscribe:
 			c.subscribe(frame.Paths)
-		case handler.WSUnsubscribe:
+		case httpx.WSUnsubscribe:
 			c.unsubscribe(frame.Paths)
 		}
 	}
@@ -469,7 +469,7 @@ func (c *eventConn) flush() bool {
 			c.unsubscribe([]string{raw})
 			continue
 		}
-		if !c.send(handler.InvalidationFrame(raw)) {
+		if !c.send(httpx.InvalidationFrame(raw)) {
 			return false
 		}
 	}
@@ -496,7 +496,7 @@ func (c *eventConn) due() []string {
 }
 
 // send writes one frame, reporting whether the socket is still usable.
-func (c *eventConn) send(frame handler.WSFrame) bool {
+func (c *eventConn) send(frame httpx.WSFrame) bool {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 

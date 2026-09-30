@@ -16,9 +16,9 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	featureoidc "github.com/heavycaffeiner/stowcloud/backend/internal/oidc"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/httpx"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 )
 
@@ -84,10 +84,10 @@ func (h *Handlers) EndSessionURL(c *gin.Context) (string, bool) {
 
 func (h *Handlers) Config(c *gin.Context) {
 	if h.d.Client() == nil {
-		c.JSON(http.StatusOK, handler.OIDCConfigView{Enabled: false})
+		c.JSON(http.StatusOK, featureoidc.OIDCConfigView{Enabled: false})
 		return
 	}
-	c.JSON(http.StatusOK, handler.OIDCConfigView{Enabled: true, DisplayName: h.d.DisplayName()})
+	c.JSON(http.StatusOK, featureoidc.OIDCConfigView{Enabled: true, DisplayName: h.d.DisplayName()})
 }
 
 func (h *Handlers) Start(c *gin.Context) {
@@ -96,7 +96,7 @@ func (h *Handlers) Start(c *gin.Context) {
 		middleware.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
 		return
 	}
-	returnTo, err := handler.SafeReturnTo(c.Query("return_to"))
+	returnTo, err := httpx.SafeReturnTo(c.Query("return_to"))
 	if err != nil {
 		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
@@ -115,7 +115,7 @@ func (h *Handlers) LinkStart(c *gin.Context) {
 		middleware.Refuse(c, apierr.Classified{Class: apierr.Malformed})
 		return
 	}
-	if !handler.Reconfirm(c, h.d.Auth, owner, req.Current) {
+	if !auth.Reconfirm(c, h.d.Auth, owner, req.Current) {
 		return
 	}
 	client := h.d.Client()
@@ -123,7 +123,7 @@ func (h *Handlers) LinkStart(c *gin.Context) {
 		middleware.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
 		return
 	}
-	returnTo, err := handler.SafeReturnTo(req.ReturnTo)
+	returnTo, err := httpx.SafeReturnTo(req.ReturnTo)
 	if err != nil {
 		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
@@ -152,7 +152,7 @@ func (h *Handlers) begin(c *gin.Context, client *featureoidc.Client, user int64,
 		return
 	}
 	h.setBinding(c, flow.Binding)
-	c.JSON(http.StatusOK, handler.OIDCStartView{AuthorizeURL: target})
+	c.JSON(http.StatusOK, featureoidc.OIDCStartView{AuthorizeURL: target})
 }
 
 func (h *Handlers) Callback(c *gin.Context) {
@@ -249,7 +249,7 @@ func (h *Handlers) completeSignIn(c *gin.Context, flow auth.OIDCFlow, claims *fe
 	if err := h.d.Auth.TouchOIDCLink(c.Request.Context(), claims.Issuer, claims.Subject); err != nil {
 		h.logWarn("stamping a single-sign-on link's last use failed", "error", err)
 	}
-	handler.SetSessionCookie(c, printableToken(sess.Token))
+	auth.SetSessionCookie(c, printableToken(sess.Token))
 	return redirect(c, flow.ReturnTo)
 }
 
@@ -270,7 +270,7 @@ func (h *Handlers) LinkDelete(c *gin.Context) {
 		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "auth.invalid_credentials"})
 		return
 	}
-	if !handler.Reconfirm(c, h.d.Auth, owner, req.Current) {
+	if !auth.Reconfirm(c, h.d.Auth, owner, req.Current) {
 		return
 	}
 	if err := h.d.Auth.RemoveOIDCLink(c.Request.Context(), owner); err != nil {
@@ -289,13 +289,13 @@ func (h *Handlers) AdminGet(c *gin.Context) {
 	link, err := h.d.Auth.OIDCLinkOf(c.Request.Context(), id)
 	if err != nil {
 		if errors.Is(err, auth.ErrNoOIDCLink) {
-			c.JSON(http.StatusOK, handler.OIDCLinkView{Linked: false})
+			c.JSON(http.StatusOK, featureoidc.OIDCLinkView{Linked: false})
 			return
 		}
 		middleware.Fail(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, handler.OIDCLinkOf(link))
+	c.JSON(http.StatusOK, featureoidc.OIDCLinkOf(link))
 }
 
 func (h *Handlers) AdminDelete(c *gin.Context) {
@@ -319,7 +319,7 @@ func (h *Handlers) AdminEndpoints(c *gin.Context) {
 		redirects = append(redirects, "https://"+host+"/api/v1/auth/oidc/callback")
 		postLogouts = append(postLogouts, "https://"+host+loginPath)
 	}
-	c.JSON(http.StatusOK, handler.OIDCEndpointsView{RedirectURIs: redirects, PostLogoutRedirectURIs: postLogouts})
+	c.JSON(http.StatusOK, featureoidc.OIDCEndpointsView{RedirectURIs: redirects, PostLogoutRedirectURIs: postLogouts})
 }
 
 func (h *Handlers) redirectURI(c *gin.Context) (string, bool) {

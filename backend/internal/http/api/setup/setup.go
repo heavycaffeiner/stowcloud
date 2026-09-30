@@ -11,10 +11,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/admin"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/check"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
@@ -50,16 +50,16 @@ type Handlers struct{ d Deps }
 
 func (h *Handlers) Get(c *gin.Context) {
 	if h.d.Gate == nil {
-		c.JSON(http.StatusOK, handler.SetupStateOf(false))
+		c.JSON(http.StatusOK, admin.SetupStateOf(false))
 		return
 	}
 	open, err := h.d.Gate.Open(c.Request.Context())
 	if err != nil {
 		h.logger().Warn("the setup state could not be read", "error", err)
-		c.JSON(http.StatusOK, handler.SetupStateOf(false))
+		c.JSON(http.StatusOK, admin.SetupStateOf(false))
 		return
 	}
-	c.JSON(http.StatusOK, handler.SetupStateOf(open))
+	c.JSON(http.StatusOK, admin.SetupStateOf(open))
 }
 
 type request struct {
@@ -94,8 +94,8 @@ func (h *Handlers) Post(c *gin.Context) {
 		SelfHost: check.HostOnly(c.Request.Host), DataDir: h.d.DataDir,
 		Lockout: check.LockoutWarns,
 	})
-	if handler.Blocking(findings) {
-		c.JSON(http.StatusUnprocessableEntity, handler.ApplyOutcomeOf(false, false, false, findings))
+	if admin.Blocking(findings) {
+		c.JSON(http.StatusUnprocessableEntity, admin.ApplyOutcomeOf(false, false, false, findings))
 		return
 	}
 
@@ -116,7 +116,7 @@ func (h *Handlers) Post(c *gin.Context) {
 		return
 	}
 
-	out := handler.SetupOutcomeOf(userID, req.Username, findings)
+	out := admin.SetupOutcomeOf(userID, req.Username, findings)
 	if h.d.State != nil {
 		if err := h.d.State.MergeSettings(c.Request.Context(), "network", network); err != nil {
 			h.logger().Error("the first-run network settings were not stored", "error", err)
@@ -140,7 +140,7 @@ func (h *Handlers) Post(c *gin.Context) {
 						h.logger().Warn("the first share was created without a grant", "error", err)
 					}
 				}
-				view := handler.ShareOf(share)
+				view := admin.ShareOf(share)
 				out.Share = &view
 			}
 		}

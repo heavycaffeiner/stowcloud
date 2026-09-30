@@ -10,7 +10,6 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 )
 
@@ -29,7 +28,7 @@ type ListInput struct{}
 
 // ListOutput preserves the native array response shape.
 type ListOutput struct {
-	Body []handler.OperationView
+	Body []files.OperationView
 }
 
 // OperationInput names one operation.
@@ -39,7 +38,7 @@ type OperationInput struct {
 
 // OperationOutput is one operation.
 type OperationOutput struct {
-	Body handler.OperationView
+	Body files.OperationView
 }
 
 // NoContentOutput is an empty 204.
@@ -49,7 +48,7 @@ type NoContentOutput struct {
 
 // List answers the caller's most recent operations.
 func (h *Handler) List(ctx context.Context, _ *ListInput) (*ListOutput, error) {
-	owner, err := handler.OwnerFrom(ctx)
+	owner, err := files.OwnerFrom(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +56,7 @@ func (h *Handler) List(ctx context.Context, _ *ListInput) (*ListOutput, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &ListOutput{Body: handler.OperationsOf(ops)}, nil
+	return &ListOutput{Body: files.OperationsOf(ops)}, nil
 }
 
 func parseOperationInput(id string) (files.OperationID, bool) {
@@ -70,7 +69,7 @@ func parseOperationInput(id string) (files.OperationID, bool) {
 
 // Get answers one operation.
 func (h *Handler) Get(ctx context.Context, in *OperationInput) (*OperationOutput, error) {
-	owner, err := handler.OwnerFrom(ctx)
+	owner, err := files.OwnerFrom(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -82,12 +81,12 @@ func (h *Handler) Get(ctx context.Context, in *OperationInput) (*OperationOutput
 	if err != nil {
 		return nil, err
 	}
-	return &OperationOutput{Body: handler.OperationOf(op)}, nil
+	return &OperationOutput{Body: files.OperationOf(op)}, nil
 }
 
 // Cancel stops an operation.
 func (h *Handler) Cancel(ctx context.Context, in *OperationInput) (*NoContentOutput, error) {
-	owner, err := handler.OwnerFrom(ctx)
+	owner, err := files.OwnerFrom(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +102,7 @@ func (h *Handler) Cancel(ctx context.Context, in *OperationInput) (*NoContentOut
 
 // Retry restarts a failed or interrupted operation.
 func (h *Handler) Retry(ctx context.Context, in *OperationInput) (*NoContentOutput, error) {
-	owner, err := handler.OwnerFrom(ctx)
+	owner, err := files.OwnerFrom(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +135,7 @@ func (h *Handler) Resume(ctx context.Context, in *OperationInput) (*NoContentOut
 }
 
 func (h *Handler) pauseResume(ctx context.Context, in *OperationInput, pause bool) (*NoContentOutput, error) {
-	owner, err := handler.OwnerFrom(ctx)
+	owner, err := files.OwnerFrom(ctx)
 	if err != nil {
 		return nil, err
 	}

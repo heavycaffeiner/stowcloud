@@ -12,10 +12,10 @@ import (
 	"net/http"
 	"strconv"
 
+	adminhttp "github.com/heavycaffeiner/stowcloud/backend/internal/admin"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/objstore"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vault"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
@@ -36,14 +36,14 @@ type Handler struct {
 // numeric query values remain strings because the native API accepts decimal
 // JSON strings and treats invalid values as zero or not-found.
 type sharesListInput struct{}
-type sharesListOutput struct{ Body []handler.ShareView }
+type sharesListOutput struct{ Body []adminhttp.ShareView }
 
 type sharesCreateInput struct {
 	_    struct{} `json:"-" additionalProperties:"false"`
 	Body createShareRequest
 }
 type shareCreatedOutput struct {
-	Body   handler.ShareView
+	Body   adminhttp.ShareView
 	Status int `status:"201"`
 }
 
@@ -55,20 +55,20 @@ type shareUpdateInput struct {
 	ID   string   `path:"id"`
 	Body updateShareRequest
 }
-type shareOutput struct{ Body handler.ShareView }
+type shareOutput struct{ Body adminhttp.ShareView }
 
 type grantsListInput struct {
 	User  string `query:"user"`
 	Group string `query:"group"`
 	Share string `query:"share"`
 }
-type grantsListOutput struct{ Body []handler.GrantView }
+type grantsListOutput struct{ Body []adminhttp.GrantView }
 type grantCreateInput struct {
 	_    struct{} `json:"-" additionalProperties:"false"`
 	Body grantRequest
 }
 type grantCreatedOutput struct {
-	Body   handler.GrantView
+	Body   adminhttp.GrantView
 	Status int `status:"201"`
 }
 type grantPathInput struct {
@@ -79,7 +79,7 @@ type grantUpdateInput struct {
 	ID   string   `path:"id"`
 	Body updateGrantRequest
 }
-type grantOutput struct{ Body handler.GrantView }
+type grantOutput struct{ Body adminhttp.GrantView }
 type noContentOutput struct {
 	Status int `status:"204"`
 }
@@ -102,14 +102,14 @@ func humaGrantID(raw string) (int64, bool) {
 }
 
 func adminUser(ctx context.Context) (int64, error) {
-	admin, err := handler.OwnerFrom(ctx)
+	admin, err := files.OwnerFrom(ctx)
 	return int64(admin), err
 }
 
 // ListShares answers every share.
 func (h *Handler) ListShares(ctx context.Context, _ *sharesListInput) (*sharesListOutput, error) {
 	empty := func(id files.ShareID) bool { return h.Core.ShareEmpty(ctx, id) }
-	return &sharesListOutput{Body: handler.SharesOf(h.Core.Shares(), empty)}, nil
+	return &sharesListOutput{Body: adminhttp.SharesOf(h.Core.Shares(), empty)}, nil
 }
 
 // CreateShare registers a share and grants it to the administrator.
@@ -141,7 +141,7 @@ func (h *Handler) CreateShare(ctx context.Context, in *sharesCreateInput) (*shar
 		}
 		h.Logger.Warn("the new share was registered without a grant for its creator", "share", int64(share.ID), "error", err)
 	}
-	return &shareCreatedOutput{Body: handler.ShareOf(share), Status: http.StatusCreated}, nil
+	return &shareCreatedOutput{Body: adminhttp.ShareOf(share), Status: http.StatusCreated}, nil
 }
 
 func (h *Handler) grantShareToContext(ctx context.Context, user int64, share files.ShareDef) error {
@@ -186,7 +186,7 @@ func (h *Handler) UpdateShare(ctx context.Context, in *shareUpdateInput) (*share
 	if h.WatchShare != nil {
 		h.WatchShare(share)
 	}
-	return &shareOutput{Body: handler.ShareOf(share)}, nil
+	return &shareOutput{Body: adminhttp.ShareOf(share)}, nil
 }
 
 // RetryShare reconnects a share that failed to mount.
@@ -199,7 +199,7 @@ func (h *Handler) RetryShare(ctx context.Context, in *sharePathInput) (*shareOut
 	if err != nil {
 		return nil, err
 	}
-	return &shareOutput{Body: handler.ShareOf(share)}, nil
+	return &shareOutput{Body: adminhttp.ShareOf(share)}, nil
 }
 
 // DeleteShare removes an empty share.
@@ -229,7 +229,7 @@ func (h *Handler) ListGrants(ctx context.Context, in *grantsListInput) (*grantsL
 	if err != nil {
 		return nil, err
 	}
-	return &grantsListOutput{Body: handler.GrantsOf(rows)}, nil
+	return &grantsListOutput{Body: adminhttp.GrantsOf(rows)}, nil
 }
 
 // CreateGrant gives a user or group access to a share.
@@ -247,7 +247,7 @@ func (h *Handler) CreateGrant(ctx context.Context, in *grantCreateInput) (*grant
 	if err != nil {
 		return nil, err
 	}
-	return &grantCreatedOutput{Body: handler.GrantOf(grant), Status: http.StatusCreated}, nil
+	return &grantCreatedOutput{Body: adminhttp.GrantOf(grant), Status: http.StatusCreated}, nil
 }
 
 // UpdateGrant changes a grant's permissions.
@@ -268,7 +268,7 @@ func (h *Handler) UpdateGrant(ctx context.Context, in *grantUpdateInput) (*grant
 	if err != nil {
 		return nil, err
 	}
-	return &grantOutput{Body: handler.GrantOf(grant)}, nil
+	return &grantOutput{Body: adminhttp.GrantOf(grant)}, nil
 }
 
 // DeleteGrant removes a grant.

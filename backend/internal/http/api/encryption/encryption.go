@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 )
@@ -26,7 +25,7 @@ type Handler struct {
 }
 
 type listView struct {
-	Shares []handler.ShareEncryptionView `json:"shares"`
+	Shares []files.ShareEncryptionView `json:"shares"`
 }
 
 type enableRequest struct {
@@ -56,7 +55,7 @@ type noContentOutput struct {
 
 // List answers the encryption state of the caller's shares.
 func (h *Handler) List(ctx context.Context, _ *listInput) (*listOutput, error) {
-	owner, err := handler.OwnerFrom(ctx)
+	owner, err := files.OwnerFrom(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +68,7 @@ func (h *Handler) List(ctx context.Context, _ *listInput) (*listOutput, error) {
 		}
 		labels[root.Share] = append(labels[root.Share], root.Label)
 	}
-	out := make([]handler.ShareEncryptionView, 0, len(order))
+	out := make([]files.ShareEncryptionView, 0, len(order))
 	for _, share := range order {
 		id, err := num.Narrow[uint32](share)
 		if err != nil {
@@ -80,7 +79,7 @@ func (h *Handler) List(ctx context.Context, _ *listInput) (*listOutput, error) {
 			return nil, err
 		}
 		if found {
-			out = append(out, handler.ShareEncryptionOf(files.ShareID(id), labels[share], enc))
+			out = append(out, files.ShareEncryptionOf(files.ShareID(id), labels[share], enc))
 		}
 	}
 	return &listOutput{Body: listView{Shares: out}}, nil

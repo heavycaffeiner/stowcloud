@@ -35,7 +35,6 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files/backends"
 	filehttp "github.com/heavycaffeiner/stowcloud/backend/internal/http/api/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	searchhttp "github.com/heavycaffeiner/stowcloud/backend/internal/http/api/search"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/setup"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/archive"
@@ -202,7 +201,7 @@ type Engine struct {
 
 	// The CSRF and content-claim keys derive from the master key at boot.
 	csrf             []byte
-	claimKey         handler.ClaimKey
+	claimKey         files.ClaimKey
 	linkLimiter      *publiclinks.Limiter
 	publicLinks      *publiclinks.Public
 	totpLimiter      *publiclinks.Limiter
@@ -523,12 +522,12 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	if values.ThumbnailEnabled {
 		e.Preview = preview.Open(thumbsDir, opt.PreviewWorker, coreSvc, clk, logger)
 	}
-	files := make([]sizeguard.File, 0, len(e.files))
+	dbFiles := make([]sizeguard.File, 0, len(e.files))
 	for _, file := range e.files {
-		files = append(files, file)
+		dbFiles = append(dbFiles, file)
 	}
 	e.Settings = live.New(live.Options{
-		State: e.State, Auth: e.Auth, Logger: logger, DataDir: opt.DataDir, Files: files,
+		State: e.State, Auth: e.Auth, Logger: logger, DataDir: opt.DataDir, Files: dbFiles,
 		SearchBounds: e.Search.SetBounds, ArchiveLimit: e.archiveGate.SetLimit,
 		WatchBounds: func(hotSet, threshold int) {
 			if e.watcher != nil {
@@ -614,7 +613,7 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	if _, rerr := rand.Read(claimBytes); rerr != nil {
 		return fail(fmt.Errorf("generating direct claim key: %w", rerr))
 	}
-	e.claimKey = handler.ClaimKey{Version: 1, Key: claimBytes}
+	e.claimKey = files.ClaimKey{Version: 1, Key: claimBytes}
 	e.linkLimiter = publiclinks.NewLimiter(5*time.Minute, 10, clk.Nanos)
 	e.totpLimiter = publiclinks.NewLimiter(5*time.Minute, 5, clk.Nanos)
 	e.davLocks = dav.NewStateLocks(e.State, clk, e.logger)

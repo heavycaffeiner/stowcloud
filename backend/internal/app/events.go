@@ -17,7 +17,6 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/runtimecfg"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/server"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/jobs"
 	task "github.com/heavycaffeiner/stowcloud/backend/internal/platform/concurrency"
@@ -192,7 +191,7 @@ func (e *Engine) eventsSocket() gin.HandlerFunc {
 		}
 	}
 	return e.events.EventHandler(func(c *gin.Context) (int64, bool) {
-		owner, ok := handler.Owner(c)
+		owner, ok := files.Owner(c)
 		return int64(owner), ok
 	})
 }

@@ -7,8 +7,9 @@ import (
 	"context"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/smb"
 )
 
 // Deps supplies the account service used by SMB routes.
@@ -34,11 +35,11 @@ type reconfirmRequest struct {
 type accessInput struct{ Body accessRequest }
 type passwordInput struct{ Body passwordRequest }
 type reconfirmInput struct{ Body reconfirmRequest }
-type stateOutput struct{ Body handler.SMBStateView }
-type clearedOutput struct{ Body handler.SMBClearedView }
+type stateOutput struct{ Body smb.SMBStateView }
+type clearedOutput struct{ Body smb.SMBClearedView }
 
 func accountOf(ctx context.Context) (int64, error) {
-	owner, err := handler.OwnerFrom(ctx)
+	owner, err := files.OwnerFrom(ctx)
 	return int64(owner), err
 }
 
@@ -72,7 +73,7 @@ func (h *Handler) Access(ctx context.Context, in *accessInput) (*stateOutput, er
 	if err != nil {
 		return nil, err
 	}
-	return &stateOutput{Body: handler.SMBStateOf(state)}, nil
+	return &stateOutput{Body: smb.SMBStateOf(state)}, nil
 }
 
 // SetPassword sets the caller's SMB password.
@@ -91,7 +92,7 @@ func (h *Handler) SetPassword(ctx context.Context, in *passwordInput) (*stateOut
 	if err != nil {
 		return nil, err
 	}
-	return &stateOutput{Body: handler.SMBStateOf(state)}, nil
+	return &stateOutput{Body: smb.SMBStateOf(state)}, nil
 }
 
 // DeletePassword clears the caller's SMB password.
@@ -111,5 +112,5 @@ func (h *Handler) DeletePassword(ctx context.Context, in *reconfirmInput) (*clea
 	if err != nil {
 		return nil, err
 	}
-	return &clearedOutput{Body: handler.SMBClearedOf(state, revertible)}, nil
+	return &clearedOutput{Body: smb.SMBClearedOf(state, revertible)}, nil
 }

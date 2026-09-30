@@ -10,9 +10,9 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
@@ -33,13 +33,13 @@ type listInput struct {
 }
 
 type listOutput struct {
-	Body []handler.LinkView
+	Body []shares.LinkView
 }
 
 type adminListInput struct{}
 
 type adminListOutput struct {
-	Body []handler.OwnedLinkView
+	Body []shares.OwnedLinkView
 }
 
 type createInput struct {
@@ -47,7 +47,7 @@ type createInput struct {
 }
 
 type createOutput struct {
-	Body   handler.MintedLinkView
+	Body   shares.MintedLinkView
 	Status int `status:"201"`
 }
 
@@ -61,7 +61,7 @@ type updateInput struct {
 }
 
 type updateOutput struct {
-	Body handler.LinkView
+	Body shares.LinkView
 }
 
 type deleteOutput struct {
@@ -75,7 +75,7 @@ func parseLinkID(raw string) (int64, bool) {
 
 // List answers the caller's links, optionally under one path.
 func (h *Handler) List(ctx context.Context, in *listInput) (*listOutput, error) {
-	owner, err := handler.OwnerFrom(ctx)
+	owner, err := files.OwnerFrom(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +91,7 @@ func (h *Handler) List(ctx context.Context, in *listInput) (*listOutput, error) 
 	if err != nil {
 		return nil, err
 	}
-	return &listOutput{Body: handler.LinksOf(links, h.VpathOf, h.Now())}, nil
+	return &listOutput{Body: shares.LinksOf(links, h.VpathOf, h.Now())}, nil
 }
 
 // AdminList answers every link with its owner.
@@ -112,12 +112,12 @@ func (h *Handler) AdminList(ctx context.Context, _ *adminListInput) (*adminListO
 			}
 		}
 	}
-	return &adminListOutput{Body: handler.OwnedLinksOf(links, names, h.VpathOf, h.Now())}, nil
+	return &adminListOutput{Body: shares.OwnedLinksOf(links, names, h.VpathOf, h.Now())}, nil
 }
 
 // Create mints a link to a path the caller may share.
 func (h *Handler) Create(ctx context.Context, in *createInput) (*createOutput, error) {
-	owner, err := handler.OwnerFrom(ctx)
+	owner, err := files.OwnerFrom(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +144,7 @@ func (h *Handler) Create(ctx context.Context, in *createInput) (*createOutput, e
 	if err != nil {
 		return nil, err
 	}
-	view, ok := handler.MintedLinkOf(link, h.VpathOf(link), h.Now())
+	view, ok := shares.MintedLinkOf(link, h.VpathOf(link), h.Now())
 	if !ok {
 		return nil, files.ErrNotFound
 	}
@@ -154,7 +154,7 @@ func (h *Handler) Create(ctx context.Context, in *createInput) (*createOutput, e
 
 // Update changes a link's expiry, password or permissions.
 func (h *Handler) Update(ctx context.Context, in *updateInput) (*updateOutput, error) {
-	owner, err := handler.OwnerFrom(ctx)
+	owner, err := files.OwnerFrom(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -170,12 +170,12 @@ func (h *Handler) Update(ctx context.Context, in *updateInput) (*updateOutput, e
 	if err != nil {
 		return nil, err
 	}
-	return &updateOutput{Body: handler.LinkOf(link, h.VpathOf(link), h.Now())}, nil
+	return &updateOutput{Body: shares.LinkOf(link, h.VpathOf(link), h.Now())}, nil
 }
 
 // Delete revokes a link.
 func (h *Handler) Delete(ctx context.Context, in *linkIDInput) (*deleteOutput, error) {
-	owner, err := handler.OwnerFrom(ctx)
+	owner, err := files.OwnerFrom(ctx)
 	if err != nil {
 		return nil, err
 	}

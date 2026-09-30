@@ -18,7 +18,6 @@ import (
 	feature "github.com/heavycaffeiner/stowcloud/backend/internal/feature/directtransfer"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/objstore"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
@@ -91,7 +90,7 @@ type directPartURLView struct {
 }
 
 func (h *Handler) Create(c *gin.Context) {
-	owner, ok := handler.Owner(c)
+	owner, ok := files.Owner(c)
 	if !ok {
 		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
@@ -120,7 +119,7 @@ func (h *Handler) Create(c *gin.Context) {
 }
 
 func (h *Handler) Status(c *gin.Context) {
-	owner, ok := handler.Owner(c)
+	owner, ok := files.Owner(c)
 	if !ok {
 		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
@@ -143,7 +142,7 @@ func (h *Handler) Status(c *gin.Context) {
 }
 
 func (h *Handler) Part(c *gin.Context) {
-	owner, ok := handler.Owner(c)
+	owner, ok := files.Owner(c)
 	if !ok {
 		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
@@ -193,7 +192,7 @@ func (h *Handler) Part(c *gin.Context) {
 }
 
 func (h *Handler) Complete(c *gin.Context) {
-	owner, ok := handler.Owner(c)
+	owner, ok := files.Owner(c)
 	if !ok {
 		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
@@ -223,7 +222,7 @@ func (h *Handler) Complete(c *gin.Context) {
 }
 
 func (h *Handler) Cancel(c *gin.Context) {
-	owner, ok := handler.Owner(c)
+	owner, ok := files.Owner(c)
 	if !ok {
 		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return

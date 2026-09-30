@@ -14,7 +14,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	featurepreview "github.com/heavycaffeiner/stowcloud/backend/internal/preview"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
@@ -28,7 +27,7 @@ import (
 type ThumbnailDeps struct {
 	Core         *files.Core
 	Resolve      func(files.UserID, string, acl.Perms) (files.Resolved, error)
-	OpenClaim    func(*gin.Context, handler.ClaimPurpose, files.UserID) (handler.Claim, bool)
+	OpenClaim    func(*gin.Context, files.ClaimPurpose, files.UserID) (files.Claim, bool)
 	PreviewLease func() (*featurepreview.Lease, bool)
 	Logger       *slog.Logger
 }
@@ -43,7 +42,7 @@ func ThumbnailHandler(d ThumbnailDeps) gin.HandlerFunc {
 		}
 		defer lease.Close()
 
-		owner, ok := handler.Owner(c)
+		owner, ok := files.Owner(c)
 		if !ok {
 			middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 			return
@@ -55,7 +54,7 @@ func ThumbnailHandler(d ThumbnailDeps) gin.HandlerFunc {
 			return
 		}
 
-		claim, ok := d.OpenClaim(c, handler.PurposeThumb, owner)
+		claim, ok := d.OpenClaim(c, files.PurposeThumb, owner)
 		if !ok {
 			middleware.Fail(c, files.ErrNotFound)
 			return

@@ -12,7 +12,6 @@ import (
 	"strconv"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/httpx"
 )
@@ -31,7 +30,7 @@ func CloseStream(stream *files.Stream, name string, logger *slog.Logger) {
 func SendStreamRange(c interface {
 	Header(string, string)
 	Status(int)
-}, writer io.Writer, entry files.FidEntry, stream *files.Stream, ranged bool, rng handler.ByteRange, size int64, attachAs string, logger *slog.Logger) {
+}, writer io.Writer, entry files.FidEntry, stream *files.Stream, ranged bool, rng httpx.ByteRange, size int64, attachAs string, logger *slog.Logger) {
 	length, err := num.Narrow[int64](stream.Remaining())
 	if err != nil {
 		CloseStream(stream, entry.Name, logger)

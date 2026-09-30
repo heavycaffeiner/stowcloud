@@ -15,7 +15,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
@@ -47,9 +46,9 @@ func NewHandlers(d Deps) *Handlers {
 type Handlers struct{ d Deps }
 
 func (h *Handlers) setTusHeaders(c *gin.Context) {
-	c.Header(handler.TusResumable, handler.TusProtocolVersion)
-	c.Header(handler.TusVersion, handler.TusProtocolVersion)
-	c.Header(handler.TusExtension, tusExtensions)
+	c.Header(uploads.TusResumable, uploads.TusProtocolVersion)
+	c.Header(uploads.TusVersion, uploads.TusProtocolVersion)
+	c.Header(uploads.TusExtension, tusExtensions)
 	c.Header(tusChecksumAlgorithm, checksumAlgorithms())
 }
 
@@ -75,7 +74,7 @@ func (h *Handlers) DiscoverOne(c *gin.Context) {
 }
 
 func (h *Handlers) Create(c *gin.Context) {
-	owner, ok := handler.Owner(c)
+	owner, ok := files.Owner(c)
 	if !ok {
 		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
@@ -86,16 +85,16 @@ func (h *Handlers) Create(c *gin.Context) {
 		return
 	}
 	h.setTusHeaders(c)
-	if err := handler.CheckResumable(c.GetHeader(handler.TusResumable)); err != nil {
+	if err := uploads.CheckResumable(c.GetHeader(uploads.TusResumable)); err != nil {
 		h.refuseTus(c, err)
 		return
 	}
-	length, err := handler.ParseLength(c.GetHeader(handler.UploadLength), c.GetHeader(handler.UploadDefer))
+	length, err := uploads.ParseLength(c.GetHeader(uploads.UploadLength), c.GetHeader(uploads.UploadDefer))
 	if err != nil {
 		h.refuseTus(c, err)
 		return
 	}
-	meta, err := handler.ParseMetadata(c.GetHeader(handler.UploadMetadata), tusMetadataMaxPairs)
+	meta, err := uploads.ParseMetadata(c.GetHeader(uploads.UploadMetadata), tusMetadataMaxPairs)
 	if err != nil {
 		h.refuseTus(c, err)
 		return
@@ -119,7 +118,7 @@ func (h *Handlers) Create(c *gin.Context) {
 		middleware.Fail(c, rerr)
 		return
 	}
-	spec := uploads.SessionSpec{IfMatch: c.GetHeader("If-Match"), Meta: uploadMetaOf(meta), RandomAccess: c.GetHeader(handler.ScRandomAccess) == "1"}
+	spec := uploads.SessionSpec{IfMatch: c.GetHeader("If-Match"), Meta: uploadMetaOf(meta), RandomAccess: c.GetHeader(uploads.ScRandomAccess) == "1"}
 	if !length.Deferred {
 		total := length.Value
 		spec.TotalLen = &total
@@ -134,12 +133,12 @@ func (h *Handlers) Create(c *gin.Context) {
 		return
 	}
 	c.Header("Location", "/api/v1/uploads/"+sess.ID.String())
-	c.Header(handler.UploadOffset, strconv.FormatUint(sess.Offset, 10))
+	c.Header(uploads.UploadOffset, strconv.FormatUint(sess.Offset, 10))
 	c.Status(http.StatusCreated)
 }
 
 func (h *Handlers) Status(c *gin.Context) {
-	owner, ok := handler.Owner(c)
+	owner, ok := files.Owner(c)
 	if !ok {
 		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
@@ -150,7 +149,7 @@ func (h *Handlers) Status(c *gin.Context) {
 		return
 	}
 	h.setTusHeaders(c)
-	if err := handler.CheckResumable(c.GetHeader(handler.TusResumable)); err != nil {
+	if err := uploads.CheckResumable(c.GetHeader(uploads.TusResumable)); err != nil {
 		h.refuseTus(c, err)
 		return
 	}
@@ -164,22 +163,22 @@ func (h *Handlers) Status(c *gin.Context) {
 		middleware.Fail(c, err)
 		return
 	}
-	if terminal, _ := handler.TerminalUploadState(sess.State.StateName()); terminal {
+	if terminal, _ := uploads.TerminalUploadState(sess.State.StateName()); terminal {
 		middleware.Fail(c, files.ErrNotFound)
 		return
 	}
 	c.Header("Cache-Control", "no-store")
-	c.Header(handler.UploadOffset, strconv.FormatUint(sess.Offset, 10))
+	c.Header(uploads.UploadOffset, strconv.FormatUint(sess.Offset, 10))
 	if sess.TotalLen != nil {
-		c.Header(handler.UploadLength, strconv.FormatUint(*sess.TotalLen, 10))
+		c.Header(uploads.UploadLength, strconv.FormatUint(*sess.TotalLen, 10))
 	} else {
-		c.Header(handler.UploadDefer, "1")
+		c.Header(uploads.UploadDefer, "1")
 	}
 	c.Status(http.StatusOK)
 }
 
 func (h *Handlers) Patch(c *gin.Context) {
-	owner, ok := handler.Owner(c)
+	owner, ok := files.Owner(c)
 	if !ok {
 		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
@@ -190,7 +189,7 @@ func (h *Handlers) Patch(c *gin.Context) {
 		return
 	}
 	h.setTusHeaders(c)
-	if err := handler.CheckResumable(c.GetHeader(handler.TusResumable)); err != nil {
+	if err := uploads.CheckResumable(c.GetHeader(uploads.TusResumable)); err != nil {
 		h.refuseTus(c, err)
 		return
 	}
@@ -203,12 +202,12 @@ func (h *Handlers) Patch(c *gin.Context) {
 		middleware.Refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		return
 	}
-	offset, err := handler.ParseOffset(c.GetHeader(handler.UploadOffset))
+	offset, err := uploads.ParseOffset(c.GetHeader(uploads.UploadOffset))
 	if err != nil {
 		h.refuseTus(c, err)
 		return
 	}
-	sum, err := chunkChecksum(c.GetHeader(handler.UploadChecksum))
+	sum, err := chunkChecksum(c.GetHeader(uploads.UploadChecksum))
 	if err != nil {
 		h.refuseTus(c, err)
 		return
@@ -235,7 +234,7 @@ func (h *Handlers) Patch(c *gin.Context) {
 			return
 		}
 	}
-	c.Header(handler.UploadOffset, strconv.FormatUint(next, 10))
+	c.Header(uploads.UploadOffset, strconv.FormatUint(next, 10))
 	c.Status(http.StatusNoContent)
 }
 
@@ -258,7 +257,7 @@ func (h *Handlers) publish(c *gin.Context, engine *uploads.Engine, sess uploads.
 }
 
 func (h *Handlers) Abort(c *gin.Context) {
-	owner, ok := handler.Owner(c)
+	owner, ok := files.Owner(c)
 	if !ok {
 		middleware.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 		return
@@ -269,7 +268,7 @@ func (h *Handlers) Abort(c *gin.Context) {
 		return
 	}
 	h.setTusHeaders(c)
-	if err := handler.CheckResumable(c.GetHeader(handler.TusResumable)); err != nil {
+	if err := uploads.CheckResumable(c.GetHeader(uploads.TusResumable)); err != nil {
 		h.refuseTus(c, err)
 		return
 	}
@@ -345,7 +344,7 @@ func (h *Handlers) SettingsPatch(c *gin.Context) {
 		}
 		return
 	}
-	c.JSON(http.StatusOK, handler.UploadSettingsView{ChunkMin: viewMin, ChunkDefault: viewDefault, CacheEnabled: engine.CacheEnabled(), CacheAvailable: engine.CacheAvailable()})
+	c.JSON(http.StatusOK, uploads.UploadSettingsView{ChunkMin: viewMin, ChunkDefault: viewDefault, CacheEnabled: engine.CacheEnabled(), CacheAvailable: engine.CacheAvailable()})
 }
 
 func (h *Handlers) engine(c *gin.Context) (*uploads.Engine, bool) {
@@ -362,7 +361,7 @@ func sessionIDOf(c *gin.Context) (uploads.SessionID, bool) {
 }
 
 func (h *Handlers) refuseTus(c *gin.Context, err error) {
-	if errors.Is(err, handler.ErrTusVersion) {
+	if errors.Is(err, uploads.ErrTusVersion) {
 		middleware.Refuse(c, apierr.Classified{Class: apierr.Precondition})
 		return
 	}
@@ -371,7 +370,7 @@ func (h *Handlers) refuseTus(c *gin.Context, err error) {
 
 func (h *Handlers) failUpload(c *gin.Context, err error) {
 	if errors.Is(err, uploads.ErrChecksum) {
-		c.JSON(handler.StatusChecksumMismatch, map[string]string{"error": "checksum_mismatch"})
+		c.JSON(uploads.StatusChecksumMismatch, map[string]string{"error": "checksum_mismatch"})
 		return
 	}
 	middleware.Fail(c, err)

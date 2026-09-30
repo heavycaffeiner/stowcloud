@@ -15,12 +15,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/admin"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/catalogue"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/check"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/settings/runtimecfg"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/system/jail"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
@@ -49,7 +49,7 @@ type Deps struct {
 	DataDir      string
 	Hardening    jail.Policy
 	UploadPatch  gin.HandlerFunc
-	SMBAgentView func() *handler.SMBAgentView
+	SMBAgentView func() *admin.SMBAgentView
 	PublishSMB   func(context.Context)
 	OnRestart    func()
 	Logger       *slog.Logger
@@ -73,7 +73,7 @@ func (h *Handlers) Get(c *gin.Context) {
 	}
 	values := h.d.Settings.Values(c.Request.Context())
 	values.DataDir = h.d.DataDir
-	c.JSON(http.StatusOK, handler.SettingsOf(catalogue.Of(values, stored), h.hopOf(c), h.d.SMBAgentView()))
+	c.JSON(http.StatusOK, admin.SettingsOf(catalogue.Of(values, stored), h.hopOf(c), h.d.SMBAgentView()))
 }
 
 func (h *Handlers) Patch(c *gin.Context) {
@@ -106,8 +106,8 @@ func (h *Handlers) Patch(c *gin.Context) {
 		HasSecret: section == "oidc" && h.d.Settings.HasConfigSecret(c.Request.Context(), secretOIDCClient),
 		Lockout:   check.LockoutBlocks,
 	})
-	if handler.Blocking(findings) {
-		c.JSON(http.StatusUnprocessableEntity, handler.ApplyOutcomeOf(false, false, false, findings))
+	if admin.Blocking(findings) {
+		c.JSON(http.StatusUnprocessableEntity, admin.ApplyOutcomeOf(false, false, false, findings))
 		return
 	}
 	if err := h.d.State.MergeSettings(c.Request.Context(), section, body); err != nil {
@@ -126,7 +126,7 @@ func (h *Handlers) Patch(c *gin.Context) {
 		applied = false
 		findings = append(findings, *pin)
 	}
-	out := handler.ApplyOutcomeOf(true, applied, restart, findings)
+	out := admin.ApplyOutcomeOf(true, applied, restart, findings)
 	if restart {
 		uploads, jobs := h.activeWork(c)
 		out = out.WithActiveWork(uploads, jobs)
@@ -195,10 +195,10 @@ func (h *Handlers) extractSecrets(c *gin.Context, section string, body map[strin
 	return true
 }
 
-func (h *Handlers) hopOf(c *gin.Context) handler.HopView {
+func (h *Handlers) hopOf(c *gin.Context) admin.HopView {
 	peer, err := peerAddress(c.Request.RemoteAddr)
 	client := middleware.ClientOf(c)
-	hop := handler.HopView{Client: client.String(), ForwardedSeen: c.GetHeader("CF-Connecting-IP") != "" || c.GetHeader("X-Forwarded-For") != ""}
+	hop := admin.HopView{Client: client.String(), ForwardedSeen: c.GetHeader("CF-Connecting-IP") != "" || c.GetHeader("X-Forwarded-For") != ""}
 	if err != nil {
 		return hop
 	}

@@ -11,9 +11,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/smb"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/smb/agent"
 )
 
@@ -53,5 +53,5 @@ func (h *Handlers) Apply(c *gin.Context) {
 		middleware.Refuse(c, apierr.Classified{Class: apierr.BadGateway, Key: "smb.agent_unreachable"})
 		return
 	}
-	c.JSON(http.StatusOK, handler.SMBReportOf(report))
+	c.JSON(http.StatusOK, smb.SMBReportOf(report))
 }

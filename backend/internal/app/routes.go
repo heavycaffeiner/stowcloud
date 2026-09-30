@@ -9,6 +9,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	adminhttp "github.com/heavycaffeiner/stowcloud/backend/internal/admin"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/dav"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/emergency"
 	featuretransfer "github.com/heavycaffeiner/stowcloud/backend/internal/feature/directtransfer"
@@ -22,7 +24,6 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/directtransfer"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/encryption"
 	filehttp "github.com/heavycaffeiner/stowcloud/backend/internal/http/api/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	jobshttp "github.com/heavycaffeiner/stowcloud/backend/internal/http/api/jobs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/links"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/oidc"
@@ -72,11 +73,11 @@ func (e *Engine) routes(router *gin.Engine) error {
 	})
 	public.GET("/api/v1/system/setup", setupRoutes.Get)
 	public.POST("/api/v1/system/setup", middleware.LimitJSON, setupRoutes.Post)
-	fsDeps := handler.AdminFSDeps{Auth: e.Auth, Core: e.Core, DataDir: e.dataDir}
+	fsDeps := adminhttp.AdminFSDeps{Auth: e.Auth, Core: e.Core, DataDir: e.dataDir}
 	if e.setup != nil {
 		fsDeps.SetupVerify = e.setup.Verify
 	}
-	adminFS := handler.NewAdminFSHandlers(fsDeps)
+	adminFS := adminhttp.NewAdminFSHandlers(fsDeps)
 	public.POST("/api/v1/system/setup/browse", middleware.LimitJSON, adminFS.SetupBrowse)
 	admin.GET("/api/v1/admin/fs", adminFS.Browse)
 	session.GET("/api/v1/events", e.eventsSocket())
@@ -89,12 +90,12 @@ func (e *Engine) routes(router *gin.Engine) error {
 		RequestScheme: func(r *http.Request) string { return middleware.RequestScheme(r, e.trustedProxies()) },
 		Logger:        e.log(),
 	})
-	auth := handler.NewAuthHandlers(handler.AuthHandlersDeps{
+	authRoutes := auth.NewAuthHandlers(auth.AuthHandlersDeps{
 		Service: e.Auth, Clock: e.clock, CSRFKey: e.csrfKey,
-		TOTPAllow: e.totpLimiter, SessionDetails: func(ctx context.Context, id int64) (handler.SessionDetails, error) {
-			return handler.SessionDetailsOf(ctx, id, handler.SessionDetailsDeps{
+		TOTPAllow: e.totpLimiter, SessionDetails: func(ctx context.Context, id int64) (auth.SessionDetails, error) {
+			return SessionDetailsOf(ctx, id, SessionDetailsDeps{
 				Auth: e.Auth, Core: e.Core, Upload: e.Upload,
-				Features: handler.FeaturesInputs{
+				Features: FeaturesInputs{
 					SMBEnabled:     func() bool { return e.smbPublisherOf() != nil },
 					PreviewEnabled: e.thumbnailEnabled, SearchHasIndex: e.Search.HasIndex,
 				},
@@ -102,15 +103,15 @@ func (e *Engine) routes(router *gin.Engine) error {
 		},
 		OIDCEndSessionURL: oidcRoutes.EndSessionURL,
 	})
-	public.POST("/api/v1/auth/login", middleware.LimitJSON, auth.Login)
-	public.POST("/api/v1/auth/login/totp", middleware.LimitJSON, auth.LoginTOTP)
-	session.POST("/api/v1/auth/logout", auth.Logout)
-	session.GET("/api/v1/auth/session", auth.Session)
+	public.POST("/api/v1/auth/login", middleware.LimitJSON, authRoutes.Login)
+	public.POST("/api/v1/auth/login/totp", middleware.LimitJSON, authRoutes.LoginTOTP)
+	session.POST("/api/v1/auth/logout", authRoutes.Logout)
+	session.GET("/api/v1/auth/session", authRoutes.Session)
 	public.GET("/api/v1/auth/oidc/config", oidcRoutes.Config)
 	public.GET("/api/v1/auth/oidc/start", oidcRoutes.Start)
 	public.GET("/api/v1/auth/oidc/callback", oidcRoutes.Callback)
 
-	account := handler.NewAccountHandlers(handler.AccountHandlersDeps{Service: e.Auth, Clock: e.clock})
+	account := auth.NewAccountHandlers(auth.AccountHandlersDeps{Service: e.Auth, Clock: e.clock})
 	session.POST("/api/v1/account/password", middleware.LimitJSON, account.Password)
 	session.GET("/api/v1/account/sessions", account.Sessions)
 	session.DELETE("/api/v1/account/sessions/:id", account.SessionDelete)
@@ -155,7 +156,9 @@ func (e *Engine) routes(router *gin.Engine) error {
 	session.POST("/api/v1/files/rename", middleware.LimitJSON, fs.Rename)
 	session.POST("/api/v1/files/archive", middleware.LimitJSON, fs.Archive)
 	session.GET("/api/v1/files/archive/fetch", fs.ArchiveFetch)
-	session.GET("/api/v1/files/archive/list", fs.ArchiveList)
+	session.GET("/api/v1/files/archive/list", previewhttp.ArchiveListHandler(previewhttp.ArchiveListDeps{
+		Core: e.Core, Resolve: resolve, AcquireArchive: e.acquireArchive, Logger: e.log(),
+	}))
 	session.POST("/api/v1/files/download", middleware.LimitJSON, fs.Download)
 	session.GET("/api/v1/files/download/fetch", fs.DownloadFetch)
 	session.GET("/api/v1/files/recent", fs.Recent)
@@ -219,7 +222,7 @@ func (e *Engine) routes(router *gin.Engine) error {
 	op(adminAPI, http.MethodPost, "/api/v1/encryption/{id}", "admin.encryption.enable", enc.Enable)
 	op(adminAPI, http.MethodDelete, "/api/v1/encryption/{id}", "admin.encryption.disable", enc.Disable)
 
-	users := handler.NewAdminUsersHandlers(handler.AdminUsersDeps{Auth: e.Auth, CleanupHome: e.Core.CleanupHome, Logger: e.logger})
+	users := adminhttp.NewAdminUsersHandlers(adminhttp.AdminUsersDeps{Auth: e.Auth, CleanupHome: e.Core.CleanupHome, Logger: e.logger})
 	admin.GET("/api/v1/admin/users", users.UsersList)
 	admin.POST("/api/v1/admin/users", middleware.LimitJSON, users.UsersCreate)
 	admin.PATCH("/api/v1/admin/users/:id", middleware.LimitJSON, users.UsersUpdate)
@@ -271,12 +274,12 @@ func (e *Engine) routes(router *gin.Engine) error {
 		State: e.State, Auth: e.Auth, Settings: e.Settings,
 		DataDir: e.dataDir, Hardening: e.hardening,
 		UploadPatch: upload.SettingsPatch,
-		SMBAgentView: func() *handler.SMBAgentView {
+		SMBAgentView: func() *adminhttp.SMBAgentView {
 			p := e.smbPublisherOf()
 			if p == nil {
 				return nil
 			}
-			return handler.SMBAgentOf(p.LastReport())
+			return adminhttp.SMBAgentOf(p.LastReport())
 		}, PublishSMB: e.publishSMBSettings,
 		OnRestart: e.Restart.Request, Logger: e.log(),
 	})
@@ -300,7 +303,7 @@ func (e *Engine) routes(router *gin.Engine) error {
 
 // requireAdmin stops a request from a session that is not an administrator's.
 func (e *Engine) requireAdmin(c *gin.Context) {
-	if _, ok := handler.Admin(c, e.Auth); !ok {
+	if _, ok := auth.Admin(c, e.Auth); !ok {
 		c.Abort()
 		return
 	}

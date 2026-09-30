@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/admin"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/logbook"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 )
 
@@ -50,8 +50,8 @@ type timelineInput struct {
 	BucketNS  string `query:"bucket_ns"`
 }
 
-type logPageOutput struct{ Body handler.LogPageView }
-type timelineOutput struct{ Body handler.LogsTimelineView }
+type logPageOutput struct{ Body admin.LogPageView }
+type timelineOutput struct{ Body admin.LogsTimelineView }
 
 // List answers one page of the log.
 func (h *Handler) List(ctx context.Context, in *logInput) (*logPageOutput, error) {
@@ -69,7 +69,7 @@ func (h *Handler) List(ctx context.Context, in *logInput) (*logPageOutput, error
 		}
 		return nil, err
 	}
-	return &logPageOutput{Body: handler.LogPageOf(page, h.Logs.Stats())}, nil
+	return &logPageOutput{Body: admin.LogPageOf(page, h.Logs.Stats())}, nil
 }
 
 // Timeline answers the log bucketed over time.
@@ -103,7 +103,7 @@ func (h *Handler) Timeline(ctx context.Context, in *timelineInput) (*timelineOut
 		}
 		truncated = truncated || auditTruncated
 	}
-	return &timelineOutput{Body: handler.LogsTimelineOf(server, audit, widthNS, truncated)}, nil
+	return &timelineOutput{Body: admin.LogsTimelineOf(server, audit, widthNS, truncated)}, nil
 }
 
 func logQueryInput(since, until, level, text, subsystem, requestID, limit, cursor string) (logbook.Query, bool) {

@@ -21,7 +21,6 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/protocol/limits"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
@@ -45,7 +44,7 @@ type PublicDeps struct {
 	SendStreamRange func(c interface {
 		Header(string, string)
 		Status(int)
-	}, writer io.Writer, entry files.FidEntry, stream *files.Stream, ranged bool, rng handler.ByteRange, size int64, attachAs string, logger *slog.Logger)
+	}, writer io.Writer, entry files.FidEntry, stream *files.Stream, ranged bool, rng httpx.ByteRange, size int64, attachAs string, logger *slog.Logger)
 	AcquireArchive func() (func(), bool)
 	WriteArchive   func(context.Context, io.Writer, files.Link, string, string)
 }
@@ -239,12 +238,12 @@ func (p *Public) Download(c *gin.Context) {
 		middleware.Fail(c, files.ErrNotFound)
 		return
 	}
-	rng, ranged, rerr := handler.ParseRange(c.GetHeader("Range"), size)
+	rng, ranged, rerr := httpx.ParseRange(c.GetHeader("Range"), size)
 	if rerr != nil {
 		p.d.CloseStream(stream, entry.Name)
-		if errors.Is(rerr, handler.ErrRangeUnsatisfiable) {
+		if errors.Is(rerr, httpx.ErrRangeUnsatisfiable) {
 			c.Header("Accept-Ranges", "bytes")
-			c.Header("Content-Range", handler.UnsatisfiedRange(size))
+			c.Header("Content-Range", httpx.UnsatisfiedRange(size))
 			middleware.Refuse(c, apierr.Classified{Class: apierr.RangeNotSatisfiable})
 			return
 		}

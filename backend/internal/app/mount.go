@@ -13,7 +13,6 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	filehttp "github.com/heavycaffeiner/stowcloud/backend/internal/http/api/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/publiclinks"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/jobs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
@@ -50,12 +49,7 @@ func (e *Engine) newPublicLinks() *publiclinks.Public {
 		Frontend:        web.Page(),
 		CloseStream:     func(stream *files.Stream, name string) { filehttp.CloseStream(stream, name, e.log()) },
 		SendStreamRange: filehttp.SendStreamRange,
-		AcquireArchive: func() (func(), bool) {
-			if !e.archiveGate.TryAcquire() {
-				return nil, false
-			}
-			return e.archiveGate.Release, true
-		},
+		AcquireArchive:  e.acquireArchive,
 		WriteArchive: func(ctx context.Context, w io.Writer, link files.Link, sub, name string) {
 			if err := filehttp.BuildArchive(ctx, w, name, func(ctx context.Context, visit filehttp.ArchiveVisit) error {
 				return e.Core.LinkArchiveWalk(ctx, link, sub, visit)
@@ -64,6 +58,15 @@ func (e *Engine) newPublicLinks() *publiclinks.Public {
 			}
 		},
 	})
+}
+
+// acquireArchive takes a slot of the gate every archive build and listing
+// shares.
+func (e *Engine) acquireArchive() (func(), bool) {
+	if !e.archiveGate.TryAcquire() {
+		return nil, false
+	}
+	return e.archiveGate.Release, true
 }
 
 // health answers the probe.
@@ -79,14 +82,14 @@ func (e *Engine) health(c *gin.Context) {
 		return
 	}
 
-	var reasons []handler.HealthReason
-	status := handler.HealthOK
+	var reasons []HealthReason
+	status := HealthOK
 	if e.Journal == nil {
-		status = handler.HealthDegraded
-		reasons = append(reasons, handler.ReasonJournalDatabase)
+		status = HealthDegraded
+		reasons = append(reasons, ReasonJournalDatabase)
 	}
 
-	h := handler.HealthOf(status, reasons)
+	h := HealthOf(status, reasons)
 	h.Revision = e.Revision
 	c.JSON(http.StatusOK, h)
 }
