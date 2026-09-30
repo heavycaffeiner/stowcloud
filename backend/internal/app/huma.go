@@ -3,50 +3,24 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"io"
-	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humagin"
 	"github.com/gin-gonic/gin"
-	hanamiapi "github.com/heavycaffeiner/hanami/api"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/adminlogs"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/adminshares"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/adminstorage"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/encryption"
-	filehttp "github.com/heavycaffeiner/stowcloud/backend/internal/http/api/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/humabridge"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/jobs"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/links"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/smbaccount"
-	trashhttp "github.com/heavycaffeiner/stowcloud/backend/internal/http/api/trash"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/server"
+
+	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/protocol/limits"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 )
 
-// humaNames declares the typed part of the native route table. The server
-// verifies that every name is registered on Gin before it starts listening.
-func humaNames() []string {
-	return []string{
-		"jobs.list", "jobs.get", "jobs.cancel", "jobs.retry", "jobs.pause", "jobs.resume",
-		"trash.list", "trash.restore", "trash.purge",
-		"admin.logs.list", "admin.logs.timeline", "admin.storage",
-		"links.list", "links.create", "links.update", "links.delete", "admin.links.list",
-		"encryption.list", "admin.encryption.enable", "admin.encryption.disable",
-		"account.smb.create", "account.smb.password.set", "account.smb.password.delete",
-		"admin.shares.list", "admin.shares.create", "admin.shares.update", "admin.shares.retry", "admin.shares.delete",
-		"admin.grants.list", "admin.grants.create", "admin.grants.update", "admin.grants.delete",
-	}
-}
-
-func (e *Engine) mountHuma(router *gin.Engine) (huma.API, error) {
+// humaConfig is shared by every typed group, so all of them write into one
+// OpenAPI document.
+func humaConfig() huma.Config {
 	config := huma.DefaultConfig("Stowcloud API", "1")
 	config.Info.Description = "Typed JSON endpoints. Streaming and compatibility protocols are mounted separately."
-	config.Servers = []*huma.Server{{URL: server.Base}}
 	// Native JSON request fields are optional unless a handler's product rules
 	// require them. Huma otherwise makes every body field required by default.
 	config.FieldsOptionalByDefault = true
@@ -69,14 +43,17 @@ func (e *Engine) mountHuma(router *gin.Engine) (huma.API, error) {
 		},
 	}
 	config.Security = []map[string][]string{{"browserSession": {}}}
-	// Only the authenticated admin route publishes the specification. The
-	// default public docs and schema endpoints bypass product route metadata.
+	// Only the authenticated admin route publishes the specification.
 	config.OpenAPIPath = ""
 	config.DocsPath = ""
 	config.SchemasPath = ""
-	// The default response transformer adds a schema link and response field;
-	// native clients must keep the existing JSON contract.
+	// Huma's own problem bodies become the native error envelope, and a
+	// handler failure keeps its cause for the access log.
 	config.Transformers = []huma.Transformer{func(ctx huma.Context, _ string, value any) (any, error) {
+		if failure, ok := value.(*apierr.Response); ok {
+			middleware.SetCause(humagin.Unwrap(ctx), failure.Unwrap())
+			return value, nil
+		}
 		problem, ok := value.(*huma.ErrorModel)
 		if !ok {
 			return value, nil
@@ -97,38 +74,29 @@ func (e *Engine) mountHuma(router *gin.Engine) (huma.API, error) {
 		return body, nil
 	}}
 	config.CreateHooks = nil
-	api := hanamiapi.New(router, config, server.Base)
-	humabridge.Install(api, e.errs)
-	api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
-		c := humagin.Unwrap(ctx)
-		if name, ok := middleware.RouteNameOf(c); ok && strings.HasPrefix(name, "admin.") {
-			if _, ok := handler.Admin(c, e.Auth); !ok {
-				return
-			}
-		}
-		next(ctx)
-	})
+	return config
+}
 
-	jobs.Register(api, jobs.Deps{Core: e.Core, State: e.State, Owner: handler.Owner, StartJobs: e.Core.StartJobs, NowNs: e.now})
-	trashhttp.Register(api, trashhttp.Deps{Core: e.Core, Owner: handler.Owner, Resolve: filehttp.Resolve(e.Core), Errors: e.errs})
-	adminlogs.Register(api, adminlogs.Deps{Logs: e.Logs, Auth: e.Auth})
-	adminstorage.Register(api, adminstorage.Deps{Core: e.Core, State: e.State})
-	adminshares.Register(api, adminshares.Deps{
-		Core: e.Core, MarkSearchIncomplete: e.searchController.MarkIncomplete,
-		WatchShare: e.watchShare, UnwatchShare: e.unwatchShare, Logger: e.logger,
+// typed is one access group's Huma API.
+type typed struct {
+	api  huma.API
+	errs *apierr.Classifier
+}
+
+func newTyped(router *gin.Engine, group *gin.RouterGroup, config huma.Config, errs *apierr.Classifier) typed {
+	return typed{api: humagin.NewWithGroup(router, group, config), errs: errs}
+}
+
+// op registers a typed operation. Every handler error is classified into the
+// native envelope; Huma would otherwise answer 500 and drop it.
+func op[I, O any](t typed, method, path, id string, h func(context.Context, *I) (*O, error)) {
+	huma.Register(t.api, huma.Operation{
+		OperationID: id, Method: method, Path: path, MaxBodyBytes: limits.RequestBody,
+	}, func(ctx context.Context, in *I) (*O, error) {
+		out, err := h(ctx, in)
+		if err != nil {
+			return nil, t.errs.Response(err)
+		}
+		return out, nil
 	})
-	links.Register(api, links.NativeDeps{
-		Core: e.Core, Auth: e.Auth, Owner: handler.Owner,
-		Resolve: filehttp.Resolve(e.Core), Now: e.now,
-		VpathOf: func(l files.Link) string {
-			vp, err := e.Core.VpathFor(l.Owner, l.Share, l.Path)
-			if err != nil {
-				return ""
-			}
-			return vp.String()
-		},
-	})
-	encryption.Register(api, encryption.Deps{Core: e.Core})
-	smbaccount.Register(api, smbaccount.Deps{Auth: e.Auth})
-	return api, nil
 }

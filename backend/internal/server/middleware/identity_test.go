@@ -14,7 +14,6 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/protocol/limits"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/server/route"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
@@ -91,15 +90,6 @@ func TestUploadedContentIsNotAScriptSource(t *testing.T) {
 	}
 }
 
-// An unset class is refused rather than treated as public. route.Validate
-// already refuses it, and this is the second line: a class that slipped
-// through must not default into the permissive one.
-func TestAnUnsetAccessClassIsRefused(t *testing.T) {
-	if err := Scope(route.Requirement{}, Principal{Kind: CredentialSessionCookie}); err == nil {
-		t.Fatal("a route with no declared access admitted a request")
-	}
-}
-
 // The session mask carries every bit the model defines, so adding a bit does
 // not silently narrow what a session can do.
 func TestTheSessionMaskCoversEveryBit(t *testing.T) {
@@ -113,16 +103,7 @@ func TestTheSessionMaskCoversEveryBit(t *testing.T) {
 
 // The trace header comes back on a served request, and on a refused one.
 func TestTheTraceHeaderIsOnEveryResponse(t *testing.T) {
-	app := gin.New()
-	if err := Mount(app, Chain(), Deps{
-		Hosts:   func() Hosts { return namedHosts() },
-		Trusted: func() []netip.Prefix { return nil },
-		Limiter: NewLimiter(newStepClock(), 1000, 1000),
-		Errors:  apierr.NewClassifier(nil),
-	}, nil); err != nil {
-		t.Fatalf("Mount: %v", err)
-	}
-	app.Any("/*path", func(c *gin.Context) { c.String(http.StatusOK, "handled") })
+	app := chainWith(t, Public, Principal{Kind: CredentialNone}, nil)
 
 	for _, c := range []struct{ what, host string }{
 		{"a served request", "app.example.test"},
@@ -137,28 +118,12 @@ func TestTheTraceHeaderIsOnEveryResponse(t *testing.T) {
 	}
 }
 
-// The scope step refuses through the chain, and its status distinguishes a
-// missing credential from an insufficient one.
-func TestScopeRefusesThroughTheChain(t *testing.T) {
-	build := func(req route.Requirement, p Principal) int {
-		app := gin.New()
-		// Registration attaches the route's metadata, which is what the chain
-		// reads. Set before the chain so ACLScope sees it.
-		app.Use(func(c *gin.Context) {
-			SetRequirement(c, req, route.BodyNone, "test.route")
-			c.Next()
-		})
-		if err := Mount(app, Chain(), Deps{
-			Hosts:     func() Hosts { return namedHosts() },
-			Trusted:   func() []netip.Prefix { return nil },
-			Limiter:   NewLimiter(newStepClock(), 1000, 1000),
-			Errors:    apierr.NewClassifier(nil),
-			Principal: func(Credential) (Principal, bool) { return p, true },
-		}, nil); err != nil {
-			t.Fatalf("Mount: %v", err)
-		}
-		app.Any("/*path", func(c *gin.Context) { c.String(http.StatusOK, "handled") })
-
+// The session group refuses anything but a session, and answers as a path
+// that is not there so a stranger with a word list cannot tell a real route
+// from an absent one.
+func TestTheSessionGroupRefusesThroughTheChain(t *testing.T) {
+	build := func(access func(Deps) []gin.HandlerFunc, p Principal) int {
+		app := chainWith(t, access, p, nil)
 		r := httptest.NewRequest("GET", "http://app.example.test/x", nil)
 		if p.Kind == CredentialSessionCookie {
 			r.AddCookie(sessionCookie())
@@ -168,42 +133,60 @@ func TestScopeRefusesThroughTheChain(t *testing.T) {
 		return send(t, app, r).status
 	}
 
-	if got := build(route.Requirement{Access: route.AccessPublic}, Principal{Kind: CredentialNone}); got != http.StatusOK {
+	if got := build(Public, Principal{Kind: CredentialNone}); got != http.StatusOK {
 		t.Errorf("a public route answered %d", got)
 	}
-	// Every refusal answers as a path that is not there, so a stranger with a
-	// word list cannot tell a real route from an absent one.
-	if got := build(route.Requirement{Access: route.AccessSession}, Principal{Kind: CredentialNone}); got != http.StatusNotFound {
+	if got := build(Session, Principal{Kind: CredentialNone}); got != http.StatusNotFound {
 		t.Errorf("a session route with no credential answered %d, want 404", got)
 	}
-	if got := build(
-		route.Requirement{Access: route.AccessSession},
-		Principal{Kind: CredentialBearerApp, Mask: acl.Read | acl.Write},
-	); got != http.StatusNotFound {
+	if got := build(Session, Principal{Kind: CredentialBearerApp, Mask: acl.Read | acl.Write}); got != http.StatusNotFound {
 		t.Errorf("an app password on the native API answered %d, want 404", got)
+	}
+	if got := build(Session, Principal{Kind: CredentialSessionCookie, Mask: sessionMask()}); got != http.StatusOK {
+		t.Errorf("a session on a session route answered %d", got)
 	}
 }
 
-// chainWith builds a server whose routes all carry one requirement and body
-// class, so a test can drive one rule through the whole chain.
-func chainWith(t *testing.T, req route.Requirement, body route.BodyClass, p Principal, key []byte) *gin.Engine {
+// The principal the auth step resolved reaches a net/http handler through the
+// request context, not only through Gin's.
+func TestThePrincipalIsOnTheRequestContext(t *testing.T) {
+	want := Principal{UserID: 7, Kind: CredentialSessionCookie, Mask: sessionMask()}
+	var got Principal
+	var ok bool
+	app := chainWith(t, Session, want, nil, func(c *gin.Context) {
+		got, ok = PrincipalFrom(c.Request.Context())
+	})
+	r := httptest.NewRequest("GET", "http://app.example.test/x", nil)
+	r.AddCookie(sessionCookie())
+	if status := send(t, app, r).status; status != http.StatusOK {
+		t.Fatalf("the request answered %d", status)
+	}
+	if !ok || got.UserID != want.UserID || got.Kind != want.Kind {
+		t.Errorf("the request context carried %+v (%v), want %+v", got, ok, want)
+	}
+}
+
+// chainWith builds a server whose routes all sit behind one access group, so
+// a test can drive one rule through the whole chain. Extra handlers run
+// before the answering one.
+func chainWith(t *testing.T, access func(Deps) []gin.HandlerFunc, p Principal, key []byte, extra ...gin.HandlerFunc) *gin.Engine {
 	t.Helper()
 	app := gin.New()
-	app.Use(func(c *gin.Context) {
-		SetRequirement(c, req, body, "test.route")
-		c.Next()
-	})
-	if err := Mount(app, Chain(), Deps{
+	d := Deps{
 		Hosts:     func() Hosts { return namedHosts() },
 		Trusted:   func() []netip.Prefix { return nil },
 		Limiter:   NewLimiter(newStepClock(), 1000, 1000),
 		Errors:    apierr.NewClassifier(nil),
 		Principal: func(Credential) (Principal, bool) { return p, true },
 		CSRFKey:   func() []byte { return key },
-	}, nil); err != nil {
-		t.Fatalf("Mount: %v", err)
 	}
-	app.Any("/*path", func(c *gin.Context) { c.String(http.StatusOK, "handled") })
+	global, err := Global(d)
+	if err != nil {
+		t.Fatalf("Global: %v", err)
+	}
+	app.Use(global...)
+	handlers := append(extra, func(c *gin.Context) { c.String(http.StatusOK, "handled") })
+	app.Group("", access(d)...).Any("/*path", handlers...)
 	return app
 }
 
@@ -211,7 +194,7 @@ func chainWith(t *testing.T, req route.Requirement, body route.BodyClass, p Prin
 func TestCSRFIsCheckedThroughTheChain(t *testing.T) {
 	key := []byte("deployment key material")
 	session := Principal{Kind: CredentialSessionCookie, Mask: sessionMask()}
-	app := chainWith(t, route.Requirement{Access: route.AccessSession}, route.BodyNone, session, key)
+	app := chainWith(t, Session, session, key)
 
 	// The cookie's value is what the token derives from, so the test derives
 	// from the same value the request carries.
@@ -247,13 +230,9 @@ func TestCSRFIsCheckedThroughTheChain(t *testing.T) {
 // An app password is not asked for a token, because an Authorization header is
 // not ambient browser authority.
 //
-// Driven through a public route, since the native API admits only the browser
-// session now. The surfaces this rule actually serves are the compatibility
-// mount and the file protocol, which carry no route requirement and so never
-// reach the scope step, but pass through this one.
+// Driven through the device group, which is where an app password is served.
 func TestAnAppPasswordSkipsCSRFThroughTheChain(t *testing.T) {
-	app := chainWith(t,
-		route.Requirement{Access: route.AccessPublic}, route.BodyNone,
+	app := chainWith(t, Device,
 		Principal{Kind: CredentialBearerApp, Mask: acl.Read | acl.Write},
 		[]byte("deployment key material"))
 
@@ -276,26 +255,26 @@ func TestNoCSRFKeyRefusesTheMutation(t *testing.T) {
 
 	for _, c := range []struct {
 		what string
-		deps func(*gin.Engine) Deps
+		key  func() []byte
 	}{
-		{"no accessor", func(*gin.Engine) Deps { return Deps{} }},
-		{"an empty key", func(*gin.Engine) Deps { return Deps{CSRFKey: func() []byte { return nil }} }},
+		{"no accessor", nil},
+		{"an empty key", func() []byte { return nil }},
 	} {
 		app := gin.New()
-		app.Use(func(fc *gin.Context) {
-			SetRequirement(fc, route.Requirement{Access: route.AccessSession}, route.BodyNone, "test.route")
-			fc.Next()
-		})
-		d := c.deps(app)
-		d.Hosts = func() Hosts { return namedHosts() }
-		d.Trusted = func() []netip.Prefix { return nil }
-		d.Limiter = NewLimiter(newStepClock(), 1000, 1000)
-		d.Errors = apierr.NewClassifier(nil)
-		d.Principal = func(Credential) (Principal, bool) { return session, true }
-		if err := Mount(app, Chain(), d, nil); err != nil {
-			t.Fatalf("Mount: %v", err)
+		d := Deps{
+			Hosts:     func() Hosts { return namedHosts() },
+			Trusted:   func() []netip.Prefix { return nil },
+			Limiter:   NewLimiter(newStepClock(), 1000, 1000),
+			Errors:    apierr.NewClassifier(nil),
+			Principal: func(Credential) (Principal, bool) { return session, true },
+			CSRFKey:   c.key,
 		}
-		app.Any("/*path", func(fc *gin.Context) { fc.String(http.StatusOK, "handled") })
+		global, err := Global(d)
+		if err != nil {
+			t.Fatalf("Global: %v", err)
+		}
+		app.Use(global...)
+		app.Group("", Session(d)...).Any("/*path", func(fc *gin.Context) { fc.String(http.StatusOK, "handled") })
 
 		// The token an empty key derives, not an arbitrary string. An
 		// arbitrary one fails the comparison anyway, which would make this
@@ -313,17 +292,15 @@ func TestNoCSRFKeyRefusesTheMutation(t *testing.T) {
 	}
 }
 
-// A declared length past the route's class is refused before the handler runs,
-// and a stream route is not bounded by it.
-func TestTheBodyLimitRefusesByDeclaredLength(t *testing.T) {
+// A declared length past the JSON bound is refused before the handler runs,
+// and a route without LimitJSON is not bounded by it.
+func TestLimitJSONRefusesByDeclaredLength(t *testing.T) {
 	// The body really is this long: a declaration that overstates the bytes
 	// fails in the transport before any middleware sees it, which would test
 	// the transport rather than this step.
 	oversized := strings.Repeat("x", int(limits.RequestBody)+1)
 
-	jsonApp := chainWith(t,
-		route.Requirement{Access: route.AccessPublic}, route.BodyJSON,
-		Principal{Kind: CredentialNone}, nil)
+	jsonApp := chainWith(t, Public, Principal{Kind: CredentialNone}, nil, LimitJSON)
 	r := httptest.NewRequest("POST", "http://app.example.test/thing", strings.NewReader(oversized))
 	if got := send(t, jsonApp, r).status; got != http.StatusRequestEntityTooLarge {
 		t.Errorf("an oversized body answered %d, want 413", got)
@@ -331,20 +308,14 @@ func TestTheBodyLimitRefusesByDeclaredLength(t *testing.T) {
 
 	// The same body on a stream route is served: TUS sends far more than the
 	// JSON bound and must not meet it here.
-	streamApp := chainWith(t,
-		route.Requirement{Access: route.AccessPublic}, route.BodyStream,
-		Principal{Kind: CredentialNone}, nil)
+	streamApp := chainWith(t, Public, Principal{Kind: CredentialNone}, nil)
 	r = httptest.NewRequest("POST", "http://app.example.test/thing", strings.NewReader(oversized))
 	if got := send(t, streamApp, r).status; got != http.StatusOK {
 		t.Errorf("an oversized stream answered %d", got)
 	}
 
-	// A body within the bound is served.
-	okApp := chainWith(t,
-		route.Requirement{Access: route.AccessPublic}, route.BodyJSON,
-		Principal{Kind: CredentialNone}, nil)
 	r = httptest.NewRequest("POST", "http://app.example.test/thing", strings.NewReader(`{}`))
-	if got := send(t, okApp, r).status; got != http.StatusOK {
+	if got := send(t, jsonApp, r).status; got != http.StatusOK {
 		t.Errorf("a body within the bound answered %d", got)
 	}
 }

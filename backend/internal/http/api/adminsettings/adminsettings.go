@@ -24,7 +24,6 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/system/jail"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/server/route"
 )
 
 const secretOIDCClient = "oidc_client_secret" //nolint:gosec // G101 flags this config key; it names stored secret material but is not secret material itself.
@@ -57,20 +56,14 @@ type Deps struct {
 	Logger       *slog.Logger
 }
 
-// NewHandlers returns the route-name to handler mapping consumed by app
-// composition.
-func NewHandlers(d Deps) map[string]gin.HandlerFunc {
-	h := &handlers{d: d}
-	return map[string]gin.HandlerFunc{
-		"admin.settings.get":   h.get,
-		"admin.settings.patch": h.patch,
-		"admin.system.restart": h.restart,
-	}
+// NewHandlers builds the administrator settings handlers.
+func NewHandlers(d Deps) *Handlers {
+	return &Handlers{d: d}
 }
 
-type handlers struct{ d Deps }
+type Handlers struct{ d Deps }
 
-func (h *handlers) get(c *gin.Context) {
+func (h *Handlers) Get(c *gin.Context) {
 	if _, ok := h.d.Admin(c); !ok {
 		return
 	}
@@ -87,7 +80,7 @@ func (h *handlers) get(c *gin.Context) {
 	h.json(c, http.StatusOK, handler.SettingsOf(catalogue.Of(values, stored), h.hopOf(c), h.d.SMBAgentView()))
 }
 
-func (h *handlers) patch(c *gin.Context) {
+func (h *Handlers) Patch(c *gin.Context) {
 	if _, ok := h.d.Admin(c); !ok {
 		return
 	}
@@ -148,7 +141,7 @@ func (h *handlers) patch(c *gin.Context) {
 	h.json(c, http.StatusOK, out)
 }
 
-func (h *handlers) restart(c *gin.Context) {
+func (h *Handlers) Restart(c *gin.Context) {
 	if _, ok := h.d.Admin(c); !ok {
 		return
 	}
@@ -169,7 +162,7 @@ type restartResult struct {
 	ActiveJobs    int  `json:"active_jobs"`
 }
 
-func (h *handlers) activeWork(c *gin.Context) (uploads, jobs int) {
+func (h *Handlers) activeWork(c *gin.Context) (uploads, jobs int) {
 	w, err := h.d.State.CountActiveWork(c.Request.Context())
 	if err != nil {
 		if h.d.Logger != nil {
@@ -180,7 +173,7 @@ func (h *handlers) activeWork(c *gin.Context) (uploads, jobs int) {
 	return w.Uploads, w.Jobs
 }
 
-func (h *handlers) pinnedBindFinding(section string, body map[string]any) *check.Finding {
+func (h *Handlers) pinnedBindFinding(section string, body map[string]any) *check.Finding {
 	if section != "network" || !h.d.Settings.BindPinned() {
 		return nil
 	}
@@ -191,7 +184,7 @@ func (h *handlers) pinnedBindFinding(section string, body map[string]any) *check
 	return &check.Finding{Section: section, Field: "bind", ReasonKey: "settings.bind_pinned_by_flag", Args: []string{"stored", stored}}
 }
 
-func (h *handlers) extractSecrets(c *gin.Context, section string, body map[string]any) bool {
+func (h *Handlers) extractSecrets(c *gin.Context, section string, body map[string]any) bool {
 	if section != "oidc" {
 		return true
 	}
@@ -212,7 +205,7 @@ func (h *handlers) extractSecrets(c *gin.Context, section string, body map[strin
 	return true
 }
 
-func (h *handlers) hopOf(c *gin.Context) handler.HopView {
+func (h *Handlers) hopOf(c *gin.Context) handler.HopView {
 	peer, err := peerAddress(c.Request.RemoteAddr)
 	client := middleware.ClientOf(c)
 	hop := handler.HopView{Client: client.String(), ForwardedSeen: c.GetHeader("CF-Connecting-IP") != "" || c.GetHeader("X-Forwarded-For") != ""}
@@ -233,11 +226,11 @@ func peerAddress(raw string) (netip.Addr, error) {
 }
 
 func decode(c *gin.Context, into any) error {
-	return middleware.DecodeJSON(middleware.LimitBody(c.Request.Body, route.BodyJSON), into)
+	return middleware.DecodeJSON(c.Request.Body, into)
 }
-func (h *handlers) json(c *gin.Context, status int, value any) { c.JSON(status, value) }
-func (h *handlers) refuse(c *gin.Context, class apierr.Classified) {
+func (h *Handlers) json(c *gin.Context, status int, value any) { c.JSON(status, value) }
+func (h *Handlers) refuse(c *gin.Context, class apierr.Classified) {
 	status, body := apierr.REST(class)
 	h.json(c, status, body)
 }
-func (h *handlers) failKnown(c *gin.Context, err error) { middleware.Fail(c, err) }
+func (h *Handlers) failKnown(c *gin.Context, err error) { middleware.Fail(c, err) }

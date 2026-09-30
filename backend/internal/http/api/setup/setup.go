@@ -18,7 +18,6 @@ import (
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/server/route"
 )
 
 // Gate is the one-use first-run token boundary.
@@ -42,18 +41,14 @@ type Deps struct {
 	Logger          *slog.Logger
 }
 
-// NewHandlers returns the route-name to handler mapping consumed by app composition.
-func NewHandlers(d Deps) map[string]gin.HandlerFunc {
-	h := &handlers{d: d}
-	return map[string]gin.HandlerFunc{
-		"system.setup.get":  h.get,
-		"system.setup.post": h.post,
-	}
+// NewHandlers builds the first-run setup handlers.
+func NewHandlers(d Deps) *Handlers {
+	return &Handlers{d: d}
 }
 
-type handlers struct{ d Deps }
+type Handlers struct{ d Deps }
 
-func (h *handlers) get(c *gin.Context) {
+func (h *Handlers) Get(c *gin.Context) {
 	if h.d.Gate == nil {
 		c.JSON(http.StatusOK, handler.SetupStateOf(false))
 		return
@@ -81,7 +76,7 @@ type shareRequest struct {
 	Host string `json:"host"`
 }
 
-func (h *handlers) post(c *gin.Context) {
+func (h *Handlers) Post(c *gin.Context) {
 	if h.d.Gate == nil {
 		h.refuse(c, apierr.Classified{Class: apierr.SetupComplete, Key: "setup.complete"})
 		return
@@ -170,15 +165,15 @@ func anyList(in []string) []any {
 }
 
 func decode(c *gin.Context, into any) error {
-	return middleware.DecodeJSON(middleware.LimitBody(c.Request.Body, route.BodyJSON), into)
+	return middleware.DecodeJSON(c.Request.Body, into)
 }
 
-func (h *handlers) refuse(c *gin.Context, class apierr.Classified) {
+func (h *Handlers) refuse(c *gin.Context, class apierr.Classified) {
 	status, body := apierr.REST(class)
 	c.JSON(status, body)
 }
 
-func (h *handlers) logger() *slog.Logger {
+func (h *Handlers) logger() *slog.Logger {
 	if h.d.Logger != nil {
 		return h.d.Logger
 	}

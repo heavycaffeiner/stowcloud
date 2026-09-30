@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/server"
+	"github.com/gin-gonic/gin"
 )
 
 // adminEngine serves an engine with one administrator and one ordinary
@@ -49,30 +49,29 @@ func adminEngine(t *testing.T) (base string, adminCookie *http.Cookie, adminCSRF
 
 // No administrative route answers an ordinary signed-in account.
 //
-// The chain requires a session for this prefix but says nothing about whose,
-// so the check lives in the handlers. That makes it something a new route can
-// silently omit, which is why this walks the whole table rather than naming
-// the routes it happens to know about: a route added without the gate fails
-// here on the day it is added.
+// This walks every mounted route rather than naming the ones it knows about,
+// so a route added outside the administrator group fails here on the day it
+// is added.
 func TestNoAdminRouteAnswersAnOrdinaryAccount(t *testing.T) {
 	t.Parallel()
 	base, adminCookie, adminCSRF, plainCookie, plainCSRF := adminEngine(t)
 
+	router := gin.New()
+	if err := openEngine(t).Mount(router); err != nil {
+		t.Fatalf("mounting: %v", err)
+	}
+
 	var checked int
-	for _, r := range server.Table() {
-		if !strings.HasPrefix(r.Name, "admin.") {
+	for _, r := range router.Routes() {
+		encryption := strings.HasPrefix(r.Path, "/api/v1/encryption/") && r.Method != http.MethodGet
+		if !strings.HasPrefix(r.Path, "/api/v1/admin/") && !encryption {
 			continue
 		}
 
 		url := base + concretePath(r.Path)
-		t.Run(r.Name, func(t *testing.T) {
+		t.Run(r.Method+" "+r.Path, func(t *testing.T) {
 			status, body := mutate(t, r.Method, url, plainCookie, plainCSRF, map[string]any{})
 
-			// 501 is a route with no binding yet, which cannot leak anything.
-			// Everything else has to be a refusal.
-			if status == http.StatusNotImplemented {
-				t.Skip("not bound in this build")
-			}
 			if status < 400 {
 				t.Errorf("%s %s answered %d to a non-administrator: %v",
 					r.Method, r.Path, status, body)
@@ -116,12 +115,12 @@ func TestTheAdminOpenAPIDescribesTypedRoutes(t *testing.T) {
 	if err := json.Unmarshal(body, &doc); err != nil {
 		t.Fatalf("the specification does not parse: %v\n%s", err, body)
 	}
-	for _, path := range []string{"/jobs", "/trash", "/admin/shares", "/links", "/encryption", "/account/smb"} {
+	for _, path := range []string{"/api/v1/jobs", "/api/v1/trash", "/api/v1/admin/shares", "/api/v1/links", "/api/v1/encryption", "/api/v1/account/smb"} {
 		if _, ok := doc.Paths[path]; !ok {
 			t.Errorf("the specification omits %s", path)
 		}
 	}
-	for _, path := range []string{"/files/read", "/uploads", "/events"} {
+	for _, path := range []string{"/api/v1/files/read", "/api/v1/uploads", "/api/v1/events"} {
 		if _, ok := doc.Paths[path]; ok {
 			t.Errorf("the typed specification includes protocol route %s", path)
 		}
@@ -131,11 +130,13 @@ func TestTheAdminOpenAPIDescribesTypedRoutes(t *testing.T) {
 // concretePath fills a route's parameters with a value that parses, so the
 // request reaches the handler's own checks rather than stopping at the router.
 func concretePath(pattern string) string {
-	out := pattern
-	for _, param := range []string{"{id}", "{user}", "{section}", "{token}"} {
-		out = strings.ReplaceAll(out, param, "1")
+	segments := strings.Split(pattern, "/")
+	for i, segment := range segments {
+		if strings.HasPrefix(segment, ":") || strings.HasPrefix(segment, "*") {
+			segments[i] = "1"
+		}
 	}
-	return out
+	return strings.Join(segments, "/")
 }
 
 // An app password cannot reach the administrative surface at all.

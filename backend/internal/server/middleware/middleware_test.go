@@ -5,7 +5,6 @@ package middleware
 
 import (
 	"net/netip"
-	"strings"
 	"testing"
 )
 
@@ -138,64 +137,6 @@ func TestThePlaceholderIsNotAPrivateClient(t *testing.T) {
 	}
 	if IsPrivateClient(mustAddr(t, "203.0.113.7")) {
 		t.Fatal("a public address passed the gate")
-	}
-}
-
-// The chain the server mounts is a valid chain.
-func TestTheChainValidates(t *testing.T) {
-	if err := ValidateChain(Chain()); err != nil {
-		t.Fatalf("the shipped chain: %v", err)
-	}
-	if len(Chain()) != 11 {
-		t.Fatalf("the chain has %d steps", len(Chain()))
-	}
-	// Every step has a name that is not the fallback.
-	for _, s := range Chain() {
-		if strings.HasPrefix(s.String(), "Step(") {
-			t.Errorf("step %d has no name", uint8(s))
-		}
-	}
-}
-
-// Each ordering rule the document calls load-bearing is refused when broken.
-// Every swap breaks exactly one rule, so a rule that stopped being checked
-// shows up as an accepted chain.
-func TestTheOrderingRulesAreEnforced(t *testing.T) {
-	swap := func(steps []Step, a, b Step) []Step {
-		out := append([]Step(nil), steps...)
-		ai, _ := indexOf(out, a)
-		bi, _ := indexOf(out, b)
-		out[ai], out[bi] = out[bi], out[ai]
-		return out
-	}
-
-	for _, c := range []struct {
-		what  string
-		steps []Step
-	}{
-		{"ErrorMapper not innermost", swap(Chain(), StepErrorMapper, StepACLScope)},
-		{"RateLimit before TrustedProxy", swap(Chain(), StepTrustedProxy, StepRateLimit)},
-		{"Auth before the boundary", swap(Chain(), StepHostAndOriginBoundary, StepAuth)},
-		{"CSRF before Auth", swap(Chain(), StepAuth, StepCSRF)},
-	} {
-		if err := ValidateChain(c.steps); err == nil {
-			t.Errorf("%s was accepted", c.what)
-		}
-	}
-}
-
-// A malformed chain reports every problem at once, so an operator is not led
-// through them one restart at a time.
-func TestAMalformedChainReportsEveryProblem(t *testing.T) {
-	err := ValidateChain([]Step{StepUnset, StepAuth, StepAuth, Step(200)})
-	if err == nil {
-		t.Fatal("a chain with four problems was accepted")
-	}
-	msg := err.Error()
-	for _, want := range []string{"position 0", "Auth", "position 3", "ErrorMapper"} {
-		if !strings.Contains(msg, want) {
-			t.Errorf("the report %q does not name %q", msg, want)
-		}
 	}
 }
 

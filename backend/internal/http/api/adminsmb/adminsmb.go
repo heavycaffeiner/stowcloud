@@ -25,21 +25,20 @@ type Deps struct {
 	Timeout time.Duration
 	Logger  *slog.Logger
 }
-type handlers struct{ d Deps }
+type Handlers struct{ d Deps }
 
 // NewHandlers builds administrator SMB routes.
-func NewHandlers(d Deps) map[string]gin.HandlerFunc {
+func NewHandlers(d Deps) *Handlers {
 	if d.Logger == nil {
 		d.Logger = slog.Default()
 	}
 	if d.Timeout <= 0 {
 		d.Timeout = agent.DefaultTimeout + 5*time.Second
 	}
-	h := &handlers{d: d}
-	return map[string]gin.HandlerFunc{"admin.smb.apply": h.apply}
+	return &Handlers{d: d}
 }
 
-func (h *handlers) apply(c *gin.Context) {
+func (h *Handlers) Apply(c *gin.Context) {
 	if !h.admin(c) {
 		return
 	}
@@ -62,7 +61,7 @@ func (h *handlers) apply(c *gin.Context) {
 	json(c, http.StatusOK, handler.SMBReportOf(report))
 }
 
-func (h *handlers) admin(c *gin.Context) bool {
+func (h *Handlers) admin(c *gin.Context) bool {
 	v, ok := c.Get(string(middleware.KeyCredential))
 	p, okp := v.(middleware.Principal)
 	if !ok || !okp || p.UserID == 0 {

@@ -7,34 +7,25 @@ package trash
 
 import (
 	"context"
-	"net/http"
 	"strconv"
 	"strings"
-
-	"github.com/danielgtaylor/huma/v2"
-	"github.com/gin-gonic/gin"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/humabridge"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
-// Deps are the capabilities needed by the authenticated trash routes.
-// Identity, path resolution, and error projection remain application policy
-// supplied as callbacks; Core is the feature boundary for trash operations.
-type Deps struct {
+// Handler serves the caller's trash. Core owns the trash semantics; Errors
+// renders the per-item outcome of a batch.
+type Handler struct {
 	Core    *files.Core
-	Owner   func(*gin.Context) (files.UserID, bool)
 	Resolve func(files.UserID, string, acl.Perms) (files.Resolved, error)
 	Errors  *apierr.Classifier
 }
 
-// Handler implements the authenticated trash HTTP routes.
-type Handler struct{ d Deps }
 type listInput struct {
 	Path string `query:"path"`
 }
@@ -57,30 +48,9 @@ type batchOutput struct {
 	}
 }
 
-// Register mounts the three conventional trash operations below the API prefix.
-func Register(api huma.API, d Deps) {
-	h := &Handler{d: d}
-	huma.Register[listInput, listOutput](api, huma.Operation{
-		OperationID: "trash.list", Method: http.MethodGet, Path: "/trash",
-	}, h.listHuma)
-	huma.Register[batchInput, batchOutput](api, huma.Operation{
-		OperationID: "trash.restore", Method: http.MethodPost, Path: "/trash/restore",
-	}, h.restoreHuma)
-	huma.Register[batchInput, batchOutput](api, huma.Operation{
-		OperationID: "trash.purge", Method: http.MethodPost, Path: "/trash/purge",
-	}, h.purgeHuma)
-}
-func (h *Handler) humaOwner(ctx context.Context) (files.UserID, error) {
-	c := humabridge.Gin(ctx)
-	owner, ok := h.owner(c)
-	if !ok {
-		return 0, humabridge.Refusal(apierr.Classified{Class: apierr.AuthRequired})
-	}
-	return owner, nil
-}
-
-func (h *Handler) listHuma(ctx context.Context, in *listInput) (*listOutput, error) {
-	owner, err := h.humaOwner(ctx)
+// List answers the trash under a path, or under every root.
+func (h *Handler) List(ctx context.Context, in *listInput) (*listOutput, error) {
+	owner, err := handler.OwnerFrom(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -95,21 +65,21 @@ func (h *Handler) listHuma(ctx context.Context, in *listInput) (*listOutput, err
 	if in.Path != "" {
 		r, err := h.resolve(owner, in.Path, acl.Read)
 		if err != nil {
-			return nil, humabridge.Failure(ctx, err)
+			return nil, err
 		}
-		entries, err := h.d.Core.TrashList(ctx, r)
+		entries, err := h.Core.TrashList(ctx, r)
 		if err != nil {
-			return nil, humabridge.Failure(ctx, err)
+			return nil, err
 		}
 		qualify(r.Share(), entries)
 		return &listOutput{Body: views}, nil
 	}
-	for _, root := range h.d.Core.Roots(owner) {
+	for _, root := range h.Core.Roots(owner) {
 		r, err := h.resolve(owner, "/"+root.Label, acl.Read)
 		if err != nil {
 			continue
 		}
-		entries, err := h.d.Core.TrashList(ctx, r)
+		entries, err := h.Core.TrashList(ctx, r)
 		if err != nil {
 			continue
 		}
@@ -118,8 +88,8 @@ func (h *Handler) listHuma(ctx context.Context, in *listInput) (*listOutput, err
 	return &listOutput{Body: views}, nil
 }
 
-func (h *Handler) batchHuma(ctx context.Context, ids []string, need acl.Perms, restore bool) (*batchOutput, error) {
-	owner, err := h.humaOwner(ctx)
+func (h *Handler) batch(ctx context.Context, ids []string, need acl.Perms, restore bool) (*batchOutput, error) {
+	owner, err := handler.OwnerFrom(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -128,25 +98,25 @@ func (h *Handler) batchHuma(ctx context.Context, ids []string, need acl.Perms, r
 		item := trashBatchItem{Path: raw}
 		r, id, err := h.resolveTrashID(owner, raw, need)
 		if err != nil {
-			wire := h.d.Errors.WireOf(err, apierr.VisibilityKnown)
+			wire := h.Errors.WireOf(err, apierr.VisibilityKnown)
 			item.Error = &wire
 			results = append(results, item)
 			continue
 		}
 		if restore {
-			restored, rerr := h.d.Core.TrashRestore(ctx, r, id)
+			restored, rerr := h.Core.TrashRestore(ctx, r, id)
 			if rerr != nil {
-				wire := h.d.Errors.WireOf(rerr, apierr.VisibilityKnown)
+				wire := h.Errors.WireOf(rerr, apierr.VisibilityKnown)
 				item.Error = &wire
 				results = append(results, item)
 				continue
 			}
 			item.OK = true
-			if vp, verr := h.d.Core.VpathFor(owner, r.Share(), restored.Share()); verr == nil {
+			if vp, verr := h.Core.VpathFor(owner, r.Share(), restored.Share()); verr == nil {
 				item.Path = vp.String()
 			}
-		} else if perr := h.d.Core.TrashPurge(ctx, r, &id); perr != nil {
-			wire := h.d.Errors.WireOf(perr, apierr.VisibilityKnown)
+		} else if perr := h.Core.TrashPurge(ctx, r, &id); perr != nil {
+			wire := h.Errors.WireOf(perr, apierr.VisibilityKnown)
 			item.Error = &wire
 			results = append(results, item)
 			continue
@@ -160,26 +130,21 @@ func (h *Handler) batchHuma(ctx context.Context, ids []string, need acl.Perms, r
 	return out, nil
 }
 
-func (h *Handler) restoreHuma(ctx context.Context, in *batchInput) (*batchOutput, error) {
-	return h.batchHuma(ctx, in.Body.IDs, acl.Create, true)
+// Restore puts trashed entries back.
+func (h *Handler) Restore(ctx context.Context, in *batchInput) (*batchOutput, error) {
+	return h.batch(ctx, in.Body.IDs, acl.Create, true)
 }
 
-func (h *Handler) purgeHuma(ctx context.Context, in *batchInput) (*batchOutput, error) {
-	return h.batchHuma(ctx, in.Body.IDs, acl.Delete, false)
-}
-
-func (h *Handler) owner(c *gin.Context) (files.UserID, bool) {
-	if h.d.Owner == nil {
-		return 0, false
-	}
-	return h.d.Owner(c)
+// Purge deletes trashed entries for good.
+func (h *Handler) Purge(ctx context.Context, in *batchInput) (*batchOutput, error) {
+	return h.batch(ctx, in.Body.IDs, acl.Delete, false)
 }
 
 func (h *Handler) resolve(owner files.UserID, raw string, need acl.Perms) (files.Resolved, error) {
-	if h.d.Resolve == nil {
+	if h.Resolve == nil {
 		return files.Resolved{}, files.ErrNotFound
 	}
-	return h.d.Resolve(owner, raw, need)
+	return h.Resolve(owner, raw, need)
 }
 
 type trashBatchItem struct {
@@ -200,7 +165,7 @@ func (h *Handler) resolveTrashID(owner files.UserID, raw string, need acl.Perms)
 	if err != nil {
 		return files.Resolved{}, "", apierr.BadRequest("trash.bad_id", "ids")
 	}
-	for _, root := range h.d.Core.Roots(owner) {
+	for _, root := range h.Core.Roots(owner) {
 		narrowed, err := num.Narrow[uint32](root.Share)
 		if err != nil || uint64(narrowed) != n {
 			continue

@@ -3,6 +3,7 @@
 package handler
 
 import (
+	"context"
 	"io"
 	"strings"
 
@@ -21,6 +22,16 @@ func Owner(c *gin.Context) (files.UserID, bool) {
 		return 0, false
 	}
 	return files.UserID(principal.UserID), true
+}
+
+// OwnerFrom reads the signed-in account from a request context, refusing a
+// request that carries none.
+func OwnerFrom(ctx context.Context) (files.UserID, error) {
+	p, ok := middleware.PrincipalFrom(ctx)
+	if !ok || p.UserID == 0 {
+		return 0, &apierr.ClassifiedError{Classified: apierr.Classified{Class: apierr.AuthRequired}}
+	}
+	return files.UserID(p.UserID), nil
 }
 
 // Fail records a service error for the chain to classify and render.

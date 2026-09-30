@@ -18,22 +18,19 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/publiclinks"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/nextcloud"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
-const frontController = "/index.php"
-
-func (e *Engine) declarePublicLinkAliases(app *gin.Engine) {
-	e.publicLinks.Declare(app, frontController+publiclinks.PublicLinkPrefix)
-}
-
-func (e *Engine) mountNCTagged(app *gin.Engine) {
-	e.ncServer().Mount(app)
-	app.GET(frontController+publiclinks.PublicLinkPrefix+"/:token", e.publicLinks.Landing)
-	app.POST(frontController+publiclinks.PublicLinkPrefix+"/:token/auth", e.publicLinks.Unlock)
-	app.GET(frontController+publiclinks.PublicLinkPrefix+"/:token/download", e.publicLinks.Download)
-	app.GET(frontController+publiclinks.PublicLinkPrefix+"/:token/zip", e.publicLinks.Zip)
-	app.POST(frontController+publiclinks.PublicLinkPrefix+"/:token/drop", e.publicLinks.Drop)
+// mountNCTagged mounts the compatibility surface and its front-controller
+// spelling of the public link routes.
+func (e *Engine) mountNCTagged(public, device gin.IRoutes) {
+	e.ncServer().Mount(device)
+	public.GET("/index.php/s/:token", e.publicLinks.Landing)
+	public.POST("/index.php/s/:token/auth", middleware.LimitJSON, e.publicLinks.Unlock)
+	public.GET("/index.php/s/:token/download", e.publicLinks.Download)
+	public.GET("/index.php/s/:token/zip", e.publicLinks.Zip)
+	public.POST("/index.php/s/:token/drop", e.publicLinks.Drop)
 }
 
 func (e *Engine) contentRoute(method, path string) bool {

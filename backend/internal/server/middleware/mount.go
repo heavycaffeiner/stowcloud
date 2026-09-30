@@ -1,14 +1,12 @@
 // Linux only, because it fronts services that are Linux only.
 //go:build linux
 
-// Mounting the chain on the framework.
-//
-// This file translates native net/http requests into the package's decisions
-// and renders those decisions through Gin. Keeping the split means each rule
-// remains framework-independent and straightforward to test.
+// Package middleware is the request chain: the global steps every request
+// passes, and the per-group steps that decide who may reach a route.
 package middleware
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -21,8 +19,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/protocol/limits"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/server/route"
 )
 
 // contextKey is this package's key namespace on the Gin context. Typed so a
@@ -57,7 +55,6 @@ type Deps struct {
 
 	CSRFKey func() []byte
 
-	Audit  AuditSink
 	Access AccessSink
 
 	// Errors classifies what a handler recorded with Fail.
@@ -66,116 +63,89 @@ type Deps struct {
 	ContentRoute func(method, path string) bool
 }
 
-// Record is one entry in a replay: which step ran, and whether it passed the
-// request on or answered it.
-type Record struct {
-	Step    Step
-	Entered bool
-	Passed  bool
-}
-
-// Recorder collects a replay. Nil is fine and records nothing.
-type Recorder interface {
-	Record(r Record)
-}
-
-// Mount installs the chain on an app, in the order Chain gives.
-func Mount(app *gin.Engine, steps []Step, d Deps, rec Recorder) error {
-	if err := ValidateChain(steps); err != nil {
-		return err
-	}
-	if app == nil {
-		return fmt.Errorf("middleware: the chain needs an application")
-	}
+// Global returns the steps every request passes through, outermost first.
+//
+// The order is the contract: TrustedProxy resolves the address RateLimit keys
+// on, the boundary decides the host role before any credential is read, and the
+// log step wraps everything so a refusal is recorded with the status it sent.
+func Global(d Deps) ([]gin.HandlerFunc, error) {
 	if d.Hosts == nil || d.Trusted == nil || d.Limiter == nil || d.Errors == nil {
-		return fmt.Errorf("middleware: the chain needs hosts, trusted proxies, a limiter and an error classifier")
+		return nil, fmt.Errorf("middleware: the chain needs hosts, trusted proxies, a limiter and an error classifier")
 	}
-
-	for _, s := range steps {
-		app.Use(handlerFor(s, d, rec))
-	}
-	return nil
-}
-
-// handlerFor builds one Gin middleware handler.
-func handlerFor(s Step, d Deps, rec Recorder) gin.HandlerFunc {
-	inner := stepHandler(s, d)
-	if rec == nil {
-		return inner
-	}
-	return func(c *gin.Context) {
-		rec.Record(Record{Step: s, Entered: true})
-		inner(c)
-		// A Gin middleware that reached its downstream handlers remains
-		// non-aborted. A refusal aborts the context and therefore did not pass.
-		rec.Record(Record{Step: s, Passed: !c.IsAborted()})
-	}
-}
-
-func stepHandler(s Step, d Deps) gin.HandlerFunc {
-	switch s {
-	case StepTrustedProxy:
-		return func(c *gin.Context) {
+	return []gin.HandlerFunc{
+		requestID,
+		func(c *gin.Context) { logHandler(c, d) },
+		func(c *gin.Context) {
 			c.Set(string(KeyClient), resolveClient(c, d))
 			c.Next()
-		}
-	case StepHostAndOriginBoundary:
-		return func(c *gin.Context) { boundaryHandler(c, d) }
-	case StepRateLimit:
-		return func(c *gin.Context) {
-			key := ClientOf(c).String()
-			if !d.Limiter.Allow(key) {
+		},
+		func(c *gin.Context) { boundaryHandler(c, d) },
+		func(c *gin.Context) { securityHeaders(c, d) },
+		func(c *gin.Context) {
+			if !d.Limiter.Allow(ClientOf(c).String()) {
 				abortClassified(c, apierr.Classified{Class: apierr.RateLimited})
 				return
 			}
 			c.Next()
-		}
-	case StepAuth:
-		return func(c *gin.Context) { authHandler(c, d) }
-	case StepRequestID:
-		return func(c *gin.Context) {
-			id, err := NewTraceID()
-			if err != nil {
-				abortClassified(c, apierr.Classified{Class: apierr.Internal})
-				return
-			}
-			c.Set(string(KeyTrace), id)
-			c.Header(TraceHeader, id)
-			c.Next()
-		}
-	case StepSecurityHeaders:
-		return func(c *gin.Context) {
-			for k, v := range SecurityHeaders() {
-				c.Header(k, v)
-			}
-			if originOf(c) != OriginContent {
-				c.Header("Content-Security-Policy", CSP(d.ScriptHashes))
-			}
-			c.Next()
-		}
-	case StepACLScope:
-		return func(c *gin.Context) { scopeHandler(c) }
-	case StepBodyLimit:
-		return func(c *gin.Context) { bodyLimitHandler(c) }
-	case StepCSRF:
-		return func(c *gin.Context) { csrfHandler(c, d) }
-	case StepAuditSink:
-		return func(c *gin.Context) { auditHandler(c, d) }
-	case StepErrorMapper:
-		return func(c *gin.Context) { errorHandler(c, d.Errors) }
-	case StepUnset:
-		return func(c *gin.Context) { c.Next() }
-	default:
-		return func(c *gin.Context) { c.Next() }
+		},
+		func(c *gin.Context) { errorHandler(c, d.Errors) },
+	}, nil
+}
+
+// Public admits any caller. A session cookie is still resolved, so a public
+// route can tell who is signed in, but a device credential is not read.
+func Public(d Deps) []gin.HandlerFunc {
+	return []gin.HandlerFunc{func(c *gin.Context) { authHandler(c, d, true) }}
+}
+
+// Session admits only a browser session, and a mutation only with its CSRF
+// token. Any other caller is answered as if the route did not exist.
+func Session(d Deps) []gin.HandlerFunc {
+	return []gin.HandlerFunc{
+		func(c *gin.Context) { authHandler(c, d, false) },
+		func(c *gin.Context) { csrfHandler(c, d) },
+		requireSession,
 	}
 }
 
-// authHandler selects a credential and resolves what it proves.
-func authHandler(c *gin.Context, d Deps) {
+// Device resolves any credential and leaves the access decision to the
+// protocol handler, which applies app-password masks and share limits itself.
+func Device(d Deps) []gin.HandlerFunc {
+	return []gin.HandlerFunc{
+		func(c *gin.Context) { authHandler(c, d, false) },
+		func(c *gin.Context) { csrfHandler(c, d) },
+	}
+}
+
+func requestID(c *gin.Context) {
+	id, err := NewTraceID()
+	if err != nil {
+		abortClassified(c, apierr.Classified{Class: apierr.Internal})
+		return
+	}
+	c.Set(string(KeyTrace), id)
+	c.Header(TraceHeader, id)
+	c.Next()
+}
+
+func securityHeaders(c *gin.Context, d Deps) {
+	for k, v := range SecurityHeaders() {
+		c.Header(k, v)
+	}
+	if originOf(c) != OriginContent {
+		c.Header("Content-Security-Policy", CSP(d.ScriptHashes))
+	}
+	c.Next()
+}
+
+// authHandler selects a credential and resolves what it proves. The principal
+// is kept on both the Gin and the request context, so a net/http or typed
+// handler reads the same answer.
+func authHandler(c *gin.Context, d Deps, sessionOnly bool) {
 	cred := Select(Presented{
 		Authorization: c.GetHeader("Authorization"),
 		Cookie:        cookieValue(c, SessionCookieName),
-	}, publicRead(c))
+	}, sessionOnly)
 
 	p := Principal{Kind: CredentialNone}
 	if d.Principal != nil && cred.Kind != CredentialNone {
@@ -184,51 +154,39 @@ func authHandler(c *gin.Context, d Deps) {
 		}
 	}
 	c.Set(string(KeyCredential), p)
+	c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), KeyCredential, p))
 	c.Next()
 }
 
-// scopeHandler applies the matched route's requirement. A refusal answers as
-// a path that is not there, rather than revealing the route's existence.
-func scopeHandler(c *gin.Context) {
-	m, ok := metaOf(c)
-	if !ok {
-		c.Next()
-		return
-	}
-	if err := Scope(m.req, principalOf(c)); err != nil {
+// PrincipalFrom reads what the auth step resolved from a request context.
+func PrincipalFrom(ctx context.Context) (Principal, bool) {
+	p, ok := ctx.Value(KeyCredential).(Principal)
+	return p, ok && p.Kind != CredentialNone
+}
+
+// requireSession answers anything but a session as a path that is not there,
+// rather than revealing that the route exists.
+func requireSession(c *gin.Context) {
+	if principalOf(c).Kind != CredentialSessionCookie {
 		c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "not_found"})
 		return
 	}
 	c.Next()
 }
 
-// auditHandler records the request after the rest of the chain has answered.
-func auditHandler(c *gin.Context, d Deps) {
+// logHandler records the request after the rest of the chain has answered.
+func logHandler(c *gin.Context, d Deps) {
 	clk := clockOf(d)
 	started := clk.Now()
 	c.Next()
 
-	if d.Audit == nil && d.Access == nil {
+	if d.Access == nil {
 		return
 	}
-	name := ""
-	if m, ok := metaOf(c); ok {
-		name = m.name
-	}
-	status := statusOf(c)
-
-	if d.Audit != nil {
-		d.Audit.Record(AuditRecordFor(
-			traceOf(c), c.Request.Method, name, status,
-			ClientOf(c), principalOf(c), originOf(c),
-		))
-	}
-	if d.Access != nil {
-		d.Access.Access(AccessRecordFor(
-			traceOf(c), c.Request.Method, name, c.Request.URL.Path, status,
-			clk.Since(started), ClientOf(c), principalOf(c), causeOf(c),
-		))
-	}
+	d.Access.Access(AccessRecordFor(
+		traceOf(c), c.Request.Method, c.FullPath(), c.Request.URL.Path, c.Writer.Status(),
+		clk.Since(started), ClientOf(c), principalOf(c), causeOf(c),
+	))
 }
 
 func clockOf(d Deps) clock.Clock {
@@ -236,10 +194,6 @@ func clockOf(d Deps) clock.Clock {
 		return clock.System()
 	}
 	return d.Clock
-}
-
-func statusOf(c *gin.Context) int {
-	return c.Writer.Status()
 }
 
 func traceOf(c *gin.Context) string {
@@ -295,20 +249,10 @@ func causeOf(c *gin.Context) error {
 
 const drainCap = 8 << 20
 
-// bodyLimitHandler refuses a body past its route's class before a handler can
-// read it.
-func bodyLimitHandler(c *gin.Context) {
-	m, ok := metaOf(c)
-	if !ok {
-		c.Next()
-		return
-	}
-	bound, bounded := BodyBound(m.body)
-	if !bounded {
-		c.Next()
-		return
-	}
-	if declared := c.Request.ContentLength; declared > bound {
+// LimitJSON refuses a declared body past the JSON bound before the handler
+// reads it. The body is drained first so the connection can be reused.
+func LimitJSON(c *gin.Context) {
+	if c.Request.ContentLength > limits.RequestBody {
 		if stream := c.Request.Body; stream != nil {
 			drained, drainErr := io.Copy(io.Discard, io.LimitReader(stream, drainCap+1))
 			if drainErr != nil || drained > drainCap {
@@ -323,10 +267,6 @@ func bodyLimitHandler(c *gin.Context) {
 
 // csrfHandler checks the token on a mutating cookie-authenticated request.
 func csrfHandler(c *gin.Context, d Deps) {
-	if m, ok := metaOf(c); ok && m.req.Access == route.AccessPublic {
-		c.Next()
-		return
-	}
 	p := principalOf(c)
 	if !CSRFRequired(c.Request.Method, p.Kind) {
 		c.Next()
@@ -445,45 +385,6 @@ func ClientOf(c *gin.Context) netip.Addr {
 		}
 	}
 	return Unroutable()
-}
-
-func publicRead(c *gin.Context) bool {
-	m, ok := metaOf(c)
-	return ok && m.req.Access == route.AccessPublic
-}
-
-const routeRequirementKey contextKey = "sc.route.requirement"
-
-// SetRequirement is how the server attaches a route's metadata.
-func SetRequirement(c *gin.Context, req route.Requirement, body route.BodyClass, name string) {
-	c.Set(string(routeRequirementKey), routeMeta{req: req, body: body, name: name})
-}
-
-type routeMeta struct {
-	req  route.Requirement
-	body route.BodyClass
-	name string
-}
-
-// RequirementOf reports the matched route's requirement.
-func RequirementOf(c *gin.Context) (route.Requirement, bool) {
-	m, ok := metaOf(c)
-	return m.req, ok
-}
-
-// RouteNameOf reports the matched route's stable product name.
-func RouteNameOf(c *gin.Context) (string, bool) {
-	m, ok := metaOf(c)
-	return m.name, ok
-}
-
-func metaOf(c *gin.Context) (routeMeta, bool) {
-	v, ok := c.Get(string(routeRequirementKey))
-	if !ok {
-		return routeMeta{}, false
-	}
-	m, ok := v.(routeMeta)
-	return m, ok
 }
 
 func cookieValue(c *gin.Context, name string) string {

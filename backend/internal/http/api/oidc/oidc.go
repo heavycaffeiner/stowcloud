@@ -75,20 +75,6 @@ type Handlers struct{ d Deps }
 // New constructs OIDC route handlers from narrow typed dependencies.
 func New(d Deps) *Handlers { return &Handlers{d: d} }
 
-// Routes returns handlers keyed by the server route names.
-func (h *Handlers) Routes() map[string]gin.HandlerFunc {
-	return map[string]gin.HandlerFunc{
-		"auth.oidc.config":         h.config,
-		"auth.oidc.start":          h.start,
-		"auth.oidc.callback":       h.callback,
-		"account.oidc-link.start":  h.linkStart,
-		"account.oidc-link.delete": h.linkDelete,
-		"admin.users.oidc.get":     h.adminGet,
-		"admin.users.oidc.delete":  h.adminDelete,
-		"admin.oidc.endpoints":     h.adminEndpoints,
-	}
-}
-
 // EndSessionURL returns the provider logout URL for the request, when available.
 func (h *Handlers) EndSessionURL(c *gin.Context) (string, bool) {
 	client := h.d.Client()
@@ -106,9 +92,7 @@ func (h *Handlers) EndSessionURL(c *gin.Context) (string, bool) {
 	return target, true
 }
 
-type handlers = Handlers
-
-func (h *handlers) config(c *gin.Context) {
+func (h *Handlers) Config(c *gin.Context) {
 	if h.d.Client() == nil {
 		h.d.WriteJSON(c, http.StatusOK, handler.OIDCConfigView{Enabled: false})
 		return
@@ -116,7 +100,7 @@ func (h *handlers) config(c *gin.Context) {
 	h.d.WriteJSON(c, http.StatusOK, handler.OIDCConfigView{Enabled: true, DisplayName: h.d.DisplayName()})
 }
 
-func (h *handlers) start(c *gin.Context) {
+func (h *Handlers) Start(c *gin.Context) {
 	client := h.d.Client()
 	if client == nil {
 		h.d.Refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
@@ -130,7 +114,7 @@ func (h *handlers) start(c *gin.Context) {
 	h.begin(c, client, 0, returnTo)
 }
 
-func (h *handlers) linkStart(c *gin.Context) {
+func (h *Handlers) LinkStart(c *gin.Context) {
 	owner, ok := h.d.Owner(c)
 	if !ok {
 		h.d.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
@@ -157,7 +141,7 @@ func (h *handlers) linkStart(c *gin.Context) {
 	h.begin(c, client, owner, returnTo)
 }
 
-func (h *handlers) begin(c *gin.Context, client *featureoidc.Client, user int64, returnTo string) {
+func (h *Handlers) begin(c *gin.Context, client *featureoidc.Client, user int64, returnTo string) {
 	flow, err := featureoidc.NewFlowSecrets()
 	if err != nil {
 		h.d.FailKnown(c, err)
@@ -181,7 +165,7 @@ func (h *handlers) begin(c *gin.Context, client *featureoidc.Client, user int64,
 	h.d.WriteJSON(c, http.StatusOK, handler.OIDCStartView{AuthorizeURL: target})
 }
 
-func (h *handlers) callback(c *gin.Context) {
+func (h *Handlers) Callback(c *gin.Context) {
 	client := h.d.Client()
 	if client == nil {
 		if err := h.redirectError(c, h.ambiguousPath(c), errDisabled); err != nil {
@@ -246,7 +230,7 @@ func (h *handlers) callback(c *gin.Context) {
 	}
 }
 
-func (h *handlers) completeLink(c *gin.Context, flow auth.OIDCFlow, claims *featureoidc.Claims) error {
+func (h *Handlers) completeLink(c *gin.Context, flow auth.OIDCFlow, claims *featureoidc.Claims) error {
 	owner, ok := h.d.Owner(c)
 	if !ok || owner != flow.User {
 		return h.redirectError(c, linkErrorPath, errLinkSessionChanged)
@@ -261,7 +245,7 @@ func (h *handlers) completeLink(c *gin.Context, flow auth.OIDCFlow, claims *feat
 	return redirect(c, flow.ReturnTo)
 }
 
-func (h *handlers) completeSignIn(c *gin.Context, flow auth.OIDCFlow, claims *featureoidc.Claims) error {
+func (h *Handlers) completeSignIn(c *gin.Context, flow auth.OIDCFlow, claims *featureoidc.Claims) error {
 	user, err := h.d.Auth.UserForOIDCIdentity(c.Request.Context(), claims.Issuer, claims.Subject)
 	if err != nil {
 		h.logInfo("a provider identity is not linked to any account", "issuer", claims.Issuer)
@@ -279,7 +263,7 @@ func (h *handlers) completeSignIn(c *gin.Context, flow auth.OIDCFlow, claims *fe
 	return redirect(c, flow.ReturnTo)
 }
 
-func (h *handlers) linkDelete(c *gin.Context) {
+func (h *Handlers) LinkDelete(c *gin.Context) {
 	owner, ok := h.d.Owner(c)
 	if !ok {
 		h.d.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
@@ -306,7 +290,7 @@ func (h *handlers) linkDelete(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-func (h *handlers) adminGet(c *gin.Context) {
+func (h *Handlers) AdminGet(c *gin.Context) {
 	if _, ok := h.d.Admin(c); !ok {
 		return
 	}
@@ -327,7 +311,7 @@ func (h *handlers) adminGet(c *gin.Context) {
 	h.d.WriteJSON(c, http.StatusOK, handler.OIDCLinkOf(link))
 }
 
-func (h *handlers) adminDelete(c *gin.Context) {
+func (h *Handlers) AdminDelete(c *gin.Context) {
 	if _, ok := h.d.Admin(c); !ok {
 		return
 	}
@@ -343,7 +327,7 @@ func (h *handlers) adminDelete(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-func (h *handlers) adminEndpoints(c *gin.Context) {
+func (h *Handlers) AdminEndpoints(c *gin.Context) {
 	if _, ok := h.d.Admin(c); !ok {
 		return
 	}
@@ -357,14 +341,14 @@ func (h *handlers) adminEndpoints(c *gin.Context) {
 	h.d.WriteJSON(c, http.StatusOK, handler.OIDCEndpointsView{RedirectURIs: redirects, PostLogoutRedirectURIs: postLogouts})
 }
 
-func (h *handlers) redirectURI(c *gin.Context) (string, bool) {
+func (h *Handlers) redirectURI(c *gin.Context) (string, bool) {
 	origin, ok := h.requestOrigin(c)
 	if !ok {
 		return "", false
 	}
 	return origin + "/api/v1/auth/oidc/callback", true
 }
-func (h *handlers) requestOrigin(c *gin.Context) (string, bool) {
+func (h *Handlers) requestOrigin(c *gin.Context) (string, bool) {
 	host := c.Request.Host
 	if host == "" {
 		return "", false
@@ -396,22 +380,22 @@ func hostDeclared(declared []string, host string) bool {
 	}
 	return false
 }
-func (h *handlers) ambiguousPath(c *gin.Context) string {
+func (h *Handlers) ambiguousPath(c *gin.Context) string {
 	if _, ok := h.d.Owner(c); ok {
 		return linkErrorPath
 	}
 	return loginPath
 }
 func redirect(c *gin.Context, target string) error { c.Redirect(http.StatusFound, target); return nil }
-func (h *handlers) redirectError(c *gin.Context, target, code string) error {
+func (h *Handlers) redirectError(c *gin.Context, target, code string) error {
 	return redirect(c, target+"?oidc_error="+url.QueryEscape(code))
 }
 func printableToken(t interface{ Reveal() []byte }) string { return hex.EncodeToString(t.Reveal()) }
-func (h *handlers) setBinding(c *gin.Context, binding string) {
+func (h *Handlers) setBinding(c *gin.Context, binding string) {
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie(bindingCookie, binding, int(flowWindow/time.Second), "/", "", true, true)
 }
-func (h *handlers) clearBinding(c *gin.Context) {
+func (h *Handlers) clearBinding(c *gin.Context) {
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie(bindingCookie, "", -1, "/", "", true, true)
 }
@@ -419,17 +403,17 @@ func pathID(c *gin.Context) (int64, bool) {
 	n, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	return n, err == nil && n > 0
 }
-func (h *handlers) logInfo(msg string, args ...any) {
+func (h *Handlers) logInfo(msg string, args ...any) {
 	if h.d.Logger != nil {
 		h.d.Logger.Info(msg, args...)
 	}
 }
-func (h *handlers) logWarn(msg string, args ...any) {
+func (h *Handlers) logWarn(msg string, args ...any) {
 	if h.d.Logger != nil {
 		h.d.Logger.Warn(msg, args...)
 	}
 }
-func (h *handlers) logError(msg string, args ...any) {
+func (h *Handlers) logError(msg string, args ...any) {
 	if h.d.Logger != nil {
 		h.d.Logger.Error(msg, args...)
 	}

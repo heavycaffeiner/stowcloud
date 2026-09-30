@@ -53,7 +53,7 @@ func IsDirectPath(path string) bool {
 }
 
 // Mount claims every path.
-func (s *Server) Mount(app *gin.Engine) {
+func (s *Server) Mount(app gin.IRoutes) {
 	get := func(path string, h gin.HandlerFunc) {
 		app.GET(path, h)
 		app.GET(frontPrefix+path, h)
@@ -93,11 +93,7 @@ func (s *Server) Mount(app *gin.Engine) {
 
 	bridge := requestScoped(s.DavHandler())
 	serveBridge := func(c *gin.Context) {
-		request := c.Request
-		if principal, ok := c.Get(string(middleware.KeyCredential)); ok {
-			request = request.WithContext(context.WithValue(request.Context(), middleware.KeyCredential, principal))
-		}
-		bridge.ServeHTTP(c.Writer, request)
+		bridge.ServeHTTP(c.Writer, c.Request)
 		c.Abort()
 	}
 	davMethods := []string{

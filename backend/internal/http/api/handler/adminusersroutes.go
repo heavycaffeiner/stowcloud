@@ -16,7 +16,6 @@ import (
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/server/route"
 )
 
 // AdminUsersDeps are the explicit services used by the administrator account
@@ -29,24 +28,16 @@ type AdminUsersDeps struct {
 }
 
 // NewAdminUsersHandlers builds administrator account, group and audit routes.
-func NewAdminUsersHandlers(d AdminUsersDeps) map[string]gin.HandlerFunc {
+func NewAdminUsersHandlers(d AdminUsersDeps) *AdminUsersHandlers {
 	if d.Logger == nil {
 		d.Logger = slog.Default()
 	}
-	h := &adminUsersHandlers{d: d}
-	return map[string]gin.HandlerFunc{
-		"admin.users.list": h.usersList, "admin.users.create": h.usersCreate,
-		"admin.users.update": h.usersUpdate, "admin.users.delete": h.usersDelete,
-		"admin.groups.list": h.groupsList, "admin.groups.create": h.groupsCreate,
-		"admin.groups.update": h.groupsUpdate, "admin.groups.delete": h.groupsDelete,
-		"admin.groups.members.add": h.memberAdd, "admin.groups.members.remove": h.memberRemove,
-		"admin.audit": h.audit,
-	}
+	return &AdminUsersHandlers{d: d}
 }
 
-type adminUsersHandlers struct{ d AdminUsersDeps }
+type AdminUsersHandlers struct{ d AdminUsersDeps }
 
-func (h *adminUsersHandlers) admin(c *gin.Context) (int64, bool) {
+func (h *AdminUsersHandlers) admin(c *gin.Context) (int64, bool) {
 	v, ok := c.Get(string(middleware.KeyCredential))
 	if !ok {
 		adminRefuse(c, apierr.Classified{Class: apierr.AuthRequired})
@@ -87,7 +78,7 @@ type adminMemberRequest struct {
 	User string `json:"user"`
 }
 
-func (h *adminUsersHandlers) usersList(c *gin.Context) {
+func (h *AdminUsersHandlers) UsersList(c *gin.Context) {
 	if _, ok := h.admin(c); !ok {
 		return
 	}
@@ -98,7 +89,7 @@ func (h *adminUsersHandlers) usersList(c *gin.Context) {
 	}
 	adminJSON(c, http.StatusOK, UsersOf(rows))
 }
-func (h *adminUsersHandlers) usersCreate(c *gin.Context) {
+func (h *AdminUsersHandlers) UsersCreate(c *gin.Context) {
 	if _, ok := h.admin(c); !ok {
 		return
 	}
@@ -118,7 +109,7 @@ func (h *adminUsersHandlers) usersCreate(c *gin.Context) {
 	}
 	adminJSON(c, http.StatusCreated, UserOf(row))
 }
-func (h *adminUsersHandlers) usersUpdate(c *gin.Context) {
+func (h *AdminUsersHandlers) UsersUpdate(c *gin.Context) {
 	caller, ok := h.admin(c)
 	if !ok {
 		return
@@ -173,7 +164,7 @@ func (h *adminUsersHandlers) usersUpdate(c *gin.Context) {
 	}
 	adminJSON(c, http.StatusOK, UserOf(row))
 }
-func (h *adminUsersHandlers) usersDelete(c *gin.Context) {
+func (h *AdminUsersHandlers) UsersDelete(c *gin.Context) {
 	caller, ok := h.admin(c)
 	if !ok {
 		return
@@ -198,7 +189,7 @@ func (h *adminUsersHandlers) usersDelete(c *gin.Context) {
 	}
 	c.Status(http.StatusNoContent)
 }
-func (h *adminUsersHandlers) groupsList(c *gin.Context) {
+func (h *AdminUsersHandlers) GroupsList(c *gin.Context) {
 	if _, ok := h.admin(c); !ok {
 		return
 	}
@@ -209,7 +200,7 @@ func (h *adminUsersHandlers) groupsList(c *gin.Context) {
 	}
 	adminJSON(c, http.StatusOK, GroupsOf(rows))
 }
-func (h *adminUsersHandlers) groupsCreate(c *gin.Context) {
+func (h *AdminUsersHandlers) GroupsCreate(c *gin.Context) {
 	if _, ok := h.admin(c); !ok {
 		return
 	}
@@ -224,7 +215,7 @@ func (h *adminUsersHandlers) groupsCreate(c *gin.Context) {
 	}
 	adminJSON(c, http.StatusCreated, GroupView{ID: strconv.FormatInt(id, 10), Name: req.Name, Members: []string{}})
 }
-func (h *adminUsersHandlers) groupsUpdate(c *gin.Context) {
+func (h *AdminUsersHandlers) GroupsUpdate(c *gin.Context) {
 	if _, ok := h.admin(c); !ok {
 		return
 	}
@@ -244,7 +235,7 @@ func (h *adminUsersHandlers) groupsUpdate(c *gin.Context) {
 	}
 	adminJSON(c, http.StatusOK, GroupOf(row))
 }
-func (h *adminUsersHandlers) groupsDelete(c *gin.Context) {
+func (h *AdminUsersHandlers) GroupsDelete(c *gin.Context) {
 	if _, ok := h.admin(c); !ok {
 		return
 	}
@@ -259,7 +250,7 @@ func (h *adminUsersHandlers) groupsDelete(c *gin.Context) {
 	}
 	c.Status(http.StatusNoContent)
 }
-func (h *adminUsersHandlers) memberAdd(c *gin.Context) {
+func (h *AdminUsersHandlers) MemberAdd(c *gin.Context) {
 	if _, ok := h.admin(c); !ok {
 		return
 	}
@@ -283,7 +274,7 @@ func (h *adminUsersHandlers) memberAdd(c *gin.Context) {
 	}
 	c.Status(http.StatusNoContent)
 }
-func (h *adminUsersHandlers) memberRemove(c *gin.Context) {
+func (h *AdminUsersHandlers) MemberRemove(c *gin.Context) {
 	if _, ok := h.admin(c); !ok {
 		return
 	}
@@ -303,7 +294,7 @@ func (h *adminUsersHandlers) memberRemove(c *gin.Context) {
 	}
 	c.Status(http.StatusNoContent)
 }
-func (h *adminUsersHandlers) audit(c *gin.Context) {
+func (h *AdminUsersHandlers) Audit(c *gin.Context) {
 	if _, ok := h.admin(c); !ok {
 		return
 	}
@@ -316,7 +307,7 @@ func (h *adminUsersHandlers) audit(c *gin.Context) {
 }
 
 func adminDecode(c *gin.Context, v any) bool {
-	if err := middleware.DecodeJSON(middleware.LimitBody(c.Request.Body, route.BodyJSON), v); err != nil {
+	if err := middleware.DecodeJSON(c.Request.Body, v); err != nil {
 		adminRefuse(c, apierr.Classified{Class: apierr.Malformed})
 		return false
 	}

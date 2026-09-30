@@ -349,8 +349,3 @@ func stripETag(value string) string {
 	value = strings.TrimPrefix(value, "W/")
 	return strings.Trim(value, "\"")
 }
-func (h *Handler) CreateHandler(c *gin.Context)   { h.Create(c) }
-func (h *Handler) StatusHandler(c *gin.Context)   { h.Status(c) }
-func (h *Handler) PartHandler(c *gin.Context)     { h.Part(c) }
-func (h *Handler) CompleteHandler(c *gin.Context) { h.Complete(c) }
-func (h *Handler) CancelHandler(c *gin.Context)   { h.Cancel(c) }

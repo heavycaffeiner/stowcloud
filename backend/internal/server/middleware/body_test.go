@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/protocol/limits"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/server/route"
 )
 
 // countingReader reports how many bytes were actually pulled, which is how the
@@ -26,36 +25,13 @@ func (r *countingReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// Each class gets its own ceiling, and the two that have none say so.
-func TestEachClassHasItsBound(t *testing.T) {
-	for _, c := range []struct {
-		class route.BodyClass
-		bound int64
-		has   bool
-	}{
-		{route.BodyJSON, limits.RequestBody, true},
-		{route.BodyDAVXML, limits.RequestBodyXML, true},
-		{route.BodyStream, 0, false},
-		{route.BodyNone, 0, false},
-	} {
-		got, has := BodyBound(c.class)
-		if has != c.has || got != c.bound {
-			t.Errorf("%v answered (%d, %v), want (%d, %v)", c.class, got, has, c.bound, c.has)
-		}
-	}
-	// The XML bound is the lower one, since an XML body becomes a tree.
-	if limits.RequestBodyXML >= limits.RequestBody {
-		t.Error("the XML bound is not lower than the JSON bound")
-	}
-}
-
-// A body past its bound fails at the boundary rather than after buffering, so
+// A body past the bound fails at the boundary rather than after buffering, so
 // a body twice the ceiling costs the ceiling rather than twice it.
 func TestAnOversizedBodyFailsWithoutBufferingItAll(t *testing.T) {
-	huge := strings.NewReader(strings.Repeat("x", int(limits.RequestBody)*3))
+	huge := strings.NewReader(`{"name":"` + strings.Repeat("x", int(limits.RequestBody)*3) + `"}`)
 	counter := &countingReader{inner: huge}
 
-	_, err := io.ReadAll(LimitBody(counter, route.BodyJSON))
+	err := DecodeJSON(counter, &payload{})
 	if !errors.Is(err, ErrBodyTooLarge) {
 		t.Fatalf("an oversized body returned %v", err)
 	}
@@ -67,55 +43,10 @@ func TestAnOversizedBodyFailsWithoutBufferingItAll(t *testing.T) {
 // A body exactly at the bound is accepted. The refusal is for crossing it, not
 // for reaching it.
 func TestABodyAtTheBoundIsAccepted(t *testing.T) {
-	exact := strings.NewReader(strings.Repeat("x", int(limits.RequestBody)))
-	got, err := io.ReadAll(LimitBody(exact, route.BodyJSON))
-	if err != nil {
+	shell := `{"name":""}`
+	exact := `{"name":"` + strings.Repeat("x", int(limits.RequestBody)-len(shell)) + `"}`
+	if err := DecodeJSON(strings.NewReader(exact), &payload{}); err != nil {
 		t.Fatalf("a body at the bound returned %v", err)
-	}
-	if int64(len(got)) != limits.RequestBody {
-		t.Errorf("read %d bytes, want %d", len(got), limits.RequestBody)
-	}
-}
-
-// A stream is not bounded here. TUS sends multi-gigabyte chunks and must not
-// meet the JSON ceiling on its way past.
-func TestAStreamIsNotBoundedByTheSharedReader(t *testing.T) {
-	big := strings.Repeat("x", int(limits.RequestBody)+4096)
-	got, err := io.ReadAll(LimitBody(strings.NewReader(big), route.BodyStream))
-	if err != nil {
-		t.Fatalf("a stream past the JSON bound returned %v", err)
-	}
-	if len(got) != len(big) {
-		t.Errorf("the stream delivered %d of %d bytes", len(got), len(big))
-	}
-}
-
-// A route declaring no body reads none, whatever the client sent.
-func TestARouteWithNoBodyReadsNothing(t *testing.T) {
-	counter := &countingReader{inner: strings.NewReader("unexpected payload")}
-	got, err := io.ReadAll(LimitBody(counter, route.BodyNone))
-	if err != nil {
-		t.Fatalf("a no-body route returned %v", err)
-	}
-	if len(got) != 0 {
-		t.Errorf("a no-body route delivered %q", got)
-	}
-	if counter.read != 0 {
-		t.Errorf("a no-body route pulled %d bytes", counter.read)
-	}
-}
-
-// The DAV bound is lower, and a body between the two bounds is refused as XML
-// while it would have passed as JSON.
-func TestTheDAVBoundIsEnforcedSeparately(t *testing.T) {
-	between := strings.Repeat("x", int(limits.RequestBodyXML)+1024)
-
-	_, err := io.ReadAll(LimitBody(strings.NewReader(between), route.BodyDAVXML))
-	if !errors.Is(err, ErrBodyTooLarge) {
-		t.Fatalf("a body past the XML bound returned %v", err)
-	}
-	if _, jerr := io.ReadAll(LimitBody(strings.NewReader(between), route.BodyJSON)); jerr != nil {
-		t.Fatalf("the same body as JSON returned %v", jerr)
 	}
 }
 

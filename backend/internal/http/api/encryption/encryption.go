@@ -11,26 +11,19 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/danielgtaylor/huma/v2"
-	"github.com/gin-gonic/gin"
-
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/humabridge"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 )
 
 const saltLen = 22
 const verifierMagic = "RCLONE\x00\x00"
 const verifierLen = 67
 
-type Deps struct {
+type Handler struct {
 	Core *files.Core
 }
-
-type handlers struct{ d Deps }
 
 type listView struct {
 	Shares []handler.ShareEncryptionView `json:"shares"`
@@ -61,27 +54,13 @@ type noContentOutput struct {
 	Status int `status:"204"`
 }
 
-// Register mounts typed encryption operations below the API prefix.
-func Register(api huma.API, d Deps) {
-	h := &handlers{d: d}
-	huma.Register[listInput, listOutput](api, huma.Operation{
-		OperationID: "encryption.list", Method: http.MethodGet, Path: "/encryption",
-	}, h.listHuma)
-	huma.Register[enableInput, noContentOutput](api, huma.Operation{
-		OperationID: "admin.encryption.enable", Method: http.MethodPost, Path: "/encryption/{id}",
-	}, h.enableHuma)
-	huma.Register[shareInput, noContentOutput](api, huma.Operation{
-		OperationID: "admin.encryption.disable", Method: http.MethodDelete, Path: "/encryption/{id}",
-	}, h.disableHuma)
-}
-
-func (h *handlers) listHuma(ctx context.Context, _ *listInput) (*listOutput, error) {
-	c := humabridge.Gin(ctx)
-	owner, ok := ownerOf(c)
-	if !ok {
-		return nil, humabridge.Refusal(apierr.Classified{Class: apierr.AuthRequired})
+// List answers the encryption state of the caller's shares.
+func (h *Handler) List(ctx context.Context, _ *listInput) (*listOutput, error) {
+	owner, err := handler.OwnerFrom(ctx)
+	if err != nil {
+		return nil, err
 	}
-	roots := h.d.Core.Roots(owner)
+	roots := h.Core.Roots(owner)
 	order := make([]int64, 0, len(roots))
 	labels := make(map[int64][]string, len(roots))
 	for _, root := range roots {
@@ -96,9 +75,9 @@ func (h *handlers) listHuma(ctx context.Context, _ *listInput) (*listOutput, err
 		if err != nil {
 			continue
 		}
-		enc, found, err := h.d.Core.EncryptionOf(ctx, files.ShareID(id))
+		enc, found, err := h.Core.EncryptionOf(ctx, files.ShareID(id))
 		if err != nil {
-			return nil, humabridge.Failure(ctx, err)
+			return nil, err
 		}
 		if found {
 			out = append(out, handler.ShareEncryptionOf(files.ShareID(id), labels[share], enc))
@@ -113,15 +92,6 @@ func parseShareID(raw string) (files.ShareID, bool) {
 		return 0, false
 	}
 	return files.ShareID(n), true
-}
-
-func ownerOf(c *gin.Context) (files.UserID, bool) {
-	v, ok := c.Get(string(middleware.KeyCredential))
-	p, okp := v.(middleware.Principal)
-	if !ok || !okp || p.UserID == 0 {
-		return 0, false
-	}
-	return files.UserID(p.UserID), true
 }
 
 func validSalt(s string) bool {
@@ -142,39 +112,42 @@ func validVerifierShape(decoded []byte) bool {
 	return len(decoded) == verifierLen && strings.HasPrefix(string(decoded), verifierMagic)
 }
 
-func (h *handlers) enableHuma(ctx context.Context, in *enableInput) (*noContentOutput, error) {
+// Enable turns on encryption for an empty share.
+func (h *Handler) Enable(ctx context.Context, in *enableInput) (*noContentOutput, error) {
 	id, ok := parseShareID(in.ID)
 	if !ok {
-		return nil, humabridge.Failure(ctx, files.ErrNotFound)
+		return nil, files.ErrNotFound
 	}
 	if in.Body.Scheme != files.SchemeRcloneCrypt {
-		return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Unprocessable, Key: "encryption.invalid_scheme"})
+		return nil, &apierr.ClassifiedError{Classified: apierr.Classified{Class: apierr.Unprocessable, Key: "encryption.invalid_scheme"}}
 	}
 	if !validSalt(in.Body.Salt) {
-		return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Unprocessable, Key: "encryption.invalid_salt"})
+		return nil, &apierr.ClassifiedError{Classified: apierr.Classified{Class: apierr.Unprocessable, Key: "encryption.invalid_salt"}}
 	}
 	verifier, err := base64.StdEncoding.DecodeString(in.Body.Verifier)
 	if err != nil || !validVerifierShape(verifier) {
-		return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Unprocessable, Key: "encryption.invalid_verifier"})
+		return nil, &apierr.ClassifiedError{Classified: apierr.Classified{Class: apierr.Unprocessable, Key: "encryption.invalid_verifier"}}
 	}
-	if err := h.d.Core.EnableEncryption(ctx, id, files.Encryption{Scheme: in.Body.Scheme, Salt: in.Body.Salt, Verifier: verifier}); err != nil {
+	if err := h.Core.EnableEncryption(ctx, id, files.Encryption{Scheme: in.Body.Scheme, Salt: in.Body.Salt, Verifier: verifier}); err != nil {
 		if errors.Is(err, files.ErrUnprocessable) {
-			return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Unprocessable, Key: "encryption.share_not_empty"})
+			return nil, &apierr.ClassifiedError{Classified: apierr.Classified{Class: apierr.Unprocessable, Key: "encryption.share_not_empty"}}
 		}
-		return nil, humabridge.Failure(ctx, err)
+		return nil, err
 	}
 	return &noContentOutput{Status: http.StatusNoContent}, nil
 }
-func (h *handlers) disableHuma(ctx context.Context, in *shareInput) (*noContentOutput, error) {
+
+// Disable turns off encryption for an empty share.
+func (h *Handler) Disable(ctx context.Context, in *shareInput) (*noContentOutput, error) {
 	id, ok := parseShareID(in.ID)
 	if !ok {
-		return nil, humabridge.Failure(ctx, files.ErrNotFound)
+		return nil, files.ErrNotFound
 	}
-	if err := h.d.Core.DisableEncryption(ctx, id); err != nil {
+	if err := h.Core.DisableEncryption(ctx, id); err != nil {
 		if errors.Is(err, files.ErrUnprocessable) {
-			return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Unprocessable, Key: "encryption.share_not_empty"})
+			return nil, &apierr.ClassifiedError{Classified: apierr.Classified{Class: apierr.Unprocessable, Key: "encryption.share_not_empty"}}
 		}
-		return nil, humabridge.Failure(ctx, err)
+		return nil, err
 	}
 	return &noContentOutput{Status: http.StatusNoContent}, nil
 }

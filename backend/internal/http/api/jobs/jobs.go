@@ -1,6 +1,6 @@
 //go:build linux
 
-// Package jobs serves authenticated long-running operation routes.
+// Package jobs serves the caller's long-running operations.
 package jobs
 
 import (
@@ -8,24 +8,18 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/danielgtaylor/huma/v2"
-	"github.com/gin-gonic/gin"
-
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/humabridge"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 )
 
 const jobsPageSize = 100
 
-// Deps contains only the operation services and composition callbacks needed by
-// these routes.
-type Deps struct {
+// Handler serves the caller's long-running operations.
+type Handler struct {
 	Core      *files.Core
 	State     *state.DB
-	Owner     func(*gin.Context) (files.UserID, bool)
 	StartJobs func()
 	NowNs     func() int64
 }
@@ -38,52 +32,30 @@ type ListOutput struct {
 	Body []handler.OperationView
 }
 
-type operationInput struct {
+// OperationInput names one operation.
+type OperationInput struct {
 	ID string `path:"id"`
 }
 
-type operationOutput struct {
+// OperationOutput is one operation.
+type OperationOutput struct {
 	Body handler.OperationView
 }
 
-type noContentOutput struct {
+// NoContentOutput is an empty 204.
+type NoContentOutput struct {
 	Status int `status:"204"`
 }
 
-// Register mounts the six conventional jobs operations below the API prefix.
-func Register(api huma.API, d Deps) {
-	h := &handlers{d: d}
-	huma.Register[ListInput, ListOutput](api, huma.Operation{
-		OperationID: "jobs.list", Method: http.MethodGet, Path: "/jobs",
-	}, h.listHuma)
-	huma.Register[operationInput, operationOutput](api, huma.Operation{
-		OperationID: "jobs.get", Method: http.MethodGet, Path: "/jobs/{id}",
-	}, h.getHuma)
-	huma.Register[operationInput, noContentOutput](api, huma.Operation{
-		OperationID: "jobs.cancel", Method: http.MethodPost, Path: "/jobs/{id}/cancel",
-	}, h.cancelHuma)
-	huma.Register[operationInput, noContentOutput](api, huma.Operation{
-		OperationID: "jobs.retry", Method: http.MethodPost, Path: "/jobs/{id}/retry",
-	}, h.retryHuma)
-	huma.Register[operationInput, noContentOutput](api, huma.Operation{
-		OperationID: "jobs.pause", Method: http.MethodPost, Path: "/jobs/{id}/pause",
-	}, h.pauseHuma)
-	huma.Register[operationInput, noContentOutput](api, huma.Operation{
-		OperationID: "jobs.resume", Method: http.MethodPost, Path: "/jobs/{id}/resume",
-	}, h.resumeHuma)
-}
-
-type handlers struct{ d Deps }
-
-func (h *handlers) listHuma(ctx context.Context, _ *ListInput) (*ListOutput, error) {
-	c := humabridge.Gin(ctx)
-	owner, ok := h.d.Owner(c)
-	if !ok {
-		return nil, humabridge.Refusal(apierr.Classified{Class: apierr.AuthRequired})
-	}
-	ops, err := h.d.Core.ListOperations(ctx, owner, jobsPageSize)
+// List answers the caller's most recent operations.
+func (h *Handler) List(ctx context.Context, _ *ListInput) (*ListOutput, error) {
+	owner, err := handler.OwnerFrom(ctx)
 	if err != nil {
-		return nil, humabridge.Failure(ctx, err)
+		return nil, err
+	}
+	ops, err := h.Core.ListOperations(ctx, owner, jobsPageSize)
+	if err != nil {
+		return nil, err
 	}
 	return &ListOutput{Body: handler.OperationsOf(ops)}, nil
 }
@@ -96,99 +68,95 @@ func parseOperationInput(id string) (files.OperationID, bool) {
 	return files.OperationID(n), true
 }
 
-func (h *handlers) operationOwner(ctx context.Context) (files.UserID, error) {
-	c := humabridge.Gin(ctx)
-	owner, ok := h.d.Owner(c)
-	if !ok {
-		return 0, humabridge.Refusal(apierr.Classified{Class: apierr.AuthRequired})
-	}
-	return owner, nil
-}
-
-func (h *handlers) getHuma(ctx context.Context, in *operationInput) (*operationOutput, error) {
-	owner, err := h.operationOwner(ctx)
+// Get answers one operation.
+func (h *Handler) Get(ctx context.Context, in *OperationInput) (*OperationOutput, error) {
+	owner, err := handler.OwnerFrom(ctx)
 	if err != nil {
 		return nil, err
 	}
 	id, ok := parseOperationInput(in.ID)
 	if !ok {
-		return nil, humabridge.Failure(ctx, files.ErrNotFound)
+		return nil, files.ErrNotFound
 	}
-	op, err := h.d.Core.Operation(ctx, owner, id)
+	op, err := h.Core.Operation(ctx, owner, id)
 	if err != nil {
-		return nil, humabridge.Failure(ctx, err)
+		return nil, err
 	}
-	return &operationOutput{Body: handler.OperationOf(op)}, nil
+	return &OperationOutput{Body: handler.OperationOf(op)}, nil
 }
 
-func (h *handlers) cancelHuma(ctx context.Context, in *operationInput) (*noContentOutput, error) {
-	owner, err := h.operationOwner(ctx)
+// Cancel stops an operation.
+func (h *Handler) Cancel(ctx context.Context, in *OperationInput) (*NoContentOutput, error) {
+	owner, err := handler.OwnerFrom(ctx)
 	if err != nil {
 		return nil, err
 	}
 	id, ok := parseOperationInput(in.ID)
 	if !ok {
-		return nil, humabridge.Failure(ctx, files.ErrNotFound)
+		return nil, files.ErrNotFound
 	}
-	if err := h.d.Core.CancelOperation(ctx, owner, id); err != nil {
-		return nil, humabridge.Failure(ctx, err)
+	if err := h.Core.CancelOperation(ctx, owner, id); err != nil {
+		return nil, err
 	}
-	return &noContentOutput{Status: http.StatusNoContent}, nil
+	return &NoContentOutput{Status: http.StatusNoContent}, nil
 }
 
-func (h *handlers) retryHuma(ctx context.Context, in *operationInput) (*noContentOutput, error) {
-	owner, err := h.operationOwner(ctx)
+// Retry restarts a failed or interrupted operation.
+func (h *Handler) Retry(ctx context.Context, in *OperationInput) (*NoContentOutput, error) {
+	owner, err := handler.OwnerFrom(ctx)
 	if err != nil {
 		return nil, err
 	}
 	id, ok := parseOperationInput(in.ID)
 	if !ok {
-		return nil, humabridge.Failure(ctx, files.ErrNotFound)
+		return nil, files.ErrNotFound
 	}
-	op, err := h.d.Core.Operation(ctx, owner, id)
+	op, err := h.Core.Operation(ctx, owner, id)
 	if err != nil {
-		return nil, humabridge.Failure(ctx, err)
+		return nil, err
 	}
 	if op.State != state.OpFailed && op.State != state.OpInterrupted {
-		return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Unprocessable})
+		return nil, &apierr.ClassifiedError{Classified: apierr.Classified{Class: apierr.Unprocessable}}
 	}
-	if err := h.d.State.ResumeOp(ctx, int64(id), h.d.NowNs()); err != nil {
-		return nil, humabridge.Failure(ctx, err)
+	if err := h.State.ResumeOp(ctx, int64(id), h.NowNs()); err != nil {
+		return nil, err
 	}
-	h.d.StartJobs()
-	return &noContentOutput{Status: http.StatusNoContent}, nil
+	h.StartJobs()
+	return &NoContentOutput{Status: http.StatusNoContent}, nil
 }
 
-func (h *handlers) pauseHuma(ctx context.Context, in *operationInput) (*noContentOutput, error) {
-	return h.pauseResumeHuma(ctx, in, true)
+// Pause holds an operation.
+func (h *Handler) Pause(ctx context.Context, in *OperationInput) (*NoContentOutput, error) {
+	return h.pauseResume(ctx, in, true)
 }
 
-func (h *handlers) resumeHuma(ctx context.Context, in *operationInput) (*noContentOutput, error) {
-	return h.pauseResumeHuma(ctx, in, false)
+// Resume continues a held operation.
+func (h *Handler) Resume(ctx context.Context, in *OperationInput) (*NoContentOutput, error) {
+	return h.pauseResume(ctx, in, false)
 }
 
-func (h *handlers) pauseResumeHuma(ctx context.Context, in *operationInput, pause bool) (*noContentOutput, error) {
-	owner, err := h.operationOwner(ctx)
+func (h *Handler) pauseResume(ctx context.Context, in *OperationInput, pause bool) (*NoContentOutput, error) {
+	owner, err := handler.OwnerFrom(ctx)
 	if err != nil {
 		return nil, err
 	}
 	id, ok := parseOperationInput(in.ID)
 	if !ok {
-		return nil, humabridge.Failure(ctx, files.ErrNotFound)
+		return nil, files.ErrNotFound
 	}
-	if _, err = h.d.Core.Operation(ctx, owner, id); err != nil {
-		return nil, humabridge.Failure(ctx, err)
+	if _, err = h.Core.Operation(ctx, owner, id); err != nil {
+		return nil, err
 	}
 	if pause {
-		err = h.d.State.PauseOp(ctx, int64(id))
+		err = h.State.PauseOp(ctx, int64(id))
 	} else {
-		err = h.d.State.ResumeOp(ctx, int64(id), h.d.NowNs())
+		err = h.State.ResumeOp(ctx, int64(id), h.NowNs())
 	}
 	if err != nil {
-		return nil, humabridge.Failure(ctx, err)
+		return nil, err
 	}
-	h.d.StartJobs()
-	return &noContentOutput{Status: http.StatusNoContent}, nil
+	h.StartJobs()
+	return &NoContentOutput{Status: http.StatusNoContent}, nil
 }
 
 var _ interface {

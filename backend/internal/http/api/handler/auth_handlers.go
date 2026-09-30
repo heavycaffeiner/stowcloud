@@ -19,7 +19,6 @@ import (
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/server/route"
 )
 
 const (
@@ -52,20 +51,12 @@ type AuthHandlersDeps struct {
 	OIDCEndSessionURL func(*gin.Context) (string, bool)
 }
 
-// NewAuthHandlers builds the native authentication handlers. The returned map
-// is keyed by route names from server.Table and can be merged into the route
-// binding without importing app.
-func NewAuthHandlers(d AuthHandlersDeps) map[string]gin.HandlerFunc {
-	h := &authHandlers{d: d}
-	return map[string]gin.HandlerFunc{
-		"auth.login":      h.login,
-		"auth.login.totp": h.loginTOTP,
-		"auth.session":    h.session,
-		"auth.logout":     h.logout,
-	}
+// NewAuthHandlers builds the native authentication handlers.
+func NewAuthHandlers(d AuthHandlersDeps) *AuthHandlers {
+	return &AuthHandlers{d: d}
 }
 
-type authHandlers struct{ d AuthHandlersDeps }
+type AuthHandlers struct{ d AuthHandlersDeps }
 
 type loginRequest struct {
 	Login    string `json:"login"`
@@ -77,7 +68,7 @@ type totpRequest struct {
 	Code      string `json:"code"`
 }
 
-func (h *authHandlers) login(c *gin.Context) {
+func (h *AuthHandlers) Login(c *gin.Context) {
 	var req loginRequest
 	if err := decodeAuthBody(c, &req); err != nil {
 		refuseTransport(c, apierr.Classified{Class: apierr.Malformed})
@@ -102,7 +93,7 @@ func (h *authHandlers) login(c *gin.Context) {
 	h.grantSession(c, sess)
 }
 
-func (h *authHandlers) askForFactor(c *gin.Context, login string) {
+func (h *AuthHandlers) askForFactor(c *gin.Context, login string) {
 	uid, err := h.d.Service.UserIDByName(c.Request.Context(), login)
 	if err != nil {
 		failKnownTransport(c, err)
@@ -116,7 +107,7 @@ func (h *authHandlers) askForFactor(c *gin.Context, login string) {
 	writeTransportJSON(c, http.StatusOK, ChallengeView{Required: "totp", Challenge: challenge, ExpiresInSeconds: ChallengeTTL})
 }
 
-func (h *authHandlers) loginTOTP(c *gin.Context) {
+func (h *AuthHandlers) LoginTOTP(c *gin.Context) {
 	var req totpRequest
 	if err := decodeAuthBody(c, &req); err != nil {
 		refuseTransport(c, apierr.Classified{Class: apierr.Malformed})
@@ -149,7 +140,7 @@ func (h *authHandlers) loginTOTP(c *gin.Context) {
 	h.grantSession(c, sess)
 }
 
-func (h *authHandlers) acceptFactor(c *gin.Context, uid int64, code string) (bool, error) {
+func (h *AuthHandlers) acceptFactor(c *gin.Context, uid int64, code string) (bool, error) {
 	ok, err := h.d.Service.VerifyTOTP(c.Request.Context(), uid, code, h.d.Clock.Nanos())
 	if err != nil || ok {
 		return ok, err
@@ -157,7 +148,7 @@ func (h *authHandlers) acceptFactor(c *gin.Context, uid int64, code string) (boo
 	return h.d.Service.UseRecoveryCode(c.Request.Context(), uid, code)
 }
 
-func (h *authHandlers) grantSession(c *gin.Context, sess auth.Session) {
+func (h *AuthHandlers) grantSession(c *gin.Context, sess auth.Session) {
 	info, err := h.d.Service.AccountInfo(c.Request.Context(), sess.UserID)
 	if err != nil {
 		failKnownTransport(c, err)
@@ -173,7 +164,7 @@ func (h *authHandlers) grantSession(c *gin.Context, sess auth.Session) {
 	writeTransportJSON(c, http.StatusOK, IdentityViewOf(sess.UserID, info.LoginName, info.DisplayName, admin, middleware.CSRFToken(h.d.CSRFKey(), printable)))
 }
 
-func (h *authHandlers) session(c *gin.Context) {
+func (h *AuthHandlers) Session(c *gin.Context) {
 	owner, ok := ownerTransport(c)
 	if !ok {
 		refuseTransport(c, apierr.Classified{Class: apierr.AuthRequired})
@@ -202,7 +193,7 @@ func (h *authHandlers) session(c *gin.Context) {
 	writeTransportJSON(c, http.StatusOK, view)
 }
 
-func (h *authHandlers) logout(c *gin.Context) {
+func (h *AuthHandlers) Logout(c *gin.Context) {
 	cookie, err := c.Cookie(middleware.SessionCookieName)
 	if err != nil || cookie == "" {
 		c.Status(http.StatusNoContent)
@@ -235,7 +226,7 @@ func decodeAuthBody(c *gin.Context, into any) error {
 	if err != nil || !strings.EqualFold(media, "application/json") {
 		return errors.New("authentication body is not JSON")
 	}
-	return middleware.DecodeJSON(middleware.LimitBody(c.Request.Body, route.BodyJSON), into)
+	return middleware.DecodeJSON(c.Request.Body, into)
 }
 
 func ownerTransport(c *gin.Context) (int64, bool) {

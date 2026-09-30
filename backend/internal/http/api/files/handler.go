@@ -31,7 +31,6 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/httpx"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/server/route"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
@@ -128,7 +127,7 @@ func (h *Handler) decode(c *gin.Context, into any) error {
 	if h.d.Decode != nil {
 		return h.d.Decode(c, into)
 	}
-	return middleware.DecodeJSON(middleware.LimitBody(c.Request.Body, route.BodyJSON), into)
+	return middleware.DecodeJSON(c.Request.Body, into)
 }
 
 // List serves the virtual grant root or a permission-checked directory page.

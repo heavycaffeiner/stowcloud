@@ -16,7 +16,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/server/route"
 )
 
 // accessRecorder collects the lines a request produced.
@@ -37,25 +36,31 @@ func (r *accessRecorder) all() []AccessEvent {
 	return append([]AccessEvent(nil), r.lines...)
 }
 
-// accessServer mounts the chain with an access sink and one handler.
-func accessServer(t *testing.T, req route.Requirement, answer gin.HandlerFunc) (*gin.Engine, *accessRecorder) {
+// accessServer mounts the chain with an access sink and one handler, behind
+// the session group when session is set and the public group otherwise.
+func accessServer(t *testing.T, session bool, answer gin.HandlerFunc) (*gin.Engine, *accessRecorder) {
 	t.Helper()
 	rec := &accessRecorder{}
 	app := gin.New()
-	app.Use(func(c *gin.Context) {
-		SetRequirement(c, req, route.BodyNone, "files.read")
-		c.Next()
-	})
-	if err := Mount(app, Chain(), Deps{
+	d := Deps{
 		Hosts:   func() Hosts { return namedHosts() },
 		Trusted: func() []netip.Prefix { return nil },
 		Limiter: NewLimiter(newStepClock(), 1000, 1000),
 		Errors:  apierr.NewClassifier(nil),
 		Access:  rec,
-	}, nil); err != nil {
-		t.Fatalf("Mount: %v", err)
 	}
-	app.Any("/*path", answer)
+	global, err := Global(d)
+	if err != nil {
+		t.Fatalf("Global: %v", err)
+	}
+	app.Use(global...)
+	access := Public(d)
+	if session {
+		access = Session(d)
+	}
+	g := app.Group("", access...)
+	g.GET("/files/read", answer)
+	g.GET("/s/:token/download", answer)
 	return app, rec
 }
 
@@ -100,8 +105,7 @@ func TestOnlyAFailureRecordsItsCause(t *testing.T) {
 		{"a success", http.StatusOK, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			app, rec := accessServer(t,
-				route.Requirement{Access: route.AccessPublic},
+			app, rec := accessServer(t, false,
 				func(c *gin.Context) {
 					// The shape a handler that writes its own status has: the
 					// error is recorded and nil is returned, so the chain
@@ -129,8 +133,7 @@ func TestOnlyAFailureRecordsItsCause(t *testing.T) {
 // The error the chain caught wins over one a handler recorded, since it is the
 // one that actually decided the status.
 func TestTheChainsOwnErrorIsThePreferredCause(t *testing.T) {
-	app, rec := accessServer(t,
-		route.Requirement{Access: route.AccessPublic},
+	app, rec := accessServer(t, false,
 		func(c *gin.Context) {
 			SetCause(c, errors.New("what the handler noticed"))
 			if gerr := c.Error(errors.New("what the chain caught")); gerr != nil {
@@ -156,8 +159,7 @@ func TestTheChainsOwnErrorIsThePreferredCause(t *testing.T) {
 // One line per request, whatever answered it, carrying the method, the path,
 // the route, the status and the resolved client.
 func TestEveryRequestLeavesOneLine(t *testing.T) {
-	app, rec := accessServer(t,
-		route.Requirement{Access: route.AccessPublic},
+	app, rec := accessServer(t, false,
 		func(c *gin.Context) { c.String(http.StatusOK, "ok") })
 
 	for range 3 {
@@ -177,7 +179,7 @@ func TestEveryRequestLeavesOneLine(t *testing.T) {
 		t.Errorf("the method is %q", e.Method)
 	case e.Path != "/files/read":
 		t.Errorf("the path is %q", e.Path)
-	case e.Route != "files.read":
+	case e.Route != "/files/read":
 		t.Errorf("the route is %q", e.Route)
 	case e.Status != http.StatusOK:
 		t.Errorf("the status is %d", e.Status)
@@ -191,8 +193,7 @@ func TestEveryRequestLeavesOneLine(t *testing.T) {
 // A refusal is a line too. An access log that held only the served requests
 // could not answer whether a client ever reached the server.
 func TestARefusalIsRecordedWithItsStatus(t *testing.T) {
-	app, rec := accessServer(t,
-		route.Requirement{Access: route.AccessSession},
+	app, rec := accessServer(t, true,
 		func(c *gin.Context) { c.String(http.StatusOK, "never reached") })
 
 	req := httptest.NewRequest("GET", "http://app.example.test/files/read", nil)
@@ -215,8 +216,7 @@ func TestARefusalIsRecordedWithItsStatus(t *testing.T) {
 // The status is the one actually sent, which is what makes this step wrap the
 // error mapper rather than sit inside it.
 func TestTheRecordedStatusIsTheOneAnswered(t *testing.T) {
-	app, rec := accessServer(t,
-		route.Requirement{Access: route.AccessPublic},
+	app, rec := accessServer(t, false,
 		func(c *gin.Context) { c.Status(http.StatusTeapot) })
 
 	req := httptest.NewRequest("GET", "http://app.example.test/files/read", nil)
@@ -258,8 +258,7 @@ func TestRedactPathRemovesATokenSegment(t *testing.T) {
 // The line carries the redacted path, not the raw one, when the request went
 // to a surface whose URL holds a secret.
 func TestTheLineCarriesTheRedactedPath(t *testing.T) {
-	app, rec := accessServer(t,
-		route.Requirement{Access: route.AccessPublic},
+	app, rec := accessServer(t, false,
 		func(c *gin.Context) { c.String(http.StatusOK, "ok") })
 
 	req := httptest.NewRequest("GET", "http://app.example.test/s/secret-link-token/download", nil)
@@ -280,14 +279,16 @@ func TestTheLineCarriesTheRedactedPath(t *testing.T) {
 // serves everything.
 func TestNoAccessSinkIsNotAFailure(t *testing.T) {
 	app := gin.New()
-	if err := Mount(app, Chain(), Deps{
+	global, err := Global(Deps{
 		Hosts:   func() Hosts { return namedHosts() },
 		Trusted: func() []netip.Prefix { return nil },
 		Limiter: NewLimiter(newStepClock(), 1000, 1000),
 		Errors:  apierr.NewClassifier(nil),
-	}, nil); err != nil {
-		t.Fatalf("Mount: %v", err)
+	})
+	if err != nil {
+		t.Fatalf("Global: %v", err)
 	}
+	app.Use(global...)
 	app.Any("/*path", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
 
 	req := httptest.NewRequest("GET", "http://app.example.test/files/read", nil)

@@ -25,7 +25,7 @@ func errorApp(t *testing.T, handler gin.HandlerFunc) *httptest.ResponseRecorder 
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	app := gin.New()
-	app.Use(stepHandler(StepErrorMapper, Deps{Errors: apierr.NewClassifier(nil)}))
+	app.Use(func(c *gin.Context) { errorHandler(c, apierr.NewClassifier(nil)) })
 	app.GET("/x", handler)
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://localhost/x", nil))

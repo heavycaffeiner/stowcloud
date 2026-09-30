@@ -26,8 +26,6 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/protocol/limits"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/httpx"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/server/route"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
@@ -59,32 +57,6 @@ type Logger interface{ Warn(string, ...any) }
 type Public struct{ d PublicDeps }
 
 func NewPublic(d PublicDeps) *Public { return &Public{d: d} }
-
-func (p *Public) Mount(app *gin.Engine) {
-	app.GET(PublicLinkPrefix+"/:token", p.Landing)
-	app.POST(PublicLinkPrefix+"/:token/auth", p.Unlock)
-	app.GET(PublicLinkPrefix+"/:token/download", p.Download)
-	app.GET(PublicLinkPrefix+"/:token/zip", p.Zip)
-	app.POST(PublicLinkPrefix+"/:token/drop", p.Drop)
-}
-func (p *Public) Declare(app *gin.Engine, prefix string) {
-	app.Use(func(c *gin.Context) {
-		if !strings.HasPrefix(c.Request.URL.Path, prefix+"/") {
-			c.Next()
-			return
-		}
-		body := route.BodyNone
-		if c.Request.Method == http.MethodPost {
-			if strings.HasSuffix(c.Request.URL.Path, "/auth") {
-				body = route.BodyJSON
-			} else if strings.HasSuffix(c.Request.URL.Path, "/drop") {
-				body = route.BodyStream
-			}
-		}
-		middleware.SetRequirement(c, route.Requirement{Access: route.AccessPublic}, body, "public link")
-		c.Next()
-	})
-}
 
 func (p *Public) linkFor(c *gin.Context) (files.Link, error) {
 	link, _, err := p.d.Core.LinkPublic(c.Request.Context(), c.Param("token"))

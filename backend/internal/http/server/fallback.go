@@ -5,8 +5,6 @@ package server
 
 import (
 	"fmt"
-	"slices"
-	"sort"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -49,19 +47,4 @@ func InstallFallback(app *gin.Engine, shell gin.HandlerFunc) error {
 		shell(c)
 	})
 	return nil
-}
-
-func CheckRouteRoots(paths []string, roots []string) error {
-	var problems []string
-	for _, p := range paths {
-		under := slices.ContainsFunc(roots, func(root string) bool { return underPrefix(p, root) })
-		if !under {
-			problems = append(problems, fmt.Sprintf("%q is under no declared root", p))
-		}
-	}
-	if len(problems) == 0 {
-		return nil
-	}
-	sort.Strings(problems)
-	return fmt.Errorf("routes: %s", strings.Join(problems, "; "))
 }

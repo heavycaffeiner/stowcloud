@@ -11,7 +11,9 @@ package apierr
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strconv"
 )
 
 // Error is the native envelope's error object.
@@ -199,4 +201,33 @@ func (k *Classifier) WireOf(err error, visibility Visibility) Wire {
 		}
 	}
 	return out
+}
+
+// Response is a classified error ready to send: a status, the native
+// envelope, and the error it came from. A typed operation returns one so the
+// framework renders the native envelope rather than its own.
+type Response struct {
+	status int
+	body   *Error
+	cause  error
+}
+
+// Response classifies err as a caller that may know the resource exists.
+func (k *Classifier) Response(err error) *Response {
+	status, body := REST(k.Classify(err, VisibilityKnown))
+	return &Response{status: status, body: body, cause: err}
+}
+
+func (r *Response) Error() string                { return r.body.Error() }
+func (r *Response) GetStatus() int               { return r.status }
+func (r *Response) MarshalJSON() ([]byte, error) { return r.body.MarshalJSON() }
+func (r *Response) Unwrap() error                { return r.cause }
+
+// GetHeaders carries Retry-After when the cause says when to come back.
+func (r *Response) GetHeaders() http.Header {
+	var wait interface{ RetryAfter() int }
+	if !errors.As(r.cause, &wait) || wait.RetryAfter() <= 0 {
+		return nil
+	}
+	return http.Header{"Retry-After": {strconv.Itoa(wait.RetryAfter())}}
 }

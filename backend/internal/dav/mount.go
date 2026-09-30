@@ -124,14 +124,10 @@ func NewMount(d Deps) http.Handler {
 }
 
 // Mount registers the WebDAV methods on a Gin router.
-func Mount(app *gin.Engine, d Deps) {
+func Mount(app gin.IRoutes, d Deps) {
 	h := requestScoped(NewMount(d))
 	bridge := func(c *gin.Context) {
-		r := c.Request
-		if p, ok := c.Get(string(middleware.KeyCredential)); ok {
-			r = r.WithContext(context.WithValue(r.Context(), middleware.KeyCredential, p))
-		}
-		h.ServeHTTP(c.Writer, r)
+		h.ServeHTTP(c.Writer, c.Request)
 		c.Abort()
 	}
 	methods := []string{

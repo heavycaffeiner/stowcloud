@@ -14,6 +14,8 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"strings"
+
+	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
 // decodeBase64 reads the standard encoding a Basic header uses.
@@ -163,4 +165,21 @@ func afterScheme(header, scheme string) (string, bool) {
 		return "", false
 	}
 	return strings.TrimSpace(rest), true
+}
+
+// Principal is what Auth resolved.
+type Principal struct {
+	// UserID is the account the credential proved. Zero is an anonymous
+	// request, which a public route serves.
+	UserID int64
+	// Kind is which credential proved it.
+	Kind CredentialKind
+	// Mask is the app password's permission mask. A session has every bit,
+	// because a session is the account itself rather than a delegation of it.
+	Mask acl.Perms
+	// Shares is the app password's allowed root share labels. Empty means every share.
+	Shares []string
+	// AppPasswordID identifies the verified app password. Sessions leave it
+	// zero because no app credential issued the request.
+	AppPasswordID int64
 }

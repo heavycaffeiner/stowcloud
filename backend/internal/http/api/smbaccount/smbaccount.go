@@ -5,24 +5,16 @@ package smbaccount
 
 import (
 	"context"
-	"net/http"
-
-	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/humabridge"
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 )
 
 // Deps supplies the account service used by SMB routes.
-type Deps struct {
+type Handler struct {
 	Auth *auth.Service
 }
-
-type handlers struct{ d Deps }
 
 type accessRequest struct {
 	Current string `json:"current"`
@@ -45,95 +37,79 @@ type reconfirmInput struct{ Body reconfirmRequest }
 type stateOutput struct{ Body handler.SMBStateView }
 type clearedOutput struct{ Body handler.SMBClearedView }
 
-// Register mounts typed account-owned SMB operations below the API prefix.
-func Register(api huma.API, d Deps) {
-	h := &handlers{d: d}
-	huma.Register[accessInput, stateOutput](api, huma.Operation{
-		OperationID: "account.smb.create", Method: http.MethodPost, Path: "/account/smb",
-	}, h.accessHuma)
-	huma.Register[passwordInput, stateOutput](api, huma.Operation{
-		OperationID: "account.smb.password.set", Method: http.MethodPost, Path: "/account/smb/password",
-	}, h.passwordSetHuma)
-	huma.Register[reconfirmInput, clearedOutput](api, huma.Operation{
-		OperationID: "account.smb.password.delete", Method: http.MethodDelete, Path: "/account/smb/password",
-	}, h.passwordDeleteHuma)
+func accountOf(ctx context.Context) (int64, error) {
+	owner, err := handler.OwnerFrom(ctx)
+	return int64(owner), err
 }
 
-func (h *handlers) humaOwner(ctx context.Context) (int64, error) {
-	c := humabridge.Gin(ctx)
-	v, ok := c.Get(string(middleware.KeyCredential))
-	p, okp := v.(middleware.Principal)
-	if !ok || !okp || p.UserID == 0 {
-		return 0, humabridge.Refusal(apierr.Classified{Class: apierr.AuthRequired})
-	}
-	return p.UserID, nil
-}
-
-func (h *handlers) reconfirmHuma(ctx context.Context, owner int64, password string) error {
+func (h *Handler) reconfirm(ctx context.Context, owner int64, password string) error {
 	if password == "" {
-		return humabridge.Failure(ctx, auth.ErrCredentials)
+		return auth.ErrCredentials
 	}
-	ok, err := h.d.Auth.VerifyAccountPassword(ctx, owner, secret.New([]byte(password)))
+	ok, err := h.Auth.VerifyAccountPassword(ctx, owner, secret.New([]byte(password)))
 	if err != nil {
-		return humabridge.Failure(ctx, err)
+		return err
 	}
 	if !ok {
-		return humabridge.Failure(ctx, auth.ErrCredentials)
+		return auth.ErrCredentials
 	}
 	return nil
 }
 
-func (h *handlers) accessHuma(ctx context.Context, in *accessInput) (*stateOutput, error) {
-	owner, err := h.humaOwner(ctx)
+// Access turns the caller's SMB access on or off.
+func (h *Handler) Access(ctx context.Context, in *accessInput) (*stateOutput, error) {
+	owner, err := accountOf(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err = h.reconfirmHuma(ctx, owner, in.Body.Current); err != nil {
+	if err = h.reconfirm(ctx, owner, in.Body.Current); err != nil {
 		return nil, err
 	}
-	if err = h.d.Auth.SetSMBAccess(ctx, owner, in.Body.OptOut, in.Body.Enabled); err != nil {
-		return nil, humabridge.Failure(ctx, err)
+	if err = h.Auth.SetSMBAccess(ctx, owner, in.Body.OptOut, in.Body.Enabled); err != nil {
+		return nil, err
 	}
-	state, err := h.d.Auth.SMBStateOf(ctx, owner)
+	state, err := h.Auth.SMBStateOf(ctx, owner)
 	if err != nil {
-		return nil, humabridge.Failure(ctx, err)
+		return nil, err
 	}
 	return &stateOutput{Body: handler.SMBStateOf(state)}, nil
 }
 
-func (h *handlers) passwordSetHuma(ctx context.Context, in *passwordInput) (*stateOutput, error) {
-	owner, err := h.humaOwner(ctx)
+// SetPassword sets the caller's SMB password.
+func (h *Handler) SetPassword(ctx context.Context, in *passwordInput) (*stateOutput, error) {
+	owner, err := accountOf(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err = h.reconfirmHuma(ctx, owner, in.Body.Current); err != nil {
+	if err = h.reconfirm(ctx, owner, in.Body.Current); err != nil {
 		return nil, err
 	}
-	if err = h.d.Auth.SetSMBPassword(ctx, owner, secret.New([]byte(in.Body.New))); err != nil {
-		return nil, humabridge.Failure(ctx, err)
+	if err = h.Auth.SetSMBPassword(ctx, owner, secret.New([]byte(in.Body.New))); err != nil {
+		return nil, err
 	}
-	state, err := h.d.Auth.SMBStateOf(ctx, owner)
+	state, err := h.Auth.SMBStateOf(ctx, owner)
 	if err != nil {
-		return nil, humabridge.Failure(ctx, err)
+		return nil, err
 	}
 	return &stateOutput{Body: handler.SMBStateOf(state)}, nil
 }
 
-func (h *handlers) passwordDeleteHuma(ctx context.Context, in *reconfirmInput) (*clearedOutput, error) {
-	owner, err := h.humaOwner(ctx)
+// DeletePassword clears the caller's SMB password.
+func (h *Handler) DeletePassword(ctx context.Context, in *reconfirmInput) (*clearedOutput, error) {
+	owner, err := accountOf(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err = h.reconfirmHuma(ctx, owner, in.Body.Current); err != nil {
+	if err = h.reconfirm(ctx, owner, in.Body.Current); err != nil {
 		return nil, err
 	}
-	revertible, err := h.d.Auth.ClearSMBPassword(ctx, owner)
+	revertible, err := h.Auth.ClearSMBPassword(ctx, owner)
 	if err != nil {
-		return nil, humabridge.Failure(ctx, err)
+		return nil, err
 	}
-	state, err := h.d.Auth.SMBStateOf(ctx, owner)
+	state, err := h.Auth.SMBStateOf(ctx, owner)
 	if err != nil {
-		return nil, humabridge.Failure(ctx, err)
+		return nil, err
 	}
 	return &clearedOutput{Body: handler.SMBClearedOf(state, revertible)}, nil
 }

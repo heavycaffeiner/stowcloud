@@ -17,7 +17,6 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/server"
 	num "github.com/heavycaffeiner/stowcloud/backend/internal/platform/number"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
@@ -47,25 +46,14 @@ type Deps struct {
 	WriteJSON func(*gin.Context, int, any)
 }
 
-// NewHandlers constructs the native route handlers. The returned names are
-// consumed by the app composition layer and intentionally match the route
-// table's upload names.
-func NewHandlers(d Deps) map[string]gin.HandlerFunc {
-	h := &handlers{d: d}
-	return map[string]gin.HandlerFunc{
-		"uploads.discover":      h.Discover,
-		"uploads.discover.one":  h.DiscoverOne,
-		"uploads.create":        h.Create,
-		"uploads.status":        h.Status,
-		"uploads.patch":         h.Patch,
-		"uploads.abort":         h.Abort,
-		"admin.settings.upload": h.SettingsPatch,
-	}
+// NewHandlers builds the resumable upload handlers.
+func NewHandlers(d Deps) *Handlers {
+	return &Handlers{d: d}
 }
 
-type handlers struct{ d Deps }
+type Handlers struct{ d Deps }
 
-func (h *handlers) setTusHeaders(c *gin.Context) {
+func (h *Handlers) setTusHeaders(c *gin.Context) {
 	c.Header(handler.TusResumable, handler.TusProtocolVersion)
 	c.Header(handler.TusVersion, handler.TusProtocolVersion)
 	c.Header(handler.TusExtension, tusExtensions)
@@ -81,19 +69,19 @@ func checksumAlgorithms() string {
 	return strings.Join(names, ",")
 }
 
-func (h *handlers) Discover(c *gin.Context) {
+func (h *Handlers) Discover(c *gin.Context) {
 	h.setTusHeaders(c)
 	c.Header("Allow", "OPTIONS, POST")
 	c.Status(http.StatusNoContent)
 }
 
-func (h *handlers) DiscoverOne(c *gin.Context) {
+func (h *Handlers) DiscoverOne(c *gin.Context) {
 	h.setTusHeaders(c)
 	c.Header("Allow", "OPTIONS, HEAD, PATCH, DELETE")
 	c.Status(http.StatusNoContent)
 }
 
-func (h *handlers) Create(c *gin.Context) {
+func (h *Handlers) Create(c *gin.Context) {
 	owner, ok := h.d.Owner(c)
 	if !ok {
 		h.d.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
@@ -152,12 +140,12 @@ func (h *handlers) Create(c *gin.Context) {
 		h.d.Fail(c, cerr)
 		return
 	}
-	c.Header("Location", server.Base+"/uploads/"+sess.ID.String())
+	c.Header("Location", "/api/v1/uploads/"+sess.ID.String())
 	c.Header(handler.UploadOffset, strconv.FormatUint(sess.Offset, 10))
 	c.Status(http.StatusCreated)
 }
 
-func (h *handlers) Status(c *gin.Context) {
+func (h *Handlers) Status(c *gin.Context) {
 	owner, ok := h.d.Owner(c)
 	if !ok {
 		h.d.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
@@ -197,7 +185,7 @@ func (h *handlers) Status(c *gin.Context) {
 	c.Status(http.StatusOK)
 }
 
-func (h *handlers) Patch(c *gin.Context) {
+func (h *Handlers) Patch(c *gin.Context) {
 	owner, ok := h.d.Owner(c)
 	if !ok {
 		h.d.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
@@ -258,7 +246,7 @@ func (h *handlers) Patch(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-func (h *handlers) publish(c *gin.Context, engine *uploads.Engine, sess uploads.Session, id uploads.SessionID, owner files.UserID) bool {
+func (h *Handlers) publish(c *gin.Context, engine *uploads.Engine, sess uploads.Session, id uploads.SessionID, owner files.UserID) bool {
 	dest, err := h.d.Core.VpathFor(owner, sess.Share, sess.Dest.Share())
 	if err != nil {
 		h.d.Fail(c, files.ErrNotFound)
@@ -276,7 +264,7 @@ func (h *handlers) publish(c *gin.Context, engine *uploads.Engine, sess uploads.
 	return true
 }
 
-func (h *handlers) Abort(c *gin.Context) {
+func (h *Handlers) Abort(c *gin.Context) {
 	owner, ok := h.d.Owner(c)
 	if !ok {
 		h.d.Refuse(c, apierr.Classified{Class: apierr.AuthRequired})
@@ -313,7 +301,7 @@ type SettingsRequest struct {
 // SettingsPatch handles the upload section of the administrator settings
 // route. It is exposed separately because the settings transport owns section
 // dispatch while this package owns the upload-specific state and validation.
-func (h *handlers) SettingsPatch(c *gin.Context) {
+func (h *Handlers) SettingsPatch(c *gin.Context) {
 	if _, ok := h.d.Admin(c); !ok {
 		return
 	}
@@ -370,7 +358,7 @@ func (h *handlers) SettingsPatch(c *gin.Context) {
 	h.d.WriteJSON(c, http.StatusOK, handler.UploadSettingsView{ChunkMin: viewMin, ChunkDefault: viewDefault, CacheEnabled: engine.CacheEnabled(), CacheAvailable: engine.CacheAvailable()})
 }
 
-func (h *handlers) engine(c *gin.Context) (*uploads.Engine, bool) {
+func (h *Handlers) engine(c *gin.Context) (*uploads.Engine, bool) {
 	_ = c
 	return h.d.Upload, h.d.Upload != nil
 }
@@ -383,7 +371,7 @@ func sessionIDOf(c *gin.Context) (uploads.SessionID, bool) {
 	return id, true
 }
 
-func (h *handlers) refuseTus(c *gin.Context, err error) {
+func (h *Handlers) refuseTus(c *gin.Context, err error) {
 	if errors.Is(err, handler.ErrTusVersion) {
 		h.d.Refuse(c, apierr.Classified{Class: apierr.Precondition})
 		return
@@ -391,7 +379,7 @@ func (h *handlers) refuseTus(c *gin.Context, err error) {
 	h.d.Refuse(c, apierr.Classified{Class: apierr.Malformed})
 }
 
-func (h *handlers) failUpload(c *gin.Context, err error) {
+func (h *Handlers) failUpload(c *gin.Context, err error) {
 	if errors.Is(err, uploads.ErrChecksum) {
 		h.d.WriteJSON(c, handler.StatusChecksumMismatch, map[string]string{"error": "checksum_mismatch"})
 		return
@@ -420,7 +408,7 @@ func uploadMetaOf(meta map[string]string) uploads.Meta {
 	return out
 }
 
-func (h *handlers) notFound(c *gin.Context) { h.d.Fail(c, files.ErrNotFound) }
+func (h *Handlers) notFound(c *gin.Context) { h.d.Fail(c, files.ErrNotFound) }
 
 func requestBodyReader(c *gin.Context) io.Reader {
 	if c.Request != nil && c.Request.Body != nil {

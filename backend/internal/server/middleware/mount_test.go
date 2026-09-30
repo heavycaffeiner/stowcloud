@@ -15,51 +15,30 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 )
 
-type replay struct {
-	mu      sync.Mutex
-	entered []Step
-	passed  []Step
-}
-
-func (r *replay) Record(rec Record) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if rec.Entered {
-		r.entered = append(r.entered, rec.Step)
-	} else if rec.Passed {
-		r.passed = append(r.passed, rec.Step)
-	}
-}
-
-func (r *replay) snapshot() ([]Step, []Step) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return append([]Step(nil), r.entered...), append([]Step(nil), r.passed...)
-}
-
 func sessionCookie() *http.Cookie {
 	return &http.Cookie{Name: SessionCookieName, Value: "abcd", Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}
 }
 
 type harness struct {
 	app *gin.Engine
-	rec *replay
 	lim *Limiter
 }
 
 func newHarness(t *testing.T, hosts Hosts) *harness {
 	t.Helper()
-	h := &harness{app: gin.New(), rec: &replay{}}
-	h.lim = NewLimiter(newStepClock(), 1000, 1000)
-	if err := Mount(h.app, Chain(), Deps{
+	h := &harness{app: gin.New(), lim: NewLimiter(newStepClock(), 1000, 1000)}
+	d := Deps{
 		Hosts:   func() Hosts { return hosts },
 		Trusted: func() []netip.Prefix { return []netip.Prefix{mustPrefix(t, "10.0.0.0/8")} },
 		Limiter: h.lim,
 		Errors:  apierr.NewClassifier(nil),
-	}, h.rec); err != nil {
-		t.Fatalf("Mount: %v", err)
 	}
-	h.app.Any("/*path", func(c *gin.Context) { c.String(http.StatusOK, "handled") })
+	global, err := Global(d)
+	if err != nil {
+		t.Fatalf("Global: %v", err)
+	}
+	h.app.Use(global...)
+	h.app.Group("", Device(d)...).Any("/*path", func(c *gin.Context) { c.String(http.StatusOK, "handled") })
 	return h
 }
 
@@ -77,37 +56,24 @@ func send(t *testing.T, app *gin.Engine, req *http.Request) answer {
 
 func (h *harness) do(t *testing.T, req *http.Request) answer { return send(t, h.app, req) }
 
-func TestARequestWalksTheChainInOrder(t *testing.T) {
+func TestARefusedHostStopsBeforeTheLimiter(t *testing.T) {
 	h := newHarness(t, namedHosts())
-	if got := h.do(t, httptest.NewRequest("GET", "http://app.example.test/anything", nil)).status; got != http.StatusOK {
-		t.Fatalf("request answered %d", got)
-	}
-	entered, _ := h.rec.snapshot()
-	want := Chain()
-	if len(entered) != len(want) {
-		t.Fatalf("entered %d steps, want %d: %v", len(entered), len(want), entered)
-	}
-	for i := range want {
-		if entered[i] != want[i] {
-			t.Fatalf("at %d entered %v, want %v", i, entered[i], want[i])
-		}
-	}
-}
-
-func TestARefusedHostStopsTheWalkAtTheBoundary(t *testing.T) {
-	h := newHarness(t, namedHosts())
+	h.lim.SetLimits(1, 1)
 	got := h.do(t, httptest.NewRequest("GET", "http://evil.example.test/anything", nil))
 	if got.status != http.StatusMisdirectedRequest || !got.close {
 		t.Fatalf("refusal was %+v, want 421 and connection close", got)
 	}
-	entered, _ := h.rec.snapshot()
-	for _, s := range entered {
-		if s == StepAuth || s == StepRateLimit {
-			t.Fatalf("%v ran after boundary refusal: %v", s, entered)
-		}
+	if got := h.do(t, httptest.NewRequest("GET", "http://app.example.test/anything", nil)).status; got != http.StatusOK {
+		t.Fatalf("a refused host spent the budget: the next request answered %d", got)
 	}
-	if entered[len(entered)-1] != StepHostAndOriginBoundary {
-		t.Fatalf("walk stopped at %v", entered[len(entered)-1])
+}
+
+func TestARefusalCarriesTheTraceHeader(t *testing.T) {
+	h := newHarness(t, namedHosts())
+	rec := httptest.NewRecorder()
+	h.app.ServeHTTP(rec, httptest.NewRequest("GET", "http://evil.example.test/anything", nil))
+	if rec.Header().Get(TraceHeader) == "" {
+		t.Fatal("a boundary refusal went out without a trace id")
 	}
 }
 
@@ -167,17 +133,9 @@ func TestBrowserAuthenticationIsBoundThroughTheChain(t *testing.T) {
 	}
 }
 
-func TestMountRefusesAMisassembledChain(t *testing.T) {
-	app := gin.New()
-	deps := Deps{Hosts: func() Hosts { return namedHosts() }, Trusted: func() []netip.Prefix { return nil }, Limiter: NewLimiter(newStepClock(), 1, 1), Errors: apierr.NewClassifier(nil)}
-	if err := Mount(app, []Step{StepAuth, StepCSRF}, deps, nil); err == nil {
-		t.Error("invalid chain mounted")
-	}
-	if err := Mount(app, nil, deps, nil); err == nil {
-		t.Error("empty chain mounted")
-	}
-	if err := Mount(app, Chain(), Deps{}, nil); err == nil {
-		t.Error("chain without dependencies mounted")
+func TestGlobalRefusesMissingDependencies(t *testing.T) {
+	if _, err := Global(Deps{}); err == nil {
+		t.Error("a chain without dependencies was built")
 	}
 }
 
@@ -185,13 +143,15 @@ func TestHostsAreReadPerRequest(t *testing.T) {
 	var mu sync.Mutex
 	hosts := Hosts{App: []string{"first.example.test"}}
 	app := gin.New()
-	if err := Mount(app, Chain(), Deps{
+	global, err := Global(Deps{
 		Hosts:   func() Hosts { mu.Lock(); defer mu.Unlock(); return hosts },
 		Trusted: func() []netip.Prefix { return nil }, Limiter: NewLimiter(newStepClock(), 1000, 1000),
 		Errors: apierr.NewClassifier(nil),
-	}, nil); err != nil {
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
+	app.Use(global...)
 	app.Any("/*path", func(c *gin.Context) { c.String(http.StatusOK, "handled") })
 	request := func(host string) int {
 		return send(t, app, httptest.NewRequest("GET", "http://"+host+"/x", nil)).status

@@ -32,7 +32,7 @@ import (
 func main() {
 	var (
 		clientDir      = flag.String("client-dir", "frontend/src/lib/api", "the frontend's API client directory")
-		routesPath     = flag.String("routes", "backend/internal/http/server/v1table.go,backend/internal/http/publiclinks/public.go", "the server's route tables")
+		routesPath     = flag.String("routes", "backend/internal/app/routes.go", "the files that register the server's routes")
 		allowPath      = flag.String("allow", "backend/routes.allow", "paths the client may call that the server need not mount")
 		serverOnlyPath = flag.String("server-only", "backend/routes.server-only",
 			"routes the server mounts for callers other than the web client")
@@ -50,13 +50,13 @@ func main() {
 	// Before any path is normalised: the prefix decides what every relative
 	// path becomes.
 	clientBase = findClientBase(*clientDir)
-	// A comma-separated list, because more than one file mounts routes: the
-	// versioned table, and the surfaces registered in code beside it.
+	// A comma-separated list, in case routes are registered in more than one
+	// file.
 	var routes []byte
 	for _, name := range strings.Split(*routesPath, ",") {
 		part, rerr := os.ReadFile(filepath.Clean(strings.TrimSpace(name)))
 		if rerr != nil {
-			fail("reading the route table: %v", rerr)
+			fail("reading the route file: %v", rerr)
 		}
 		routes = append(routes, part...)
 		routes = append(routes, '\n')
@@ -332,54 +332,24 @@ func methodOf(src string, from int) string {
 	return "GET"
 }
 
-// mountedPaths pulls every method and pattern the route table registers.
+// mountedPaths pulls every method and pattern the route file registers.
 //
-// Two spellings are supported because the internal route table declares routes
-// as add(method, path, name, body) calls while some fixtures use struct fields.
-// Reading both keeps the checker focused on the route contract rather than one
-// representation of it.
+// Two spellings are read: a registration on a gin group with a literal path,
+// and a typed operation registered through op. Both carry the full path.
 func mountedPaths(src string) map[call]bool {
 	out := map[call]bool{}
 
-	structForm := regexp.MustCompile(`Method:\s*"([A-Z]+)",\s*Pattern:\s*"([^"]+)"`)
-	for _, m := range structForm.FindAllStringSubmatch(src, -1) {
+	groupForm := regexp.MustCompile(`\b\w+\.(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\(\s*"(/[^"]*)"`)
+	for _, m := range groupForm.FindAllStringSubmatch(src, -1) {
 		out[call{method: m[1], path: normalise(m[2])}] = true
 	}
 
-	addForm := regexp.MustCompile(`add\("([A-Z]+)",\s*"(/[^"]*)"`)
-	for _, m := range addForm.FindAllStringSubmatch(src, -1) {
-		// The versioned table declares paths relative to its own mount, so the
-		// prefix the client sends is added back here rather than being written
-		// into every row.
-		out[call{method: m[1], path: normalise(tablePrefix + m[2])}] = true
-	}
-
-	// Routes registered directly on the router, which is how a surface outside
-	// the versioned table mounts itself. The path is absolute there, and the
-	// framework's own `:name` parameters become the same placeholder a table
-	// pattern's braces do.
-	routerForm := regexp.MustCompile(`app\.(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\(\s*([A-Za-z]+\+)?"(/[^"]*)"`)
-	for _, m := range routerForm.FindAllStringSubmatch(src, -1) {
-		path := m[3]
-		if m[2] != "" {
-			// The path is joined to a constant naming the mount prefix. The
-			// public link surface is the only one, and its prefix is where a
-			// short URL lives.
-			path = publicLinkPrefix + path
-		}
-		out[call{method: strings.ToUpper(m[1]), path: normalise(path)}] = true
+	opForm := regexp.MustCompile(`\bop\(\s*\w+,\s*http\.Method(\w+),\s*"(/[^"]*)"`)
+	for _, m := range opForm.FindAllStringSubmatch(src, -1) {
+		out[call{method: strings.ToUpper(m[1]), path: normalise(m[2])}] = true
 	}
 	return out
 }
-
-// publicLinkPrefix is where the public link surface mounts. Its routes are
-// registered against a constant rather than a literal, so the prefix is named
-// here to reassemble them.
-const publicLinkPrefix = "/s"
-
-// tablePrefix is where the versioned table is mounted. Its rows carry paths
-// relative to it, and the client sends the whole thing.
-const tablePrefix = "/api/v1"
 
 // clientBase is what the client prepends to every relative path, discovered
 // from its own source so this cannot drift from it.
@@ -494,7 +464,7 @@ func normalise(p string) string {
 		return ""
 	}
 	// The client's own base is the API prefix, so its paths are relative to it
-	// and the table's are absolute. A public share link is the exception: it is
+	// and the server's are absolute. A public share link is the exception: it is
 	// served from the origin, so its path is already absolute.
 	//
 	// The prefix is read from the client rather than assumed. It was "/api"
@@ -508,8 +478,8 @@ func normalise(p string) string {
 	// segment.
 	segs := strings.Split(p, "/")
 	for i, s := range segs {
-		// `:name` is the router's own spelling for the same thing a table
-		// writes as `{name}`, and a surface registered in code uses it.
+		// `:name` is gin's spelling and `{name}` is Huma's; both are the same
+		// segment.
 		if strings.HasPrefix(s, ":") && len(s) > 1 {
 			segs[i] = "{}"
 			continue

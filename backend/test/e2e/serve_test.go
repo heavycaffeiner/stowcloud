@@ -8,14 +8,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 
 	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/server"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
 )
 
 // The rebuilt engine comes up on a real socket and answers a real request.
@@ -44,8 +41,8 @@ func TestTheEngineServesARealRequest(t *testing.T) {
 	}
 }
 
-// Every route the table names is registered. A route the table declares and
-// the server does not answer is one a client discovers and then cannot use.
+// A declared route answers. A route the client knows and the server does not
+// answer is one a client discovers and then cannot use.
 //
 // A credential-gated route has to be driven with a session to prove anything
 // now. Anonymously it answers 404, and so does a path that was never mounted,
@@ -88,7 +85,7 @@ func TestEveryDeclaredRouteAnswers(t *testing.T) {
 	}
 }
 
-// A path the table does not name is a 404 rather than a hang or a crash.
+// A path no route names is a 404 rather than a hang or a crash.
 func TestAnUnknownPathIsNotFound(t *testing.T) {
 	t.Parallel()
 	base := boot(t)
@@ -122,9 +119,8 @@ func TestEveryAnswerIsJSON(t *testing.T) {
 	}
 }
 
-// Mounting reports a broken assembly before anything binds, so a defect
-// surfaces at startup rather than at a request.
-func TestMountingChecksTheAssembly(t *testing.T) {
+// A correct assembly mounts without error.
+func TestMountingACorrectAssembly(t *testing.T) {
 	t.Parallel()
 	e, err := app.Open(context.Background(), app.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
 	if err != nil {
@@ -143,72 +139,6 @@ func TestMountingChecksTheAssembly(t *testing.T) {
 	if app == nil {
 		t.Fatal("mounting returned no application and no error")
 	}
-}
-
-// The preflight check is what this assembly is gated on, so a broken one has
-// to be refused. Proven against the real check rather than by inspection: the
-// same call the mount makes, given a deliberately incomplete assembly.
-//
-// Without this, removing the check from Mount changes nothing observable and
-// every defect it exists to catch reaches a request instead.
-func TestABrokenAssemblyIsRefused(t *testing.T) {
-	t.Parallel()
-	table := server.Table()
-
-	full := make(server.Handlers, len(table))
-	for _, r := range table {
-		full[r.Name] = func(*gin.Context) {}
-	}
-
-	cases := []struct {
-		name string
-		p    server.Preflight
-	}{
-		{
-			name: "a route with no handler",
-			p: server.Preflight{
-				Routes: table, Roots: []string{server.Base},
-				Chain:    middleware.Chain(),
-				Handlers: dropOne(full, table[0].Name),
-			},
-		},
-		{
-			name: "an empty middleware chain",
-			p: server.Preflight{
-				Routes: table, Roots: []string{server.Base},
-				Handlers: full,
-			},
-		},
-	}
-
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if err := server.Check(c.p); err == nil {
-				t.Fatalf("%s was accepted", c.name)
-			}
-		})
-	}
-
-	// And the complete assembly passes, so each row above fails because of the
-	// one thing it removes rather than because this shape never validates.
-	whole := server.Preflight{
-		Routes: table, Roots: []string{server.Base},
-		Chain: middleware.Chain(), Handlers: full,
-	}
-	if err := server.Check(whole); err != nil {
-		t.Errorf("a complete assembly was refused: %v", err)
-	}
-}
-
-// dropOne returns the handlers without one name.
-func dropOne(in server.Handlers, name string) server.Handlers {
-	out := make(server.Handlers, len(in))
-	for k, v := range in {
-		if k != name {
-			out[k] = v
-		}
-	}
-	return out
 }
 
 // Closing releases the files. A boot that failed and left its databases open
@@ -339,72 +269,5 @@ func TestTheChainRunsBeforeTheRoutes(t *testing.T) {
 
 	if resp.Header.Get("Content-Security-Policy") == "" {
 		t.Error("a route answered without the chain having run")
-	}
-}
-
-// Every route the table declares is registered, and no name is registered
-// twice or under a name the table does not have.
-//
-// Register already refuses a missing handler, so what this adds is the other
-// direction: a binding whose name was misspelled would silently fall through
-// to the not-implemented default, and the route would look served while doing
-// nothing. The count is what catches that.
-func TestEveryRouteHasExactlyOneHandler(t *testing.T) {
-	t.Parallel()
-	e, err := app.Open(context.Background(), app.Options{DataDir: t.TempDir(), PasswordParams: fastPasswordParams()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if cerr := e.Close(); cerr != nil {
-			t.Errorf("closing: %v", cerr)
-		}
-	}()
-
-	app := gin.New()
-	if err := e.Mount(app); err != nil {
-		t.Fatalf("mounting: %v", err)
-	}
-
-	table := server.Table()
-	if len(table) == 0 {
-		t.Fatal("the route table is empty")
-	}
-
-	seen := map[string]bool{}
-	for _, r := range table {
-		if seen[r.Name] {
-			t.Errorf("%s appears twice in the table", r.Name)
-		}
-		seen[r.Name] = true
-	}
-}
-
-// A bound route does not answer not-implemented. That is what separates a
-// binding from a misspelled one, which falls through to the default and looks
-// served while doing nothing.
-func TestABoundRouteIsNotTheDefault(t *testing.T) {
-	t.Parallel()
-	base, _, sess := bootWithUser(t)
-
-	// Every route bound so far that takes no path parameter and no share.
-	bound := []string{
-		"/api/v1/system/health",
-		"/api/v1/jobs",
-		"/api/v1/account/sessions",
-		"/api/v1/account/app-passwords",
-		"/api/v1/files/list?path=%2F",
-	}
-
-	for _, path := range bound {
-		t.Run(path, func(t *testing.T) {
-			status, body := authed(t, http.MethodGet, base+path, sess)
-			if status == http.StatusNotImplemented {
-				t.Errorf("%s fell through to the default: %s", path, body)
-			}
-			if strings.Contains(string(body), "not_implemented") {
-				t.Errorf("%s answered the default body: %s", path, body)
-			}
-		})
 	}
 }

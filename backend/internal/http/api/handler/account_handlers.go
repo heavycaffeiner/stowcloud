@@ -17,7 +17,6 @@ import (
 	secret "github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/server/route"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
@@ -27,25 +26,11 @@ type AccountHandlersDeps struct {
 }
 
 // NewAccountHandlers builds the caller-scoped account and credential routes.
-func NewAccountHandlers(d AccountHandlersDeps) map[string]gin.HandlerFunc {
-	h := &accountHandlers{d: d}
-	return map[string]gin.HandlerFunc{
-		"account.sessions.list":              h.sessions,
-		"account.sessions.delete":            h.sessionDelete,
-		"account.app-passwords.list":         h.appPasswords,
-		"account.app-passwords.delete":       h.appPasswordDelete,
-		"account.app-passwords.create":       h.appPasswordCreate,
-		"account.app-passwords.wipe":         h.appPasswordWipe,
-		"account.password":                   h.password,
-		"account.totp.setup":                 h.totpSetup,
-		"account.totp.enroll":                h.totpEnroll,
-		"account.totp.disable":               h.totpDisable,
-		"account.totp.recovery-codes.list":   h.recoveryList,
-		"account.totp.recovery-codes.create": h.recoveryCreate,
-	}
+func NewAccountHandlers(d AccountHandlersDeps) *AccountHandlers {
+	return &AccountHandlers{d: d}
 }
 
-type accountHandlers struct{ d AccountHandlersDeps }
+type AccountHandlers struct{ d AccountHandlersDeps }
 
 type passwordRequestTransport struct {
 	Current string `json:"current"`
@@ -70,7 +55,7 @@ type appPasswordScopeTransport struct {
 	Shares []string `json:"shares,omitempty"`
 }
 
-func (h *accountHandlers) password(c *gin.Context) {
+func (h *AccountHandlers) Password(c *gin.Context) {
 	owner, ok := ownerTransport(c)
 	if !ok {
 		accountRefuse(c, apierr.Classified{Class: apierr.AuthRequired})
@@ -91,7 +76,7 @@ func (h *accountHandlers) password(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-func (h *accountHandlers) sessions(c *gin.Context) {
+func (h *AccountHandlers) Sessions(c *gin.Context) {
 	owner, ok := ownerTransport(c)
 	if !ok {
 		accountRefuse(c, apierr.Classified{Class: apierr.AuthRequired})
@@ -104,7 +89,7 @@ func (h *accountHandlers) sessions(c *gin.Context) {
 	}
 	accountJSON(c, http.StatusOK, SessionsOf(rows, currentDigestTransport(c)))
 }
-func (h *accountHandlers) sessionDelete(c *gin.Context) {
+func (h *AccountHandlers) SessionDelete(c *gin.Context) {
 	owner, ok := ownerTransport(c)
 	if !ok {
 		accountRefuse(c, apierr.Classified{Class: apierr.AuthRequired})
@@ -134,7 +119,7 @@ func (h *accountHandlers) sessionDelete(c *gin.Context) {
 	}
 	c.Status(http.StatusNotFound)
 }
-func (h *accountHandlers) appPasswords(c *gin.Context) {
+func (h *AccountHandlers) AppPasswords(c *gin.Context) {
 	owner, ok := ownerTransport(c)
 	if !ok {
 		accountRefuse(c, apierr.Classified{Class: apierr.AuthRequired})
@@ -147,7 +132,7 @@ func (h *accountHandlers) appPasswords(c *gin.Context) {
 	}
 	accountJSON(c, http.StatusOK, AppPasswordsOf(rows))
 }
-func (h *accountHandlers) appPasswordDelete(c *gin.Context) {
+func (h *AccountHandlers) AppPasswordDelete(c *gin.Context) {
 	owner, ok := ownerTransport(c)
 	if !ok {
 		accountRefuse(c, apierr.Classified{Class: apierr.AuthRequired})
@@ -164,7 +149,7 @@ func (h *accountHandlers) appPasswordDelete(c *gin.Context) {
 	}
 	c.Status(http.StatusNoContent)
 }
-func (h *accountHandlers) appPasswordWipe(c *gin.Context) {
+func (h *AccountHandlers) AppPasswordWipe(c *gin.Context) {
 	owner, ok := ownerTransport(c)
 	if !ok {
 		accountRefuse(c, apierr.Classified{Class: apierr.AuthRequired})
@@ -181,7 +166,7 @@ func (h *accountHandlers) appPasswordWipe(c *gin.Context) {
 	}
 	c.Status(http.StatusNoContent)
 }
-func (h *accountHandlers) appPasswordCreate(c *gin.Context) {
+func (h *AccountHandlers) AppPasswordCreate(c *gin.Context) {
 	owner, ok := ownerTransport(c)
 	if !ok {
 		accountRefuse(c, apierr.Classified{Class: apierr.AuthRequired})
@@ -211,7 +196,7 @@ func (h *accountHandlers) appPasswordCreate(c *gin.Context) {
 	}
 	accountJSON(c, http.StatusCreated, map[string]string{"name": req.Name, "token": token})
 }
-func (h *accountHandlers) totpSetup(c *gin.Context) {
+func (h *AccountHandlers) TOTPSetup(c *gin.Context) {
 	owner, ok := ownerTransport(c)
 	if !ok {
 		accountRefuse(c, apierr.Classified{Class: apierr.AuthRequired})
@@ -237,7 +222,7 @@ func (h *accountHandlers) totpSetup(c *gin.Context) {
 	}
 	accountJSON(c, http.StatusOK, TOTPSetupOf(secretB32, info.LoginName))
 }
-func (h *accountHandlers) totpEnroll(c *gin.Context) {
+func (h *AccountHandlers) TOTPEnroll(c *gin.Context) {
 	owner, ok := ownerTransport(c)
 	if !ok {
 		accountRefuse(c, apierr.Classified{Class: apierr.AuthRequired})
@@ -279,7 +264,7 @@ func (h *accountHandlers) totpEnroll(c *gin.Context) {
 	}
 	accountJSON(c, http.StatusOK, map[string]any{"recovery_codes": codes})
 }
-func (h *accountHandlers) totpDisable(c *gin.Context) {
+func (h *AccountHandlers) TOTPDisable(c *gin.Context) {
 	owner, ok := ownerTransport(c)
 	if !ok {
 		accountRefuse(c, apierr.Classified{Class: apierr.AuthRequired})
@@ -299,7 +284,7 @@ func (h *accountHandlers) totpDisable(c *gin.Context) {
 	}
 	c.Status(http.StatusNoContent)
 }
-func (h *accountHandlers) recoveryList(c *gin.Context) {
+func (h *AccountHandlers) RecoveryList(c *gin.Context) {
 	owner, ok := ownerTransport(c)
 	if !ok {
 		accountRefuse(c, apierr.Classified{Class: apierr.AuthRequired})
@@ -312,7 +297,7 @@ func (h *accountHandlers) recoveryList(c *gin.Context) {
 	}
 	accountJSON(c, http.StatusOK, map[string]int{"remaining": remaining})
 }
-func (h *accountHandlers) recoveryCreate(c *gin.Context) {
+func (h *AccountHandlers) RecoveryCreate(c *gin.Context) {
 	owner, ok := ownerTransport(c)
 	if !ok {
 		accountRefuse(c, apierr.Classified{Class: apierr.AuthRequired})
@@ -333,7 +318,7 @@ func (h *accountHandlers) recoveryCreate(c *gin.Context) {
 	}
 	accountJSON(c, http.StatusOK, map[string]any{"recovery_codes": codes})
 }
-func (h *accountHandlers) reconfirm(c *gin.Context, owner int64, password string) bool {
+func (h *AccountHandlers) reconfirm(c *gin.Context, owner int64, password string) bool {
 	if password == "" {
 		middleware.Fail(c, auth.ErrCredentials)
 		return false
@@ -383,7 +368,7 @@ func currentDigestTransport(c *gin.Context) []byte {
 	return sum[:]
 }
 func accountDecode(c *gin.Context, into any) error {
-	return middleware.DecodeJSON(middleware.LimitBody(c.Request.Body, route.BodyJSON), into)
+	return middleware.DecodeJSON(c.Request.Body, into)
 }
 func accountPathID(c *gin.Context) (int64, bool) {
 	n, err := strconv.ParseInt(c.Param("id"), 10, 64)

@@ -16,15 +16,7 @@ func shellApp(t *testing.T) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	app := gin.New()
-	table := Table()
-	h := make(Handlers, len(table))
-	for _, r := range table {
-		name := r.Name
-		h[name] = func(c *gin.Context) { c.Header("Sc-Test-Route", name); c.String(200, name) }
-	}
-	if err := Register(app, table, h); err != nil {
-		t.Fatalf("Register: %v", err)
-	}
+	app.GET("/api/v1/files/list", func(c *gin.Context) { c.String(200, "files.list") })
 	if err := InstallFallback(app, func(c *gin.Context) {
 		c.Header("Content-Type", "text/html")
 		c.String(200, "<!doctype html><title>shell</title>")
@@ -80,23 +72,6 @@ func TestReservationIsComponentWise(t *testing.T) {
 		if got := IsReserved(c.path); got != c.reserved {
 			t.Errorf("IsReserved(%q) = %v, want %v", c.path, got, c.reserved)
 		}
-	}
-}
-
-func TestEveryShippedRouteIsUnderARoot(t *testing.T) {
-	paths := make([]string, 0, len(Table()))
-	for _, r := range Table() {
-		paths = append(paths, r.Path)
-	}
-	if err := CheckRouteRoots(paths, []string{"/api"}); err != nil {
-		t.Errorf("shipped table: %v", err)
-	}
-	err := CheckRouteRoots(append(paths, "/stray/route"), []string{"/api"})
-	if err == nil {
-		t.Fatal("route outside root accepted")
-	}
-	if !strings.Contains(err.Error(), "/stray/route") {
-		t.Errorf("report does not name stray: %v", err)
 	}
 }
 

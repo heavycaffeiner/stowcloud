@@ -265,12 +265,11 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   # directory, so a narrower path saw none of its calls, and the screens under
   # routes/ build URLs of their own that no .ts file names.
   #
-  # The client calls the native v1 route table plus the unversioned public-link
-  # surface. Both files are checked so either registration site cannot drift.
+  # Every native and public-link route is registered in one file.
   run "routecheck (the client's paths are mounted)" \
       ingo_host go run ./tools/routecheck \
         -client-dir ../frontend/src \
-        -routes internal/http/server/v1table.go,internal/http/publiclinks/public.go \
+        -routes internal/app/routes.go \
         -allow routes.allow \
         -server-only routes.server-only
   # routecheck proves the paths exist. This proves the bodies match: the

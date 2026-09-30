@@ -6,16 +6,12 @@ package adminlogs
 import (
 	"context"
 	"errors"
-	"net/http"
 	"strconv"
 	"strings"
-
-	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/admin/logbook"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/humabridge"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/apierr"
 )
 
@@ -26,27 +22,9 @@ const (
 
 // Deps contains the log services and narrow composition callbacks required by
 // the administrator log routes.
-type Deps struct {
+type Handler struct {
 	Logs *logbook.Sink
 	Auth *auth.Service
-}
-
-// Register adds typed administrator log operations. Paths are relative to the
-// caller's API mount.
-func Register(api huma.API, d Deps) {
-	h := &handlers{d: d}
-	huma.Register(api, huma.Operation{
-		OperationID: "admin.logs.list",
-		Method:      http.MethodGet,
-		Path:        "/admin/logs",
-		Summary:     "List administrator logs",
-	}, h.listHuma)
-	huma.Register(api, huma.Operation{
-		OperationID: "admin.logs.timeline",
-		Method:      http.MethodGet,
-		Path:        "/admin/logs/timeline",
-		Summary:     "Summarize administrator logs",
-	}, h.timelineHuma)
 }
 
 type logInput struct {
@@ -75,51 +53,53 @@ type timelineInput struct {
 type logPageOutput struct{ Body handler.LogPageView }
 type timelineOutput struct{ Body handler.LogsTimelineView }
 
-func (h *handlers) listHuma(ctx context.Context, in *logInput) (*logPageOutput, error) {
-	if h.d.Logs == nil {
-		return nil, humabridge.Refusal(apierr.Classified{Class: apierr.SubsystemUnavailable})
+// List answers one page of the log.
+func (h *Handler) List(ctx context.Context, in *logInput) (*logPageOutput, error) {
+	if h.Logs == nil {
+		return nil, &apierr.ClassifiedError{Classified: apierr.Classified{Class: apierr.SubsystemUnavailable}}
 	}
 	q, ok := logQueryInput(in.Since, in.Until, in.Level, in.Text, in.Subsystem, in.RequestID, in.Limit, in.Cursor)
 	if !ok {
-		return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Malformed})
+		return nil, &apierr.ClassifiedError{Classified: apierr.Classified{Class: apierr.Malformed}}
 	}
-	page, err := h.d.Logs.Query(ctx, q)
+	page, err := h.Logs.Query(ctx, q)
 	if err != nil {
 		if errors.Is(err, logbook.ErrBadCursor) {
-			return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Malformed})
+			return nil, &apierr.ClassifiedError{Classified: apierr.Classified{Class: apierr.Malformed}}
 		}
-		return nil, humabridge.Failure(ctx, err)
+		return nil, err
 	}
-	return &logPageOutput{Body: handler.LogPageOf(page, h.d.Logs.Stats())}, nil
+	return &logPageOutput{Body: handler.LogPageOf(page, h.Logs.Stats())}, nil
 }
 
-func (h *handlers) timelineHuma(ctx context.Context, in *timelineInput) (*timelineOutput, error) {
-	if h.d.Logs == nil {
-		return nil, humabridge.Refusal(apierr.Classified{Class: apierr.SubsystemUnavailable})
+// Timeline answers the log bucketed over time.
+func (h *Handler) Timeline(ctx context.Context, in *timelineInput) (*timelineOutput, error) {
+	if h.Logs == nil {
+		return nil, &apierr.ClassifiedError{Classified: apierr.Classified{Class: apierr.SubsystemUnavailable}}
 	}
 	q, ok := logQueryInput(in.Since, in.Until, in.Level, in.Text, in.Subsystem, in.RequestID, in.Limit, in.Cursor)
 	if !ok {
-		return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Malformed})
+		return nil, &apierr.ClassifiedError{Classified: apierr.Classified{Class: apierr.Malformed}}
 	}
 	width, ok := bucketInput(in.BucketNS)
 	if !ok {
-		return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Malformed})
+		return nil, &apierr.ClassifiedError{Classified: apierr.Classified{Class: apierr.Malformed}}
 	}
-	server, widthNS, truncated, err := h.d.Logs.Counts(ctx, q, width)
+	server, widthNS, truncated, err := h.Logs.Counts(ctx, q, width)
 	if err != nil {
 		if errors.Is(err, logbook.ErrBadCursor) {
-			return nil, humabridge.Refusal(apierr.Classified{Class: apierr.Malformed})
+			return nil, &apierr.ClassifiedError{Classified: apierr.Classified{Class: apierr.Malformed}}
 		}
-		return nil, humabridge.Failure(ctx, err)
+		return nil, err
 	}
 	var audit []auth.AuditBucket
 	if len(server) > 0 {
 		var auditTruncated bool
-		audit, auditTruncated, err = h.d.Auth.AuditCounts(ctx,
+		audit, auditTruncated, err = h.Auth.AuditCounts(ctx,
 			auth.AuditFilter{SinceNs: q.Since, UntilNs: q.Until},
 			server[0].StartNs, widthNS, len(server))
 		if err != nil {
-			return nil, humabridge.Failure(ctx, err)
+			return nil, err
 		}
 		truncated = truncated || auditTruncated
 	}
@@ -164,5 +144,3 @@ func bucketInput(raw string) (int64, bool) {
 	v, err := strconv.ParseInt(raw, 10, 64)
 	return v, err == nil && v > 0
 }
-
-type handlers struct{ d Deps }

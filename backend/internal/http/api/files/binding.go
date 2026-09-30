@@ -11,7 +11,6 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/server/middleware"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/server/route"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
 
@@ -29,7 +28,7 @@ func Resolve(c *files.Core) func(files.UserID, string, acl.Perms) (files.Resolve
 
 // Decode applies the shared JSON body limit and decoder.
 func Decode(c *gin.Context, into any) error {
-	return middleware.DecodeJSON(middleware.LimitBody(c.Request.Body, route.BodyJSON), into)
+	return middleware.DecodeJSON(c.Request.Body, into)
 }
 
 // OpenBoundClaim opens a claim for one purpose and binds it to the session

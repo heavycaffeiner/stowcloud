@@ -6,7 +6,6 @@ package middleware
 import (
 	"encoding/base64"
 	"encoding/hex"
-	"strings"
 	"testing"
 )
 
@@ -91,129 +90,6 @@ func TestTheSchemeMatchIsCaseInsensitive(t *testing.T) {
 	for _, header := range []string{"bearer tok", "BEARER tok", "BeArEr tok"} {
 		if got := Select(Presented{Authorization: header}, false); got.Kind != CredentialBearerApp {
 			t.Errorf("%q selected %v", header, got.Kind)
-		}
-	}
-}
-
-// A declaration with no problems is accepted.
-func TestAWellFormedDeclarationIsAccepted(t *testing.T) {
-	if err := ValidateProtocolPaths(ProtocolPaths{
-		FilePrefixes:    []string{"/dav", "/remote.php/dav"},
-		PublicReads:     []MethodPath{{"GET", "/s/{token}"}, {"OPTIONS", "/status"}},
-		CredentialFlows: []MethodPath{{"POST", "/login/v2/poll"}},
-	}); err != nil {
-		t.Fatalf("a valid declaration: %v", err)
-	}
-}
-
-// The three sets must not overlap. A path claimed twice has a credential
-// requirement that depends on which check runs first.
-func TestTheThreeSetsMustBeDisjoint(t *testing.T) {
-	for _, c := range []struct {
-		what  string
-		paths ProtocolPaths
-	}{
-		{
-			"a public read that is also a credential flow",
-			ProtocolPaths{
-				PublicReads:     []MethodPath{{"GET", "/shared"}},
-				CredentialFlows: []MethodPath{{"POST", "/shared"}},
-			},
-		},
-		{
-			"a public read under a file prefix",
-			ProtocolPaths{
-				FilePrefixes: []string{"/dav"},
-				PublicReads:  []MethodPath{{"GET", "/dav/public"}},
-			},
-		},
-		{
-			"a credential flow under a file prefix",
-			ProtocolPaths{
-				FilePrefixes:    []string{"/dav"},
-				CredentialFlows: []MethodPath{{"POST", "/dav/flow"}},
-			},
-		},
-	} {
-		if err := ValidateProtocolPaths(c.paths); err == nil {
-			t.Errorf("%s was accepted", c.what)
-		}
-	}
-}
-
-// A public read may not change state, and a credential flow must be a POST.
-func TestTheMethodRulesAreEnforced(t *testing.T) {
-	if err := ValidateProtocolPaths(ProtocolPaths{
-		PublicReads: []MethodPath{{"POST", "/anonymous-write"}},
-	}); err == nil {
-		t.Error("an unauthenticated mutation labelled a public read was accepted")
-	}
-	if err := ValidateProtocolPaths(ProtocolPaths{
-		CredentialFlows: []MethodPath{{"GET", "/login/v2/poll"}},
-	}); err == nil {
-		t.Error("a GET credential flow was accepted")
-	}
-
-	// The safe verbs pass, including OPTIONS for protocol discovery.
-	for _, m := range []string{"GET", "HEAD", "OPTIONS"} {
-		if verr := ValidateProtocolPaths(ProtocolPaths{
-			PublicReads: []MethodPath{{m, "/status"}},
-		}); verr != nil {
-			t.Errorf("%s as a public read: %v", m, verr)
-		}
-	}
-}
-
-// A prefix of "/" would make every path a challenge mount, which is how a
-// whole application ends up answering a Basic challenge instead of its own
-// sign-in page.
-func TestAWholeTreeFilePrefixIsRefused(t *testing.T) {
-	for _, prefix := range []string{"/", "dav"} {
-		if err := ValidateProtocolPaths(ProtocolPaths{FilePrefixes: []string{prefix}}); err == nil {
-			t.Errorf("the file prefix %q was accepted", prefix)
-		}
-	}
-}
-
-// Prefix matching is component-wise, so a neighbouring mount is not pulled
-// into another protocol's challenge behaviour.
-func TestFilePrefixMatchingIsComponentWise(t *testing.T) {
-	prefixes := []string{"/dav"}
-	for _, c := range []struct {
-		path string
-		want bool
-	}{
-		{"/dav", true},
-		{"/dav/", true},
-		{"/dav/files/alice", true},
-		{"/DAV/files", true},
-		{"/dav2", false},
-		{"/davos/files", false},
-		{"/other", false},
-		{"/", false},
-	} {
-		if got := UnderFilePrefix(c.path, prefixes); got != c.want {
-			t.Errorf("UnderFilePrefix(%q) = %v", c.path, got)
-		}
-	}
-}
-
-// Every problem at once, since a mount is declared once at startup.
-func TestADeclarationReportsEveryProblem(t *testing.T) {
-	err := ValidateProtocolPaths(ProtocolPaths{
-		FilePrefixes:    []string{"dav", "/x", "/x"},
-		PublicReads:     []MethodPath{{"DELETE", "/wipe"}},
-		CredentialFlows: []MethodPath{{"GET", "relative"}},
-	})
-	if err == nil {
-		t.Fatal("a declaration with five problems was accepted")
-	}
-	msg := err.Error()
-	for _, want := range []string{
-		"does not begin with /", "declared twice", "changes state", "not a POST",
-	} {
-		if !strings.Contains(msg, want) {
-			t.Errorf("the report omits %q:\n  %s", want, msg)
 		}
 	}
 }

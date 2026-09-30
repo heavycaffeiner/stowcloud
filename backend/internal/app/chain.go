@@ -35,7 +35,6 @@ func (e *Engine) deps() middleware.Deps {
 		Clock:        e.clk(),
 		Principal:    e.ResolvePrincipal,
 		CSRFKey:      e.csrfKey,
-		Audit:        nil,
 		Access:       accessLog{e},
 		Errors:       e.errs,
 		// The interface's own inline bootstrap, admitted by hash. Empty in a

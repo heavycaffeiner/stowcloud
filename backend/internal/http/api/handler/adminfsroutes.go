@@ -38,14 +38,13 @@ type AdminFSDeps struct {
 }
 
 // NewAdminFSHandlers builds administrator and first-run host filesystem routes.
-func NewAdminFSHandlers(d AdminFSDeps) map[string]gin.HandlerFunc {
-	h := &adminFSHandlers{d: d}
-	return map[string]gin.HandlerFunc{"admin.fs.browse": h.browse, "system.setup.browse": h.setupBrowse}
+func NewAdminFSHandlers(d AdminFSDeps) *AdminFSHandlers {
+	return &AdminFSHandlers{d: d}
 }
 
-type adminFSHandlers struct{ d AdminFSDeps }
+type AdminFSHandlers struct{ d AdminFSDeps }
 
-func (h *adminFSHandlers) browse(c *gin.Context) {
+func (h *AdminFSHandlers) Browse(c *gin.Context) {
 	if _, ok := adminPrincipal(c, h.d.Auth); !ok {
 		return
 	}
@@ -62,7 +61,7 @@ type adminSetupFSRequest struct {
 	Path  string `json:"path"`
 }
 
-func (h *adminFSHandlers) setupBrowse(c *gin.Context) {
+func (h *AdminFSHandlers) SetupBrowse(c *gin.Context) {
 	if h.d.SetupVerify == nil {
 		adminRefuse(c, apierr.Classified{Class: apierr.SetupComplete, Key: "setup.complete"})
 		return
@@ -110,7 +109,7 @@ func adminPrincipal(c *gin.Context, svc *auth.Service) (int64, bool) {
 	return p.UserID, true
 }
 
-func (h *adminFSHandlers) browseHost(path string) (HostListingView, error) {
+func (h *AdminFSHandlers) browseHost(path string) (HostListingView, error) {
 	if path == "" {
 		return h.hostFSRoots(), nil
 	}
@@ -170,7 +169,7 @@ func adminEntryIsDir(dir string, d os.DirEntry) bool {
 	return err == nil && info.IsDir()
 }
 
-func (h *adminFSHandlers) hostFSRoots() HostListingView {
+func (h *AdminFSHandlers) hostFSRoots() HostListingView {
 	candidates := []string{"/", "/srv", "/mnt", "/media", "/data", "/home", "/opt"}
 	if h.d.DataDir != "" {
 		candidates = append(candidates, h.d.DataDir)
