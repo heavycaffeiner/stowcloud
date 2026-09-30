@@ -5,17 +5,16 @@ import { joinPath } from '../../../../lib/api/path-utils'
 import { isUnlocked } from '../../../../lib/crypto/e2ee'
 import { dirListQuery, dirViewOf, folderSizeQuery, shareEncryptionQuery } from '../../../../lib/query/files'
 import { sessionQuery } from '../../../../lib/query/session'
-import { useStore } from '../../../../hooks/use-store'
-import { selection } from '../../../../lib/store/selection.store'
-import { view } from '../../../../lib/store/view.store'
+import { useSelectionStore } from '../../../../lib/store/selection.store'
+import { useViewStore } from '../../../../lib/store/view.store'
 import type { BrowseFilterDate, BrowseFilterType } from '../logic/types'
 import { matchesBrowseDate, matchesBrowseType } from '../logic/browse-listing-predicates'
 
 export function useBrowseListing(path: string, filterType: BrowseFilterType, filterDate: BrowseFilterDate) {
   const session = useQuery(sessionQuery())
-  const sortKey = useStore(view, (state) => state.sortKey)
-  const sortOrder = useStore(view, (state) => state.sortOrder)
-  const selectedNames = useStore(selection, (state) => state.names)
+  const sortKey = useViewStore((state) => state.sortKey)
+  const sortOrder = useViewStore((state) => state.sortOrder)
+  const selectedNames = useSelectionStore((state) => state.names)
   const listing = useInfiniteQuery(dirListQuery(path, { key: sortKey, order: sortOrder }))
   const directory = useMemo(() => dirViewOf(listing.data?.pages), [listing.data?.pages])
   const entries = directory.entries

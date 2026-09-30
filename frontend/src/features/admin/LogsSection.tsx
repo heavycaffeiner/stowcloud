@@ -22,8 +22,7 @@ import {
 import { adminAuditQuery, adminLogsQuery, adminTimelineQuery } from '../../lib/query/logs'
 import { adminUsersQuery } from '../../lib/query/admin'
 import { useDebounced } from '../../hooks/use-debounced'
-import { logsForm } from '../../lib/store/logs.store'
-import { useStore } from '../../hooks/use-store'
+import { logsForm, useLogsFormStore } from '../../lib/store/logs.store'
 import { Button } from '../../lib/ui/Button'
 import { TextField } from '../../lib/ui/TextField'
 import { ProgressCircular } from '../../lib/ui/ProgressCircular'
@@ -57,9 +56,9 @@ const OUTCOME_KEY: Record<string, string> = { ok: 'audit.success', failed: 'audi
 /* i18n */ ;('logs.total')
 export function LogsSection() {
   const { t, tp } = useI18n()
-  const filters = useStore(logsForm, (state) => state.filters)
-  const expanded = useStore(logsForm, (state) => state.expanded)
-  const focusedBucket = useStore(logsForm, (state) => state.focusedBucket)
+  const filters = useLogsFormStore((state) => state.filters)
+  const expanded = useLogsFormStore((state) => state.expanded)
+  const focusedBucket = useLogsFormStore((state) => state.focusedBucket)
   const settled = useDebounced(filters, DEBOUNCE_MS)
   const includesServer = pureIncludesServer(settled.sourceMode)
   const includesAudit = pureIncludesAudit(settled.sourceMode)

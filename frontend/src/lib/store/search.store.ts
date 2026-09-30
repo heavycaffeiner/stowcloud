@@ -10,8 +10,7 @@
 // and scroll anchor in this one store lets that route remount without silently
 // changing the question or losing the item the user just opened.
 import type { SearchHit, SearchProgress } from '../api/client'
-import { defineStore } from './create'
-import { ui } from './ui.store'
+import { create } from 'zustand'
 
 export type SearchKind = 'any' | 'file' | 'dir'
 export type SearchSortKey = 'relevance' | 'name' | 'size' | 'date'
@@ -47,7 +46,11 @@ export interface SearchState {
   readonly snapshot: SearchSnapshot | null
 }
 
-export const search = defineStore({ open: false, scope: '', snapshot: null } as SearchState, (set) => ({
+export const useSearchStore = create<SearchState>()(() => ({ open: false, scope: '', snapshot: null }))
+
+const set = useSearchStore.setState
+
+export const search = {
   openSheet(scope = ''): void {
     set({ open: true, scope })
   },
@@ -59,15 +62,15 @@ export const search = defineStore({ open: false, scope: '', snapshot: null } as 
   },
   clearSnapshot(): void {
     set({ snapshot: null })
+  },
+  /** The saved snapshot, if it was taken for this scope. */
+  snapshotFor(scope: string): SearchSnapshot | null {
+    const { snapshot } = useSearchStore.getState()
+    return snapshot?.scope === scope ? snapshot : null
   }
-}))
-
-/** Computes the destination for the search surface without changing state. */
-export function searchTarget(scope = ''): string | null {
-  return ui.getState().compact ? (scope ? `/search?path=${encodeURIComponent(scope)}` : '/search') : null
 }
 
-/** Opens search in whichever shape the viewport calls for. */
-export function openSearch(scope = ''): void {
-  search.openSheet(scope)
+/** The search route for a compact layout, or null where the sheet opens in place. */
+export function searchTarget(compact: boolean, scope = ''): string | null {
+  return compact ? (scope ? `/search?path=${encodeURIComponent(scope)}` : '/search') : null
 }

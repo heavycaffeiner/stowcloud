@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useI18n } from '../../../hooks/use-i18n'
-import { useStore } from '../../../hooks/use-store'
-import { ui } from '../../../lib/store/ui.store'
-import { view } from '../../../lib/store/view.store'
+import { ui, useUiStore } from '../../../lib/store/ui.store'
+import { useViewStore, view } from '../../../lib/store/view.store'
 import { selection } from '../../../lib/store/selection.store'
-import { openSearch, searchTarget } from '../../../lib/store/search.store'
+import { search, searchTarget } from '../../../lib/store/search.store'
 import { joinPath, normalizePath } from '../../../lib/api/path-utils'
 import { describeApiError } from '../../../lib/api/error-text'
 import type { Entry, SortKey } from '../../../lib/api/client'
@@ -34,12 +33,12 @@ function BrowsePageContent({ path }: { path: string }) {
   const { t } = useI18n()
   const navigate = useNavigate()
   const location = useLocation()
-  const compact = useStore(ui, (state) => state.compact)
-  const details = useStore(ui, (state) => state.details)
-  const mode = useStore(view, (state) => state.mode)
-  const density = useStore(view, (state) => state.density)
-  const sortKey = useStore(view, (state) => state.sortKey)
-  const sortOrder = useStore(view, (state) => state.sortOrder)
+  const compact = useUiStore((state) => state.compact)
+  const details = useUiStore((state) => state.details)
+  const mode = useViewStore((state) => state.mode)
+  const density = useViewStore((state) => state.density)
+  const sortKey = useViewStore((state) => state.sortKey)
+  const sortOrder = useViewStore((state) => state.sortOrder)
   const [state, stateActions] = useBrowseState()
   const { patch } = stateActions
   const { filterType, filterDate, previewIndex } = state
@@ -163,9 +162,9 @@ function BrowsePageContent({ path }: { path: string }) {
     }
   }
   const openSearchForPath = () => {
-    const target = searchTarget(path)
+    const target = searchTarget(compact, path)
     if (target) void navigate(target)
-    else openSearch(path)
+    else search.openSheet(path)
   }
   const actionTarget = selected[0] ?? state.contextEntry
   // A keyboard shortcut runs only what the row menu would offer for the selection.

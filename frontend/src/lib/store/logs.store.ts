@@ -4,7 +4,7 @@
 // the projection of this state (`query/logs.ts`), so a filter change is a new
 // key rather than a request this store has to cancel and reconcile.
 import { EMPTY_FILTERS, type LogFilters } from '../admin/log-view'
-import { defineStore } from './create'
+import { create } from 'zustand'
 
 export interface LogsFormState {
   readonly filters: LogFilters
@@ -17,7 +17,12 @@ export interface LogsFormState {
 
 const INITIAL: LogsFormState = { filters: EMPTY_FILTERS, expanded: new Set<string>(), focusedBucket: null }
 
-export const logsForm = defineStore(INITIAL, (set, get) => ({
+export const useLogsFormStore = create<LogsFormState>()(() => INITIAL)
+
+const set = useLogsFormStore.setState
+const get = useLogsFormStore.getState
+
+export const logsForm = {
   /** A filter change drops the expansion set and the bar cursor: both name
    *  things that are about to be replaced. */
   patch(patch: Partial<LogFilters>): void {
@@ -39,4 +44,4 @@ export const logsForm = defineStore(INITIAL, (set, get) => ({
   focusBucket(index: number | null): void {
     set({ focusedBucket: index })
   }
-}))
+}

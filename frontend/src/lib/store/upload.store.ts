@@ -1,6 +1,6 @@
 // The upload queue's state. The Worker that fills it lives in
 // `upload/queue.ts`; this file only holds what the tray renders.
-import { defineStore } from './create'
+import { create } from 'zustand'
 
 export type UploadStatus = 'queued' | 'uploading' | 'paused' | 'done' | 'error' | 'canceled'
 
@@ -27,7 +27,14 @@ export interface UploadState {
   readonly open: boolean
 }
 
-export const uploads = defineStore({ items: [], open: false } as UploadState, (set, get) => ({
+const EMPTY: UploadState = { items: [], open: false }
+
+export const useUploadStore = create<UploadState>()(() => EMPTY)
+
+const set = useUploadStore.setState
+const get = useUploadStore.getState
+
+export const uploads = {
   queue(item: UploadItem): void {
     set({ items: [...get().items, item], open: true })
   },
@@ -50,5 +57,9 @@ export const uploads = defineStore({ items: [], open: false } as UploadState, (s
 
   statusOf(id: string): UploadStatus | undefined {
     return get().items.find((item) => item.id === id)?.status
+  },
+
+  reset(): void {
+    set(EMPTY, true)
   }
-}))
+}

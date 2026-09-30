@@ -3,10 +3,9 @@ import type { KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent } from 
 import type { Entry, Perms } from '../../lib/api/types'
 import { formatEntrySize } from '../../lib/format/entry-size'
 import { useI18n } from '../../hooks/use-i18n'
-import { useStore } from '../../hooks/use-store'
-import { selection } from '../../lib/store/selection.store'
-import { ui } from '../../lib/store/ui.store'
-import { view } from '../../lib/store/view.store'
+import { selection, useSelectionStore } from '../../lib/store/selection.store'
+import { useUiStore } from '../../lib/store/ui.store'
+import { useViewStore } from '../../lib/store/view.store'
 import { computeScaleMapping, computeWindow, rowIndexToScrollTop } from '../../lib/virtual/windowing'
 import { cellPos, sectionRows, verticalTarget } from '../../lib/virtual/grid-sections'
 import { indicesInRect, type Rect } from './logic/marquee'
@@ -145,10 +144,10 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
   ref
 ) {
   const { t } = useI18n()
-  const compact = useStore(ui, (state) => state.compact)
-  const density = useStore(view, (state) => state.density)
-  const names = useStore(selection, (state) => state.names)
-  const focused = useStore(selection, (state) => state.focused)
+  const compact = useUiStore((state) => state.compact)
+  const density = useViewStore((state) => state.density)
+  const names = useSelectionStore((state) => state.names)
+  const focused = useSelectionStore((state) => state.focused)
   const viewport = useRef<HTMLDivElement>(null)
   const folderEl = useRef<HTMLDivElement>(null)
   const fileEl = useRef<HTMLDivElement>(null)

@@ -2,16 +2,15 @@ import { useEffect, useRef } from 'react'
 import { useI18n } from '../../hooks/use-i18n'
 import { formatBytes, formatEta, formatRate } from '../../lib/format/bytes'
 import { pauseUpload, resumeUpload, cancelUpload } from '../../lib/upload/queue'
-import { uploads, type UploadItem } from '../../lib/store/upload.store'
-import { useStore } from '../../hooks/use-store'
+import { type UploadItem, uploads, useUploadStore } from '../../lib/store/upload.store'
 import { Icon } from '../../lib/ui/Icon'
 import { IconButton } from '../../lib/ui/IconButton'
 import { VirtualList } from '../../lib/ui/VirtualList'
 
 export function UploadTray() {
   const { t } = useI18n()
-  const items = useStore(uploads, (state) => state.items)
-  const open = useStore(uploads, (state) => state.open)
+  const items = useUploadStore((state) => state.items)
+  const open = useUploadStore((state) => state.open)
   const previous = useRef(new Map<string, UploadItem['status']>())
   const pendingStarts = useRef(new Set<string>())
   const startTimer = useRef<number | null>(null)

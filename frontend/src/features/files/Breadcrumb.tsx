@@ -1,8 +1,7 @@
 import { Fragment, useEffect, useId, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import { useI18n } from '../../hooks/use-i18n'
-import { useStore } from '../../hooks/use-store'
-import { ui } from '../../lib/store/ui.store'
+import { useUiStore } from '../../lib/store/ui.store'
 import { Menu } from '../../lib/ui/Menu'
 import { Icon } from '../../lib/ui/Icon'
 
@@ -18,7 +17,7 @@ export interface BreadcrumbProps {
 
 export function Breadcrumb({ crumbs, onNavigate }: BreadcrumbProps) {
   const { t } = useI18n()
-  const compact = useStore(ui, (state) => state.compact)
+  const compact = useUiStore((state) => state.compact)
   const menuId = useId()
   const menuRef = useRef<HTMLDivElement>(null)
   const [menu, setMenu] = useState({ open: false, pos: { x: 0, y: 0 } })

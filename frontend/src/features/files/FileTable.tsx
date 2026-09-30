@@ -1,10 +1,9 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, MouseEvent as ReactMouseEvent } from 'react'
 import type { Entry, Perms, SortKey } from '../../lib/api/types'
-import { useStore } from '../../hooks/use-store'
-import { selection } from '../../lib/store/selection.store'
-import { ui } from '../../lib/store/ui.store'
-import { view } from '../../lib/store/view.store'
+import { selection, useSelectionStore } from '../../lib/store/selection.store'
+import { useUiStore } from '../../lib/store/ui.store'
+import { useViewStore, view } from '../../lib/store/view.store'
 import { useI18n } from '../../hooks/use-i18n'
 import {
   computeScaleMapping,
@@ -60,12 +59,12 @@ export const FileTable = forwardRef<FileViewHandle, FileTableProps>(function Fil
   ref
 ) {
   const { t } = useI18n()
-  const compact = useStore(ui, (state) => state.compact)
-  const density = useStore(view, (state) => state.density)
-  const sortKey = useStore(view, (state) => state.sortKey)
-  const sortOrder = useStore(view, (state) => state.sortOrder)
-  const names = useStore(selection, (state) => state.names)
-  const focused = useStore(selection, (state) => state.focused)
+  const compact = useUiStore((state) => state.compact)
+  const density = useViewStore((state) => state.density)
+  const sortKey = useViewStore((state) => state.sortKey)
+  const sortOrder = useViewStore((state) => state.sortOrder)
+  const names = useSelectionStore((state) => state.names)
+  const focused = useSelectionStore((state) => state.focused)
   const [measure, setMeasure] = useState({ top: 0, scroll: 0, height: 0, width: 0 })
   const viewport = useRef<HTMLDivElement>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)

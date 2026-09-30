@@ -1,7 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MutableRefObject, RefObject } from 'react'
-import { createStore, type StoreApi } from 'zustand/vanilla'
-import { useStore } from 'zustand'
 import type { SearchDone, SearchHit, SearchProgress } from '../../../lib/api/client'
 import { resolveExtensions } from '../../../lib/search/filters'
 import { search, type SearchSnapshot } from '../../../lib/store/search.store'
@@ -55,32 +53,22 @@ export interface SearchController {
   readonly saveSnapshot: (overrides?: Partial<SearchSnapshot>) => void
 }
 
-function restoredSnapshot(scope: string): SearchSnapshot | null {
-  const snapshot = search.getState().snapshot
-  return snapshot?.scope === scope ? snapshot : null
-}
-
 export function useSearchController({
   scope,
   resultsContainer,
   categoriesRef
 }: SearchControllerOptions): SearchController {
-  const restored = useMemo(() => restoredSnapshot(scope), [scope])
-  const storeRef = useRef<StoreApi<SearchPanelState> | null>(null)
-  if (storeRef.current === null) storeRef.current = createStore(() => initialSearchState(restored))
-  const store = storeRef.current
-  const state = useStore(store)
-  const set: StateSetter = useCallback(
-    (key, value) => {
-      store.setState((current) => ({
-        [key]:
-          typeof value === 'function'
-            ? (value as (previous: SearchPanelState[typeof key]) => SearchPanelState[typeof key])(current[key])
-            : value
-      }))
-    },
-    [store]
-  )
+  const [restored] = useState(() => search.snapshotFor(scope))
+  const [state, setState] = useState(() => initialSearchState(restored))
+  const set: StateSetter = useCallback((key, value) => {
+    setState((current) => ({
+      ...current,
+      [key]:
+        typeof value === 'function'
+          ? (value as (previous: SearchPanelState[typeof key]) => SearchPanelState[typeof key])(current[key])
+          : value
+    }))
+  }, [])
   const inputRef = useRef<HTMLInputElement | null>(null)
   const cancelRef = useRef<(() => void) | null>(null)
   const arrivingRef = useRef<SearchHit[]>([])

@@ -12,8 +12,7 @@ import {
   jobResumeMutation,
   jobRetryMutation
 } from '../../lib/query/jobs'
-import { jobTray } from '../../lib/store/jobs.store'
-import { useStore } from '../../hooks/use-store'
+import { jobTray, useJobTrayStore } from '../../lib/store/jobs.store'
 import { Icon } from '../../lib/ui/Icon'
 import { IconButton } from '../../lib/ui/IconButton'
 import { VirtualList } from '../../lib/ui/VirtualList'
@@ -97,8 +96,8 @@ function jobProgressValue(item: JobRow): number | undefined {
 
 function useJobTray() {
   const { t, tp } = useI18n()
-  const ids = useStore(jobTray, (state) => state.ids)
-  const open = useStore(jobTray, (state) => state.open)
+  const ids = useJobTrayStore((state) => state.ids)
+  const open = useJobTrayStore((state) => state.open)
   const [trayState, setTrayState] = useState<{ expandedJobs: ReadonlySet<string> }>({
     expandedJobs: new Set()
   })

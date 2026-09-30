@@ -3,9 +3,8 @@ import { useMemo, useReducer, useRef } from 'react'
 import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useI18n } from '../hooks/use-i18n'
 import { isUnauthenticated, logoutMutation, screenOf, sessionQuery, setupRequiredQuery } from '../lib/query/session'
-import { openSearch as openSearchStore, search, searchTarget } from '../lib/store/search.store'
-import { ui } from '../lib/store/ui.store'
-import { useStore } from '../hooks/use-store'
+import { search, searchTarget, useSearchStore } from '../lib/store/search.store'
+import { ui, useUiStore } from '../lib/store/ui.store'
 import { JobTray } from '../features/jobs/JobTray'
 import { NavigationBar, type NavigationBarItem } from '../lib/ui/NavigationBar'
 import { NavigationDrawer, type NavItem, type RootItem } from '../features/account/navigation/NavigationDrawer'
@@ -39,10 +38,10 @@ export function AppShell() {
   const { t } = useI18n()
   const location = useLocation()
   const navigate = useNavigate()
-  const compact = useStore(ui, (state) => state.compact)
-  const sidebarCollapsed = useStore(ui, (state) => state.sidebarCollapsed)
-  const searchOpen = useStore(search, (state) => state.open)
-  const searchScope = useStore(search, (state) => state.scope)
+  const compact = useUiStore((state) => state.compact)
+  const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed)
+  const searchOpen = useSearchStore((state) => state.open)
+  const searchScope = useSearchStore((state) => state.scope)
   const session = useQuery(sessionQuery())
   const definitiveFailure = session.isError && isUnauthenticated(session.error)
   const sessionUnavailable = session.isError && !definitiveFailure
@@ -115,9 +114,9 @@ export function AppShell() {
 
   const openSearch = (): void => {
     setShell({ mobileDrawerOpen: false, folderSelectorOpen: false })
-    const target = searchTarget(browseScope)
+    const target = searchTarget(compact, browseScope)
     if (target) void navigate(target)
-    else openSearchStore(browseScope)
+    else search.openSheet(browseScope)
   }
 
   useShellKeyboardShortcuts(screen, openSearch)

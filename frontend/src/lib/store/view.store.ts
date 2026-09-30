@@ -1,7 +1,7 @@
 // How the file browser is laid out and ordered. All three outlive the page:
 // a toggle that resets on reload is one the user has to re-set on reload.
 import type { Order, SortKey } from '../api/types'
-import { defineStore } from './create'
+import { create } from 'zustand'
 import { readPref, writePref } from './persist'
 
 export type ViewMode = 'list' | 'grid'
@@ -19,26 +19,27 @@ export interface ViewState {
   readonly sortOrder: Order
 }
 
-export const view = defineStore(
-  {
-    mode: readPref('sc.view', VIEWS, 'list'),
-    density: readPref('sc.density', DENSITIES, 'comfortable'),
-    sortKey: readPref('sc.sort', SORT_KEYS, 'name'),
-    sortOrder: readPref('sc.order', ORDERS, 'asc')
-  } as ViewState,
-  (set) => ({
-    setMode(mode: ViewMode): void {
-      set({ mode })
-      writePref('sc.view', mode)
-    },
-    setDensity(density: Density): void {
-      set({ density })
-      writePref('sc.density', density)
-    },
-    setSort(sortKey: SortKey, sortOrder: Order): void {
-      set({ sortKey, sortOrder })
-      writePref('sc.sort', sortKey)
-      writePref('sc.order', sortOrder)
-    }
-  })
-)
+export const useViewStore = create<ViewState>()(() => ({
+  mode: readPref('sc.view', VIEWS, 'list'),
+  density: readPref('sc.density', DENSITIES, 'comfortable'),
+  sortKey: readPref('sc.sort', SORT_KEYS, 'name'),
+  sortOrder: readPref('sc.order', ORDERS, 'asc')
+}))
+
+const set = useViewStore.setState
+
+export const view = {
+  setMode(mode: ViewMode): void {
+    set({ mode })
+    writePref('sc.view', mode)
+  },
+  setDensity(density: Density): void {
+    set({ density })
+    writePref('sc.density', density)
+  },
+  setSort(sortKey: SortKey, sortOrder: Order): void {
+    set({ sortKey, sortOrder })
+    writePref('sc.sort', sortKey)
+    writePref('sc.order', sortOrder)
+  }
+}

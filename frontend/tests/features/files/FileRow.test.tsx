@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Entry } from '../../../src/lib/api/types'
-import { selection } from '../../../src/lib/store/selection.store'
+import { selection, useSelectionStore } from '../../../src/lib/store/selection.store'
 import { act, cleanup, fireEvent, render } from '../../../src/test/test-utils'
 import { FileGrid } from '../../../src/features/files/FileGrid'
 import { FileTable } from '../../../src/features/files/FileTable'
@@ -62,7 +62,7 @@ describe.each([
   function renderView(initialEntries: Entry[] = [documents, pictures]) {
     const opened: { path: string; selected: string[] }[] = []
     const onOpen = vi.fn((entry: Entry) => {
-      opened.push({ path: entry.path, selected: [...selection.getState().names] })
+      opened.push({ path: entry.path, selected: [...useSelectionStore.getState().names] })
       // Navigation clears selection. No later pointer event may restore the old entry.
       selection.clear()
     })
@@ -98,7 +98,7 @@ describe.each([
     expect(view.opened).toEqual([{ path: documents.path, selected: [documents.name] }])
     fireEvent.doubleClick(row)
     expect(view.onOpen).toHaveBeenCalledTimes(1)
-    expect([...selection.getState().names]).toEqual([])
+    expect([...useSelectionStore.getState().names]).toEqual([])
   })
 
   it('opens on the first completed touch tap without selecting the row or card', () => {
@@ -110,7 +110,7 @@ describe.each([
     expect(view.opened).toEqual([{ path: documents.path, selected: [] }])
     expect(view.onOpen).toHaveBeenCalledTimes(1)
     expect(row.getAttribute('aria-selected')).toBe('false')
-    expect([...selection.getState().names]).toEqual([])
+    expect([...useSelectionStore.getState().names]).toEqual([])
   })
 
   it('opens each touched path independently, including repeated names after navigation', async () => {
@@ -176,7 +176,7 @@ describe.each([
     tap(b, { pointerType: 'mouse', detail: 2, ctrlKey: true })
     fireEvent.doubleClick(b, { ctrlKey: true })
 
-    expect([...selection.getState().names]).toEqual([documents.name, pictures.name])
+    expect([...useSelectionStore.getState().names]).toEqual([documents.name, pictures.name])
     expect(view.opened).toEqual([])
   })
 

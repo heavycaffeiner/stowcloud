@@ -5,7 +5,7 @@
 // listed simply matches nothing, so nothing has to prune it. The cursor is an
 // index, because a row that has not loaded yet can still be focused while its
 // page is on the way.
-import { defineStore } from './create'
+import { create } from 'zustand'
 
 export interface SelectionState {
   readonly names: ReadonlySet<string>
@@ -16,7 +16,12 @@ export interface SelectionState {
 
 const EMPTY: SelectionState = { names: new Set<string>(), anchor: null, focused: null }
 
-export const selection = defineStore(EMPTY, (set, get) => ({
+export const useSelectionStore = create<SelectionState>()(() => EMPTY)
+
+const set = useSelectionStore.setState
+const get = useSelectionStore.getState
+
+export const selection = {
   only(name: string, index: number | null = null): void {
     set({ names: new Set([name]), anchor: name, focused: index })
   },
@@ -63,5 +68,9 @@ export const selection = defineStore(EMPTY, (set, get) => ({
 
   focus(index: number | null): void {
     set({ focused: index })
+  },
+
+  reset(): void {
+    set(EMPTY, true)
   }
-}))
+}

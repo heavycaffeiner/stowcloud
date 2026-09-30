@@ -4,8 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { i18n, setLocale } from '../../../lib/i18n/state'
 import { useI18n } from '../../../hooks/use-i18n'
 import { logoutMutation, oidcConfigQuery, sessionQuery } from '../../../lib/query/session'
-import { ui } from '../../../lib/store/ui.store'
-import { useStore } from '../../../hooks/use-store'
+import { ui, useUiStore } from '../../../lib/store/ui.store'
 import { useDocumentTitle } from '../../hooks/use-document-title'
 import { PageTabs } from '../PageTabs'
 import { AccountPanel, AppearancePanel, ConnectionsPanel, SecurityPanel } from './SettingsPanels'
@@ -18,7 +17,7 @@ export function SettingsPage() {
   const session = useQuery(sessionQuery())
   const oidcConfig = useQuery(oidcConfigQuery())
   const logout = useMutation(logoutMutation())
-  const theme = useStore(ui, (state) => state.theme)
+  const theme = useUiStore((state) => state.theme)
   const { i18n: translation } = useTranslation(undefined, { i18n })
   const locale = translation.language === 'en' ? 'en' : 'ko'
   const featureConnections = !!session.data?.features.smb || !!session.data?.features.webdav

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { uploads, type UploadItem } from '../../../src/lib/store/upload.store'
+import { type UploadItem, uploads, useUploadStore } from '../../../src/lib/store/upload.store'
 import { addFiles, handle } from '../../../src/lib/upload/queue'
 
 vi.mock('../../../src/lib/crypto/encrypted-shares', async (importOriginal) => {
@@ -83,7 +83,7 @@ describe('upload cancellation state transitions', () => {
     handle({ t: 'error', id: 'u1', code: 'upload.cleanup_pending', message: 'upload.cleanup_pending' })
     handle({ t: 'progress', id: 'u1', sent: 100, total: 100, rate: 0, etaSec: 0 })
 
-    expect(uploads.peek().items[0]).toMatchObject({
+    expect(useUploadStore.getState().items[0]).toMatchObject({
       status: 'error',
       errorCode: 'upload.cleanup_pending',
       message: 'upload.cleanup_pending',
@@ -92,14 +92,14 @@ describe('upload cancellation state transitions', () => {
 
     handle({ t: 'canceled', id: 'u1' })
 
-    expect(uploads.peek().items[0]).toMatchObject({ status: 'canceled' })
-    expect(uploads.peek().items[0].errorCode).toBeUndefined()
+    expect(useUploadStore.getState().items[0]).toMatchObject({ status: 'canceled' })
+    expect(useUploadStore.getState().items[0].errorCode).toBeUndefined()
   })
 
   it('does not let a late progress event undo a confirmed cancellation', () => {
     handle({ t: 'canceled', id: 'u1' })
     handle({ t: 'progress', id: 'u1', sent: 100, total: 100, rate: 0, etaSec: 0 })
 
-    expect(uploads.peek().items[0]).toMatchObject({ status: 'canceled', sent: 100 })
+    expect(useUploadStore.getState().items[0]).toMatchObject({ status: 'canceled', sent: 100 })
   })
 })

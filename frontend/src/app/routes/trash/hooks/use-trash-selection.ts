@@ -1,10 +1,9 @@
 import { useEffect } from 'react'
 import type { TrashEntry } from '../../../../lib/api/types'
-import { selection } from '../../../../lib/store/selection.store'
-import { useStore } from '../../../../hooks/use-store'
+import { selection, useSelectionStore } from '../../../../lib/store/selection.store'
 
 export function useTrashSelection(entries: readonly TrashEntry[]) {
-  const selected = useStore(selection, (state) => state.names)
+  const selected = useSelectionStore((state) => state.names)
 
   useEffect(() => {
     const known = new Set(entries.map((entry) => entry.id))
