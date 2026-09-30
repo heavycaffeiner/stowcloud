@@ -1,6 +1,6 @@
 //go:build linux
 
-package events
+package jobs
 
 import (
 	"context"

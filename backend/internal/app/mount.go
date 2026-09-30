@@ -33,8 +33,8 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/publiclinks"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/server"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/jobs"
 	featureoidc "github.com/heavycaffeiner/stowcloud/backend/internal/oidc"
-	runtimetasks "github.com/heavycaffeiner/stowcloud/backend/internal/runtime/tasks"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/smb/agent"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/web"
 )
@@ -48,7 +48,7 @@ func (e *Engine) Mount(router *gin.Engine) error {
 		return fmt.Errorf("mounting routes: Gin engine is nil")
 	}
 	periodic := e.tasks()
-	if err := runtimetasks.Validate(periodic); err != nil {
+	if err := jobs.Validate(periodic); err != nil {
 		return fmt.Errorf("mounting routes: %w", err)
 	}
 	e.publicLinks = e.newPublicLinks()

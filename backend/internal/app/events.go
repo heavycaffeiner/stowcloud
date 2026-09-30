@@ -20,8 +20,8 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/api/handler"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/server"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/jobs"
 	task "github.com/heavycaffeiner/stowcloud/backend/internal/platform/concurrency"
-	runtimeevents "github.com/heavycaffeiner/stowcloud/backend/internal/runtime/events"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 	storagewatch "github.com/stowcloud/storage/watch"
 )
@@ -35,19 +35,19 @@ const eventQueue = 1024
 // the push, and clients fall back to asking again.
 func (e *Engine) startEvents(ctx context.Context, cfg watchSettings) {
 	defs := e.Core.Shares()
-	shares := make([]runtimeevents.Share, 0, len(defs))
+	shares := make([]jobs.Share, 0, len(defs))
 	for _, def := range defs {
-		shares = append(shares, runtimeevents.Share{
+		shares = append(shares, jobs.Share{
 			ID: uint32(def.ID), Host: def.Host, Broken: def.BrokenReason != "",
 		})
 	}
-	watcher, err := runtimeevents.Start(ctx, runtimeevents.Config{
+	watcher, err := jobs.StartEvents(ctx, jobs.Config{
 		Backend:        cfg.Backend,
 		HotSetMax:      cfg.HotSetMax,
 		FullThreshold:  cfg.FullThreshold,
 		Clock:          e.clock,
 		OnCoverageLost: e.searchController.MarkIncomplete,
-		OnEvent: func(ctx context.Context, ev runtimeevents.Event) {
+		OnEvent: func(ctx context.Context, ev jobs.Event) {
 			e.invalidateCache(ctx, ev)
 			e.searchController.Offer(ev.Share, ev.Dir, ev.All)
 		},
@@ -73,7 +73,7 @@ func (e *Engine) watchShare(def files.ShareDef) {
 	if e.watcher == nil {
 		return
 	}
-	e.watcher.WatchShare(runtimeevents.Share{
+	e.watcher.WatchShare(jobs.Share{
 		ID: uint32(def.ID), Host: def.Host, Broken: def.BrokenReason != "",
 	})
 }
@@ -86,7 +86,7 @@ func (e *Engine) unwatchShare(def files.ShareDef) {
 }
 
 // eventSources maps the runtime stream to the transport's opaque event shape.
-func eventSources(ctx context.Context, in <-chan runtimeevents.Event) <-chan server.EventSource {
+func eventSources(ctx context.Context, in <-chan jobs.Event) <-chan server.EventSource {
 	out := make(chan server.EventSource, eventQueue)
 	task.Go(ctx, "event source mapping", func() {
 		defer close(out)
@@ -115,7 +115,7 @@ func eventSources(ctx context.Context, in <-chan runtimeevents.Event) <-chan ser
 // which is one row however much was missed. An event that does name a
 // directory marks that directory and its ancestors, leaving the rest of the
 // share's cache alone.
-func (e *Engine) invalidateCache(ctx context.Context, ev runtimeevents.Event) {
+func (e *Engine) invalidateCache(ctx context.Context, ev jobs.Event) {
 	share := files.ShareID(ev.Share)
 	if ev.All {
 		if err := e.Core.InvalidateShare(ctx, share); err != nil {

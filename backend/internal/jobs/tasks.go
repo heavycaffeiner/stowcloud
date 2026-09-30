@@ -1,7 +1,8 @@
 //go:build linux
 
-// Package tasks runs generic recurring work owned by the application.
-package tasks
+// Package jobs runs the application's recurring work and turns storage
+// watcher notifications into the change stream its products consume.
+package jobs
 
 import (
 	"context"
@@ -41,9 +42,9 @@ type Runner struct {
 	logger *slog.Logger
 }
 
-// New constructs a runner using logger for task failures and shutdown warnings.
+// NewRunner constructs a runner using logger for task failures and shutdown warnings.
 // A nil logger uses the process default.
-func New(logger *slog.Logger) *Runner {
+func NewRunner(logger *slog.Logger) *Runner {
 	if logger == nil {
 		logger = slog.Default()
 	}

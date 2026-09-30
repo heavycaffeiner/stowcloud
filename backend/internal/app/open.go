@@ -43,15 +43,14 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/publiclinks"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/server"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/jobs"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/oidc"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/concurrency"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/security/secret"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/system/jail"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/preview"
-	runtimeevents "github.com/heavycaffeiner/stowcloud/backend/internal/runtime/events"
 	runtimerestart "github.com/heavycaffeiner/stowcloud/backend/internal/runtime/restart"
-	runtimetasks "github.com/heavycaffeiner/stowcloud/backend/internal/runtime/tasks"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/search/controller"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/search/svc"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
@@ -189,7 +188,7 @@ type Engine struct {
 
 	// watcher reports filesystem changes, and events fans them out to clients.
 	// Both are nil when the host kernel refuses an inotify descriptor.
-	watcher *runtimeevents.Manager
+	watcher *jobs.Manager
 	events  *server.EventHub
 
 	clock  clock.Clock
@@ -217,7 +216,7 @@ type Engine struct {
 	jobs        concurrency.Group
 	jobsCtx     context.Context
 	jobsStop    context.CancelFunc
-	maintenance *runtimetasks.Runner
+	maintenance *jobs.Runner
 	Restart     *runtimerestart.Signal
 	hardening   jail.Policy
 }
@@ -280,7 +279,7 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 		logger:      logger,
 		jobsCtx:     jobsCtx,
 		jobsStop:    jobsStop,
-		maintenance: runtimetasks.New(logger),
+		maintenance: jobs.NewRunner(logger),
 		Restart:     &runtimerestart.Signal{},
 		// Until settings are loaded, no proxy is trusted and no host is
 		// named. An empty host list is what first boot looks like, and the

@@ -1,8 +1,6 @@
 //go:build linux
 
-// Package events translates platform watcher notifications into the small,
-// transport-neutral change stream the application assembles into its products.
-package events
+package jobs
 
 import (
 	"context"
@@ -102,10 +100,10 @@ type Manager struct {
 	events  <-chan Event
 }
 
-// Start creates the watcher, starts event normalization, and registers the
+// StartEvents creates the watcher, starts event normalization, and registers the
 // supplied local shares. A kernel watcher failure is returned to the caller;
 // callers may deliberately degrade to polling.
-func Start(ctx context.Context, cfg Config, shares []Share) (*Manager, error) {
+func StartEvents(ctx context.Context, cfg Config, shares []Share) (*Manager, error) {
 	in := make(chan storagewatch.Event, eventQueue)
 	watcher, err := storagewatch.Start(ctx, storagewatch.Config{
 		Backend:        cfg.Backend,

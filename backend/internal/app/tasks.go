@@ -9,11 +9,11 @@ import (
 
 	directtransfer "github.com/heavycaffeiner/stowcloud/backend/internal/feature/directtransfer"
 	filehttp "github.com/heavycaffeiner/stowcloud/backend/internal/http/api/files"
-	runtimetasks "github.com/heavycaffeiner/stowcloud/backend/internal/runtime/tasks"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/jobs"
 )
 
-func (e *Engine) tasks() []runtimetasks.Task {
-	return runtimetasks.Schedule(runtimetasks.Policy{
+func (e *Engine) tasks() []jobs.Task {
+	return jobs.Schedule(jobs.Policy{
 		Now: e.now,
 		SweepDavLocks: func(ctx context.Context, now int64) error {
 			_, err := e.State.SweepDavLocks(ctx, now)
@@ -32,7 +32,7 @@ func (e *Engine) tasks() []runtimetasks.Task {
 	})
 }
 
-func (e *Engine) startTasks(items []runtimetasks.Task) {
+func (e *Engine) startTasks(items []jobs.Task) {
 	e.maintenance.Start(items)
 }
 

@@ -1,7 +1,7 @@
 // Linux only, matching the file under test.
 //go:build linux
 
-package tasks
+package jobs
 
 import (
 	"context"
