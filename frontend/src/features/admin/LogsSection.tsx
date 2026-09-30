@@ -54,10 +54,8 @@ const SEGMENT_CLASS: Record<string, string> = {
 }
 const LEVEL_CLASS: Record<string, string> = {
   error: styles.levelError,
-  failed: styles.levelFailed,
   warn: styles.levelWarn,
-  info: styles.levelInfo,
-  ok: styles.levelOk
+  info: styles.levelInfo
 }
 
 /* i18n */ ;('logs.arrow_keys_move_between_buckets')
@@ -442,7 +440,9 @@ export function LogsSection() {
               <>
                 {item.source === 'audit' ? (
                   <div className={styles.row}>
-                    <span className={styles.level}>{item.row.ok ? t('audit.success') : t('audit.failure')}</span>
+                    <span className={cx(styles.level, item.row.ok ? styles.levelOk : styles.levelFailed)}>
+                      {item.row.ok ? t('audit.success') : t('audit.failure')}
+                    </span>
                     <span className={styles.body}>
                       <span className={styles.msg}>{item.row.event}</span>
                       <span className={styles.meta}>
