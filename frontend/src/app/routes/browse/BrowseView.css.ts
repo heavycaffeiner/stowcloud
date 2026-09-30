@@ -371,7 +371,8 @@ export const loadingMore = style({
   alignItems: 'center',
   justifyContent: 'center',
   gap: '8px',
-  padding: '12px'
+  padding: '12px',
+  color: vars.content.secondary
 })
 
 export const nothing = style({
