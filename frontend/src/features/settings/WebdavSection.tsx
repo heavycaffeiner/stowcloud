@@ -1,4 +1,4 @@
-import { useComponentState } from '../../hooks/use-component-state'
+import { useState } from 'react'
 import { useI18n } from '../../hooks/use-i18n'
 import { Button } from '../../lib/ui/Button'
 
@@ -6,7 +6,7 @@ export function WebdavSection() {
   const { t } = useI18n()
 
   const origin = window.location.origin
-  const [announcement, setAnnouncement] = useComponentState('')
+  const [announcement, setAnnouncement] = useState('')
 
   const baseUrl = origin ? `${origin}/dav` : ''
   const davUrl = baseUrl.replace(/^http/, 'dav')

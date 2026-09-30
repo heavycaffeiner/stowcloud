@@ -1,6 +1,6 @@
+import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import type { FormEvent } from 'react'
-import { useComponentState } from '../../hooks/use-component-state'
 import { ApiError } from '../../lib/api/client'
 import { describeApiError } from '../../lib/api/error-text'
 import { scorePasswordStrength } from '../../lib/format/password-strength'
@@ -22,7 +22,7 @@ export function PasswordSection() {
     formError: string | null
     success: boolean
   }
-  const [state, setState] = useComponentState<PasswordState>({
+  const [state, setState] = useState<PasswordState>({
     current: '',
     next: '',
     confirm: '',

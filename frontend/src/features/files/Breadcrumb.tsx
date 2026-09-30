@@ -1,6 +1,5 @@
-import { Fragment, useEffect, useId, useRef } from 'react'
+import { Fragment, useEffect, useId, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
-import { useComponentState } from '../../hooks/use-component-state'
 import { useI18n } from '../../hooks/use-i18n'
 import { useStore } from '../../hooks/use-store'
 import { ui } from '../../lib/store/ui.store'
@@ -22,7 +21,7 @@ export function Breadcrumb({ crumbs, onNavigate }: BreadcrumbProps) {
   const compact = useStore(ui, (state) => state.compact)
   const menuId = useId()
   const menuRef = useRef<HTMLDivElement>(null)
-  const [menu, setMenu] = useComponentState({ open: false, pos: { x: 0, y: 0 } })
+  const [menu, setMenu] = useState({ open: false, pos: { x: 0, y: 0 } })
 
   useEffect(() => {
     if (!menu.open) return

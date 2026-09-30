@@ -1,7 +1,6 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, MouseEvent as ReactMouseEvent } from 'react'
 import type { Entry, Perms, SortKey } from '../../lib/api/types'
-import { useComponentState } from '../../hooks/use-component-state'
 import { useStore } from '../../hooks/use-store'
 import { selection } from '../../lib/store/selection.store'
 import { ui } from '../../lib/store/ui.store'
@@ -67,7 +66,7 @@ export const FileTable = forwardRef<FileViewHandle, FileTableProps>(function Fil
   const sortOrder = useStore(view, (state) => state.sortOrder)
   const names = useStore(selection, (state) => state.names)
   const focused = useStore(selection, (state) => state.focused)
-  const [measure, setMeasure] = useComponentState({ top: 0, scroll: 0, height: 0, width: 0 })
+  const [measure, setMeasure] = useState({ top: 0, scroll: 0, height: 0, width: 0 })
   const viewport = useRef<HTMLDivElement>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
   const HEADER_HEIGHT = 40

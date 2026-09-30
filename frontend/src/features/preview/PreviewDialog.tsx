@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { api, type Entry } from '../../lib/api/client'
-import { useComponentState } from '../../hooks/use-component-state'
 import type { ArchiveEntry, ArchiveListing, ShareEncryption } from '../../lib/api/types'
 import { ApiError } from '../../lib/api/types'
 import { fileContentQuery, archiveEntriesQuery } from '../../lib/query/files'
@@ -135,7 +134,7 @@ export function PreviewDialog({
   onEdit
 }: PreviewDialogProps) {
   const { t, tp } = useI18n()
-  const [previewState, setPreviewState] = useComponentState({
+  const [previewState, setPreviewState] = useState({
     unlockOpen: false,
     unlockGeneration: 0,
     cwd: '',

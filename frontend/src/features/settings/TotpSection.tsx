@@ -1,5 +1,5 @@
+import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { useComponentState } from '../../hooks/use-component-state'
 import { ApiError } from '../../lib/api/client'
 import { describeApiError } from '../../lib/api/error-text'
 import { tp } from '../../lib/i18n'
@@ -41,7 +41,7 @@ export function TotpSection() {
     reissueOpen: boolean
     reissuePassword: string
   }
-  const [state, setState] = useComponentState<TotpState>({
+  const [state, setState] = useState<TotpState>({
     enrollOpen: false,
     enrollPassword: '',
     setupSecret: '',

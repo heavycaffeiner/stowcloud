@@ -1,5 +1,4 @@
-import { useEffect, useRef } from 'react'
-import { useComponentState } from '../../hooks/use-component-state'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { describeApiError } from '../../lib/api/error-text'
 import type { ApplyOutcome } from '../../lib/api/types'
@@ -25,7 +24,7 @@ interface RestartDialogProps {
 export function RestartDialog({ open, outcome, onclose, onrestarted }: RestartDialogProps) {
   const { t } = useI18n()
   type RestartState = { phase: Phase; deadline: number | null; waitStartedAt: number | null; sawOutage: boolean }
-  const [state, setState] = useComponentState<RestartState>({
+  const [state, setState] = useState<RestartState>({
     phase: 'confirm',
     deadline: null,
     waitStartedAt: null,

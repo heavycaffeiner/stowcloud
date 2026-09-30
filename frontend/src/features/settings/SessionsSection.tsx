@@ -1,5 +1,5 @@
+import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { useComponentState } from '../../hooks/use-component-state'
 import { ApiError, type ActiveSession } from '../../lib/api/client'
 import { formatDateNs } from '../../lib/i18n'
 import { useI18n } from '../../hooks/use-i18n'
@@ -12,7 +12,7 @@ export function SessionsSection() {
   const { t } = useI18n()
   const list = useQuery(activeSessionsQuery())
   const revoke = useMutation(revokeSessionMutation())
-  const [revokeTarget, setRevokeTarget] = useComponentState<ActiveSession | null>(null)
+  const [revokeTarget, setRevokeTarget] = useState<ActiveSession | null>(null)
 
   function confirmRevoke(): void {
     if (!revokeTarget) return

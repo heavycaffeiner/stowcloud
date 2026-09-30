@@ -1,5 +1,5 @@
+import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { useComponentState } from '../../hooks/use-component-state'
 import type { AdminGroup } from '../../lib/api/client'
 import { ApiError } from '../../lib/api/client'
 import { describeApiError } from '../../lib/api/error-text'
@@ -38,7 +38,7 @@ export function GroupManagementSection() {
     addMemberId: string
     grantsTarget: AdminGroup | null
   }
-  const [state, setState] = useComponentState<GroupState>({
+  const [state, setState] = useState<GroupState>({
     createOpen: false,
     newName: '',
     createValidation: null,

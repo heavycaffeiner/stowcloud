@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQueries, useQuery } from '@tanstack/react-query'
 import type { JobKindWire, JobState, JobStatus } from '../../lib/api/client'
 import { batchErrorKey } from '../../lib/api/error-text'
-import { useComponentState } from '../../hooks/use-component-state'
 import { useI18n } from '../../hooks/use-i18n'
 import { queryClient } from '../../lib/query/client'
 import {
@@ -100,7 +99,7 @@ function useJobTray() {
   const { t, tp } = useI18n()
   const ids = useStore(jobTray, (state) => state.ids)
   const open = useStore(jobTray, (state) => state.open)
-  const [trayState, setTrayState] = useComponentState<{ expandedJobs: ReadonlySet<string> }>({
+  const [trayState, setTrayState] = useState<{ expandedJobs: ReadonlySet<string> }>({
     expandedJobs: new Set()
   })
   const { expandedJobs } = trayState

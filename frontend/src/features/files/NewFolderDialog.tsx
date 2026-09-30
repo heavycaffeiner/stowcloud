@@ -1,9 +1,8 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '../../lib/ui/Button'
 import { TextField } from '../../lib/ui/TextField'
 import { BrowseDialog } from './browse-dialog'
 import { useI18n } from '../../hooks/use-i18n'
-import { useComponentState } from '../../hooks/use-component-state'
 export function NewFolderDialog({
   open,
   onClose,
@@ -14,7 +13,7 @@ export function NewFolderDialog({
   onCreate: (name: string) => void
 }) {
   const { t } = useI18n()
-  const [form, setForm] = useComponentState({ name: '', submitted: false })
+  const [form, setForm] = useState({ name: '', submitted: false })
   useEffect(() => {
     if (open) setForm({ name: t('common.new_folder'), submitted: false })
   }, [open, t, setForm])

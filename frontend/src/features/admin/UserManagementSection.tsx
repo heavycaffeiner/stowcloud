@@ -1,6 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { useMemo } from 'react'
-import { useComponentState } from '../../hooks/use-component-state'
+import { useMemo, useState } from 'react'
 import { formatBytes, bytesToMb, BYTES_PER_MB } from '../../lib/format/bytes'
 import { scorePasswordStrength } from '../../lib/format/password-strength'
 import { useI18n } from '../../hooks/use-i18n'
@@ -41,7 +40,7 @@ export function UserManagementSection() {
     grantsTarget: AdminUser | null
     oidcTarget: AdminUser | null
   }
-  const [state, setState] = useComponentState<UserState>({
+  const [state, setState] = useState<UserState>({
     createOpen: false,
     newName: '',
     newPassword: '',

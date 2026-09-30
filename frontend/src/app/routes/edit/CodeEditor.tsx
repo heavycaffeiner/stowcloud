@@ -1,6 +1,5 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import type { Ref } from 'react'
-import { useComponentState } from '../../../hooks/use-component-state'
 import { useI18n } from '../../../hooks/use-i18n'
 import type { EditorView } from '@codemirror/view'
 import type { LanguageSupport } from '@codemirror/language'
@@ -65,7 +64,7 @@ export const CodeEditor = forwardRef(function CodeEditor(
   latestProps.current = { onChange, onSave, onLimit, onLanguageChange }
   const viewRef = useRef<EditorView | null>(null)
   const lastEchoRef = useRef(value)
-  const [status, setStatus] = useComponentState({ ready: false, failed: false })
+  const [status, setStatus] = useState({ ready: false, failed: false })
   const { ready, failed } = status
 
   useImperativeHandle(

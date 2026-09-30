@@ -1,5 +1,5 @@
+import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { useComponentState } from '../../hooks/use-component-state'
 import { ApiError } from '../../lib/api/client'
 import { oidcErrorMessage } from '../../lib/api/oidc'
 import { describeApiError } from '../../lib/api/error-text'
@@ -24,7 +24,7 @@ export function OidcSection() {
     connectError: string | null
     disconnectError: string | null
   }
-  const [state, setState] = useComponentState<OidcState>({
+  const [state, setState] = useState<OidcState>({
     dialog: null,
     connectPassword: '',
     disconnectPassword: '',

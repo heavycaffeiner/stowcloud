@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
-import { useComponentState } from '../../hooks/use-component-state'
 import type { Entry } from '../../lib/api/types'
 import { joinPath } from '../../lib/api/path-utils'
 import { dirListQuery, dirViewOf } from '../../lib/query/files'
@@ -199,7 +198,7 @@ export function FileTreeList({
   const pendingFocus = useRef<string | null>(null)
   const focusWithin = useRef(false)
   const loadingFocus = useRef<{ parent: string; childCount: number } | null>(null)
-  const [treeState, setTreeState] = useComponentState<{
+  const [treeState, setTreeState] = useState<{
     expanded: Set<string>
     directories: ReadonlyMap<string, DirectoryState>
     focusKey: string | null

@@ -1,9 +1,8 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { destinationProblem } from '../../lib/api/path-utils'
 import { statQuery } from '../../lib/query/files'
 import { sessionQuery } from '../../lib/query/session'
-import { useComponentState } from '../../hooks/use-component-state'
 import { useI18n } from '../../hooks/use-i18n'
 import { Button } from '../../lib/ui/Button'
 import { BrowseDialog } from './browse-dialog'
@@ -29,7 +28,7 @@ export function DestinationPickerDialog({
     () => (session.data?.roots ?? []).map((root) => ({ path: `/${root.label}`, name: root.label })),
     [session.data?.roots]
   )
-  const [state, setState] = useComponentState<{ selected: string | null }>({ selected: null })
+  const [state, setState] = useState<{ selected: string | null }>({ selected: null })
   const selected = state.selected
   const stat = useQuery({ ...statQuery(selected ?? ''), enabled: open && selected !== null })
   const problem = selected ? destinationProblem(selected, sources) : null

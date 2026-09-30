@@ -1,5 +1,5 @@
+import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { useComponentState } from '../../hooks/use-component-state'
 import { ApiError, type AppPasswordInfo } from '../../lib/api/client'
 import { describeApiError } from '../../lib/api/error-text'
 import { formatDateNs } from '../../lib/i18n'
@@ -29,7 +29,7 @@ export function AppPasswordsSection() {
     wipeTarget: AppPasswordInfo | null
     actionError: string | null
   }
-  const [state, setState] = useComponentState<AppPasswordState>({
+  const [state, setState] = useState<AppPasswordState>({
     createOpen: false,
     newName: '',
     newCurrent: '',

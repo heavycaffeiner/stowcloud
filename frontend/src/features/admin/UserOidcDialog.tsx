@@ -1,4 +1,4 @@
-import { useComponentState } from '../../hooks/use-component-state'
+import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { ApiError, type AdminUser } from '../../lib/api/client'
 import { describeApiError } from '../../lib/api/error-text'
@@ -20,7 +20,7 @@ export function UserOidcDialog({ user, onClose }: UserOidcDialogProps) {
   const query = useQuery(adminUserOidcQuery(user?.id ?? null))
   const unlink = useMutation(adminUnlinkOidcMutation())
   type OidcDialogState = { confirmUnlink: boolean; openFor: number | null }
-  const [state, setState] = useComponentState<OidcDialogState>({ confirmUnlink: false, openFor: user?.id ?? null })
+  const [state, setState] = useState<OidcDialogState>({ confirmUnlink: false, openFor: user?.id ?? null })
   const { confirmUnlink } = state
   const setConfirmUnlink = (value: boolean): void => setState((current) => ({ ...current, confirmUnlink: value }))
   const openFor = user?.id ?? null

@@ -1,5 +1,5 @@
+import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { useComponentState } from '../../hooks/use-component-state'
 import { ApiError } from '../../lib/api/client'
 import { describeApiError } from '../../lib/api/error-text'
 import { useI18n } from '../../hooks/use-i18n'
@@ -31,7 +31,7 @@ export function SmbSection() {
     error: string | null
     announcement: string
   }
-  const [state, setState] = useComponentState<SmbState>({
+  const [state, setState] = useState<SmbState>({
     dialog: null,
     currentPassword: '',
     newPassword: '',

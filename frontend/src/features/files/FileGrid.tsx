@@ -1,8 +1,7 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent } from 'react'
 import type { Entry, Perms } from '../../lib/api/types'
 import { formatEntrySize } from '../../lib/format/entry-size'
-import { useComponentState } from '../../hooks/use-component-state'
 import { useI18n } from '../../hooks/use-i18n'
 import { useStore } from '../../hooks/use-store'
 import { selection } from '../../lib/store/selection.store'
@@ -153,7 +152,7 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
   const viewport = useRef<HTMLDivElement>(null)
   const folderEl = useRef<HTMLDivElement>(null)
   const fileEl = useRef<HTMLDivElement>(null)
-  const [metrics, setMetrics] = useComponentState({
+  const [metrics, setMetrics] = useState({
     width: 0,
     scroll: 0,
     height: 0,

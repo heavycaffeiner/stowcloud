@@ -1,5 +1,4 @@
-import { useEffect, useMemo } from 'react'
-import { useComponentState } from '../../hooks/use-component-state'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { formatBytes } from '../../lib/format/bytes'
 import { formatDuration, formatNumber } from '../../lib/i18n'
@@ -37,11 +36,11 @@ export function StorageIndexSection() {
   const storageItems = useMemo(() => (storage.data ? [storage.data, ...storage.data.shares] : []), [storage.data])
   const status = useQuery(adminIndexStatusQuery())
   const settings = useQuery(adminSettingsQuery())
-  const [estimateRequested, setEstimateRequested] = useComponentState(false)
+  const [estimateRequested, setEstimateRequested] = useState(false)
   const estimate = useQuery({ ...adminIndexEstimateQuery(), enabled: estimateRequested })
   const toggle = useMutation(adminIndexSettingsMutation())
   const build = useMutation(adminBuildIndexMutation())
-  const [jobId, setJobId] = useComponentState<string | null>(null)
+  const [jobId, setJobId] = useState<string | null>(null)
   const job = useQuery({ ...jobQuery(jobId ?? ''), enabled: jobId !== null })
   const nameEnabled = settings.data?.fields.find((field) => field.key === 'search.name_index_enabled')?.value === true
   useEffect(() => {

@@ -1,5 +1,4 @@
-import { useEffect, useSyncExternalStore } from 'react'
-import { useComponentState } from '../../hooks/use-component-state'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useI18n } from '../../hooks/use-i18n'
 import { adminSettingsQuery, adminUploadSettingsMutation } from '../../lib/query/admin'
@@ -28,8 +27,8 @@ export function UploadSettingsSection() {
   const serverDefault = Number(
     fields?.find((item) => item.key === 'upload.chunk_default_bytes')?.value ?? CHUNK_SIZE_MIN * 2
   )
-  const [cacheEnabled, setCacheEnabled] = useComponentState<boolean | null>(null)
-  const [cacheAvailable, setCacheAvailable] = useComponentState<boolean | null>(null)
+  const [cacheEnabled, setCacheEnabled] = useState<boolean | null>(null)
+  const [cacheAvailable, setCacheAvailable] = useState<boolean | null>(null)
   return (
     <UploadSettingsForm
       key={`${serverMin}:${serverDefault}`}
@@ -87,7 +86,7 @@ function UploadSettingsForm({
     concurrencyError: string | null
     concurrencySaved: boolean
   }
-  const [state, setState] = useComponentState<UploadFormState>({
+  const [state, setState] = useState<UploadFormState>({
     minMb: String(bytesToMb(serverMin)),
     defaultMb: String(bytesToMb(serverDefault)),
     baseline: JSON.stringify({ min: serverMin, def: serverDefault }),

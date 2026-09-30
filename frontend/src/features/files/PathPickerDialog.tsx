@@ -1,6 +1,5 @@
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useComponentState } from '../../hooks/use-component-state'
 import { useI18n } from '../../hooks/use-i18n'
 import { api } from '../../lib/api/client'
 import { Button } from '../../lib/ui/Button'
@@ -25,7 +24,7 @@ function guessStart(start: string | undefined, mode: PathPickerDialogProps['mode
 }
 export function PathPickerDialog({ open, mode, start, token, onclose, onpick }: PathPickerDialogProps) {
   const { t } = useI18n()
-  const [state, setState] = useComponentState({
+  const [state, setState] = useState({
     currentPath: '',
     initialGuess: '',
     selected: null as string | null,

@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useRef } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { HTMLAttributes, KeyboardEvent, ReactNode } from 'react'
 import {
   defaultRangeExtractor,
@@ -8,7 +8,6 @@ import {
   useVirtualizer
 } from '@tanstack/react-virtual'
 import type { Range, Rect, Virtualizer } from '@tanstack/react-virtual'
-import { useComponentState } from '../../hooks/use-component-state'
 
 type ItemKey = string | number
 type ListVirtualizer = Virtualizer<HTMLElement, HTMLLIElement>
@@ -201,7 +200,7 @@ export function VirtualList<T>({
   // subscriptions, row measurements or full-data key indexes.
   const windowed = items.length > SMALL_LIST_LIMIT
   const listRef = useRef<HTMLUListElement>(null)
-  const [interaction, setInteraction] = useComponentState({
+  const [interaction, setInteraction] = useState({
     layout: {
       owner: null as HTMLElement | null,
       visible: false,

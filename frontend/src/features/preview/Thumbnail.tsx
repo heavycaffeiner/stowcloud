@@ -1,11 +1,10 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { api, type Entry } from '../../lib/api/client'
 import { isVideoFile, mimeTypeOf } from './logic/media-utils'
 import { registerMediaSource, releaseMediaSource, swReady } from '../../lib/crypto/download-sw'
 import { decryptDownload, isUnlocked } from '../../lib/crypto/e2ee'
 import { encryptionForLabel, shareLabelOf } from '../../lib/crypto/encrypted-shares'
 import type { IconName } from '../../lib/icons'
-import { useComponentState } from '../../hooks/use-component-state'
 import { Icon } from '../../lib/ui/Icon'
 
 const CACHE = new Map<string, string>()
@@ -91,7 +90,7 @@ export interface ThumbnailProps {
 }
 
 export function Thumbnail({ entry, dim, fallback, iconSize }: ThumbnailProps) {
-  const [state, setState] = useComponentState<{ url: string | null }>({ url: null })
+  const [state, setState] = useState<{ url: string | null }>({ url: null })
   const { url } = state
   const key = `${entry.name}\x00${entry.etag}`
   const isVid = isVideoFile(entry.name)

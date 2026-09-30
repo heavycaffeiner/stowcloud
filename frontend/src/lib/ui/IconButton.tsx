@@ -1,7 +1,6 @@
 import type { MouseEventHandler, ReactNode } from 'react'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Icon } from './Icon'
-import { useComponentState } from '../../hooks/use-component-state'
 
 interface IconButtonElement extends HTMLElement {
   updateComplete?: Promise<unknown>
@@ -57,7 +56,7 @@ export function IconButton({
 
   const wrapperRef = useRef<HTMLSpanElement>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [tooltip, setTooltip] = useComponentState({ shown: false, position: { left: 0, top: 0 } })
+  const [tooltip, setTooltip] = useState({ shown: false, position: { left: 0, top: 0 } })
   const { shown, position } = tooltip
 
   const clearTimer = () => {
