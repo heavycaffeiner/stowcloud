@@ -9,7 +9,7 @@ import (
 
 	app "github.com/heavycaffeiner/stowcloud/backend/internal/app"
 	live "github.com/heavycaffeiner/stowcloud/backend/internal/app/settings"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/dav"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/dav"
 )
 
 // A saved host list reaches the running server.

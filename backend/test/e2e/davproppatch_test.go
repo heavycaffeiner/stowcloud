@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/dav"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/dav"
 )
 
 // proppatch runs a PROPPATCH and returns the recorder.

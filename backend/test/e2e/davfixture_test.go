@@ -12,12 +12,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/dav"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/cache"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/dbfile"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/dav"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/clock"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )

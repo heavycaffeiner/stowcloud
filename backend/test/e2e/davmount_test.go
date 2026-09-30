@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/heavycaffeiner/stowcloud/backend/internal/dav"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/files"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/dav"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/http/middleware"
 )
 

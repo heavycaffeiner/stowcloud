@@ -9,7 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/heavycaffeiner/stowcloud/backend/internal/http/dav"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/dav"
 )
 
 // target builds the destination a mount would hand a transfer method.
