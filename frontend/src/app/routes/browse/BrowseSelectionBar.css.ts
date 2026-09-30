@@ -7,32 +7,7 @@ const barEnter = keyframes({
   to: { opacity: '1', transform: 'translate(-50%, 0) scale(1)' }
 })
 
-export const closeBtn = style({
-  selectors: {
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
-      outlineOffset: vars.focusRing.offset
-    },
-    '&:hover': {
-      background: `color-mix(in srgb, ${vars.content.primary} 10%, transparent)`,
-      color: vars.content.primary
-    }
-  },
-  width: vars.control.min,
-  height: vars.control.min,
-  borderRadius: '50%',
-  border: 'none',
-  background: 'transparent',
-  color: vars.content.secondary,
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  cursor: 'pointer',
-  padding: '0',
-  transition: 'background-color 120ms ease, color 120ms ease'
-})
-
-export const actionBtn = style({
+export const iconBtn = style({
   selectors: {
     '&:focus-visible': {
       outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
@@ -61,7 +36,7 @@ export const bar = style({
   position: 'fixed',
   left: '50%',
   transform: 'translateX(-50%)',
-  bottom: 'calc(24px + 0px + env(safe-area-inset-bottom, 0px))',
+  bottom: 'calc(24px + env(safe-area-inset-bottom, 0px))',
   zIndex: '25',
   maxWidth: 'calc(100vw - 32px)',
   borderRadius: '28px',

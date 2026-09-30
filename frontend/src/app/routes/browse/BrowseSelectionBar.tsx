@@ -42,7 +42,7 @@ export function BrowseSelectionBar({ state, actions, t }: BrowseSelectionBarProp
       <div className={styles.barInner}>
         <button
           type="button"
-          className={cx(styles.closeBtn, iconButtonStyles.root)}
+          className={cx(styles.iconBtn, iconButtonStyles.root)}
           aria-label={t('browse.clear_selection')}
           onClick={actions.onClear}
         >
@@ -55,7 +55,7 @@ export function BrowseSelectionBar({ state, actions, t }: BrowseSelectionBarProp
         <div className={styles.actions}>
           <button
             type="button"
-            className={cx(styles.actionBtn, iconButtonStyles.root)}
+            className={cx(styles.iconBtn, iconButtonStyles.root)}
             aria-label={details ? t('details.hide') : t('details.show')}
             title={details ? t('details.hide') : t('details.show')}
             onClick={actions.onToggleDetails}
@@ -66,7 +66,7 @@ export function BrowseSelectionBar({ state, actions, t }: BrowseSelectionBarProp
             <button
               key={action.key}
               type="button"
-              className={cx(styles.actionBtn, iconButtonStyles.root)}
+              className={cx(styles.iconBtn, iconButtonStyles.root)}
               aria-label={action.label}
               title={action.label}
               onClick={action.run}
