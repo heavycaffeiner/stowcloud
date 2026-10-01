@@ -1,6 +1,5 @@
 import { describeApiError } from '../../../api/error-text'
 import { useI18n } from '../../../hooks/use-i18n'
-import { selection } from '../../../lib/store/selection.store'
 import { Button } from '../../../ui/Button'
 import { Dialog } from '../../../ui/Dialog'
 import { VirtualList } from '../../../ui/VirtualList'
@@ -17,8 +16,9 @@ export function TrashPage() {
   const { t } = useI18n()
   const trash = useTrash()
   const entries: TrashEntry[] = trash.data ?? []
-  const selected = useTrashSelection(entries)
-  const actions = useTrashActions(t, selected)
+  const selection = useTrashSelection(entries)
+  const { selected } = selection
+  const actions = useTrashActions(t, selection)
   const { state, setState, busy, restorePending, purgePending, restoreItems, requestPurge, cancelPurge, confirmPurge } =
     actions
   const { purgeOpen, purgeSingle, operation, notice } = state
@@ -60,7 +60,7 @@ export function TrashPage() {
               ref={(element) => {
                 if (element) element.indeterminate = partiallySelected
               }}
-              onChange={() => (allSelected ? selection.clear() : selection.all(entries.map((entry) => entry.id)))}
+              onChange={() => (allSelected ? selection.clear() : selection.setAll(entries.map((entry) => entry.id)))}
             />
             {t('trash.select_all', { selected: selected.size, total: entries.length })}
           </label>

@@ -24,7 +24,11 @@ const devHttps = existsSync(path.join(devTls, 'cert.pem'))
 
 export default defineConfig({
   base: '/',
-  plugins: [vanillaExtractPlugin({ identifiers: process.env.NODE_ENV === 'production' ? 'short' : 'debug' }), react()],
+  plugins: [
+    vanillaExtractPlugin({ identifiers: process.env.NODE_ENV === 'production' ? 'short' : 'debug' }),
+    // Subscribes every component and hook that reads a signal's value to that signal.
+    react({ babel: { plugins: [['module:@preact/signals-react-transform']] } })
+  ],
   resolve: {
     alias: [
       { find: 'react-router/dom', replacement: reactRouterDomProduction },

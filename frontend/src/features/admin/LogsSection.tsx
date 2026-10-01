@@ -19,7 +19,7 @@ import {
 } from './logic/log-view'
 import { useAdminAudit, useAdminLogs, useAdminTimeline, useAdminUsers } from './api'
 import { useDebounced } from '../../hooks/use-debounced'
-import { logsForm, useLogsFormStore } from '../../lib/store/logs.store'
+import { logsForm, useLogsFormStore } from './logs-store'
 import { Button } from '../../ui/Button'
 import { TextField } from '../../ui/TextField'
 import { ProgressCircular } from '../../ui/ProgressCircular'

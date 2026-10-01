@@ -2,9 +2,9 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 import type { KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent } from 'react'
 import { formatEntrySize } from '../../lib/format/entry-size'
 import { useI18n } from '../../hooks/use-i18n'
-import { selection, useSelectionStore } from '../../lib/store/selection.store'
+import { selection, useSelectionStore } from './selection'
 import { useCompact } from '../../ui/use-compact'
-import { useViewStore } from '../../lib/store/view.store'
+import { density as densityPref } from './view-prefs'
 import { computeScaleMapping, computeWindow, rowIndexToScrollTop } from '../../lib/virtual/windowing'
 import { cellPos, sectionRows, verticalTarget } from '../../lib/virtual/grid-sections'
 import { indicesInRect, type Rect } from './logic/marquee'
@@ -144,7 +144,7 @@ export const FileGrid = forwardRef<FileGridHandle, FileGridProps>(function FileG
 ) {
   const { t } = useI18n()
   const compact = useCompact()
-  const density = useViewStore((state) => state.density)
+  const density = densityPref.value
   const names = useSelectionStore((state) => state.names)
   const focused = useSelectionStore((state) => state.focused)
   const viewport = useRef<HTMLDivElement>(null)

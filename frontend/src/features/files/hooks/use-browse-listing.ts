@@ -1,8 +1,8 @@
 import { useMemo } from 'react'
 import { joinPath } from '../../../lib/path-utils'
 import { isUnlocked } from '../../../lib/crypto/e2ee'
-import { useSelectionStore } from '../../../lib/store/selection.store'
-import { useViewStore } from '../../../lib/store/view.store'
+import { useSelectionStore } from '../selection'
+import { sortKey, sortOrder } from '../view-prefs'
 import type { BrowseFilterDate, BrowseFilterType } from '../logic/browse-types'
 import { matchesBrowseDate, matchesBrowseType } from '../logic/browse-listing-predicates'
 import { dirViewOf, useDirectory, useFolderSizes, useShareEncryption, type Entry } from '../api'
@@ -10,10 +10,8 @@ import { useSession } from '../../auth/api'
 
 export function useBrowseListing(path: string, filterType: BrowseFilterType, filterDate: BrowseFilterDate) {
   const session = useSession()
-  const sortKey = useViewStore((state) => state.sortKey)
-  const sortOrder = useViewStore((state) => state.sortOrder)
   const selectedNames = useSelectionStore((state) => state.names)
-  const listing = useDirectory(path, { key: sortKey, order: sortOrder })
+  const listing = useDirectory(path, { key: sortKey.value, order: sortOrder.value })
   const directory = useMemo(() => dirViewOf(listing.data?.pages), [listing.data?.pages])
   const entries = directory.entries
   const selected = useMemo(() => entries.filter((entry) => selectedNames.has(entry.name)), [entries, selectedNames])
@@ -51,8 +49,6 @@ export function useBrowseListing(path: string, filterType: BrowseFilterType, fil
     root,
     noShares,
     selectionBytes,
-    canCreate: directory.perms.create,
-    sortKey,
-    sortOrder
+    canCreate: directory.perms.create
   }
 }

@@ -1,10 +1,10 @@
 import { useReducer } from 'react'
 import { describeApiError } from '../../../api/error-text'
 import { tp } from '../../../lib/i18n'
-import { selection } from '../../../lib/store/selection.store'
 import { mergeState } from '../../../lib/merge-state'
 import type { BatchItemResult } from '../../files/api'
 import { usePurgeTrash, useRestoreTrash } from '../api'
+import type { TrashSelection } from './use-trash-selection'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
 
@@ -15,7 +15,7 @@ export type TrashState = {
   notice: string | null
 }
 
-export function useTrashActions(t: Translate, selected: ReadonlySet<string>) {
+export function useTrashActions(t: Translate, { selected, setAll }: TrashSelection) {
   const restore = useRestoreTrash()
   const purge = usePurgeTrash()
   const [state, setState] = useReducer(mergeState<TrashState>, {
@@ -33,7 +33,7 @@ export function useTrashActions(t: Translate, selected: ReadonlySet<string>) {
 
   function applyResults(ids: readonly string[], results: readonly BatchItemResult[]): void {
     const failed = new Set(results.filter((result) => !result.ok).map((result) => result.path))
-    selection.replace([...selected].filter((id) => !ids.includes(id) || failed.has(id)))
+    setAll([...selected].filter((id) => !ids.includes(id) || failed.has(id)))
   }
 
   async function restoreItems(ids: string[]): Promise<void> {

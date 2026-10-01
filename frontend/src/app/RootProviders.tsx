@@ -3,17 +3,11 @@ import type { PropsWithChildren } from 'react'
 import { I18nextProvider, useTranslation } from 'react-i18next'
 import { queryClient } from '../lib/query/client'
 import { i18n } from '../lib/i18n/state'
-import { useUiStore } from '../lib/store/ui.store'
-import { useMduiBootstrap, useMduiLocale, useMduiTheme } from './use-root-providers'
+import { useMduiLocale } from './use-root-providers'
 
 export function RootProviders({ children }: PropsWithChildren) {
-  const theme = useUiStore((state) => state.theme)
   const { i18n: translation } = useTranslation(undefined, { i18n })
-  const locale = translation.language === 'en' ? 'en' : 'ko'
-
-  useMduiBootstrap()
-  useMduiTheme(theme)
-  useMduiLocale(locale)
+  useMduiLocale(translation.language === 'en' ? 'en' : 'ko')
 
   return (
     <I18nextProvider i18n={i18n}>

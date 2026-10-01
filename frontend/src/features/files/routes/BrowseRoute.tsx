@@ -1,11 +1,21 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useI18n } from '../../../hooks/use-i18n'
-import { ui, useUiStore } from '../../../lib/store/ui.store'
 import { useCompact } from '../../../ui/use-compact'
-import { useViewStore, view } from '../../../lib/store/view.store'
-import { selection } from '../../../lib/store/selection.store'
-import { search, searchTarget } from '../../../lib/store/search.store'
+import {
+  chooseSort,
+  cycleDensity,
+  density as densityPref,
+  detailsPanel,
+  sortKey as sortKeyPref,
+  sortOrder as sortOrderPref,
+  toggleDetails,
+  toggleViewMode,
+  viewMode
+} from '../view-prefs'
+import { lastFolder } from '../location'
+import { selection } from '../selection'
+import { useOpenSearch } from '../../search/state'
 import { joinPath, normalizePath } from '../../../lib/path-utils'
 import { describeApiError } from '../../../api/error-text'
 import type { FileGridHandle } from '../FileGrid'
@@ -38,11 +48,12 @@ function BrowsePageContent({ path }: { path: string }) {
   const navigate = useNavigate()
   const location = useLocation()
   const compact = useCompact()
-  const details = useUiStore((state) => state.details)
-  const mode = useViewStore((state) => state.mode)
-  const density = useViewStore((state) => state.density)
-  const sortKey = useViewStore((state) => state.sortKey)
-  const sortOrder = useViewStore((state) => state.sortOrder)
+  const openSearch = useOpenSearch()
+  const details = detailsPanel.value === 'open'
+  const mode = viewMode.value
+  const density = densityPref.value
+  const sortKey = sortKeyPref.value
+  const sortOrder = sortOrderPref.value
   const [state, stateActions] = useBrowseState()
   const { patch } = stateActions
   const { filterType, filterDate, previewIndex } = state
@@ -94,6 +105,9 @@ function BrowsePageContent({ path }: { path: string }) {
   useDocumentTitle(`${path.split('/').filter(Boolean).at(-1) ?? 'Stowcloud'} - Stowcloud`)
 
   useBrowsePathSelection(path)
+  useEffect(() => {
+    lastFolder.value = path
+  }, [path])
   useBrowseRouteFocus({
     focusName,
     isPending: query.isPending,
@@ -168,11 +182,6 @@ function BrowsePageContent({ path }: { path: string }) {
       index += delta
     }
   }
-  const openSearchForPath = () => {
-    const target = searchTarget(compact, path)
-    if (target) void navigate(target)
-    else search.openSheet(path)
-  }
   const actionTarget = selected[0] ?? state.contextEntry
   // A keyboard shortcut runs only what the row menu would offer for the selection.
   const runRowAction = (key: string) => actions.actions.find((action) => action.key === key)?.run()
@@ -188,15 +197,9 @@ function BrowsePageContent({ path }: { path: string }) {
   const onDetailsContext = (event: React.MouseEvent) => {
     if (actionTarget) openContextFor(actionTarget, event)
   }
-  const onToggleView = () => view.setMode(mode === 'list' ? 'grid' : 'list')
-  const onToggleDetails = () => ui.setDetails(!details)
   const onToggleTree = () => patch((current) => ({ treeOpen: !current.treeOpen }))
-  const onCycleDensity = () => {
-    const order = ['compact', 'comfortable', 'spacious'] as const
-    view.setDensity(order[(order.indexOf(density) + 1) % order.length])
-  }
   const onChooseSort = (key: SortKey) => {
-    view.setSort(key, sortKey === key && sortOrder === 'asc' ? 'desc' : 'asc')
+    chooseSort(key)
     menus.closeSort()
   }
   const onUnlock = () => {
@@ -249,8 +252,8 @@ function BrowsePageContent({ path }: { path: string }) {
           onUnlock,
           onFilter: menus.openFilterMenu,
           onRefresh: () => void query.refetch(),
-          onToggleView,
-          onToggleDetails,
+          onToggleView: toggleViewMode,
+          onToggleDetails: toggleDetails,
           onSort: menus.openSort,
           onNew: menus.openNewMenu,
           onOverflow: menus.openOverflow
@@ -260,7 +263,7 @@ function BrowsePageContent({ path }: { path: string }) {
       {selected.length ? (
         <BrowseSelectionBar
           state={{ compact, details, count: selected.length, bytes: selectionBytes }}
-          actions={{ onClear: selection.clear, onToggleDetails, actions: actions.actions }}
+          actions={{ onClear: selection.clear, onToggleDetails: toggleDetails, actions: actions.actions }}
           t={t}
         />
       ) : null}
@@ -293,13 +296,13 @@ function BrowsePageContent({ path }: { path: string }) {
         onContextMenu={openContextFor}
         onRename={() => runRowAction('rename')}
         onDelete={() => runRowAction('delete')}
-        onSearchFocus={openSearchForPath}
+        onSearchFocus={() => openSearch(path)}
         onRequestMore={() => {
           if (query.hasNextPage && !query.isFetchingNextPage) void query.fetchNextPage()
         }}
         onTreeNavigate={(next) => void navigate(`/b${next}`)}
         onTreeClose={() => patch({ treeOpen: false })}
-        onDetailsClose={onToggleDetails}
+        onDetailsClose={toggleDetails}
         onDownload={actions.downloadSelection}
         onShare={() => {
           const entry = selected[0] ?? state.contextEntry
@@ -332,10 +335,10 @@ function BrowsePageContent({ path }: { path: string }) {
           onCloseSort: menus.closeSort,
           onCloseNew: menus.closeNewMenu,
           onCloseOverflow: menus.closeOverflow,
-          onToggleView,
-          onToggleDetails,
+          onToggleView: toggleViewMode,
+          onToggleDetails: toggleDetails,
           onToggleTree,
-          onCycleDensity,
+          onCycleDensity: cycleDensity,
           onNavigateTrash: () => void navigate('/trash'),
           onRefresh: () => void query.refetch(),
           onChooseSort,

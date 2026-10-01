@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { selection, useSelectionStore } from '../../../src/lib/store/selection.store'
+import { selection, useSelectionStore } from '../../../src/features/files/selection'
 
 const NAMES = ['a.txt', 'b.txt', 'c.txt', 'd.txt']
 

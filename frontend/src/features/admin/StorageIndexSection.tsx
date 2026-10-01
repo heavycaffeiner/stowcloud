@@ -13,7 +13,7 @@ import {
   useSetNameIndex
 } from './api'
 import { useJobStatus } from '../jobs/api'
-import { jobTray } from '../../lib/store/jobs.store'
+import { jobTray } from '../jobs/tray-store'
 import { Button } from '../../ui/Button'
 import { Icon } from '../../ui/Icon'
 import { Switch } from '../../ui/Switch'

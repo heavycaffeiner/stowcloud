@@ -1,5 +1,5 @@
 // The upload queue's state. The Worker that fills it lives in
-// `upload/queue.ts`; this file only holds what the tray renders.
+// `queue.ts`; this file only holds what the tray renders.
 import { create } from 'zustand'
 
 export type UploadStatus = 'queued' | 'uploading' | 'paused' | 'done' | 'error' | 'canceled'

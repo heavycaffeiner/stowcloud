@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { type UploadItem, uploads, useUploadStore } from '../../../src/lib/store/upload.store'
+import { type UploadItem, uploads, useUploadStore } from '../../../src/features/uploads/store'
 
 function item(over: Partial<UploadItem> = {}): UploadItem {
   return {

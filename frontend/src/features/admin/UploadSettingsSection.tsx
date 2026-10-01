@@ -11,7 +11,7 @@ import {
   validChunkSizeOverride
 } from '../../lib/upload/chunk-planner'
 import { loadStoredChunkSize, loadStoredConcurrency, subscribeUploadPreferences } from '../../lib/upload/preferences'
-import { setUploadChunkSize, setUploadConcurrency } from '../../lib/upload/queue'
+import { setUploadChunkSize, setUploadConcurrency } from '../uploads/queue'
 import { Button } from '../../ui/Button'
 import { Icon } from '../../ui/Icon'
 import { Switch } from '../../ui/Switch'

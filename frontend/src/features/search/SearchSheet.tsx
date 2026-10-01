@@ -5,16 +5,16 @@ import { Icon } from '../../ui/Icon'
 import { IconButton } from '../../ui/IconButton'
 import { Modal } from '../../ui/Modal'
 import { SearchPanel } from './SearchPanel'
+import { sheetScope } from './state'
 import * as styles from './SearchSheet.css'
 
-export interface SearchSheetProps {
-  readonly open: boolean
-  readonly scope?: string
-  readonly onClose: () => void
-}
-
-export function SearchSheet({ open, scope = '', onClose }: SearchSheetProps) {
+/** The desktop search surface, open while `sheetScope` names the folder it was opened from. */
+export function SearchSheet() {
   const { t } = useI18n()
+  const scope = sheetScope.value
+  const onClose = (): void => {
+    sheetScope.value = null
+  }
   const trailing: ReactNode = (
     <IconButton label={t('search.close')} onClick={onClose}>
       <Icon name="close" />
@@ -22,7 +22,7 @@ export function SearchSheet({ open, scope = '', onClose }: SearchSheetProps) {
   )
   return (
     <Modal
-      open={open}
+      open={scope !== null}
       className={styles.root}
       label={t('search.title')}
       onClose={onClose}
@@ -30,7 +30,7 @@ export function SearchSheet({ open, scope = '', onClose }: SearchSheetProps) {
     >
       <div className={styles.body}>
         <ErrorBoundary>
-          <SearchPanel scope={scope} autoFocus onNavigated={onClose} trailing={trailing} />
+          <SearchPanel scope={scope ?? ''} autoFocus onNavigated={onClose} trailing={trailing} />
         </ErrorBoundary>
       </div>
     </Modal>

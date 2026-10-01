@@ -30,6 +30,7 @@
     "@fontsource-variable/google-sans-flex": "^5.3.1",
     "@iconify/types": "^2.0.0",
     "@playwright/test": "1.62.1",
+    "@preact/signals-react-transform": "^0.8.2",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^24.10.0",
     "@types/react": "^19.3.0",
@@ -60,6 +61,7 @@
     "@lezer/highlight": "^1.2.3",
     "@noble/ciphers": "^2.4.0",
     "@noble/hashes": "^2.4.0",
+    "@preact/signals-react": "^3.12.0",
     "@stowcloud/rclone-crypt": "github:Stowcloud/rclone-crypt#v0.1.0",
     "@tanstack/react-query": "^5.102.8",
     "@tanstack/react-virtual": "^3.14.11",
@@ -69,10 +71,14 @@
     "i18next": "^26.4.2",
     "mdui": "^2.1.5",
     "openapi-fetch": "^0.17.0",
+    "overlay-kit": "^1.9.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "react-hook-form": "^7.89.0",
+    "react-hotkeys-hook": "^5.3.3",
     "react-i18next": "^17.0.15",
     "react-router-dom": "^7.18.3",
+    "react-simplikit": "^0.3.1",
     "zustand": "^5.0.15"
   }
 }

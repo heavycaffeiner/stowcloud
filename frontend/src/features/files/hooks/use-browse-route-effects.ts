@@ -2,7 +2,7 @@ import { useEffect, type RefObject } from 'react'
 import type { NavigateFunction } from 'react-router-dom'
 import type { FileGridHandle } from '../FileGrid'
 import type { FileViewHandle } from '../FileTable'
-import { selection } from '../../../lib/store/selection.store'
+import { selection } from '../selection'
 
 export function useBrowsePathSelection(path: string): void {
   useEffect(() => {

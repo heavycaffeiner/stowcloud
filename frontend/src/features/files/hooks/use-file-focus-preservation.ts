@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { selection } from '../../../lib/store/selection.store'
+import { selection } from '../selection'
 import type { Entry } from '../api'
 
 export function useFileFocusPreservation(entries: readonly Entry[], focused: number | null) {

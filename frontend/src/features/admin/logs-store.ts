@@ -3,7 +3,7 @@
 // Only the form lives here. What the filters fetch is three queries keyed on
 // the projection of this state (`query/logs.ts`), so a filter change is a new
 // key rather than a request this store has to cancel and reconcile.
-import { EMPTY_FILTERS, type LogFilters } from '../../features/admin/logic/log-view'
+import { EMPTY_FILTERS, type LogFilters } from './logic/log-view'
 import { create } from 'zustand'
 
 export interface LogsFormState {

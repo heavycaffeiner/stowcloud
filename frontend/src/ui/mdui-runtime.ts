@@ -3,7 +3,8 @@ import { setColorScheme } from 'mdui/functions/setColorScheme.js'
 import { setLocale as setMduiLocale } from 'mdui/functions/setLocale.js'
 import { setTheme } from 'mdui/functions/setTheme.js'
 import type { Locale } from '../lib/i18n/state'
-import type { ThemePref } from '../lib/store/ui.store'
+
+export type ThemePref = 'system' | 'light' | 'dark'
 
 const localeModules = {
   ko: () => import('mdui/locales/ko-kr.js')

@@ -1,8 +1,8 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, MouseEvent as ReactMouseEvent } from 'react'
-import { selection, useSelectionStore } from '../../lib/store/selection.store'
+import { selection, useSelectionStore } from './selection'
 import { useCompact } from '../../ui/use-compact'
-import { useViewStore, view } from '../../lib/store/view.store'
+import { chooseSort, density as densityPref, sortKey as sortKeyPref, sortOrder as sortOrderPref } from './view-prefs'
 import { useI18n } from '../../hooks/use-i18n'
 import {
   computeScaleMapping,
@@ -67,9 +67,9 @@ export const FileTable = forwardRef<FileViewHandle, FileTableProps>(function Fil
 ) {
   const { t } = useI18n()
   const compact = useCompact()
-  const density = useViewStore((state) => state.density)
-  const sortKey = useViewStore((state) => state.sortKey)
-  const sortOrder = useViewStore((state) => state.sortOrder)
+  const density = densityPref.value
+  const sortKey = sortKeyPref.value
+  const sortOrder = sortOrderPref.value
   const names = useSelectionStore((state) => state.names)
   const focused = useSelectionStore((state) => state.focused)
   const [measure, setMeasure] = useState({ top: 0, scroll: 0, height: 0, width: 0 })
@@ -97,7 +97,6 @@ export const FileTable = forwardRef<FileViewHandle, FileTableProps>(function Fil
         : key === 'mtime'
           ? t('browse.sort_by_modified')
           : t('browse.sort_by_kind')
-  const chooseSort = (key: SortKey) => view.setSort(key, sortKey === key && sortOrder === 'asc' ? 'desc' : 'asc')
 
   const update = () => {
     const el = viewport.current

@@ -1,119 +1,40 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { describeApiError } from '../../api/error-text'
 import { useI18n } from '../../hooks/use-i18n'
+import { useSession, type RootEntry } from '../../features/auth/api'
+import { createMenuRequest } from '../../features/files/create-menu'
 import { useSetRootOrder } from '../../features/settings/api'
 import { Icon } from '../../ui/Icon'
 import { IconButton } from '../../ui/IconButton'
 import { Modal } from '../../ui/Modal'
 import { VirtualList } from '../../ui/VirtualList'
+import { useNavigation, type NavId, type NavItem } from './navigation'
+import { sidebar } from './sidebar'
 import * as styles from './NavigationDrawer.css'
 import * as iconButtonStyles from '../../ui/IconButton.css'
 import { cx } from '../../ui/cx'
 
-export interface NavItem {
-  readonly id: string
-  readonly label: string
-  readonly icon: string
-  readonly href?: string
-}
-
-export interface RootItem {
-  readonly id: string
-  readonly label: string
-  readonly icon?: string
-  readonly brokenReason?: string
-}
+const FILE_DESTINATIONS: readonly NavId[] = ['recent', 'trash', 'links']
+const SETTING_DESTINATIONS: readonly NavId[] = ['settings', 'admin']
 
 export interface NavigationDrawerProps {
-  readonly navItems?: readonly NavItem[]
-  readonly activeNav?: string
-  readonly items?: readonly RootItem[]
-  readonly active?: string
-  readonly onSelect?: (item: RootItem) => void
-  readonly onNavSelect?: (item: NavItem) => void
-  readonly onSearch?: () => void
+  /** Rendered as a modal sheet over the compact layout instead of the wide sidebar. */
   readonly overlay?: boolean
   readonly onClose?: () => void
-  readonly folderSelectorOnly?: boolean
-  readonly collapsed?: boolean
-  readonly onNew?: (trigger: HTMLElement) => void
-  readonly userInitial?: string
 }
 
-export function NavigationDrawer({
-  navItems = [],
-  activeNav = 'files',
-  items = [],
-  active = '',
-  onSelect,
-  onNavSelect,
-  onSearch,
-  overlay = false,
-  onClose,
-  folderSelectorOnly = false,
-  collapsed = false,
-  onNew,
-  userInitial = 'S'
-}: NavigationDrawerProps) {
+export function NavigationDrawer({ overlay = false, onClose }: NavigationDrawerProps) {
   const { t } = useI18n()
-  const orderMutation = useSetRootOrder()
-  const [orderState, setOrderState] = useState<{
-    reordering: boolean
-    pendingOrder: RootItem[] | null
-    error: string | null
-  }>({ reordering: false, pendingOrder: null, error: null })
-  const { reordering, pendingOrder, error: orderError } = orderState
-  const displayRoots = pendingOrder ?? items
+  const navigate = useNavigate()
+  const { items, active } = useNavigation()
+  const user = useSession().data?.user
+  const collapsed = !overlay && sidebar.value === 'collapsed'
 
-  useEffect(() => {
-    setOrderState((state) => (state.pendingOrder === null ? state : { ...state, pendingOrder: null }))
-  }, [items, setOrderState])
-
-  const destinations = useMemo(() => {
-    const fallback: NavItem[] = [
-      { id: 'files', label: t('nav.files'), icon: 'folder', href: '/b' },
-      { id: 'recent', label: t('nav.recent'), icon: 'history', href: '/recent' },
-      { id: 'trash', label: t('common.trash'), icon: 'delete', href: '/trash' },
-      { id: 'links', label: t('nav.links'), icon: 'link', href: '/links' },
-      { id: 'settings', label: t('common.settings'), icon: 'settings', href: '/settings' }
-    ]
-    return navItems.length > 0 ? navItems : fallback
-  }, [navItems, t])
-
-  const closeOverlay = (): void => {
-    if (overlay) onClose?.()
+  const go = (href: string): void => {
+    void navigate(href)
+    onClose?.()
   }
-
-  const selectDestination = (item: NavItem): void => {
-    onNavSelect?.(item)
-    closeOverlay()
-  }
-
-  const moveRoot = (index: number, direction: -1 | 1): void => {
-    const target = index + direction
-    if (target < 0 || target >= displayRoots.length) return
-    const next = [...displayRoots]
-    ;[next[index], next[target]] = [next[target], next[index]]
-    setOrderState({ reordering: true, pendingOrder: next, error: null })
-    orderMutation.mutate(
-      next.map((root) => root.id),
-      {
-        onError: (error) => {
-          setOrderState({
-            reordering: false,
-            pendingOrder: null,
-            error: describeApiError(error, t('nav.could_not_save_order'))
-          })
-        },
-        onSettled: () => setOrderState((state) => ({ ...state, reordering: false }))
-      }
-    )
-  }
-
-  const fileNavItems = destinations.filter((item) => ['recent', 'trash', 'links'].includes(item.id))
-  const settingNavItems = destinations.filter((item) => ['settings', 'admin'].includes(item.id))
-
-  const drawerClass = cx(styles.root, overlay ? styles.overlay : collapsed && styles.collapsed)
 
   const content = (
     <>
@@ -127,15 +48,15 @@ export function NavigationDrawer({
           >
             <Icon name="close" />
           </button>
-          <span className={styles.appName}>{folderSelectorOnly ? t('nav.browse_folders') : 'Stowcloud'}</span>
+          <span className={styles.appName}>Stowcloud</span>
           <span className={styles.userAvatar} aria-hidden="true">
-            {userInitial}
+            {(user?.display_name || user?.name || 'S').slice(0, 1).toUpperCase()}
           </span>
         </div>
       ) : null}
 
       <div className={styles.body}>
-        {onNew && !folderSelectorOnly ? (
+        {active === 'files' ? (
           <div className={styles.newWrap}>
             <button
               type="button"
@@ -143,8 +64,10 @@ export function NavigationDrawer({
               aria-label={t('browse.new')}
               title={t('browse.new')}
               onClick={(event) => {
-                onNew(event.currentTarget)
-                closeOverlay()
+                // The sidebar sits on the left, so the menu anchors its left edge to the button.
+                const rect = event.currentTarget.getBoundingClientRect()
+                createMenuRequest.value = { x: rect.left, y: rect.bottom + 4, align: 'start' }
+                onClose?.()
               }}
             >
               <Icon name="add" size={20} />
@@ -153,163 +76,181 @@ export function NavigationDrawer({
           </div>
         ) : null}
 
-        {!folderSelectorOnly ? (
-          <>
-            {!collapsed && fileNavItems.length > 0 ? <div className={styles.divider} role="separator" /> : null}
-            <ul className={styles.list}>
-              {fileNavItems.map((item) => {
-                const isActive = activeNav === item.id
-                return (
-                  <li key={item.id} className={styles.entry}>
-                    <button
-                      className={cx(styles.item, isActive && styles.itemActive)}
-                      type="button"
-                      aria-current={isActive ? 'page' : undefined}
-                      aria-label={item.label}
-                      title={collapsed ? item.label : undefined}
-                      onClick={() => selectDestination(item)}
-                    >
-                      <span className={styles.itemIcon}>
-                        <Icon name={item.icon} size={20} />
-                      </span>
-                      {!collapsed ? <span className={styles.itemLabel}>{item.label}</span> : null}
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-          </>
-        ) : null}
+        {!collapsed ? <div className={styles.divider} role="separator" /> : null}
+        <Destinations
+          items={items.filter((item) => FILE_DESTINATIONS.includes(item.id))}
+          active={active}
+          collapsed={collapsed}
+          onSelect={go}
+        />
 
-        {folderSelectorOnly || (!collapsed && displayRoots.length > 0) ? (
-          <div className={styles.rootsSection}>
-            <div className={styles.sectionHeader}>
-              <span className={styles.sectionTitle}>{t('nav.folders')}</span>
-              {displayRoots.length > 0 ? (
-                <button
-                  type="button"
-                  className={styles.reorderToggle}
-                  aria-pressed={reordering}
-                  onClick={() => setOrderState((state) => ({ ...state, reordering: !state.reordering }))}
-                >
-                  {reordering ? t('nav.reorder_done') : t('nav.reorder')}
-                </button>
-              ) : null}
-            </div>
-            <ul className={styles.list} aria-label={t('nav.folder_selector')}>
-              <li className={styles.entry}>
-                <VirtualList
-                  className={styles.sublist}
-                  items={displayRoots}
-                  itemKey={(root) => root.id}
-                  estimateSize={reordering ? 48 : overlay ? 48 : 40}
-                  renderItem={(root, index) =>
-                    reordering ? (
-                      <div className={cx(styles.subitem, styles.subitemReorder)}>
-                        <span className={styles.itemIcon}>
-                          <Icon name={root.icon ?? 'folder'} size={18} />
-                        </span>
-                        <span className={styles.subitemLabel}>{root.label}</span>
-                        <span className={styles.reorderActions}>
-                          <IconButton
-                            label={t('nav.move_up', { name: root.label })}
-                            disabled={index === 0}
-                            onClick={() => moveRoot(index, -1)}
-                          >
-                            <span className={cx(styles.reorderChevron, styles.reorderChevronUp)}>
-                              <Icon name="chevron_right" size={16} />
-                            </span>
-                          </IconButton>
-                          <IconButton
-                            label={t('nav.move_down', { name: root.label })}
-                            disabled={index === displayRoots.length - 1}
-                            onClick={() => moveRoot(index, 1)}
-                          >
-                            <span className={cx(styles.reorderChevron, styles.reorderChevronDown)}>
-                              <Icon name="chevron_right" size={16} />
-                            </span>
-                          </IconButton>
-                        </span>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        className={cx(styles.subitem, active === root.id && styles.subitemActive)}
-                        aria-current={active === root.id ? 'location' : undefined}
-                        onClick={() => {
-                          onSelect?.(root)
-                          closeOverlay()
-                        }}
-                      >
-                        <span className={styles.itemIcon}>
-                          <Icon name={root.icon ?? 'folder'} size={18} />
-                        </span>
-                        <span className={styles.subitemLabel}>{root.label}</span>
-                      </button>
-                    )
-                  }
-                />
-                {orderError ? (
-                  <p className={styles.reorderError} role="alert">
-                    {orderError}
-                  </p>
-                ) : null}
-              </li>
-            </ul>
-          </div>
-        ) : null}
+        {!collapsed ? <RootList overlay={overlay} onSelect={go} /> : null}
 
-        {!folderSelectorOnly ? (
-          <>
-            <div className={styles.divider} role="separator" />
-            {!collapsed ? <div className={styles.sectionTitle}>{t('common.settings')}</div> : null}
-            <ul className={styles.list}>
-              {settingNavItems.map((item) => {
-                const isActive = activeNav === item.id
-                return (
-                  <li key={item.id} className={styles.entry}>
-                    <button
-                      type="button"
-                      className={cx(styles.item, isActive && styles.itemActive)}
-                      aria-current={isActive ? 'page' : undefined}
-                      aria-label={item.label}
-                      title={collapsed ? item.label : undefined}
-                      onClick={() => selectDestination(item)}
-                    >
-                      <span className={styles.itemIcon}>
-                        <Icon name={item.icon} size={20} />
-                      </span>
-                      {!collapsed ? (
-                        <span className={styles.itemLabel}>{item.id === 'admin' ? t('nav.admin') : item.label}</span>
-                      ) : null}
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-          </>
-        ) : null}
+        <div className={styles.divider} role="separator" />
+        {!collapsed ? <div className={styles.sectionTitle}>{t('common.settings')}</div> : null}
+        <Destinations
+          items={items.filter((item) => SETTING_DESTINATIONS.includes(item.id))}
+          active={active}
+          collapsed={collapsed}
+          onSelect={go}
+        />
       </div>
     </>
   )
 
   if (!overlay) {
     return (
-      <nav className={drawerClass} aria-label={t('common.main_menu')}>
+      <nav className={cx(styles.root, collapsed && styles.collapsed)} aria-label={t('common.main_menu')}>
         {content}
       </nav>
     )
   }
-
   return (
     <Modal
       open
-      id={folderSelectorOnly ? 'sc-folder-selector' : 'sc-shell-drawer'}
-      className={drawerClass}
-      label={folderSelectorOnly ? t('nav.folder_selector') : t('common.main_menu')}
+      id="sc-shell-drawer"
+      className={cx(styles.root, styles.overlay)}
+      label={t('common.main_menu')}
       onClose={() => onClose?.()}
     >
       {content}
     </Modal>
+  )
+}
+
+function Destinations({
+  items,
+  active,
+  collapsed,
+  onSelect
+}: {
+  readonly items: readonly NavItem[]
+  readonly active: NavId
+  readonly collapsed: boolean
+  readonly onSelect: (href: string) => void
+}) {
+  return (
+    <ul className={styles.list}>
+      {items.map((item) => (
+        <li key={item.id} className={styles.entry}>
+          <button
+            type="button"
+            className={cx(styles.item, active === item.id && styles.itemActive)}
+            aria-current={active === item.id ? 'page' : undefined}
+            aria-label={item.label}
+            title={collapsed ? item.label : undefined}
+            onClick={() => onSelect(item.href)}
+          >
+            <span className={styles.itemIcon}>
+              <Icon name={item.icon} size={20} />
+            </span>
+            {!collapsed ? <span className={styles.itemLabel}>{item.label}</span> : null}
+          </button>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/** The user's roots, reorderable. A saved order shows at once and holds until the session reports it back. */
+function RootList({ overlay, onSelect }: { readonly overlay: boolean; readonly onSelect: (href: string) => void }) {
+  const { t } = useI18n()
+  const { roots, activeRoot } = useNavigation()
+  const orderMutation = useSetRootOrder()
+  const [reordering, setReordering] = useState(false)
+  const [pending, setPending] = useState<{ base: readonly RootEntry[]; order: readonly RootEntry[] } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const displayRoots = pending?.base === roots ? pending.order : roots
+  if (displayRoots.length === 0) return null
+
+  const moveRoot = (index: number, direction: -1 | 1): void => {
+    const target = index + direction
+    if (target < 0 || target >= displayRoots.length) return
+    const next = displayRoots.with(index, displayRoots[target]).with(target, displayRoots[index])
+    setPending({ base: roots, order: next })
+    setError(null)
+    orderMutation.mutate(
+      next.map((root) => root.label),
+      {
+        onError: (failure) => {
+          setPending(null)
+          setError(describeApiError(failure, t('nav.could_not_save_order')))
+        },
+        onSettled: () => setReordering(false)
+      }
+    )
+  }
+
+  return (
+    <div className={styles.rootsSection}>
+      <div className={styles.sectionHeader}>
+        <span className={styles.sectionTitle}>{t('nav.folders')}</span>
+        <button
+          type="button"
+          className={styles.reorderToggle}
+          aria-pressed={reordering}
+          onClick={() => setReordering((current) => !current)}
+        >
+          {reordering ? t('nav.reorder_done') : t('nav.reorder')}
+        </button>
+      </div>
+      <ul className={styles.list} aria-label={t('nav.folder_selector')}>
+        <li className={styles.entry}>
+          <VirtualList
+            className={styles.sublist}
+            items={displayRoots}
+            itemKey={(root) => root.label}
+            estimateSize={reordering || overlay ? 48 : 40}
+            renderItem={(root, index) =>
+              reordering ? (
+                <div className={cx(styles.subitem, styles.subitemReorder)}>
+                  <span className={styles.itemIcon}>
+                    <Icon name="folder" size={18} />
+                  </span>
+                  <span className={styles.subitemLabel}>{root.label}</span>
+                  <span className={styles.reorderActions}>
+                    <IconButton
+                      label={t('nav.move_up', { name: root.label })}
+                      disabled={index === 0}
+                      onClick={() => moveRoot(index, -1)}
+                    >
+                      <span className={cx(styles.reorderChevron, styles.reorderChevronUp)}>
+                        <Icon name="chevron_right" size={16} />
+                      </span>
+                    </IconButton>
+                    <IconButton
+                      label={t('nav.move_down', { name: root.label })}
+                      disabled={index === displayRoots.length - 1}
+                      onClick={() => moveRoot(index, 1)}
+                    >
+                      <span className={cx(styles.reorderChevron, styles.reorderChevronDown)}>
+                        <Icon name="chevron_right" size={16} />
+                      </span>
+                    </IconButton>
+                  </span>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className={cx(styles.subitem, activeRoot === root.label && styles.subitemActive)}
+                  aria-current={activeRoot === root.label ? 'location' : undefined}
+                  onClick={() => onSelect(`/b/${encodeURIComponent(root.label)}`)}
+                >
+                  <span className={styles.itemIcon}>
+                    <Icon name="folder" size={18} />
+                  </span>
+                  <span className={styles.subitemLabel}>{root.label}</span>
+                </button>
+              )
+            }
+          />
+          {error ? (
+            <p className={styles.reorderError} role="alert">
+              {error}
+            </p>
+          ) : null}
+        </li>
+      </ul>
+    </div>
   )
 }

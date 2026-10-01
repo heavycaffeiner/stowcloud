@@ -4,23 +4,23 @@
 // The Worker is a separate module realm, so it cannot see the CSRF token or
 // the server's chunk limits. Both are resent with every command, which is also
 // what keeps them right across a re-login that rotates the session.
-import type { SessionInfo } from '../../features/auth/api'
-import { invalidateDirs } from '../../features/files/api'
-import { encryptionForLabel, shareLabelOf } from '../crypto/encrypted-shares'
-import { encryptForUpload, FileTooLargeError, LockedSessionError } from '../crypto/e2ee'
-import { bytesToMb } from '../format/bytes'
-import { queryClient } from '../query/client'
-import { keys } from '../query/keys'
-import { uploads } from '../store/upload.store'
-import { CHUNK_SIZE_MIN } from './chunk-planner'
+import type { SessionInfo } from '../auth/api'
+import { invalidateDirs } from '../files/api'
+import { encryptionForLabel, shareLabelOf } from '../../lib/crypto/encrypted-shares'
+import { encryptForUpload, FileTooLargeError, LockedSessionError } from '../../lib/crypto/e2ee'
+import { bytesToMb } from '../../lib/format/bytes'
+import { queryClient } from '../../lib/query/client'
+import { keys } from '../../lib/query/keys'
+import { uploads } from './store'
+import { CHUNK_SIZE_MIN } from '../../lib/upload/chunk-planner'
 import {
   loadStoredChunkSize,
   loadStoredConcurrency,
   storeChunkSize,
   storeConcurrency,
   subscribeUploadPreferences
-} from './preferences'
-import type { AddItem, Cmd, Evt } from './protocol'
+} from '../../lib/upload/preferences'
+import type { AddItem, Cmd, Evt } from '../../lib/upload/protocol'
 
 let worker: Worker | null = null
 

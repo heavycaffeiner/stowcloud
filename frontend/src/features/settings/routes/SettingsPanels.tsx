@@ -1,6 +1,11 @@
 import { lazy, Suspense } from 'react'
-import type { Locale } from '../../../lib/i18n/state'
-import type { ThemePref } from '../../../lib/store/ui.store'
+import { useTranslation } from 'react-i18next'
+import { useI18n } from '../../../hooks/use-i18n'
+import { i18n, setLocale } from '../../../lib/i18n/state'
+import { useOidcConfig, useSession } from '../../auth/api'
+import { useSignOut } from '../hooks/use-sign-out'
+import { useUploadConcurrency } from '../hooks/use-upload-concurrency'
+import { theme } from '../theme'
 import { SettingsCard } from '../SettingsCard'
 import { Button } from '../../../ui/Button'
 import { Icon } from '../../../ui/Icon'
@@ -8,7 +13,7 @@ import { SegmentedControl } from '../../../ui/SegmentedControl'
 import * as styles from './SettingsPanels.css'
 import * as settingsCardStyles from '../SettingsCard.css'
 import { cx } from '../../../ui/cx'
-import type { SessionInfo } from '../../auth/api'
+
 const PasswordSection = lazy(() => import('../PasswordSection').then((m) => ({ default: m.PasswordSection })))
 const TotpSection = lazy(() => import('../TotpSection').then((m) => ({ default: m.TotpSection })))
 const AppPasswordsSection = lazy(() =>
@@ -19,14 +24,10 @@ const SmbSection = lazy(() => import('../SmbSection').then((m) => ({ default: m.
 const WebdavSection = lazy(() => import('../WebdavSection').then((m) => ({ default: m.WebdavSection })))
 const OidcSection = lazy(() => import('../OidcSection').then((m) => ({ default: m.OidcSection })))
 
-type AccountPanelProps = {
-  session: SessionInfo | undefined
-  signOutPending: boolean
-  onSignOut: () => void
-  t: (key: string) => string
-}
-
-export function AccountPanel({ session, signOutPending, onSignOut, t }: AccountPanelProps) {
+export function AccountPanel() {
+  const { t } = useI18n()
+  const session = useSession().data
+  const { signOut, pending } = useSignOut()
   return (
     <div className={styles.pageGrid}>
       <SettingsCard
@@ -51,12 +52,7 @@ export function AccountPanel({ session, signOutPending, onSignOut, t }: AccountP
         }
       >
         <div className={styles.row}>
-          <Button
-            variant="outlined"
-            icon={<Icon name="close" size={18} />}
-            loading={signOutPending}
-            onClick={onSignOut}
-          >
+          <Button variant="outlined" icon={<Icon name="close" size={18} />} loading={pending} onClick={signOut}>
             {t('common.sign_out')}
           </Button>
         </div>
@@ -65,12 +61,13 @@ export function AccountPanel({ session, signOutPending, onSignOut, t }: AccountP
   )
 }
 
-type SecurityPanelProps = {
-  oidcVisible: boolean
-  t: (key: string) => string
-}
-
-export function SecurityPanel({ oidcVisible, t }: SecurityPanelProps) {
+export function SecurityPanel() {
+  const { t } = useI18n()
+  const session = useSession().data
+  const oidcConfig = useOidcConfig().data
+  const oidcVisible =
+    oidcConfig !== undefined &&
+    (oidcConfig.enabled || !!session?.oidc.linked || new URLSearchParams(window.location.search).has('oidc_error'))
   return (
     <Suspense fallback={<p>{t('common.loading')}</p>}>
       <div className={styles.pageGrid}>
@@ -136,12 +133,9 @@ export function SecurityPanel({ oidcVisible, t }: SecurityPanelProps) {
   )
 }
 
-type ConnectionsPanelProps = {
-  session: SessionInfo | undefined
-  t: (key: string) => string
-}
-
-export function ConnectionsPanel({ session, t }: ConnectionsPanelProps) {
+export function ConnectionsPanel() {
+  const { t } = useI18n()
+  const session = useSession().data
   return (
     <Suspense fallback={<p>{t('common.loading')}</p>}>
       <div className={styles.pageGrid}>
@@ -176,29 +170,11 @@ export function ConnectionsPanel({ session, t }: ConnectionsPanelProps) {
   )
 }
 
-type AppearancePanelProps = {
-  theme: ThemePref
-  locale: Locale
-  concurrency: number
-  concurrencyChoices: readonly number[]
-  concurrencySaveFailed: boolean
-  onThemeChange: (value: string) => void
-  onLocaleChange: (value: string) => void
-  onConcurrencyChange: (value: string) => void
-  t: (key: string) => string
-}
-
-export function AppearancePanel({
-  theme,
-  locale,
-  concurrency,
-  concurrencyChoices,
-  concurrencySaveFailed,
-  onThemeChange,
-  onLocaleChange,
-  onConcurrencyChange,
-  t
-}: AppearancePanelProps) {
+export function AppearancePanel() {
+  const { t } = useI18n()
+  const { i18n: translation } = useTranslation(undefined, { i18n })
+  const locale = translation.language === 'en' ? 'en' : 'ko'
+  const concurrency = useUploadConcurrency()
   return (
     <div className={styles.pageGrid}>
       <SettingsCard
@@ -214,13 +190,15 @@ export function AppearancePanel({
           <SegmentedControl
             className={styles.segmented}
             label={t('settings.theme')}
-            value={theme}
+            value={theme.value}
             options={[
               { value: 'system', label: t('common.system') },
               { value: 'light', label: t('settings.light') },
               { value: 'dark', label: t('settings.dark') }
             ]}
-            onChange={onThemeChange}
+            onChange={(value) => {
+              if (value === 'system' || value === 'light' || value === 'dark') theme.value = value
+            }}
           />
         </div>
       </SettingsCard>
@@ -242,7 +220,10 @@ export function AppearancePanel({
               { value: 'ko', label: '한국어' },
               { value: 'en', label: 'English' }
             ]}
-            onChange={onLocaleChange}
+            onChange={(value) => {
+              // A catalogue that fails to load leaves the current language, which the control then shows.
+              if (value === 'ko' || value === 'en') void setLocale(value).catch(() => undefined)
+            }}
           />
         </div>
       </SettingsCard>
@@ -259,12 +240,12 @@ export function AppearancePanel({
           <SegmentedControl
             className={styles.segmented}
             label={t('settings.upload_concurrency')}
-            value={String(concurrency)}
-            options={concurrencyChoices.map((count) => ({ value: String(count), label: count }))}
-            onChange={onConcurrencyChange}
+            value={String(concurrency.concurrency)}
+            options={concurrency.choices.map((count) => ({ value: String(count), label: count }))}
+            onChange={(value) => concurrency.choose(Number(value))}
           />
         </div>
-        {concurrencySaveFailed ? (
+        {concurrency.saveFailed ? (
           <p className={styles.error} role="alert">
             {t('common.could_not_save_settings')}
           </p>

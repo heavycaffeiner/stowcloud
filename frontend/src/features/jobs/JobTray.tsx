@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { batchErrorKey } from '../../api/error-text'
 import { useI18n } from '../../hooks/use-i18n'
-import { jobTray, useJobTrayStore } from '../../lib/store/jobs.store'
+import { jobTray, useJobTrayStore } from './tray-store'
 import { Icon } from '../../ui/Icon'
 import { IconButton } from '../../ui/IconButton'
 import { VirtualList } from '../../ui/VirtualList'

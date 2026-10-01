@@ -1,6 +1,6 @@
 import type { Dispatch, MouseEvent as ReactMouseEvent } from 'react'
-import { useEventListener } from '../../../hooks/use-event-listener'
-import type { NewActionAnchor } from '../../../app/shell/AppShell'
+import { useSignalEffect } from '@preact/signals-react'
+import { createMenuRequest } from '../create-menu'
 import type { BrowseState } from '../logic/browse-types'
 import type { StatePatch } from '../../../lib/merge-state'
 
@@ -80,13 +80,12 @@ export function useBrowseMenus({
         : { dateMenuPosition: { x: rect.left, y: rect.bottom + 4 }, dateMenuOpen: true }
     )
   }
-  useEventListener(window, 'stowcloud:new', (event) => {
-    if (!canCreate) {
-      patch({ snackbar: t('error.acl_denied') })
-      return
-    }
-    const anchor = (event as CustomEvent<NewActionAnchor | undefined>).detail
-    patch({ newMenuTrigger: null, newMenuPosition: anchor ?? { x: 80, y: 120, align: 'start' }, newMenuOpen: true })
+  useSignalEffect(() => {
+    const anchor = createMenuRequest.value
+    if (anchor === null) return
+    createMenuRequest.value = null
+    if (canCreate) patch({ newMenuTrigger: null, newMenuPosition: anchor, newMenuOpen: true })
+    else patch({ snackbar: t('error.acl_denied') })
   })
   return { openSort, closeSort, openNewMenu, closeNewMenu, openOverflow, closeOverflow, openFilterMenu }
 }

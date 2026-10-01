@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MutableRefObject, RefObject } from 'react'
 import { useEventListener } from '../../../hooks/use-event-listener'
 import { resolveExtensions } from '../logic/filters'
-import { search, type SearchSnapshot } from '../../../lib/store/search.store'
+import { saveSnapshot, snapshotFor, type SearchSnapshot } from '../state'
 import {
   initialSearchState,
   toSnapshot,
@@ -58,7 +58,7 @@ export function useSearchController({
   resultsContainer,
   categoriesRef
 }: SearchControllerOptions): SearchController {
-  const [restored] = useState(() => search.snapshotFor(scope))
+  const [restored] = useState(() => snapshotFor(scope))
   const [state, setState] = useState(() => initialSearchState(restored))
   const set: StateSetter = useCallback((key, value) => {
     setState((current) => ({
@@ -217,7 +217,7 @@ export function useSearchController({
   }, [start, state.extQuery, state.kind, state.presets, state.ran])
 
   useEffect(() => {
-    search.saveSnapshot(toSnapshot(scope, latestRef.current))
+    saveSnapshot(toSnapshot(scope, latestRef.current))
   }, [
     scope,
     state.query,
@@ -255,7 +255,7 @@ export function useSearchController({
       cancelStream()
       flush()
       const current = latestRef.current
-      search.saveSnapshot(
+      saveSnapshot(
         toSnapshot(scope, current, {
           hits: current.hits,
           running: false,
@@ -312,6 +312,6 @@ export function useSearchController({
     stop,
     clear,
     selectCategory,
-    saveSnapshot: (overrides = {}) => search.saveSnapshot(toSnapshot(scope, latestRef.current, overrides))
+    saveSnapshot: (overrides = {}) => saveSnapshot(toSnapshot(scope, latestRef.current, overrides))
   }
 }

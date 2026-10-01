@@ -1,15 +1,11 @@
-import { useEffect } from 'react'
-import { selection, useSelectionStore } from '../../../lib/store/selection.store'
+import { useSet } from 'react-simplikit'
 import type { TrashEntry } from '../api'
 
+/** The checked trash items. An id the listing no longer holds stops counting as checked. */
 export function useTrashSelection(entries: readonly TrashEntry[]) {
-  const selected = useSelectionStore((state) => state.names)
-
-  useEffect(() => {
-    const known = new Set(entries.map((entry) => entry.id))
-    const next = new Set([...selected].filter((id) => known.has(id)))
-    if (next.size !== selected.size) selection.replace(next)
-  }, [entries, selected])
-
-  return selected
+  const [checked, { toggle, setAll, reset }] = useSet<string>()
+  const selected: ReadonlySet<string> = new Set(entries.map((entry) => entry.id).filter((id) => checked.has(id)))
+  return { selected, toggle, setAll, clear: reset }
 }
+
+export type TrashSelection = ReturnType<typeof useTrashSelection>

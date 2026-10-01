@@ -1,8 +1,8 @@
 import { useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { parentOf } from '../../../lib/path-utils'
-import { search } from '../../../lib/store/search.store'
-import type { SearchPanelState } from '../logic/search-state'
+import { saveSnapshot } from '../state'
+import { toSnapshot, type SearchPanelState } from '../logic/search-state'
 import type { SearchHit } from '../api'
 
 export interface SearchNavigationOptions {
@@ -20,23 +20,7 @@ export function useSearchNavigation({ scope, state, onNavigated }: SearchNavigat
   return {
     openResult: useCallback(
       (hit: SearchHit): void => {
-        search.saveSnapshot({
-          scope,
-          query: state.query,
-          kind: state.kind,
-          presets: state.presets,
-          extText: state.extText,
-          extQuery: state.extQuery,
-          sortKey: state.sortKey,
-          hits: state.hits,
-          running: state.running,
-          ran: state.ran,
-          failure: state.failure,
-          truncated: state.truncated,
-          elapsedMs: state.elapsedMs,
-          scanned: state.scanned,
-          scrollTop: state.scrollTop
-        })
+        saveSnapshot(toSnapshot(scope, state))
         onNavigated?.()
         void navigate(`/b${parentOf(hit.path)}?focus=${encodeURIComponent(hit.entry.name)}`)
       },

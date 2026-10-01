@@ -5,7 +5,7 @@ import { encryptionForLabel, shareLabelOf } from '../../../lib/crypto/encrypted-
 import { FileTooLargeError, isUnlocked, LockedSessionError } from '../../../lib/crypto/e2ee'
 import { downloadEncryptedFile, downloadEncryptedFolder } from '../../../lib/crypto/download-sw'
 import { downloadPath, triggerUrlDownload } from '../../../lib/format/download'
-import { selection } from '../../../lib/store/selection.store'
+import { selection } from '../selection'
 import { pickedFilesFromDataTransfer } from '../../../lib/upload/directory-picker'
 import { rowActions, type RowAction } from '../logic/row-actions'
 import { browseTransferSources, runBrowseTransfer } from '../logic/browse-transfer'

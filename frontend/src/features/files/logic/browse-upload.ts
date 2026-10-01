@@ -1,5 +1,5 @@
 import type { Dispatch } from 'react'
-import { addEntries, addFiles } from '../../../lib/upload/queue'
+import { addEntries, addFiles } from '../../uploads/queue'
 import type { BrowseState } from './browse-types'
 import type { StatePatch } from '../../../lib/merge-state'
 import type { Entry, OnConflict } from '../api'

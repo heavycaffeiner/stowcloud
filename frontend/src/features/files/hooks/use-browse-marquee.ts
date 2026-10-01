@@ -1,6 +1,6 @@
 import type { Dispatch, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { useRef } from 'react'
-import { selection } from '../../../lib/store/selection.store'
+import { selection } from '../selection'
 import { autoScrollStep, movedFar, rectBetween } from '../logic/marquee'
 import type { FileGridHandle } from '../FileGrid'
 import type { FileViewHandle } from '../FileTable'

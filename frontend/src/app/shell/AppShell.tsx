@@ -1,57 +1,33 @@
-import { useMemo, useReducer, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { useRefEffect } from 'react-simplikit'
 import { useI18n } from '../../hooks/use-i18n'
-import { useOutsideDismiss } from '../../hooks/use-outside-dismiss'
 import { isUnauthenticated, screenOf, useSession, useSetupRequired } from '../../features/auth/api'
-import { useLogout } from '../../features/settings/api'
-import { search, searchTarget, useSearchStore } from '../../lib/store/search.store'
-import { ui, useUiStore } from '../../lib/store/ui.store'
-import { useCompact } from '../../ui/use-compact'
 import { JobTray } from '../../features/jobs/JobTray'
-import { NavigationBar, type NavigationBarItem } from '../../ui/NavigationBar'
-import { NavigationDrawer, type NavItem, type RootItem } from './NavigationDrawer'
 import { SearchSheet } from '../../features/search/SearchSheet'
-import { Icon } from '../../ui/Icon'
 import { UploadTray } from '../../features/uploads/UploadTray'
-import { ProgressCircular } from '../../ui/ProgressCircular'
+import { swReady } from '../../lib/crypto/download-sw'
+import { startLiveInvalidation } from '../../lib/query/live'
 import { Button } from '../../ui/Button'
 import { ErrorBoundary } from '../../ui/ErrorBoundary'
-import {
-  browsePathFromUrl,
-  useBrowsePathState,
-  useShellKeyboardShortcuts,
-  useShellLiveInvalidation,
-  useShellRouteTransitions,
-  useTrayGeometry,
-  type ShellState
-} from './use-shell-lifecycle'
-import { mergeState } from '../../lib/merge-state'
+import { NavigationBar, type NavigationBarItem } from '../../ui/NavigationBar'
+import { ProgressCircular } from '../../ui/ProgressCircular'
+import { cssVarName } from '../../ui/css-var'
+import { trayStackTop } from '../../ui/theme.css'
+import { useCompact } from '../../ui/use-compact'
+import { NavigationDrawer } from './NavigationDrawer'
+import { ShellHeader } from './ShellHeader'
+import { useNavigation, type NavId } from './navigation'
+import { sidebar } from './sidebar'
 import * as styles from './AppShell.css'
-import * as iconButtonStyles from '../../ui/IconButton.css'
 import * as routeErrorBoundaryStyles from '../RouteErrorBoundary.css'
-import * as utilitiesStyles from '../../ui/utilities.css'
 import { cx } from '../../ui/cx'
 
-/** Where the create menu should open, in viewport coordinates. `align` says
- * which edge `x` refers to: a left-hand trigger anchors its left edge, a
- * right-hand one its right. */
-export interface NewActionAnchor {
-  readonly x: number
-  readonly y: number
-  readonly align: 'start' | 'end'
-}
-
+/** Lets a signed-in session through to the app and sends everyone else to sign-in or first-run setup. */
 export function AppShell() {
   const { t } = useI18n()
-  const location = useLocation()
-  const navigate = useNavigate()
-  const compact = useCompact()
-  const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed)
-  const searchOpen = useSearchStore((state) => state.open)
-  const searchScope = useSearchStore((state) => state.scope)
   const session = useSession()
   const definitiveFailure = session.isError && isUnauthenticated(session.error)
-  const sessionUnavailable = session.isError && !definitiveFailure
   const setup = useSetupRequired(definitiveFailure)
   const screen = screenOf({
     hasSession: session.data !== undefined && !definitiveFailure,
@@ -59,155 +35,9 @@ export function AppShell() {
     setupPending: definitiveFailure && setup.isPending,
     setupRequired: setup.data === true
   })
-  const [shell, setShell] = useReducer(mergeState<ShellState>, {
-    lastBrowsePath: null,
-    mobileDrawerOpen: false,
-    folderSelectorOpen: false,
-    accountMenuOpen: false
-  })
-  const { lastBrowsePath, mobileDrawerOpen, folderSelectorOpen, accountMenuOpen } = shell
-  const trayStackRef = useRef<HTMLDivElement | null>(null)
-  const accountMenuRef = useRef<HTMLDivElement | null>(null)
-  const logout = useLogout()
-
-  useOutsideDismiss(accountMenuOpen, accountMenuRef, () => setShell({ accountMenuOpen: false }))
-  useShellRouteTransitions(compact, location.pathname, location.search, screen, setShell)
-  useBrowsePathState(location.pathname, location.search, setShell)
-  useShellLiveInvalidation(screen)
-
-  const signOut = (): void => {
-    setShell({ accountMenuOpen: false })
-    logout.mutate(undefined, {
-      onSettled: (result) => {
-        // Single sign-on ends the provider's session through its own URL; a
-        // local session just returns to the sign-in screen.
-        if (result?.end_session_url) window.location.assign(result.end_session_url)
-        else void navigate('/login', { replace: true })
-      }
-    })
-  }
-
-  const roots = useMemo<RootItem[]>(
-    () =>
-      (session.data?.roots ?? []).map((root) => ({
-        id: root.label,
-        label: root.label,
-        icon: 'folder',
-        brokenReason: root.broken_reason
-      })),
-    [session.data?.roots]
-  )
-  const rootItems = roots
-  const browsePath = browsePathFromUrl(location.pathname)
-  const browseTarget = (): string => {
-    const rootLabels = new Set(rootItems.map((item) => item.id))
-    const valid = (path: string | null): path is string =>
-      path === '/' || (!!path && rootLabels.has(path.split('/').filter(Boolean)[0] ?? ''))
-    if (valid(browsePath)) return browsePath
-    const previous = lastBrowsePath?.split('?')[0] ?? null
-    if (valid(previous)) return previous
-    return rootItems.length > 0 ? `/${rootItems[0].id}` : '/'
-  }
-
-  const browseHref = (path: string): string => (path === '/' ? '/b' : `/b${path}`)
-  const browseScope =
-    browsePath && browsePath !== '/'
-      ? browsePath
-      : lastBrowsePath?.split('?')[0] && lastBrowsePath?.split('?')[0] !== '/'
-        ? lastBrowsePath.split('?')[0]
-        : ''
-  const activeRoot = browsePath?.split('/').filter(Boolean)[0] ?? ''
-
-  const openSearch = (): void => {
-    setShell({ mobileDrawerOpen: false, folderSelectorOpen: false })
-    const target = searchTarget(compact, browseScope)
-    if (target) void navigate(target)
-    else search.openSheet(browseScope)
-  }
-
-  useShellKeyboardShortcuts(screen, openSearch)
-  useTrayGeometry(trayStackRef, screen === 'browser')
-
-  const navItems = useMemo<NavItem[]>(() => {
-    const items: NavItem[] = [
-      { id: 'files', label: t('nav.files'), icon: 'folder', href: browseHref(browseTarget()) },
-      { id: 'recent', label: t('nav.recent'), icon: 'history', href: '/recent' },
-      { id: 'trash', label: t('common.trash'), icon: 'delete', href: '/trash' },
-      { id: 'links', label: t('nav.links'), icon: 'link', href: '/links' },
-      { id: 'settings', label: t('common.settings'), icon: 'settings', href: '/settings' }
-    ]
-    if (session.data?.user.is_admin)
-      items.push({ id: 'admin', label: t('nav.admin'), icon: 'admin_panel_settings', href: '/admin' })
-    return items
-  }, [browseTarget, session.data?.user.is_admin, t, location.pathname, location.search, lastBrowsePath])
-
-  const activeNav = location.pathname.startsWith('/settings')
-    ? 'settings'
-    : location.pathname.startsWith('/admin')
-      ? 'admin'
-      : location.pathname.startsWith('/recent')
-        ? 'recent'
-        : location.pathname.startsWith('/trash')
-          ? 'trash'
-          : location.pathname.startsWith('/links')
-            ? 'links'
-            : 'files'
-
-  const compactItems = useMemo<NavigationBarItem[]>(
-    () => [
-      { id: 'files', label: t('nav.files'), icon: 'folder', href: browseHref(browseTarget()) },
-      { id: 'recent', label: t('nav.recent'), icon: 'history', href: '/recent' },
-      { id: 'links', label: t('nav.links'), icon: 'link', href: '/links' },
-      {
-        id: 'more',
-        label: t('nav.more'),
-        icon: 'menu',
-        popup: 'dialog',
-        expanded: mobileDrawerOpen,
-        controls: 'sc-shell-drawer'
-      }
-    ],
-    [mobileDrawerOpen, browseTarget, t, location.pathname, lastBrowsePath]
-  )
-
-  const compactActive = ['trash', 'settings', 'admin'].includes(activeNav) ? 'more' : activeNav
-
-  const navigateTo = (id: string, href?: string): void => {
-    if (id === 'files') {
-      setShell({ mobileDrawerOpen: false, folderSelectorOpen: false })
-      void navigate(browseHref(browseTarget()))
-      return
-    }
-    if (id === 'more') {
-      setShell((current) => ({ folderSelectorOpen: false, mobileDrawerOpen: !current.mobileDrawerOpen }))
-      return
-    }
-    const target = href ?? navItems.find((item) => item.id === id)?.href
-    if (target) {
-      setShell({ mobileDrawerOpen: false, folderSelectorOpen: false })
-      void navigate(target)
-    }
-  }
-
-  // The browse page owns the create menu, so the sidebar hands over where its
-  // button sits. Without a rect the menu opened at a fixed corner, detached
-  // from the control that summoned it.
-  const triggerNewAction = (trigger?: HTMLElement): void => {
-    const rect = trigger?.getBoundingClientRect()
-    // The sidebar sits on the left, so its menu anchors its left edge. Taking
-    // the right edge instead placed the menu off-screen once the rail was
-    // collapsed and that edge was only a few dozen pixels in.
-    window.dispatchEvent(
-      new CustomEvent<NewActionAnchor>('stowcloud:new', {
-        detail: rect ? { x: rect.left, y: rect.bottom + 4, align: 'start' } : undefined
-      })
-    )
-  }
-
-  const userInitial = (session.data?.user.display_name || session.data?.user.name || 'S').slice(0, 1).toUpperCase()
   if (screen === 'login') return <Navigate to="/login" replace />
   if (screen === 'first-run') return <Navigate to="/setup" replace />
-  if (sessionUnavailable) {
+  if (session.isError && !definitiveFailure) {
     return (
       <main className={routeErrorBoundaryStyles.root}>
         <section className={routeErrorBoundaryStyles.card} role="alert">
@@ -227,203 +57,96 @@ export function AppShell() {
       </div>
     )
   }
+  return <ShellLayout />
+}
 
+function ShellLayout() {
+  const compact = useCompact()
+  const collapsed = sidebar.value === 'collapsed'
+  useEffect(() => {
+    const stop = startLiveInvalidation()
+    void swReady()
+    return stop
+  }, [])
   return (
     <>
       <div className={cx(styles.root, compact && styles.compact)}>
-        <header className={styles.header}>
-          <div className={styles.headerLeft}>
-            {!compact ? (
-              <button
-                type="button"
-                className={cx(styles.headerMenuBtn, iconButtonStyles.root)}
-                aria-label={t('nav.toggle_sidebar')}
-                aria-expanded={!sidebarCollapsed}
-                onClick={() => ui.toggleSidebar()}
-              >
-                <Icon name="menu" size={22} />
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className={styles.headerBrandBtn}
-              onClick={() => navigateTo('files', browseHref(browseTarget()))}
-            >
-              <span className={styles.headerBrand}>Stowcloud</span>
-            </button>
-          </div>
-
-          <div className={styles.headerCenter}>
-            <button
-              className={cx(styles.headerSearch, utilitiesStyles.focusRing)}
-              type="button"
-              onClick={openSearch}
-              aria-label={t('common.search')}
-            >
-              <span className={styles.headerSearchIcon}>
-                <Icon name="search" size={18} />
-              </span>
-              <span className={styles.headerSearchPlaceholder}>{t('common.search')}</span>
-              <span className={styles.headerSearchHints}>
-                <kbd className={styles.headerShortcut}>/</kbd>
-                <span className={styles.headerFilterIcon} aria-hidden="true">
-                  <Icon name="tune" size={16} />
-                </span>
-              </span>
-            </button>
-          </div>
-
-          <div className={styles.headerRight}>
-            {!compact ? (
-              <button
-                type="button"
-                className={cx(styles.headerIconBtn, iconButtonStyles.root)}
-                aria-label={t('nav.help')}
-                onClick={() =>
-                  window.open('https://github.com/heavycaffeiner/Stowcloud', '_blank', 'noopener,noreferrer')
-                }
-              >
-                <Icon name="help" size={20} />
-              </button>
-            ) : null}
-            {!compact ? (
-              <button
-                type="button"
-                className={cx(styles.headerIconBtn, iconButtonStyles.root)}
-                aria-label={t('common.settings')}
-                onClick={() => navigateTo('settings', '/settings')}
-              >
-                <Icon name="settings" size={20} />
-              </button>
-            ) : null}
-            <div className={styles.headerAccountWrap} ref={accountMenuRef}>
-              <button
-                type="button"
-                className={styles.headerAvatarBtn}
-                aria-label={session.data?.user.display_name || session.data?.user.name || 'User'}
-                aria-haspopup="menu"
-                aria-expanded={accountMenuOpen}
-                onClick={() => setShell((current) => ({ accountMenuOpen: !current.accountMenuOpen }))}
-              >
-                <span className={styles.headerAvatar}>{userInitial}</span>
-              </button>
-              {accountMenuOpen ? (
-                <div className={styles.headerAccountMenu} role="menu">
-                  <div className={styles.headerAccountName}>
-                    {session.data?.user.display_name || session.data?.user.name}
-                  </div>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className={styles.headerAccountItem}
-                    onClick={() => {
-                      setShell({ accountMenuOpen: false })
-                      navigateTo('settings', '/settings')
-                    }}
-                  >
-                    <Icon name="settings" size={18} />
-                    {t('common.settings')}
-                  </button>
-                  <button type="button" role="menuitem" className={styles.headerAccountItem} onClick={signOut}>
-                    <Icon name="close" size={18} />
-                    {t('common.sign_out')}
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </header>
-
+        <ShellHeader />
         <div className={styles.body}>
-          {!compact ? (
-            <NavigationDrawer
-              collapsed={sidebarCollapsed}
-              navItems={navItems}
-              activeNav={activeNav}
-              items={rootItems}
-              active={activeRoot}
-              onSelect={(root) => void navigate(`/b/${encodeURIComponent(root.id)}`)}
-              onNavSelect={(item) => navigateTo(item.id, item.href)}
-              onSearch={openSearch}
-              onNew={activeNav === 'files' ? triggerNewAction : undefined}
-              userInitial={userInitial}
-            />
-          ) : null}
-
-          <main
-            className={cx(
-              styles.main,
-              !compact && sidebarCollapsed ? styles.mainCollapsed : !compact && styles.mainDrawer
-            )}
-          >
+          {!compact ? <NavigationDrawer /> : null}
+          <main className={cx(styles.main, !compact && (collapsed ? styles.mainCollapsed : styles.mainDrawer))}>
             <Outlet />
           </main>
         </div>
-
-        {compact ? (
-          <NavigationBar
-            items={compactItems}
-            active={compactActive}
-            onSelect={(id) => {
-              if (id === 'more') setShell((current) => ({ mobileDrawerOpen: !current.mobileDrawerOpen }))
-              else navigateTo(id, compactItems.find((item) => item.id === id)?.href)
-            }}
-          />
-        ) : null}
-
-        {compact && folderSelectorOpen ? (
-          <NavigationDrawer
-            items={rootItems}
-            active={activeRoot}
-            folderSelectorOnly
-            overlay
-            onClose={() => setShell({ folderSelectorOpen: false })}
-            onSelect={(root) => {
-              setShell({ folderSelectorOpen: false })
-              void navigate(`/b/${encodeURIComponent(root.id)}`)
-            }}
-          />
-        ) : null}
-
-        {compact && mobileDrawerOpen ? (
-          <NavigationDrawer
-            overlay
-            navItems={navItems}
-            activeNav={activeNav}
-            items={rootItems}
-            active={activeRoot}
-            userInitial={userInitial}
-            onClose={() => setShell({ mobileDrawerOpen: false })}
-            onSelect={(root) => {
-              setShell({ mobileDrawerOpen: false })
-              void navigate(`/b/${encodeURIComponent(root.id)}`)
-            }}
-            onNavSelect={(item) => {
-              setShell({ mobileDrawerOpen: false })
-              navigateTo(item.id, item.href)
-            }}
-            onSearch={openSearch}
-            onNew={
-              activeNav === 'files'
-                ? (trigger) => {
-                    setShell({ mobileDrawerOpen: false })
-                    triggerNewAction(trigger)
-                  }
-                : undefined
-            }
-          />
-        ) : null}
+        {compact ? <CompactNav /> : null}
       </div>
-
-      <div ref={trayStackRef} className={cx(styles.trayStack, compact && styles.trayStackCompact)}>
-        <ErrorBoundary>
-          <JobTray />
-        </ErrorBoundary>
-        <ErrorBoundary>
-          <UploadTray />
-        </ErrorBoundary>
-      </div>
-      <SearchSheet open={searchOpen && !compact} scope={searchScope} onClose={() => search.close()} />
+      <TrayStack compact={compact} />
+      {!compact ? <SearchSheet /> : null}
     </>
+  )
+}
+
+const BAR_DESTINATIONS: readonly NavId[] = ['files', 'recent', 'links']
+
+/** The bottom bar. Whatever does not fit on it lives in a drawer that closes on any navigation. */
+function CompactNav() {
+  const { t } = useI18n()
+  const navigate = useNavigate()
+  const { key } = useLocation()
+  const { items, active } = useNavigation()
+  const [openedAt, setOpenedAt] = useState<string | null>(null)
+  const drawerOpen = openedAt === key
+  const bar: readonly NavigationBarItem[] = [
+    ...items.filter((item) => BAR_DESTINATIONS.includes(item.id)),
+    {
+      id: 'more',
+      label: t('nav.more'),
+      icon: 'menu',
+      popup: 'dialog',
+      expanded: drawerOpen,
+      controls: 'sc-shell-drawer'
+    }
+  ]
+  const select = (id: string): void => {
+    if (id === 'more') setOpenedAt(drawerOpen ? null : key)
+    else {
+      const href = bar.find((item) => item.id === id)?.href
+      if (href) void navigate(href)
+    }
+  }
+  return (
+    <>
+      <NavigationBar items={bar} active={BAR_DESTINATIONS.includes(active) ? active : 'more'} onSelect={select} />
+      {drawerOpen ? <NavigationDrawer overlay onClose={() => setOpenedAt(null)} /> : null}
+    </>
+  )
+}
+
+/** The job and upload trays. Publishes its top edge so floating controls can sit above it. */
+function TrayStack({ compact }: { readonly compact: boolean }) {
+  const ref = useRefEffect<HTMLDivElement>((element) => {
+    const root = document.documentElement.style
+    const publish = (): void => {
+      const top =
+        element.offsetHeight > 0 ? `${window.innerHeight - element.getBoundingClientRect().top + 12}px` : '0px'
+      root.setProperty(cssVarName(trayStackTop), top)
+    }
+    const observer = new ResizeObserver(publish)
+    observer.observe(element)
+    publish()
+    return () => {
+      observer.disconnect()
+      root.removeProperty(cssVarName(trayStackTop))
+    }
+  }, [])
+  return (
+    <div ref={ref} className={cx(styles.trayStack, compact && styles.trayStackCompact)}>
+      <ErrorBoundary>
+        <JobTray />
+      </ErrorBoundary>
+      <ErrorBoundary>
+        <UploadTray />
+      </ErrorBoundary>
+    </div>
   )
 }

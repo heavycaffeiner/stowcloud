@@ -1,4 +1,4 @@
-import type { SearchSnapshot, SearchSortKey } from '../../../lib/store/search.store'
+import type { SearchSnapshot, SearchSortKey } from '../state'
 import type { SearchHit, SearchProgress } from '../api'
 
 export type Kind = 'any' | 'file' | 'dir'

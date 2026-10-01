@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { type UploadItem, uploads, useUploadStore } from '../../../src/lib/store/upload.store'
-import { addFiles, handle } from '../../../src/lib/upload/queue'
+import { type UploadItem, uploads, useUploadStore } from '../../../src/features/uploads/store'
+import { addFiles, handle } from '../../../src/features/uploads/queue'
 
 vi.mock('../../../src/lib/crypto/encrypted-shares', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../src/lib/crypto/encrypted-shares')>()
