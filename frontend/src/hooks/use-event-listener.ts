@@ -38,7 +38,8 @@ export function useEventListener(
 ): void {
   const onEvent = useEffectEvent(listener)
   useEffect(() => {
-    const element = target instanceof EventTarget ? target : target?.current
+    // Not `instanceof EventTarget`: a window from another realm fails that test.
+    const element = target && 'addEventListener' in target ? target : target?.current
     if (!element) return
     const handle = (event: Event): void => onEvent(event)
     element.addEventListener(type, handle, { capture, passive })
