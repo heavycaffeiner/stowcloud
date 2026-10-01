@@ -138,8 +138,8 @@ if ss -tln 2>/dev/null | grep -q ":$PORT "; then
 fi
 
 echo "==> serving"
-# Truncated, so the readiness check below reads this run rather than matching
-# a "listening" line the previous one left behind.
+# Truncated, so the token read below is this run's rather than one the
+# previous run left behind.
 : > "$DIR/log"
 "$BIN" --data-dir "$PWD/$DIR/data" >> "$DIR/log" 2>&1 &
 SERVER=$!
@@ -152,7 +152,7 @@ READY=
 for _ in $(seq 1 60); do
   sleep 0.25
   if ! kill -0 "$SERVER" 2>/dev/null; then break; fi
-  if grep -q "msg=listening" "$DIR/log" 2>/dev/null; then READY=1; break; fi
+  if ss -tln 2>/dev/null | grep -q ":$PORT "; then READY=1; break; fi
 done
 
 if [ -z "$READY" ]; then
@@ -163,7 +163,7 @@ if [ -z "$READY" ]; then
   exit 1
 fi
 
-TOKEN=$(grep -oE 'setup token \(valid[^)]*\): [a-f0-9]+' "$DIR/log" | tail -1 | awk '{print $NF}')
+TOKEN=$(grep -oE 'setup_token=[a-f0-9]+' "$DIR/log" | tail -1 | cut -d= -f2)
 
 # Whether the account already exists, asked of the server rather than inferred
 # from the token line: the token is minted at startup and stays in the log
