@@ -1735,15 +1735,15 @@ export interface components {
             password?: string;
         };
         LoginResult: {
-            admin: boolean;
-            challenge: string;
-            csrf: string;
+            admin?: boolean;
+            challenge?: string;
+            csrf?: string;
             display?: string;
             /** Format: int64 */
-            expires_in_seconds: number;
-            id: string;
-            login: string;
-            required: string;
+            expires_in_seconds?: number;
+            id?: string;
+            login?: string;
+            required?: string;
         };
         LogoutView: {
             end_session_url: string;
@@ -1862,21 +1862,21 @@ export interface components {
             size: number;
         };
         PublicLinkView: {
-            can_download: boolean;
-            drop: boolean;
+            can_download?: boolean;
+            drop?: boolean;
             entries?: components["schemas"]["PublicLinkEntryView"][];
-            has_password: boolean;
-            id: string;
-            is_dir: boolean;
-            label: string;
+            has_password?: boolean;
+            id?: string;
+            is_dir?: boolean;
+            label?: string;
             /** Format: int64 */
-            max_upload_bytes: number;
-            name: string;
-            note: string;
-            path: string;
+            max_upload_bytes?: number;
+            name?: string;
+            note?: string;
+            path?: string;
             protected: boolean;
             /** Format: int64 */
-            size: number;
+            size?: number;
         };
         Range: {
             choices?: string[] | null;
@@ -2003,14 +2003,14 @@ export interface components {
             active_jobs?: number;
             /** Format: int64 */
             active_uploads?: number;
-            applied: boolean;
-            findings: components["schemas"]["FindingView"][] | null;
-            restart_required: boolean;
+            applied?: boolean;
+            findings?: components["schemas"]["FindingView"][] | null;
+            restart_required?: boolean;
             share?: components["schemas"]["ShareView"];
             share_failed?: boolean;
-            stored: boolean;
-            user: components["schemas"]["SetupAccountView"];
-            warnings: components["schemas"]["FindingView"][] | null;
+            stored?: boolean;
+            user?: components["schemas"]["SetupAccountView"];
+            warnings?: components["schemas"]["FindingView"][] | null;
         };
         SetupShareRequest: {
             host?: string;

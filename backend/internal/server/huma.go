@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"reflect"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -115,7 +116,58 @@ func requireResponseFields(doc *huma.OpenAPI) {
 			continue
 		}
 		ref := prefix + name
-		registry.SchemaFromRef(ref).Required = strict.Schema(registry.TypeFromRef(ref), false, name).Required
+		goType := registry.TypeFromRef(ref)
+		nilable := map[string]bool{}
+		pointerEmbedded(goType, nilable)
+		required := []string{}
+		for _, field := range strict.Schema(goType, false, name).Required {
+			if !nilable[field] {
+				required = append(required, field)
+			}
+		}
+		registry.SchemaFromRef(ref).Required = required
+	}
+}
+
+// pointerEmbedded adds the JSON names t gets from embedded pointers. Huma
+// flattens them like any embedded struct, but encoding/json leaves all of
+// their fields out when the pointer is nil.
+func pointerEmbedded(t reflect.Type, into map[string]bool) {
+	if t.Kind() != reflect.Struct {
+		return
+	}
+	for field := range t.Fields() {
+		switch {
+		case !field.Anonymous:
+		case field.Type.Kind() == reflect.Pointer:
+			jsonNames(field.Type.Elem(), into)
+		default:
+			pointerEmbedded(field.Type, into)
+		}
+	}
+}
+
+// jsonNames adds every JSON field name encoding/json writes for struct t.
+func jsonNames(t reflect.Type, into map[string]bool) {
+	if t.Kind() != reflect.Struct {
+		return
+	}
+	for field := range t.Fields() {
+		tag := field.Tag.Get("json")
+		name, _, _ := strings.Cut(tag, ",")
+		switch {
+		case name == "-" || !field.IsExported() && !field.Anonymous:
+		case field.Anonymous && name == "":
+			embedded := field.Type
+			if embedded.Kind() == reflect.Pointer {
+				embedded = embedded.Elem()
+			}
+			jsonNames(embedded, into)
+		case name == "":
+			into[field.Name] = true
+		default:
+			into[name] = true
+		}
 	}
 }
 

@@ -1471,15 +1471,6 @@
             "type": "string"
           }
         },
-        "required": [
-          "id",
-          "login",
-          "admin",
-          "csrf",
-          "required",
-          "challenge",
-          "expires_in_seconds"
-        ],
         "type": "object"
       },
       "LogoutView": {
@@ -2001,18 +1992,7 @@
           }
         },
         "required": [
-          "protected",
-          "id",
-          "name",
-          "is_dir",
-          "size",
-          "label",
-          "note",
-          "path",
-          "can_download",
-          "drop",
-          "has_password",
-          "max_upload_bytes"
+          "protected"
         ],
         "type": "object"
       },
@@ -2571,14 +2551,6 @@
             ]
           }
         },
-        "required": [
-          "user",
-          "warnings",
-          "stored",
-          "applied",
-          "restart_required",
-          "findings"
-        ],
         "type": "object"
       },
       "SetupShareRequest": {
