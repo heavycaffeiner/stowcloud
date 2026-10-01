@@ -212,5 +212,7 @@ else
   echo "  then: bash scripts/dev.sh --fresh"
 fi
 echo
+echo "  hot reload against this server: cd frontend && pnpm dev"
+echo
 echo "  log:  $DIR/log"
 echo "  stop: kill \$(cat $DIR/pid)"

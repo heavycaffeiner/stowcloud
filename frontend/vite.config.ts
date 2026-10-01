@@ -1,4 +1,7 @@
+import { existsSync, readFileSync } from 'node:fs'
+import type { IncomingMessage } from 'node:http'
 import { createRequire } from 'node:module'
+import path from 'node:path'
 import { fileURLToPath, URL } from 'node:url'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vitest/config'
@@ -11,6 +14,13 @@ const reactRouterProduction = reactRouterDevelopment.replace(/[\\/]dist[\\/]deve
   match.replace('development', 'production')
 )
 const reactRouterDomProduction = reactRouterProduction.replace(/[\\/]index\.mjs$/, '/dom-export.mjs')
+
+// The engine scripts/dev.sh starts speaks only TLS and refuses a signed-in request from an http Origin,
+// so `pnpm dev` serves https with the certificate dev.sh left in its data directory.
+const devTls = path.resolve(fileURLToPath(new URL('..', import.meta.url)), process.env.SC_DEV_DIR ?? '.dev', 'data/tls')
+const devHttps = existsSync(path.join(devTls, 'cert.pem'))
+  ? { cert: readFileSync(path.join(devTls, 'cert.pem')), key: readFileSync(path.join(devTls, 'key.pem')) }
+  : undefined
 
 export default defineConfig({
   base: '/',
@@ -56,6 +66,7 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: false,
+    https: devHttps,
     // Reaching this server from another machine (a phone, another laptop) needs
     // both `--host` and the name that machine uses in its address bar: Vite
     // refuses a Host it was not told about, and a DNS name is not covered by the
@@ -79,10 +90,15 @@ export default defineConfig({
       ].map((pattern) => [
         pattern,
         {
-          target: process.env.SC_DEV_API ?? 'https://127.0.0.1:8081',
+          target: process.env.SC_DEV_API ?? 'https://127.0.0.1:18443',
           secure: false,
           changeOrigin: false,
-          ws: pattern.startsWith('^/api')
+          ws: pattern.startsWith('^/api'),
+          // Opening a share link loads the app under development; its API calls still reach the engine.
+          bypass:
+            pattern === '^/s/'
+              ? (req: IncomingMessage) => (req.headers.accept?.includes('text/html') ? '/index.html' : undefined)
+              : undefined
         }
       ])
     )
