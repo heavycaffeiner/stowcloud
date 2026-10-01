@@ -1,4 +1,6 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useState, useSyncExternalStore } from 'react'
+import { useForm } from 'react-hook-form'
+import { t } from '../../lib/i18n'
 import { useI18n } from '../../hooks/use-i18n'
 import { useAdminSettings, useSaveUploadSettings } from './api'
 import { describeApiError } from '../../api/error-text'
@@ -13,225 +15,104 @@ import {
 import { loadStoredChunkSize, loadStoredConcurrency, subscribeUploadPreferences } from '../../lib/upload/preferences'
 import { setUploadChunkSize, setUploadConcurrency } from '../uploads/queue'
 import { Button } from '../../ui/Button'
+import { FormTextField } from '../../ui/FormTextField'
 import { Icon } from '../../ui/Icon'
 import { Switch } from '../../ui/Switch'
-import { TextField } from '../../ui/TextField'
 import { AdminCard } from './AdminCard'
 import * as styles from './UploadSettingsSection.css'
 import * as adminStyles from './admin.css'
 
+const chunkBytes = (mb: string): number => Math.round(Number(mb) * BYTES_PER_MB)
+
+interface ServerValues {
+  minMb: string
+  defaultMb: string
+}
+
+function serverProblem({ minMb, defaultMb }: ServerValues): string | null {
+  const min = Number(minMb)
+  const def = Number(defaultMb)
+  if (!Number.isFinite(min) || !Number.isFinite(def) || min <= 0 || def <= 0)
+    return t('upload_settings.enter_valid_number')
+  if (chunkBytes(minMb) < CHUNK_SIZE_MIN)
+    return t('upload_settings.minimum_must_at_least', { min: formatBytes(CHUNK_SIZE_MIN) })
+  if (chunkBytes(defaultMb) < chunkBytes(minMb)) return t('upload_settings.default_cannot_smaller_than_minimum')
+  return null
+}
+
+function overrideProblem(mb: string, serverMin: number): string | true {
+  const bytes = chunkBytes(mb)
+  if (!(Number(mb) > 0) || !Number.isSafeInteger(bytes)) return t('upload_settings.enter_valid_number')
+  if (!validChunkSizeOverride(bytes, serverMin))
+    return t('upload_settings.must_at_least_server_minimum', { min: formatBytes(serverMin) })
+  return true
+}
+
+function concurrencyProblem(input: string): string | true {
+  const value = Number(input)
+  return (
+    (Number.isInteger(value) && value >= MIN_CONCURRENCY && value <= MAX_CONCURRENCY) ||
+    t('upload_settings.concurrency_must_between', { min: MIN_CONCURRENCY, max: MAX_CONCURRENCY })
+  )
+}
+
 export function UploadSettingsSection() {
-  const settings = useAdminSettings()
-  const fields = settings.data?.fields
+  const fields = useAdminSettings().data?.fields
   const serverMin = Number(fields?.find((item) => item.key === 'upload.chunk_min_bytes')?.value ?? CHUNK_SIZE_MIN)
   const serverDefault = Number(
     fields?.find((item) => item.key === 'upload.chunk_default_bytes')?.value ?? CHUNK_SIZE_MIN * 2
   )
-  const [cacheEnabled, setCacheEnabled] = useState<boolean | null>(null)
-  const [cacheAvailable, setCacheAvailable] = useState<boolean | null>(null)
   return (
-    <UploadSettingsForm
-      key={`${serverMin}:${serverDefault}`}
-      serverMin={serverMin}
-      serverDefault={serverDefault}
-      cacheEnabled={cacheEnabled}
-      cacheAvailable={cacheAvailable}
-      onCacheResponse={(enabled, available) => {
-        setCacheEnabled(enabled)
-        setCacheAvailable(available)
-      }}
-    />
+    <>
+      <ServerUploadCards serverMin={serverMin} serverDefault={serverDefault} />
+      <ChunkOverrideCard serverMin={serverMin} serverDefault={serverDefault} />
+      <ConcurrencyCard />
+    </>
   )
 }
 
-interface UploadSettingsFormProps {
-  readonly serverMin: number
-  readonly serverDefault: number
-  readonly cacheEnabled: boolean | null
-  readonly cacheAvailable: boolean | null
-  readonly onCacheResponse: (enabled: boolean, available: boolean) => void
+interface ServerSizes {
+  serverMin: number
+  serverDefault: number
 }
 
-function UploadSettingsForm({
-  serverMin,
-  serverDefault,
-  cacheEnabled,
-  cacheAvailable,
-  onCacheResponse
-}: UploadSettingsFormProps) {
+function ServerUploadCards({ serverMin, serverDefault }: ServerSizes) {
   const { t } = useI18n()
-  const mutation = useSaveUploadSettings()
-  const override = useSyncExternalStore(
-    subscribeUploadPreferences,
-    () => loadStoredChunkSize(serverMin),
-    () => null
-  )
-  const activeConcurrency = useSyncExternalStore(
-    subscribeUploadPreferences,
-    loadStoredConcurrency,
-    () => DEFAULT_CONCURRENCY
-  )
-  type UploadFormState = {
-    minMb: string
-    defaultMb: string
-    baseline: string
-    serverValidation: string | null
-    serverSaved: boolean
-    cacheTouched: boolean
-    cacheDraft: boolean | null
-    inputMb: string
-    overrideError: string | null
-    overrideSaved: boolean
-    concurrencyInput: string
-    concurrencyError: string | null
-    concurrencySaved: boolean
-  }
-  const [state, setState] = useState<UploadFormState>({
-    minMb: String(bytesToMb(serverMin)),
-    defaultMb: String(bytesToMb(serverDefault)),
-    baseline: JSON.stringify({ min: serverMin, def: serverDefault }),
-    serverValidation: null,
-    serverSaved: false,
-    cacheTouched: false,
-    cacheDraft: cacheEnabled,
-    inputMb: String((override ?? serverDefault) / BYTES_PER_MB),
-    overrideError: null,
-    overrideSaved: false,
-    concurrencyInput: String(activeConcurrency),
-    concurrencyError: null,
-    concurrencySaved: false
+  const save = useSaveUploadSettings()
+  // An edit survives a refetch of the server values; untouched fields follow it.
+  const { control, handleSubmit, setError, reset, formState } = useForm<ServerValues>({
+    values: { minMb: String(bytesToMb(serverMin)), defaultMb: String(bytesToMb(serverDefault)) },
+    resetOptions: { keepDirtyValues: true }
   })
-  const {
-    minMb,
-    defaultMb,
-    baseline,
-    serverValidation,
-    serverSaved,
-    cacheTouched,
-    cacheDraft,
-    inputMb,
-    overrideError,
-    overrideSaved,
-    concurrencyInput,
-    concurrencyError,
-    concurrencySaved
-  } = state
-  const patchState = (patch: Partial<UploadFormState>): void => setState((current) => ({ ...current, ...patch }))
-  const setMinMb = (value: string): void => patchState({ minMb: value })
-  const setDefaultMb = (value: string): void => patchState({ defaultMb: value })
-  const setBaseline = (value: string): void => patchState({ baseline: value })
-  const setServerValidation = (value: string | null): void => patchState({ serverValidation: value })
-  const setServerSaved = (value: boolean): void => patchState({ serverSaved: value })
-  const setCacheTouched = (value: boolean): void => patchState({ cacheTouched: value })
-  const setCacheDraft = (value: boolean | null): void => patchState({ cacheDraft: value })
-  const setInputMb = (value: string): void => patchState({ inputMb: value })
-  const setOverrideError = (value: string | null): void => patchState({ overrideError: value })
-  const setOverrideSaved = (value: boolean): void => patchState({ overrideSaved: value })
-  const setConcurrencyInput = (value: string): void => patchState({ concurrencyInput: value })
-  const setConcurrencyError = (value: string | null): void => patchState({ concurrencyError: value })
-  const setConcurrencySaved = (value: boolean): void => patchState({ concurrencySaved: value })
-  useEffect(() => {
-    setInputMb(String((override ?? serverDefault) / BYTES_PER_MB))
-  }, [override, serverDefault])
-  useEffect(() => {
-    setConcurrencyInput(String(activeConcurrency))
-  }, [activeConcurrency])
-  const serverDirty =
-    baseline !==
-    JSON.stringify({
-      min: Math.round(Number(minMb) * BYTES_PER_MB),
-      def: Math.round(Number(defaultMb) * BYTES_PER_MB)
-    })
-  async function saveServer(): Promise<void> {
-    setServerValidation(null)
-    setServerSaved(false)
-    const min = Number(minMb)
-    const def = Number(defaultMb)
-    if (!Number.isFinite(min) || !Number.isFinite(def) || min <= 0 || def <= 0) {
-      setServerValidation(t('upload_settings.enter_valid_number'))
+  // The server reports the cache state only in a save answer; null until then.
+  const [cache, setCache] = useState<{ enabled: boolean; available: boolean } | null>(null)
+  const [cacheDraft, setCacheDraft] = useState<boolean | null>(null)
+  const cacheOn = cacheDraft ?? cache?.enabled ?? null
+  const submit = handleSubmit((values) => {
+    if (save.isPending) return
+    const problem = serverProblem(values)
+    if (problem) {
+      setError('root', { message: problem })
       return
     }
-    const minBytes = Math.round(min * BYTES_PER_MB)
-    const defBytes = Math.round(def * BYTES_PER_MB)
-    if (minBytes < CHUNK_SIZE_MIN) {
-      setServerValidation(t('upload_settings.minimum_must_at_least', { min: formatBytes(CHUNK_SIZE_MIN) }))
-      return
-    }
-    if (defBytes < minBytes) {
-      setServerValidation(t('upload_settings.default_cannot_smaller_than_minimum'))
-      return
-    }
-    try {
-      const response = await mutation.mutateAsync({
-        chunk_min: minBytes,
-        chunk_default: defBytes,
-        ...(cacheTouched && cacheDraft !== null ? { cache_enabled: cacheDraft } : {})
-      })
-      const fingerprint = JSON.stringify({ min: response.chunk_min, def: response.chunk_default })
-      setMinMb(String(bytesToMb(response.chunk_min)))
-      setDefaultMb(String(bytesToMb(response.chunk_default)))
-      setBaseline(fingerprint)
-      onCacheResponse(response.cache_enabled, response.cache_available)
-      setCacheDraft(response.cache_enabled)
-      setCacheTouched(false)
-      setServerSaved(true)
-    } catch {
-      /* rendered below */
-    }
-  }
-  function saveOverride(): void {
-    setOverrideError(null)
-    setOverrideSaved(false)
-    const mb = Number(inputMb)
-    const bytes = Math.round(mb * BYTES_PER_MB)
-    if (!Number.isFinite(mb) || mb <= 0 || !Number.isSafeInteger(bytes)) {
-      setOverrideError(t('upload_settings.enter_valid_number'))
-      return
-    }
-    if (!validChunkSizeOverride(bytes, serverMin)) {
-      setOverrideError(t('upload_settings.must_at_least_server_minimum', { min: formatBytes(serverMin) }))
-      return
-    }
-    if (!setUploadChunkSize(bytes, serverMin)) {
-      setOverrideError(t('common.could_not_save_settings'))
-      return
-    }
-    setInputMb(String(bytes / BYTES_PER_MB))
-    setOverrideSaved(true)
-  }
-  function resetOverride(): void {
-    setOverrideError(null)
-    setOverrideSaved(false)
-    if (!setUploadChunkSize(null)) {
-      setOverrideError(t('common.could_not_save_settings'))
-      return
-    }
-    setInputMb(String(serverDefault / BYTES_PER_MB))
-  }
-  function saveConcurrency(): void {
-    setConcurrencyError(null)
-    setConcurrencySaved(false)
-    const value = Number(concurrencyInput)
-    if (!Number.isInteger(value) || value < MIN_CONCURRENCY || value > MAX_CONCURRENCY) {
-      setConcurrencyError(t('upload_settings.concurrency_must_between', { min: MIN_CONCURRENCY, max: MAX_CONCURRENCY }))
-      return
-    }
-    if (!setUploadConcurrency(value)) {
-      setConcurrencyError(t('common.could_not_save_settings'))
-      return
-    }
-    setConcurrencyInput(String(value))
-    setConcurrencySaved(true)
-  }
-  function resetConcurrency(): void {
-    setConcurrencyError(null)
-    setConcurrencySaved(false)
-    if (!setUploadConcurrency(DEFAULT_CONCURRENCY)) {
-      setConcurrencyError(t('common.could_not_save_settings'))
-      return
-    }
-    setConcurrencyInput(String(DEFAULT_CONCURRENCY))
-  }
+    save.mutate(
+      {
+        chunk_min: chunkBytes(values.minMb),
+        chunk_default: chunkBytes(values.defaultMb),
+        ...(cacheDraft !== null ? { cache_enabled: cacheDraft } : {})
+      },
+      {
+        onSuccess: (response) => {
+          reset({ minMb: String(bytesToMb(response.chunk_min)), defaultMb: String(bytesToMb(response.chunk_default)) })
+          setCache({ enabled: response.cache_enabled, available: response.cache_available })
+          setCacheDraft(null)
+        }
+      }
+    )
+  })
+  const error =
+    formState.errors.root?.message ?? (save.error ? describeApiError(save.error, t('common.could_not_save')) : null)
+
   return (
     <>
       <AdminCard
@@ -245,34 +126,34 @@ function UploadSettingsForm({
         }
         icon={<Icon name="upload" />}
       >
-        <div className={styles.form}>
-          <TextField
+        <form className={styles.form} onSubmit={(event) => void submit(event)}>
+          <FormTextField
+            control={control}
+            name="minMb"
             className={styles.field}
             label={t('upload_settings.minimum_chunk_size_mb')}
-            value={minMb}
-            onValueChange={setMinMb}
             placeholder={String(bytesToMb(serverMin))}
           />
-          <TextField
+          <FormTextField
+            control={control}
+            name="defaultMb"
             className={styles.field}
             label={t('upload_settings.default_chunk_size_mb')}
-            value={defaultMb}
-            onValueChange={setDefaultMb}
             placeholder={String(bytesToMb(serverDefault))}
           />
-          <Button onClick={() => void saveServer()} loading={mutation.isPending}>
+          <Button type="submit" loading={save.isPending}>
             {t('common.save')}
           </Button>
-        </div>
-        {serverValidation || mutation.error ? (
+        </form>
+        {error ? (
           <p className={adminStyles.error} role="alert">
-            {serverValidation ?? describeApiError(mutation.error, t('common.could_not_save'))}
+            {error}
           </p>
-        ) : mutation.isPending ? (
+        ) : save.isPending ? (
           <p className={adminStyles.note}>{t('common.saving')}</p>
-        ) : serverDirty ? (
+        ) : formState.isDirty ? (
           <p className={adminStyles.note}>{t('settings.unsaved_changes')}</p>
-        ) : serverSaved ? (
+        ) : save.isSuccess ? (
           <p className={styles.adminSaved} role="status">
             {t('upload_settings.server_wide_setting_saved')}
           </p>
@@ -295,90 +176,137 @@ function UploadSettingsForm({
         subtitle={t('upload_settings.cache_spool_hint')}
         icon={<Icon name="history" />}
       >
-        {cacheAvailable === false ? (
+        {cache?.available === false ? (
           <p className={adminStyles.error} role="alert">
             {t('upload_settings.cache_spool_unavailable')}
           </p>
         ) : (
           <div className={adminStyles.storageToggleRow}>
             <Switch
-              checked={cacheDraft === true}
+              checked={cacheOn === true}
               label={t('upload_settings.cache_spool_enable')}
-              onChange={(checked) => {
-                setCacheDraft(checked)
-                setCacheTouched(true)
-              }}
+              onChange={setCacheDraft}
             />
-            {cacheDraft === null ? (
+            {cacheOn === null ? (
               <p className={adminStyles.note}>{t('upload_settings.cache_spool_state_unknown')}</p>
             ) : null}
           </div>
         )}
       </AdminCard>
-
-      <AdminCard
-        id="upload-browser-override"
-        title={t('upload_settings.override_browser_only')}
-        subtitle={t('upload_settings.unlike_server_wide_setting_above')}
-        icon={<Icon name="settings" />}
-      >
-        <div className={styles.form}>
-          <TextField
-            className={styles.field}
-            label={t('upload_settings.browser_default_chunk_size_mb')}
-            value={inputMb}
-            error={overrideError}
-            placeholder={String(bytesToMb(serverDefault))}
-            onValueChange={setInputMb}
-          />
-          <div className={styles.actions}>
-            <Button onClick={saveOverride}>{t('common.save')}</Button>
-            <Button variant="text" onClick={resetOverride} disabled={override === null}>
-              {t('upload_settings.reset_server_default')}
-            </Button>
-          </div>
-        </div>
-        {overrideSaved ? (
-          <p className={styles.adminSaved} role="status">
-            {t('upload_settings.saved_uploads_started_from_now', { size: formatBytes(override ?? 0) })}
-          </p>
-        ) : override !== null ? (
-          <p className={adminStyles.note}>{t('upload_settings.current_override', { size: formatBytes(override) })}</p>
-        ) : (
-          <p className={adminStyles.note}>{t('upload_settings.currently_using_server_default')}</p>
-        )}
-      </AdminCard>
-
-      <AdminCard
-        id="upload-concurrency"
-        title={t('upload_settings.concurrency_limit')}
-        subtitle={t('upload_settings.concurrency_limit_hint')}
-        icon={<Icon name="speed" />}
-      >
-        <div className={styles.form}>
-          <TextField
-            className={styles.field}
-            label={t('upload_settings.concurrency_limit')}
-            value={concurrencyInput}
-            error={concurrencyError}
-            placeholder={String(DEFAULT_CONCURRENCY)}
-            onValueChange={setConcurrencyInput}
-          />
-          <div className={styles.actions}>
-            <Button onClick={saveConcurrency}>{t('common.save')}</Button>
-            <Button variant="text" onClick={resetConcurrency} disabled={activeConcurrency === DEFAULT_CONCURRENCY}>
-              {t('upload_settings.reset_concurrency_default')}
-            </Button>
-          </div>
-        </div>
-        {concurrencySaved ? (
-          <p className={styles.adminSaved} role="status">
-            {t('upload_settings.concurrency_saved')}
-          </p>
-        ) : (
-          <p className={adminStyles.note}>{t('upload_settings.current_concurrency', { count: activeConcurrency })}</p>
-        )}
-      </AdminCard>
     </>
+  )
+}
+
+function ChunkOverrideCard({ serverMin, serverDefault }: ServerSizes) {
+  const { t } = useI18n()
+  const override = useSyncExternalStore(
+    subscribeUploadPreferences,
+    () => loadStoredChunkSize(serverMin),
+    () => null
+  )
+  const { control, handleSubmit, setError, clearErrors } = useForm({
+    values: { mb: String((override ?? serverDefault) / BYTES_PER_MB) }
+  })
+  const [saved, setSaved] = useState(false)
+  const submit = handleSubmit(
+    ({ mb }) => {
+      const ok = setUploadChunkSize(chunkBytes(mb), serverMin)
+      if (!ok) setError('mb', { message: t('common.could_not_save_settings') })
+      setSaved(ok)
+    },
+    () => setSaved(false)
+  )
+  function resetOverride(): void {
+    clearErrors()
+    setSaved(false)
+    if (!setUploadChunkSize(null)) setError('mb', { message: t('common.could_not_save_settings') })
+  }
+
+  return (
+    <AdminCard
+      id="upload-browser-override"
+      title={t('upload_settings.override_browser_only')}
+      subtitle={t('upload_settings.unlike_server_wide_setting_above')}
+      icon={<Icon name="settings" />}
+    >
+      <form className={styles.form} onSubmit={(event) => void submit(event)}>
+        <FormTextField
+          control={control}
+          name="mb"
+          rules={{ validate: (value) => overrideProblem(value, serverMin) }}
+          className={styles.field}
+          label={t('upload_settings.browser_default_chunk_size_mb')}
+          placeholder={String(bytesToMb(serverDefault))}
+        />
+        <div className={styles.actions}>
+          <Button type="submit">{t('common.save')}</Button>
+          <Button variant="text" onClick={resetOverride} disabled={override === null}>
+            {t('upload_settings.reset_server_default')}
+          </Button>
+        </div>
+      </form>
+      {saved ? (
+        <p className={styles.adminSaved} role="status">
+          {t('upload_settings.saved_uploads_started_from_now', { size: formatBytes(override ?? 0) })}
+        </p>
+      ) : override !== null ? (
+        <p className={adminStyles.note}>{t('upload_settings.current_override', { size: formatBytes(override) })}</p>
+      ) : (
+        <p className={adminStyles.note}>{t('upload_settings.currently_using_server_default')}</p>
+      )}
+    </AdminCard>
+  )
+}
+
+function ConcurrencyCard() {
+  const { t } = useI18n()
+  const active = useSyncExternalStore(subscribeUploadPreferences, loadStoredConcurrency, () => DEFAULT_CONCURRENCY)
+  const { control, handleSubmit, setError, clearErrors } = useForm({ values: { count: String(active) } })
+  const [saved, setSaved] = useState(false)
+  const submit = handleSubmit(
+    ({ count }) => {
+      const ok = setUploadConcurrency(Number(count))
+      if (!ok) setError('count', { message: t('common.could_not_save_settings') })
+      setSaved(ok)
+    },
+    () => setSaved(false)
+  )
+  function resetConcurrency(): void {
+    clearErrors()
+    setSaved(false)
+    if (!setUploadConcurrency(DEFAULT_CONCURRENCY)) setError('count', { message: t('common.could_not_save_settings') })
+  }
+
+  return (
+    <AdminCard
+      id="upload-concurrency"
+      title={t('upload_settings.concurrency_limit')}
+      subtitle={t('upload_settings.concurrency_limit_hint')}
+      icon={<Icon name="speed" />}
+    >
+      <form className={styles.form} onSubmit={(event) => void submit(event)}>
+        <FormTextField
+          control={control}
+          name="count"
+          rules={{ validate: concurrencyProblem }}
+          className={styles.field}
+          label={t('upload_settings.concurrency_limit')}
+          placeholder={String(DEFAULT_CONCURRENCY)}
+        />
+        <div className={styles.actions}>
+          <Button type="submit">{t('common.save')}</Button>
+          <Button variant="text" onClick={resetConcurrency} disabled={active === DEFAULT_CONCURRENCY}>
+            {t('upload_settings.reset_concurrency_default')}
+          </Button>
+        </div>
+      </form>
+      {saved ? (
+        <p className={styles.adminSaved} role="status">
+          {t('upload_settings.concurrency_saved')}
+        </p>
+      ) : (
+        <p className={adminStyles.note}>{t('upload_settings.current_concurrency', { count: active })}</p>
+      )}
+    </AdminCard>
   )
 }

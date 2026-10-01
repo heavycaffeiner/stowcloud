@@ -1,195 +1,108 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { formatBytes, bytesToMb, BYTES_PER_MB } from '../../lib/format/bytes'
-import { scorePasswordStrength } from '../../lib/format/password-strength'
+import { t } from '../../lib/i18n'
 import { useI18n } from '../../hooks/use-i18n'
 import { describeApiError } from '../../api/error-text'
+import { confirmAction, promptText } from '../../ui/ActionDialog'
 import { Button } from '../../ui/Button'
-import { Dialog } from '../../ui/Dialog'
-import { TextField } from '../../ui/TextField'
 import { VirtualList } from '../../ui/VirtualList'
-import { GrantManagementSection } from './GrantManagementSection'
+import { showGrants } from './GrantManagementSection'
+import { askNewUser, askUserPassword } from './UserDialogs'
 import { showUserOidc } from './UserOidcDialog'
 import { UserManagementRow } from './UserManagementRow'
 import { Icon } from '../../ui/Icon'
 import { ProgressCircular } from '../../ui/ProgressCircular'
-import { ProgressLinear } from '../../ui/ProgressLinear'
 import * as adminStyles from './admin.css'
 import { ApiError } from '../../api/fetcher'
-import {
-  useAdminUsers,
-  useCreateUser,
-  useDeleteUser,
-  useSetUserDisabled,
-  useSetUserPassword,
-  useSetUserQuota,
-  type AdminUser
-} from './api'
+import { useAdminUsers, useDeleteUser, useSetUserDisabled, useSetUserQuota, type AdminUser } from './api'
 
-const MIN_PASSWORD_LEN = 10
+function lastAdminText(error: unknown, lastAdmin: string, fallback: string): string {
+  return error instanceof ApiError && error.code === 'admin.last_admin' ? lastAdmin : describeApiError(error, fallback)
+}
+
+const validQuota = (value: string): string | true =>
+  value === '' || (Number.isFinite(Number(value)) && Number(value) > 0) || t('user.enter_number_greater_than_0')
+
+function userGrants(user: AdminUser): Promise<void> {
+  const name = user.display_name || user.name
+  return showGrants({
+    title: t('user.folders_visible', { name }),
+    principal: { kind: 'user', id: user.id },
+    label: name
+  })
+}
 
 export function UserManagementSection() {
   const { t } = useI18n()
   const usersQuery = useAdminUsers()
   const users = usersQuery.data ?? []
-  const activeAdminCount = useMemo(() => users.filter((user) => user.is_admin && !user.disabled).length, [users])
-  const lastActiveAdmin = (user: AdminUser) => user.is_admin && !user.disabled && activeAdminCount <= 1
-  type UserState = {
-    createOpen: boolean
-    newName: string
-    newPassword: string
-    createValidation: string | null
-    deleteTarget: AdminUser | null
-    quotaTarget: AdminUser | null
-    quotaInput: string
-    quotaValidation: string | null
-    passwordTarget: AdminUser | null
-    passwordInput: string
-    passwordConfirm: string
-    passwordValidation: string | null
-    grantsTarget: AdminUser | null
-    oidcTarget: AdminUser | null
-  }
-  const [state, setState] = useState<UserState>({
-    createOpen: false,
-    newName: '',
-    newPassword: '',
-    createValidation: null,
-    deleteTarget: null,
-    quotaTarget: null,
-    quotaInput: '',
-    quotaValidation: null,
-    passwordTarget: null,
-    passwordInput: '',
-    passwordConfirm: '',
-    passwordValidation: null,
-    grantsTarget: null,
-    oidcTarget: null
-  })
-  const {
-    createOpen,
-    newName,
-    newPassword,
-    createValidation,
-    deleteTarget,
-    quotaTarget,
-    quotaInput,
-    quotaValidation,
-    passwordTarget,
-    passwordInput,
-    passwordConfirm,
-    passwordValidation,
-    grantsTarget,
-    oidcTarget
-  } = state
-  const create = useCreateUser()
+  const toggle = useSetUserDisabled()
   const remove = useDeleteUser()
   const quota = useSetUserQuota()
-  const password = useSetUserPassword()
-  const toggle = useSetUserDisabled()
-  const patchState = (patch: Partial<UserState>): void => setState((current) => ({ ...current, ...patch }))
-  const setCreateOpen = (value: boolean): void => patchState({ createOpen: value })
-  const setNewName = (value: string): void => patchState({ newName: value })
-  const setNewPassword = (value: string): void => patchState({ newPassword: value })
-  const setCreateValidation = (value: string | null): void => patchState({ createValidation: value })
-  const setDeleteTarget = (value: AdminUser | null): void => patchState({ deleteTarget: value })
-  const setQuotaTarget = (value: AdminUser | null): void => patchState({ quotaTarget: value })
-  const setQuotaInput = (value: string): void => patchState({ quotaInput: value })
-  const setQuotaValidation = (value: string | null): void => patchState({ quotaValidation: value })
-  const setPasswordTarget = (value: AdminUser | null): void => patchState({ passwordTarget: value })
-  const setPasswordInput = (value: string): void => patchState({ passwordInput: value })
-  const setPasswordConfirm = (value: string): void => patchState({ passwordConfirm: value })
-  const setPasswordValidation = (value: string | null): void => patchState({ passwordValidation: value })
-  const setGrantsTarget = (value: AdminUser | null): void => patchState({ grantsTarget: value })
-  const setOidcTarget = (value: AdminUser | null): void => patchState({ oidcTarget: value })
-  // The row stays mounted while its dialog is open, so focus can return to the button that opened it.
-  async function openOidc(user: AdminUser): Promise<void> {
-    setOidcTarget(user)
-    await showUserOidc(user)
-    setOidcTarget(null)
-  }
+  // Keeps the row that opened a dialog mounted so focus can return to it.
+  const [pinned, setPinned] = useState<number | null>(null)
+  const activeAdminCount = users.filter((user) => user.is_admin && !user.disabled).length
   const togglingId = toggle.isPending && toggle.variables ? toggle.variables.id : null
 
-  const createError = createValidation ?? (create.error ? createErrorText(create.error, t) : null)
-  const deleteError = remove.error ? userDeleteError(remove.error, t) : null
-  const toggleError = toggle.error ? userToggleError(toggle.error, t) : null
-  const quotaError = quotaValidation ?? (quota.error ? describeApiError(quota.error, t('common.could_not_save')) : null)
-  const passwordError =
-    passwordValidation ??
-    (password.error ? describeApiError(password.error, t('password.could_not_change_password_try')) : null)
+  async function withPinned(user: AdminUser, task: () => Promise<unknown>): Promise<void> {
+    setPinned(user.id)
+    await task()
+    setPinned(null)
+  }
+  async function addUser(): Promise<void> {
+    const created = await askNewUser()
+    if (created) await userGrants(created)
+  }
+  function editQuota(user: AdminUser): Promise<void> {
+    return withPinned(user, () =>
+      promptText({
+        title: t('user.storage_quota', { name: user.display_name || user.name }),
+        label: t('user.storage_quota_mb'),
+        action: t('common.save'),
+        placeholder: t('user.empty_means_unlimited'),
+        initial: user.quota_bytes ? String(bytesToMb(Number(BigInt(user.quota_bytes)))) : '',
+        hint: (
+          <p className={adminStyles.sectionFieldHint}>
+            {t('user.currently_using', { used: formatBytes(Number(BigInt(user.usage_bytes))) })}
+            {t('user.empty_means_unlimited_uploads_copies')}
+          </p>
+        ),
+        validate: validQuota,
+        run: (value) =>
+          quota.mutateAsync({ id: user.id, quotaBytes: value ? Math.round(Number(value) * BYTES_PER_MB) : null }),
+        describeError: (error) => describeApiError(error, t('common.could_not_save'))
+      })
+    )
+  }
+  function deleteUser(user: AdminUser): Promise<void> {
+    return withPinned(user, () =>
+      confirmAction({
+        title: t('user.delete_user'),
+        action: t('common.delete'),
+        danger: true,
+        body: <p>{t('user.permanently_deletes_account_including_its', { name: user.name })}</p>,
+        run: () => remove.mutateAsync(user.id),
+        describeError: (error) =>
+          lastAdminText(error, t('user.last_administrator_cannot_deleted'), t('common.could_not_delete'))
+      })
+    )
+  }
 
-  function submitCreate(): void {
-    setCreateValidation(null)
-    if (newPassword.length < MIN_PASSWORD_LEN) {
-      setCreateValidation(t('user.password_must_at_least_characters', { min: MIN_PASSWORD_LEN }))
-      return
-    }
-    if (!newName.trim()) return
-    create.mutate(
-      { name: newName.trim(), password: newPassword },
-      {
-        onSuccess: (created) => {
-          setCreateOpen(false)
-          setGrantsTarget(created)
-        }
-      }
-    )
-  }
-  function submitDelete(): void {
-    if (!deleteTarget) return
-    remove.mutate(deleteTarget.id, { onSuccess: () => setDeleteTarget(null) })
-  }
-  function submitQuota(): void {
-    if (!quotaTarget) return
-    setQuotaValidation(null)
-    const value = quotaInput.trim()
-    if (!value) {
-      quota.mutate({ id: quotaTarget.id, quotaBytes: null }, { onSuccess: () => setQuotaTarget(null) })
-      return
-    }
-    const mb = Number(value)
-    if (!Number.isFinite(mb) || mb <= 0) {
-      setQuotaValidation(t('user.enter_number_greater_than_0'))
-      return
-    }
-    quota.mutate(
-      { id: quotaTarget.id, quotaBytes: Math.round(mb * BYTES_PER_MB) },
-      { onSuccess: () => setQuotaTarget(null) }
-    )
-  }
-  function submitPassword(): void {
-    if (!passwordTarget) return
-    setPasswordValidation(null)
-    if (passwordInput.length < MIN_PASSWORD_LEN) {
-      setPasswordValidation(t('user.password_must_at_least_characters', { min: MIN_PASSWORD_LEN }))
-      return
-    }
-    if (passwordInput !== passwordConfirm) {
-      setPasswordValidation(t('password.new_passwords_do_not_match'))
-      return
-    }
-    password.mutate({ id: passwordTarget.id, password: passwordInput }, { onSuccess: () => setPasswordTarget(null) })
-  }
   return (
     <section className={adminStyles.section}>
       <div className={adminStyles.sectionHeader}>
         <p className={adminStyles.sectionHint}>{t('user.create_accounts_suspend_or_re')}</p>
-        <Button
-          className={adminStyles.sectionHeaderAction}
-          icon={<Icon name="add" />}
-          onClick={() => {
-            create.reset()
-            setCreateValidation(null)
-            setNewName('')
-            setNewPassword('')
-            setCreateOpen(true)
-          }}
-        >
+        <Button className={adminStyles.sectionHeaderAction} icon={<Icon name="add" />} onClick={() => void addUser()}>
           {t('user.add_user')}
         </Button>
       </div>
-      {toggleError ? (
+      {toggle.error ? (
         <p className={adminStyles.sectionError} role="alert">
-          {toggleError}
+          {lastAdminText(
+            toggle.error,
+            t('user.last_administrator_cannot_deactivated'),
+            t('common.could_not_save_change')
+          )}
         </p>
       ) : null}
       {usersQuery.isPending ? (
@@ -205,280 +118,22 @@ export function UserManagementSection() {
           itemKey={(user) => user.id}
           estimateSize={80}
           itemProps={() => ({ className: adminStyles.item })}
-          pinnedKeys={[
-            deleteTarget?.id,
-            quotaTarget?.id,
-            passwordTarget?.id,
-            grantsTarget?.id,
-            oidcTarget?.id,
-            togglingId
-          ].filter((id): id is number => id != null)}
+          pinnedKeys={[pinned, togglingId].filter((id): id is number => id !== null)}
           renderItem={(user) => (
             <UserManagementRow
               user={user}
-              t={t}
-              locked={lastActiveAdmin(user)}
+              locked={user.is_admin && !user.disabled && activeAdminCount <= 1}
               toggling={togglingId === user.id}
-              quotaLabel={quotaLabel(user, t)}
               onToggle={() => toggle.mutate({ id: user.id, disabled: !user.disabled })}
-              onQuota={() => {
-                quota.reset()
-                setQuotaValidation(null)
-                setQuotaInput(user.quota_bytes ? String(bytesToMb(Number(BigInt(user.quota_bytes)))) : '')
-                setQuotaTarget(user)
-              }}
-              onGrants={() => setGrantsTarget(user)}
-              onOidc={() => void openOidc(user)}
-              onPassword={() => {
-                password.reset()
-                setPasswordValidation(null)
-                setPasswordInput('')
-                setPasswordConfirm('')
-                setPasswordTarget(user)
-              }}
-              onDelete={() => {
-                remove.reset()
-                setDeleteTarget(user)
-              }}
+              onQuota={() => void editQuota(user)}
+              onGrants={() => void withPinned(user, () => userGrants(user))}
+              onOidc={() => void withPinned(user, () => showUserOidc(user))}
+              onPassword={() => void withPinned(user, () => askUserPassword(user))}
+              onDelete={() => void deleteUser(user)}
             />
           )}
         />
       )}
-      <Dialog
-        open={createOpen}
-        title={t('user.add_user')}
-        onClose={() => {
-          if (!create.isPending) setCreateOpen(false)
-        }}
-        actions={
-          <>
-            <Button variant="text" disabled={create.isPending} onClick={() => setCreateOpen(false)}>
-              {t('common.cancel')}
-            </Button>
-            <Button loading={create.isPending} onClick={submitCreate}>
-              {t('common.add')}
-            </Button>
-          </>
-        }
-      >
-        <form
-          className={adminStyles.form}
-          onSubmit={(event) => {
-            event.preventDefault()
-            submitCreate()
-          }}
-        >
-          <TextField
-            label={t('user.username')}
-            value={newName}
-            autoComplete="off"
-            autoFocus
-            onValueChange={setNewName}
-          />
-          <TextField
-            type="password"
-            label={t('common.password')}
-            value={newPassword}
-            autoComplete="new-password"
-            onValueChange={setNewPassword}
-          />
-          {newPassword ? (
-            <div>
-              <ProgressLinear
-                value={scorePasswordStrength(newPassword).ratio}
-                tone={scorePasswordStrength(newPassword).tier}
-                label={t('common.password_strength', { level: scorePasswordStrength(newPassword).label })}
-              />
-              <span className={adminStyles.sectionFieldHint}>{scorePasswordStrength(newPassword).label}</span>
-            </div>
-          ) : null}
-          <p className={adminStyles.sectionFieldHint}>
-            {t('user.at_least_characters_turning_smb', { min: MIN_PASSWORD_LEN })}
-          </p>
-          {createError ? (
-            <p className={adminStyles.sectionError} role="alert">
-              {createError}
-            </p>
-          ) : null}
-        </form>
-      </Dialog>
-      <Dialog
-        open={deleteTarget !== null}
-        title={t('user.delete_user')}
-        onClose={() => {
-          if (!remove.isPending) setDeleteTarget(null)
-        }}
-        actions={
-          <>
-            <Button variant="text" disabled={remove.isPending} onClick={() => setDeleteTarget(null)}>
-              {t('common.cancel')}
-            </Button>
-            <Button danger loading={remove.isPending} onClick={submitDelete}>
-              {t('common.delete')}
-            </Button>
-          </>
-        }
-      >
-        <p>{t('user.permanently_deletes_account_including_its', { name: deleteTarget?.name ?? '' })}</p>
-        {deleteError ? (
-          <p className={adminStyles.sectionError} role="alert">
-            {deleteError}
-          </p>
-        ) : null}
-      </Dialog>
-      <Dialog
-        open={grantsTarget !== null}
-        title={
-          grantsTarget
-            ? t('user.folders_visible', { name: grantsTarget.display_name || grantsTarget.name })
-            : t('common.folder_permissions')
-        }
-        onClose={() => setGrantsTarget(null)}
-        actions={
-          <Button variant="text" onClick={() => setGrantsTarget(null)}>
-            {t('common.close')}
-          </Button>
-        }
-      >
-        {grantsTarget ? (
-          <GrantManagementSection
-            principal={{ kind: 'user', id: grantsTarget.id }}
-            label={grantsTarget.display_name || grantsTarget.name}
-          />
-        ) : null}
-      </Dialog>
-      <Dialog
-        open={quotaTarget !== null}
-        title={
-          quotaTarget
-            ? t('user.storage_quota', { name: quotaTarget.display_name || quotaTarget.name })
-            : t('user.storage_quota_2')
-        }
-        onClose={() => {
-          if (!quota.isPending) setQuotaTarget(null)
-        }}
-        actions={
-          <>
-            <Button variant="text" disabled={quota.isPending} onClick={() => setQuotaTarget(null)}>
-              {t('common.cancel')}
-            </Button>
-            <Button loading={quota.isPending} onClick={submitQuota}>
-              {t('common.save')}
-            </Button>
-          </>
-        }
-      >
-        <form
-          className={adminStyles.form}
-          onSubmit={(event) => {
-            event.preventDefault()
-            submitQuota()
-          }}
-        >
-          <TextField
-            label={t('user.storage_quota_mb')}
-            placeholder={t('user.empty_means_unlimited')}
-            value={quotaInput}
-            autoFocus
-            onValueChange={setQuotaInput}
-          />
-          <p className={adminStyles.sectionFieldHint}>
-            {quotaTarget
-              ? t('user.currently_using', { used: formatBytes(Number(BigInt(quotaTarget.usage_bytes))) })
-              : ''}
-            {t('user.empty_means_unlimited_uploads_copies')}
-          </p>
-          {quotaError ? (
-            <p className={adminStyles.sectionError} role="alert">
-              {quotaError}
-            </p>
-          ) : null}
-        </form>
-      </Dialog>
-      <Dialog
-        open={passwordTarget !== null}
-        title={t('password.change_password')}
-        onClose={() => {
-          if (!password.isPending) setPasswordTarget(null)
-        }}
-        actions={
-          <>
-            <Button variant="text" disabled={password.isPending} onClick={() => setPasswordTarget(null)}>
-              {t('common.cancel')}
-            </Button>
-            <Button
-              loading={password.isPending}
-              disabled={!passwordInput || passwordInput !== passwordConfirm}
-              onClick={submitPassword}
-            >
-              {t('common.save')}
-            </Button>
-          </>
-        }
-      >
-        <form
-          className={adminStyles.form}
-          onSubmit={(event) => {
-            event.preventDefault()
-            submitPassword()
-          }}
-        >
-          <TextField
-            type="password"
-            label={t('password.new_password')}
-            value={passwordInput}
-            autoComplete="new-password"
-            autoFocus
-            onValueChange={setPasswordInput}
-          />
-          <TextField
-            type="password"
-            label={t('password.confirm_new_password')}
-            value={passwordConfirm}
-            autoComplete="new-password"
-            onValueChange={setPasswordConfirm}
-          />
-          {passwordInput ? (
-            <div>
-              <ProgressLinear
-                value={scorePasswordStrength(passwordInput).ratio}
-                tone={scorePasswordStrength(passwordInput).tier}
-                label={t('password.new_password_strength', { level: scorePasswordStrength(passwordInput).label })}
-              />
-              <span className={adminStyles.sectionFieldHint}>{scorePasswordStrength(passwordInput).label}</span>
-            </div>
-          ) : null}
-          <p className={adminStyles.sectionFieldHint}>
-            {t('password.must_at_least_characters', { min: MIN_PASSWORD_LEN })}
-          </p>
-          {passwordError ? (
-            <p className={adminStyles.sectionError} role="alert">
-              {passwordError}
-            </p>
-          ) : null}
-        </form>
-      </Dialog>
     </section>
   )
-}
-
-function quotaLabel(user: AdminUser, t: (key: string, params?: Record<string, string | number>) => string): string {
-  const used = formatBytes(Number(BigInt(user.usage_bytes)))
-  return user.quota_bytes ? `${used} / ${formatBytes(Number(BigInt(user.quota_bytes)))}` : t('user.used', { used })
-}
-function createErrorText(error: unknown, t: (key: string, params?: Record<string, string | number>) => string): string {
-  if (error instanceof ApiError && error.code === 'fs.conflict') return t('common.name_already_taken')
-  if (error instanceof ApiError && error.code === 'auth.weak_password')
-    return t('user.password_must_at_least_characters', { min: error.reasonNumber('min_length') ?? MIN_PASSWORD_LEN })
-  return describeApiError(error, t('user.could_not_create_user'))
-}
-function userToggleError(error: unknown, t: (key: string, params?: Record<string, string | number>) => string): string {
-  return error instanceof ApiError && error.code === 'admin.last_admin'
-    ? t('user.last_administrator_cannot_deactivated')
-    : describeApiError(error, t('common.could_not_save_change'))
-}
-function userDeleteError(error: unknown, t: (key: string, params?: Record<string, string | number>) => string): string {
-  return error instanceof ApiError && error.code === 'admin.last_admin'
-    ? t('user.last_administrator_cannot_deleted')
-    : describeApiError(error, t('common.could_not_delete'))
 }

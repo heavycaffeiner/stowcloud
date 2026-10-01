@@ -1,22 +1,32 @@
+import { useI18n } from '../../hooks/use-i18n'
 import { Checkbox } from '../../ui/Checkbox'
 import * as styles from './GrantPermissionGrid.css'
 import { ALL_GRANT_PERMS, type GrantPermName } from './api'
 
-type Translate = (key: string, params?: Record<string, string | number>) => string
-
-export interface PermissionSets {
-  allow: Set<GrantPermName>
-  deny: Set<GrantPermName>
+export function usePermLabels(): Record<GrantPermName, string> {
+  const { t } = useI18n()
+  return {
+    read: t('common.read'),
+    write: t('grant.write'),
+    create: t('grant.create'),
+    delete: t('common.delete'),
+    rename: t('grant.rename'),
+    move: t('common.move'),
+    share: t('common.share_links'),
+    download: t('common.download')
+  }
 }
 
-export interface GrantPermissionGridProps extends PermissionSets {
-  setAllow: (next: Set<GrantPermName>) => void
-  setDeny: (next: Set<GrantPermName>) => void
-  permLabel: Record<GrantPermName, string>
-  t: Translate
+interface GrantPermissionGridProps {
+  allow: readonly GrantPermName[]
+  deny: readonly GrantPermName[]
+  onAllowChange: (next: GrantPermName[]) => void
+  onDenyChange: (next: GrantPermName[]) => void
 }
 
-export function GrantPermissionGrid({ allow, deny, setAllow, setDeny, permLabel, t }: GrantPermissionGridProps) {
+export function GrantPermissionGrid({ allow, deny, onAllowChange, onDenyChange }: GrantPermissionGridProps) {
+  const { t } = useI18n()
+  const permLabel = usePermLabels()
   return (
     <div className={styles.root}>
       <div className={styles.head}>
@@ -28,18 +38,18 @@ export function GrantPermissionGrid({ allow, deny, setAllow, setDeny, permLabel,
           <span>{permLabel[permission]}</span>
           <span className={styles.cell}>
             <Checkbox
-              checked={allow.has(permission)}
+              checked={allow.includes(permission)}
               hideLabel
               label={t('grant.allow_2', { perm: permLabel[permission] })}
-              onChange={(checked) => setAllow(togglePermission(allow, permission, checked))}
+              onChange={(checked) => onAllowChange(togglePermission(allow, permission, checked))}
             />
           </span>
           <span className={styles.cell}>
             <Checkbox
-              checked={deny.has(permission)}
+              checked={deny.includes(permission)}
               hideLabel
               label={t('grant.deny_2', { perm: permLabel[permission] })}
-              onChange={(checked) => setDeny(togglePermission(deny, permission, checked))}
+              onChange={(checked) => onDenyChange(togglePermission(deny, permission, checked))}
             />
           </span>
         </div>
@@ -48,9 +58,11 @@ export function GrantPermissionGrid({ allow, deny, setAllow, setDeny, permLabel,
   )
 }
 
-function togglePermission(set: Set<GrantPermName>, permission: GrantPermName, checked: boolean): Set<GrantPermName> {
-  const next = new Set(set)
-  if (checked) next.add(permission)
-  else next.delete(permission)
-  return next
+function togglePermission(
+  list: readonly GrantPermName[],
+  permission: GrantPermName,
+  checked: boolean
+): GrantPermName[] {
+  const rest = list.filter((item) => item !== permission)
+  return checked ? [...rest, permission] : rest
 }

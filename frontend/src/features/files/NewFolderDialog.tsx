@@ -1,7 +1,7 @@
-import { useState } from 'react'
 import { overlay } from 'overlay-kit'
+import { useForm } from 'react-hook-form'
 import { Button } from '../../ui/Button'
-import { TextField } from '../../ui/TextField'
+import { FormTextField } from '../../ui/FormTextField'
 import { BrowseDialog } from './browse-dialog'
 import { useI18n } from '../../hooks/use-i18n'
 
@@ -24,11 +24,11 @@ function NewFolderDialog({
   onCreate: (name: string) => void
 }) {
   const { t } = useI18n()
-  const [name, setName] = useState(() => t('common.new_folder'))
-  const submit = (): void => {
+  const { control, handleSubmit } = useForm({ defaultValues: { name: t('common.new_folder') } })
+  const submit = handleSubmit(({ name }) => {
     const value = name.trim()
     if (value) onCreate(value)
-  }
+  })
   return (
     <BrowseDialog
       open={open}
@@ -40,22 +40,13 @@ function NewFolderDialog({
           <Button variant="text" onClick={onClose}>
             {t('common.cancel')}
           </Button>
-          <Button onClick={submit}>{t('common.create')}</Button>
+          <Button onClick={() => void submit()}>{t('common.create')}</Button>
         </>
       }
     >
-      <TextField
-        value={name}
-        label={t('new_folder.folder_name')}
-        autoFocus
-        onValueChange={setName}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') {
-            event.preventDefault()
-            submit()
-          }
-        }}
-      />
+      <form onSubmit={(event) => void submit(event)}>
+        <FormTextField control={control} name="name" label={t('new_folder.folder_name')} autoFocus />
+      </form>
     </BrowseDialog>
   )
 }

@@ -1,3 +1,5 @@
+import { t } from '../../lib/i18n'
+import { useI18n } from '../../hooks/use-i18n'
 import { Button } from '../../ui/Button'
 import { Icon } from '../../ui/Icon'
 import { IconButton } from '../../ui/IconButton'
@@ -10,18 +12,13 @@ import * as buttonStyles from '../../ui/Button.css'
 import type { AdminShare, ShareBackend } from './api'
 import type { ShareEncryption } from '../shares/api'
 
-type Translator = (key: string, params?: Record<string, string | number>) => string
-
 interface ShareManagementListProps {
-  t: Translator
   shares: AdminShare[]
   encryptionByShare: Map<number, ShareEncryption>
   encryptionLoaded: boolean
   pinnedKeys: number[]
   trashTogglingId: number | null
   retryingId: number | null
-  trashError: string | null
-  retryError: string | null
   onEnableEncryption: (share: AdminShare) => void
   onDisableEncryption: (share: AdminShare) => void
   onCopySalt: (salt: string, name: string) => void
@@ -31,13 +28,13 @@ interface ShareManagementListProps {
   onDelete: (share: AdminShare) => void
 }
 
-function backendLabel(t: Translator, backend: ShareBackend): string {
+export function backendLabel(backend: ShareBackend): string {
   if (backend === 's3') return t('folder_share.backend_s3')
   if (backend === 'veracrypt') return t('folder_share.backend_veracrypt')
   return t('folder_share.backend_local')
 }
 
-function brokenText(t: Translator, reason?: string): string {
+function brokenText(reason?: string): string {
   switch (reason) {
     case 'missing':
       return t('folder_share.broken_missing')
@@ -57,15 +54,12 @@ function brokenText(t: Translator, reason?: string): string {
 }
 
 export function ShareManagementList({
-  t,
   shares,
   encryptionByShare,
   encryptionLoaded,
   pinnedKeys,
   trashTogglingId,
   retryingId,
-  trashError,
-  retryError,
   onEnableEncryption,
   onDisableEncryption,
   onCopySalt,
@@ -74,134 +68,121 @@ export function ShareManagementList({
   onEdit,
   onDelete
 }: ShareManagementListProps) {
-  return (
-    <>
-      {shares.length === 0 ? (
-        <div className={styles.empty}>
-          <Icon name="folder-tree" size={28} />
-          <p className={styles.emptyText}>{t('folder_share.no_shares_registered_add_folder')}</p>
-        </div>
-      ) : (
-        <VirtualList
-          className={styles.list}
-          items={shares}
-          itemKey={(share) => share.id}
-          estimateSize={112}
-          itemProps={() => ({ className: styles.item })}
-          pinnedKeys={pinnedKeys}
-          renderItem={(share) => {
-            const encryption = encryptionByShare.get(share.id)
-            return (
-              <ListItem
-                className={styles.row}
-                leading={<Icon name="folder" size={20} />}
-                headline={
-                  <>
-                    <span>{share.name}</span>
-                    {share.backend !== 'local' ? (
-                      <small className={styles.shareBackend}>{backendLabel(t, share.backend)}</small>
-                    ) : null}
-                  </>
-                }
-                supporting={
-                  <>
-                    <code data-testid="share-source">{share.source}</code>
-                    {share.broken_reason ? (
-                      <span className={adminStyles.error}>{brokenText(t, share.broken_reason)}</span>
-                    ) : null}
-                    {encryptionLoaded ? (
-                      <span className={styles.enc} data-testid="share-encryption">
-                        {encryption ? (
-                          <>
-                            <span className={styles.encNote}>
-                              <Icon name="lock" size={14} />
-                              {t('encryption.encrypted_note')}
-                            </span>
-                            <Button
-                              variant="text"
-                              ariaLabel={t('encryption.disable_title', { name: share.name })}
-                              onClick={() => onDisableEncryption(share)}
-                            >
-                              {t('encryption.disable')}
-                            </Button>
-                          </>
-                        ) : share.empty ? (
-                          <Button
-                            variant="text"
-                            ariaLabel={t('encryption.enable_title', { name: share.name })}
-                            onClick={() => onEnableEncryption(share)}
-                          >
-                            {t('encryption.enable')}
-                          </Button>
-                        ) : null}
-                      </span>
-                    ) : null}
+  const { t } = useI18n()
+  return shares.length === 0 ? (
+    <div className={styles.empty}>
+      <Icon name="folder-tree" size={28} />
+      <p className={styles.emptyText}>{t('folder_share.no_shares_registered_add_folder')}</p>
+    </div>
+  ) : (
+    <VirtualList
+      className={styles.list}
+      items={shares}
+      itemKey={(share) => share.id}
+      estimateSize={112}
+      itemProps={() => ({ className: styles.item })}
+      pinnedKeys={pinnedKeys}
+      renderItem={(share) => {
+        const encryption = encryptionByShare.get(share.id)
+        return (
+          <ListItem
+            className={styles.row}
+            leading={<Icon name="folder" size={20} />}
+            headline={
+              <>
+                <span>{share.name}</span>
+                {share.backend !== 'local' ? (
+                  <small className={styles.shareBackend}>{backendLabel(share.backend)}</small>
+                ) : null}
+              </>
+            }
+            supporting={
+              <>
+                <code data-testid="share-source">{share.source}</code>
+                {share.broken_reason ? (
+                  <span className={adminStyles.error}>{brokenText(share.broken_reason)}</span>
+                ) : null}
+                {encryptionLoaded ? (
+                  <span className={styles.enc} data-testid="share-encryption">
                     {encryption ? (
-                      <span className={styles.encSaltRow}>
-                        <span className={styles.encSaltLabel}>{t('encryption.salt_label')}</span>
-                        <code className={styles.encSalt} data-testid="share-encryption-salt">
-                          {encryption.salt}
-                        </code>
+                      <>
+                        <span className={styles.encNote}>
+                          <Icon name="lock" size={14} />
+                          {t('encryption.encrypted_note')}
+                        </span>
                         <Button
                           variant="text"
-                          ariaLabel={t('encryption.copy_salt', { name: share.name })}
-                          onClick={() => onCopySalt(encryption.salt, share.name)}
+                          ariaLabel={t('encryption.disable_title', { name: share.name })}
+                          onClick={() => onDisableEncryption(share)}
                         >
-                          {t('common.copy')}
+                          {t('encryption.disable')}
                         </Button>
-                      </span>
-                    ) : null}
-                  </>
-                }
-                trailing={
-                  <>
-                    <span
-                      className={styles.trash}
-                      title={trashTogglingId === share.id ? t('folder_share.applying') : undefined}
-                    >
-                      <span className={styles.trashLabel}>{t('folder_share.use_trash')}</span>
-                      <Switch
-                        checked={share.trash_enabled}
-                        disabled={trashTogglingId === share.id}
-                        label={t('folder_share.trash', { name: share.name })}
-                        showLabel={false}
-                        onChange={(enabled) => onToggleTrash(share, enabled)}
-                      />
-                    </span>
-                    {share.broken_reason ? (
-                      <Button variant="tonal" loading={retryingId === share.id} onClick={() => onRetry(share)}>
-                        {t('folder_share.retry')}
+                      </>
+                    ) : share.empty ? (
+                      <Button
+                        variant="text"
+                        ariaLabel={t('encryption.enable_title', { name: share.name })}
+                        onClick={() => onEnableEncryption(share)}
+                      >
+                        {t('encryption.enable')}
                       </Button>
                     ) : null}
-                    <IconButton
-                      label={t('common.edit', { name: share.name })}
-                      icon="rename"
-                      onClick={() => onEdit(share)}
-                    />
-                    <span className={buttonStyles.danger}>
-                      <IconButton
-                        label={t('common.remove', { name: share.name })}
-                        icon="delete"
-                        onClick={() => onDelete(share)}
-                      />
-                    </span>
-                  </>
-                }
-              />
-            )
-          }}
-        />
-      )}
-      {trashError ? (
-        <p className={adminStyles.error} role="alert">
-          {trashError}
-        </p>
-      ) : null}
-      {retryError ? (
-        <p className={adminStyles.error} role="alert">
-          {retryError}
-        </p>
-      ) : null}
-    </>
+                  </span>
+                ) : null}
+                {encryption ? (
+                  <span className={styles.encSaltRow}>
+                    <span className={styles.encSaltLabel}>{t('encryption.salt_label')}</span>
+                    <code className={styles.encSalt} data-testid="share-encryption-salt">
+                      {encryption.salt}
+                    </code>
+                    <Button
+                      variant="text"
+                      ariaLabel={t('encryption.copy_salt', { name: share.name })}
+                      onClick={() => onCopySalt(encryption.salt, share.name)}
+                    >
+                      {t('common.copy')}
+                    </Button>
+                  </span>
+                ) : null}
+              </>
+            }
+            trailing={
+              <>
+                <span
+                  className={styles.trash}
+                  title={trashTogglingId === share.id ? t('folder_share.applying') : undefined}
+                >
+                  <span className={styles.trashLabel}>{t('folder_share.use_trash')}</span>
+                  <Switch
+                    checked={share.trash_enabled}
+                    disabled={trashTogglingId === share.id}
+                    label={t('folder_share.trash', { name: share.name })}
+                    showLabel={false}
+                    onChange={(enabled) => onToggleTrash(share, enabled)}
+                  />
+                </span>
+                {share.broken_reason ? (
+                  <Button variant="tonal" loading={retryingId === share.id} onClick={() => onRetry(share)}>
+                    {t('folder_share.retry')}
+                  </Button>
+                ) : null}
+                <IconButton
+                  label={t('common.edit', { name: share.name })}
+                  icon="rename"
+                  onClick={() => onEdit(share)}
+                />
+                <span className={buttonStyles.danger}>
+                  <IconButton
+                    label={t('common.remove', { name: share.name })}
+                    icon="delete"
+                    onClick={() => onDelete(share)}
+                  />
+                </span>
+              </>
+            }
+          />
+        )
+      }}
+    />
   )
 }

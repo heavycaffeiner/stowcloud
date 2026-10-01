@@ -1,11 +1,14 @@
-import { useState } from 'react'
+import { overlay } from 'overlay-kit'
+import { useForm, useWatch } from 'react-hook-form'
 import { describeApiError } from '../../api/error-text'
 import { tp } from '../../lib/i18n'
+import { useCopyText } from '../../hooks/use-copy-text'
 import { useI18n } from '../../hooks/use-i18n'
 import { useReissueRecoveryCodes, useRecoveryCodesRemaining, useTotpDisable, useTotpEnroll, useTotpSetup } from './api'
 import { useSession } from '../auth/api'
 import { Button } from '../../ui/Button'
-import { TextField } from '../../ui/TextField'
+import { FormTextField } from '../../ui/FormTextField'
+import { askPassword } from './PasswordPrompt'
 import { SettingsDialog } from './SettingsDialog'
 import * as styles from './TotpSection.css'
 import * as settingsCardStyles from './SettingsCard.css'
@@ -18,192 +21,43 @@ export function TotpSection() {
   const enabled = session.data?.user.totp_enabled ?? false
   const smbDedicated = session.data?.user.smb_credential === 'dedicated'
   const recovery = useRecoveryCodesRemaining(enabled)
-  const setup = useTotpSetup()
-  const enroll = useTotpEnroll()
   const disable = useTotpDisable()
   const reissue = useReissueRecoveryCodes()
-  type TotpState = {
-    enrollOpen: boolean
-    enrollPassword: string
-    setupSecret: string
-    setupUrl: string
-    enrollCode: string
-    secretCopyState: 'idle' | 'copied' | 'failed'
-    recoveryCodes: string[] | null
-    recoveryAcknowledged: boolean
-    recoveryCopyState: 'idle' | 'copied' | 'failed'
-    disableOpen: boolean
-    disablePassword: string
-    reissueOpen: boolean
-    reissuePassword: string
-  }
-  const [state, setState] = useState<TotpState>({
-    enrollOpen: false,
-    enrollPassword: '',
-    setupSecret: '',
-    setupUrl: '',
-    enrollCode: '',
-    secretCopyState: 'idle',
-    recoveryCodes: null,
-    recoveryAcknowledged: false,
-    recoveryCopyState: 'idle',
-    disableOpen: false,
-    disablePassword: '',
-    reissueOpen: false,
-    reissuePassword: ''
-  })
-  const {
-    enrollOpen,
-    enrollPassword,
-    setupSecret,
-    setupUrl,
-    enrollCode,
-    secretCopyState,
-    recoveryCodes,
-    recoveryAcknowledged,
-    recoveryCopyState,
-    disableOpen,
-    disablePassword,
-    reissueOpen,
-    reissuePassword
-  } = state
-  const update = <K extends keyof TotpState>(key: K, value: TotpState[K]): void =>
-    setState((current) => ({ ...current, [key]: value }))
-  const setEnrollOpen = (value: boolean): void => update('enrollOpen', value)
-  const setEnrollPassword = (value: string): void => update('enrollPassword', value)
-  const setSetupSecret = (value: string): void => update('setupSecret', value)
-  const setSetupUrl = (value: string): void => update('setupUrl', value)
-  const setEnrollCode = (value: string): void => update('enrollCode', value)
-  const setSecretCopyState = (value: TotpState['secretCopyState']): void => update('secretCopyState', value)
-  const setRecoveryCodes = (value: string[] | null): void => update('recoveryCodes', value)
-  const setRecoveryAcknowledged = (value: boolean): void => update('recoveryAcknowledged', value)
-  const setRecoveryCopyState = (value: TotpState['recoveryCopyState']): void => update('recoveryCopyState', value)
-  const setDisableOpen = (value: boolean): void => update('disableOpen', value)
-  const setDisablePassword = (value: string): void => update('disablePassword', value)
-  const setReissueOpen = (value: boolean): void => update('reissueOpen', value)
-  const setReissuePassword = (value: string): void => update('reissuePassword', value)
 
-  const enrollError = setup.error || enroll.error
-  const enrollErrorText = enrollError
-    ? enrollError instanceof ApiError && enrollError.code === 'auth.invalid_credentials'
-      ? setupSecret
-        ? t('totp.password_or_verification_code_incorrect')
-        : t('common.incorrect_password')
-      : describeApiError(
-          enrollError,
-          setupSecret ? t('totp.could_not_enable_try_again') : t('totp.could_not_start_setup_try')
-        )
-    : null
-  const disableError = disable.error
-    ? disable.error instanceof ApiError && disable.error.code === 'auth.invalid_credentials'
-      ? t('common.incorrect_password')
-      : describeApiError(disable.error, t('totp.could_not_turn_off_try'))
-    : null
-  const reissueError = reissue.error
-    ? reissue.error instanceof ApiError && reissue.error.code === 'auth.invalid_credentials'
-      ? t('common.incorrect_password')
-      : describeApiError(reissue.error, t('totp.could_not_reissue_them_try'))
-    : null
-
-  function openEnroll(): void {
-    setEnrollPassword('')
-    setSetupSecret('')
-    setSetupUrl('')
-    setEnrollCode('')
-    setSecretCopyState('idle')
-    setup.reset()
-    enroll.reset()
-    setEnrollOpen(true)
+  async function setUp(): Promise<void> {
+    const codes = await enrollTotp()
+    if (codes) await showRecoveryCodes(codes)
   }
-  function revealSecret(): void {
-    if (!enrollPassword || setupSecret) return
-    setup.mutate(enrollPassword, {
-      onSuccess: (result) => {
-        setSetupSecret(result.secret)
-        setSetupUrl(result.uri)
-      }
+  function turnOff(): void {
+    void askPassword({
+      title: t('totp.turn_off_two_factor_authentication_2'),
+      action: t('totp.turn_off'),
+      body: (
+        <>
+          <p className={settingsCardStyles.text}>{t('totp.enter_your_current_password_continue')}</p>
+          <p className={styles.smbWarning}>
+            {smbDedicated ? t('smb.dedicated_will_be_replaced') : t('smb.remove_reverts_to_account')}
+          </p>
+        </>
+      ),
+      run: (password) => disable.mutateAsync(password),
+      describeError: (error) => describeApiError(error, t('totp.could_not_turn_off_try'))
     })
   }
-  function confirmEnroll(): void {
-    enroll.mutate(
-      { password: enrollPassword, secret: setupSecret, code: enrollCode },
-      {
-        onSuccess: (codes) => {
-          setRecoveryCodes(codes)
-          setRecoveryAcknowledged(false)
-          setRecoveryCopyState('idle')
-          setEnrollOpen(false)
-          setSetupSecret('')
-          setSetupUrl('')
-          setEnrollPassword('')
-          setEnrollCode('')
-          void session.refetch()
-        }
-      }
-    )
-  }
-  function closeEnroll(): void {
-    if (setup.isPending || enroll.isPending) return
-    setEnrollOpen(false)
-    setSetupSecret('')
-    setSetupUrl('')
-    setEnrollPassword('')
-    setEnrollCode('')
-  }
-  async function copySecret(): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(setupSecret)
-      setSecretCopyState('copied')
-    } catch {
-      setSecretCopyState('failed')
-    }
-  }
-  async function copyRecoveryCodes(): Promise<void> {
-    if (!recoveryCodes) return
-    try {
-      await navigator.clipboard.writeText(recoveryCodes.join('\n'))
-      setRecoveryCopyState('copied')
-    } catch {
-      setRecoveryCopyState('failed')
-    }
-  }
-  function closeRecoveryCodes(): void {
-    if (recoveryCodes && !recoveryAcknowledged) return
-    setRecoveryCodes(null)
-  }
-  function acknowledgeRecoveryCodes(): void {
-    setRecoveryAcknowledged(true)
-    setRecoveryCodes(null)
-  }
-  function openDisable(): void {
-    setDisablePassword('')
-    disable.reset()
-    setDisableOpen(true)
-  }
-  function confirmDisable(): void {
-    disable.mutate(disablePassword, {
-      onSuccess: () => {
-        setDisableOpen(false)
-        setDisablePassword('')
-        void session.refetch()
-      }
+  async function reissueCodes(): Promise<void> {
+    const codes = await askPassword({
+      title: t('totp.reissue_recovery_codes_2'),
+      action: t('totp.reissue'),
+      body: (
+        <p className={settingsCardStyles.text}>
+          {t('totp.reissuing_invalidates_all_10_recovery')} <strong>{t('totp.at_once')}</strong>
+          {t('totp.cannot_undone_new_codes_shown')}
+        </p>
+      ),
+      run: (password) => reissue.mutateAsync(password),
+      describeError: (error) => describeApiError(error, t('totp.could_not_reissue_them_try'))
     })
-  }
-  function openReissue(): void {
-    setReissuePassword('')
-    reissue.reset()
-    setReissueOpen(true)
-  }
-  function confirmReissue(): void {
-    reissue.mutate(reissuePassword, {
-      onSuccess: (codes) => {
-        setRecoveryCodes(codes)
-        setRecoveryAcknowledged(false)
-        setRecoveryCopyState('idle')
-        setReissueOpen(false)
-        setReissuePassword('')
-      }
-    })
+    if (codes) await showRecoveryCodes(codes)
   }
 
   return (
@@ -211,11 +65,11 @@ export function TotpSection() {
       <div className={styles.status}>
         <span className={cx(styles.badge, enabled && styles.badgeOn)}>{enabled ? t('totp.on') : t('totp.off')}</span>
         {enabled ? (
-          <Button variant="outlined" onClick={openDisable}>
+          <Button variant="outlined" onClick={turnOff}>
             {t('totp.turn_off_two_factor_authentication')}
           </Button>
         ) : (
-          <Button onClick={openEnroll}>{t('totp.set_up_two_factor_authentication')}</Button>
+          <Button onClick={() => void setUp()}>{t('totp.set_up_two_factor_authentication')}</Button>
         )}
       </div>
       {enabled ? (
@@ -226,155 +80,157 @@ export function TotpSection() {
               {recovery.data <= 3 ? ` ${t('totp.running_low_reissue_them_now')}` : ''}
             </p>
           ) : null}
-          <Button variant="outlined" onClick={openReissue}>
+          <Button variant="outlined" onClick={() => void reissueCodes()}>
             {t('totp.reissue_recovery_codes')}
           </Button>
         </div>
       ) : null}
-      <SettingsDialog
-        open={enrollOpen}
-        title={t('totp.set_up_two_factor_authentication')}
-        onClose={closeEnroll}
-        actions={
-          <>
-            <Button variant="text" onClick={closeEnroll} disabled={setup.isPending || enroll.isPending}>
-              {t('common.cancel')}
-            </Button>
-            <Button
-              onClick={setupSecret ? confirmEnroll : revealSecret}
-              disabled={setupSecret ? enrollCode.length !== 6 : !enrollPassword}
-              loading={setup.isPending || enroll.isPending}
-            >
-              {setupSecret ? t('totp.enable') : t('common.continue')}
-            </Button>
-          </>
-        }
-      >
-        <TextField
-          type="password"
-          label={t('common.current_password')}
-          value={enrollPassword}
-          autoComplete="current-password"
-          onValueChange={setEnrollPassword}
-        />
-        {setup.isPending ? <p className={settingsCardStyles.text}>{t('totp.loading_setup_details')}</p> : null}
-        {setupSecret ? (
-          <>
-            <p className={settingsCardStyles.text}>{t('totp.add_key_below_authenticator_app')}</p>
-            <div className={styles.secretRow}>
-              <input
-                className={styles.secret}
-                readOnly
-                value={setupSecret}
-                aria-label={t('totp.add_key_below_authenticator_app')}
-              />
-              <Button variant="text" onClick={() => void copySecret()}>
-                {secretCopyState === 'copied' ? t('common.copied') : t('common.copy')}
-              </Button>
-            </div>
-            {secretCopyState === 'failed' ? (
-              <p className={styles.copyFeedback} role="alert">
-                {t('totp.copy_secret_failed')}
-              </p>
-            ) : null}
-            <p className={styles.url}>{setupUrl}</p>
-            <TextField
-              label={t('totp.6_digit_code')}
-              value={enrollCode}
-              error={enrollErrorText}
-              onValueChange={setEnrollCode}
-            />
-          </>
-        ) : enrollErrorText ? (
-          <p className={styles.smbWarning} role="alert">
-            {enrollErrorText}
-          </p>
-        ) : null}
-      </SettingsDialog>
-      <SettingsDialog
-        open={disableOpen}
-        title={t('totp.turn_off_two_factor_authentication_2')}
-        onClose={() => {
-          if (!disable.isPending) setDisableOpen(false)
-        }}
-        actions={
-          <>
-            <Button variant="text" onClick={() => setDisableOpen(false)} disabled={disable.isPending}>
-              {t('common.cancel')}
-            </Button>
-            <Button onClick={confirmDisable} disabled={!disablePassword} loading={disable.isPending}>
-              {t('totp.turn_off')}
-            </Button>
-          </>
-        }
-      >
-        <p className={settingsCardStyles.text}>{t('totp.enter_your_current_password_continue')}</p>
-        {smbDedicated ? (
-          <p className={styles.smbWarning}>{t('smb.dedicated_will_be_replaced')}</p>
-        ) : (
-          <p className={styles.smbWarning}>{t('smb.remove_reverts_to_account')}</p>
-        )}
-        <TextField
-          type="password"
-          label={t('common.current_password')}
-          value={disablePassword}
-          error={disableError}
-          onValueChange={setDisablePassword}
-        />
-      </SettingsDialog>
-      <SettingsDialog
-        open={reissueOpen}
-        title={t('totp.reissue_recovery_codes_2')}
-        onClose={() => {
-          if (!reissue.isPending) setReissueOpen(false)
-        }}
-        actions={
-          <>
-            <Button variant="text" onClick={() => setReissueOpen(false)} disabled={reissue.isPending}>
-              {t('common.cancel')}
-            </Button>
-            <Button onClick={confirmReissue} disabled={!reissuePassword} loading={reissue.isPending}>
-              {t('totp.reissue')}
-            </Button>
-          </>
-        }
-      >
-        <p className={settingsCardStyles.text}>
-          {t('totp.reissuing_invalidates_all_10_recovery')} <strong>{t('totp.at_once')}</strong>
-          {t('totp.cannot_undone_new_codes_shown')}
-        </p>
-        <TextField
-          type="password"
-          label={t('common.current_password')}
-          value={reissuePassword}
-          error={reissueError}
-          onValueChange={setReissuePassword}
-        />
-      </SettingsDialog>
-      <SettingsDialog
-        open={!!recoveryCodes}
-        title={t('totp.recovery_codes')}
-        onClose={closeRecoveryCodes}
-        dismissible={false}
-        actions={<Button onClick={acknowledgeRecoveryCodes}>{t('totp.acknowledge_codes_saved')}</Button>}
-      >
-        <p className={settingsCardStyles.text}>{t('totp.each_code_works_once_save')}</p>
-        <ul className={styles.codes}>
-          {(recoveryCodes ?? []).map((code) => (
-            <li key={code}>
-              <input className={styles.code} readOnly value={code} aria-label={t('totp.recovery_codes')} />
-            </li>
-          ))}
-        </ul>
-        <Button variant="outlined" onClick={() => void copyRecoveryCodes()}>
-          {recoveryCopyState === 'copied' ? t('common.copied') : t('totp.copy_codes')}
-        </Button>
-        {recoveryCopyState === 'failed' ? (
-          <p className={styles.copyFeedback} role="alert">
-            {t('totp.copy_codes_failed')}
-          </p>
-        ) : null}
-      </SettingsDialog>
     </div>
+  )
+}
+
+/** Walks through enrolling a second factor. Resolves to the recovery codes, or null when cancelled. */
+function enrollTotp(): Promise<string[] | null> {
+  return overlay.openAsync<string[] | null>(({ isOpen, close, unmount }) => (
+    <EnrollDialog open={isOpen} onDone={close} onClosed={unmount} />
+  ))
+}
+
+interface EnrollDialogProps {
+  open: boolean
+  onDone: (codes: string[] | null) => void
+  onClosed: () => void
+}
+
+function EnrollDialog({ open, onDone, onClosed }: EnrollDialogProps) {
+  const { t } = useI18n()
+  const setup = useTotpSetup()
+  const enroll = useTotpEnroll()
+  const copy = useCopyText()
+  const { control, handleSubmit } = useForm({ defaultValues: { password: '', code: '' } })
+  const [password, code] = useWatch({ control, name: ['password', 'code'] })
+  const secret = setup.data?.secret ?? ''
+  const busy = setup.isPending || enroll.isPending
+  const error = setup.error ?? enroll.error
+  const errorText = error
+    ? error instanceof ApiError && error.code === 'auth.invalid_credentials'
+      ? secret
+        ? t('totp.password_or_verification_code_incorrect')
+        : t('common.incorrect_password')
+      : describeApiError(error, secret ? t('totp.could_not_enable_try_again') : t('totp.could_not_start_setup_try'))
+    : null
+
+  // The password reveals a secret first; the code from the app then enrolls it.
+  const submit = handleSubmit((values) => {
+    if (busy) return
+    if (!secret) {
+      if (values.password) setup.mutate(values.password)
+    } else if (values.code.length === 6) {
+      enroll.mutate({ password: values.password, secret, code: values.code }, { onSuccess: onDone })
+    }
+  })
+  const cancel = (): void => {
+    if (!busy) onDone(null)
+  }
+
+  return (
+    <SettingsDialog
+      open={open}
+      title={t('totp.set_up_two_factor_authentication')}
+      onClose={cancel}
+      onClosed={onClosed}
+      onSubmit={(event) => void submit(event)}
+      actions={
+        <>
+          <Button variant="text" onClick={cancel} disabled={busy}>
+            {t('common.cancel')}
+          </Button>
+          <Button onClick={() => void submit()} disabled={secret ? code.length !== 6 : !password} loading={busy}>
+            {secret ? t('totp.enable') : t('common.continue')}
+          </Button>
+        </>
+      }
+    >
+      <FormTextField
+        control={control}
+        name="password"
+        type="password"
+        label={t('common.current_password')}
+        autoComplete="current-password"
+      />
+      {setup.isPending ? <p className={settingsCardStyles.text}>{t('totp.loading_setup_details')}</p> : null}
+      {secret ? (
+        <>
+          <p className={settingsCardStyles.text}>{t('totp.add_key_below_authenticator_app')}</p>
+          <div className={styles.secretRow}>
+            <input
+              className={styles.secret}
+              readOnly
+              value={secret}
+              aria-label={t('totp.add_key_below_authenticator_app')}
+            />
+            <Button variant="text" onClick={() => copy.mutate(secret)}>
+              {copy.isSuccess ? t('common.copied') : t('common.copy')}
+            </Button>
+          </div>
+          {copy.isError ? (
+            <p className={styles.copyFeedback} role="alert">
+              {t('totp.copy_secret_failed')}
+            </p>
+          ) : null}
+          <p className={styles.url}>{setup.data?.uri}</p>
+          <FormTextField control={control} name="code" label={t('totp.6_digit_code')} error={errorText} />
+        </>
+      ) : errorText ? (
+        <p className={styles.smbWarning} role="alert">
+          {errorText}
+        </p>
+      ) : null}
+    </SettingsDialog>
+  )
+}
+
+/** Shows freshly issued recovery codes until the user says they are saved. */
+function showRecoveryCodes(codes: string[]): Promise<void> {
+  return overlay.openAsync<void>(({ isOpen, close, unmount }) => (
+    <RecoveryCodesDialog open={isOpen} codes={codes} onDone={() => close()} onClosed={unmount} />
+  ))
+}
+
+interface RecoveryCodesDialogProps {
+  open: boolean
+  codes: string[]
+  onDone: () => void
+  onClosed: () => void
+}
+
+function RecoveryCodesDialog({ open, codes, onDone, onClosed }: RecoveryCodesDialogProps) {
+  const { t } = useI18n()
+  const copy = useCopyText()
+  return (
+    <SettingsDialog
+      open={open}
+      title={t('totp.recovery_codes')}
+      onClosed={onClosed}
+      dismissible={false}
+      actions={<Button onClick={onDone}>{t('totp.acknowledge_codes_saved')}</Button>}
+    >
+      <p className={settingsCardStyles.text}>{t('totp.each_code_works_once_save')}</p>
+      <ul className={styles.codes}>
+        {codes.map((code) => (
+          <li key={code}>
+            <input className={styles.code} readOnly value={code} aria-label={t('totp.recovery_codes')} />
+          </li>
+        ))}
+      </ul>
+      <Button variant="outlined" onClick={() => copy.mutate(codes.join('\n'))}>
+        {copy.isSuccess ? t('common.copied') : t('totp.copy_codes')}
+      </Button>
+      {copy.isError ? (
+        <p className={styles.copyFeedback} role="alert">
+          {t('totp.copy_codes_failed')}
+        </p>
+      ) : null}
+    </SettingsDialog>
   )
 }

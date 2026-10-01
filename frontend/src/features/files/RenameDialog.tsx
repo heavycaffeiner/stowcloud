@@ -1,7 +1,7 @@
-import { useState } from 'react'
 import { overlay } from 'overlay-kit'
+import { useForm } from 'react-hook-form'
 import { Button } from '../../ui/Button'
-import { TextField } from '../../ui/TextField'
+import { FormTextField } from '../../ui/FormTextField'
 import { BrowseDialog } from './browse-dialog'
 import { useI18n } from '../../hooks/use-i18n'
 
@@ -32,12 +32,12 @@ function RenameDialog({
   onRename: (name: string) => void
 }) {
   const { t } = useI18n()
-  const [name, setName] = useState(currentName)
-  const submit = (): void => {
+  const { control, handleSubmit } = useForm({ defaultValues: { name: currentName } })
+  const submit = handleSubmit(({ name }) => {
     const value = name.trim()
     if (value && value !== currentName) onRename(value)
     else onClose()
-  }
+  })
   return (
     <BrowseDialog
       open={open}
@@ -49,22 +49,13 @@ function RenameDialog({
           <Button variant="text" onClick={onClose}>
             {t('common.cancel')}
           </Button>
-          <Button onClick={submit}>{t('common.ok')}</Button>
+          <Button onClick={() => void submit()}>{t('common.ok')}</Button>
         </>
       }
     >
-      <TextField
-        value={name}
-        label={t('rename.new_name')}
-        autoFocus
-        onValueChange={setName}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') {
-            event.preventDefault()
-            submit()
-          }
-        }}
-      />
+      <form onSubmit={(event) => void submit(event)}>
+        <FormTextField control={control} name="name" label={t('rename.new_name')} autoFocus />
+      </form>
     </BrowseDialog>
   )
 }

@@ -1,7 +1,9 @@
+import { useWatch } from 'react-hook-form'
 import { Link } from 'react-router-dom'
 import { Button } from '../../../ui/Button'
-import { TextField } from '../../../ui/TextField'
+import { FormTextField } from '../../../ui/FormTextField'
 import { useDocumentTitle } from '../../../hooks/use-document-title'
+import { useI18n } from '../../../hooks/use-i18n'
 import { useLoginFlow } from '../hooks/use-login-flow'
 import * as authStyles from './auth.css'
 import * as utilitiesStyles from '../../../ui/utilities.css'
@@ -10,46 +12,46 @@ import { cx } from '../../../ui/cx'
 const SOURCE_URL = 'https://github.com/heavycaffeiner/stowcloud'
 
 export function LoginPage() {
+  const { t } = useI18n()
   const {
-    t,
     form,
-    updateForm,
+    step,
+    factorMode,
+    pending,
     returnTo,
     ssoName,
     ssoError,
-    login,
-    loginTotp,
-    submitCredentials,
-    submitTotp,
+    submit,
+    switchFactor,
+    backToPassword,
     startOidcLogin
   } = useLoginFlow()
+  const { control, formState } = form
+  const [username, password, code] = useWatch({ control, name: ['username', 'password', 'code'] })
+  const errorMessage = formState.errors.root?.message
   useDocumentTitle(t('login.sign_stowcloud'))
-  const { step, factorMode, username, password, code, errorMessage } = form
   return (
     <main className={authStyles.page}>
-      <form
-        className={cx(authStyles.card, authStyles.login)}
-        onSubmit={step === 'credentials' ? submitCredentials : submitTotp}
-      >
+      <form className={cx(authStyles.card, authStyles.login)} onSubmit={(event) => void submit(event)}>
         <h1 className={authStyles.title}>Stowcloud</h1>
         <p className={authStyles.subtitle}>
           {returnTo ? t('login.sign_first_authorise_app') : t('login.sign_your_account')}
         </p>
         {step === 'credentials' ? (
           <>
-            <TextField
-              value={username}
+            <FormTextField
+              control={control}
+              name="username"
               label={t('login.username')}
               autoFocus
               autoComplete="username"
-              onValueChange={(username) => updateForm({ username })}
             />
-            <TextField
-              value={password}
+            <FormTextField
+              control={control}
+              name="password"
               label={t('common.password')}
               type="password"
               autoComplete="current-password"
-              onValueChange={(password) => updateForm({ password })}
             />
           </>
         ) : (
@@ -57,24 +59,15 @@ export function LoginPage() {
             <p className={authStyles.subtitle}>
               {factorMode === 'totp' ? t('login.enter_your_two_factor_code') : t('login.recovery_code_hint')}
             </p>
-            <TextField
-              value={code}
+            <FormTextField
+              control={control}
+              name="code"
               label={factorMode === 'totp' ? t('login.verification_code') : t('login.recovery_code')}
               placeholder={factorMode === 'totp' ? t('login.6_digits') : undefined}
               autoFocus
               autoComplete="one-time-code"
-              onValueChange={(code) => updateForm({ code })}
             />
-            <Button
-              variant="text"
-              onClick={() =>
-                updateForm((current) => ({
-                  factorMode: current.factorMode === 'totp' ? 'recovery' : 'totp',
-                  code: '',
-                  errorMessage: null
-                }))
-              }
-            >
+            <Button variant="text" onClick={switchFactor}>
               {factorMode === 'totp' ? t('login.use_recovery_code') : t('login.use_authenticator_code')}
             </Button>
           </>
@@ -91,18 +84,14 @@ export function LoginPage() {
         ) : null}
         <div className={authStyles.actions}>
           {step === 'totp' ? (
-            <Button
-              className={authStyles.action}
-              variant="text"
-              onClick={() => updateForm({ step: 'credentials', factorMode: 'totp', code: '', errorMessage: null })}
-            >
+            <Button className={authStyles.action} variant="text" onClick={backToPassword}>
               {t('login.back')}
             </Button>
           ) : null}
           <Button
             className={authStyles.action}
             type="submit"
-            loading={step === 'credentials' ? login.isPending : loginTotp.isPending}
+            loading={pending}
             disabled={step === 'credentials' ? !username.trim() || !password : !code.trim()}
           >
             {step === 'credentials' ? t('login.sign') : t('common.ok')}

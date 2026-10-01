@@ -1,18 +1,21 @@
-import { useGrantManagementState } from './hooks/grant-management-state'
+import { useState } from 'react'
+import { overlay } from 'overlay-kit'
+import { Controller, useForm, useWatch } from 'react-hook-form'
 import { describeApiError } from '../../api/error-text'
+import { t } from '../../lib/i18n'
 import { useI18n } from '../../hooks/use-i18n'
+import { confirmAction } from '../../ui/ActionDialog'
 import { Button } from '../../ui/Button'
-import { Checkbox } from '../../ui/Checkbox'
-import { GrantPermissionGrid } from './GrantPermissionGrid'
+import { GrantPermissionGrid, usePermLabels } from './GrantPermissionGrid'
 import { Chip } from '../../ui/Chip'
 import { Dialog } from '../../ui/Dialog'
+import { FormTextField } from '../../ui/FormTextField'
 import { Switch } from '../../ui/Switch'
 import { Icon } from '../../ui/Icon'
 import { IconButton } from '../../ui/IconButton'
 import { ListItem } from '../../ui/ListItem'
 import { ProgressCircular } from '../../ui/ProgressCircular'
-import { Select, type SelectOption } from '../../ui/Select'
-import { TextField } from '../../ui/TextField'
+import { Select } from '../../ui/Select'
 import { VirtualList } from '../../ui/VirtualList'
 import * as styles from './GrantManagementSection.css'
 import * as adminStyles from './admin.css'
@@ -26,98 +29,72 @@ import {
   useDeleteGrant,
   useUpdateGrant,
   type AdminGrant,
+  type AdminShare,
   type GrantPermName,
   type GrantPrincipal
 } from './api'
 import { ApiError } from '../../api/fetcher'
 
-interface GrantManagementSectionProps {
+interface GrantsTarget {
+  title: string
   /** Who these grants belong to: a user id or a group id, never both. */
   principal: GrantPrincipal
   /** Display name used in the hint and delete confirmation copy. */
   label: string
 }
 
-type Translate = (key: string, params?: Record<string, string | number>) => string
-
-type PermissionSets = {
-  allow: Set<GrantPermName>
-  deny: Set<GrantPermName>
+/** Shows the folders a user or group can see. Settles once it has closed. */
+export function showGrants(target: GrantsTarget): Promise<void> {
+  return overlay.openAsync<void>(({ isOpen, close, unmount }) => (
+    <GrantsDialog {...target} open={isOpen} onClose={() => close()} onClosed={unmount} />
+  ))
 }
 
-export function GrantManagementSection({ principal, label }: GrantManagementSectionProps) {
+function GrantsDialog({
+  title,
+  principal,
+  label,
+  open,
+  onClose,
+  onClosed
+}: GrantsTarget & { open: boolean; onClose: () => void; onClosed: () => void }) {
   const { t } = useI18n()
-  const permLabel: Record<GrantPermName, string> = {
-    read: t('common.read'),
-    write: t('grant.write'),
-    create: t('grant.create'),
-    delete: t('common.delete'),
-    rename: t('grant.rename'),
-    move: t('common.move'),
-    share: t('common.share_links'),
-    download: t('common.download')
-  }
-  const scope = principal.kind === 'user' ? { userId: principal.id } : { groupId: principal.id }
+  return (
+    <Dialog
+      open={open}
+      title={title}
+      onClose={onClose}
+      onClosed={onClosed}
+      actions={
+        <Button variant="text" onClick={onClose}>
+          {t('common.close')}
+        </Button>
+      }
+    >
+      <GrantManagementSection principal={principal} label={label} />
+    </Dialog>
+  )
+}
+
+function shareNameOf(shares: readonly AdminShare[], id: number): string {
+  return shares.find((share) => share.id === id)?.name ?? t('grant.share', { id })
+}
+
+function GrantManagementSection({ principal, label }: Omit<GrantsTarget, 'title'>) {
+  const { t } = useI18n()
+  const permLabel = usePermLabels()
   const sharesQuery = useAdminShares()
-  const grantsQuery = useAdminGrants(scope)
+  const grantsQuery = useAdminGrants(principal.kind === 'user' ? { userId: principal.id } : { groupId: principal.id })
+  const deleteGrant = useDeleteGrant()
   const shares = sharesQuery.data ?? []
   const grants = grantsQuery.data ?? []
-  const loading = sharesQuery.isPending || grantsQuery.isPending
+  const [expandedIds, setExpandedIds] = useState<ReadonlySet<number>>(new Set())
+  // Keeps the row that opened a dialog mounted so focus can return to it.
+  const [pinned, setPinned] = useState<number | null>(null)
   const loadError =
     sharesQuery.error || grantsQuery.error
       ? describeApiError(sharesQuery.error ?? grantsQuery.error, t('grant.could_not_load_permission_list'))
       : null
-
-  const [state, patchState] = useGrantManagementState()
-  const {
-    expandedIds,
-    addOpen,
-    addShareId,
-    addSubpath,
-    addAllow,
-    addDeny,
-    addInherit,
-    addLabel,
-    addValidation,
-    editTarget,
-    editAllow,
-    editDeny,
-    editInherit,
-    editLabel,
-    editValidation,
-    deleteTarget
-  } = state
-  const setExpandedIds = (value: Set<number> | ((current: Set<number>) => Set<number>)): void =>
-    patchState((current) => ({ expandedIds: typeof value === 'function' ? value(current.expandedIds) : value }))
-  const setAddOpen = (value: boolean): void => patchState({ addOpen: value })
-  const setAddShareId = (value: string): void => patchState({ addShareId: value })
-  const setAddSubpath = (value: string): void => patchState({ addSubpath: value })
-  const setAddAllow = (value: Set<GrantPermName>): void => patchState({ addAllow: value })
-  const setAddDeny = (value: Set<GrantPermName>): void => patchState({ addDeny: value })
-  const setAddInherit = (value: boolean): void => patchState({ addInherit: value })
-  const setAddLabel = (value: string): void => patchState({ addLabel: value })
-  const setAddValidation = (value: string | null): void => patchState({ addValidation: value })
-  const setEditTarget = (value: AdminGrant | null): void => patchState({ editTarget: value })
-  const setEditAllow = (value: Set<GrantPermName>): void => patchState({ editAllow: value })
-  const setEditDeny = (value: Set<GrantPermName>): void => patchState({ editDeny: value })
-  const setEditInherit = (value: boolean): void => patchState({ editInherit: value })
-  const setEditLabel = (value: string): void => patchState({ editLabel: value })
-  const setEditValidation = (value: string | null): void => patchState({ editValidation: value })
-  const setDeleteTarget = (value: AdminGrant | null): void => patchState({ deleteTarget: value })
-  const addMut = useCreateGrant()
-  const editMut = useUpdateGrant()
-  const deleteMut = useDeleteGrant()
-
-  const shareName = (id: number): string => shares.find((share) => share.id === id)?.name ?? t('grant.share', { id })
-  const addError =
-    addValidation ?? (addMut.error ? grantError(addMut.error, t('common.could_not_add_folder'), t) : null)
-  const editError =
-    editValidation ?? (editMut.error ? grantError(editMut.error, t('common.could_not_save_change'), t) : null)
-  const deleteError = deleteMut.error ? describeApiError(deleteMut.error, t('common.could_not_remove')) : null
-  const shareOptions: SelectOption[] = [
-    { value: '', text: t('grant.select_share'), disabled: true },
-    ...shares.map((share) => ({ value: String(share.id), text: share.name }))
-  ]
 
   function toggleExpanded(id: number): void {
     setExpandedIds((current) => {
@@ -127,401 +104,336 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
       return next
     })
   }
-
   function allowSummary(grant: AdminGrant): string {
     if (grant.allow.length === 0) return t('grant.no_permissions_granted')
     if (grant.allow.length === ALL_GRANT_PERMS.length) return t('grant.full_permissions')
     return grant.allow.map((permission) => permLabel[permission]).join(' - ')
   }
-
-  function openAdd(): void {
-    addMut.reset()
-    setAddValidation(null)
-    setAddShareId(shares[0] ? String(shares[0].id) : '')
-    setAddSubpath('')
-    setAddAllow(new Set(['read', 'download']))
-    setAddDeny(new Set())
-    setAddInherit(true)
-    setAddLabel('')
-    setAddOpen(true)
+  async function withPinned(grant: AdminGrant, task: () => Promise<unknown>): Promise<void> {
+    setPinned(grant.id)
+    await task()
+    setPinned(null)
   }
-
-  function closeAdd(): void {
-    if (!addMut.isPending) setAddOpen(false)
-  }
-
-  function submitAdd(): void {
-    setAddValidation(null)
-    if (!addShareId) {
-      setAddValidation(t('grant.select_share'))
-      return
-    }
-    if (addAllow.size === 0 && addDeny.size === 0) {
-      setAddValidation(t('grant.select_at_least_one_permission'))
-      return
-    }
-    addMut.mutate(
-      {
-        principal,
-        share: Number(addShareId),
-        subpath: addSubpath.trim(),
-        allow: [...addAllow],
-        deny: [...addDeny],
-        inherit: addInherit,
-        label: addLabel.trim() || undefined
-      },
-      { onSuccess: () => setAddOpen(false) }
+  function remove(grant: AdminGrant): Promise<void> {
+    return withPinned(grant, () =>
+      confirmAction({
+        title: t('grant.remove_folder_permission'),
+        action: t('common.remove_2'),
+        danger: true,
+        body: (
+          <p>
+            {t('grant.access_removed_immediately', { name: grant.label || shareNameOf(shares, grant.share) })}{' '}
+            {t('grant.will_not_see_folder_from', { principal: label })}
+          </p>
+        ),
+        run: () => deleteGrant.mutateAsync(grant.id),
+        describeError: (error) => describeApiError(error, t('common.could_not_remove'))
+      })
     )
-  }
-
-  function openEdit(grant: AdminGrant): void {
-    editMut.reset()
-    setEditValidation(null)
-    setEditTarget(grant)
-    setEditAllow(new Set(grant.allow))
-    setEditDeny(new Set(grant.deny))
-    setEditInherit(grant.inherit)
-    setEditLabel(grant.label ?? '')
-  }
-
-  function closeEdit(): void {
-    if (!editMut.isPending) setEditTarget(null)
-  }
-
-  function submitEdit(): void {
-    if (!editTarget) return
-    setEditValidation(null)
-    if (editAllow.size === 0 && editDeny.size === 0) {
-      setEditValidation(t('grant.select_at_least_one_permission'))
-      return
-    }
-    editMut.mutate(
-      {
-        id: editTarget.id,
-        update: {
-          allow: [...editAllow],
-          deny: [...editDeny],
-          inherit: editInherit,
-          label: editLabel.trim()
-        }
-      },
-      { onSuccess: () => setEditTarget(null) }
-    )
-  }
-
-  function askDelete(grant: AdminGrant): void {
-    deleteMut.reset()
-    setDeleteTarget(grant)
-  }
-
-  function closeDelete(): void {
-    if (!deleteMut.isPending) setDeleteTarget(null)
-  }
-
-  function submitDelete(): void {
-    if (!deleteTarget) return
-    deleteMut.mutate(deleteTarget.id, { onSuccess: () => setDeleteTarget(null) })
   }
 
   return (
-    <>
-      <section className={adminStyles.section}>
-        <p className={adminStyles.sectionHint}>
-          <strong>{label}</strong>
-          {t('grant.sees_only_folders_granted_here')}
+    <section className={adminStyles.section}>
+      <p className={adminStyles.sectionHint}>
+        <strong>{label}</strong>
+        {t('grant.sees_only_folders_granted_here')}
+      </p>
+      {sharesQuery.isPending || grantsQuery.isPending ? (
+        <ProgressCircular />
+      ) : loadError ? (
+        <p className={adminStyles.sectionError} role="alert">
+          {loadError}
         </p>
-        {loading ? (
-          <ProgressCircular />
-        ) : loadError ? (
-          <p className={adminStyles.sectionError} role="alert">
-            {loadError}
-          </p>
-        ) : (
-          <>
-            {grants.length === 0 ? (
-              <div className={adminStyles.empty}>
-                <Icon name="account_tree" />
-                <p className={adminStyles.emptyText}>{t('grant.no_folders_granted_yet_signing')}</p>
-              </div>
-            ) : (
-              <VirtualList
-                className={adminStyles.list}
-                items={grants}
-                itemKey={(grant) => grant.id}
-                estimateSize={96}
-                itemProps={() => ({ className: adminStyles.item })}
-                pinnedKeys={[editTarget?.id, deleteTarget?.id].filter((id): id is number => id != null)}
-                renderItem={(grant) => {
-                  const expanded = expandedIds.has(grant.id)
-                  const overlap = grant.allow.filter((permission) => grant.deny.includes(permission))
-                  const grantName = grant.label || shareName(grant.share)
-                  return (
-                    <ListItem
-                      headline={
-                        <>
-                          <span className={adminStyles.rowName}>{grantName}</span>
-                          {!grant.inherit ? <Chip variant="assist">{t('grant.path_only')}</Chip> : null}
-                        </>
-                      }
-                      supporting={
-                        <span className={styles.supporting}>
-                          <span>
-                            {shareName(grant.share)}
-                            {grant.subpath ? ` / ${grant.subpath}` : t('grant.root')}
-                          </span>
-                          <span>
-                            {allowSummary(grant)}
-                            {grant.deny.length > 0 ? (
-                              <span className={styles.summaryDeny}>
-                                {' '}
-                                -{' '}
-                                {t('grant.denied', {
-                                  perms: grant.deny.map((permission) => permLabel[permission]).join(', ')
-                                })}
-                              </span>
-                            ) : null}
-                          </span>
-                          {overlap.length > 0 ? (
-                            <span className={styles.warning}>
-                              <Icon name="warning" size={14} />
-                              {t('grant.appears_both_allow_deny_so', {
-                                perms: overlap.map((permission) => permLabel[permission]).join(', ')
+      ) : (
+        <>
+          {grants.length === 0 ? (
+            <div className={adminStyles.empty}>
+              <Icon name="account_tree" />
+              <p className={adminStyles.emptyText}>{t('grant.no_folders_granted_yet_signing')}</p>
+            </div>
+          ) : (
+            <VirtualList
+              className={adminStyles.list}
+              items={grants}
+              itemKey={(grant) => grant.id}
+              estimateSize={96}
+              itemProps={() => ({ className: adminStyles.item })}
+              pinnedKeys={pinned === null ? undefined : [pinned]}
+              renderItem={(grant) => {
+                const expanded = expandedIds.has(grant.id)
+                const overlap = grant.allow.filter((permission) => grant.deny.includes(permission))
+                const grantName = grant.label || shareNameOf(shares, grant.share)
+                return (
+                  <ListItem
+                    headline={
+                      <>
+                        <span className={adminStyles.rowName}>{grantName}</span>
+                        {!grant.inherit ? <Chip variant="assist">{t('grant.path_only')}</Chip> : null}
+                      </>
+                    }
+                    supporting={
+                      <span className={styles.supporting}>
+                        <span>
+                          {shareNameOf(shares, grant.share)}
+                          {grant.subpath ? ` / ${grant.subpath}` : t('grant.root')}
+                        </span>
+                        <span>
+                          {allowSummary(grant)}
+                          {grant.deny.length > 0 ? (
+                            <span className={styles.summaryDeny}>
+                              {' '}
+                              -{' '}
+                              {t('grant.denied', {
+                                perms: grant.deny.map((permission) => permLabel[permission]).join(', ')
                               })}
                             </span>
                           ) : null}
-                          {expanded ? (
-                            <span className={styles.perms}>
-                              {grant.allow.map((permission) => (
-                                <Chip key={`allow-${permission}`} variant="filter" selected>
-                                  {permLabel[permission]}
-                                </Chip>
-                              ))}
-                              {grant.deny.map((permission) => (
-                                <Chip key={`deny-${permission}`} variant="input">
-                                  {t('grant.denied', { perms: permLabel[permission] })}
-                                </Chip>
-                              ))}
-                            </span>
-                          ) : null}
                         </span>
-                      }
-                      trailing={
-                        <span className={adminStyles.rowActions}>
-                          <IconButton
-                            label={
-                              expanded ? t('grant.collapse_permission_details') : t('grant.expand_permission_details')
-                            }
-                            expanded={expanded}
-                            onClick={() => toggleExpanded(grant.id)}
-                          >
-                            <span className={cx(styles.chevron, expanded && styles.chevronOpen)}>
-                              <Icon name="chevron-right" size={18} />
-                            </span>
-                          </IconButton>
-                          <IconButton label={t('common.edit', { name: grantName })} onClick={() => openEdit(grant)}>
-                            <Icon name="settings" size={18} />
-                          </IconButton>
-                          <span className={buttonStyles.danger}>
-                            <IconButton
-                              label={t('common.remove', { name: grantName })}
-                              onClick={() => askDelete(grant)}
-                            >
-                              <Icon name="delete" size={18} />
-                            </IconButton>
+                        {overlap.length > 0 ? (
+                          <span className={styles.warning}>
+                            <Icon name="warning" size={14} />
+                            {t('grant.appears_both_allow_deny_so', {
+                              perms: overlap.map((permission) => permLabel[permission]).join(', ')
+                            })}
                           </span>
+                        ) : null}
+                        {expanded ? (
+                          <span className={styles.perms}>
+                            {grant.allow.map((permission) => (
+                              <Chip key={`allow-${permission}`} variant="filter" selected>
+                                {permLabel[permission]}
+                              </Chip>
+                            ))}
+                            {grant.deny.map((permission) => (
+                              <Chip key={`deny-${permission}`} variant="input">
+                                {t('grant.denied', { perms: permLabel[permission] })}
+                              </Chip>
+                            ))}
+                          </span>
+                        ) : null}
+                      </span>
+                    }
+                    trailing={
+                      <span className={adminStyles.rowActions}>
+                        <IconButton
+                          label={
+                            expanded ? t('grant.collapse_permission_details') : t('grant.expand_permission_details')
+                          }
+                          expanded={expanded}
+                          onClick={() => toggleExpanded(grant.id)}
+                        >
+                          <span className={cx(styles.chevron, expanded && styles.chevronOpen)}>
+                            <Icon name="chevron-right" size={18} />
+                          </span>
+                        </IconButton>
+                        <IconButton
+                          label={t('common.edit', { name: grantName })}
+                          onClick={() => void withPinned(grant, () => askGrant(principal, grant))}
+                        >
+                          <Icon name="settings" size={18} />
+                        </IconButton>
+                        <span className={buttonStyles.danger}>
+                          <IconButton
+                            label={t('common.remove', { name: grantName })}
+                            onClick={() => void remove(grant)}
+                          >
+                            <Icon name="delete" size={18} />
+                          </IconButton>
                         </span>
-                      }
-                    />
-                  )
-                }}
-              />
-            )}
-            <Button variant="tonal" icon={<Icon name="add" />} onClick={openAdd}>
-              {t('common.add_folder')}
-            </Button>
+                      </span>
+                    }
+                  />
+                )
+              }}
+            />
+          )}
+          <Button variant="tonal" icon={<Icon name="add" />} onClick={() => void askGrant(principal)}>
+            {t('common.add_folder')}
+          </Button>
+        </>
+      )}
+    </section>
+  )
+}
+
+/** Adds a folder grant, or edits one when given. Resolves true once saved. */
+function askGrant(principal: GrantPrincipal, grant?: AdminGrant): Promise<boolean> {
+  return overlay.openAsync<boolean>(({ isOpen, close, unmount }) => (
+    <GrantDialog principal={principal} grant={grant} open={isOpen} onDone={close} onClosed={unmount} />
+  ))
+}
+
+interface GrantValues {
+  shareId: string
+  subpath: string
+  allow: GrantPermName[]
+  deny: GrantPermName[]
+  inherit: boolean
+  label: string
+}
+
+interface GrantDialogProps {
+  principal: GrantPrincipal
+  grant?: AdminGrant
+  open: boolean
+  onDone: (saved: boolean) => void
+  onClosed: () => void
+}
+
+function GrantDialog({ principal, grant, open, onDone, onClosed }: GrantDialogProps) {
+  const { t } = useI18n()
+  const shares = useAdminShares().data ?? []
+  const create = useCreateGrant()
+  const update = useUpdateGrant()
+  const save = grant ? update : create
+  const { control, handleSubmit, setError, setValue, formState } = useForm<GrantValues>({
+    defaultValues: grant
+      ? {
+          shareId: String(grant.share),
+          subpath: grant.subpath,
+          allow: grant.allow,
+          deny: grant.deny,
+          inherit: grant.inherit,
+          label: grant.label ?? ''
+        }
+      : {
+          shareId: shares[0] ? String(shares[0].id) : '',
+          subpath: '',
+          allow: ['read', 'download'],
+          deny: [],
+          inherit: true,
+          label: ''
+        }
+  })
+  const [allow, deny] = useWatch({ control, name: ['allow', 'deny'] })
+  const error =
+    formState.errors.root?.message ??
+    (save.error
+      ? grantErrorText(save.error, grant ? t('common.could_not_save_change') : t('common.could_not_add_folder'))
+      : null)
+
+  const submit = handleSubmit((values) => {
+    if (save.isPending) return
+    if (!values.shareId) return setError('root', { message: t('grant.select_share') })
+    if (values.allow.length === 0 && values.deny.length === 0)
+      return setError('root', { message: t('grant.select_at_least_one_permission') })
+    const done = { onSuccess: () => onDone(true) }
+    if (grant)
+      update.mutate(
+        {
+          id: grant.id,
+          update: { allow: values.allow, deny: values.deny, inherit: values.inherit, label: values.label.trim() }
+        },
+        done
+      )
+    else
+      create.mutate(
+        {
+          principal,
+          share: Number(values.shareId),
+          subpath: values.subpath.trim(),
+          allow: values.allow,
+          deny: values.deny,
+          inherit: values.inherit,
+          label: values.label.trim() || undefined
+        },
+        done
+      )
+  })
+  const cancel = (): void => {
+    if (!save.isPending) onDone(false)
+  }
+
+  return (
+    <Dialog
+      open={open}
+      title={grant ? t('grant.edit_folder_permission') : t('common.add_folder')}
+      onClose={cancel}
+      onClosed={onClosed}
+      actions={
+        <>
+          <Button variant="text" disabled={save.isPending} onClick={cancel}>
+            {t('common.cancel')}
+          </Button>
+          <Button loading={save.isPending} onClick={() => void submit()}>
+            {grant ? t('common.save') : t('common.add')}
+          </Button>
+        </>
+      }
+    >
+      <form className={adminStyles.form} onSubmit={(event) => void submit(event)}>
+        {grant ? (
+          <p className={adminStyles.sectionFieldHint}>
+            {shareNameOf(shares, grant.share)}
+            {grant.subpath ? ` / ${grant.subpath}` : t('grant.root')}
+            {t('grant.share_path_cannot_changed_grant')}
+          </p>
+        ) : (
+          <>
+            <Controller
+              control={control}
+              name="shareId"
+              render={({ field }) => (
+                <Select
+                  label={t('common.share')}
+                  options={[
+                    { value: '', text: t('grant.select_share'), disabled: true },
+                    ...shares.map((share) => ({ value: String(share.id), text: share.name }))
+                  ]}
+                  value={field.value}
+                  required
+                  onValueChange={field.onChange}
+                />
+              )}
+            />
+            <FormTextField
+              control={control}
+              name="subpath"
+              label={t('grant.subpath_leave_empty_whole_share')}
+              placeholder={t('grant.e_g_vacation')}
+              autoComplete="off"
+            />
+            <p className={adminStyles.sectionFieldHint}>{t('grant.left_empty_whole_share_appears')}</p>
           </>
         )}
-      </section>
-
-      <Dialog
-        open={addOpen}
-        title={t('common.add_folder')}
-        onClose={closeAdd}
-        actions={
-          <>
-            <Button variant="text" disabled={addMut.isPending} onClick={closeAdd}>
-              {t('common.cancel')}
-            </Button>
-            <Button loading={addMut.isPending} onClick={submitAdd}>
-              {t('common.add')}
-            </Button>
-          </>
-        }
-      >
-        <form
-          className={adminStyles.form}
-          onSubmit={(event) => {
-            event.preventDefault()
-            submitAdd()
-          }}
-        >
-          <Select
-            label={t('common.share')}
-            options={shareOptions}
-            value={addShareId}
-            required
-            onValueChange={setAddShareId}
-          />
-          <TextField
-            label={t('grant.subpath_leave_empty_whole_share')}
-            placeholder={t('grant.e_g_vacation')}
-            value={addSubpath}
-            autoComplete="off"
-            onValueChange={setAddSubpath}
-          />
-          <p className={adminStyles.sectionFieldHint}>{t('grant.left_empty_whole_share_appears')}</p>
-          <PermissionGrid
-            allow={addAllow}
-            deny={addDeny}
-            setAllow={setAddAllow}
-            setDeny={setAddDeny}
-            permLabel={permLabel}
-            t={t}
-          />
-          <Switch checked={addInherit} label={t('grant.apply_subfolders')} onChange={setAddInherit} />
-          <TextField
-            label={t('grant.display_name_optional')}
-            placeholder={t('grant.defaults_folder_name')}
-            value={addLabel}
-            autoComplete="off"
-            onValueChange={setAddLabel}
-          />
-          {addError ? (
-            <p className={adminStyles.sectionError} role="alert">
-              {addError}
-            </p>
-          ) : null}
-        </form>
-      </Dialog>
-
-      <Dialog
-        open={editTarget !== null}
-        title={t('grant.edit_folder_permission')}
-        onClose={closeEdit}
-        actions={
-          <>
-            <Button variant="text" disabled={editMut.isPending} onClick={closeEdit}>
-              {t('common.cancel')}
-            </Button>
-            <Button loading={editMut.isPending} onClick={submitEdit}>
-              {t('common.save')}
-            </Button>
-          </>
-        }
-      >
-        {editTarget ? (
-          <form
-            className={adminStyles.form}
-            onSubmit={(event) => {
-              event.preventDefault()
-              submitEdit()
-            }}
-          >
-            <p className={adminStyles.sectionFieldHint}>
-              {shareName(editTarget.share)}
-              {editTarget.subpath ? ` / ${editTarget.subpath}` : t('grant.root')}
-              {t('grant.share_path_cannot_changed_grant')}
-            </p>
-            <PermissionGrid
-              allow={editAllow}
-              deny={editDeny}
-              setAllow={setEditAllow}
-              setDeny={setEditDeny}
-              permLabel={permLabel}
-              t={t}
-            />
-            {editAllow.size > 0 && [...editAllow].some((permission) => editDeny.has(permission)) ? (
-              <p className={styles.warning}>
-                <Icon name="warning" size={14} />
-                {t('grant.permission_listed_both_allow_deny')}
-              </p>
-            ) : null}
-            <Switch checked={editInherit} label={t('grant.apply_subfolders')} onChange={setEditInherit} />
-            <TextField
-              label={t('grant.display_name_optional')}
-              placeholder={t('grant.defaults_folder_name')}
-              value={editLabel}
-              autoComplete="off"
-              onValueChange={setEditLabel}
-            />
-            {editError ? (
-              <p className={adminStyles.sectionError} role="alert">
-                {editError}
-              </p>
-            ) : null}
-          </form>
-        ) : null}
-      </Dialog>
-
-      <Dialog
-        open={deleteTarget !== null}
-        title={t('grant.remove_folder_permission')}
-        onClose={closeDelete}
-        actions={
-          <>
-            <Button variant="text" disabled={deleteMut.isPending} onClick={closeDelete}>
-              {t('common.cancel')}
-            </Button>
-            <Button danger loading={deleteMut.isPending} onClick={submitDelete}>
-              {t('common.remove_2')}
-            </Button>
-          </>
-        }
-      >
-        <p>
-          {t('grant.access_removed_immediately', {
-            name: deleteTarget?.label || (deleteTarget ? shareName(deleteTarget.share) : '')
-          })}{' '}
-          {t('grant.will_not_see_folder_from', { principal: label })}
-        </p>
-        {deleteError ? (
-          <p className={adminStyles.sectionError} role="alert">
-            {deleteError}
+        <GrantPermissionGrid
+          allow={allow}
+          deny={deny}
+          onAllowChange={(next) => setValue('allow', next)}
+          onDenyChange={(next) => setValue('deny', next)}
+        />
+        {grant && allow.some((permission) => deny.includes(permission)) ? (
+          <p className={styles.warning}>
+            <Icon name="warning" size={14} />
+            {t('grant.permission_listed_both_allow_deny')}
           </p>
         ) : null}
-      </Dialog>
-    </>
+        <Controller
+          control={control}
+          name="inherit"
+          render={({ field }) => (
+            <Switch checked={field.value} label={t('grant.apply_subfolders')} onChange={field.onChange} />
+          )}
+        />
+        <FormTextField
+          control={control}
+          name="label"
+          label={t('grant.display_name_optional')}
+          placeholder={t('grant.defaults_folder_name')}
+          autoComplete="off"
+        />
+        {error ? (
+          <p className={adminStyles.sectionError} role="alert">
+            {error}
+          </p>
+        ) : null}
+      </form>
+    </Dialog>
   )
 }
 
-function PermissionGrid({
-  allow,
-  deny,
-  setAllow,
-  setDeny,
-  permLabel,
-  t
-}: PermissionSets & {
-  setAllow: (next: Set<GrantPermName>) => void
-  setDeny: (next: Set<GrantPermName>) => void
-  permLabel: Record<GrantPermName, string>
-  t: Translate
-}) {
-  return (
-    <GrantPermissionGrid allow={allow} deny={deny} setAllow={setAllow} setDeny={setDeny} permLabel={permLabel} t={t} />
-  )
-}
-
-function togglePermission(set: Set<GrantPermName>, permission: GrantPermName, checked: boolean): Set<GrantPermName> {
-  const next = new Set(set)
-  if (checked) next.add(permission)
-  else next.delete(permission)
-  return next
-}
-
-function grantError(error: unknown, fallback: string, t: Translate, mapNotFound = true): string {
+function grantErrorText(error: unknown, fallback: string): string {
   if (error instanceof ApiError && error.code === 'fs.invalid_name') return t('grant.select_at_least_one_permission')
-  if (mapNotFound && error instanceof ApiError && error.code === 'fs.not_found')
-    return t('common.share_no_longer_exists')
+  if (error instanceof ApiError && error.code === 'fs.not_found') return t('common.share_no_longer_exists')
   return describeApiError(error, fallback)
 }

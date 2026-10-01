@@ -185,7 +185,8 @@ export function useRevokeAppPassword() {
   const invalidate = useInvalidate()
   return useMutation({
     mutationFn: ({ id, wipe }: { id: number; wipe: boolean }) => revokeAppPassword(id, wipe),
-    onSuccess: () => invalidate(keys.appPasswords())
+    // A 404 means the row is already gone, so the list is stale either way.
+    onSettled: () => invalidate(keys.appPasswords())
   })
 }
 

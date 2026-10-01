@@ -1,3 +1,5 @@
+import { formatBytes } from '../../lib/format/bytes'
+import { useI18n } from '../../hooks/use-i18n'
 import { Button } from '../../ui/Button'
 import { Icon } from '../../ui/Icon'
 import { ListItem } from '../../ui/ListItem'
@@ -7,14 +9,10 @@ import * as adminStyles from './admin.css'
 import { cx } from '../../ui/cx'
 import type { AdminUser } from './api'
 
-type Translator = (key: string, params?: Record<string, string | number>) => string
-
 interface UserManagementRowProps {
   user: AdminUser
-  t: Translator
   locked: boolean
   toggling: boolean
-  quotaLabel: string
   onToggle: () => void
   onQuota: () => void
   onGrants: () => void
@@ -25,10 +23,8 @@ interface UserManagementRowProps {
 
 export function UserManagementRow({
   user,
-  t,
   locked,
   toggling,
-  quotaLabel,
   onToggle,
   onQuota,
   onGrants,
@@ -36,6 +32,8 @@ export function UserManagementRow({
   onPassword,
   onDelete
 }: UserManagementRowProps) {
+  const { t } = useI18n()
+  const used = formatBytes(Number(BigInt(user.usage_bytes)))
   return (
     <ListItem
       headline={
@@ -58,7 +56,7 @@ export function UserManagementRow({
             />
           </span>
           <button className={cx(adminStyles.chip, styles.chipMuted)} type="button" onClick={onQuota}>
-            {quotaLabel}
+            {user.quota_bytes ? `${used} / ${formatBytes(Number(BigInt(user.quota_bytes)))}` : t('user.used', { used })}
           </button>
           <div className={adminStyles.rowActions}>
             <Button

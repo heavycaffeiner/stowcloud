@@ -1,6 +1,6 @@
 import 'mdui/components/text-field.js'
-import type { KeyboardEventHandler } from 'react'
-import { useEffect, useRef } from 'react'
+import type { KeyboardEventHandler, Ref } from 'react'
+import { useEffect, useImperativeHandle, useRef } from 'react'
 import { cx } from './cx'
 import * as styles from './TextField.css'
 
@@ -53,6 +53,7 @@ export interface TextFieldProps {
   className?: string
   onValueChange?: (value: string) => void
   onKeyDown?: KeyboardEventHandler<HTMLElement>
+  ref?: Ref<HTMLElement>
 }
 
 export function TextField({
@@ -73,9 +74,11 @@ export function TextField({
   name,
   className,
   onValueChange,
-  onKeyDown
+  onKeyDown,
+  ref: handle
 }: TextFieldProps) {
   const ref = useRef<TextFieldElement | null>(null)
+  useImperativeHandle(handle, () => ref.current as HTMLElement, [])
   const errorRef = useRef<HTMLParagraphElement | null>(null)
   useEffect(() => {
     syncTextFieldAria(ref.current, label, error ? errorRef.current : null)

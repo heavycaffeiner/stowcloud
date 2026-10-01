@@ -1,109 +1,76 @@
-import { useState } from 'react'
-import type { FormEvent } from 'react'
+import { useForm, useWatch } from 'react-hook-form'
 import { describeApiError } from '../../api/error-text'
 import { scorePasswordStrength } from '../../lib/format/password-strength'
 import { validatePasswordChange } from '../../lib/format/password-change'
 import { useChangePassword } from './api'
 import { useI18n } from '../../hooks/use-i18n'
 import { Button } from '../../ui/Button'
-import { TextField } from '../../ui/TextField'
+import { FormTextField } from '../../ui/FormTextField'
 import { ProgressLinear } from '../../ui/ProgressLinear'
 import * as styles from './PasswordSection.css'
 import { ApiError } from '../../api/fetcher'
 
+interface PasswordValues {
+  current: string
+  next: string
+  confirm: string
+}
+
 export function PasswordSection() {
   const { t } = useI18n()
   const save = useChangePassword()
-  type PasswordState = {
-    current: string
-    next: string
-    confirm: string
-    currentError: string | null
-    nextError: string | null
-    formError: string | null
-    success: boolean
-  }
-  const [state, setState] = useState<PasswordState>({
-    current: '',
-    next: '',
-    confirm: '',
-    currentError: null,
-    nextError: null,
-    formError: null,
-    success: false
+  const { control, handleSubmit, setError, reset, formState } = useForm<PasswordValues>({
+    defaultValues: { current: '', next: '', confirm: '' }
   })
-  const {
-    current: currentPassword,
-    next: newPassword,
-    confirm: confirmPassword,
-    currentError,
-    nextError: newError,
-    formError,
-    success
-  } = state
-  const patchState = (patch: Partial<PasswordState>): void => setState((current) => ({ ...current, ...patch }))
-  const setCurrentPassword = (value: string): void => patchState({ current: value })
-  const setNewPassword = (value: string): void => patchState({ next: value })
-  const setConfirmPassword = (value: string): void => patchState({ confirm: value })
-  const setCurrentError = (value: string | null): void => patchState({ currentError: value })
-  const setNewError = (value: string | null): void => patchState({ nextError: value })
-  const setFormError = (value: string | null): void => patchState({ formError: value })
-  const setSuccess = (value: boolean): void => patchState({ success: value })
-  const strength = scorePasswordStrength(newPassword)
+  const [current, next] = useWatch({ control, name: ['current', 'next'] })
+  const strength = scorePasswordStrength(next)
 
-  function reset(): void {
-    setCurrentPassword('')
-    setNewPassword('')
-    setConfirmPassword('')
+  const checkNext = (value: string, values: PasswordValues): string | true => {
+    const problem = validatePasswordChange(value, values.confirm, 10)
+    if (!problem) return true
+    return problem.kind === 'too_short'
+      ? t('password.must_at_least_characters', { min: problem.min })
+      : t('password.new_passwords_do_not_match')
   }
 
-  async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault()
-    setCurrentError(null)
-    setNewError(null)
-    setFormError(null)
-    setSuccess(false)
-    const problem = validatePasswordChange(newPassword, confirmPassword, 10)
-    if (problem) {
-      setNewError(
-        problem.kind === 'too_short'
-          ? t('password.must_at_least_characters', { min: problem.min })
-          : t('password.new_passwords_do_not_match')
-      )
-      return
-    }
-    try {
-      await save.mutateAsync({ current: currentPassword, next: newPassword })
-      setSuccess(true)
-      reset()
-    } catch (error) {
-      if (error instanceof ApiError && error.code === 'auth.invalid_credentials')
-        setCurrentError(t('password.current_password_incorrect'))
-      else if (error instanceof ApiError && error.code === 'auth.weak_password')
-        setNewError(t('password.must_at_least_characters', { min: error.reasonNumber('min_length') ?? 10 }))
-      else setFormError(describeApiError(error, t('password.could_not_change_password_try')))
-    }
-  }
+  // A failed check hides the success of an earlier change.
+  const submit = handleSubmit(
+    async (values) => {
+      if (save.isPending) return
+      try {
+        await save.mutateAsync({ current: values.current, next: values.next })
+        reset()
+      } catch (error) {
+        if (error instanceof ApiError && error.code === 'auth.invalid_credentials')
+          setError('current', { message: t('password.current_password_incorrect') })
+        else if (error instanceof ApiError && error.code === 'auth.weak_password')
+          setError('next', {
+            message: t('password.must_at_least_characters', { min: error.reasonNumber('min_length') ?? 10 })
+          })
+        else setError('root', { message: describeApiError(error, t('password.could_not_change_password_try')) })
+      }
+    },
+    () => save.reset()
+  )
 
   return (
-    <form className={styles.root} onSubmit={submit}>
-      <TextField
+    <form className={styles.root} onSubmit={(event) => void submit(event)}>
+      <FormTextField
+        control={control}
+        name="current"
         type="password"
         label={t('common.current_password')}
-        value={currentPassword}
-        error={currentError}
         autoComplete="current-password"
-        onValueChange={setCurrentPassword}
       />
-      <TextField
+      <FormTextField
+        control={control}
+        name="next"
+        rules={{ validate: checkNext }}
         type="password"
         label={t('password.new_password')}
-        value={newPassword}
-        error={newError}
         autoComplete="new-password"
-        onValueChange={setNewPassword}
       />
-      {newPassword ? (
+      {next ? (
         <div className={styles.strength}>
           <ProgressLinear
             className={styles.strengthBar}
@@ -114,25 +81,26 @@ export function PasswordSection() {
           <span className={styles.strengthLabel}>{strength.label}</span>
         </div>
       ) : null}
-      <TextField
+      <FormTextField
+        control={control}
+        name="confirm"
+        rules={{ deps: 'next' }}
         type="password"
         label={t('password.confirm_new_password')}
-        value={confirmPassword}
         autoComplete="new-password"
-        onValueChange={setConfirmPassword}
       />
-      {formError ? (
+      {formState.errors.root?.message ? (
         <p className={styles.error} role="alert">
-          {formError}
+          {formState.errors.root.message}
         </p>
       ) : null}
-      {success ? (
+      {save.isSuccess ? (
         <p className={styles.success} role="status">
           {t('password.password_changed')}
         </p>
       ) : null}
       <div className={styles.actions}>
-        <Button type="submit" disabled={!currentPassword || !newPassword} loading={save.isPending}>
+        <Button type="submit" disabled={!current || !next} loading={save.isPending}>
           {t('password.change_password')}
         </Button>
       </div>

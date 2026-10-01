@@ -1,11 +1,15 @@
 import { useState } from 'react'
+import { overlay } from 'overlay-kit'
+import { Controller, useForm, useWatch } from 'react-hook-form'
 import { describeApiError } from '../../api/error-text'
 import { formatDateNs } from '../../lib/i18n'
+import { useCopyText } from '../../hooks/use-copy-text'
 import { useI18n } from '../../hooks/use-i18n'
 import { useAppPasswords, useCreateAppPassword, useRevokeAppPassword } from './api'
+import { confirmAction } from '../../ui/ActionDialog'
 import { Button } from '../../ui/Button'
+import { FormTextField } from '../../ui/FormTextField'
 import { Switch } from '../../ui/Switch'
-import { TextField } from '../../ui/TextField'
 import { VirtualList } from '../../ui/VirtualList'
 import { SettingsDialog } from './SettingsDialog'
 import * as styles from './AppPasswordsSection.css'
@@ -13,135 +17,41 @@ import * as settingsCardStyles from './SettingsCard.css'
 import { ApiError } from '../../api/fetcher'
 import type { AppPasswordInfo } from './api'
 
+function isExpired(item: AppPasswordInfo): boolean {
+  return item.expires_ns ? Number(item.expires_ns) / 1e6 <= Date.now() : false
+}
+
 export function AppPasswordsSection() {
   const { t } = useI18n()
   const list = useAppPasswords()
-  const create = useCreateAppPassword()
   const revoke = useRevokeAppPassword()
-  const wipe = useRevokeAppPassword()
-  type AppPasswordState = {
-    createOpen: boolean
-    newName: string
-    newCurrent: string
-    newReadOnly: boolean
-    issuedToken: string | null
-    issuedAcknowledged: boolean
-    tokenCopyState: 'idle' | 'copied' | 'failed'
-    revokeTarget: AppPasswordInfo | null
-    wipeTarget: AppPasswordInfo | null
-    actionError: string | null
-  }
-  const [state, setState] = useState<AppPasswordState>({
-    createOpen: false,
-    newName: '',
-    newCurrent: '',
-    newReadOnly: false,
-    issuedToken: null,
-    issuedAcknowledged: false,
-    tokenCopyState: 'idle',
-    revokeTarget: null,
-    wipeTarget: null,
-    actionError: null
-  })
-  const {
-    createOpen,
-    newName,
-    newCurrent,
-    newReadOnly,
-    issuedToken,
-    issuedAcknowledged,
-    tokenCopyState,
-    revokeTarget,
-    wipeTarget,
-    actionError
-  } = state
-  const patchState = (patch: Partial<AppPasswordState>): void => setState((current) => ({ ...current, ...patch }))
-  const setCreateOpen = (value: boolean): void => patchState({ createOpen: value })
-  const setNewName = (value: string): void => patchState({ newName: value })
-  const setNewCurrent = (value: string): void => patchState({ newCurrent: value })
-  const setNewReadOnly = (value: boolean): void => patchState({ newReadOnly: value })
-  const setIssuedToken = (value: string | null): void => patchState({ issuedToken: value })
-  const setIssuedAcknowledged = (value: boolean): void => patchState({ issuedAcknowledged: value })
-  const setTokenCopyState = (value: AppPasswordState['tokenCopyState']): void => patchState({ tokenCopyState: value })
-  const setRevokeTarget = (value: AppPasswordInfo | null): void => patchState({ revokeTarget: value })
-  const setWipeTarget = (value: AppPasswordInfo | null): void => patchState({ wipeTarget: value })
-  const setActionError = (value: string | null): void => patchState({ actionError: value })
+  // Keeps the row that opened a dialog mounted so focus can return to it.
+  const [pinned, setPinned] = useState<number | null>(null)
 
-  function isExpired(item: AppPasswordInfo): boolean {
-    return item.expires_ns ? Number(item.expires_ns) / 1e6 <= Date.now() : false
+  async function create(): Promise<void> {
+    const token = await askNewAppPassword()
+    if (token !== null) await showIssuedToken(token)
   }
-  function openCreate(): void {
-    setNewName('')
-    setNewCurrent('')
-    setNewReadOnly(false)
-    create.reset()
-    setActionError(null)
-    setCreateOpen(true)
-  }
-  function confirmCreate(): void {
-    if (!newName.trim() || !newCurrent) return
-    create.mutate(
-      { name: newName.trim(), currentPassword: newCurrent, scope: newReadOnly ? { readOnly: true } : undefined },
-      {
-        onSuccess: (token) => {
-          setCreateOpen(false)
-          setIssuedToken(token)
-          setIssuedAcknowledged(false)
-          setTokenCopyState('idle')
-          void list.refetch()
-        },
-        onError: (error) => setActionError(describeApiError(error, t('app_password.could_not_create_app_password')))
-      }
-    )
-  }
-  function closeIssued(): void {
-    if (issuedToken && !issuedAcknowledged) return
-    setIssuedToken(null)
-  }
-  function acknowledgeIssued(): void {
-    setIssuedAcknowledged(true)
-    setIssuedToken(null)
-  }
-  async function copyToken(): Promise<void> {
-    if (!issuedToken) return
-    try {
-      await navigator.clipboard.writeText(issuedToken)
-      setTokenCopyState('copied')
-    } catch {
-      setTokenCopyState('failed')
-    }
-  }
-  function confirmRevoke(): void {
-    if (!revokeTarget) return
-    setActionError(null)
-    revoke.mutate(
-      { id: revokeTarget.id, wipe: false },
-      {
-        onSuccess: () => setRevokeTarget(null),
-        onError: (error) => {
-          if (error instanceof ApiError && error.status === 404) {
-            setRevokeTarget(null)
-            void list.refetch()
-          } else setActionError(describeApiError(error, t('common.could_not_save_change')))
-        }
-      }
-    )
-  }
-  function confirmWipe(): void {
-    if (!wipeTarget) return
-    setActionError(null)
-    wipe.mutate(
-      { id: wipeTarget.id, wipe: true },
-      {
-        onSuccess: () => setWipeTarget(null),
-        onError: (error) => {
-          if (error instanceof ApiError && error.status === 404) {
-            setWipeTarget(null)
-            void list.refetch()
-          } else setActionError(describeApiError(error, t('common.could_not_save_change')))
-        }
-      }
-    )
+  async function remove(item: AppPasswordInfo, wipe: boolean): Promise<void> {
+    setPinned(item.id)
+    await confirmAction({
+      title: wipe ? t('app_password.wipe_device') : t('app_password.revoke_app_password'),
+      action: wipe ? t('app_password.wipe_2') : t('app_password.revoke_2'),
+      body: (
+        <p className={settingsCardStyles.text}>
+          {wipe
+            ? t('app_password.next_time_that_device_erase', { name: item.name })
+            : t('app_password.everything_using_disconnected_at_once', { name: item.name })}
+        </p>
+      ),
+      // Someone else already removed it, which is what was asked for.
+      run: () =>
+        revoke.mutateAsync({ id: item.id, wipe }).catch((error: unknown) => {
+          if (!(error instanceof ApiError && error.status === 404)) throw error
+        }),
+      describeError: (error) => describeApiError(error, t('common.could_not_save_change'))
+    })
+    setPinned(null)
   }
 
   return (
@@ -150,13 +60,14 @@ export function AppPasswordsSection() {
         <p className={settingsCardStyles.text}>{t('common.loading')}</p>
       ) : list.isError ? (
         <p className={styles.error}>{t('common.could_not_load_list')}</p>
-      ) : (list.data ?? []).length === 0 ? (
+      ) : list.data.length === 0 ? (
         <p className={settingsCardStyles.text}>{t('app_password.no_app_passwords_issued_yet')}</p>
       ) : (
         <VirtualList
           className={styles.list}
-          items={list.data ?? []}
+          items={list.data}
           itemKey={(item) => item.id}
+          pinnedKeys={pinned === null ? undefined : [pinned]}
           estimateSize={96}
           itemProps={() => ({ className: styles.item })}
           renderItem={(item) => (
@@ -181,10 +92,7 @@ export function AppPasswordsSection() {
                   <Button
                     variant="text"
                     ariaLabel={t('app_password.wipe', { name: item.name })}
-                    onClick={() => {
-                      setActionError(null)
-                      setWipeTarget(item)
-                    }}
+                    onClick={() => void remove(item, true)}
                   >
                     {t('app_password.wipe_2')}
                   </Button>
@@ -192,10 +100,7 @@ export function AppPasswordsSection() {
                 <Button
                   variant="text"
                   ariaLabel={t('app_password.revoke', { name: item.name })}
-                  onClick={() => {
-                    setActionError(null)
-                    setRevokeTarget(item)
-                  }}
+                  onClick={() => void remove(item, false)}
                 >
                   {t('app_password.revoke_2')}
                 </Button>
@@ -205,120 +110,143 @@ export function AppPasswordsSection() {
         />
       )}
       <div className={styles.actions}>
-        <Button variant="outlined" onClick={openCreate}>
+        <Button variant="outlined" onClick={() => void create()}>
           {t('app_password.new_app_password')}
         </Button>
       </div>
-      <SettingsDialog
-        open={createOpen}
-        title={t('app_password.new_app_password')}
-        onClose={() => setCreateOpen(false)}
-        actions={
-          <>
-            <Button variant="text" onClick={() => setCreateOpen(false)}>
-              {t('common.cancel')}
-            </Button>
-            <Button onClick={confirmCreate} disabled={!newName.trim() || !newCurrent} loading={create.isPending}>
-              {t('common.create')}
-            </Button>
-          </>
-        }
-      >
-        {actionError ? (
-          <p className={styles.error} role="alert">
-            {actionError}
-          </p>
-        ) : null}
-        <p className={settingsCardStyles.text}>{t('app_password.use_one_where_your_account')}</p>
-        <TextField
-          label={t('common.name')}
-          placeholder={t('app_password.e_g_rclone_backup')}
-          value={newName}
-          onValueChange={setNewName}
-        />
-        <TextField
-          type="password"
-          label={t('common.current_password')}
-          autoComplete="current-password"
-          value={newCurrent}
-          onValueChange={setNewCurrent}
-        />
-        <Switch checked={newReadOnly} label={t('app_password.read_only_download_only_no')} onChange={setNewReadOnly} />
-        <p className={settingsCardStyles.text}>{t('app_password.read_only_recommended_anywhere_only')}</p>
-      </SettingsDialog>
-      <SettingsDialog
-        open={!!issuedToken}
-        title={t('app_password.app_password_issued')}
-        onClose={closeIssued}
-        dismissible={false}
-        actions={<Button onClick={acknowledgeIssued}>{t('app_password.acknowledge_saved')}</Button>}
-      >
-        <p className={settingsCardStyles.text}>{t('app_password.once_you_close_cannot_shown')}</p>
-        <div className={styles.tokenRow}>
-          <input
-            className={styles.tokenInput}
-            readOnly
-            value={issuedToken ?? ''}
-            aria-label={t('app_password.app_password_issued')}
-          />
-          <Button variant="text" onClick={() => void copyToken()}>
-            {tokenCopyState === 'copied' ? t('common.copied') : t('common.copy')}
-          </Button>
-        </div>
-        {tokenCopyState === 'failed' ? (
-          <p className={styles.copyFeedback} role="alert">
-            {t('app_password.copy_failed')}
-          </p>
-        ) : null}
-      </SettingsDialog>
-      <SettingsDialog
-        open={!!revokeTarget}
-        title={t('app_password.revoke_app_password')}
-        onClose={() => setRevokeTarget(null)}
-        actions={
-          <>
-            <Button variant="text" onClick={() => setRevokeTarget(null)}>
-              {t('common.cancel')}
-            </Button>
-            <Button onClick={confirmRevoke} loading={revoke.isPending}>
-              {t('app_password.revoke_2')}
-            </Button>
-          </>
-        }
-      >
-        <p className={settingsCardStyles.text}>
-          {t('app_password.everything_using_disconnected_at_once', { name: revokeTarget?.name ?? '' })}
-        </p>
-        {actionError ? (
-          <p className={styles.error} role="alert">
-            {actionError}
-          </p>
-        ) : null}
-      </SettingsDialog>
-      <SettingsDialog
-        open={!!wipeTarget}
-        title={t('app_password.wipe_device')}
-        onClose={() => setWipeTarget(null)}
-        actions={
-          <>
-            <Button variant="text" onClick={() => setWipeTarget(null)}>
-              {t('common.cancel')}
-            </Button>
-            <Button onClick={confirmWipe} loading={wipe.isPending}>
-              {t('app_password.wipe_2')}
-            </Button>
-          </>
-        }
-      >
-        <p className={settingsCardStyles.text}>
-          {t('app_password.next_time_that_device_erase', { name: wipeTarget?.name ?? '' })}
-        </p>
-        {actionError ? (
-          <p className={styles.error} role="alert">
-            {actionError}
-          </p>
-        ) : null}
-      </SettingsDialog>
     </div>
+  )
+}
+
+/** Resolves to the new token, or null when cancelled. */
+function askNewAppPassword(): Promise<string | null> {
+  return overlay.openAsync<string | null>(({ isOpen, close, unmount }) => (
+    <NewAppPasswordDialog open={isOpen} onDone={close} onClosed={unmount} />
+  ))
+}
+
+interface NewAppPasswordDialogProps {
+  open: boolean
+  onDone: (token: string | null) => void
+  onClosed: () => void
+}
+
+function NewAppPasswordDialog({ open, onDone, onClosed }: NewAppPasswordDialogProps) {
+  const { t } = useI18n()
+  const create = useCreateAppPassword()
+  const { control, handleSubmit } = useForm({ defaultValues: { name: '', currentPassword: '', readOnly: false } })
+  const [name, currentPassword] = useWatch({ control, name: ['name', 'currentPassword'] })
+  const submit = handleSubmit((values) => {
+    if (!values.name.trim() || !values.currentPassword || create.isPending) return
+    create.mutate(
+      {
+        name: values.name.trim(),
+        currentPassword: values.currentPassword,
+        scope: values.readOnly ? { readOnly: true } : undefined
+      },
+      { onSuccess: onDone }
+    )
+  })
+  const cancel = (): void => {
+    if (!create.isPending) onDone(null)
+  }
+  return (
+    <SettingsDialog
+      open={open}
+      title={t('app_password.new_app_password')}
+      onClose={cancel}
+      onClosed={onClosed}
+      onSubmit={(event) => void submit(event)}
+      actions={
+        <>
+          <Button variant="text" disabled={create.isPending} onClick={cancel}>
+            {t('common.cancel')}
+          </Button>
+          <Button disabled={!name.trim() || !currentPassword} loading={create.isPending} onClick={() => void submit()}>
+            {t('common.create')}
+          </Button>
+        </>
+      }
+    >
+      {create.error ? (
+        <p className={styles.error} role="alert">
+          {create.error instanceof ApiError && create.error.code === 'auth.invalid_credentials'
+            ? t('common.incorrect_password')
+            : describeApiError(create.error, t('app_password.could_not_create_app_password'))}
+        </p>
+      ) : null}
+      <p className={settingsCardStyles.text}>{t('app_password.use_one_where_your_account')}</p>
+      <FormTextField
+        control={control}
+        name="name"
+        label={t('common.name')}
+        placeholder={t('app_password.e_g_rclone_backup')}
+      />
+      <FormTextField
+        control={control}
+        name="currentPassword"
+        type="password"
+        label={t('common.current_password')}
+        autoComplete="current-password"
+      />
+      <Controller
+        control={control}
+        name="readOnly"
+        render={({ field }) => (
+          <Switch
+            checked={field.value}
+            label={t('app_password.read_only_download_only_no')}
+            onChange={field.onChange}
+          />
+        )}
+      />
+      <p className={settingsCardStyles.text}>{t('app_password.read_only_recommended_anywhere_only')}</p>
+    </SettingsDialog>
+  )
+}
+
+/** Shows a token once, until the user says it is saved. */
+function showIssuedToken(token: string): Promise<void> {
+  return overlay.openAsync<void>(({ isOpen, close, unmount }) => (
+    <IssuedTokenDialog open={isOpen} token={token} onDone={() => close()} onClosed={unmount} />
+  ))
+}
+
+interface IssuedTokenDialogProps {
+  open: boolean
+  token: string
+  onDone: () => void
+  onClosed: () => void
+}
+
+function IssuedTokenDialog({ open, token, onDone, onClosed }: IssuedTokenDialogProps) {
+  const { t } = useI18n()
+  const copy = useCopyText()
+  return (
+    <SettingsDialog
+      open={open}
+      title={t('app_password.app_password_issued')}
+      onClosed={onClosed}
+      dismissible={false}
+      actions={<Button onClick={onDone}>{t('app_password.acknowledge_saved')}</Button>}
+    >
+      <p className={settingsCardStyles.text}>{t('app_password.once_you_close_cannot_shown')}</p>
+      <div className={styles.tokenRow}>
+        <input
+          className={styles.tokenInput}
+          readOnly
+          value={token}
+          aria-label={t('app_password.app_password_issued')}
+        />
+        <Button variant="text" onClick={() => copy.mutate(token)}>
+          {copy.isSuccess ? t('common.copied') : t('common.copy')}
+        </Button>
+      </div>
+      {copy.isError ? (
+        <p className={styles.copyFeedback} role="alert">
+          {t('app_password.copy_failed')}
+        </p>
+      ) : null}
+    </SettingsDialog>
   )
 }
