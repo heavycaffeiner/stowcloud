@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humagin"
@@ -75,6 +76,75 @@ func humaConfig() huma.Config {
 	}}
 	config.CreateHooks = nil
 	return config
+}
+
+// requireResponseFields marks the fields a response always carries as
+// required. Optional-by-default is a request validation rule; a response field
+// without omitempty is always on the wire, and the generated client types say so.
+func requireResponseFields(doc *huma.OpenAPI) {
+	const prefix = "#/components/schemas/"
+	registry := doc.Components.Schemas
+	requests, responses := map[string]bool{}, map[string]bool{}
+	for _, item := range doc.Paths {
+		for _, operation := range []*huma.Operation{
+			item.Get, item.Put, item.Post, item.Delete, item.Options, item.Head, item.Patch, item.Trace,
+		} {
+			if operation == nil {
+				continue
+			}
+			if operation.RequestBody != nil {
+				for _, media := range operation.RequestBody.Content {
+					collectSchemaRefs(registry, media.Schema, requests)
+				}
+			}
+			for code, response := range operation.Responses {
+				if code == "default" {
+					continue
+				}
+				for _, media := range response.Content {
+					collectSchemaRefs(registry, media.Schema, responses)
+				}
+			}
+		}
+	}
+	// A registry left at Huma's default derives required from omitempty and
+	// the required tag, which is what encoding/json puts on the wire.
+	strict := huma.NewMapRegistry(prefix, huma.DefaultSchemaNamer)
+	for name := range responses {
+		if requests[name] {
+			continue
+		}
+		ref := prefix + name
+		registry.SchemaFromRef(ref).Required = strict.Schema(registry.TypeFromRef(ref), false, name).Required
+	}
+}
+
+// collectSchemaRefs adds every named schema reachable from s to into.
+func collectSchemaRefs(registry huma.Registry, s *huma.Schema, into map[string]bool) {
+	if s == nil {
+		return
+	}
+	if s.Ref != "" {
+		name := s.Ref[strings.LastIndex(s.Ref, "/")+1:]
+		if !into[name] {
+			into[name] = true
+			collectSchemaRefs(registry, registry.SchemaFromRef(s.Ref), into)
+		}
+		return
+	}
+	collectSchemaRefs(registry, s.Items, into)
+	collectSchemaRefs(registry, s.Not, into)
+	if extra, ok := s.AdditionalProperties.(*huma.Schema); ok {
+		collectSchemaRefs(registry, extra, into)
+	}
+	for _, property := range s.Properties {
+		collectSchemaRefs(registry, property, into)
+	}
+	for _, group := range [][]*huma.Schema{s.OneOf, s.AnyOf, s.AllOf} {
+		for _, sub := range group {
+			collectSchemaRefs(registry, sub, into)
+		}
+	}
 }
 
 // typed is one access group's Huma API. A public group's operations are

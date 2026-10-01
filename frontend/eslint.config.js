@@ -4,7 +4,7 @@ import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
   {
-    ignores: ['build/**', 'coverage/**', 'node_modules/**', 'playwright-report/**', 'test-results/**']
+    ignores: ['build/**', 'coverage/**', 'node_modules/**', 'playwright-report/**', 'src/api/generated/**', 'test-results/**']
   },
   {
     files: ['**/*.{js,mjs,ts,tsx}'],

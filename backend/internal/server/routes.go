@@ -291,6 +291,7 @@ func (e *Engine) routes(router *gin.Engine) error {
 
 	dav.Mount(device, dav.Deps{Core: e.Core, State: e.State, Locks: e.davLocks, Clock: e.clk(), Logger: e.logger, Errors: e.errs, InfinityEntries: 10_000})
 	e.mountNCTagged(public, publicAPI, linkPage, device)
+	requireResponseFields(config.OpenAPI)
 	return web.Install(router)
 }
 
