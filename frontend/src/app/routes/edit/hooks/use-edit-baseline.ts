@@ -1,8 +1,6 @@
 import { useEffect } from 'react'
-import type { QueryClient } from '@tanstack/react-query'
-import { keys } from '../../../../lib/query/keys'
-import type { ReadFileResponse } from '../../../../lib/api/types'
 import type { EditActions } from './use-edit-state'
+import type { FileCache, ReadFileResponse } from '../../../../features/files/api'
 
 export interface EditBaselineOptions {
   path: string
@@ -12,7 +10,7 @@ export interface EditBaselineOptions {
   etag?: string
   content?: ReadFileResponse
   unlocked: boolean
-  queryClient: QueryClient
+  files: FileCache
   actions: Pick<EditActions, 'beginPath' | 'markBaseline'>
 }
 
@@ -24,7 +22,7 @@ export function useEditBaseline({
   etag,
   content,
   unlocked,
-  queryClient,
+  files,
   actions
 }: EditBaselineOptions): void {
   useEffect(() => {
@@ -34,8 +32,8 @@ export function useEditBaseline({
 
   useEffect(() => {
     if (!awaitingBaseline || !etag || !content || path !== loadedPath) return
-    const expected = queryClient.getQueryData(keys.pathContent(entryPath ?? path, etag, unlocked))
+    const expected = files.cachedContent(entryPath ?? path, etag, unlocked)
     if (expected !== content) return
     actions.markBaseline(etag)
-  }, [actions, awaitingBaseline, content, entryPath, etag, loadedPath, path, queryClient, unlocked])
+  }, [actions, awaitingBaseline, content, entryPath, etag, loadedPath, path, files, unlocked])
 }

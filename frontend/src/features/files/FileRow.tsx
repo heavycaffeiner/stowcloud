@@ -1,5 +1,4 @@
 import type { MouseEvent as ReactMouseEvent } from 'react'
-import type { Entry } from '../../lib/api/types'
 import type { ActivationHandlers } from './hooks/use-file-activation'
 import { formatEntrySize } from '../../lib/format/entry-size'
 import { formatModifiedDateNs } from '../../lib/i18n'
@@ -12,6 +11,7 @@ import * as iconButtonStyles from '../../ui/IconButton.css'
 import * as utilitiesStyles from '../../ui/utilities.css'
 import { cx } from '../../ui/cx'
 import { vars } from '../../ui/theme.css'
+import type { Entry } from './api'
 
 export function getEntryIcon(entry: Entry): { name: string; color?: string } {
   if (entry.kind === 'dir') return { name: 'folder', color: vars.content.icon }

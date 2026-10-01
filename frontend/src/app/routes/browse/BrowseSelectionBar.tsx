@@ -1,10 +1,10 @@
-import type { Entry } from '../../../lib/api/client'
 import type { RowAction } from '../../../features/files/logic/row-actions'
 import { formatBytes } from '../../../lib/format/bytes'
 import { Icon } from '../../../ui/Icon'
 import * as styles from './BrowseSelectionBar.css'
 import * as iconButtonStyles from '../../../ui/IconButton.css'
 import { cx } from '../../../ui/cx'
+import type { Entry } from '../../../features/files/api'
 
 type SelectionBarState = {
   compact: boolean

@@ -1,11 +1,10 @@
 import { useReducer } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ApiError } from '../../../../lib/api/client'
-import { oidcErrorMessage, startOidcLogin } from '../../../../lib/api/oidc'
 import { useI18n } from '../../../../hooks/use-i18n'
-import { loginMutation, loginTotpMutation, oidcConfigQuery } from '../../../../lib/query/session'
+import { startOidcLogin, useLogin, useLoginTotp, useOidcConfig } from '../../../../features/auth/api'
 import { mergeState } from '../../../../lib/merge-state'
+import { ApiError } from '../../../../api/fetcher'
+import { oidcErrorMessage } from '../../../../features/auth/oidc-error'
 
 type LoginFormState = {
   step: 'credentials' | 'totp'
@@ -33,9 +32,9 @@ export function useLoginFlow() {
     errorMessage: null
   })
   const returnTo = safeReturnTo(searchParams.get('returnTo'))
-  const oidcConfig = useQuery(oidcConfigQuery())
-  const login = useMutation(loginMutation())
-  const loginTotp = useMutation(loginTotpMutation())
+  const oidcConfig = useOidcConfig()
+  const login = useLogin()
+  const loginTotp = useLoginTotp()
   const errorText = (error: unknown): string =>
     error instanceof ApiError
       ? error.code === 'auth.invalid_credentials'

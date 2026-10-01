@@ -1,10 +1,7 @@
 import { useCallback } from 'react'
-import type { QueryClient } from '@tanstack/react-query'
 import { describeApiError } from '../../../../lib/api/error-text'
-import { fileContentQuery, statQuery } from '../../../../lib/query/files'
-import { keys } from '../../../../lib/query/keys'
-import type { Entry } from '../../../../lib/api/types'
 import type { EditActions } from './use-edit-state'
+import type { Entry, FileCache } from '../../../../features/files/api'
 
 type SaveMutation = {
   isPending: boolean
@@ -18,7 +15,7 @@ export interface EditSaveOptions {
   canSave: boolean
   content: string
   baselineEtag: string | null
-  queryClient: QueryClient
+  files: FileCache
   mutation: SaveMutation
   actions: Pick<
     EditActions,
@@ -46,7 +43,7 @@ export function useEditSave(
     canSave,
     content,
     baselineEtag,
-    queryClient,
+    files,
     mutation,
     actions,
     focus,
@@ -58,15 +55,14 @@ export function useEditSave(
     if (!canSave || !entry) return false
     actions.setSaveError(null)
     try {
-      const latest = await queryClient.fetchQuery({ ...statQuery(path), staleTime: 0 })
+      const latest = await files.fetchStat(path, true)
       if (baselineEtag !== null && latest.etag !== baselineEtag) {
         actions.setConflict(true, latest.etag_weak)
         return false
       }
       const savedContent = content
       const updated = await mutation.mutateAsync({ path, content: savedContent })
-      queryClient.setQueryData(keys.pathContent(updated.path, updated.etag, true), { content: savedContent })
-      queryClient.setQueryData(keys.pathStat(path), updated)
+      files.rememberSaved(path, updated, savedContent)
       actions.markBaseline(updated.etag)
       actions.clearDraftIf(savedContent)
       actions.setSnackbar(translate(/* i18n */ 'common.saved'))
@@ -76,7 +72,7 @@ export function useEditSave(
       actions.setSaveError(describeApiError(error, translate('common.could_not_save')))
       return false
     }
-  }, [actions, baselineEtag, canSave, content, focus, mutation, path, queryClient, translate, entry])
+  }, [actions, baselineEtag, canSave, content, focus, mutation, path, files, translate, entry])
 
   const overwriteAfterConflict = useCallback(async (): Promise<void> => {
     actions.setConflict(false)
@@ -84,8 +80,7 @@ export function useEditSave(
     try {
       const savedContent = content
       const updated = await mutation.mutateAsync({ path, content: savedContent })
-      queryClient.setQueryData(keys.pathContent(updated.path, updated.etag, true), { content: savedContent })
-      queryClient.setQueryData(keys.pathStat(path), updated)
+      files.rememberSaved(path, updated, savedContent)
       actions.markBaseline(updated.etag)
       actions.clearDraftIf(savedContent)
       actions.setSnackbar(translate(/* i18n */ 'editor.overwritten'))
@@ -94,13 +89,13 @@ export function useEditSave(
     } catch (error) {
       actions.setSnackbar(describeApiError(error, translate('common.could_not_save')))
     }
-  }, [actions, blocker, content, entry, focus, mutation, path, queryClient, translate])
+  }, [actions, blocker, content, entry, focus, mutation, path, files, translate])
 
   const reloadAfterConflict = useCallback(async (): Promise<void> => {
     actions.setConflict(false)
     try {
-      const freshMeta = await queryClient.fetchQuery({ ...statQuery(path), staleTime: 0 })
-      await queryClient.fetchQuery(fileContentQuery(freshMeta, unlocked))
+      const freshMeta = await files.fetchStat(path, true)
+      await files.fetchContent(freshMeta, unlocked)
       actions.markBaseline(freshMeta.etag)
       actions.clearDraft()
       actions.setSnackbar(translate(/* i18n */ 'editor.reloaded_newer_version'))
@@ -108,7 +103,7 @@ export function useEditSave(
     } catch (error) {
       actions.setSnackbar(describeApiError(error, translate('editor.could_not_load_file')))
     }
-  }, [actions, focus, path, queryClient, translate, unlocked])
+  }, [actions, focus, path, files, translate, unlocked])
 
   const discardAndLeave = useCallback(() => {
     actions.clearDraft()

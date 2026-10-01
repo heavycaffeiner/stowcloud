@@ -1,12 +1,10 @@
 import { useCallback, useReducer } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
-import type { Entry, OwnedShareLinkInfo, Perms, ShareLinkInfo } from '../../../../lib/api/client'
 import { describeApiError } from '../../../../lib/api/error-text'
 import { normalizePath } from '../../../../lib/api/path-utils'
-import { queryClient } from '../../../../lib/query/client'
-import { keys } from '../../../../lib/query/keys'
-import { statQuery } from '../../../../lib/query/files'
 import { mergeState } from '../../../../lib/merge-state'
+import { useFileCache, type Entry } from '../../../../features/files/api'
+import type { OwnedShareLinkInfo, ShareLinkInfo } from '../../../../features/links/api'
+import type { Perms } from '../../../../features/files/perms'
 
 type LinkRow = ShareLinkInfo | OwnedShareLinkInfo
 export type { LinkRow }
@@ -44,15 +42,14 @@ export function useLinkManagement(userId: number | undefined, t: Translator) {
     targetErrorPath: null,
     targetError: null
   })
-  const query = useQueryClient()
+  const files = useFileCache()
 
   const isMine = useCallback((link: LinkRow): boolean => !isOwned(link) || link.owner === userId, [userId])
 
-  const targetOf = useCallback((link: LinkRow): Entry | undefined => {
-    const path = normalizePath(link.path)
-    const cached = queryClient.getQueryState<Entry>(keys.pathStat(path))
-    return cached?.isInvalidated ? undefined : cached?.data
-  }, [])
+  const targetOf = useCallback(
+    (link: LinkRow): Entry | undefined => files.cachedStat(normalizePath(link.path)),
+    [files]
+  )
 
   const capabilityLabel = useCallback(
     (key: keyof Perms): string => {
@@ -103,7 +100,7 @@ export function useLinkManagement(userId: number | undefined, t: Translator) {
       }
       setState({ resolvingPath: path, managing: null, managingTarget: null })
       try {
-        const target = await query.fetchQuery({ ...statQuery(path), staleTime: Infinity })
+        const target = await files.fetchStat(path, false)
         setState({ managingTarget: target, managing: link })
       } catch (error) {
         setState({ targetErrorPath: path, targetError: describeApiError(error, t('links.target_unknown')) })
@@ -111,7 +108,7 @@ export function useLinkManagement(userId: number | undefined, t: Translator) {
         setState({ resolvingPath: null })
       }
     },
-    [isMine, query, setState, state.resolvingPath, t]
+    [files, isMine, setState, state.resolvingPath, t]
   )
 
   return { ...state, setState, isMine, targetSummary, openManagement }

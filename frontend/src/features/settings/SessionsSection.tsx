@@ -1,19 +1,19 @@
 import { useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
-import { ApiError, type ActiveSession } from '../../lib/api/client'
 import { formatDateNs } from '../../lib/i18n'
 import { useI18n } from '../../hooks/use-i18n'
-import { activeSessionsQuery, revokeSessionMutation } from '../../lib/query/account'
+import { useActiveSessions, useRevokeSession } from './api'
 import { Button } from '../../ui/Button'
 import { VirtualList } from '../../ui/VirtualList'
 import { SettingsDialog } from './SettingsDialog'
 import * as styles from './SessionsSection.css'
 import * as settingsCardStyles from './SettingsCard.css'
+import { ApiError } from '../../api/fetcher'
+import type { ActiveSession } from './api'
 
 export function SessionsSection() {
   const { t } = useI18n()
-  const list = useQuery(activeSessionsQuery())
-  const revoke = useMutation(revokeSessionMutation())
+  const list = useActiveSessions()
+  const revoke = useRevokeSession()
   const [revokeTarget, setRevokeTarget] = useState<ActiveSession | null>(null)
 
   function confirmRevoke(): void {

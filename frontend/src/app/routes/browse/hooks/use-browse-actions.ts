@@ -1,21 +1,10 @@
 import type { Dispatch, DragEvent } from 'react'
-import { useMutation } from '@tanstack/react-query'
-import { ApiError, type Entry, type OnConflict } from '../../../../lib/api/client'
-import type { ShareEncryption } from '../../../../lib/api/types'
 import { joinPath } from '../../../../lib/api/path-utils'
 import { batchErrorKey, describeApiError } from '../../../../lib/api/error-text'
 import { encryptionForLabel, shareLabelOf } from '../../../../lib/crypto/encrypted-shares'
 import { FileTooLargeError, isUnlocked, LockedSessionError } from '../../../../lib/crypto/e2ee'
 import { downloadEncryptedFile, downloadEncryptedFolder } from '../../../../lib/crypto/download-sw'
 import { downloadPath, triggerUrlDownload } from '../../../../lib/format/download'
-import {
-  mkdirMutation,
-  renameMutation,
-  deleteMutation,
-  moveMutation,
-  copyMutation,
-  archiveTicketMutation
-} from '../../../../lib/query/files'
 import { selection } from '../../../../lib/store/selection.store'
 import { pickedFilesFromDataTransfer } from '../../../../lib/upload/directory-picker'
 import { rowActions, type RowAction } from '../../../../features/files/logic/row-actions'
@@ -23,6 +12,18 @@ import { browseTransferSources, runBrowseTransfer } from '../logic/browse-transf
 import { createBrowseUploadActions } from '../logic/browse-upload'
 import type { BrowseState } from '../logic/types'
 import type { StatePatch } from '../../../../lib/merge-state'
+import { ApiError } from '../../../../api/fetcher'
+import {
+  useArchiveTicket,
+  useCopyFiles,
+  useDeleteFiles,
+  useMkdir,
+  useMoveFiles,
+  useRename,
+  type Entry,
+  type OnConflict
+} from '../../../../features/files/api'
+import type { ShareEncryption } from '../../../../features/shares/api'
 
 type Patch = Dispatch<StatePatch<BrowseState>>
 
@@ -40,12 +41,12 @@ type BrowseActionContext = {
 
 export function useBrowseActions(context: BrowseActionContext) {
   const { path, entries, selected, contextEntry, renameTarget, canCreate, navigate, t, patch } = context
-  const mkdir = useMutation(mkdirMutation())
-  const rename = useMutation(renameMutation())
-  const remove = useMutation(deleteMutation())
-  const move = useMutation(moveMutation())
-  const copy = useMutation(copyMutation())
-  const archive = useMutation(archiveTicketMutation())
+  const mkdir = useMkdir()
+  const rename = useRename()
+  const remove = useDeleteFiles()
+  const move = useMoveFiles()
+  const copy = useCopyFiles()
+  const archive = useArchiveTicket()
   const uploads = createBrowseUploadActions({ entries, path, patch })
 
   const openUnlockFor = (target: { salt: string; verifier: string }, retry: () => void) =>

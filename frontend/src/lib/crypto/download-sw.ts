@@ -5,8 +5,7 @@
 // reusable, Range-capable media (/sc-media/<token>).
 import { equalBytes } from '@noble/ciphers/utils.js'
 import { makeZip } from 'client-zip'
-import { api } from '../api/client'
-import type { Entry } from '../api/types'
+import { contentUrl, listPage, type Entry } from '../../features/files/api'
 import {
   BLOCK_SIZE,
   ciphertextSpanForRange,
@@ -197,7 +196,7 @@ export async function downloadEncryptedFile(entry: Entry): Promise<void> {
   // copy only after a usable body exists, so a failed fetch cannot retain it.
   if (!isUnlocked(encryption.salt)) throw new LockedSessionError()
 
-  const res = await fetch(api.contentUrl(entry), { credentials: 'include' })
+  const res = await fetch(contentUrl(entry), { credentials: 'include' })
   if (!res.ok || !res.body) throw new Error(`could not fetch ${entry.path}: HTTP ${res.status}`)
   const transform = decryptStream(encryption.salt, entry.size)
   await streamToDownload(entry.name, res.body.pipeThrough(transform), plaintextSizeFromCiphertextSize(entry.size))
@@ -211,7 +210,7 @@ export async function downloadEncryptedFile(entry: Entry): Promise<void> {
 async function* walkFiles(dirPath: string): AsyncGenerator<Entry> {
   let cursor: string | undefined
   do {
-    const page = await api.list(dirPath, { cursor, sort: 'name', order: 'asc' })
+    const page = await listPage(dirPath, { cursor, sort: 'name', order: 'asc' })
     for (const child of page.entries) {
       if (child.kind === 'dir') {
         yield* walkFiles(child.path)
@@ -250,7 +249,7 @@ export async function downloadEncryptedFolder(vpath: string): Promise<void> {
       // A hostile listing response could otherwise smuggle a `../` or
       // absolute-path entry name straight into the zip on disk.
       if (!isSafeArchiveName(relative)) continue
-      const res = await fetch(api.contentUrl(file), { credentials: 'include' })
+      const res = await fetch(contentUrl(file), { credentials: 'include' })
       if (!res.ok || !res.body) throw new Error(`could not fetch ${file.path}: HTTP ${res.status}`)
       yield { name: relative, input: res.body.pipeThrough(decryptStream(salt, file.size)) }
     }
@@ -319,7 +318,7 @@ type MediaReply =
 async function nonceForToken(token: string, entry: Entry): Promise<Uint8Array> {
   const cached = nonceCache.get(token)
   if (cached) return cached
-  const res = await fetch(api.contentUrl(entry), { credentials: 'include', headers: { Range: 'bytes=0-31' } })
+  const res = await fetch(contentUrl(entry), { credentials: 'include', headers: { Range: 'bytes=0-31' } })
   if (!res.ok || !res.body)
     throw new Error(`could not read the rclone-crypt header for ${entry.path}: HTTP ${res.status}`)
   const header = new Uint8Array(await res.arrayBuffer())
@@ -368,7 +367,7 @@ async function resolveMediaRange(req: MediaRangeRequest): Promise<MediaReply> {
         const chunkEnd = Math.min(end + 1, chunkStart + BLOCK_SIZE * 8)
         try {
           const span = ciphertextSpanForRange(chunkStart, chunkEnd, plaintextSize)
-          const res = await fetch(api.contentUrl(entry), {
+          const res = await fetch(contentUrl(entry), {
             credentials: 'include',
             headers: { Range: `bytes=${span.offset}-${span.offset + span.length - 1}` }
           })

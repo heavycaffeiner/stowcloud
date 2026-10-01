@@ -9,7 +9,7 @@ import type {
   AdminUser,
   AuditQuery,
   AuditRow
-} from '../api/types'
+} from '../../features/admin/api'
 
 /**
  * Two server resources feed one screen. `GET /admin/logs` is what the server
@@ -130,20 +130,10 @@ export function pureToQuery(filters: LogFilters, cursor?: string): AdminLogQuery
   }
 }
 
-/** The filters projected onto the audit route's parameters.
- *
- *  Only the time bounds cross over, and that is the endpoint's rule rather
- *  than a simplification here: an audit row carries no level, no subsystem
- *  and no request id, and `/admin/logs/timeline` counts the audit half of
- *  every bucket narrowed by `since`/`until` alone. Sending anything else
- *  would make the list disagree with the bars above it. */
-export function pureToAuditQuery(filters: LogFilters, before?: number | null): AuditQuery {
-  return {
-    since_ns: pureLocalToNs(filters.since),
-    until_ns: pureLocalToNs(filters.until),
-    limit: PAGE_SIZE,
-    ...(before === undefined || before === null ? {} : { before })
-  }
+/** The audit route takes a page cursor and a size and filters on nothing the
+ *  form holds, so the audit rows do not follow the time window. */
+export function pureToAuditQuery(before?: number | null): AuditQuery {
+  return { limit: PAGE_SIZE, ...(before === undefined || before === null ? {} : { before }) }
 }
 
 /** Candidate bucket widths, coarsest last: 1s, 5s, 15s, 30s, 1m, 5m, 15m,

@@ -1,14 +1,5 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
 import { useGrantManagementState } from './hooks/grant-management-state'
-import {
-  ALL_GRANT_PERMS,
-  ApiError,
-  type AdminGrant,
-  type GrantPermName,
-  type GrantPrincipal
-} from '../../lib/api/client'
 import { describeApiError } from '../../lib/api/error-text'
-import { adminGrantMutation, adminGrantsQuery, adminSharesQuery } from '../../lib/query/admin'
 import { useI18n } from '../../hooks/use-i18n'
 import { Button } from '../../ui/Button'
 import { Checkbox } from '../../ui/Checkbox'
@@ -27,6 +18,18 @@ import * as styles from './GrantManagementSection.css'
 import * as adminStyles from './admin.css'
 import * as buttonStyles from '../../ui/Button.css'
 import { cx } from '../../ui/cx'
+import {
+  ALL_GRANT_PERMS,
+  useAdminGrants,
+  useAdminShares,
+  useCreateGrant,
+  useDeleteGrant,
+  useUpdateGrant,
+  type AdminGrant,
+  type GrantPermName,
+  type GrantPrincipal
+} from './api'
+import { ApiError } from '../../api/fetcher'
 
 interface GrantManagementSectionProps {
   /** Who these grants belong to: a user id or a group id, never both. */
@@ -55,8 +58,8 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
     download: t('common.download')
   }
   const scope = principal.kind === 'user' ? { userId: principal.id } : { groupId: principal.id }
-  const sharesQuery = useQuery(adminSharesQuery())
-  const grantsQuery = useQuery(adminGrantsQuery(scope))
+  const sharesQuery = useAdminShares()
+  const grantsQuery = useAdminGrants(scope)
   const shares = sharesQuery.data ?? []
   const grants = grantsQuery.data ?? []
   const loading = sharesQuery.isPending || grantsQuery.isPending
@@ -101,9 +104,9 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
   const setEditLabel = (value: string): void => patchState({ editLabel: value })
   const setEditValidation = (value: string | null): void => patchState({ editValidation: value })
   const setDeleteTarget = (value: AdminGrant | null): void => patchState({ deleteTarget: value })
-  const addMut = useMutation(adminGrantMutation())
-  const editMut = useMutation(adminGrantMutation())
-  const deleteMut = useMutation(adminGrantMutation())
+  const addMut = useCreateGrant()
+  const editMut = useUpdateGrant()
+  const deleteMut = useDeleteGrant()
 
   const shareName = (id: number): string => shares.find((share) => share.id === id)?.name ?? t('grant.share', { id })
   const addError =
@@ -159,16 +162,13 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
     }
     addMut.mutate(
       {
-        kind: 'create',
-        req: {
-          principal,
-          share: Number(addShareId),
-          subpath: addSubpath.trim(),
-          allow: [...addAllow],
-          deny: [...addDeny],
-          inherit: addInherit,
-          label: addLabel.trim() || undefined
-        }
+        principal,
+        share: Number(addShareId),
+        subpath: addSubpath.trim(),
+        allow: [...addAllow],
+        deny: [...addDeny],
+        inherit: addInherit,
+        label: addLabel.trim() || undefined
       },
       { onSuccess: () => setAddOpen(false) }
     )
@@ -197,13 +197,12 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
     }
     editMut.mutate(
       {
-        kind: 'update',
         id: editTarget.id,
-        patch: {
+        update: {
           allow: [...editAllow],
           deny: [...editDeny],
           inherit: editInherit,
-          label: editLabel.trim() || null
+          label: editLabel.trim()
         }
       },
       { onSuccess: () => setEditTarget(null) }
@@ -221,7 +220,7 @@ export function GrantManagementSection({ principal, label }: GrantManagementSect
 
   function submitDelete(): void {
     if (!deleteTarget) return
-    deleteMut.mutate({ kind: 'delete', id: deleteTarget.id }, { onSuccess: () => setDeleteTarget(null) })
+    deleteMut.mutate(deleteTarget.id, { onSuccess: () => setDeleteTarget(null) })
   }
 
   return (

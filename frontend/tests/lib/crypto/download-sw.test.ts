@@ -7,17 +7,16 @@
 // (`vi.resetModules`) so the two groups never fight over the module-scoped
 // registration cache `swReady` keeps.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Entry, ShareEncryption } from '../../../src/lib/api/types'
+import type { Entry } from '../../../src/features/files/api'
+import type { ShareEncryption } from '../../../src/features/shares/api'
 
 // Deliberately not the real route: only the api layer may spell that, and a
 // double only has to be a distinguishable address the fetch stub recognises.
 const contentUrl = vi.fn((entry: { content?: string }) => `https://stub.invalid/content/${entry.content}`)
 const list = vi.fn()
-vi.mock('../../../src/lib/api/client', () => ({
-  api: {
-    contentUrl: (entry: { content?: string }) => contentUrl(entry),
-    list: (path: string, opts: unknown) => list(path, opts)
-  }
+vi.mock('../../../src/features/files/api', () => ({
+  contentUrl: (entry: { content?: string }) => contentUrl(entry),
+  listPage: (path: string, opts: unknown) => list(path, opts)
 }))
 
 const encryptionForLabel = vi.fn()

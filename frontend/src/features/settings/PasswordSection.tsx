@@ -1,20 +1,19 @@
 import { useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
 import type { FormEvent } from 'react'
-import { ApiError } from '../../lib/api/client'
 import { describeApiError } from '../../lib/api/error-text'
 import { scorePasswordStrength } from '../../lib/format/password-strength'
 import { validatePasswordChange } from '../../lib/format/password-change'
-import { changePasswordMutation } from '../../lib/query/account'
+import { useChangePassword } from './api'
 import { useI18n } from '../../hooks/use-i18n'
 import { Button } from '../../ui/Button'
 import { TextField } from '../../ui/TextField'
 import { ProgressLinear } from '../../ui/ProgressLinear'
 import * as styles from './PasswordSection.css'
+import { ApiError } from '../../api/fetcher'
 
 export function PasswordSection() {
   const { t } = useI18n()
-  const save = useMutation(changePasswordMutation())
+  const save = useChangePassword()
   type PasswordState = {
     current: string
     next: string

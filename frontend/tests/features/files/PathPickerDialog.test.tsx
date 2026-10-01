@@ -25,10 +25,10 @@ describe('PathPickerDialog', () => {
     await waitFor(() => expect(choose.hasAttribute('disabled')).toBe(false))
     choose.dispatchEvent(new Event('click', { bubbles: true }))
     expect(onPick).toHaveBeenCalledWith('/note.txt')
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining('/api/v1/system/setup/browse'),
-      expect.objectContaining({ method: 'POST' })
-    )
+    const request = fetchMock.mock.calls[0][0] as Request
+    expect(request.url).toContain('/api/v1/system/setup/browse')
+    expect(request.method).toBe('POST')
+    expect(await request.json()).toEqual({ token: 'setup-token', path: '' })
   })
   it('falls back to roots after an initial failure', async () => {
     vi.spyOn(globalThis, 'fetch')

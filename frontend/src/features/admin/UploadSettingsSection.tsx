@@ -1,7 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
 import { useI18n } from '../../hooks/use-i18n'
-import { adminSettingsQuery, adminUploadSettingsMutation } from '../../lib/query/admin'
+import { useAdminSettings, useSaveUploadSettings } from './api'
 import { describeApiError } from '../../lib/api/error-text'
 import { BYTES_PER_MB, bytesToMb, formatBytes } from '../../lib/format/bytes'
 import {
@@ -22,7 +21,7 @@ import * as styles from './UploadSettingsSection.css'
 import * as adminStyles from './admin.css'
 
 export function UploadSettingsSection() {
-  const settings = useQuery(adminSettingsQuery())
+  const settings = useAdminSettings()
   const fields = settings.data?.fields
   const serverMin = Number(fields?.find((item) => item.key === 'upload.chunk_min_bytes')?.value ?? CHUNK_SIZE_MIN)
   const serverDefault = Number(
@@ -61,7 +60,7 @@ function UploadSettingsForm({
   onCacheResponse
 }: UploadSettingsFormProps) {
   const { t } = useI18n()
-  const mutation = useMutation(adminUploadSettingsMutation())
+  const mutation = useSaveUploadSettings()
   const override = useSyncExternalStore(
     subscribeUploadPreferences,
     () => loadStoredChunkSize(serverMin),

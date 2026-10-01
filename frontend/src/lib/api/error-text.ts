@@ -14,7 +14,7 @@
 // were in) and the share screen reversed the server's English back into keys
 // by substring, so a one-word copy edit on the server silently dropped it to
 // a generic fallback.
-import { ApiError } from './types'
+import { ApiError } from '../../api/fetcher'
 import { t } from '../i18n'
 
 /** Every `reason_key` the server can send, as literals so `i18n-check.mjs`
@@ -151,14 +151,6 @@ export function describeApiError(err: unknown, fallback: string): string {
   if (!(err instanceof ApiError)) return fallback
   const key = keyFor(err.code, err.detail)
   return key ? t(key, params(err.detail)) : fallback
-}
-
-/** A `SettingsField.readonly_reason_key` from the settings snapshot. An
- *  unknown key renders as itself, visibly odd, which is the right signal for
- *  a client older than the server it is talking to, and better than leaving a
- *  field the admin cannot edit with no explanation next to it. */
-export function serverKeyText(key: string): string {
-  return SERVER_KEYS.has(key) ? t(key) : key
 }
 
 /** Same, for a per-item batch/job failure: the `{code, message, detail}`

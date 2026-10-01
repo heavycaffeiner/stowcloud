@@ -1,10 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import type { KeyboardEvent } from 'react'
-import { api, type Entry } from '../../lib/api/client'
-import type { ArchiveEntry, ArchiveListing, ShareEncryption } from '../../lib/api/types'
-import { ApiError } from '../../lib/api/types'
-import { fileContentQuery, archiveEntriesQuery } from '../../lib/query/files'
+import { ApiError } from '../../api/fetcher'
+import {
+  contentUrl,
+  thumbUrl,
+  useArchiveEntries,
+  useFileContent,
+  useShareEncryption,
+  type ArchiveEntry,
+  type Entry
+} from '../files/api'
+import { useEncryptedArchive } from './api'
 import { formatBytes } from '../../lib/format/bytes'
 import { formatEntrySize } from '../../lib/format/entry-size'
 import { useI18n } from '../../hooks/use-i18n'
@@ -12,8 +18,6 @@ import { useEventListener } from '../../hooks/use-event-listener'
 import { IMAGE_EXT, VIDEO_EXT, extensionOf, mimeTypeOf } from './logic/media-utils'
 import { registerMediaSource, releaseMediaSource, swReady } from '../../lib/crypto/download-sw'
 import { decryptDownload, isUnlocked, MAX_ENCRYPTABLE_BYTES } from '../../lib/crypto/e2ee'
-import { encryptionForLabel, shareLabelOf } from '../../lib/crypto/encrypted-shares'
-import { listEncryptedArchive } from '../../lib/crypto/zip-listing'
 import { Button } from '../../ui/Button'
 import { Dialog } from '../../ui/Dialog'
 import { IconButton } from '../../ui/IconButton'
@@ -105,29 +109,22 @@ export function PreviewDialog({
     if (!isEditableFileName(entry.name)) return { kind: 'none' }
     return entry.size > TEXT_MAX_BYTES ? { kind: 'too-large-text' } : { kind: 'text' }
   }, [entry])
-  const encryptionQuery = useQuery<ShareEncryption | null>({
-    queryKey: ['preview-encryption', entry?.path ?? ''],
-    queryFn: () => encryptionForLabel(shareLabelOf((entry as Entry).path)),
-    enabled: open && entry !== null,
-    staleTime: Infinity
-  })
+  const encryptionQuery = useShareEncryption(entry?.path ?? '', open && entry !== null)
   const encryption = encryptionQuery.data ?? null
   const encryptionPending = open && entry !== null && encryptionQuery.isPending
   const unlocked = useMemo(() => encryption === null || isUnlocked(encryption.salt), [encryption, unlockGeneration])
   const locked = Boolean(entry && encryption && !unlocked)
-  const textQuery = useQuery({
-    ...fileContentQuery(entry, unlocked),
-    enabled: open && body.kind === 'text' && !encryptionPending && unlocked
-  })
-  const archiveQuery = useQuery({
-    ...archiveEntriesQuery(path, open && body.kind === 'archive' && !encryptionPending && encryption === null)
-  })
-  const encryptedArchiveQuery = useQuery<ArchiveListing>({
-    queryKey: ['preview-encrypted-archive', entry?.path ?? '', unlocked],
-    queryFn: () => listEncryptedArchive(entry as Entry, (encryption as ShareEncryption).salt),
-    enabled: open && body.kind === 'archive' && encryption !== null && unlocked,
-    staleTime: Infinity
-  })
+  const textQuery = useFileContent(entry, unlocked, open && body.kind === 'text' && !encryptionPending && unlocked)
+  const archiveQuery = useArchiveEntries(
+    path,
+    open && body.kind === 'archive' && !encryptionPending && encryption === null
+  )
+  const encryptedArchiveQuery = useEncryptedArchive(
+    entry,
+    encryption,
+    unlocked,
+    open && body.kind === 'archive' && unlocked
+  )
   const archiveListing = encryption ? (encryptedArchiveQuery.data ?? null) : (archiveQuery.data ?? null)
   const archiveError = encryption ? encryptedArchiveQuery.error : archiveQuery.error
   const archivePending = encryption ? encryptedArchiveQuery.isPending : archiveQuery.isPending
@@ -187,7 +184,7 @@ export function PreviewDialog({
         return
       }
       try {
-        const response = await fetch(api.contentUrl(entry))
+        const response = await fetch(contentUrl(entry))
         if (!response.ok) throw new Error(`HTTP ${response.status}`)
         const plaintext = await decryptDownload(new Uint8Array(await response.arrayBuffer()), encryption.salt)
         if (cancelled) return
@@ -227,8 +224,8 @@ export function PreviewDialog({
             ? mediaUrl
             : null
           : entry.preview?.available && extensionOf(entry.name) !== 'svg'
-            ? api.thumbUrl(entry, PREVIEW_DIM) || api.contentUrl(entry)
-            : api.contentUrl(entry)))
+            ? thumbUrl(entry, PREVIEW_DIM) || contentUrl(entry)
+            : contentUrl(entry)))
       : null
   const videoUrl =
     body.kind === 'video' && !videoGaveUp
@@ -236,7 +233,7 @@ export function PreviewDialog({
         ? mediaKind === 'ready'
           ? mediaUrl
           : null
-        : api.contentUrl(entry)
+        : contentUrl(entry)
       : null
   const loading =
     (body.kind === 'text' && textQuery.isPending) ||
@@ -331,7 +328,7 @@ export function PreviewDialog({
                   src={imageUrl}
                   alt={entry.name}
                   onError={() => {
-                    const own = api.contentUrl(entry)
+                    const own = contentUrl(entry)
                     if (!encryption && imageUrl !== own) setPreviewState((state) => ({ ...state, imageOverride: own }))
                     else setPreviewState((state) => ({ ...state, imageGaveUp: true }))
                   }}

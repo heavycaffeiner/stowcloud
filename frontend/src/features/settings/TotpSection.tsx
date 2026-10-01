@@ -1,34 +1,27 @@
 import { useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
-import { ApiError } from '../../lib/api/client'
 import { describeApiError } from '../../lib/api/error-text'
 import { tp } from '../../lib/i18n'
 import { useI18n } from '../../hooks/use-i18n'
-import {
-  recoveryCodesQuery,
-  reissueRecoveryCodesMutation,
-  totpDisableMutation,
-  totpEnrollMutation,
-  totpSetupMutation
-} from '../../lib/query/account'
-import { sessionQuery } from '../../lib/query/session'
+import { useReissueRecoveryCodes, useRecoveryCodesRemaining, useTotpDisable, useTotpEnroll, useTotpSetup } from './api'
+import { useSession } from '../auth/api'
 import { Button } from '../../ui/Button'
 import { TextField } from '../../ui/TextField'
 import { SettingsDialog } from './SettingsDialog'
 import * as styles from './TotpSection.css'
 import * as settingsCardStyles from './SettingsCard.css'
 import { cx } from '../../ui/cx'
+import { ApiError } from '../../api/fetcher'
 
 export function TotpSection() {
   const { t } = useI18n()
-  const session = useQuery(sessionQuery())
+  const session = useSession()
   const enabled = session.data?.user.totp_enabled ?? false
   const smbDedicated = session.data?.user.smb_credential === 'dedicated'
-  const recovery = useQuery(recoveryCodesQuery(enabled))
-  const setup = useMutation(totpSetupMutation())
-  const enroll = useMutation(totpEnrollMutation())
-  const disable = useMutation(totpDisableMutation())
-  const reissue = useMutation(reissueRecoveryCodesMutation())
+  const recovery = useRecoveryCodesRemaining(enabled)
+  const setup = useTotpSetup()
+  const enroll = useTotpEnroll()
+  const disable = useTotpDisable()
+  const reissue = useReissueRecoveryCodes()
   type TotpState = {
     enrollOpen: boolean
     enrollPassword: string
@@ -135,8 +128,8 @@ export function TotpSection() {
     enroll.mutate(
       { password: enrollPassword, secret: setupSecret, code: enrollCode },
       {
-        onSuccess: (result) => {
-          setRecoveryCodes(result.recovery_codes)
+        onSuccess: (codes) => {
+          setRecoveryCodes(codes)
           setRecoveryAcknowledged(false)
           setRecoveryCopyState('idle')
           setEnrollOpen(false)
@@ -203,8 +196,8 @@ export function TotpSection() {
   }
   function confirmReissue(): void {
     reissue.mutate(reissuePassword, {
-      onSuccess: (result) => {
-        setRecoveryCodes(result.recovery_codes)
+      onSuccess: (codes) => {
+        setRecoveryCodes(codes)
         setRecoveryAcknowledged(false)
         setRecoveryCopyState('idle')
         setReissueOpen(false)
@@ -227,10 +220,10 @@ export function TotpSection() {
       </div>
       {enabled ? (
         <div className={styles.recovery}>
-          {recovery.data ? (
-            <p className={cx(styles.recoveryCount, recovery.data.remaining <= 3 && styles.recoveryCountLow)}>
-              {tp('totp.recovery_codes_left', recovery.data.remaining)}
-              {recovery.data.remaining <= 3 ? ` ${t('totp.running_low_reissue_them_now')}` : ''}
+          {recovery.data !== undefined ? (
+            <p className={cx(styles.recoveryCount, recovery.data <= 3 && styles.recoveryCountLow)}>
+              {tp('totp.recovery_codes_left', recovery.data)}
+              {recovery.data <= 3 ? ` ${t('totp.running_low_reissue_them_now')}` : ''}
             </p>
           ) : null}
           <Button variant="outlined" onClick={openReissue}>

@@ -11,7 +11,7 @@
 // the whole tab and strands the user on the browser's own error page,
 // wiping their place in the file browser; a new tab costs nothing and
 // cannot do that.
-import { api } from '../api/client'
+import { download, stat } from '../../features/files/api'
 import { downloadEncryptedFile } from '../crypto/download-sw'
 import { encryptionForLabel, shareLabelOf } from '../crypto/encrypted-shares'
 
@@ -42,9 +42,9 @@ export function triggerUrlDownload(url: string, filename?: string, newTab = fals
 export async function downloadPath(path: string): Promise<void> {
   const encryption = await encryptionForLabel(shareLabelOf(path))
   if (encryption) {
-    await downloadEncryptedFile(await api.stat(path))
+    await downloadEncryptedFile(await stat(path))
     return
   }
-  const ticket = await api.download(path)
+  const ticket = await download(path)
   triggerUrlDownload(ticket.url, ticket.name)
 }

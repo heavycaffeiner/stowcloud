@@ -1,6 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent } from 'react'
-import type { Entry, Perms } from '../../lib/api/types'
 import { formatEntrySize } from '../../lib/format/entry-size'
 import { useI18n } from '../../hooks/use-i18n'
 import { selection, useSelectionStore } from '../../lib/store/selection.store'
@@ -22,6 +21,8 @@ import * as utilitiesStyles from '../../ui/utilities.css'
 import { cx } from '../../ui/cx'
 import { cssVarName } from '../../ui/css-var'
 import { vars } from '../../ui/theme.css'
+import type { Entry } from './api'
+import type { Perms } from './perms'
 
 export interface FileGridProps {
   entries: readonly Entry[]

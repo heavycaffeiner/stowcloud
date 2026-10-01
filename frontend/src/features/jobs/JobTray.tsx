@@ -1,17 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useMutation, useQueries, useQuery } from '@tanstack/react-query'
-import type { JobKindWire, JobState, JobStatus } from '../../lib/api/client'
 import { batchErrorKey } from '../../lib/api/error-text'
 import { useI18n } from '../../hooks/use-i18n'
-import { queryClient } from '../../lib/query/client'
-import {
-  jobCancelMutation,
-  jobListQuery,
-  jobPauseMutation,
-  jobQuery,
-  jobResumeMutation,
-  jobRetryMutation
-} from '../../lib/query/jobs'
 import { jobTray, useJobTrayStore } from '../../lib/store/jobs.store'
 import { Icon } from '../../ui/Icon'
 import { IconButton } from '../../ui/IconButton'
@@ -19,6 +8,8 @@ import { VirtualList } from '../../ui/VirtualList'
 import { ProgressLinear } from '../../ui/ProgressLinear'
 import * as styles from './JobTray.css'
 import * as utilitiesStyles from '../../ui/utilities.css'
+import { useInvalidateAllPaths } from '../files/api'
+import { useJobAction, useJobList, useJobStatuses, type JobKind, type JobState, type JobStatus } from './api'
 
 interface JobRow {
   id: string
@@ -35,7 +26,7 @@ interface JobRow {
   nextRunNs: string
 }
 
-function frontendKind(kind: JobKindWire): JobRow['kind'] {
+function frontendKind(kind: JobKind): JobRow['kind'] {
   return kind === 'index_build' ? 'index' : kind === 'delete' ? 'delete' : 'copy'
 }
 
@@ -105,12 +96,13 @@ function useJobTray() {
     expandedJobs: new Set()
   })
   const { expandedJobs } = trayState
-  const cancel = useMutation(jobCancelMutation())
-  const retry = useMutation(jobRetryMutation())
-  const pause = useMutation(jobPauseMutation())
-  const resume = useMutation(jobResumeMutation())
-  const list = useQuery(jobListQuery())
-  const statuses = useQueries({ queries: ids.map((id) => jobQuery(id)) })
+  const cancel = useJobAction('cancel')
+  const retry = useJobAction('retry')
+  const pause = useJobAction('pause')
+  const resume = useJobAction('resume')
+  const list = useJobList()
+  const statuses = useJobStatuses(ids)
+  const invalidatePaths = useInvalidateAllPaths()
   const rows = useMemo(
     () => ids.map((id, index) => rowFor(id, statuses[index]?.data, statuses[index]?.isError === true)),
     [ids, statuses]
@@ -120,8 +112,8 @@ function useJobTray() {
   const assertiveRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
-    jobTray.track(...(list.data?.jobs ?? []).map((job) => job.id))
-  }, [list.data?.jobs])
+    jobTray.track(...(list.data ?? []).map((job) => job.id))
+  }, [list.data])
 
   useEffect(() => {
     setTrayState((state) => {
@@ -146,7 +138,7 @@ function useJobTray() {
       seen.add(item.id)
       const prior = previous.current.get(item.id)
       if (prior !== undefined && prior !== item.status) {
-        void queryClient.invalidateQueries({ queryKey: ['path'] })
+        invalidatePaths()
         const label = kindLabel(item.kind, t)
         if (item.status === 'done')
           announce(
@@ -171,7 +163,7 @@ function useJobTray() {
       previous.current.set(item.id, item.status)
     }
     for (const id of previous.current.keys()) if (!seen.has(id)) previous.current.delete(id)
-  }, [rows, t, tp])
+  }, [invalidatePaths, rows, t, tp])
 
   const activeCount = rows.filter((row) => ['queued', 'running', 'paused', 'retrying'].includes(row.status)).length
   const clearFinished = (): void =>

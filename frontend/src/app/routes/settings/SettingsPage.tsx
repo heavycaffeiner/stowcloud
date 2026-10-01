@@ -1,9 +1,9 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { i18n, setLocale } from '../../../lib/i18n/state'
 import { useI18n } from '../../../hooks/use-i18n'
-import { logoutMutation, oidcConfigQuery, sessionQuery } from '../../../lib/query/session'
+import { useOidcConfig, useSession } from '../../../features/auth/api'
+import { useLogout } from '../../../features/settings/api'
 import { ui, useUiStore } from '../../../lib/store/ui.store'
 import { useDocumentTitle } from '../../hooks/use-document-title'
 import { PageTabs } from '../PageTabs'
@@ -15,9 +15,9 @@ import * as pageTabsStyles from '../PageTabs.css'
 export function SettingsPage() {
   const { t } = useI18n()
   const navigate = useNavigate()
-  const session = useQuery(sessionQuery())
-  const oidcConfig = useQuery(oidcConfigQuery())
-  const logout = useMutation(logoutMutation())
+  const session = useSession()
+  const oidcConfig = useOidcConfig()
+  const logout = useLogout()
   const theme = useUiStore((state) => state.theme)
   const { i18n: translation } = useTranslation(undefined, { i18n })
   const locale = translation.language === 'en' ? 'en' : 'ko'

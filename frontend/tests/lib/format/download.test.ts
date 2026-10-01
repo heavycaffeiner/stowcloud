@@ -1,26 +1,18 @@
-// frontend/tests/lib/format/download.test.ts: the two-step download is the only
-// path left to trigger a plain-share file download: mint a ticket by path,
-// then hand its `url` to the browser's own navigation. No client code may
-// compose a download URL from a path directly. `downloadPath` calls the
-// client's `download()` with the path and navigates to the ticket's own
-// `url`; the source-tree scan for a surviving hand-built download URL lives
-// in `tools/no-download-url.test.ts`, with the node code, because it needs
-// `node:fs`.
-// An encrypted path skips the ticket and routes through
-// `downloadEncryptedFile` instead: covered here only at the routing
-// boundary; the decrypt/Service-Worker pipeline itself is
-// `crypto/download-sw.test.ts`'s job.
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+// A plain-share download mints a ticket by path and hands its `url` to the
+// browser's own navigation; no client code composes a download URL from a path.
+// An encrypted path skips the ticket and goes through `downloadEncryptedFile`,
+// checked here only at that routing boundary.
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const download = vi.fn()
 const stat = vi.fn()
 const shareEncryptionList = vi.fn()
-vi.mock('../../../src/lib/api/client', () => ({
-  api: {
-    download: (p: string) => download(p),
-    stat: (p: string) => stat(p),
-    shareEncryptionList: () => shareEncryptionList()
-  }
+vi.mock('../../../src/features/files/api', () => ({
+  download: (p: string) => download(p),
+  stat: (p: string) => stat(p)
+}))
+vi.mock('../../../src/features/shares/api', () => ({
+  fetchShareEncryptions: () => shareEncryptionList()
 }))
 
 const downloadEncryptedFile = vi.fn()
@@ -28,7 +20,7 @@ vi.mock('../../../src/lib/crypto/download-sw', () => ({
   downloadEncryptedFile: (entry: unknown) => downloadEncryptedFile(entry)
 }))
 
-import { invalidateEncryptedShares, setEncryptedSharesSource } from '../../../src/lib/crypto/encrypted-shares'
+import { invalidateEncryptedShares } from '../../../src/lib/crypto/encrypted-shares'
 import { downloadPath, triggerUrlDownload } from '../../../src/lib/format/download'
 
 beforeEach(() => {
@@ -36,8 +28,7 @@ beforeEach(() => {
   stat.mockReset()
   downloadEncryptedFile.mockReset()
   shareEncryptionList.mockReset()
-  shareEncryptionList.mockResolvedValue({ shares: [] })
-  setEncryptedSharesSource(() => shareEncryptionList().then((r: { shares: unknown[] }) => r.shares))
+  shareEncryptionList.mockResolvedValue([])
   invalidateEncryptedShares()
 })
 
@@ -81,11 +72,9 @@ describe('downloadPath', () => {
   })
 
   it('routes an encrypted path through downloadEncryptedFile instead of minting a ticket', async () => {
-    shareEncryptionList.mockResolvedValue({
-      shares: [
-        { share: 1, labels: ['home'], scheme: 'rclone-crypt-v1', salt: 's'.repeat(22), verifier: 'v', createdNs: 0 }
-      ]
-    })
+    shareEncryptionList.mockResolvedValue([
+      { share: 1, labels: ['home'], scheme: 'rclone-crypt-v1', salt: 's'.repeat(22), verifier: 'v', createdNs: 0 }
+    ])
     const entry = { name: 'report.pdf', path: '/home/report.pdf', kind: 'file', size: 10, content: 'claim' }
     stat.mockResolvedValue(entry)
 

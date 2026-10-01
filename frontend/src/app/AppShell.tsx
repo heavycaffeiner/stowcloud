@@ -1,9 +1,9 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
 import { useMemo, useReducer, useRef } from 'react'
 import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useI18n } from '../hooks/use-i18n'
 import { useOutsideDismiss } from '../hooks/use-outside-dismiss'
-import { isUnauthenticated, logoutMutation, screenOf, sessionQuery, setupRequiredQuery } from '../lib/query/session'
+import { isUnauthenticated, screenOf, useSession, useSetupRequired } from '../features/auth/api'
+import { useLogout } from '../features/settings/api'
 import { search, searchTarget, useSearchStore } from '../lib/store/search.store'
 import { ui, useUiStore } from '../lib/store/ui.store'
 import { useCompact } from '../ui/use-compact'
@@ -49,10 +49,10 @@ export function AppShell() {
   const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed)
   const searchOpen = useSearchStore((state) => state.open)
   const searchScope = useSearchStore((state) => state.scope)
-  const session = useQuery(sessionQuery())
+  const session = useSession()
   const definitiveFailure = session.isError && isUnauthenticated(session.error)
   const sessionUnavailable = session.isError && !definitiveFailure
-  const setup = useQuery(setupRequiredQuery(definitiveFailure))
+  const setup = useSetupRequired(definitiveFailure)
   const screen = screenOf({
     hasSession: session.data !== undefined && !definitiveFailure,
     sessionFailed: definitiveFailure,
@@ -68,7 +68,7 @@ export function AppShell() {
   const { lastBrowsePath, mobileDrawerOpen, folderSelectorOpen, accountMenuOpen } = shell
   const trayStackRef = useRef<HTMLDivElement | null>(null)
   const accountMenuRef = useRef<HTMLDivElement | null>(null)
-  const logout = useMutation(logoutMutation())
+  const logout = useLogout()
 
   useOutsideDismiss(accountMenuOpen, accountMenuRef, () => setShell({ accountMenuOpen: false }))
   useShellRouteTransitions(compact, location.pathname, location.search, screen, setShell)

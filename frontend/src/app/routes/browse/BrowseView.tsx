@@ -1,6 +1,5 @@
 import type { ChangeEvent, Dispatch, MouseEvent as ReactMouseEvent, RefObject } from 'react'
 import { useEffect } from 'react'
-import type { Entry, Perms } from '../../../lib/api/client'
 import type { FileGridHandle } from '../../../features/files/FileGrid'
 import type { FileViewHandle } from '../../../features/files/FileTable'
 import { FileGrid } from '../../../features/files/FileGrid'
@@ -34,6 +33,8 @@ import * as styles from './BrowseView.css'
 import * as iconButtonStyles from '../../../ui/IconButton.css'
 import * as utilitiesStyles from '../../../ui/utilities.css'
 import { cx } from '../../../ui/cx'
+import type { Entry } from '../../../features/files/api'
+import type { Perms } from '../../../features/files/perms'
 
 type Patch = Dispatch<StatePatch<BrowseState>>
 type Translate = (key: string, params?: Record<string, string | number>) => string

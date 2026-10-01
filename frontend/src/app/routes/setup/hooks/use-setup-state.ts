@@ -1,6 +1,6 @@
 import { type Dispatch, useReducer } from 'react'
-import type { SetupFinding } from '../../../../lib/api/setup'
 import { mergeState, type StatePatch } from '../../../../lib/merge-state'
+import type { SetupFinding } from '../../../../features/auth/api'
 
 export type SetupState = {
   token: string

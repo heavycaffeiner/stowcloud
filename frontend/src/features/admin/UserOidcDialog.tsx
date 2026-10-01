@@ -1,14 +1,14 @@
 import { useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
-import { ApiError, type AdminUser } from '../../lib/api/client'
 import { describeApiError } from '../../lib/api/error-text'
 import { formatDateNs } from '../../lib/i18n'
 import { useI18n } from '../../hooks/use-i18n'
-import { adminUnlinkOidcMutation, adminUserOidcQuery } from '../../lib/query/admin'
+import { useAdminUserOidc, useUnlinkUserOidc } from './api'
 import { Button } from '../../ui/Button'
 import { Dialog } from '../../ui/Dialog'
 import { ProgressCircular } from '../../ui/ProgressCircular'
 import * as styles from './UserOidcDialog.css'
+import { ApiError } from '../../api/fetcher'
+import type { AdminUser } from './api'
 
 interface UserOidcDialogProps {
   user: AdminUser | null
@@ -17,8 +17,8 @@ interface UserOidcDialogProps {
 
 export function UserOidcDialog({ user, onClose }: UserOidcDialogProps) {
   const { t } = useI18n()
-  const query = useQuery(adminUserOidcQuery(user?.id ?? null))
-  const unlink = useMutation(adminUnlinkOidcMutation())
+  const query = useAdminUserOidc(user?.id ?? null)
+  const unlink = useUnlinkUserOidc()
   type OidcDialogState = { confirmUnlink: boolean; openFor: number | null }
   const [state, setState] = useState<OidcDialogState>({ confirmUnlink: false, openFor: user?.id ?? null })
   const { confirmUnlink } = state

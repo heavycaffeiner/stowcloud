@@ -1,4 +1,3 @@
-import type { AdminUser } from '../../lib/api/client'
 import { Button } from '../../ui/Button'
 import { Icon } from '../../ui/Icon'
 import { ListItem } from '../../ui/ListItem'
@@ -6,6 +5,7 @@ import { Switch } from '../../ui/Switch'
 import * as styles from './UserManagementRow.css'
 import * as adminStyles from './admin.css'
 import { cx } from '../../ui/cx'
+import type { AdminUser } from './api'
 
 type Translator = (key: string, params?: Record<string, string | number>) => string
 

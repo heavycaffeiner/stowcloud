@@ -1,4 +1,3 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useRef } from 'react'
 import { useBlocker, useNavigate, useParams } from 'react-router-dom'
 import { normalizePath, parentOf } from '../../../lib/api/path-utils'
@@ -6,7 +5,7 @@ import { describeApiError } from '../../../lib/api/error-text'
 import { isUnlocked, MAX_ENCRYPTABLE_BYTES } from '../../../lib/crypto/e2ee'
 import { formatBytes } from '../../../lib/format/bytes'
 import { useI18n } from '../../../hooks/use-i18n'
-import { fileContentQuery, shareEncryptionQuery, statQuery, writeFileMutation } from '../../../lib/query/files'
+import { useFileCache, useFileContent, useShareEncryption, useStat, useWriteFile } from '../../../features/files/api'
 import { Button } from '../../../ui/Button'
 import { Dialog } from '../../../ui/Dialog'
 import { ProgressCircular } from '../../../ui/ProgressCircular'
@@ -29,20 +28,20 @@ import { cx } from '../../../ui/cx'
 export function EditPage() {
   const { t } = useI18n()
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
+  const files = useFileCache()
   const { '*': rawPath } = useParams()
   const path = normalizePath(`/${rawPath ?? ''}`)
   const filename = path.split('/').filter(Boolean).at(-1) ?? path
-  const stat = useQuery(statQuery(path))
+  const stat = useStat(path)
   const isDir = stat.data?.kind === 'dir'
-  const encryption = useQuery(shareEncryptionQuery(path, stat.data !== undefined && !isDir))
+  const encryption = useShareEncryption(path, stat.data !== undefined && !isDir)
   const share = encryption.data ?? null
   const unlocked = share === null || isUnlocked(share.salt)
   const locked = Boolean(stat.data && !isDir && share && !unlocked)
   const entry = stat.data && !isDir ? stat.data : null
   const contentEnabled = Boolean(entry && !encryption.isPending && !encryption.error && unlocked)
-  const contentQuery = useQuery({ ...fileContentQuery(entry, unlocked), enabled: contentEnabled })
-  const saveMutation = useMutation(writeFileMutation())
+  const contentQuery = useFileContent(entry, unlocked, contentEnabled)
+  const saveMutation = useWriteFile()
   const editorRef = useRef<CodeEditorHandle>(null)
   const { state, actions } = useEditState()
   const {
@@ -79,15 +78,9 @@ export function EditPage() {
     etag: stat.data?.etag,
     content: contentQuery.data,
     unlocked,
-    queryClient,
+    files,
     actions
   })
-  const removeContent = useCallback(
-    (contentPath: string) => {
-      queryClient.removeQueries({ queryKey: ['path', contentPath, 'content'] })
-    },
-    [queryClient]
-  )
   useEditSessionLock({
     path,
     entryPath: entry?.path,
@@ -96,7 +89,7 @@ export function EditPage() {
     draft,
     sealedDraft,
     actions,
-    removeContent,
+    removeContent: files.forgetContent,
     translate: t
   })
   useEditNavigation({ dirty, blocker, actions })
@@ -113,7 +106,7 @@ export function EditPage() {
       canSave,
       content,
       baselineEtag,
-      queryClient,
+      files,
       mutation: saveMutation,
       actions,
       focus: focusEditor,

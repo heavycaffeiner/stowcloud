@@ -7,11 +7,11 @@ import { TextField } from '../../../ui/TextField'
 import { useDocumentTitle } from '../../hooks/use-document-title'
 import { useSetupFlows, MIN_PASSWORD_LENGTH, toList } from './hooks/use-setup-flows'
 import { useSetupState } from './hooks/use-setup-state'
-import type { SetupFinding } from '../../../lib/api/setup'
 import { ProgressLinear } from '../../../ui/ProgressLinear'
 import * as authStyles from '../auth.css'
 import * as utilitiesStyles from '../../../ui/utilities.css'
 import { cx } from '../../../ui/cx'
+import type { SetupFinding } from '../../../features/auth/api'
 
 function warningText(
   t: (key: string, params?: Record<string, string | number>) => string,

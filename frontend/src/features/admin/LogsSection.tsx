@@ -1,7 +1,5 @@
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { useMemo, useRef } from 'react'
 import type { KeyboardEvent } from 'react'
-import { ALL_LOG_LEVELS, type AdminLogRecord, type AuditRow } from '../../lib/api/types'
 import { formatDateNs, formatDuration, formatNumber } from '../../lib/i18n'
 import { useI18n } from '../../hooks/use-i18n'
 import {
@@ -19,8 +17,7 @@ import {
   type TimelineSeries,
   type UnifiedLogItem
 } from '../../lib/admin/log-view'
-import { adminAuditQuery, adminLogsQuery, adminTimelineQuery } from '../../lib/query/logs'
-import { adminUsersQuery } from '../../lib/query/admin'
+import { useAdminAudit, useAdminLogs, useAdminTimeline, useAdminUsers } from './api'
 import { useDebounced } from '../../hooks/use-debounced'
 import { logsForm, useLogsFormStore } from '../../lib/store/logs.store'
 import { Button } from '../../ui/Button'
@@ -31,6 +28,7 @@ import { VirtualList } from '../../ui/VirtualList'
 import * as styles from './LogsSection.css'
 import * as utilitiesStyles from '../../ui/utilities.css'
 import { cx } from '../../ui/cx'
+import { type AdminLogRecord, ALL_LOG_LEVELS, type AuditRow } from './api'
 
 const SOURCE_MODES: readonly { mode: LogSourceMode; key: string }[] = [
   { mode: 'all', key: 'logs.source_all' },
@@ -77,10 +75,10 @@ export function LogsSection() {
   const settled = useDebounced(filters, DEBOUNCE_MS)
   const includesServer = pureIncludesServer(settled.sourceMode)
   const includesAudit = pureIncludesAudit(settled.sourceMode)
-  const logs = useInfiniteQuery(adminLogsQuery(settled, includesServer))
-  const audit = useInfiniteQuery(adminAuditQuery(settled, includesAudit))
-  const timeline = useQuery(adminTimelineQuery(settled, true))
-  const users = useQuery({ ...adminUsersQuery(), enabled: includesAudit })
+  const logs = useAdminLogs(settled, includesServer)
+  const audit = useAdminAudit(includesAudit)
+  const timeline = useAdminTimeline(settled, true)
+  const users = useAdminUsers(includesAudit)
   const records: AdminLogRecord[] = includesServer ? (logs.data?.pages.flatMap((page) => page.records) ?? []) : []
   const auditRows: AuditRow[] = includesAudit ? (audit.data?.pages.flatMap((page) => page.rows) ?? []) : []
   const items = useMemo(() => pureInterleave(records, auditRows, MAX_RECORDS), [records, auditRows])

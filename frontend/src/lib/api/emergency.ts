@@ -1,11 +1,9 @@
 // The safe-mode settings editor's client.
 //
-// Standalone, like setup.ts and for a sharper version of the same reason: this
-// module is loaded on a server whose engine may not have come up at all, so it
-// must not pull in ./client or ./http and with them the whole
-// authenticated surface. The four calls below are the entire contract, and
-// they are the only routes the emergency mux mounts.
-import { ApiError, type ApiErrorBody } from './types'
+// Loaded on a server whose engine may not have come up at all, so it must not
+// pull in the feature API modules and with them the authenticated surface.
+// These calls are the only routes the emergency mux mounts.
+import { ApiError, type ApiErrorBody } from '../../api/fetcher'
 
 const BASE = '/emergency/api'
 

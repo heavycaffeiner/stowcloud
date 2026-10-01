@@ -1,6 +1,6 @@
 import { type Dispatch, useReducer } from 'react'
-import type { AdminGrant, GrantPermName } from '../../../lib/api/client'
 import { mergeState, type StatePatch } from '../../../lib/merge-state'
+import type { AdminGrant, GrantPermName } from '../api'
 
 export interface GrantManagementState {
   expandedIds: Set<number>

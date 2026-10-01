@@ -5,13 +5,9 @@ import {
   type ServerSettingsGroup,
   type ServerSettingsValues
 } from './hooks/server-settings-state'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { describeApiError, serverKeyText } from '../../lib/api/error-text'
-import type { ApplyOutcome, SettingsSnapshot } from '../../lib/api/types'
+import { describeApiError } from '../../lib/api/error-text'
 import { BYTES_PER_MB, bytesToMb } from '../../lib/format/bytes'
 import { useI18n } from '../../hooks/use-i18n'
-import { adminOidcEndpointsQuery, adminSettingsMutation, adminSettingsQuery } from '../../lib/query/admin'
-import { keys } from '../../lib/query/keys'
 import { Button } from '../../ui/Button'
 import { PathPickerDialog } from '../files/PathPickerDialog'
 import { TextField } from '../../ui/TextField'
@@ -25,6 +21,14 @@ import { ProgressCircular } from '../../ui/ProgressCircular'
 import * as styles from './ServerSettingsSection.css'
 import * as adminStyles from './admin.css'
 import { cx } from '../../ui/cx'
+import {
+  useAdminSettings,
+  useOidcEndpoints,
+  useRefreshAdminSettings,
+  useSaveSettings,
+  type ApplyOutcome,
+  type SettingsSnapshot
+} from './api'
 
 type Group = ServerSettingsGroup
 type PathMode = 'folder' | 'file'
@@ -346,9 +350,9 @@ function findingList(outcome: ApplyOutcome | null, t: Translator): ReactNode {
 
 export function ServerSettingsSection() {
   const { t } = useI18n()
-  const queryClient = useQueryClient()
-  const settings = useQuery(adminSettingsQuery())
-  const endpoints = useQuery(adminOidcEndpointsQuery())
+  const settings = useAdminSettings()
+  const endpoints = useOidcEndpoints()
+  const refreshSettings = useRefreshAdminSettings()
   const snapshot = settings.data
   const [state, patchState] = useServerSettingsState()
   const {
@@ -379,7 +383,7 @@ export function ServerSettingsSection() {
   const setSecret = (value: string): void => patchState({ secret: value })
   const setAnnouncement = (value: string): void => patchState({ announcement: value })
   const errorRef = useRef<HTMLParagraphElement>(null)
-  const mutation = useMutation(adminSettingsMutation())
+  const mutation = useSaveSettings()
   const fields = useMemo(() => (snapshot ? valueMap(snapshot) : {}), [snapshot])
 
   useEffect(() => {
@@ -412,7 +416,7 @@ export function ServerSettingsSection() {
   }
   function rangeError(key: string, raw: string): string | null {
     const range = snapshot?.fields.find((field) => field.key === key)?.range
-    if (range?.kind === 'int') {
+    if (range?.kind === 'int' && range.min !== undefined && range.max !== undefined) {
       const number = Number(raw)
       if (!Number.isInteger(number) || number < range.min || number > range.max)
         return t('server.enter_a_value_between', { min: range.min, max: range.max })
@@ -492,16 +496,19 @@ export function ServerSettingsSection() {
       return
     }
     const req = requestFor(group, values, group === 'oidc' ? secret : '')
-    mutation.mutate({ section: group, req } as never, {
-      onSuccess: (result: ApplyOutcome) => {
-        setOutcome(result)
-        const accepted = result.stored || result.applied || result.restart_required
-        if (accepted) setBaselines((before) => ({ ...before, [group]: json(requestFor(group, values, '')) }))
-        if (result.restart_required) setRestartOutcome(result)
-        if (group === 'oidc' && accepted) setSecret('')
-      },
-      onError: (error) => setValidationError(describeApiError(error, t(`server.could_not_save_${group}_settings`)))
-    })
+    mutation.mutate(
+      { section: group, req },
+      {
+        onSuccess: (result) => {
+          setOutcome(result)
+          const accepted = result.stored || result.applied || result.restart_required
+          if (accepted) setBaselines((before) => ({ ...before, [group]: json(requestFor(group, values, '')) }))
+          if (result.restart_required) setRestartOutcome(result)
+          if (group === 'oidc' && accepted) setSecret('')
+        },
+        onError: (error) => setValidationError(describeApiError(error, t(`server.could_not_save_${group}_settings`)))
+      }
+    )
   }
   function status(group: Group): ReactNode {
     if (activeGroup !== group) return null
@@ -652,22 +659,6 @@ export function ServerSettingsSection() {
             ))}
           </div>
         </nav>
-        {snapshot.smb_public_bind_warning ? (
-          <p className={adminStyles.warning} role="alert">
-            {t('server.smb_reachable_from_outside_private')}
-          </p>
-        ) : null}
-        {snapshot.smb_overgrants?.length ? (
-          <div className={adminStyles.warning}>
-            <p role="alert">{t('server.smb_grants_more_than_configured')}</p>
-            <VirtualList
-              items={snapshot.smb_overgrants}
-              itemKey={(item) => `${item.share}-${item.user}-${item.key}`}
-              estimateSize={56}
-              renderItem={(item) => t(item.key, { share: item.share, user: item.user, detail: item.detail.join(', ') })}
-            />
-          </div>
-        ) : null}
         <ServerSmbCard
           t={t}
           values={values}
@@ -707,15 +698,7 @@ export function ServerSettingsSection() {
                   {otherFields.map((item) => (
                     <div key={item.key}>
                       <dt className={styles.otherLabel}>{fieldLabel(t, item.key)}</dt>
-                      <dd className={styles.otherValue}>
-                        {displayValue(t, item.value)}
-                        {item.readonly_reason_key ? (
-                          <>
-                            <br />
-                            <span className={styles.reason}>{serverKeyText(item.readonly_reason_key)}</span>
-                          </>
-                        ) : null}
-                      </dd>
+                      <dd className={styles.otherValue}>{displayValue(t, item.value)}</dd>
                     </div>
                   ))}
                 </dl>
@@ -921,7 +904,7 @@ export function ServerSettingsSection() {
         onClose={() => setRestartOutcome(null)}
         onRestarted={() => {
           setRestartOutcome(null)
-          void queryClient.invalidateQueries({ queryKey: keys.adminSettings() })
+          refreshSettings()
         }}
       />
       <PathPickerDialog

@@ -4,7 +4,23 @@
 // paths are "wanted", and what an `inval` should do about it belong one layer
 // up; this never reconnects on its own, so the caller's backoff is the only
 // backoff.
-import type { ClientMsg, ServerMsg } from './types'
+import { serverRoot } from '../../api/fetcher'
+
+/** The hub sends the path that changed rather than an etag: a token on the
+ *  frame would be one directory read old by the time it arrives. */
+export type ServerMsg = { t: 'inval'; path: string } | { t: 'pong' }
+
+export type ClientMsg = { t: 'sub'; paths: string[] } | { t: 'unsub'; paths: string[] } | { t: 'ping' }
+
+/** The frame is untrusted; anything but the two shapes the hub sends is null. */
+function serverMsgOf(data: unknown): ServerMsg | null {
+  if (typeof data !== 'string') return null
+  const value: unknown = JSON.parse(data)
+  if (value === null || typeof value !== 'object' || !('t' in value)) return null
+  if (value.t === 'pong') return { t: 'pong' }
+  if (value.t === 'inval' && 'path' in value && typeof value.path === 'string') return { t: 'inval', path: value.path }
+  return null
+}
 
 export interface EventsTransport {
   /** Opens (or re-opens) the socket. `onMessage` fires per decoded frame;
@@ -18,18 +34,10 @@ export interface EventsTransport {
   close(): void
 }
 
-/** Same-origin `ws`/`wss` URL for `/api/v1/events`, derived from the page's own
- *  origin so this works unmodified behind both plain `http` dev and TLS-
- *  terminating Tailscale `wss` in production, and through `vite dev`'s proxy
- *  (`vite.config.ts` sets `ws: true` for every `/api` path precisely so this
- *  case works too). `VITE_API_BASE` (cross-origin dev against a remote
- *  server) is the one case a same-origin derivation can't cover, so it gets
- *  a direct scheme swap instead. */
+/** The page's own origin with the scheme swapped, so TLS in front of the
+ *  server carries over; a configured server root gets the same swap. */
 function wsUrl(): string {
-  const rawBase = (import.meta.env.VITE_API_BASE ?? '') as string
-  if (rawBase) {
-    return rawBase.replace(/^http/, 'ws') + '/api/v1/events'
-  }
+  if (serverRoot) return serverRoot.replace(/^http/, 'ws') + '/api/v1/events'
   const proto = typeof location !== 'undefined' && location.protocol === 'https:' ? 'wss:' : 'ws:'
   const host = typeof location !== 'undefined' ? location.host : '127.0.0.1'
   return `${proto}//${host}/api/v1/events`
@@ -43,11 +51,13 @@ class WsEventsTransport implements EventsTransport {
     this.#ws = ws
     ws.addEventListener('open', onOpen)
     ws.addEventListener('message', (ev) => {
+      let msg: ServerMsg | null = null
       try {
-        onMessage(JSON.parse(ev.data as string) as ServerMsg)
+        msg = serverMsgOf(ev.data)
       } catch {
-        // See this class's doc comment: a bad frame is dropped, not fatal.
+        // A frame that is not JSON is dropped, like any other unreadable one.
       }
+      if (msg) onMessage(msg)
     })
     ws.addEventListener('close', onClose)
     // A connection-level error is always followed by a `close` event too

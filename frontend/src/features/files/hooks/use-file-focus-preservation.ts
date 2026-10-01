@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
-import type { Entry } from '../../../lib/api/types'
 import { selection } from '../../../lib/store/selection.store'
+import type { Entry } from '../api'
 
 export function useFileFocusPreservation(entries: readonly Entry[], focused: number | null) {
   const focusSnapshot = useRef<{ names: string[]; focusedName: string | null }>({ names: [], focusedName: null })

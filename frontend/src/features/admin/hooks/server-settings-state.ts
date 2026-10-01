@@ -1,6 +1,6 @@
 import { type Dispatch, useReducer } from 'react'
-import type { ApplyOutcome } from '../../../lib/api/types'
 import { mergeState, type StatePatch } from '../../../lib/merge-state'
+import type { ApplyOutcome } from '../api'
 
 export type ServerSettingsGroup =
   'smb' | 'search' | 'thumbnail' | 'archive' | 'network' | 'db' | 'homes' | 'watch' | 'rate' | 'oidc'

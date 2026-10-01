@@ -1,4 +1,3 @@
-import type { AdminShare, ShareBackend, ShareEncryption } from '../../lib/api/client'
 import { Button } from '../../ui/Button'
 import { Icon } from '../../ui/Icon'
 import { IconButton } from '../../ui/IconButton'
@@ -8,6 +7,8 @@ import { VirtualList } from '../../ui/VirtualList'
 import * as styles from './ShareManagementList.css'
 import * as adminStyles from './admin.css'
 import * as buttonStyles from '../../ui/Button.css'
+import type { AdminShare, ShareBackend } from './api'
+import type { ShareEncryption } from '../shares/api'
 
 type Translator = (key: string, params?: Record<string, string | number>) => string
 

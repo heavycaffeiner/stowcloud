@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, type Entry } from '../../lib/api/client'
+import { contentUrl, thumbUrl, type Entry } from '../files/api'
 import { isVideoFile, mimeTypeOf } from './logic/media-utils'
 import { registerMediaSource, releaseMediaSource, swReady } from '../../lib/crypto/download-sw'
 import { decryptDownload, isUnlocked } from '../../lib/crypto/e2ee'
@@ -111,7 +111,7 @@ export function Thumbnail({ entry, dim, fallback, iconSize, imageClassName }: Th
       return () => undefined
     }
     if (isVid) {
-      const source = api.contentUrl(entry)
+      const source = contentUrl(entry)
       if (source)
         void extractVideoFrame(source)
           .then((next) => {
@@ -131,7 +131,7 @@ export function Thumbnail({ entry, dim, fallback, iconSize, imageClassName }: Th
       const encryption = await encryptionForLabel(shareLabelOf(entry.path)).catch(() => null)
       if (cancelled) return
       if (!encryption) {
-        const next = api.thumbUrl(entry, dim)
+        const next = thumbUrl(entry, dim)
         if (next) {
           cachePut(key, next)
           setState({ url: next })
@@ -149,7 +149,7 @@ export function Thumbnail({ entry, dim, fallback, iconSize, imageClassName }: Th
         return
       }
       try {
-        const response = await fetch(api.contentUrl(entry))
+        const response = await fetch(contentUrl(entry))
         if (!response.ok) throw new Error(`HTTP ${response.status}`)
         const plaintext = await decryptDownload(new Uint8Array(await response.arrayBuffer()), encryption.salt)
         if (cancelled) return

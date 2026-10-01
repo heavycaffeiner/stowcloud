@@ -9,7 +9,7 @@
 // route unmounts when a result opens. Keeping the submitted question, answer,
 // and scroll anchor in this one store lets that route remount without silently
 // changing the question or losing the item the user just opened.
-import type { SearchHit, SearchProgress } from '../api/client'
+import type { SearchHit, SearchProgress } from '../../features/search/api'
 import { create } from 'zustand'
 
 export type SearchKind = 'any' | 'file' | 'dir'

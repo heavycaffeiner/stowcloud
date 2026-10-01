@@ -1,6 +1,6 @@
-import { ALL_GRANT_PERMS, type GrantPermName } from '../../lib/api/client'
 import { Checkbox } from '../../ui/Checkbox'
 import * as styles from './GrantPermissionGrid.css'
+import { ALL_GRANT_PERMS, type GrantPermName } from './api'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
 

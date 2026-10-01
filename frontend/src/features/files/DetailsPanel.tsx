@@ -1,9 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
-import { useQueries } from '@tanstack/react-query'
-import { ApiError, type Entry } from '../../lib/api/types'
 import { joinPath } from '../../lib/api/path-utils'
-import { folderSizeQuery } from '../../lib/query/files'
 import { formatBytes } from '../../lib/format/bytes'
 import { formatEntrySize } from '../../lib/format/entry-size'
 import { formatModifiedDateNs } from '../../lib/i18n'
@@ -18,6 +15,8 @@ import { getEntryIcon } from './FileRow'
 import * as styles from './DetailsPanel.css'
 import { cx } from '../../ui/cx'
 import { vars } from '../../ui/theme.css'
+import { ApiError } from '../../api/fetcher'
+import { useFolderSizes, type Entry } from './api'
 
 interface DetailsPanelProps {
   path: string
@@ -78,7 +77,7 @@ export function DetailsPanel({
         : [path]
       : selected.filter((entry) => entry.kind === 'dir').map((entry) => joinPath(path, entry.name))
   const base = many ? selected.filter((entry) => entry.kind !== 'dir').reduce((sum, entry) => sum + entry.size, 0) : 0
-  const queries = useQueries({ queries: targets.map((target) => folderSizeQuery(target)) })
+  const queries = useFolderSizes(targets)
   const measured = queries.some((query) => query.isError)
     ? 'failed'
     : queries.some((query) => query.isPending)

@@ -1,10 +1,8 @@
 import { useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
-import { ApiError, type AppPasswordInfo } from '../../lib/api/client'
 import { describeApiError } from '../../lib/api/error-text'
 import { formatDateNs } from '../../lib/i18n'
 import { useI18n } from '../../hooks/use-i18n'
-import { appPasswordsQuery, createAppPasswordMutation, revokeAppPasswordMutation } from '../../lib/query/account'
+import { useAppPasswords, useCreateAppPassword, useRevokeAppPassword } from './api'
 import { Button } from '../../ui/Button'
 import { Switch } from '../../ui/Switch'
 import { TextField } from '../../ui/TextField'
@@ -12,13 +10,15 @@ import { VirtualList } from '../../ui/VirtualList'
 import { SettingsDialog } from './SettingsDialog'
 import * as styles from './AppPasswordsSection.css'
 import * as settingsCardStyles from './SettingsCard.css'
+import { ApiError } from '../../api/fetcher'
+import type { AppPasswordInfo } from './api'
 
 export function AppPasswordsSection() {
   const { t } = useI18n()
-  const list = useQuery(appPasswordsQuery())
-  const create = useMutation(createAppPasswordMutation())
-  const revoke = useMutation(revokeAppPasswordMutation())
-  const wipe = useMutation(revokeAppPasswordMutation())
+  const list = useAppPasswords()
+  const create = useCreateAppPassword()
+  const revoke = useRevokeAppPassword()
+  const wipe = useRevokeAppPassword()
   type AppPasswordState = {
     createOpen: boolean
     newName: string
@@ -83,9 +83,9 @@ export function AppPasswordsSection() {
     create.mutate(
       { name: newName.trim(), currentPassword: newCurrent, scope: newReadOnly ? { readOnly: true } : undefined },
       {
-        onSuccess: (result) => {
+        onSuccess: (token) => {
           setCreateOpen(false)
-          setIssuedToken(result.token)
+          setIssuedToken(token)
           setIssuedAcknowledged(false)
           setTokenCopyState('idle')
           void list.refetch()

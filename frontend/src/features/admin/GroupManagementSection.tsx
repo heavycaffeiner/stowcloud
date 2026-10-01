@@ -1,10 +1,6 @@
 import { useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
-import type { AdminGroup } from '../../lib/api/client'
-import { ApiError } from '../../lib/api/client'
 import { describeApiError } from '../../lib/api/error-text'
 import { useI18n } from '../../hooks/use-i18n'
-import { adminGroupMutation, adminGroupsQuery, adminUsersQuery } from '../../lib/query/admin'
 import { Button } from '../../ui/Button'
 import { Dialog } from '../../ui/Dialog'
 import { Icon } from '../../ui/Icon'
@@ -16,13 +12,24 @@ import { ListItem } from '../../ui/ListItem'
 import { GrantManagementSection } from './GrantManagementSection'
 import * as styles from './GroupManagementSection.css'
 import * as adminStyles from './admin.css'
+import {
+  useAddGroupMember,
+  useAdminGroups,
+  useAdminUsers,
+  useCreateGroup,
+  useDeleteGroup,
+  useRemoveGroupMember,
+  useRenameGroup,
+  type AdminGroup
+} from './api'
+import { ApiError } from '../../api/fetcher'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
 
 export function GroupManagementSection() {
   const { t, tp } = useI18n()
-  const groupsQuery = useQuery(adminGroupsQuery())
-  const usersQuery = useQuery(adminUsersQuery())
+  const groupsQuery = useAdminGroups()
+  const usersQuery = useAdminUsers()
   const groups = groupsQuery.data ?? []
   const users = usersQuery.data ?? []
   const loading = groupsQuery.isPending || usersQuery.isPending
@@ -74,11 +81,11 @@ export function GroupManagementSection() {
   const setMembersTargetId = (value: number | null): void => patchState({ membersTargetId: value })
   const setAddMemberId = (value: string): void => patchState({ addMemberId: value })
   const setGrantsTarget = (value: AdminGroup | null): void => patchState({ grantsTarget: value })
-  const create = useMutation(adminGroupMutation())
-  const rename = useMutation(adminGroupMutation())
-  const remove = useMutation(adminGroupMutation())
-  const addMember = useMutation(adminGroupMutation())
-  const removeMember = useMutation(adminGroupMutation())
+  const create = useCreateGroup()
+  const rename = useRenameGroup()
+  const remove = useDeleteGroup()
+  const addMember = useAddGroupMember()
+  const removeMember = useRemoveGroupMember()
 
   const membersTarget = membersTargetId === null ? null : (groups.find((group) => group.id === membersTargetId) ?? null)
   const availableUsers = users.filter((user) => !membersTarget?.members.includes(user.id))
@@ -93,9 +100,9 @@ export function GroupManagementSection() {
       ? describeApiError(removeMember.error, t('common.could_not_remove'))
       : null
   const memberBusyId =
-    addMember.isPending && addMember.variables?.kind === 'add-member'
+    addMember.isPending && addMember.variables
       ? addMember.variables.userId
-      : removeMember.isPending && removeMember.variables?.kind === 'remove-member'
+      : removeMember.isPending && removeMember.variables
         ? removeMember.variables.userId
         : null
 
@@ -121,7 +128,7 @@ export function GroupManagementSection() {
       setCreateValidation(t('group.enter_group_name'))
       return
     }
-    create.mutate({ kind: 'create', req: { name: newName.trim() } }, { onSuccess: () => setCreateOpen(false) })
+    create.mutate(newName.trim(), { onSuccess: () => setCreateOpen(false) })
   }
 
   function openRename(group: AdminGroup): void {
@@ -142,10 +149,7 @@ export function GroupManagementSection() {
       setRenameValidation(t('group.enter_group_name'))
       return
     }
-    rename.mutate(
-      { kind: 'rename', id: renameTarget.id, patch: { name: renameName.trim() } },
-      { onSuccess: () => setRenameTarget(null) }
-    )
+    rename.mutate({ id: renameTarget.id, name: renameName.trim() }, { onSuccess: () => setRenameTarget(null) })
   }
 
   function askDelete(group: AdminGroup): void {
@@ -159,7 +163,7 @@ export function GroupManagementSection() {
 
   function submitDelete(): void {
     if (!deleteTarget) return
-    remove.mutate({ kind: 'delete', id: deleteTarget.id }, { onSuccess: () => setDeleteTarget(null) })
+    remove.mutate(deleteTarget.id, { onSuccess: () => setDeleteTarget(null) })
   }
 
   function openMembers(group: AdminGroup): void {
@@ -176,14 +180,14 @@ export function GroupManagementSection() {
   function submitAddMember(): void {
     if (!membersTarget || addMemberId === '') return
     addMember.mutate(
-      { kind: 'add-member', id: membersTarget.id, userId: Number(addMemberId) },
+      { groupId: membersTarget.id, userId: Number(addMemberId) },
       { onSuccess: () => setAddMemberId('') }
     )
   }
 
   function submitRemoveMember(userId: number): void {
     if (!membersTarget) return
-    removeMember.mutate({ kind: 'remove-member', id: membersTarget.id, userId })
+    removeMember.mutate({ groupId: membersTarget.id, userId })
   }
 
   function openGrants(group: AdminGroup): void {

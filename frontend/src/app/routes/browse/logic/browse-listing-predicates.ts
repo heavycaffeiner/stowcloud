@@ -1,6 +1,6 @@
-import type { Entry } from '../../../../lib/api/client'
 import { isVideoFile } from '../../../../features/preview/logic/media-utils'
 import type { BrowseFilterDate, BrowseFilterType } from './types'
+import type { Entry } from '../../../../features/files/api'
 
 const DOCUMENT_EXTENSIONS = new Set([
   'pdf',

@@ -1,25 +1,24 @@
 import { useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
-import { ApiError } from '../../lib/api/client'
-import { oidcErrorMessage } from '../../lib/api/oidc'
 import { describeApiError } from '../../lib/api/error-text'
 import { formatDateNs } from '../../lib/i18n'
 import { useI18n } from '../../hooks/use-i18n'
-import { oidcLinkStartMutation, oidcUnlinkMutation } from '../../lib/query/account'
-import { oidcConfigQuery, sessionQuery } from '../../lib/query/session'
+import { useOidcConfig, useSession } from '../auth/api'
+import { useOidcLinkStart, useOidcUnlink } from './api'
 import { Button } from '../../ui/Button'
 import { TextField } from '../../ui/TextField'
 import { SettingsDialog } from './SettingsDialog'
 import * as styles from './OidcSection.css'
 import * as settingsCardStyles from './SettingsCard.css'
 import { cx } from '../../ui/cx'
+import { ApiError } from '../../api/fetcher'
+import { oidcErrorMessage } from '../auth/oidc-error'
 
 export function OidcSection() {
   const { t } = useI18n()
-  const session = useQuery(sessionQuery())
-  const config = useQuery(oidcConfigQuery())
-  const link = useMutation(oidcLinkStartMutation())
-  const unlink = useMutation(oidcUnlinkMutation())
+  const session = useSession()
+  const config = useOidcConfig()
+  const link = useOidcLinkStart()
+  const unlink = useOidcUnlink()
   type OidcState = {
     dialog: 'connect' | 'disconnect' | null
     connectPassword: string
@@ -66,8 +65,8 @@ export function OidcSection() {
     link.mutate(
       { password: connectPassword, returnTo: window.location.pathname },
       {
-        onSuccess: (result) => {
-          window.location.href = result.authorize_url
+        onSuccess: (url) => {
+          window.location.href = url
         },
         onError: (value) => setConnectError(describe(value, t('oidc.could_not_start_connection_try')))
       }

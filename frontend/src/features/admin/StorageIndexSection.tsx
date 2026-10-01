@@ -1,18 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { formatBytes } from '../../lib/format/bytes'
 import { formatDuration, formatNumber } from '../../lib/i18n'
 import { useI18n } from '../../hooks/use-i18n'
 import { describeApiError } from '../../lib/api/error-text'
 import {
-  adminBuildIndexMutation,
-  adminIndexEstimateQuery,
-  adminIndexSettingsMutation,
-  adminIndexStatusQuery,
-  adminSettingsQuery,
-  adminStorageQuery
-} from '../../lib/query/admin'
-import { jobQuery } from '../../lib/query/jobs'
+  useAdminSettings,
+  useAdminStorage,
+  useBuildIndex,
+  useIndexEstimate,
+  useIndexStatus,
+  useRefreshIndexStatus,
+  useSetNameIndex
+} from './api'
+import { useJobStatus } from '../jobs/api'
 import { jobTray } from '../../lib/store/jobs.store'
 import { Button } from '../../ui/Button'
 import { Icon } from '../../ui/Icon'
@@ -33,21 +33,21 @@ const ACCURACY: Record<string, string> = {
 
 export function StorageIndexSection() {
   const { t } = useI18n()
-  const qc = useQueryClient()
-  const storage = useQuery(adminStorageQuery())
+  const storage = useAdminStorage()
   const storageItems = useMemo(() => (storage.data ? [storage.data, ...storage.data.shares] : []), [storage.data])
-  const status = useQuery(adminIndexStatusQuery())
-  const settings = useQuery(adminSettingsQuery())
+  const status = useIndexStatus()
+  const settings = useAdminSettings()
   const [estimateRequested, setEstimateRequested] = useState(false)
-  const estimate = useQuery({ ...adminIndexEstimateQuery(), enabled: estimateRequested })
-  const toggle = useMutation(adminIndexSettingsMutation())
-  const build = useMutation(adminBuildIndexMutation())
+  const estimate = useIndexEstimate(estimateRequested)
+  const toggle = useSetNameIndex()
+  const build = useBuildIndex()
   const [jobId, setJobId] = useState<string | null>(null)
-  const job = useQuery({ ...jobQuery(jobId ?? ''), enabled: jobId !== null })
+  const job = useJobStatus(jobId)
+  const refreshStatus = useRefreshIndexStatus()
   const nameEnabled = settings.data?.fields.find((field) => field.key === 'search.name_index_enabled')?.value === true
   useEffect(() => {
-    if (job.data && job.data.state !== 'running') void qc.invalidateQueries({ queryKey: ['admin', 'index-status'] })
-  }, [job.data, qc])
+    if (job.data && job.data.state !== 'running') refreshStatus()
+  }, [job.data, refreshStatus])
   function estimateCost(): void {
     if (!estimateRequested) setEstimateRequested(true)
     else void estimate.refetch()

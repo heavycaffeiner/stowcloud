@@ -1,35 +1,8 @@
-// frontend/src/lib/crypto/encrypted-shares.ts - which shares this account sees
-// are end-to-end encrypted, fetched once per session and cached, keyed on
-// the vpath label a destination or entry is addressed by.
-//
-// `ShareEncryption.labels` (frontend/src/lib/api/types.ts) is a per-caller
-// projection, not a stored column: an account can hold two grants on the
-// same share under two different subpaths, each surfaced under its own
-// label, so the same share can appear under more than one label for this
-// account and under entirely different labels for another. That is why this
-// cache is a plain module-scoped variable rather than anything persisted:
-// it is only ever correct for the account that is currently signed in, and
-// must be dropped on logout so the next account does not inherit it.
-//
-// This module imports nothing from the api layer at runtime, and that is
-// deliberate rather than incidental: `api/http.ts` reads the label logic
-// below, so a runtime import back into `api/client.ts` would close a cycle
-// through it, and `client.ts`'s eager `export const api = httpApi` evaluates
-// before such a cycle resolves, capturing `api` as undefined for the
-// process's whole life. `client.ts` pushes its fetcher in
-// here instead, so the dependency runs one way. The type-only import below
-// is erased at compile time and closes nothing.
-import type { ShareEncryption } from '../api/types'
-
-/** The fetcher `client.ts` installs when it loads. Unset until then, which is a programming error rather than a
- *  state to tolerate: see `encryptedShares`. */
-let source: (() => Promise<ShareEncryption[]>) | null = null
-
-/** Installs the backend this cache reads through. Called once, from
- *  `api/client.ts`, at module initialisation. */
-export function setEncryptedSharesSource(fetch: () => Promise<ShareEncryption[]>): void {
-  source = fetch
-}
+// Which shares this account sees are end-to-end encrypted, fetched once per
+// session and cached by the label a path is addressed under. The set is only
+// correct for the signed-in account, so it lives in memory and is dropped on
+// logout.
+import { fetchShareEncryptions, type ShareEncryption } from '../../features/shares/api'
 
 let cache: Promise<ShareEncryption[]> | null = null
 
@@ -42,13 +15,7 @@ let cache: Promise<ShareEncryption[]> | null = null
  */
 export function encryptedShares(): Promise<ShareEncryption[]> {
   if (cache === null) {
-    // Rejecting rather than resolving empty: an unset source means the api
-    // layer was never initialised, and answering "no share is encrypted" to
-    // that question is how plaintext reaches an encrypted share.
-    const fetch = source
-    cache = fetch === null ? Promise.reject(new Error('the encrypted-share source is not installed')) : fetch()
-    // Not cached: the next caller tries again rather than reusing a
-    // permanently-rejected promise for a transient failure.
+    cache = fetchShareEncryptions()
     cache.catch(() => {
       cache = null
     })
@@ -64,8 +31,7 @@ export function invalidateEncryptedShares(): void {
 }
 
 /** The first path segment of a vpath (`/label/rest` or `label/rest`): the
- *  share label every destination and every listed entry is addressed by.
- *  Same rule `api/http.ts`'s `recentList` already splits a served path on. */
+ *  share label every destination and every listed entry is addressed by. */
 export function shareLabelOf(vpath: string): string {
   const trimmed = vpath.startsWith('/') ? vpath.slice(1) : vpath
   const cut = trimmed.indexOf('/')

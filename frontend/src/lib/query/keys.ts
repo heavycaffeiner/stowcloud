@@ -1,9 +1,10 @@
 // Every query key in the app, in one place.
 //
 // Keys are hierarchical so a write invalidates a prefix instead of naming each
-// query it touched: `keys.dir(path)` covers that directory's listing, its
-// `stat` and its measured size, and `keys.admin()` covers every admin screen.
-import type { AdminLogQuery, AdminLogsTimelineQuery, AuditQuery, Order, SortKey } from '../api/client'
+// query it touched: `['path', p]` covers that path's listing, stat, size and
+// content, and `keys.admin()` covers every admin screen.
+import type { AdminLogQuery, AdminLogsTimelineQuery, AuditQuery } from '../../features/admin/api'
+import type { Order, SortKey } from '../../features/files/api'
 
 export interface Sort {
   readonly key: SortKey
@@ -33,7 +34,6 @@ export const keys = {
   // predicate, every path under it: the split into "directory reads" and "file
   // reads" only made it possible for a file's own `stat` to survive a change
   // to the folder holding it.
-  path: (path: string) => ['path', path] as const,
   /** Prefix for invalidating every directory, stat, size, content, and archive read. */
   paths: () => ['path'] as const,
   pathList: (path: string, sort: Sort) => ['path', path, 'list', sort.key, sort.order] as const,
@@ -49,6 +49,8 @@ export const keys = {
    *  the answer, and re-fetching it per folder would be one request per
    *  navigation for a value that changes only when a share does. */
   shareEncryption: (label: string) => ['share-encryption', label] as const,
+  /** Every encrypted share, and by prefix every label's answer above. */
+  shareEncryptions: () => ['share-encryption'] as const,
   recent: () => ['recent'] as const,
   trash: () => ['trash'] as const,
   shareLinks: (path?: string) => ['share-links', path ?? null] as const,
@@ -76,5 +78,7 @@ export const keys = {
   adminLogs: (query: AdminLogQuery) => ['admin', 'logs', query] as const,
   adminAudit: (query: AuditQuery) => ['admin', 'audit', query] as const,
   adminTimeline: (query: AdminLogsTimelineQuery) => ['admin', 'timeline', query] as const,
+  /** A setup token keys apart the first-run listing from the signed-in one. */
+  hostListing: (token: string | null, path: string) => ['host-fs', token, path] as const,
   systemHealth: () => ['system-health'] as const
 } as const

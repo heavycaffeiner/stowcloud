@@ -1,7 +1,6 @@
-import { useQuery } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { useI18n } from '../../../hooks/use-i18n'
-import { sessionQuery } from '../../../lib/query/session'
+import { useSession } from '../../../features/auth/api'
 import { useDocumentTitle } from '../../hooks/use-document-title'
 import { PageTabs, type PageTabItem } from '../PageTabs'
 import { AdminPanels, SectionLoading } from './AdminPanels'
@@ -35,7 +34,7 @@ function AdminFrame({ children }: { children: ReactNode }) {
 
 export function AdminPage() {
   const { t } = useI18n()
-  const session = useQuery(sessionQuery())
+  const session = useSession()
   const { tab, selectTab } = useAdminTab()
 
   useDocumentTitle(t('admin.admin_stowcloud'))

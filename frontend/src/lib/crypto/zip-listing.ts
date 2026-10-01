@@ -3,8 +3,7 @@
 // holds no key for an encrypted share, so it cannot list this itself.
 // Character-encoding fallback mirrors archive.go's ListArchive.
 import { ZipReader, Reader } from '@zip.js/zip.js'
-import { api } from '../api/client'
-import type { ArchiveEntry, ArchiveListing, Entry } from '../api/types'
+import { contentUrl, type ArchiveEntry, type ArchiveListing, type Entry } from '../../features/files/api'
 import { BLOCK_SIZE, ciphertextSpanForRange, decryptPlaintextRange, plaintextSizeFromCiphertextSize } from './e2ee'
 
 // Matches limits.ArchiveEntriesListed in backend/internal/preview/limits.
@@ -132,7 +131,7 @@ class EncryptedZipReader extends Reader<void> {
    *  makes for the same reason. */
   private async nonce(): Promise<Uint8Array> {
     if (this.nonce0) return this.nonce0
-    const res = await fetch(api.contentUrl(this.entry), { credentials: 'include', headers: { Range: 'bytes=0-31' } })
+    const res = await fetch(contentUrl(this.entry), { credentials: 'include', headers: { Range: 'bytes=0-31' } })
     if (!res.ok || !res.body) {
       throw new Error(`could not read the rclone-crypt header for ${this.entry.path}: HTTP ${res.status}`)
     }
@@ -161,7 +160,7 @@ class EncryptedZipReader extends Reader<void> {
     const rangeStart = startBlock * BLOCK_SIZE
     const rangeEnd = Math.min(endBlock * BLOCK_SIZE + BLOCK_SIZE, this.size)
     const span = ciphertextSpanForRange(rangeStart, rangeEnd, this.size)
-    const res = await fetch(api.contentUrl(this.entry), {
+    const res = await fetch(contentUrl(this.entry), {
       credentials: 'include',
       headers: { Range: `bytes=${span.offset}-${span.offset + span.length - 1}` }
     })
@@ -200,7 +199,7 @@ class EncryptedZipReader extends Reader<void> {
 
 /**
  * Lists a zip archive stored on an encrypted share, in the same shape
- * `api.archiveList` returns for a plain one, so the preview dialog renders one
+ * the server's own listing returns for a plain one, so the preview dialog renders one
  * listing type regardless of which share produced it.
  *
  * `entry` is the archive's own listing row (its `size` is the file's

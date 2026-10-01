@@ -1,14 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
 import { describeApiError } from '../../lib/api/error-text'
-import type { ApplyOutcome } from '../../lib/api/types'
 import { useI18n } from '../../hooks/use-i18n'
-import { adminRestartMutation, systemHealthQuery } from '../../lib/query/admin'
+import { useRestartServer, useSystemHealth } from './api'
 import { Button } from '../../ui/Button'
 import { Dialog } from '../../ui/Dialog'
 import { ProgressCircular } from '../../ui/ProgressCircular'
 import { nextRestartWaitStep } from './logic/restart-wait'
 import * as styles from './RestartDialog.css'
+import type { ApplyOutcome } from './api'
 
 const POLL_INTERVAL_MS = 200
 const WAIT_BUDGET_MS = 45_000
@@ -37,8 +36,8 @@ export function RestartDialog({ open, outcome, onClose, onRestarted }: RestartDi
   const setWaitStartedAt = (value: number | null): void => patchState({ waitStartedAt: value })
   const setSawOutage = (value: boolean): void => patchState({ sawOutage: value })
   const wasOpen = useRef(false)
-  const restart = useMutation(adminRestartMutation())
-  const health = useQuery(systemHealthQuery(phase === 'waiting' ? POLL_INTERVAL_MS : false))
+  const restart = useRestartServer()
+  const health = useSystemHealth(phase === 'waiting' ? POLL_INTERVAL_MS : false)
   useEffect(() => {
     if (open && !wasOpen.current) {
       setPhase('confirm')

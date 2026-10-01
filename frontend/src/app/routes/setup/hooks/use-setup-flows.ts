@@ -1,12 +1,10 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { ApiError, api, type CreateShareReq } from '../../../../lib/api/client'
 import { describeApiError } from '../../../../lib/api/error-text'
-import { createInitialAdmin, SetupValidationError } from '../../../../lib/api/setup'
 import type { SetupActions, SetupState } from './use-setup-state'
-import { keys } from '../../../../lib/query/keys'
-import { loginMutation } from '../../../../lib/query/session'
 import { useI18n } from '../../../../hooks/use-i18n'
+import { ApiError } from '../../../../api/fetcher'
+import { useCreateShare } from '../../../../features/admin/api'
+import { SetupValidationError, useCreateInitialAdmin, useLoadSession, useLogin } from '../../../../features/auth/api'
 
 export const MIN_PASSWORD_LENGTH = 10
 export const toList = (value: string): string[] =>
@@ -18,10 +16,10 @@ export const toList = (value: string): string[] =>
 export function useSetupFlows(state: SetupState, actions: SetupActions) {
   const { t } = useI18n()
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
-  const setup = useMutation({ mutationFn: createInitialAdmin })
-  const login = useMutation(loginMutation())
-  const retryShare = useMutation({ mutationFn: (req: CreateShareReq) => api.adminCreateShare(req) })
+  const setup = useCreateInitialAdmin()
+  const login = useLogin()
+  const loadSession = useLoadSession()
+  const retryShare = useCreateShare()
   const messageFor = (error: unknown): string => {
     if (error instanceof ApiError) {
       if (error.code === 'setup.invalid_token') return t('setup.invalid_setup_token_check_server')
@@ -40,7 +38,7 @@ export function useSetupFlows(state: SetupState, actions: SetupActions) {
           actions.patch({ doneButLoginFailed: true })
           return
         }
-        await api.session()
+        await loadSession()
         actions.patch({ pickerAuthenticated: true })
       } catch {
         actions.patch({ doneButLoginFailed: true })
@@ -82,8 +80,6 @@ export function useSetupFlows(state: SetupState, actions: SetupActions) {
         first_share: state.shareName.trim() ? { name: state.shareName.trim(), host: state.sharePath.trim() } : undefined
       })
       actions.patch({ accountCreated: true, warnings: result.warnings, shareFailed: result.share_failed === true })
-      void queryClient.invalidateQueries({ queryKey: keys.session() })
-      void queryClient.invalidateQueries({ queryKey: keys.setupRequired() })
       if (result.warnings.length > 0 || result.share_failed === true) return
       await continueAfterSetup()
     } catch (error) {

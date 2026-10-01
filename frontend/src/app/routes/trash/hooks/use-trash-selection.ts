@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
-import type { TrashEntry } from '../../../../lib/api/types'
 import { selection, useSelectionStore } from '../../../../lib/store/selection.store'
+import type { TrashEntry } from '../../../../features/trash/api'
 
 export function useTrashSelection(entries: readonly TrashEntry[]) {
   const selected = useSelectionStore((state) => state.names)

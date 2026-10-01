@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MutableRefObject, RefObject } from 'react'
 import { useEventListener } from '../../../hooks/use-event-listener'
-import type { SearchDone, SearchHit, SearchProgress } from '../../../lib/api/client'
 import { resolveExtensions } from '../../../lib/search/filters'
 import { search, type SearchSnapshot } from '../../../lib/store/search.store'
 import {
@@ -19,8 +18,8 @@ import {
   viewFor,
   windowFor
 } from '../logic/search-selectors'
-import { api } from '../../../lib/api/client'
 import type { WindowResult } from '../../../lib/virtual/windowing'
+import { searchStream, type SearchDone, type SearchHit, type SearchProgress } from '../api'
 const FLUSH_MS = 100
 
 type StateSetter = <K extends keyof SearchPanelState>(
@@ -131,7 +130,7 @@ export function useSearchController({
     set('ran', true)
     set('running', true)
     const { kind, presets, extQuery } = latestRef.current
-    const stopStream = api.searchStream(
+    const stopStream = searchStream(
       {
         query,
         kind: kind === 'any' ? undefined : kind,

@@ -1,6 +1,11 @@
 // The public share page's client: how it reads the server's answers.
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ShareNotFoundError, ShareUnlockFailedError, shareDownloadUrl, unlockShare } from '../../../src/lib/api/share'
+import {
+  ShareNotFoundError,
+  ShareUnlockFailedError,
+  shareDownloadUrl,
+  unlockShare
+} from '../../../src/features/links/api'
 
 describe('shareDownloadUrl', () => {
   it('a download is an address, and a subpath rides in the query', () => {

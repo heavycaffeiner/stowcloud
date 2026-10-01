@@ -1,10 +1,8 @@
-import { useQuery } from '@tanstack/react-query'
 import { describeApiError } from '../../../lib/api/error-text'
 import { baseName, normalizePath } from '../../../lib/api/path-utils'
 import { useI18n } from '../../../hooks/use-i18n'
-import { adminLinksQuery } from '../../../lib/query/admin'
-import { sessionQuery } from '../../../lib/query/session'
-import { shareLinksQuery } from '../../../lib/query/shares'
+import { useSession } from '../../../features/auth/api'
+import { useAllShareLinks, useShareLinks } from '../../../features/links/api'
 import { VirtualList } from '../../../ui/VirtualList'
 import { useDocumentTitle } from '../../hooks/use-document-title'
 import { SecondaryPageShell } from '../secondary/SecondaryPageShell'
@@ -17,10 +15,10 @@ import * as secondaryPageShellStyles from '../secondary/SecondaryPageShell.css'
 
 export function LinksPage() {
   const { t } = useI18n()
-  const session = useQuery(sessionQuery())
+  const session = useSession()
   const isAdmin = session.data?.user.is_admin === true
-  const own = useQuery({ ...shareLinksQuery(undefined), enabled: session.data !== undefined && !isAdmin })
-  const all = useQuery({ ...adminLinksQuery(), enabled: isAdmin })
+  const own = useShareLinks(undefined, session.data !== undefined && !isAdmin)
+  const all = useAllShareLinks(isAdmin)
   const management = useLinkManagement(session.data?.user.id, t)
   const rows: LinkRow[] = isAdmin ? (all.data ?? []) : (own.data ?? [])
   const activeQuery = isAdmin ? all : own

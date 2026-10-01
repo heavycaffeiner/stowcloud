@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { ApiError } from '../../../src/lib/api/types'
-import { isUnauthenticated, screenOf } from '../../../src/lib/query/session'
+import { ApiError } from '../../../src/api/fetcher'
+import { isUnauthenticated, screenOf } from '../../../src/features/auth/api'
 
 describe('which screen the app is on', () => {
   it('shows the browser as soon as there is a session', () => {

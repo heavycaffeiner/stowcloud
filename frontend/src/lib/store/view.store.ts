@@ -1,6 +1,6 @@
 // How the file browser is laid out and ordered. All three outlive the page:
 // a toggle that resets on reload is one the user has to re-set on reload.
-import type { Order, SortKey } from '../api/types'
+import type { Order, SortKey } from '../../features/files/api'
 import { create } from 'zustand'
 import { readPref, writePref } from './persist'
 

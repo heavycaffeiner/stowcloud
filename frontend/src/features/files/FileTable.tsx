@@ -1,6 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, MouseEvent as ReactMouseEvent } from 'react'
-import type { Entry, Perms, SortKey } from '../../lib/api/types'
 import { selection, useSelectionStore } from '../../lib/store/selection.store'
 import { useCompact } from '../../ui/use-compact'
 import { useViewStore, view } from '../../lib/store/view.store'
@@ -23,6 +22,8 @@ import * as styles from './FileTable.css'
 import * as fileRowStyles from './FileRow.css'
 import * as utilitiesStyles from '../../ui/utilities.css'
 import { cx } from '../../ui/cx'
+import type { Entry, SortKey } from './api'
+import type { Perms } from './perms'
 
 const HEADER_CELL_CLASS = { name: styles.headerCellName, size: styles.headerCellSize, mtime: styles.headerCellMtime }
 

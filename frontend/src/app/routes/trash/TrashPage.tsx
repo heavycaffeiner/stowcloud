@@ -1,8 +1,5 @@
-import { useQuery } from '@tanstack/react-query'
 import { describeApiError } from '../../../lib/api/error-text'
-import type { TrashEntry } from '../../../lib/api/types'
 import { useI18n } from '../../../hooks/use-i18n'
-import { trashQuery } from '../../../lib/query/files'
 import { selection } from '../../../lib/store/selection.store'
 import { Button } from '../../../ui/Button'
 import { Dialog } from '../../../ui/Dialog'
@@ -14,10 +11,11 @@ import { TrashOperation, TrashRow } from './TrashView'
 import { useTrashActions } from './hooks/use-trash-actions'
 import { useTrashSelection } from './hooks/use-trash-selection'
 import * as styles from './TrashPage.css'
+import { useTrash, type TrashEntry } from '../../../features/trash/api'
 
 export function TrashPage() {
   const { t } = useI18n()
-  const trash = useQuery(trashQuery())
+  const trash = useTrash()
   const entries: TrashEntry[] = trash.data ?? []
   const selected = useTrashSelection(entries)
   const actions = useTrashActions(t, selected)

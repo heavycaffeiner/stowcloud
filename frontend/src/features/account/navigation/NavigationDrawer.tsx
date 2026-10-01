@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
 import { describeApiError } from '../../../lib/api/error-text'
 import { useI18n } from '../../../hooks/use-i18n'
-import { setRootOrderMutation } from '../../../lib/query/account'
+import { useSetRootOrder } from '../../settings/api'
 import { Icon } from '../../../ui/Icon'
 import { IconButton } from '../../../ui/IconButton'
 import { Modal } from '../../../ui/Modal'
@@ -57,7 +56,7 @@ export function NavigationDrawer({
   userInitial = 'S'
 }: NavigationDrawerProps) {
   const { t } = useI18n()
-  const orderMutation = useMutation(setRootOrderMutation())
+  const orderMutation = useSetRootOrder()
   const [orderState, setOrderState] = useState<{
     reordering: boolean
     pendingOrder: RootItem[] | null

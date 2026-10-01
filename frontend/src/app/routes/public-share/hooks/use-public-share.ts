@@ -1,15 +1,14 @@
-import { useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useReducer, useRef } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  getShare,
   ShareNotFoundError,
   SharePasswordRequiredError,
   SharePathGoneError,
   shareDownloadUrl,
   shareZipUrl,
-  unlockShare
-} from '../../../../lib/api/share'
+  unlockShare,
+  usePublicShare as usePublicShareQuery
+} from '../../../../features/links/api'
 import { useI18n } from '../../../../hooks/use-i18n'
 import { createPublicShareQueue, type DropItem, type PublicShareQueue } from '../logic/public-share-queue'
 import { mergeState } from '../../../../lib/merge-state'
@@ -40,12 +39,7 @@ export function usePublicShare() {
   const queueMapRef = useRef(new Map<string, PublicShareQueue>())
   const activeTokenRef = useRef(token)
   const fileInput = useRef<HTMLInputElement>(null)
-  const share = useQuery({
-    queryKey: ['share', token, path],
-    queryFn: () => getShare(token, path),
-    retry: false,
-    enabled: token.length > 0
-  })
+  const share = usePublicShareQuery(token, path)
   const info = share.data
   const needsPassword = share.error instanceof SharePasswordRequiredError
   const retryableError = Boolean(

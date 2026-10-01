@@ -1,15 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
-import type { Entry } from '../../lib/api/types'
 import { joinPath } from '../../lib/api/path-utils'
-import { dirListQuery, dirViewOf } from '../../lib/query/files'
-import { sessionQuery } from '../../lib/query/session'
+import { useSession } from '../auth/api'
 import { useI18n } from '../../hooks/use-i18n'
 import { FileTreeItem } from './FileTreeItem'
 import { VirtualList } from '../../ui/VirtualList'
 import { Modal } from '../../ui/Modal'
 import * as styles from './FileTree.css'
 import { cx } from '../../ui/cx'
+import { dirViewOf, useDirectory, type Entry } from './api'
 
 export interface FileTreeProps {
   currentPath: string
@@ -77,7 +75,7 @@ function DirectoryBranch({
   currentPath: string
   onChange: (path: string, state: DirectoryState) => void
 }) {
-  const query = useInfiniteQuery(dirListQuery(path, { key: 'name', order: 'asc' }))
+  const query = useDirectory(path, { key: 'name', order: 'asc' })
   const directory = useMemo(() => dirViewOf(query.data?.pages), [query.data?.pages])
   const children = useMemo(() => directory.entries.filter((entry) => entry.kind === 'dir'), [directory.entries])
   const state = useMemo<DirectoryState>(
@@ -437,7 +435,7 @@ export function FileTreeList({
 
 export function FileTree({ currentPath, onNavigate, overlay = false, onClose }: FileTreeProps) {
   const { t } = useI18n()
-  const session = useQuery(sessionQuery())
+  const session = useSession()
   const roots = useMemo(
     () => (session.data?.roots ?? []).map((root) => ({ path: `/${root.label}`, name: root.label })),
     [session.data?.roots]

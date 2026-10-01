@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import type { HTMLAttributes, MouseEvent } from 'react'
-import type { Entry } from '../../../lib/api/types'
+import type { Entry } from '../api'
 
 const TAP_MAX_MS = 450
 const TAP_MOVE_PX = 12

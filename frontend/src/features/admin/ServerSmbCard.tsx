@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react'
-import type { SettingsSnapshot } from '../../lib/api/types'
 import type { ServerSettingsGroup } from './hooks/server-settings-state'
 import { ServerSettingsCard } from './ServerSettingsCard'
 import * as styles from './ServerSmbCard.css'
 import * as adminStyles from './admin.css'
+import type { SettingsSnapshot } from './api'
 type Translator = (key: string, params?: Record<string, string | number>) => string
 type Values = Record<string, unknown>
 type Input = (

@@ -8,7 +8,6 @@ import { selection } from '../../../lib/store/selection.store'
 import { search, searchTarget } from '../../../lib/store/search.store'
 import { joinPath, normalizePath } from '../../../lib/api/path-utils'
 import { describeApiError } from '../../../lib/api/error-text'
-import type { Entry, SortKey } from '../../../lib/api/client'
 import type { FileGridHandle } from '../../../features/files/FileGrid'
 import type { FileViewHandle } from '../../../features/files/FileTable'
 import type { MenuAnchor } from '../../../features/files/logic/row-actions'
@@ -26,6 +25,7 @@ import { useBrowsePathSelection, useBrowseRouteFocus } from './hooks/use-browse-
 import { BrowseSelectionBar } from './BrowseSelectionBar'
 import { BrowseToolbar, BrowseContent, BrowseDialogs } from './BrowseView'
 import * as styles from './BrowseRoute.css'
+import type { Entry, SortKey } from '../../../features/files/api'
 
 export function BrowseRoute() {
   const params = useParams()

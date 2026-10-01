@@ -1,5 +1,4 @@
 import { lazy, Suspense } from 'react'
-import type { SessionInfo } from '../../../lib/api/types'
 import type { Locale } from '../../../lib/i18n/state'
 import type { ThemePref } from '../../../lib/store/ui.store'
 import { SettingsCard } from '../../../features/settings/SettingsCard'
@@ -9,6 +8,7 @@ import { SegmentedControl } from '../../../ui/SegmentedControl'
 import * as styles from './SettingsPanels.css'
 import * as settingsCardStyles from '../../../features/settings/SettingsCard.css'
 import { cx } from '../../../ui/cx'
+import type { SessionInfo } from '../../../features/auth/api'
 const PasswordSection = lazy(() =>
   import('../../../features/settings/PasswordSection').then((m) => ({ default: m.PasswordSection }))
 )

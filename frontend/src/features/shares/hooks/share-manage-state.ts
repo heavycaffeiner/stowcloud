@@ -1,6 +1,6 @@
 import { type Dispatch, useReducer } from 'react'
-import type { ShareLinkInfo } from '../../../lib/api/client'
 import { mergeState, type StatePatch } from '../../../lib/merge-state'
+import type { ShareLinkInfo } from '../../links/api'
 
 export interface ShareManageState {
   dialogOpen: boolean

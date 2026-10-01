@@ -6,7 +6,7 @@
 // modules that run outside a component (the WebSocket bridge, the upload
 // worker glue) import it directly.
 import { MutationCache, QueryCache, QueryClient } from '@tanstack/react-query'
-import { ApiError, isSessionDead } from '../api/types'
+import { ApiError, isSessionDead } from '../../api/fetcher'
 import { lock } from '../crypto/e2ee'
 import { invalidateEncryptedShares } from '../crypto/encrypted-shares'
 import { keys } from './keys'

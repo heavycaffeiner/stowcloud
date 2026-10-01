@@ -1,11 +1,8 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { formatBytes, bytesToMb, BYTES_PER_MB } from '../../lib/format/bytes'
 import { scorePasswordStrength } from '../../lib/format/password-strength'
 import { useI18n } from '../../hooks/use-i18n'
-import { ApiError, type AdminUser } from '../../lib/api/client'
 import { describeApiError } from '../../lib/api/error-text'
-import { adminUserMutation, adminUsersQuery } from '../../lib/query/admin'
 import { Button } from '../../ui/Button'
 import { Dialog } from '../../ui/Dialog'
 import { TextField } from '../../ui/TextField'
@@ -17,12 +14,22 @@ import { Icon } from '../../ui/Icon'
 import { ProgressCircular } from '../../ui/ProgressCircular'
 import { ProgressLinear } from '../../ui/ProgressLinear'
 import * as adminStyles from './admin.css'
+import { ApiError } from '../../api/fetcher'
+import {
+  useAdminUsers,
+  useCreateUser,
+  useDeleteUser,
+  useSetUserDisabled,
+  useSetUserPassword,
+  useSetUserQuota,
+  type AdminUser
+} from './api'
 
 const MIN_PASSWORD_LEN = 10
 
 export function UserManagementSection() {
   const { t } = useI18n()
-  const usersQuery = useQuery(adminUsersQuery())
+  const usersQuery = useAdminUsers()
   const users = usersQuery.data ?? []
   const activeAdminCount = useMemo(() => users.filter((user) => user.is_admin && !user.disabled).length, [users])
   const lastActiveAdmin = (user: AdminUser) => user.is_admin && !user.disabled && activeAdminCount <= 1
@@ -74,11 +81,11 @@ export function UserManagementSection() {
     grantsTarget,
     oidcTarget
   } = state
-  const create = useMutation(adminUserMutation())
-  const remove = useMutation(adminUserMutation())
-  const quota = useMutation(adminUserMutation())
-  const password = useMutation(adminUserMutation())
-  const toggle = useMutation(adminUserMutation())
+  const create = useCreateUser()
+  const remove = useDeleteUser()
+  const quota = useSetUserQuota()
+  const password = useSetUserPassword()
+  const toggle = useSetUserDisabled()
   const patchState = (patch: Partial<UserState>): void => setState((current) => ({ ...current, ...patch }))
   const setCreateOpen = (value: boolean): void => patchState({ createOpen: value })
   const setNewName = (value: string): void => patchState({ newName: value })
@@ -94,7 +101,7 @@ export function UserManagementSection() {
   const setPasswordValidation = (value: string | null): void => patchState({ passwordValidation: value })
   const setGrantsTarget = (value: AdminUser | null): void => patchState({ grantsTarget: value })
   const setOidcTarget = (value: AdminUser | null): void => patchState({ oidcTarget: value })
-  const togglingId = toggle.isPending && toggle.variables?.kind === 'disable' ? toggle.variables.id : null
+  const togglingId = toggle.isPending && toggle.variables ? toggle.variables.id : null
 
   const createError = createValidation ?? (create.error ? createErrorText(create.error, t) : null)
   const deleteError = remove.error ? userDeleteError(remove.error, t) : null
@@ -112,25 +119,25 @@ export function UserManagementSection() {
     }
     if (!newName.trim()) return
     create.mutate(
-      { kind: 'create', name: newName.trim(), password: newPassword },
+      { name: newName.trim(), password: newPassword },
       {
         onSuccess: (created) => {
           setCreateOpen(false)
-          setGrantsTarget(created as AdminUser)
+          setGrantsTarget(created)
         }
       }
     )
   }
   function submitDelete(): void {
     if (!deleteTarget) return
-    remove.mutate({ kind: 'delete', id: deleteTarget.id }, { onSuccess: () => setDeleteTarget(null) })
+    remove.mutate(deleteTarget.id, { onSuccess: () => setDeleteTarget(null) })
   }
   function submitQuota(): void {
     if (!quotaTarget) return
     setQuotaValidation(null)
     const value = quotaInput.trim()
     if (!value) {
-      quota.mutate({ kind: 'quota', id: quotaTarget.id, quotaBytes: null }, { onSuccess: () => setQuotaTarget(null) })
+      quota.mutate({ id: quotaTarget.id, quotaBytes: null }, { onSuccess: () => setQuotaTarget(null) })
       return
     }
     const mb = Number(value)
@@ -139,7 +146,7 @@ export function UserManagementSection() {
       return
     }
     quota.mutate(
-      { kind: 'quota', id: quotaTarget.id, quotaBytes: Math.round(mb * BYTES_PER_MB) },
+      { id: quotaTarget.id, quotaBytes: Math.round(mb * BYTES_PER_MB) },
       { onSuccess: () => setQuotaTarget(null) }
     )
   }
@@ -154,10 +161,7 @@ export function UserManagementSection() {
       setPasswordValidation(t('password.new_passwords_do_not_match'))
       return
     }
-    password.mutate(
-      { kind: 'password', id: passwordTarget.id, password: passwordInput },
-      { onSuccess: () => setPasswordTarget(null) }
-    )
+    password.mutate({ id: passwordTarget.id, password: passwordInput }, { onSuccess: () => setPasswordTarget(null) })
   }
   return (
     <section className={adminStyles.section}>
@@ -210,7 +214,7 @@ export function UserManagementSection() {
               locked={lastActiveAdmin(user)}
               toggling={togglingId === user.id}
               quotaLabel={quotaLabel(user, t)}
-              onToggle={() => toggle.mutate({ kind: 'disable', id: user.id, disabled: !user.disabled })}
+              onToggle={() => toggle.mutate({ id: user.id, disabled: !user.disabled })}
               onQuota={() => {
                 quota.reset()
                 setQuotaValidation(null)

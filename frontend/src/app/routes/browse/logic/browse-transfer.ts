@@ -1,12 +1,12 @@
 import type { Dispatch } from 'react'
-import { ApiError, type BatchResult, type Entry, type OnConflict } from '../../../../lib/api/client'
-import type { CopyResult } from '../../../../lib/api/types'
 import { baseName, joinPath } from '../../../../lib/api/path-utils'
 import { batchErrorKey, describeApiError } from '../../../../lib/api/error-text'
 import { jobTray } from '../../../../lib/store/jobs.store'
 import { selection } from '../../../../lib/store/selection.store'
 import type { BrowseState } from './types'
 import type { StatePatch } from '../../../../lib/merge-state'
+import { ApiError } from '../../../../api/fetcher'
+import type { BatchResult, CopyResult, Entry, OnConflict } from '../../../../features/files/api'
 
 type Patch = Dispatch<StatePatch<BrowseState>>
 type Translate = (key: string, params?: Record<string, string | number>) => string

@@ -1,6 +1,6 @@
 import { type Dispatch, useReducer } from 'react'
-import type { AdminShare, ShareBackend } from '../../../lib/api/client'
 import { mergeState, type StatePatch } from '../../../lib/merge-state'
+import type { AdminShare, ShareBackend } from '../api'
 
 export interface BackendForm {
   hostPath: string
@@ -45,7 +45,6 @@ export interface SharePickerState {
 }
 
 export interface ShareManagementState {
-  smbNote: string | null
   pathPicker: SharePickerState | null
   addOpen: boolean
   addName: string
@@ -69,7 +68,6 @@ export interface ShareManagementState {
 }
 
 const initialShareManagementState: ShareManagementState = {
-  smbNote: null,
   pathPicker: null,
   addOpen: false,
   addName: '',

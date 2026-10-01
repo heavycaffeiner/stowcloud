@@ -4,13 +4,12 @@
 // The Worker is a separate module realm, so it cannot see the CSRF token or
 // the server's chunk limits. Both are resent with every command, which is also
 // what keeps them right across a re-login that rotates the session.
-import { api } from '../api/client'
-import type { SessionInfo } from '../api/types'
+import type { SessionInfo } from '../../features/auth/api'
+import { invalidateDirs } from '../../features/files/api'
 import { encryptionForLabel, shareLabelOf } from '../crypto/encrypted-shares'
 import { encryptForUpload, FileTooLargeError, LockedSessionError } from '../crypto/e2ee'
 import { bytesToMb } from '../format/bytes'
 import { queryClient } from '../query/client'
-import { invalidateDirs } from '../query/files'
 import { keys } from '../query/keys'
 import { uploads } from '../store/upload.store'
 import { CHUNK_SIZE_MIN } from './chunk-planner'
@@ -79,7 +78,7 @@ export function handle(evt: Evt): void {
       uploads.patch(evt.id, { sent: evt.size, status: 'done' })
       // What makes the new file appear wherever it was uploaded to, in every
       // screen showing that directory.
-      invalidateDirs([evt.dest])
+      invalidateDirs(queryClient, [evt.dest])
       break
     case 'error':
       uploads.patch(evt.id, {

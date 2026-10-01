@@ -1,4 +1,3 @@
-import type { SearchHit } from '../../lib/api/client'
 import { formatBytes } from '../../lib/format/bytes'
 import { formatModifiedDateNs } from '../../lib/i18n'
 import { parentOf } from '../../lib/api/path-utils'
@@ -7,6 +6,7 @@ import { computeWindow, type WindowResult } from '../../lib/virtual/windowing'
 import { Icon } from '../../ui/Icon'
 import * as styles from './SearchResults.css'
 import { vars } from '../../ui/theme.css'
+import type { SearchHit } from './api'
 
 export interface SearchResultsProps {
   readonly ran: boolean

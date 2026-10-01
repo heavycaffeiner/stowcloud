@@ -1,21 +1,20 @@
 // frontend/tests/lib/crypto/encrypted-shares.test.ts
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { fetchShareEncryptions } from '../../../src/features/shares/api'
 import {
   encryptedShares,
   encryptionForLabel,
   invalidateEncryptedShares,
-  setEncryptedSharesSource,
   shareLabelOf
 } from '../../../src/lib/crypto/encrypted-shares'
 
-// The module reads through an installed fetcher rather than importing the
-// api layer, so a test installs one directly instead of mocking a module.
-const shareEncryptionList = vi.fn()
+vi.mock('../../../src/features/shares/api', () => ({ fetchShareEncryptions: vi.fn() }))
+
+const shareEncryptionList = vi.mocked(fetchShareEncryptions)
 
 beforeEach(() => {
   shareEncryptionList.mockReset()
-  setEncryptedSharesSource(() => shareEncryptionList().then((r: { shares: unknown[] }) => r.shares))
   invalidateEncryptedShares()
 })
 
@@ -48,7 +47,7 @@ describe('encryptedShares (fetch-once cache)', () => {
       verifier: 'abc',
       createdNs: 1
     }
-    shareEncryptionList.mockResolvedValue({ shares: [row] })
+    shareEncryptionList.mockResolvedValue([row])
 
     const [a, b] = await Promise.all([encryptedShares(), encryptedShares()])
     await encryptedShares()
@@ -62,13 +61,13 @@ describe('encryptedShares (fetch-once cache)', () => {
     shareEncryptionList.mockRejectedValueOnce(new Error('network down'))
     await expect(encryptedShares()).rejects.toThrow('network down')
 
-    shareEncryptionList.mockResolvedValueOnce({ shares: [] })
+    shareEncryptionList.mockResolvedValueOnce([])
     await expect(encryptedShares()).resolves.toEqual([])
     expect(shareEncryptionList).toHaveBeenCalledTimes(2)
   })
 
   it('invalidateEncryptedShares forces the next call to re-fetch', async () => {
-    shareEncryptionList.mockResolvedValue({ shares: [] })
+    shareEncryptionList.mockResolvedValue([])
     await encryptedShares()
     invalidateEncryptedShares()
     await encryptedShares()
@@ -86,13 +85,13 @@ describe('encryptionForLabel', () => {
       verifier: 'abc',
       createdNs: 1
     }
-    shareEncryptionList.mockResolvedValue({ shares: [row] })
+    shareEncryptionList.mockResolvedValue([row])
 
     expect(await encryptionForLabel('team-a-drop')).toEqual(row)
   })
 
   it('resolves to null once a successful fetch confirms the label is unencrypted', async () => {
-    shareEncryptionList.mockResolvedValue({ shares: [] })
+    shareEncryptionList.mockResolvedValue([])
     expect(await encryptionForLabel('plain-vault')).toBeNull()
   })
 

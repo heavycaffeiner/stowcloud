@@ -1,4 +1,3 @@
-import type { OwnedShareLinkInfo } from '../../../lib/api/client'
 import { useI18n } from '../../../hooks/use-i18n'
 import { Icon } from '../../../ui/Icon'
 import { isDropLink, isExpired, isExhausted, type LinkRow } from './hooks/use-link-management'
@@ -6,6 +5,7 @@ import { ProgressCircular } from '../../../ui/ProgressCircular'
 import * as styles from './LinkRow.css'
 import * as secondaryPageShellStyles from '../secondary/SecondaryPageShell.css'
 import { cx } from '../../../ui/cx'
+import type { OwnedShareLinkInfo } from '../../../features/links/api'
 interface LinkRowProps {
   link: LinkRow
   mine: boolean

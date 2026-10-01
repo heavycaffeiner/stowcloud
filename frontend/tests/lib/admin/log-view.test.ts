@@ -7,7 +7,7 @@ import type {
   AdminUser,
   AuditPage,
   AuditRow
-} from '../../../src/lib/api/types'
+} from '../../../src/features/admin/api'
 import {
   EMPTY_FILTERS,
   PAGE_SIZE,
@@ -115,30 +115,17 @@ describe('pure log filter projection', () => {
     expect(pureToQuery(EMPTY_FILTERS, '').cursor).toBeUndefined()
   })
 
-  // The rule the timeline endpoint implements, mirrored exactly: only the
-  // time bounds reach the audit half. Sending a level or a subsystem would
-  // narrow the list under bars the server drew unnarrowed.
-  it('sends only the time bounds to the audit route', () => {
-    const filters: LogFilters = {
-      ...EMPTY_FILTERS,
-      levels: new Set(['ERROR']),
-      text: 'refused',
-      subsystem: 'dav',
-      requestId: '01J000',
-      since: '2026-09-04T12:30',
-      until: '2026-09-04T13:30'
-    }
-    const q = pureToAuditQuery(filters)
-    expect(q.since_ns).toBe(pureLocalToNs('2026-09-04T12:30'))
-    expect(q.until_ns).toBe(pureLocalToNs('2026-09-04T13:30'))
+  // The audit route filters on nothing the form holds, so sending a bound
+  // would suggest a narrowing the server never applies.
+  it('sends only a page size to the audit route', () => {
+    const q = pureToAuditQuery()
     expect(q.limit).toBe(PAGE_SIZE)
-    expect(q.before).toBeUndefined()
-    expect(Object.keys(q).sort()).toEqual(['limit', 'since_ns', 'until_ns'])
+    expect(Object.keys(q)).toEqual(['limit'])
   })
 
   it('carries an audit cursor only when there is one to carry', () => {
-    expect(pureToAuditQuery(EMPTY_FILTERS, 42).before).toBe(42)
-    expect(pureToAuditQuery(EMPTY_FILTERS, null).before).toBeUndefined()
+    expect(pureToAuditQuery(42).before).toBe(42)
+    expect(pureToAuditQuery(null).before).toBeUndefined()
   })
 
   it('reports which filters reach the server log alone', () => {

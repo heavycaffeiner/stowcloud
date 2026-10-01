@@ -1,23 +1,22 @@
 import { useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
-import { ApiError } from '../../lib/api/client'
 import { describeApiError } from '../../lib/api/error-text'
 import { useI18n } from '../../hooks/use-i18n'
-import { sessionQuery } from '../../lib/query/session'
-import { smbPasswordMutation, smbSettingsMutation } from '../../lib/query/account'
+import { useSession } from '../auth/api'
+import { useClearSmbPassword, useSetSmbPassword, useSmbSettings } from './api'
 import { Button } from '../../ui/Button'
 import { TextField } from '../../ui/TextField'
 import { SettingsDialog } from './SettingsDialog'
 import { Switch } from '../../ui/Switch'
 import * as styles from './SmbSection.css'
 import * as settingsCardStyles from './SettingsCard.css'
+import { ApiError } from '../../api/fetcher'
 
 export function SmbSection() {
   const { t } = useI18n()
-  const session = useQuery(sessionQuery())
-  const settings = useMutation(smbSettingsMutation())
-  const setPassword = useMutation(smbPasswordMutation())
-  const clearPassword = useMutation(smbPasswordMutation())
+  const session = useSession()
+  const settings = useSmbSettings()
+  const setPassword = useSetSmbPassword()
+  const clearPassword = useClearSmbPassword()
   const user = session.data?.user
   const credential = user?.smb_credential ?? 'none'
   const optOut = user?.smb_opt_out ?? false
@@ -105,15 +104,15 @@ export function SmbSection() {
     setDialog('set')
   }
   function confirmSet(): void {
+    // The server turns the account's own switches back on with the password.
+    const togglesCleared = optOut || !enabled
     setPassword.mutate(
       { currentPassword, smbPassword: newPassword },
       {
-        onSuccess: (result) => {
+        onSuccess: () => {
           setDialog(null)
           setAnnouncement(
-            'smb_toggles_cleared' in result && result.smb_toggles_cleared
-              ? `${t('smb.password_set')} ${t('smb.toggles_cleared')}`
-              : t('smb.password_set')
+            togglesCleared ? `${t('smb.password_set')} ${t('smb.toggles_cleared')}` : t('smb.password_set')
           )
           void session.refetch()
         },
@@ -128,21 +127,14 @@ export function SmbSection() {
     setDialog('clear')
   }
   function confirmClear(): void {
-    clearPassword.mutate(
-      { currentPassword, smbPassword: null },
-      {
-        onSuccess: (result) => {
-          setDialog(null)
-          setAnnouncement(
-            'reverted_to_account_password' in result && result.reverted_to_account_password
-              ? t('smb.password_removed_reverted')
-              : t('smb.password_removed_no_access')
-          )
-          void session.refetch()
-        },
-        onError: (value) => setError(describeMutationError(value, t('smb.could_not_save_password')))
-      }
-    )
+    clearPassword.mutate(currentPassword, {
+      onSuccess: (revertible) => {
+        setDialog(null)
+        setAnnouncement(revertible ? t('smb.password_removed_reverted') : t('smb.password_removed_no_access'))
+        void session.refetch()
+      },
+      onError: (value) => setError(describeMutationError(value, t('smb.could_not_save_password')))
+    })
   }
 
   return (

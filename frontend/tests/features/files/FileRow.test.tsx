@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Entry } from '../../../src/lib/api/types'
+import type { Entry } from '../../../src/features/files/api'
 import { selection, useSelectionStore } from '../../../src/lib/store/selection.store'
 import { act, cleanup, fireEvent, render, within } from '../../../src/test/test-utils'
 import { FileGrid } from '../../../src/features/files/FileGrid'

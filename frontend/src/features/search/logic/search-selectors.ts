@@ -1,7 +1,7 @@
 import { EXTENSION_PRESETS, parseExtensions } from '../../../lib/search/filters'
 import { computeWindow, type WindowResult } from '../../../lib/virtual/windowing'
 import { SORT_KEYS, sortHits, type CategoryId, type SearchPanelState, type SearchStatus } from './search-state'
-import type { SearchHit } from '../../../lib/api/client'
+import type { SearchHit } from '../api'
 
 export function activeCategoryFor(state: SearchPanelState): CategoryId {
   if (state.kind === 'dir') return 'dir'

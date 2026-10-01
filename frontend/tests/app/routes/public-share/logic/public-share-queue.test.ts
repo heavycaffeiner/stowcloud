@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { dropUpload, ShareTooLargeError } from '../../../../../src/lib/api/share'
+import { dropUpload, ShareTooLargeError } from '../../../../../src/features/links/api'
 import { createPublicShareQueue } from '../../../../../src/app/routes/public-share/logic/public-share-queue'
 
-vi.mock('../../../../../src/lib/api/share', () => ({
+vi.mock('../../../../../src/features/links/api', () => ({
   dropUpload: vi.fn(),
   ShareTooLargeError: class extends Error {}
 }))

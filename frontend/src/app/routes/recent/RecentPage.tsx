@@ -1,12 +1,9 @@
-import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import type { RecentHit } from '../../../lib/api/types'
 import { describeApiError } from '../../../lib/api/error-text'
 import { formatBytes } from '../../../lib/format/bytes'
 import { formatDateNs } from '../../../lib/i18n'
 import { useI18n } from '../../../hooks/use-i18n'
 import { normalizePath, parentOf } from '../../../lib/api/path-utils'
-import { recentQuery } from '../../../lib/query/files'
 import { useDocumentTitle } from '../../hooks/use-document-title'
 import { Icon } from '../../../ui/Icon'
 import { VirtualList } from '../../../ui/VirtualList'
@@ -14,6 +11,7 @@ import { SecondaryPageShell } from '../secondary/SecondaryPageShell'
 import { SecondaryPageState } from '../secondary/SecondaryPageState'
 import * as styles from './RecentPage.css'
 import * as secondaryPageShellStyles from '../secondary/SecondaryPageShell.css'
+import { useRecent, type RecentHit } from '../../../features/recent/api'
 
 const RECENT_LIMIT = 100
 const RECENT_RETENTION_DAYS = 14
@@ -25,8 +23,8 @@ function parentOfVpath(vpath: string): string {
 export function RecentPage() {
   const { t } = useI18n()
   const navigate = useNavigate()
-  const recent = useQuery(recentQuery(RECENT_LIMIT))
-  const hits = recent.data?.hits ?? []
+  const recent = useRecent(RECENT_LIMIT)
+  const hits = recent.data ?? []
   useDocumentTitle(t('recent.title_stowcloud'))
 
   function verb(hit: RecentHit): string {

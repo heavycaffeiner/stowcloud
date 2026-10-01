@@ -1,4 +1,3 @@
-import type { BatchItemResult, TrashEntry } from '../../../lib/api/types'
 import { batchErrorKey } from '../../../lib/api/error-text'
 import { formatDateNs } from '../../../lib/i18n'
 import { formatBytes } from '../../../lib/format/bytes'
@@ -7,6 +6,8 @@ import { VirtualList } from '../../../ui/VirtualList'
 import * as styles from './TrashView.css'
 import * as secondaryPageShellStyles from '../secondary/SecondaryPageShell.css'
 import { cx } from '../../../ui/cx'
+import type { BatchItemResult } from '../../../features/files/api'
+import type { TrashEntry } from '../../../features/trash/api'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
 

@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { destinationProblem } from '../../lib/api/path-utils'
-import { statQuery } from '../../lib/query/files'
-import { sessionQuery } from '../../lib/query/session'
+import { useSession } from '../auth/api'
+import { useStat } from './api'
 import { useI18n } from '../../hooks/use-i18n'
 import { Button } from '../../ui/Button'
 import { BrowseDialog } from './browse-dialog'
@@ -25,14 +24,14 @@ export function DestinationPickerDialog({
   onPick: (dest: string, mode: 'move' | 'copy') => void
 }) {
   const { t } = useI18n()
-  const session = useQuery(sessionQuery())
+  const session = useSession()
   const roots = useMemo(
     () => (session.data?.roots ?? []).map((root) => ({ path: `/${root.label}`, name: root.label })),
     [session.data?.roots]
   )
   const [state, setState] = useState<{ selected: string | null }>({ selected: null })
   const selected = state.selected
-  const stat = useQuery({ ...statQuery(selected ?? ''), enabled: open && selected !== null })
+  const stat = useStat(selected ?? '', open && selected !== null)
   const problem = selected ? destinationProblem(selected, sources) : null
   const writable = stat.data?.perms.create ?? false
   const copy = canCopy && selected !== null && problem !== 'into_itself' && writable

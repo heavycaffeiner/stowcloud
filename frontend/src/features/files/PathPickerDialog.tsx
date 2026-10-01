@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { useI18n } from '../../hooks/use-i18n'
-import { api } from '../../lib/api/client'
+import { useHostListing } from '../admin/api'
 import { Button } from '../../ui/Button'
 import { Dialog } from '../../ui/Dialog'
 import { Icon } from '../../ui/Icon'
@@ -46,13 +45,7 @@ export function PathPickerDialog({ open, mode, start, token, onClose, onPick }: 
     }
   }, [open, wasOpen, start, mode, setState])
 
-  const listing = useQuery({
-    queryKey: ['host-fs', token ?? null, currentPath],
-    queryFn: () => (token ? api.browseSetupPath(token, currentPath) : api.browseHostPath(currentPath)),
-    enabled: open,
-    retry: false,
-    placeholderData: (previous) => previous
-  })
+  const listing = useHostListing(token ?? null, currentPath, open)
 
   useLayoutEffect(() => {
     if (!open || listing.isPlaceholderData || listing.data?.path !== currentPath) return

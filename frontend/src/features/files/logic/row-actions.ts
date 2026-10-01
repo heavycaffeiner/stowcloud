@@ -6,10 +6,10 @@
 // Both of them render the *same array value*, so an action cannot be added to
 // one and missed on the other; this module is where adding, removing or gating
 // one is allowed to happen, and the only place.
-import type { Entry } from '../../../lib/api/client'
 import { icons } from '../../../ui/icons'
 import { t } from '../../../lib/i18n'
 import { isEditableFileName } from './editable-files'
+import type { Entry } from '../api'
 
 /** Where a row menu opens and which element opened it; a mouse event fits as is. */
 export interface MenuAnchor {

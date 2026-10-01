@@ -5,10 +5,9 @@
 // an `inval` frame is an `invalidateQueries` for that path. A change made over
 // SMB, by a sync client or in another tab therefore lands on screen through
 // the same path as a change made here.
-import { eventsTransport } from '../api/events-transport'
-import type { ServerMsg } from '../api/types'
+import { invalidateDirs } from '../../features/files/api'
+import { eventsTransport, type ServerMsg } from '../api/events-transport'
 import { queryClient } from './client'
-import { invalidateDirs } from './files'
 
 const PING_MS = 30_000
 /** Capped exponential backoff: a dead server gets hammered less over time,
@@ -59,7 +58,7 @@ export function startLiveInvalidation(): () => void {
     if (pending.size === 0) return
     const paths = pending
     pending = new Set<string>()
-    invalidateDirs(paths)
+    invalidateDirs(queryClient, paths)
   }
 
   function syncSubscriptions(): void {

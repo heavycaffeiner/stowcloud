@@ -1,23 +1,8 @@
 import { useMemo } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import { useShareManagementState, type BackendForm, emptyBackendForm } from './hooks/share-management-state'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useI18n } from '../../hooks/use-i18n'
-import {
-  api,
-  ApiError,
-  type AdminShare,
-  type CreateShareReq,
-  type ShareBackend,
-  type ShareS3Config,
-  type ShareVeracryptConfig,
-  type SMBOutcome,
-  type UpdateShareReq
-} from '../../lib/api/client'
 import { describeApiError } from '../../lib/api/error-text'
-import { smbOutcomeText } from '../../lib/api/smb-text'
-import { adminShareMutation, adminSharesQuery } from '../../lib/query/admin'
-import { invalidateEncryptedShares } from '../../lib/crypto/encrypted-shares'
 import { deriveKeys, generateSalt, makeVerifier, unlock, type DerivedKeys } from '../../lib/crypto/e2ee'
 import { clean } from '@noble/ciphers/utils.js'
 import { Button } from '../../ui/Button'
@@ -31,6 +16,23 @@ import { Select } from '../../ui/Select'
 import { TextField } from '../../ui/TextField'
 import * as styles from './ShareManagementSection.css'
 import * as adminStyles from './admin.css'
+import { ApiError } from '../../api/fetcher'
+import {
+  useAdminShares,
+  useCreateShare,
+  useDeleteShare,
+  useDisableShareEncryption,
+  useEnableShareEncryption,
+  useRetryShare,
+  useUpdateShare,
+  type AdminShare,
+  type CreateShareReq,
+  type ShareBackend,
+  type ShareS3Config,
+  type ShareVeracryptConfig,
+  type UpdateShareReq
+} from './api'
+import { useShareEncryptions } from '../shares/api'
 
 const MIN_VAULT_SIZE = 16
 const MAX_VAULT_SIZE = 1 << 20
@@ -282,24 +284,24 @@ function LocalPathField({ value, onChange, openPathPicker, placeholder }: LocalP
 
 export function ShareManagementSection() {
   const { t } = useI18n()
-  const queryClient = useQueryClient()
-  const sharesQuery = useQuery(adminSharesQuery())
+  const sharesQuery = useAdminShares()
   const shares = sharesQuery.data ?? []
-  const encryptionQuery = useQuery({ queryKey: ['share-encryption'], queryFn: () => api.shareEncryptionList() })
+  const encryptionQuery = useShareEncryptions()
   const encryptedByShare = useMemo(
-    () => new Map((encryptionQuery.data?.shares ?? []).map((entry) => [entry.share, entry])),
+    () => new Map((encryptionQuery.data ?? []).map((entry) => [entry.share, entry])),
     [encryptionQuery.data]
   )
 
-  const addMutation = useMutation(adminShareMutation())
-  const editMutation = useMutation(adminShareMutation())
-  const deleteMutation = useMutation(adminShareMutation())
-  const trashMutation = useMutation(adminShareMutation())
-  const retryMutation = useMutation(adminShareMutation())
+  const addMutation = useCreateShare()
+  const editMutation = useUpdateShare()
+  const deleteMutation = useDeleteShare()
+  const trashMutation = useUpdateShare()
+  const retryMutation = useRetryShare()
+  const enableEncryptionMutation = useEnableShareEncryption()
+  const disableEncryptionMutation = useDisableShareEncryption()
 
   const [state, patchState] = useShareManagementState()
   const {
-    smbNote,
     pathPicker,
     addOpen,
     addName,
@@ -321,7 +323,6 @@ export function ShareManagementSection() {
     announcement,
     pathPickerCounter
   } = state
-  const setSmbNote = (value: string | null): void => patchState({ smbNote: value })
   const setPathPicker = (value: typeof state.pathPicker): void => patchState({ pathPicker: value })
   const setAddOpen = (value: boolean): void => patchState({ addOpen: value })
   const setAddName = (value: string): void => patchState({ addName: value })
@@ -363,20 +364,13 @@ export function ShareManagementSection() {
     ? describeApiError(encryptionQuery.error, t('encryption.could_not_load_status'))
     : null
   const encryptionEnableError = encGenerateError
-  const trashTogglingId =
-    trashMutation.isPending && trashMutation.variables?.kind === 'update' ? trashMutation.variables.id : null
-  const retryingId =
-    retryMutation.isPending && retryMutation.variables?.kind === 'retry' ? retryMutation.variables.id : null
+  const trashTogglingId = trashMutation.isPending ? (trashMutation.variables?.id ?? null) : null
+  const retryingId = retryMutation.isPending ? (retryMutation.variables ?? null) : null
   const passphraseMismatch = encPassphraseConfirm.length > 0 && encPassphrase !== encPassphraseConfirm
 
   const openPathPicker = (mode: 'folder' | 'file', start: string, apply: (path: string) => void) => {
     setPathPicker({ mode, start, apply })
     setPathPickerCounter((value) => value + 1)
-  }
-
-  const noteSMB = (result: unknown) => {
-    const smb = (result as { smb?: SMBOutcome } | null)?.smb
-    setSmbNote(smbOutcomeText(smb))
   }
 
   const openAdd = () => {
@@ -407,8 +401,7 @@ export function ShareManagementSection() {
     else if (addBackend === 's3') request.s3 = s3Of(addForm)
     else request.veracrypt = vaultOf(addForm)
     try {
-      const result = await addMutation.mutateAsync({ kind: 'create', req: request })
-      noteSMB(result)
+      await addMutation.mutateAsync(request)
       setAddOpen(false)
     } catch {
       return
@@ -448,8 +441,7 @@ export function ShareManagementSection() {
       if (config) patch.veracrypt = config
     }
     try {
-      const result = await editMutation.mutateAsync({ kind: 'update', id: editTarget.id, patch })
-      noteSMB(result)
+      await editMutation.mutateAsync({ id: editTarget.id, patch })
       setEditTarget(null)
     } catch {
       return
@@ -459,12 +451,7 @@ export function ShareManagementSection() {
   const toggleTrash = async (share: AdminShare, enabled: boolean) => {
     trashMutation.reset()
     try {
-      const result = await trashMutation.mutateAsync({
-        kind: 'update',
-        id: share.id,
-        patch: { trash_enabled: enabled }
-      })
-      noteSMB(result)
+      await trashMutation.mutateAsync({ id: share.id, patch: { trash_enabled: enabled } })
     } catch {
       return
     }
@@ -473,8 +460,7 @@ export function ShareManagementSection() {
   const retry = async (share: AdminShare) => {
     retryMutation.reset()
     try {
-      const result = await retryMutation.mutateAsync({ kind: 'retry', id: share.id })
-      noteSMB(result)
+      await retryMutation.mutateAsync(share.id)
     } catch {
       return
     }
@@ -483,8 +469,7 @@ export function ShareManagementSection() {
   const confirmDelete = async () => {
     if (!deleteTarget) return
     try {
-      const result = await deleteMutation.mutateAsync({ kind: 'delete', id: deleteTarget.id })
-      noteSMB(result)
+      await deleteMutation.mutateAsync(deleteTarget.id)
       setDeleteTarget(null)
     } catch {
       return
@@ -520,9 +505,7 @@ export function ShareManagementSection() {
       const salt = generateSalt()
       keys = await deriveKeys(encPassphrase, salt)
       const verifier = await makeVerifier(keys)
-      await api.adminEnableShareEncryption(target.id, { scheme: 'rclone-crypt-v1', salt, verifier })
-      await queryClient.invalidateQueries({ queryKey: ['share-encryption'] })
-      invalidateEncryptedShares()
+      await enableEncryptionMutation.mutateAsync({ id: target.id, scheme: 'rclone-crypt-v1', salt, verifier })
       await unlock(encPassphrase, salt, verifier)
       setAnnouncement(t('encryption.enabled_for', { name: target.name }))
       setEncEnableTarget(null)
@@ -547,17 +530,12 @@ export function ShareManagementSection() {
   const closeEncryptionDisable = () => {
     if (!disableEncryptionMutation.isPending) setEncDisableTarget(null)
   }
-  const disableEncryptionMutation = useMutation({
-    mutationFn: (id: number) => api.adminDisableShareEncryption(id)
-  })
   const disableEncryption = async () => {
     const target = encDisableTarget
     if (!target) return
     setEncDisableError(null)
     try {
       await disableEncryptionMutation.mutateAsync(target.id)
-      await queryClient.invalidateQueries({ queryKey: ['share-encryption'] })
-      invalidateEncryptedShares()
       setAnnouncement(t('encryption.disabled_for', { name: target.name }))
       setEncDisableTarget(null)
     } catch (error) {
@@ -646,11 +624,6 @@ export function ShareManagementSection() {
               onEdit={openEdit}
               onDelete={openDelete}
             />
-            {smbNote ? (
-              <p className={adminStyles.note} role="status">
-                {smbNote}
-              </p>
-            ) : null}
             {encryptionLoadError ? (
               <p className={adminStyles.error} role="alert">
                 {encryptionLoadError}

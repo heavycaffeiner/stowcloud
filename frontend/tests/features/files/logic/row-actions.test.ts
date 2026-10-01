@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { Entry } from '../../../../src/lib/api/client'
+import type { Entry } from '../../../../src/features/files/api'
 import { rowActions, type RowActionHandlers } from '../../../../src/features/files/logic/row-actions'
 
 function entry(name: string, kind: 'file' | 'dir', perms: Partial<Entry['perms']> = {}): Entry {

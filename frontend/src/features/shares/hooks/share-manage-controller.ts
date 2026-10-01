@@ -1,13 +1,13 @@
 import { useEffect, useMemo } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
-import type { PermsReq, ShareLinkInfo } from '../../../lib/api/client'
 import { describeApiError } from '../../../lib/api/error-text'
 import {
-  shareCreateMutation,
-  shareDeleteMutation,
-  shareLinksQuery,
-  shareUpdateMutation
-} from '../../../lib/query/shares'
+  useCreateShareLink,
+  useDeleteShareLink,
+  useShareLinks,
+  useUpdateShareLink,
+  type PermsReq,
+  type ShareLinkInfo
+} from '../../links/api'
 import type { SelectOption } from '../../../ui/Select'
 import { useShareManageState } from './share-manage-state'
 
@@ -108,10 +108,10 @@ export function useShareManageController(
     editLabel,
     revokeTarget
   } = state
-  const sharesQuery = useQuery(shareLinksQuery(path, open))
-  const createMut = useMutation(shareCreateMutation())
-  const updateMut = useMutation(shareUpdateMutation())
-  const deleteMut = useMutation(shareDeleteMutation())
+  const sharesQuery = useShareLinks(path, open)
+  const createMut = useCreateShareLink()
+  const updateMut = useUpdateShareLink()
+  const deleteMut = useDeleteShareLink()
   const links = sharesQuery.data ?? []
   const newExpiryBad = expiryUnusable(newExpiry, newExpiryDate)
   const editExpiryBad = expiryUnusable(editExpiry, editExpiryDate)
@@ -253,7 +253,7 @@ export function useShareManageController(
           password: editClearPassword ? null : editNewPassword.trim() || undefined,
           expires_ns: editExpiry === 'keep' ? undefined : (expiryToNs(editExpiry, editExpiryDate) ?? null),
           max_downloads: maxDownloads,
-          label: editLabel.trim() || null
+          label: editLabel.trim()
         }
       })
       patch({ editingId: null })

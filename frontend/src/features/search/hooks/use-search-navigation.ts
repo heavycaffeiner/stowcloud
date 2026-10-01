@@ -1,9 +1,9 @@
 import { useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { parentOf } from '../../../lib/api/path-utils'
-import type { SearchHit } from '../../../lib/api/client'
 import { search } from '../../../lib/store/search.store'
 import type { SearchPanelState } from '../logic/search-state'
+import type { SearchHit } from '../api'
 
 export interface SearchNavigationOptions {
   readonly scope: string

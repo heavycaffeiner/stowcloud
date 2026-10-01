@@ -1,5 +1,5 @@
-import type { Entry, OnConflict, BatchItemResult } from '../../../../lib/api/client'
 import type { Rect } from '../../../../features/files/logic/marquee'
+import type { BatchItemResult, Entry, OnConflict } from '../../../../features/files/api'
 
 export type OperationKind = 'delete' | 'move' | 'copy'
 export type UnlockTarget = { salt: string; verifier: string; retry: () => void }

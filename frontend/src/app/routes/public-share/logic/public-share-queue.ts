@@ -1,4 +1,4 @@
-import { dropUpload, ShareTooLargeError } from '../../../../lib/api/share'
+import { dropUpload, ShareTooLargeError } from '../../../../features/links/api'
 
 export type DropItem = {
   id: number
