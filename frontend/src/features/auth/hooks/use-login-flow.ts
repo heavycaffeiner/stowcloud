@@ -9,8 +9,11 @@ import { oidcErrorMessage } from '../oidc-error'
 export type FactorMode = 'totp' | 'recovery'
 
 /** A same-origin path to return to after sign-in. Anything else could send the user off-site. */
-function safeReturnTo(raw: string | undefined): string | null {
-  return raw && raw.startsWith('/') && !raw.startsWith('//') && !raw.startsWith('/\\') ? raw : null
+export function safeReturnTo(raw: string | undefined): string | null {
+  // Parsed rather than prefix-checked: the parser drops tabs and newlines, so `/\t/host` means `//host`.
+  if (!raw?.startsWith('/') || !URL.canParse(raw, window.location.origin)) return null
+  const url = new URL(raw, window.location.origin)
+  return url.origin === window.location.origin ? url.pathname + url.search + url.hash : null
 }
 
 function errorText(error: unknown): string {
