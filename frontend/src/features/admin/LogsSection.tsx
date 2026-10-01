@@ -16,7 +16,7 @@ import {
   type TimelineBar,
   type TimelineSeries,
   type UnifiedLogItem
-} from '../../lib/admin/log-view'
+} from './logic/log-view'
 import { useAdminAudit, useAdminLogs, useAdminTimeline, useAdminUsers } from './api'
 import { useDebounced } from '../../hooks/use-debounced'
 import { logsForm, useLogsFormStore } from '../../lib/store/logs.store'

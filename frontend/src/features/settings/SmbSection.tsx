@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { describeApiError } from '../../lib/api/error-text'
+import { describeApiError } from '../../api/error-text'
 import { useI18n } from '../../hooks/use-i18n'
 import { useSession } from '../auth/api'
 import { useClearSmbPassword, useSetSmbPassword, useSmbSettings } from './api'

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { formatBytes } from '../../lib/format/bytes'
 import { formatDuration, formatNumber } from '../../lib/i18n'
 import { useI18n } from '../../hooks/use-i18n'
-import { describeApiError } from '../../lib/api/error-text'
+import { describeApiError } from '../../api/error-text'
 import {
   useAdminSettings,
   useAdminStorage,

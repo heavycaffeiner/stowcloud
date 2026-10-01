@@ -5,7 +5,7 @@ import {
   type ServerSettingsGroup,
   type ServerSettingsValues
 } from './hooks/server-settings-state'
-import { describeApiError } from '../../lib/api/error-text'
+import { describeApiError } from '../../api/error-text'
 import { BYTES_PER_MB, bytesToMb } from '../../lib/format/bytes'
 import { useI18n } from '../../hooks/use-i18n'
 import { Button } from '../../ui/Button'

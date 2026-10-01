@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { destinationProblem } from '../../lib/api/path-utils'
+import { destinationProblem } from '../../lib/path-utils'
 import { useSession } from '../auth/api'
 import { useStat } from './api'
 import { useI18n } from '../../hooks/use-i18n'

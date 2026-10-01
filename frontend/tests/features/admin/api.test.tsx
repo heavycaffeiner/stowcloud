@@ -6,7 +6,7 @@ import type { PropsWithChildren } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../../src/api/fetcher'
 import { useAdminLogs, useAdminTimeline, useSystemHealth } from '../../../src/features/admin/api'
-import { EMPTY_FILTERS, PAGE_SIZE, pureLocalToNs, type LogFilters } from '../../../src/lib/admin/log-view'
+import { EMPTY_FILTERS, PAGE_SIZE, pureLocalToNs, type LogFilters } from '../../../src/features/admin/logic/log-view'
 import { createTestQueryClient } from '../../../src/test/test-utils'
 
 function jsonResponse(status: number, body: unknown): Response {

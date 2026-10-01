@@ -1,4 +1,4 @@
-import { EXTENSION_PRESETS, parseExtensions } from '../../../lib/search/filters'
+import { EXTENSION_PRESETS, parseExtensions } from './filters'
 import { computeWindow, type WindowResult } from '../../../lib/virtual/windowing'
 import { SORT_KEYS, sortHits, type CategoryId, type SearchPanelState, type SearchStatus } from './search-state'
 import type { SearchHit } from '../api'

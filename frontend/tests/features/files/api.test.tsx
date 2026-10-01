@@ -15,7 +15,7 @@ import {
   useWriteFile
 } from '../../../src/features/files/api'
 import { invalidateEncryptedShares } from '../../../src/lib/crypto/encrypted-shares'
-import { batchErrorKey, describeApiError } from '../../../src/lib/api/error-text'
+import { batchErrorKey, describeApiError } from '../../../src/api/error-text'
 import { t } from '../../../src/lib/i18n'
 import { createTestQueryClient } from '../../../src/test/test-utils'
 

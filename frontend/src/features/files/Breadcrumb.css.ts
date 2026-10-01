@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css'
-import * as browseViewStyles from '../../app/routes/browse/BrowseView.css'
+import * as browseViewStyles from './routes/BrowseView.css'
 import { vars } from '../../ui/theme.css'
 
 export const root = style({

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { batchErrorKey } from '../../lib/api/error-text'
+import { batchErrorKey } from '../../api/error-text'
 import { useI18n } from '../../hooks/use-i18n'
 import { jobTray, useJobTrayStore } from '../../lib/store/jobs.store'
 import { Icon } from '../../ui/Icon'

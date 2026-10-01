@@ -11,7 +11,7 @@ import {
   pureToAuditQuery,
   pureToQuery,
   type LogFilters
-} from '../../lib/admin/log-view'
+} from './logic/log-view'
 import { invalidateEncryptedShares } from '../../lib/crypto/encrypted-shares'
 import { keys, type GrantScope } from '../../lib/query/keys'
 import { jobFromWire } from '../jobs/api'

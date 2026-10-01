@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MutableRefObject, RefObject } from 'react'
 import { useEventListener } from '../../../hooks/use-event-listener'
-import { resolveExtensions } from '../../../lib/search/filters'
+import { resolveExtensions } from '../logic/filters'
 import { search, type SearchSnapshot } from '../../../lib/store/search.store'
 import {
   initialSearchState,

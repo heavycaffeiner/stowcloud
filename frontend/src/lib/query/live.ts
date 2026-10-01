@@ -6,7 +6,7 @@
 // SMB, by a sync client or in another tab therefore lands on screen through
 // the same path as a change made here.
 import { invalidateDirs } from '../../features/files/api'
-import { eventsTransport, type ServerMsg } from '../api/events-transport'
+import { eventsTransport, type ServerMsg } from '../../api/events-transport'
 import { queryClient } from './client'
 
 const PING_MS = 30_000

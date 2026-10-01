@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
-import { joinPath } from '../../lib/api/path-utils'
+import { joinPath } from '../../lib/path-utils'
 import { formatBytes } from '../../lib/format/bytes'
 import { formatEntrySize } from '../../lib/format/entry-size'
 import { formatModifiedDateNs } from '../../lib/i18n'

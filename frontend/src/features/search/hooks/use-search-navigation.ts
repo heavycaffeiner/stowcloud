@@ -1,6 +1,6 @@
 import { useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { parentOf } from '../../../lib/api/path-utils'
+import { parentOf } from '../../../lib/path-utils'
 import { search } from '../../../lib/store/search.store'
 import type { SearchPanelState } from '../logic/search-state'
 import type { SearchHit } from '../api'

@@ -1,7 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { useI18n } from '../../hooks/use-i18n'
 import { useAdminSettings, useSaveUploadSettings } from './api'
-import { describeApiError } from '../../lib/api/error-text'
+import { describeApiError } from '../../api/error-text'
 import { BYTES_PER_MB, bytesToMb, formatBytes } from '../../lib/format/bytes'
 import {
   CHUNK_SIZE_MIN,

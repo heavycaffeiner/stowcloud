@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react'
-import { describeApiError } from '../../../lib/api/error-text'
+import { describeApiError } from '../../../api/error-text'
 import {
   useCreateShareLink,
   useDeleteShareLink,

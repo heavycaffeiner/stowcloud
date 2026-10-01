@@ -1,7 +1,7 @@
 // The search stream: hits arrive as server-sent events until the server is
 // done or reports that its bounded walk stopped early.
 import { apiUrl } from '../../api/fetcher'
-import { normalizePath } from '../../lib/api/path-utils'
+import { normalizePath } from '../../lib/path-utils'
 import type { Entry } from '../files/api'
 
 export interface SearchHit {

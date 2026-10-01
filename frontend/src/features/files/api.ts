@@ -23,7 +23,7 @@ import {
   type ApiErrorBody
 } from '../../api/fetcher'
 import type { components } from '../../api/generated/schema'
-import { isWithin, parentOf } from '../../lib/api/path-utils'
+import { isWithin, parentOf } from '../../lib/path-utils'
 import { decryptDownload, encryptForUpload } from '../../lib/crypto/e2ee'
 import { encryptionForLabel, shareLabelOf } from '../../lib/crypto/encrypted-shares'
 import { keys, type Sort } from '../../lib/query/keys'

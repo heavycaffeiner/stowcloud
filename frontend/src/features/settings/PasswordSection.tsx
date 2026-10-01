@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { describeApiError } from '../../lib/api/error-text'
+import { describeApiError } from '../../api/error-text'
 import { scorePasswordStrength } from '../../lib/format/password-strength'
 import { validatePasswordChange } from '../../lib/format/password-change'
 import { useChangePassword } from './api'

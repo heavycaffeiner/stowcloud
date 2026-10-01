@@ -1,5 +1,5 @@
 import { useGrantManagementState } from './hooks/grant-management-state'
-import { describeApiError } from '../../lib/api/error-text'
+import { describeApiError } from '../../api/error-text'
 import { useI18n } from '../../hooks/use-i18n'
 import { Button } from '../../ui/Button'
 import { Checkbox } from '../../ui/Checkbox'

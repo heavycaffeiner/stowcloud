@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { joinPath } from '../../lib/api/path-utils'
+import { joinPath } from '../../lib/path-utils'
 import { useSession } from '../auth/api'
 import { useI18n } from '../../hooks/use-i18n'
 import { FileTreeItem } from './FileTreeItem'
