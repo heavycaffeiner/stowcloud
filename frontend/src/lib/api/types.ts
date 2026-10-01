@@ -114,6 +114,22 @@ export interface Entry {
 export type SortKey = 'name' | 'size' | 'mtime' | 'kind'
 export type Order = 'asc' | 'desc'
 
+export interface ListOpts {
+  sort?: SortKey
+  order?: Order
+  /**
+   * The page to fetch, taken from the previous page's `cursor`.
+   *
+   * Opaque, and only ever a value the server handed out. There is no offset
+   * beside it: the server orders the whole directory and cuts the page this
+   * names, so a caller cannot ask for a slice starting at an arbitrary row.
+   */
+  cursor?: string
+  limit?: number
+  /** Lets the caller cancel a windowed fetch for a range it has scrolled past. */
+  signal?: AbortSignal
+}
+
 export interface ListResponse {
   total: number
   /**
@@ -1671,4 +1687,51 @@ export interface ShareEncryption {
   salt: string
   verifier: string
   createdNs: number
+}
+
+export interface SearchHit {
+  path: string
+  entry: Entry
+}
+
+/** One search, filters included.
+ *
+ *  An absent `kind` or an empty `exts` narrows nothing. `scope` is the folder
+ *  the search was opened from: it ranks that subtree up, it does not confine
+ *  the search to it. */
+export interface SearchRequest {
+  query: string
+  kind?: 'file' | 'dir'
+  exts?: readonly string[]
+  scope?: string
+}
+
+/** The `done` event of `GET /api/v1/search/stream`.
+ *
+ *  `count` is how many hits the server sent. `truncated` means the server
+ *  stopped before checking every accessible folder, so the hits remain useful
+ *  but are not a complete answer. `error` describes a failed stream. */
+export interface SearchDone {
+  count: number
+  /** Which tier answered, for a diagnostic. */
+  tier?: string
+  /** True when the server stopped before checking every accessible folder. */
+  truncated?: boolean
+  elapsedMs?: number
+  /** `busy` when the engine already had its hands full, `search_failed` when
+   *  the walk broke, `network` when the stream did. Absent on a search that
+   *  ran to the end. */
+  error?: string
+}
+
+/** The `progress` event of `GET /api/v1/search/stream`.
+ *
+ *  A walk of a large tree can run for a long time before it matches
+ *  anything, and silence for that long reads as a search that has stopped.
+ *  These are the counters the walk has reached, never an estimate of what is
+ *  left: nothing knows the size of a tree until it has been walked. */
+export interface SearchProgress {
+  dirs: number
+  files: number
+  found: number
 }

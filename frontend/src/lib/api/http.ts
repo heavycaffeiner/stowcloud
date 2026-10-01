@@ -86,10 +86,14 @@ import {
   type WatchSettingsReq,
   type Kind,
   type Perms,
+  type ListOpts,
+  type SearchDone,
+  type SearchHit,
+  type SearchProgress,
+  type SearchRequest,
   permsFromNames,
   permNamesOf
 } from './types'
-import type { ListOpts, SearchDone, SearchHit, SearchProgress, SearchRequest } from './mock'
 import { normalizePath } from './path-utils'
 import { decryptDownload, encryptForUpload } from '../crypto/e2ee'
 import { encryptionForLabel, shareLabelOf } from '../crypto/encrypted-shares'
