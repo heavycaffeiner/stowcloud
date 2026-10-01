@@ -19,8 +19,6 @@
     "preview": "vite preview",
     "check": "tsc -b",
     "test": "vitest run",
-    "test:alignment": "node e2e/alignment.spec.mjs",
-    "test:virtual-scroll": "node e2e/virtual-scroll.spec.mjs",
     "test:e2e": "playwright test",
     "test:watch": "vitest",
     "lint:i18n": "node tools/i18n-check.mjs",
