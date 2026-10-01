@@ -200,11 +200,12 @@ func collectSchemaRefs(registry huma.Registry, s *huma.Schema, into map[string]b
 }
 
 // typed is one access group's Huma API. A public group's operations are
-// documented as needing no credential.
+// documented as needing no credential; a hidden group's are left out of the document.
 type typed struct {
 	api    huma.API
 	errs   *apierr.Classifier
 	public bool
+	hidden bool
 }
 
 // newTyped mounts a Huma API on group. A declared body past the JSON bound is
@@ -216,7 +217,7 @@ func newTyped(router *gin.Engine, group *gin.RouterGroup, config huma.Config, er
 // op registers a typed operation. Every handler error is classified into the
 // native envelope; Huma would otherwise answer 500 and drop it.
 func op[I, O any](t typed, method, path, id string, h func(context.Context, *I) (*O, error)) {
-	operation := huma.Operation{OperationID: id, Method: method, Path: path, MaxBodyBytes: limits.RequestBody}
+	operation := huma.Operation{OperationID: id, Method: method, Path: path, MaxBodyBytes: limits.RequestBody, Hidden: t.hidden}
 	if t.public {
 		operation.Security = []map[string][]string{{}}
 	}

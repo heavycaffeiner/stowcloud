@@ -26,6 +26,9 @@ import (
 // spelling of the public link routes.
 func (e *Engine) mountNCTagged(public gin.IRoutes, publicAPI, linkPage typed, device gin.IRoutes) {
 	e.ncServer().Mount(device)
+	// The published document is the same in every build, so the frontend's
+	// generated client does not depend on this tag.
+	linkPage.hidden, publicAPI.hidden = true, true
 	op(linkPage, http.MethodGet, "/index.php/s/{token}", "nc.links.public.get", e.publicLinks.Landing)
 	op(publicAPI, http.MethodPost, "/index.php/s/{token}/auth", "nc.links.unlock", e.publicLinks.Unlock("/index.php"+shares.PublicLinkPrefix))
 	public.GET("/index.php/s/:token/download", e.publicLinks.Download)
