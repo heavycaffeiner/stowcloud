@@ -49,6 +49,18 @@ export function Dialog({
   useEventListener(ref, 'overlay-click', () => {
     if (dismissible) onClose?.()
   })
+  // mdui shows the dialog and moves focus into it a frame later. Moving it right after the dialog shows
+  // keeps a key pressed in between, Escape included, from landing on the page underneath.
+  useEventListener(ref, 'open', (event) => {
+    const dialog = ref.current
+    if (event.target !== dialog || !dialog) return
+    queueMicrotask(() =>
+      (
+        dialog.querySelector<HTMLElement>('[autofocus]') ??
+        dialog.shadowRoot?.querySelector<HTMLElement>('[part~="panel"]')
+      )?.focus({ preventScroll: true })
+    )
+  })
   // mdui popups nested inside the dialog fire their own bubbling `closed`.
   useEventListener(ref, 'closed', (event) => {
     if (event.target === ref.current) onClosed?.()
