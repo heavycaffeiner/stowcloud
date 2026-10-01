@@ -233,7 +233,7 @@ function FilterPill<T extends string>({
                 close()
               }}
             >
-              {current === value ? '✓ ' : ''}
+              {current === value ? <span aria-hidden="true">✓ </span> : null}
               {text}
             </MenuItem>
           ))}

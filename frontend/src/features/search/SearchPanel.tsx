@@ -147,7 +147,7 @@ export function SearchPanel({ scope = '', autoFocus = false, trailing }: SearchP
                     controller.set('sortOpen', false)
                   }}
                 >
-                  {state.sortKey === key ? '✓ ' : ''}
+                  {state.sortKey === key ? <span aria-hidden="true">✓ </span> : null}
                   {t(labelKey)}
                 </button>
               ))}
