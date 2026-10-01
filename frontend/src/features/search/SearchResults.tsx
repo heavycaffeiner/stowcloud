@@ -1,5 +1,6 @@
 import { formatBytes } from '../../lib/format/bytes'
 import { formatModifiedDateNs } from '../../lib/i18n'
+import { useI18n } from '../../hooks/use-i18n'
 import { parentOf } from '../../lib/path-utils'
 import { extensionOf } from './logic/filters'
 import { computeWindow, type WindowResult } from '../../lib/virtual/windowing'
@@ -18,7 +19,6 @@ export interface SearchResultsProps {
   readonly onOpen: (hit: SearchHit) => void
   readonly onScroll: (scrollTop: number) => void
   readonly resultsRef: (node: HTMLDivElement | null) => void
-  readonly t: (key: string, values?: Record<string, string>) => string
 }
 
 function getHitIcon(hit: SearchHit): { name: string; color?: string } {
@@ -94,9 +94,9 @@ export function SearchResults({
   activeFilters,
   onOpen,
   onScroll,
-  resultsRef,
-  t
+  resultsRef
 }: SearchResultsProps) {
+  const { t } = useI18n()
   return (
     <div
       className={styles.results}

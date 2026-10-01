@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react'
 import type { AdminTab } from '../hooks/use-admin-tab'
+import { useI18n } from '../../../hooks/use-i18n'
 import { ErrorBoundary } from '../../../ui/ErrorBoundary'
 import { ProgressCircular } from '../../../ui/ProgressCircular'
 import * as styles from './AdminPanels.css'
@@ -47,26 +48,20 @@ export function SectionLoading({ label }: { label: string }) {
   )
 }
 
-interface AdminPanelsProps {
-  tab: AdminTab
-  loadingLabel: string
-  usersLabel: string
-  groupsLabel: string
-}
-
-export function AdminPanels({ tab, loadingLabel, usersLabel, groupsLabel }: AdminPanelsProps) {
+export function AdminPanels({ tab }: { tab: AdminTab }) {
+  const { t } = useI18n()
   return (
     <div className={adminPageStyles.inner}>
       <ErrorBoundary resetKey={tab}>
-        <Suspense fallback={<SectionLoading label={loadingLabel} />}>
+        <Suspense fallback={<SectionLoading label={t('common.loading')} />}>
           {tab === 'users' ? (
             <>
               <section className={cx(styles.pageSection, settingsCardStyles.card, textFieldStyles.onLowSurface)}>
-                <h2 className={styles.pageTitle}>{usersLabel}</h2>
+                <h2 className={styles.pageTitle}>{t('admin.users')}</h2>
                 <UserManagementSection />
               </section>
               <section className={cx(styles.pageSection, settingsCardStyles.card, textFieldStyles.onLowSurface)}>
-                <h2 className={styles.pageTitle}>{groupsLabel}</h2>
+                <h2 className={styles.pageTitle}>{t('admin.groups')}</h2>
                 <GroupManagementSection />
               </section>
             </>

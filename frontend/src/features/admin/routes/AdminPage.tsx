@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { useI18n } from '../../../hooks/use-i18n'
+import { t } from '../../../lib/i18n'
 import { useSession } from '../../auth/api'
 import { useDocumentTitle } from '../../../hooks/use-document-title'
 import { PageTabs, type PageTabItem } from '../../../ui/PageTabs'
@@ -10,7 +11,7 @@ import * as pageTabsStyles from '../../../ui/PageTabs.css'
 
 type AdminTabItem = PageTabItem<AdminTab>
 
-function adminTabs(t: (key: string) => string): readonly AdminTabItem[] {
+function adminTabs(): readonly AdminTabItem[] {
   return [
     { value: 'users', label: t('admin.people_and_access'), icon: 'admin' },
     { value: 'shares', label: t('admin.shared_folders'), icon: 'folder' },
@@ -69,16 +70,10 @@ export function AdminPage() {
     )
   }
 
-  const tabs = adminTabs(t)
   return (
     <AdminFrame>
-      <PageTabs label={t('admin.admin_sections')} items={tabs} active={tab} onSelect={selectTab} />
-      <AdminPanels
-        tab={tab}
-        loadingLabel={t('common.loading')}
-        usersLabel={t('admin.users')}
-        groupsLabel={t('admin.groups')}
-      />
+      <PageTabs label={t('admin.admin_sections')} items={adminTabs()} active={tab} onSelect={selectTab} />
+      <AdminPanels tab={tab} />
     </AdminFrame>
   )
 }

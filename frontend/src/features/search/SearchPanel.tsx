@@ -187,7 +187,6 @@ export function SearchPanel({ scope = '', autoFocus = false, onNavigated, traili
         resultsRef={(node) => {
           resultsContainer.current = node
         }}
-        t={t}
       />
     </div>
   )

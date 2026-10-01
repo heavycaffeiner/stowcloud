@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { batchErrorKey } from '../../api/error-text'
 import { useI18n } from '../../hooks/use-i18n'
+import { t } from '../../lib/i18n'
 import { jobTray, useJobTrayStore } from './tray-store'
 import { Icon } from '../../ui/Icon'
 import { IconButton } from '../../ui/IconButton'
@@ -30,7 +31,7 @@ function frontendKind(kind: JobKind): JobRow['kind'] {
   return kind === 'index_build' ? 'index' : kind === 'delete' ? 'delete' : 'copy'
 }
 
-function kindLabel(kind: JobRow['kind'], t: (key: string, params?: Record<string, string | number>) => string): string {
+function kindLabel(kind: JobRow['kind']): string {
   return kind === 'delete' ? t('common.delete') : kind === 'copy' ? t('common.copy') : t('job.index_build')
 }
 
@@ -139,7 +140,7 @@ function useJobTray() {
       const prior = previous.current.get(item.id)
       if (prior !== undefined && prior !== item.status) {
         invalidatePaths()
-        const label = kindLabel(item.kind, t)
+        const label = kindLabel(item.kind)
         if (item.status === 'done')
           announce(
             'polite',
@@ -172,7 +173,6 @@ function useJobTray() {
     )
 
   return {
-    t,
     rows,
     open,
     expandedJobs,
@@ -190,8 +190,8 @@ function useJobTray() {
 }
 
 export function JobTray() {
+  const { t } = useI18n()
   const {
-    t,
     rows,
     open,
     expandedJobs,
@@ -267,7 +267,7 @@ export function JobTray() {
               estimateSize={128}
               itemProps={() => ({ className: styles.item })}
               renderItem={(item) => {
-                const label = kindLabel(item.kind, t)
+                const label = kindLabel(item.kind)
                 const outstandingCount = item.attempting.length + item.pending.length
                 return (
                   <>
