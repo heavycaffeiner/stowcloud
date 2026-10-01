@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { overlay } from 'overlay-kit'
 import { ApiError } from '../../api/fetcher'
@@ -16,16 +16,16 @@ import { formatBytes } from '../../lib/format/bytes'
 import { formatEntrySize } from '../../lib/format/entry-size'
 import { joinPath } from '../../lib/path-utils'
 import { useI18n } from '../../hooks/use-i18n'
-import { useEventListener } from '../../hooks/use-event-listener'
 import { IMAGE_EXT, VIDEO_EXT, extensionOf, mimeTypeOf } from './logic/media-utils'
 import { registerMediaSource, releaseMediaSource, swReady } from '../../lib/crypto/download-sw'
-import { decryptDownload, isUnlocked, MAX_ENCRYPTABLE_BYTES } from '../../lib/crypto/e2ee'
+import { decryptDownload, MAX_ENCRYPTABLE_BYTES } from '../../lib/crypto/e2ee'
+import { useShareUnlocked } from '../../lib/crypto/keyring'
 import { Button } from '../../ui/Button'
 import { Dialog } from '../../ui/Dialog'
 import { ErrorBoundary } from '../../ui/ErrorBoundary'
 import { IconButton } from '../../ui/IconButton'
 import { ProgressCircular } from '../../ui/ProgressCircular'
-import { UnlockShareDialog } from '../shares/UnlockShareDialog'
+import { askUnlock } from '../shares/UnlockShareDialog'
 import { Icon } from '../../ui/Icon'
 import { isEditableFileName } from '../files/logic/editable-files'
 import * as styles from './PreviewDialog.css'
@@ -160,8 +160,6 @@ function PreviewDialog({
 }: PreviewDialogProps) {
   const { t, tp } = useI18n()
   const [previewState, setPreviewState] = useState({
-    unlockOpen: false,
-    unlockGeneration: 0,
     cwd: '',
     imageOverride: null as string | null,
     imageGaveUp: false,
@@ -169,8 +167,7 @@ function PreviewDialog({
     mediaUrl: null as string | null,
     mediaKind: 'idle' as MediaKind
   })
-  const { unlockOpen, unlockGeneration, cwd, imageOverride, imageGaveUp, videoGaveUp, mediaUrl, mediaKind } =
-    previewState
+  const { cwd, imageOverride, imageGaveUp, videoGaveUp, mediaUrl, mediaKind } = previewState
   const videoRef = useRef<HTMLVideoElement>(null)
   const previewRef = useRef<HTMLDivElement>(null)
   const body: Body = useMemo(() => {
@@ -185,7 +182,8 @@ function PreviewDialog({
   const encryptionQuery = useShareEncryption(entry?.path ?? '', open && entry !== null)
   const encryption = encryptionQuery.data ?? null
   const encryptionPending = open && entry !== null && encryptionQuery.isPending
-  const unlocked = useMemo(() => encryption === null || isUnlocked(encryption.salt), [encryption, unlockGeneration])
+  const keyHeld = useShareUnlocked(encryption?.salt)
+  const unlocked = encryption === null || keyHeld
   const locked = Boolean(entry && encryption && !unlocked)
   const textQuery = useFileContent(entry, unlocked, open && body.kind === 'text' && !encryptionPending && unlocked)
   const archiveQuery = useArchiveEntries(
@@ -203,12 +201,17 @@ function PreviewDialog({
   const archivePending = encryption ? encryptedArchiveQuery.isPending : archiveQuery.isPending
   const previewKey = open && entry ? `${body.kind}\x00${path}\x00${entry.size}` : null
 
+  const asking = useRef(false)
+  async function requestUnlock(): Promise<void> {
+    if (!encryption || asking.current) return
+    asking.current = true
+    await askUnlock(encryption)
+    asking.current = false
+  }
+  const onLocked = useEffectEvent(() => void requestUnlock())
   useEffect(() => {
-    if (locked) setPreviewState((state) => ({ ...state, unlockOpen: true }))
+    if (locked) onLocked()
   }, [locked])
-  const bumpUnlock = () => setPreviewState((state) => ({ ...state, unlockGeneration: state.unlockGeneration + 1 }))
-  useEventListener(window, 'sc:unlock', bumpUnlock)
-  useEventListener(window, 'sc:lock', bumpUnlock)
   useEffect(() => {
     if (!open || !entry) return
     queueMicrotask(() => previewRef.current?.querySelector<HTMLButtonElement>('button')?.focus())
@@ -219,8 +222,7 @@ function PreviewDialog({
       imageOverride: null,
       imageGaveUp: false,
       videoGaveUp: false,
-      cwd: '',
-      unlockOpen: false
+      cwd: ''
     }))
     videoRef.current?.pause()
   }, [previewKey])
@@ -341,211 +343,198 @@ function PreviewDialog({
     })
 
   return (
-    <>
-      <Dialog
-        open={open}
-        title={entry.name}
-        hideTitle
-        size="viewer"
-        role="dialog"
-        onClose={onClose}
-        onClosed={onClosed}
-        onKeyDown={onKeyDown}
-      >
-        <div ref={previewRef} className={styles.root}>
-          <header className={styles.bar}>
-            <IconButton className={styles.iconButton} label={t('common.close')} onClick={onClose}>
-              <Icon name="close" />
+    <Dialog
+      open={open}
+      title={entry.name}
+      hideTitle
+      size="viewer"
+      role="dialog"
+      onClose={onClose}
+      onClosed={onClosed}
+      onKeyDown={onKeyDown}
+    >
+      <div ref={previewRef} className={styles.root}>
+        <header className={styles.bar}>
+          <IconButton className={styles.iconButton} label={t('common.close')} onClick={onClose}>
+            <Icon name="close" />
+          </IconButton>
+          <div className={styles.meta}>
+            <span className={styles.name} title={entry.name}>
+              {entry.name}
+            </span>
+            <span className={styles.size}>{formatEntrySize(entry.size, encryption !== null)}</span>
+          </div>
+          {body.kind === 'text' || body.kind === 'too-large-text' ? (
+            <IconButton
+              className={styles.iconButton}
+              label={t('browse.open_text_editor')}
+              onClick={() => onEdit(entry)}
+            >
+              <Icon name="edit_document" />
             </IconButton>
-            <div className={styles.meta}>
-              <span className={styles.name} title={entry.name}>
-                {entry.name}
-              </span>
-              <span className={styles.size}>{formatEntrySize(entry.size, encryption !== null)}</span>
-            </div>
-            {body.kind === 'text' || body.kind === 'too-large-text' ? (
-              <IconButton
-                className={styles.iconButton}
-                label={t('browse.open_text_editor')}
-                onClick={() => onEdit(entry)}
-              >
-                <Icon name="edit_document" />
-              </IconButton>
-            ) : null}
-            <IconButton className={styles.iconButton} label={t('common.download')} onClick={() => onDownload(entry)}>
-              <Icon name="download" />
-            </IconButton>
-          </header>
-          <div className={styles.body}>
-            <div className={styles.stage}>
-              {loading ? (
-                <ProgressCircular size={40} />
-              ) : videoUrl ? (
-                <div className={styles.videoContainer}>
-                  <video
-                    ref={videoRef}
-                    className={styles.video}
-                    src={videoUrl}
-                    controls
-                    autoPlay
-                    playsInline
-                    preload="metadata"
-                    onError={() => setPreviewState((state) => ({ ...state, videoGaveUp: true }))}
+          ) : null}
+          <IconButton className={styles.iconButton} label={t('common.download')} onClick={() => onDownload(entry)}>
+            <Icon name="download" />
+          </IconButton>
+        </header>
+        <div className={styles.body}>
+          <div className={styles.stage}>
+            {loading ? (
+              <ProgressCircular size={40} />
+            ) : videoUrl ? (
+              <div className={styles.videoContainer}>
+                <video
+                  ref={videoRef}
+                  className={styles.video}
+                  src={videoUrl}
+                  controls
+                  autoPlay
+                  playsInline
+                  preload="metadata"
+                  onError={() => setPreviewState((state) => ({ ...state, videoGaveUp: true }))}
+                >
+                  <track kind="captions" />
+                  {t('preview.cannot_preview')}
+                </video>
+              </div>
+            ) : imageUrl ? (
+              <img
+                className={styles.image}
+                src={imageUrl}
+                alt={entry.name}
+                onError={() => {
+                  const own = contentUrl(entry)
+                  if (!encryption && imageUrl !== own) setPreviewState((state) => ({ ...state, imageOverride: own }))
+                  else setPreviewState((state) => ({ ...state, imageGaveUp: true }))
+                }}
+              />
+            ) : textQuery.data?.content !== undefined ? (
+              <pre className={styles.text}>{textQuery.data.content}</pre>
+            ) : archiveListing ? (
+              <div className={styles.archive}>
+                <p className={styles.archiveCount}>
+                  {tp('preview.archive_entries', level.length)}{' '}
+                  {archiveListing.skipped ? (
+                    <span className={styles.archiveSkipped}>
+                      {tp('preview.archive_skipped', archiveListing.skipped)}
+                    </span>
+                  ) : null}{' '}
+                  {archiveListing.truncated ? (
+                    <span className={styles.archiveSkipped}>
+                      {t('preview.archive_truncated', { limit: archiveListing.limit })}
+                    </span>
+                  ) : null}
+                </p>
+                <nav className={styles.crumbs} aria-label={t('preview.archive_location')}>
+                  <button
+                    type="button"
+                    className={styles.crumb}
+                    disabled={!cwd}
+                    onClick={() => setPreviewState((state) => ({ ...state, cwd: '' }))}
                   >
-                    <track kind="captions" />
-                    {t('preview.cannot_preview')}
-                  </video>
-                </div>
-              ) : imageUrl ? (
-                <img
-                  className={styles.image}
-                  src={imageUrl}
-                  alt={entry.name}
-                  onError={() => {
-                    const own = contentUrl(entry)
-                    if (!encryption && imageUrl !== own) setPreviewState((state) => ({ ...state, imageOverride: own }))
-                    else setPreviewState((state) => ({ ...state, imageGaveUp: true }))
-                  }}
-                />
-              ) : textQuery.data?.content !== undefined ? (
-                <pre className={styles.text}>{textQuery.data.content}</pre>
-              ) : archiveListing ? (
-                <div className={styles.archive}>
-                  <p className={styles.archiveCount}>
-                    {tp('preview.archive_entries', level.length)}{' '}
-                    {archiveListing.skipped ? (
-                      <span className={styles.archiveSkipped}>
-                        {tp('preview.archive_skipped', archiveListing.skipped)}
+                    {entry.name}
+                  </button>
+                  {crumbs.map((crumb, index) => (
+                    <span key={crumb.path}>
+                      <span className={styles.crumbSep} aria-hidden="true">
+                        /
                       </span>
-                    ) : null}{' '}
-                    {archiveListing.truncated ? (
-                      <span className={styles.archiveSkipped}>
-                        {t('preview.archive_truncated', { limit: archiveListing.limit })}
-                      </span>
-                    ) : null}
-                  </p>
-                  <nav className={styles.crumbs} aria-label={t('preview.archive_location')}>
-                    <button
-                      type="button"
-                      className={styles.crumb}
-                      disabled={!cwd}
-                      onClick={() => setPreviewState((state) => ({ ...state, cwd: '' }))}
-                    >
-                      {entry.name}
-                    </button>
-                    {crumbs.map((crumb, index) => (
-                      <span key={crumb.path}>
-                        <span className={styles.crumbSep} aria-hidden="true">
-                          /
-                        </span>
+                      <button
+                        type="button"
+                        className={styles.crumb}
+                        disabled={index === crumbs.length - 1}
+                        onClick={() => setPreviewState((state) => ({ ...state, cwd: crumb.path }))}
+                      >
+                        {crumb.label}
+                      </button>
+                    </span>
+                  ))}
+                </nav>
+                {level.length === 0 ? (
+                  <p className={styles.archiveEmpty}>{t('preview.archive_empty')}</p>
+                ) : (
+                  <ul className={styles.archiveList}>
+                    {cwd ? (
+                      <li>
                         <button
                           type="button"
-                          className={styles.crumb}
-                          disabled={index === crumbs.length - 1}
-                          onClick={() => setPreviewState((state) => ({ ...state, cwd: crumb.path }))}
+                          className={cx(styles.archiveRow, styles.archiveRowUp)}
+                          onClick={archiveUp}
                         >
-                          {crumb.label}
+                          <Icon name="chevron_left" />
+                          <span>{t('preview.archive_up')}</span>
                         </button>
-                      </span>
-                    ))}
-                  </nav>
-                  {level.length === 0 ? (
-                    <p className={styles.archiveEmpty}>{t('preview.archive_empty')}</p>
-                  ) : (
-                    <ul className={styles.archiveList}>
-                      {cwd ? (
-                        <li>
+                      </li>
+                    ) : null}
+                    {level.map((row) => (
+                      <li key={row.path}>
+                        {row.kind === 'dir' ? (
                           <button
                             type="button"
-                            className={cx(styles.archiveRow, styles.archiveRowUp)}
-                            onClick={archiveUp}
+                            className={styles.archiveRow}
+                            onClick={() => setPreviewState((state) => ({ ...state, cwd: row.path }))}
                           >
-                            <Icon name="chevron_left" />
-                            <span>{t('preview.archive_up')}</span>
+                            <Icon name="folder" />
+                            <span className={styles.archiveName}>{row.label}</span>
+                            <span>{t('details.folder')}</span>
                           </button>
-                        </li>
+                        ) : (
+                          <div className={styles.archiveRow}>
+                            <Icon name="draft" />
+                            <span className={styles.archiveName}>{row.label}</span>
+                            <span>{t('details.file')}</span>
+                            <span>{formatBytes(row.size)}</span>
+                          </div>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ) : (
+              <div className={styles.card} role={failed ? 'alert' : undefined}>
+                <p className={styles.cardTitle}>{locked ? t('preview.locked_title') : t('preview.cannot_preview')}</p>
+                <p className={styles.cardReason}>
+                  {locked
+                    ? t('preview.locked_reason')
+                    : (failed ??
+                      (body.kind === 'too-large-text' ? t('preview.too_large_for_text') : t('preview.no_preview')))}
+                </p>
+                {typeof failedDetail === 'string' ? <p className={styles.cardDetail}>{failedDetail}</p> : null}
+                <div className={styles.cardActions}>
+                  {locked ? (
+                    <Button onClick={() => void requestUnlock()}>{t('encryption.unlock')}</Button>
+                  ) : (
+                    <>
+                      <Button onClick={() => onDownload(entry)}>{t('common.download')}</Button>
+                      {body.kind === 'too-large-text' ? (
+                        <Button variant="outlined" onClick={() => onEdit(entry)}>
+                          {t('browse.open_text_editor')}
+                        </Button>
                       ) : null}
-                      {level.map((row) => (
-                        <li key={row.path}>
-                          {row.kind === 'dir' ? (
-                            <button
-                              type="button"
-                              className={styles.archiveRow}
-                              onClick={() => setPreviewState((state) => ({ ...state, cwd: row.path }))}
-                            >
-                              <Icon name="folder" />
-                              <span className={styles.archiveName}>{row.label}</span>
-                              <span>{t('details.folder')}</span>
-                            </button>
-                          ) : (
-                            <div className={styles.archiveRow}>
-                              <Icon name="draft" />
-                              <span className={styles.archiveName}>{row.label}</span>
-                              <span>{t('details.file')}</span>
-                              <span>{formatBytes(row.size)}</span>
-                            </div>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
+                    </>
                   )}
                 </div>
-              ) : (
-                <div className={styles.card} role={failed ? 'alert' : undefined}>
-                  <p className={styles.cardTitle}>{locked ? t('preview.locked_title') : t('preview.cannot_preview')}</p>
-                  <p className={styles.cardReason}>
-                    {locked
-                      ? t('preview.locked_reason')
-                      : (failed ??
-                        (body.kind === 'too-large-text' ? t('preview.too_large_for_text') : t('preview.no_preview')))}
-                  </p>
-                  {typeof failedDetail === 'string' ? <p className={styles.cardDetail}>{failedDetail}</p> : null}
-                  <div className={styles.cardActions}>
-                    {locked ? (
-                      <Button onClick={() => setPreviewState((state) => ({ ...state, unlockOpen: true }))}>
-                        {t('encryption.unlock')}
-                      </Button>
-                    ) : (
-                      <>
-                        <Button onClick={() => onDownload(entry)}>{t('common.download')}</Button>
-                        {body.kind === 'too-large-text' ? (
-                          <Button variant="outlined" onClick={() => onEdit(entry)}>
-                            {t('browse.open_text_editor')}
-                          </Button>
-                        ) : null}
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
-          {hasPrev || hasNext ? (
-            <div className={styles.nav}>
-              <IconButton
-                className={styles.iconButton}
-                label={t('preview.previous')}
-                disabled={!hasPrev}
-                onClick={onPrev}
-              >
-                <Icon name="chevron_left" />
-              </IconButton>
-              <IconButton className={styles.iconButton} label={t('preview.next')} disabled={!hasNext} onClick={onNext}>
-                <Icon name="chevron_right" />
-              </IconButton>
-            </div>
-          ) : null}
         </div>
-      </Dialog>
-      <UnlockShareDialog
-        open={unlockOpen}
-        salt={encryption?.salt ?? ''}
-        verifier={encryption?.verifier ?? ''}
-        onUnlock={() =>
-          setPreviewState((state) => ({ ...state, unlockOpen: false, unlockGeneration: state.unlockGeneration + 1 }))
-        }
-        onClose={() => setPreviewState((state) => ({ ...state, unlockOpen: false }))}
-      />
-    </>
+        {hasPrev || hasNext ? (
+          <div className={styles.nav}>
+            <IconButton
+              className={styles.iconButton}
+              label={t('preview.previous')}
+              disabled={!hasPrev}
+              onClick={onPrev}
+            >
+              <Icon name="chevron_left" />
+            </IconButton>
+            <IconButton className={styles.iconButton} label={t('preview.next')} disabled={!hasNext} onClick={onNext}>
+              <Icon name="chevron_right" />
+            </IconButton>
+          </div>
+        ) : null}
+      </div>
+    </Dialog>
   )
 }

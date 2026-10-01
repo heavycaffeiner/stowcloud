@@ -649,14 +649,11 @@ export function useDeleteUser() {
   )
 }
 
-export function useAdminUserOidc(userId: number | null) {
+export function useAdminUserOidc(userId: number) {
   return useQuery({
-    queryKey: keys.adminUserOidc(userId ?? 0),
+    queryKey: keys.adminUserOidc(userId),
     queryFn: async () =>
-      userOidcFromWire(
-        await unwrap(client.GET('/api/v1/admin/users/{id}/oidc', { params: { path: id(userId ?? 0) } }))
-      ),
-    enabled: userId !== null
+      userOidcFromWire(await unwrap(client.GET('/api/v1/admin/users/{id}/oidc', { params: { path: id(userId) } })))
   })
 }
 

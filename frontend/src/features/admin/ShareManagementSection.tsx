@@ -10,7 +10,7 @@ import { Dialog } from '../../ui/Dialog'
 import { Icon } from '../../ui/Icon'
 import { ShareManagementList } from './ShareManagementList'
 import { Switch } from '../../ui/Switch'
-import { PathPickerDialog } from '../files/PathPickerDialog'
+import { pickPath } from '../files/PathPickerDialog'
 import { ProgressCircular } from '../../ui/ProgressCircular'
 import { Select } from '../../ui/Select'
 import { TextField } from '../../ui/TextField'
@@ -302,7 +302,6 @@ export function ShareManagementSection() {
 
   const [state, patchState] = useShareManagementState()
   const {
-    pathPicker,
     addOpen,
     addName,
     addBackend,
@@ -320,10 +319,8 @@ export function ShareManagementSection() {
     encGenerateError,
     encDisableTarget,
     encDisableError,
-    announcement,
-    pathPickerCounter
+    announcement
   } = state
-  const setPathPicker = (value: typeof state.pathPicker): void => patchState({ pathPicker: value })
   const setAddOpen = (value: boolean): void => patchState({ addOpen: value })
   const setAddName = (value: string): void => patchState({ addName: value })
   const setAddBackend = (value: ShareBackend): void => patchState({ addBackend: value })
@@ -344,10 +341,6 @@ export function ShareManagementSection() {
   const setEncDisableTarget = (value: AdminShare | null): void => patchState({ encDisableTarget: value })
   const setEncDisableError = (value: string | null): void => patchState({ encDisableError: value })
   const setAnnouncement = (value: string): void => patchState({ announcement: value })
-  const setPathPickerCounter = (value: number | ((current: number) => number)): void =>
-    patchState((current) => ({
-      pathPickerCounter: typeof value === 'function' ? value(current.pathPickerCounter) : value
-    }))
 
   const addError =
     addValidation ?? (addMutation.error ? errorText(addMutation.error, t('common.could_not_add_folder'), t) : null)
@@ -368,9 +361,9 @@ export function ShareManagementSection() {
   const retryingId = retryMutation.isPending ? (retryMutation.variables ?? null) : null
   const passphraseMismatch = encPassphraseConfirm.length > 0 && encPassphrase !== encPassphraseConfirm
 
-  const openPathPicker = (mode: 'folder' | 'file', start: string, apply: (path: string) => void) => {
-    setPathPicker({ mode, start, apply })
-    setPathPickerCounter((value) => value + 1)
+  const openPathPicker = async (mode: 'folder' | 'file', start: string, apply: (path: string) => void) => {
+    const picked = await pickPath({ mode, start })
+    if (picked !== null) apply(picked)
   }
 
   const openAdd = () => {
@@ -571,7 +564,7 @@ export function ShareManagementSection() {
         form={form}
         setForm={setForm}
         creating={creating}
-        openPathPicker={(start, apply) => openPathPicker('file', start, apply)}
+        openPathPicker={(start, apply) => void openPathPicker('file', start, apply)}
       />
     )
 
@@ -580,7 +573,7 @@ export function ShareManagementSection() {
       <LocalPathField
         value={form.hostPath}
         onChange={(value) => setForm((current) => ({ ...current, hostPath: value }))}
-        openPathPicker={(start, apply) => openPathPicker('folder', start, apply)}
+        openPathPicker={(start, apply) => void openPathPicker('folder', start, apply)}
         placeholder={creating ? t('folder_share.e_g_srv_photos') : undefined}
       />
       {creating ? <p className={adminStyles.hint}>{t('folder_share.enter_path_folder_already_exists')}</p> : null}
@@ -842,18 +835,6 @@ export function ShareManagementSection() {
           </>
         ) : null}
       </Dialog>
-
-      <PathPickerDialog
-        key={pathPickerCounter}
-        open={pathPicker !== null}
-        mode={pathPicker?.mode ?? 'folder'}
-        start={pathPicker?.start ?? ''}
-        onClose={() => setPathPicker(null)}
-        onPick={(path) => {
-          pathPicker?.apply(path)
-          setPathPicker(null)
-        }}
-      />
     </>
   )
 }

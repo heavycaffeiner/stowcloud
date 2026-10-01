@@ -3,7 +3,6 @@ import { mergeState, type StatePatch } from '../../../lib/merge-state'
 import type { ShareLinkInfo } from '../../links/api'
 
 export interface ShareManageState {
-  dialogOpen: boolean
   creatingOpen: boolean
   newKind: 'download' | 'drop'
   newRead: boolean
@@ -25,13 +24,11 @@ export interface ShareManageState {
   editExpiryDate: string
   editMaxDownloads: string
   editLabel: string
-  revokeTarget: ShareLinkInfo | null
   copiedId: number | null
   copyErrorId: number | null
 }
 
 const initialShareManageState: ShareManageState = {
-  dialogOpen: false,
   creatingOpen: false,
   newKind: 'download',
   newRead: true,
@@ -53,7 +50,6 @@ const initialShareManageState: ShareManageState = {
   editExpiryDate: '',
   editMaxDownloads: '',
   editLabel: '',
-  revokeTarget: null,
   copiedId: null,
   copyErrorId: null
 }

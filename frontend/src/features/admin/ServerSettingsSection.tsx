@@ -9,12 +9,12 @@ import { describeApiError } from '../../api/error-text'
 import { BYTES_PER_MB, bytesToMb } from '../../lib/format/bytes'
 import { useI18n } from '../../hooks/use-i18n'
 import { Button } from '../../ui/Button'
-import { PathPickerDialog } from '../files/PathPickerDialog'
+import { pickPath } from '../files/PathPickerDialog'
 import { TextField } from '../../ui/TextField'
 import { Icon } from '../../ui/Icon'
 import { Switch } from '../../ui/Switch'
 import { VirtualList } from '../../ui/VirtualList'
-import { RestartDialog } from './RestartDialog'
+import { offerRestart } from './RestartDialog'
 import { ServerSettingsCard } from './ServerSettingsCard'
 import { ServerSmbCard } from './ServerSmbCard'
 import { ProgressCircular } from '../../ui/ProgressCircular'
@@ -31,7 +31,6 @@ import {
 } from './api'
 
 type Group = ServerSettingsGroup
-type PathMode = 'folder' | 'file'
 type Values = ServerSettingsValues
 type Translator = (key: string, params?: Record<string, string | number>) => string
 
@@ -355,18 +354,7 @@ export function ServerSettingsSection() {
   const refreshSettings = useRefreshAdminSettings()
   const snapshot = settings.data
   const [state, patchState] = useServerSettingsState()
-  const {
-    values,
-    baselines,
-    hydrated,
-    activeGroup,
-    validationError,
-    outcome,
-    restartOutcome,
-    pathPicker,
-    secret,
-    announcement
-  } = state
+  const { values, baselines, hydrated, activeGroup, validationError, outcome, secret, announcement } = state
   const setValues = (next: Values | ((current: Values) => Values)): void =>
     patchState((current) => ({ values: typeof next === 'function' ? next(current.values) : next }))
   const setBaselines = (
@@ -378,8 +366,6 @@ export function ServerSettingsSection() {
   const setActiveGroup = (value: Group | null): void => patchState({ activeGroup: value })
   const setValidationError = (value: string | null): void => patchState({ validationError: value })
   const setOutcome = (value: ApplyOutcome | null): void => patchState({ outcome: value })
-  const setRestartOutcome = (value: ApplyOutcome | null): void => patchState({ restartOutcome: value })
-  const setPathPicker = (value: { mode: PathMode; key: string } | null): void => patchState({ pathPicker: value })
   const setSecret = (value: string): void => patchState({ secret: value })
   const setAnnouncement = (value: string): void => patchState({ announcement: value })
   const errorRef = useRef<HTMLParagraphElement>(null)
@@ -413,6 +399,10 @@ export function ServerSettingsSection() {
     setValues((before) => ({ ...before, [key]: value }))
     setValidationError(null)
     setOutcome(null)
+  }
+  async function browse(mode: 'folder' | 'file', key: string): Promise<void> {
+    const picked = await pickPath({ mode, start: String(values[key] ?? '') })
+    if (picked !== null) setValue(key, picked)
   }
   function rangeError(key: string, raw: string): string | null {
     const range = snapshot?.fields.find((field) => field.key === key)?.range
@@ -503,7 +493,7 @@ export function ServerSettingsSection() {
           setOutcome(result)
           const accepted = result.stored || result.applied || result.restart_required
           if (accepted) setBaselines((before) => ({ ...before, [group]: json(requestFor(group, values, '')) }))
-          if (result.restart_required) setRestartOutcome(result)
+          if (result.restart_required) void offerRestart(result).then((restarted) => restarted && refreshSettings())
           if (group === 'oidc' && accepted) setSecret('')
         },
         onError: (error) => setValidationError(describeApiError(error, t(`server.could_not_save_${group}_settings`)))
@@ -634,289 +624,268 @@ export function ServerSettingsSection() {
     )
   }
   return (
-    <>
-      <section className={adminStyles.section}>
-        <h3 className={adminStyles.sectionTitle}>{t('server.server_settings')}</h3>
-        <p className={adminStyles.sectionHint}>{t('server.settings_stored_in_database')}</p>
-        <nav className={styles.nav} aria-label={t('admin.server_settings_navigation')}>
-          <div className={styles.navItems}>
-            {[
-              ['server-smb', 'admin.server_smb'],
-              ['server-search', 'admin.server_search'],
-              ['server-network', 'admin.server_network'],
-              ['server-transfers', 'admin.server_transfers'],
-              ['server-security', 'admin.server_security'],
-              ['server-storage', 'admin.server_storage_paths']
-            ].map(([id, key]) => (
-              <button
-                key={id}
-                type="button"
-                className={styles.navButton}
-                onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-              >
-                {t(key)}
-              </button>
+    <section className={adminStyles.section}>
+      <h3 className={adminStyles.sectionTitle}>{t('server.server_settings')}</h3>
+      <p className={adminStyles.sectionHint}>{t('server.settings_stored_in_database')}</p>
+      <nav className={styles.nav} aria-label={t('admin.server_settings_navigation')}>
+        <div className={styles.navItems}>
+          {[
+            ['server-smb', 'admin.server_smb'],
+            ['server-search', 'admin.server_search'],
+            ['server-network', 'admin.server_network'],
+            ['server-transfers', 'admin.server_transfers'],
+            ['server-security', 'admin.server_security'],
+            ['server-storage', 'admin.server_storage_paths']
+          ].map(([id, key]) => (
+            <button
+              key={id}
+              type="button"
+              className={styles.navButton}
+              onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            >
+              {t(key)}
+            </button>
+          ))}
+        </div>
+      </nav>
+      <ServerSmbCard
+        t={t}
+        values={values}
+        snapshot={snapshot}
+        input={input}
+        toggle={toggle}
+        saveButton={saveButton}
+        emptyNote={(key) => {
+          const note = emptyNote(snapshot, key, t)
+          return note ? <p className={styles.emptyNote}>{note}</p> : null
+        }}
+        onValueChange={setValue}
+      />
+      {card(
+        'server-storage',
+        t('server.storage_paths'),
+        t('settings.paths_readonly_reason'),
+        <>
+          <dl className={styles.other}>
+            {PATH_KEYS.map((key) => (
+              <div key={key}>
+                <dt className={styles.otherLabel}>{fieldLabel(t, key)}</dt>
+                <dd className={styles.otherValue}>{displayValue(t, fields[key])}</dd>
+              </div>
             ))}
+            <div>
+              <dt className={styles.otherLabel}>{fieldLabel(t, 'symlink_policy')}</dt>
+              <dd className={styles.otherValue}>
+                <span className={styles.reason}>{t('settings.readonly_per_share_symlink_policy')}</span>
+              </dd>
+            </div>
+          </dl>
+          {otherFields.length ? (
+            <>
+              <h5 className={styles.adminSectionSubhead}>{t('settings.settings_sections')}</h5>
+              <dl className={styles.other}>
+                {otherFields.map((item) => (
+                  <div key={item.key}>
+                    <dt className={styles.otherLabel}>{fieldLabel(t, item.key)}</dt>
+                    <dd className={styles.otherValue}>{displayValue(t, item.value)}</dd>
+                  </div>
+                ))}
+              </dl>
+            </>
+          ) : null}
+        </>
+      )}
+      {card(
+        'server-search',
+        t('common.search'),
+        t('server.all_apply_immediately_no_restart'),
+        <>
+          {input('search.max_concurrent_fast', t('server.concurrent_fast_searches'), { type: 'number' })}
+          {input('search.walk_deadline_fast_ms', t('server.fast_search_timeout_ms'), { type: 'number' })}
+          {saveButton('search')}
+        </>
+      )}
+      {card(
+        'server-transfers',
+        t('server.zip_download'),
+        t('server.applies_immediately_no_restart_needed'),
+        <>
+          {input('archive.max_concurrent', t('server.concurrent_zip_streams'), { type: 'number' })}
+          {saveButton('archive')}
+        </>
+      )}
+      {card(
+        'server-thumbnail',
+        t('server.thumbnail_settings'),
+        t('server.thumbnail_enabled_description'),
+        <>
+          {toggle('thumbnail.enabled', t('server.thumbnail_enabled'))}
+          <div className={styles.pathRow}>
+            {input('thumbnail.dir', t('server.thumbnail_storage_dir'))}
+            <Button
+              className={styles.pathButton}
+              variant="outlined"
+              onClick={() => void browse('folder', 'thumbnail.dir')}
+            >
+              {t('picker.browse_folder')}
+            </Button>
           </div>
-        </nav>
-        <ServerSmbCard
-          t={t}
-          values={values}
-          snapshot={snapshot}
-          input={input}
-          toggle={toggle}
-          saveButton={saveButton}
-          emptyNote={(key) => {
-            const note = emptyNote(snapshot, key, t)
-            return note ? <p className={styles.emptyNote}>{note}</p> : null
-          }}
-          onValueChange={setValue}
-        />
-        {card(
-          'server-storage',
-          t('server.storage_paths'),
-          t('settings.paths_readonly_reason'),
-          <>
-            <dl className={styles.other}>
-              {PATH_KEYS.map((key) => (
-                <div key={key}>
-                  <dt className={styles.otherLabel}>{fieldLabel(t, key)}</dt>
-                  <dd className={styles.otherValue}>{displayValue(t, fields[key])}</dd>
+          {!String(values['thumbnail.dir'] ?? '').trim() && emptyNote(snapshot, 'thumbnail.dir', t) ? (
+            <p className={styles.emptyNote}>{emptyNote(snapshot, 'thumbnail.dir', t)}</p>
+          ) : null}
+          <p className={adminStyles.sectionHint}>{t('server.thumbnail_storage_dir_description')}</p>
+          {saveButton('thumbnail')}
+        </>
+      )}
+      {card(
+        'server-network',
+        t('server.network'),
+        t('server.applies_immediately_no_restart_needed'),
+        <>
+          {input('app_hosts', t('server.app_hosts_comma_separated'))}
+          {!String(values.app_hosts ?? '').trim() && emptyNote(snapshot, 'app_hosts', t) ? (
+            <p className={styles.emptyNote}>{emptyNote(snapshot, 'app_hosts', t)}</p>
+          ) : null}
+          <p className={adminStyles.sectionHint}>{t('server.app_hosts_hint')}</p>
+          {input('trusted_proxies', t('server.trusted_proxies_comma_separated'))}
+          {!String(values.trusted_proxies ?? '').trim() && emptyNote(snapshot, 'trusted_proxies', t) ? (
+            <p className={styles.emptyNote}>{emptyNote(snapshot, 'trusted_proxies', t)}</p>
+          ) : null}
+          {hop ? (
+            <p className={adminStyles.sectionHint}>
+              {t('server.requests_arriving_from', { address: hopAddress || t('server.unknown_address') })}{' '}
+              {hop.peer_trusted ? t('server.peer_trusted') : t('server.peer_not_trusted')}
+            </p>
+          ) : null}
+          {hop && !hop.peer_trusted && hop.forwarded_seen ? (
+            <div className={adminStyles.warning} role="alert">
+              <p>{t('server.forwarding_headers_ignored_hint', { address: hopAddress })}</p>
+              <Button variant="text" onClick={addObserved} disabled={!hopAddress}>
+                {t('server.add_observed_address_to_trusted', { address: hopAddress })}
+              </Button>
+            </div>
+          ) : null}
+          {input('content_hosts', t('server.content_hosts_comma_separated'))}
+          {input('allowed_origins', t('server.allowed_origins_cors_comma_separated'))}
+          {input('compat_canonical_url', t('server.compat_canonical_url'))}
+          {input('bind', t('server.bind_address'))}
+          <p className={adminStyles.sectionHint}>{t('server.bind_address_hint')}</p>
+          {saveButton('network')}
+        </>
+      )}
+      {card(
+        'server-watch',
+        t('server.file_watching'),
+        t('server.what_file_watching_is_for'),
+        <>
+          {input('watch.hot_set_max', t('server.maximum_folders_watched_at_once'), { type: 'number' })}
+          {input('watch.full_threshold', t('server.changes_before_a_full_rescan'), { type: 'number' })}
+          <p className={adminStyles.sectionHint}>
+            {t('settings.within_kernel_watch_limit', {
+              limit:
+                snapshot.fields.find((field) => field.key === 'watch.hot_set_max')?.range &&
+                'max' in snapshot.fields.find((field) => field.key === 'watch.hot_set_max')!.range!
+                  ? (snapshot.fields.find((field) => field.key === 'watch.hot_set_max')!.range as { max: number }).max
+                  : ''
+            })}
+          </p>
+          {saveButton('watch')}
+        </>
+      )}
+      {card(
+        'server-homes',
+        t('server.home_folders'),
+        t('server.home_folders_hint'),
+        <>
+          {toggle('homes.enabled', t('server.enable_home_folders'))}
+          <div className={styles.pathRow}>
+            {input('homes.root', t('server.homes_root_path'))}
+            <Button
+              className={styles.pathButton}
+              variant="outlined"
+              onClick={() => void browse('folder', 'homes.root')}
+            >
+              {t('picker.browse_folder')}
+            </Button>
+          </div>
+          {saveButton('homes')}
+        </>
+      )}
+      {card(
+        'server-rate',
+        t('server.request_rate'),
+        t('server.what_the_request_rate_is_for'),
+        <>
+          {input('rate.per_sec', t('server.requests_per_second'), { type: 'number' })}
+          {input('rate.burst', t('server.burst_allowance'), { type: 'number' })}
+          {saveButton('rate')}
+        </>
+      )}
+      {card(
+        'server-security',
+        t('settings.single_sign_on'),
+        t('server.single_sign_on_hint'),
+        <>
+          {toggle('oidc.enabled', t('settings.oidc_enable'))}
+          {input('oidc.issuer', t('settings.oidc_issuer'))}
+          {input('oidc.client_id', t('settings.oidc_client_id'))}
+          {input('oidc.secret', t('common.password'), {
+            type: 'password',
+            placeholder: t('settings.secret_is_write_only')
+          })}
+          {toggle('oidc.public_client', t('settings.oidc_public_client'))}
+          {input('oidc.scopes', t('settings.oidc_scopes'))}
+          {input('oidc.display_name', t('settings.oidc_display_name'))}
+          {toggle('oidc.allow_private_endpoints', t('settings.oidc_allow_private_endpoints'))}
+          <div className={styles.pathRow}>
+            {input('oidc.ca_cert_file', t('field.oidc_ca_cert_file'))}
+            <Button
+              className={styles.pathButton}
+              variant="outlined"
+              onClick={() => void browse('file', 'oidc.ca_cert_file')}
+            >
+              {t('picker.browse_file')}
+            </Button>
+          </div>
+          <p className={adminStyles.sectionHint}>{t('server.connected_accounts_cannot_use_smb')}</p>
+          {saveButton('oidc')}
+          {endpoints.data &&
+          (endpoints.data.redirect_uris.length || endpoints.data.post_logout_redirect_uris.length) ? (
+            <div className={styles.endpoints}>
+              <p className={adminStyles.sectionHint}>{t('settings.oidc_endpoints_hint')}</p>
+              <h5 className={styles.adminSectionSubhead}>{t('settings.oidc_effective_redirect_uris')}</h5>
+              {endpoints.data.redirect_uris.map((uri) => (
+                <div className={styles.endpointRow} key={uri}>
+                  <code className={styles.endpointUri}>{uri}</code>
+                  <Button
+                    variant="text"
+                    ariaLabel={t('common.copy_named', { name: uri })}
+                    onClick={() => void copyEndpoint(uri, t('settings.oidc_effective_redirect_uris'))}
+                  >
+                    {t('common.copy')}
+                  </Button>
                 </div>
               ))}
-              <div>
-                <dt className={styles.otherLabel}>{fieldLabel(t, 'symlink_policy')}</dt>
-                <dd className={styles.otherValue}>
-                  <span className={styles.reason}>{t('settings.readonly_per_share_symlink_policy')}</span>
-                </dd>
-              </div>
-            </dl>
-            {otherFields.length ? (
-              <>
-                <h5 className={styles.adminSectionSubhead}>{t('settings.settings_sections')}</h5>
-                <dl className={styles.other}>
-                  {otherFields.map((item) => (
-                    <div key={item.key}>
-                      <dt className={styles.otherLabel}>{fieldLabel(t, item.key)}</dt>
-                      <dd className={styles.otherValue}>{displayValue(t, item.value)}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </>
-            ) : null}
-          </>
-        )}
-        {card(
-          'server-search',
-          t('common.search'),
-          t('server.all_apply_immediately_no_restart'),
-          <>
-            {input('search.max_concurrent_fast', t('server.concurrent_fast_searches'), { type: 'number' })}
-            {input('search.walk_deadline_fast_ms', t('server.fast_search_timeout_ms'), { type: 'number' })}
-            {saveButton('search')}
-          </>
-        )}
-        {card(
-          'server-transfers',
-          t('server.zip_download'),
-          t('server.applies_immediately_no_restart_needed'),
-          <>
-            {input('archive.max_concurrent', t('server.concurrent_zip_streams'), { type: 'number' })}
-            {saveButton('archive')}
-          </>
-        )}
-        {card(
-          'server-thumbnail',
-          t('server.thumbnail_settings'),
-          t('server.thumbnail_enabled_description'),
-          <>
-            {toggle('thumbnail.enabled', t('server.thumbnail_enabled'))}
-            <div className={styles.pathRow}>
-              {input('thumbnail.dir', t('server.thumbnail_storage_dir'))}
-              <Button
-                className={styles.pathButton}
-                variant="outlined"
-                onClick={() => setPathPicker({ mode: 'folder', key: 'thumbnail.dir' })}
-              >
-                {t('picker.browse_folder')}
-              </Button>
-            </div>
-            {!String(values['thumbnail.dir'] ?? '').trim() && emptyNote(snapshot, 'thumbnail.dir', t) ? (
-              <p className={styles.emptyNote}>{emptyNote(snapshot, 'thumbnail.dir', t)}</p>
-            ) : null}
-            <p className={adminStyles.sectionHint}>{t('server.thumbnail_storage_dir_description')}</p>
-            {saveButton('thumbnail')}
-          </>
-        )}
-        {card(
-          'server-network',
-          t('server.network'),
-          t('server.applies_immediately_no_restart_needed'),
-          <>
-            {input('app_hosts', t('server.app_hosts_comma_separated'))}
-            {!String(values.app_hosts ?? '').trim() && emptyNote(snapshot, 'app_hosts', t) ? (
-              <p className={styles.emptyNote}>{emptyNote(snapshot, 'app_hosts', t)}</p>
-            ) : null}
-            <p className={adminStyles.sectionHint}>{t('server.app_hosts_hint')}</p>
-            {input('trusted_proxies', t('server.trusted_proxies_comma_separated'))}
-            {!String(values.trusted_proxies ?? '').trim() && emptyNote(snapshot, 'trusted_proxies', t) ? (
-              <p className={styles.emptyNote}>{emptyNote(snapshot, 'trusted_proxies', t)}</p>
-            ) : null}
-            {hop ? (
-              <p className={adminStyles.sectionHint}>
-                {t('server.requests_arriving_from', { address: hopAddress || t('server.unknown_address') })}{' '}
-                {hop.peer_trusted ? t('server.peer_trusted') : t('server.peer_not_trusted')}
+              <h5 className={styles.adminSectionSubhead}>{t('settings.oidc_post_logout_redirect_uris')}</h5>
+              {endpoints.data.post_logout_redirect_uris.map((uri) => (
+                <div className={styles.endpointRow} key={uri}>
+                  <code className={styles.endpointUri}>{uri}</code>
+                  <Button
+                    variant="text"
+                    ariaLabel={t('common.copy_named', { name: uri })}
+                    onClick={() => void copyEndpoint(uri, t('settings.oidc_post_logout_redirect_uris'))}
+                  >
+                    {t('common.copy')}
+                  </Button>
+                </div>
+              ))}
+              <p className={styles.announce} aria-live="polite">
+                {announcement}
               </p>
-            ) : null}
-            {hop && !hop.peer_trusted && hop.forwarded_seen ? (
-              <div className={adminStyles.warning} role="alert">
-                <p>{t('server.forwarding_headers_ignored_hint', { address: hopAddress })}</p>
-                <Button variant="text" onClick={addObserved} disabled={!hopAddress}>
-                  {t('server.add_observed_address_to_trusted', { address: hopAddress })}
-                </Button>
-              </div>
-            ) : null}
-            {input('content_hosts', t('server.content_hosts_comma_separated'))}
-            {input('allowed_origins', t('server.allowed_origins_cors_comma_separated'))}
-            {input('compat_canonical_url', t('server.compat_canonical_url'))}
-            {input('bind', t('server.bind_address'))}
-            <p className={adminStyles.sectionHint}>{t('server.bind_address_hint')}</p>
-            {saveButton('network')}
-          </>
-        )}
-        {card(
-          'server-watch',
-          t('server.file_watching'),
-          t('server.what_file_watching_is_for'),
-          <>
-            {input('watch.hot_set_max', t('server.maximum_folders_watched_at_once'), { type: 'number' })}
-            {input('watch.full_threshold', t('server.changes_before_a_full_rescan'), { type: 'number' })}
-            <p className={adminStyles.sectionHint}>
-              {t('settings.within_kernel_watch_limit', {
-                limit:
-                  snapshot.fields.find((field) => field.key === 'watch.hot_set_max')?.range &&
-                  'max' in snapshot.fields.find((field) => field.key === 'watch.hot_set_max')!.range!
-                    ? (snapshot.fields.find((field) => field.key === 'watch.hot_set_max')!.range as { max: number }).max
-                    : ''
-              })}
-            </p>
-            {saveButton('watch')}
-          </>
-        )}
-        {card(
-          'server-homes',
-          t('server.home_folders'),
-          t('server.home_folders_hint'),
-          <>
-            {toggle('homes.enabled', t('server.enable_home_folders'))}
-            <div className={styles.pathRow}>
-              {input('homes.root', t('server.homes_root_path'))}
-              <Button
-                className={styles.pathButton}
-                variant="outlined"
-                onClick={() => setPathPicker({ mode: 'folder', key: 'homes.root' })}
-              >
-                {t('picker.browse_folder')}
-              </Button>
             </div>
-            {saveButton('homes')}
-          </>
-        )}
-        {card(
-          'server-rate',
-          t('server.request_rate'),
-          t('server.what_the_request_rate_is_for'),
-          <>
-            {input('rate.per_sec', t('server.requests_per_second'), { type: 'number' })}
-            {input('rate.burst', t('server.burst_allowance'), { type: 'number' })}
-            {saveButton('rate')}
-          </>
-        )}
-        {card(
-          'server-security',
-          t('settings.single_sign_on'),
-          t('server.single_sign_on_hint'),
-          <>
-            {toggle('oidc.enabled', t('settings.oidc_enable'))}
-            {input('oidc.issuer', t('settings.oidc_issuer'))}
-            {input('oidc.client_id', t('settings.oidc_client_id'))}
-            {input('oidc.secret', t('common.password'), {
-              type: 'password',
-              placeholder: t('settings.secret_is_write_only')
-            })}
-            {toggle('oidc.public_client', t('settings.oidc_public_client'))}
-            {input('oidc.scopes', t('settings.oidc_scopes'))}
-            {input('oidc.display_name', t('settings.oidc_display_name'))}
-            {toggle('oidc.allow_private_endpoints', t('settings.oidc_allow_private_endpoints'))}
-            <div className={styles.pathRow}>
-              {input('oidc.ca_cert_file', t('field.oidc_ca_cert_file'))}
-              <Button
-                className={styles.pathButton}
-                variant="outlined"
-                onClick={() => setPathPicker({ mode: 'file', key: 'oidc.ca_cert_file' })}
-              >
-                {t('picker.browse_file')}
-              </Button>
-            </div>
-            <p className={adminStyles.sectionHint}>{t('server.connected_accounts_cannot_use_smb')}</p>
-            {saveButton('oidc')}
-            {endpoints.data &&
-            (endpoints.data.redirect_uris.length || endpoints.data.post_logout_redirect_uris.length) ? (
-              <div className={styles.endpoints}>
-                <p className={adminStyles.sectionHint}>{t('settings.oidc_endpoints_hint')}</p>
-                <h5 className={styles.adminSectionSubhead}>{t('settings.oidc_effective_redirect_uris')}</h5>
-                {endpoints.data.redirect_uris.map((uri) => (
-                  <div className={styles.endpointRow} key={uri}>
-                    <code className={styles.endpointUri}>{uri}</code>
-                    <Button
-                      variant="text"
-                      ariaLabel={t('common.copy_named', { name: uri })}
-                      onClick={() => void copyEndpoint(uri, t('settings.oidc_effective_redirect_uris'))}
-                    >
-                      {t('common.copy')}
-                    </Button>
-                  </div>
-                ))}
-                <h5 className={styles.adminSectionSubhead}>{t('settings.oidc_post_logout_redirect_uris')}</h5>
-                {endpoints.data.post_logout_redirect_uris.map((uri) => (
-                  <div className={styles.endpointRow} key={uri}>
-                    <code className={styles.endpointUri}>{uri}</code>
-                    <Button
-                      variant="text"
-                      ariaLabel={t('common.copy_named', { name: uri })}
-                      onClick={() => void copyEndpoint(uri, t('settings.oidc_post_logout_redirect_uris'))}
-                    >
-                      {t('common.copy')}
-                    </Button>
-                  </div>
-                ))}
-                <p className={styles.announce} aria-live="polite">
-                  {announcement}
-                </p>
-              </div>
-            ) : null}
-          </>
-        )}
-      </section>
-      <RestartDialog
-        open={restartOutcome !== null}
-        outcome={restartOutcome}
-        onClose={() => setRestartOutcome(null)}
-        onRestarted={() => {
-          setRestartOutcome(null)
-          refreshSettings()
-        }}
-      />
-      <PathPickerDialog
-        open={pathPicker !== null}
-        mode={pathPicker?.mode ?? 'folder'}
-        start={pathPicker ? String(values[pathPicker.key] ?? '') : ''}
-        onClose={() => setPathPicker(null)}
-        onPick={(path) => {
-          if (pathPicker) setValue(pathPicker.key, path)
-          setPathPicker(null)
-        }}
-      />
-    </>
+          ) : null}
+        </>
+      )}
+    </section>
   )
 }

@@ -1,7 +1,6 @@
 import { describeApiError } from '../../../api/error-text'
 import { useI18n } from '../../../hooks/use-i18n'
 import { Button } from '../../../ui/Button'
-import { Dialog } from '../../../ui/Dialog'
 import { VirtualList } from '../../../ui/VirtualList'
 import { useDocumentTitle } from '../../../hooks/use-document-title'
 import { SecondaryPageShell } from '../../../ui/SecondaryPageShell'
@@ -18,38 +17,28 @@ export function TrashPage() {
   const entries: TrashEntry[] = trash.data ?? []
   const selection = useTrashSelection(entries)
   const { selected } = selection
-  const actions = useTrashActions(t, selection)
-  const { state, setState, busy, restorePending, purgePending, restoreItems, requestPurge, cancelPurge, confirmPurge } =
-    actions
-  const { purgeOpen, purgeSingle, operation, notice } = state
+  const {
+    operation,
+    notice,
+    pinned,
+    busy,
+    restorePending,
+    purgePending,
+    restoreItems,
+    purgeItems,
+    dismissOperation,
+    dismissNotice
+  } = useTrashActions(selection)
   useDocumentTitle(t('trash.trash_stowcloud'))
 
   const allSelected = entries.length > 0 && selected.size === entries.length
   const partiallySelected = selected.size > 0 && !allSelected
-  const purgeCount = purgeSingle === null ? selected.size : 1
 
   return (
     <SecondaryPageShell
       title={t('common.trash')}
       refreshLabel={t('common.refresh')}
       onRefresh={() => void trash.refetch()}
-      overlay={
-        <Dialog
-          open={purgeOpen}
-          title={t('trash.delete_permanently')}
-          onClose={cancelPurge}
-          actions={
-            <>
-              <Button variant="text" onClick={cancelPurge}>
-                {t('common.cancel')}
-              </Button>
-              <Button onClick={() => void confirmPurge()}>{t('common.delete')}</Button>
-            </>
-          }
-        >
-          <p>{t('trash.permanently_deletes_items_cannot_undone', { count: purgeCount })}</p>
-        </Dialog>
-      }
     >
       {entries.length > 0 ? (
         <div className={styles.toolbar}>
@@ -78,7 +67,7 @@ export function TrashPage() {
               danger
               disabled={selected.size === 0 || busy}
               loading={purgePending}
-              onClick={() => requestPurge(null)}
+              onClick={() => void purgeItems(null)}
             >
               {t('trash.purge')}
             </Button>
@@ -88,12 +77,12 @@ export function TrashPage() {
       {notice ? (
         <p className={styles.notice} role="status" aria-live="polite">
           {notice}{' '}
-          <button type="button" className={styles.noticeClose} onClick={() => setState({ notice: null })}>
+          <button type="button" className={styles.noticeClose} onClick={dismissNotice}>
             {t('common.close')}
           </button>
         </p>
       ) : null}
-      {operation ? <TrashOperation operation={operation} onClose={() => setState({ operation: null })} t={t} /> : null}
+      {operation ? <TrashOperation operation={operation} onClose={dismissOperation} /> : null}
       <SecondaryPageState
         loading={trash.isPending}
         loadingLabel={t('common.loading')}
@@ -108,7 +97,7 @@ export function TrashPage() {
             itemKey={(entry) => entry.id}
             estimateSize={61}
             itemProps={() => ({ className: styles.row })}
-            pinnedKeys={purgeOpen && purgeSingle !== null ? [purgeSingle] : undefined}
+            pinnedKeys={pinned === null ? undefined : [pinned]}
             renderItem={(entry) => (
               <TrashRow
                 entry={entry}
@@ -116,8 +105,7 @@ export function TrashPage() {
                 disabled={busy}
                 onToggle={() => selection.toggle(entry.id)}
                 onRestore={() => void restoreItems([entry.id])}
-                onPurge={() => requestPurge(entry.id)}
-                t={t}
+                onPurge={() => void purgeItems(entry.id)}
               />
             )}
           />

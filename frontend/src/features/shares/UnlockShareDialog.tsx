@@ -7,7 +7,7 @@ import { Dialog } from '../../ui/Dialog'
 import { TextField } from '../../ui/TextField'
 import { useUnlockShareState } from './hooks/share-manage-state'
 
-export interface UnlockShareDialogProps {
+interface UnlockShareDialogProps {
   open: boolean
   salt: string
   verifier: string
@@ -30,7 +30,7 @@ export function askUnlock(share: { salt: string; verifier: string }): Promise<bo
   ))
 }
 
-export function UnlockShareDialog({ open, salt, verifier, onUnlock, onClose, onClosed }: UnlockShareDialogProps) {
+function UnlockShareDialog({ open, salt, verifier, onUnlock, onClose, onClosed }: UnlockShareDialogProps) {
   const { t } = useI18n()
   const [form, patch] = useUnlockShareState()
   const { passphrase, unlocking, error } = form

@@ -17,7 +17,6 @@ export type SetupState = {
   shareRetryError: string | null
   errorMessage: string | null
   warnings: SetupFinding[]
-  pickerOpen: boolean
   pickerAuthenticated: boolean
   step: number
 }
@@ -51,7 +50,6 @@ const initialState: SetupState = {
   shareRetryError: null,
   errorMessage: null,
   warnings: [],
-  pickerOpen: false,
   pickerAuthenticated: false,
   step: 1
 }

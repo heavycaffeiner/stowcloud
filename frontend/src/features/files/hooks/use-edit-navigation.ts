@@ -1,18 +1,29 @@
-import { useEffect } from 'react'
+import { useEffect, useEffectEvent } from 'react'
+import { useBlocker } from 'react-router-dom'
 import { useBeforeUnload } from '../../../hooks/use-before-unload'
-import type { Blocker } from 'react-router-dom'
-import type { EditActions } from './use-edit-state'
+import { askLeaveEditor } from '../routes/EditDialogs'
 
 export interface EditNavigationOptions {
+  name: string
   dirty: boolean
-  blocker: Blocker
-  actions: Pick<EditActions, 'setLeaveDialog'>
+  canSave: boolean
+  save: () => Promise<boolean>
+  discard: () => void
 }
 
-export function useEditNavigation({ dirty, blocker, actions }: EditNavigationOptions): void {
+/** Holds a navigation away from unsaved changes until the user decides what happens to them. */
+export function useEditNavigation({ name, dirty, canSave, save, discard }: EditNavigationOptions): void {
+  const blocker = useBlocker(
+    dirty ? ({ currentLocation, nextLocation }) => currentLocation.pathname !== nextLocation.pathname : false
+  )
+  const decide = useEffectEvent(async () => {
+    const choice = await askLeaveEditor(name, canSave)
+    if (choice === 'discard') discard()
+    if (choice === 'discard' || (choice === 'save' && (await save()))) blocker.proceed?.()
+    else blocker.reset?.()
+  })
   useEffect(() => {
-    actions.setLeaveDialog(blocker.state === 'blocked')
-  }, [actions, blocker.state])
-
+    if (blocker.state === 'blocked') void decide()
+  }, [blocker.state])
   useBeforeUnload(dirty)
 }

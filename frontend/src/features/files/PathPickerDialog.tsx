@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { overlay } from 'overlay-kit'
 import { useI18n } from '../../hooks/use-i18n'
 import { useHostListing } from '../admin/api'
 import { Button } from '../../ui/Button'
@@ -9,42 +10,41 @@ import * as styles from './PathPickerDialog.css'
 import * as utilitiesStyles from '../../ui/utilities.css'
 import { cx } from '../../ui/cx'
 
-export interface PathPickerDialogProps {
-  open: boolean
+export interface PathPickerOptions {
   mode: 'folder' | 'file'
   start?: string
+  /** Browses through the setup endpoint, before there is an account to sign in with. */
   token?: string
-  onClose: () => void
-  onPick: (path: string) => void
 }
 
-function guessStart(start: string | undefined, mode: PathPickerDialogProps['mode']): string {
+export interface PathPickerDialogProps extends PathPickerOptions {
+  open: boolean
+  onClose: () => void
+  onPick: (path: string) => void
+  onClosed?: () => void
+}
+
+/** Lets the user browse the server's disk for a folder or a file. Null when cancelled. */
+export function pickPath(options: PathPickerOptions): Promise<string | null> {
+  return overlay.openAsync<string | null>(({ isOpen, close, unmount }) => (
+    <PathPickerDialog {...options} open={isOpen} onClose={() => close(null)} onPick={close} onClosed={unmount} />
+  ))
+}
+
+function guessStart(start: string | undefined, mode: PathPickerOptions['mode']): string {
   if (!start) return ''
   if (mode === 'folder') return start
   const cut = start.lastIndexOf('/')
   return cut > 0 ? start.slice(0, cut) : ''
 }
-export function PathPickerDialog({ open, mode, start, token, onClose, onPick }: PathPickerDialogProps) {
+
+export function PathPickerDialog({ open, mode, start, token, onClose, onPick, onClosed }: PathPickerDialogProps) {
   const { t } = useI18n()
-  const [state, setState] = useState({
-    currentPath: '',
-    initialGuess: '',
-    selected: null as string | null,
-    wasOpen: false
-  })
-  const { currentPath, initialGuess, selected, wasOpen } = state
+  const [initialGuess] = useState(() => guessStart(start, mode))
+  const [currentPath, setCurrentPath] = useState(initialGuess)
+  const [selected, setSelected] = useState<string | null>(null)
   const body = useRef<HTMLDivElement>(null)
   const focusAfterNavigation = useRef(false)
-
-  useEffect(() => {
-    if (open && !wasOpen) {
-      const guess = guessStart(start, mode)
-      setState({ currentPath: guess, initialGuess: guess, selected: null, wasOpen: true })
-    } else {
-      setState((value) => (value.wasOpen === open ? value : { ...value, wasOpen: open }))
-    }
-  }, [open, wasOpen, start, mode, setState])
-
   const listing = useHostListing(token ?? null, currentPath, open)
 
   useLayoutEffect(() => {
@@ -57,11 +57,10 @@ export function PathPickerDialog({ open, mode, start, token, onClose, onPick }: 
     }
   }, [open, currentPath, listing.data?.path, listing.isPlaceholderData])
 
+  // A start path that cannot be listed falls back to the roots.
   useEffect(() => {
-    if (open && listing.isError && currentPath === initialGuess && initialGuess !== '') {
-      setState((value) => ({ ...value, currentPath: '' }))
-    }
-  }, [open, listing.isError, currentPath, initialGuess, setState])
+    if (listing.isError && currentPath === initialGuess && initialGuess !== '') setCurrentPath('')
+  }, [listing.isError, currentPath, initialGuess])
 
   const atRoot = listing.data?.path === ''
   const showError = Boolean(listing.error) && (currentPath !== initialGuess || initialGuess === '')
@@ -71,7 +70,8 @@ export function PathPickerDialog({ open, mode, start, token, onClose, onPick }: 
 
   const navigate = (path: string) => {
     focusAfterNavigation.current = body.current?.contains(document.activeElement) ?? false
-    setState((value) => ({ ...value, currentPath: path, selected: null }))
+    setCurrentPath(path)
+    setSelected(null)
   }
   const confirm = () => {
     if (mode === 'folder' && listing.data && listing.data.path !== '') onPick(listing.data.path)
@@ -84,6 +84,7 @@ export function PathPickerDialog({ open, mode, start, token, onClose, onPick }: 
       title={title}
       role="dialog"
       dismissible={false}
+      onClosed={onClosed}
       actions={
         <>
           <Button variant="text" onClick={onClose}>
@@ -146,7 +147,7 @@ export function PathPickerDialog({ open, mode, start, token, onClose, onPick }: 
                         selected === entry.path && styles.entrySelected
                       )}
                       aria-pressed={selected === entry.path}
-                      onClick={() => setState((value) => ({ ...value, selected: entry.path }))}
+                      onClick={() => setSelected(entry.path)}
                     >
                       <Icon name="draft" />
                       <span className={styles.entryName}>{entry.name}</span>

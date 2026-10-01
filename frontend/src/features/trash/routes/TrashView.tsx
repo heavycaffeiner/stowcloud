@@ -1,6 +1,10 @@
+import { overlay } from 'overlay-kit'
 import { batchErrorKey } from '../../../api/error-text'
-import { formatDateNs } from '../../../lib/i18n'
+import { useI18n } from '../../../hooks/use-i18n'
+import { formatDateNs, t } from '../../../lib/i18n'
 import { formatBytes } from '../../../lib/format/bytes'
+import { Button } from '../../../ui/Button'
+import { Dialog } from '../../../ui/Dialog'
 import { Icon } from '../../../ui/Icon'
 import { VirtualList } from '../../../ui/VirtualList'
 import * as styles from './TrashView.css'
@@ -8,23 +12,37 @@ import * as secondaryPageShellStyles from '../../../ui/SecondaryPageShell.css'
 import { cx } from '../../../ui/cx'
 import type { BatchItemResult } from '../../files/api'
 import type { TrashEntry } from '../api'
+import type { TrashOperationResult } from '../hooks/use-trash-actions'
 
-type Translate = (key: string, params?: Record<string, string | number>) => string
+/** Asks to confirm a permanent delete of `count` items. True when confirmed. */
+export function confirmPurge(count: number): Promise<boolean> {
+  return overlay.openAsync<boolean>(({ isOpen, close, unmount }) => (
+    <Dialog
+      open={isOpen}
+      title={t('trash.delete_permanently')}
+      onClose={() => close(false)}
+      onClosed={unmount}
+      actions={
+        <>
+          <Button variant="text" onClick={() => close(false)}>
+            {t('common.cancel')}
+          </Button>
+          <Button onClick={() => close(true)}>{t('common.delete')}</Button>
+        </>
+      }
+    >
+      <p>{t('trash.permanently_deletes_items_cannot_undone', { count })}</p>
+    </Dialog>
+  ))
+}
 
-function resultError(result: BatchItemResult, t: Translate): string {
+function resultError(result: BatchItemResult): string {
   const key = batchErrorKey(result.error)
   return key ? t(key.key, key.params) : t('error.internal')
 }
 
-export function TrashOperation({
-  operation,
-  onClose,
-  t
-}: {
-  operation: { kind: 'restore' | 'purge'; results: BatchItemResult[] }
-  onClose: () => void
-  t: Translate
-}) {
+export function TrashOperation({ operation, onClose }: { operation: TrashOperationResult; onClose: () => void }) {
+  const { t } = useI18n()
   return (
     <section className={styles.operation} role="status" aria-live="polite">
       <div className={styles.operationHeading}>
@@ -46,7 +64,7 @@ export function TrashOperation({
         renderItem={(result) => (
           <>
             <span className={styles.operationPath}>{result.path}</span>
-            <span className={styles.operationResult}>{result.ok ? t('common.done') : resultError(result, t)}</span>
+            <span className={styles.operationResult}>{result.ok ? t('common.done') : resultError(result)}</span>
           </>
         )}
       />
@@ -61,10 +79,10 @@ interface TrashRowProps {
   onToggle: () => void
   onRestore: () => void
   onPurge: () => void
-  t: Translate
 }
 
-export function TrashRow({ entry, selected, disabled, onToggle, onRestore, onPurge, t }: TrashRowProps) {
+export function TrashRow({ entry, selected, disabled, onToggle, onRestore, onPurge }: TrashRowProps) {
+  const { t } = useI18n()
   return (
     <>
       <label className={styles.checkbox}>

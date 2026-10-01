@@ -8,7 +8,7 @@ import { Dialog } from '../../ui/Dialog'
 import { TextField } from '../../ui/TextField'
 import { VirtualList } from '../../ui/VirtualList'
 import { GrantManagementSection } from './GrantManagementSection'
-import { UserOidcDialog } from './UserOidcDialog'
+import { showUserOidc } from './UserOidcDialog'
 import { UserManagementRow } from './UserManagementRow'
 import { Icon } from '../../ui/Icon'
 import { ProgressCircular } from '../../ui/ProgressCircular'
@@ -101,6 +101,12 @@ export function UserManagementSection() {
   const setPasswordValidation = (value: string | null): void => patchState({ passwordValidation: value })
   const setGrantsTarget = (value: AdminUser | null): void => patchState({ grantsTarget: value })
   const setOidcTarget = (value: AdminUser | null): void => patchState({ oidcTarget: value })
+  // The row stays mounted while its dialog is open, so focus can return to the button that opened it.
+  async function openOidc(user: AdminUser): Promise<void> {
+    setOidcTarget(user)
+    await showUserOidc(user)
+    setOidcTarget(null)
+  }
   const togglingId = toggle.isPending && toggle.variables ? toggle.variables.id : null
 
   const createError = createValidation ?? (create.error ? createErrorText(create.error, t) : null)
@@ -222,7 +228,7 @@ export function UserManagementSection() {
                 setQuotaTarget(user)
               }}
               onGrants={() => setGrantsTarget(user)}
-              onOidc={() => setOidcTarget(user)}
+              onOidc={() => void openOidc(user)}
               onPassword={() => {
                 password.reset()
                 setPasswordValidation(null)
@@ -341,7 +347,6 @@ export function UserManagementSection() {
           />
         ) : null}
       </Dialog>
-      <UserOidcDialog user={oidcTarget} onClose={() => setOidcTarget(null)} />
       <Dialog
         open={quotaTarget !== null}
         title={

@@ -38,14 +38,7 @@ export function emptyBackendForm(): BackendForm {
   }
 }
 
-export interface SharePickerState {
-  mode: 'folder' | 'file'
-  start: string
-  apply: (path: string) => void
-}
-
 export interface ShareManagementState {
-  pathPicker: SharePickerState | null
   addOpen: boolean
   addName: string
   addBackend: ShareBackend
@@ -64,11 +57,9 @@ export interface ShareManagementState {
   encDisableTarget: AdminShare | null
   encDisableError: string | null
   announcement: string
-  pathPickerCounter: number
 }
 
 const initialShareManagementState: ShareManagementState = {
-  pathPicker: null,
   addOpen: false,
   addName: '',
   addBackend: 'local',
@@ -86,8 +77,7 @@ const initialShareManagementState: ShareManagementState = {
   encGenerateError: null,
   encDisableTarget: null,
   encDisableError: null,
-  announcement: '',
-  pathPickerCounter: 0
+  announcement: ''
 }
 
 export function useShareManagementState(): readonly [ShareManagementState, Dispatch<StatePatch<ShareManagementState>>] {

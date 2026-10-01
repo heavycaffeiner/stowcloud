@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
+import { overlay } from 'overlay-kit'
 import { describeApiError } from '../../api/error-text'
 import { useI18n } from '../../hooks/use-i18n'
 import { useRestartServer, useSystemHealth } from './api'
@@ -15,42 +16,31 @@ const WAIT_BUDGET_SECONDS = Math.round(WAIT_BUDGET_MS / 1000)
 type Phase = 'confirm' | 'submitting' | 'waiting' | 'timeout' | 'success'
 interface RestartDialogProps {
   open: boolean
-  outcome: ApplyOutcome | null
-  onClose: () => void
-  onRestarted: () => void
+  outcome: ApplyOutcome
+  /** Gets whether the server came back from a restart. */
+  onClose: (restarted: boolean) => void
+  onClosed: () => void
 }
 
-export function RestartDialog({ open, outcome, onClose, onRestarted }: RestartDialogProps) {
+/** Offers the restart a settings change needs. True once the server has come back from it. */
+export function offerRestart(outcome: ApplyOutcome): Promise<boolean> {
+  return overlay.openAsync<boolean>(({ isOpen, close, unmount }) => (
+    <RestartDialog open={isOpen} outcome={outcome} onClose={close} onClosed={unmount} />
+  ))
+}
+
+function RestartDialog({ open, outcome, onClose, onClosed }: RestartDialogProps) {
   const { t } = useI18n()
-  type RestartState = { phase: Phase; deadline: number | null; waitStartedAt: number | null; sawOutage: boolean }
-  const [state, setState] = useState<RestartState>({
-    phase: 'confirm',
-    deadline: null,
-    waitStartedAt: null,
-    sawOutage: false
-  })
-  const { phase, deadline, waitStartedAt, sawOutage } = state
-  const patchState = (patch: Partial<RestartState>): void => setState((current) => ({ ...current, ...patch }))
-  const setPhase = (value: Phase): void => patchState({ phase: value })
-  const setDeadline = (value: number | null): void => patchState({ deadline: value })
-  const setWaitStartedAt = (value: number | null): void => patchState({ waitStartedAt: value })
-  const setSawOutage = (value: boolean): void => patchState({ sawOutage: value })
-  const wasOpen = useRef(false)
+  const [phase, setPhase] = useState<Phase>('confirm')
+  const [waitStartedAt, setWaitStartedAt] = useState<number | null>(null)
+  const [sawOutage, setSawOutage] = useState(false)
   const restart = useRestartServer()
   const health = useSystemHealth(phase === 'waiting' ? POLL_INTERVAL_MS : false)
+  const close = (): void => onClose(phase === 'success')
+  const finish = useEffectEvent(() => onClose(true))
+
   useEffect(() => {
-    if (open && !wasOpen.current) {
-      setPhase('confirm')
-      setDeadline(null)
-      setWaitStartedAt(null)
-      setSawOutage(false)
-      restart.reset()
-    }
-    if (!open && phase === 'waiting') setPhase('confirm')
-    wasOpen.current = open
-  }, [open, phase, restart])
-  useEffect(() => {
-    if (!open || phase !== 'waiting' || waitStartedAt === null || deadline === null) return
+    if (phase !== 'waiting' || waitStartedAt === null) return
     const step = nextRestartWaitStep(sawOutage, {
       isSuccess: health.isSuccess,
       succeededAt: health.dataUpdatedAt,
@@ -58,55 +48,36 @@ export function RestartDialog({ open, outcome, onClose, onRestarted }: RestartDi
       erroredAt: health.errorUpdatedAt,
       waitStartedAt,
       now: Date.now(),
-      deadline
+      deadline: waitStartedAt + WAIT_BUDGET_MS
     })
     setSawOutage(step.sawOutage)
-    if (step.outcome === 'confirmed') {
-      setPhase('success')
-      onRestarted()
-      const timer = window.setTimeout(onClose, 900)
-      return () => window.clearTimeout(timer)
-    }
+    if (step.outcome === 'confirmed') setPhase('success')
     if (step.outcome === 'timed-out') setPhase('timeout')
-  }, [
-    open,
-    phase,
-    waitStartedAt,
-    deadline,
-    sawOutage,
-    health.isSuccess,
-    health.dataUpdatedAt,
-    health.isError,
-    health.errorUpdatedAt,
-    onClose,
-    onRestarted
-  ])
-  if (!open || !outcome?.restart_required) return null
+  }, [phase, waitStartedAt, sawOutage, health.isSuccess, health.dataUpdatedAt, health.isError, health.errorUpdatedAt])
+
+  // The good news stays up for a moment before the dialog closes on its own.
+  useEffect(() => {
+    if (phase !== 'success') return
+    const timer = window.setTimeout(finish, 900)
+    return () => window.clearTimeout(timer)
+  }, [phase])
+
   const activeUploads = outcome.active_uploads ?? 0
   const activeJobs = outcome.active_jobs ?? 0
   function beginWaiting(): void {
-    const started = Date.now()
-    setWaitStartedAt(started)
-    setDeadline(started + WAIT_BUDGET_MS)
+    setWaitStartedAt(Date.now())
     setSawOutage(false)
     setPhase('waiting')
   }
   function confirmRestart(): void {
     restart.reset()
     setPhase('submitting')
-    restart.mutate(undefined, {
-      onSuccess: () => {
-        if (open) beginWaiting()
-      },
-      onError: () => {
-        if (open) setPhase('confirm')
-      }
-    })
+    restart.mutate(undefined, { onSuccess: beginWaiting, onError: () => setPhase('confirm') })
   }
   const actions =
     phase === 'confirm' ? (
       <>
-        <Button variant="text" onClick={onClose}>
+        <Button variant="text" onClick={close}>
           {t('common.cancel')}
         </Button>
         <Button danger onClick={confirmRestart}>
@@ -122,18 +93,18 @@ export function RestartDialog({ open, outcome, onClose, onRestarted }: RestartDi
       </>
     ) : phase === 'timeout' ? (
       <>
-        <Button variant="text" onClick={onClose}>
+        <Button variant="text" onClick={close}>
           {t('common.close')}
         </Button>
         <Button onClick={beginWaiting}>{t('common.retry')}</Button>
       </>
     ) : (
-      <Button variant="text" onClick={onClose}>
+      <Button variant="text" onClick={close}>
         {t('common.close')}
       </Button>
     )
   return (
-    <Dialog open={open} title={t('restart.title')} onClose={onClose} actions={actions}>
+    <Dialog open={open} title={t('restart.title')} onClose={close} onClosed={onClosed} actions={actions}>
       {phase === 'confirm' || phase === 'submitting' ? (
         <p>
           {activeUploads > 0 || activeJobs > 0

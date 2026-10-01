@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { overlay } from 'overlay-kit'
 import { describeApiError } from '../../api/error-text'
 import { formatDateNs } from '../../lib/i18n'
 import { useI18n } from '../../hooks/use-i18n'
@@ -10,20 +11,25 @@ import * as styles from './UserOidcDialog.css'
 import { ApiError } from '../../api/fetcher'
 import type { AdminUser } from './api'
 
-interface UserOidcDialogProps {
-  user: AdminUser | null
-  onClose: () => void
+/** Shows a user's single sign-on connection. Settles once it has closed. */
+export function showUserOidc(user: AdminUser): Promise<void> {
+  return overlay.openAsync<void>(({ isOpen, close, unmount }) => (
+    <UserOidcDialog user={user} open={isOpen} onClose={() => close()} onClosed={unmount} />
+  ))
 }
 
-export function UserOidcDialog({ user, onClose }: UserOidcDialogProps) {
+interface UserOidcDialogProps {
+  user: AdminUser
+  open: boolean
+  onClose: () => void
+  onClosed: () => void
+}
+
+function UserOidcDialog({ user, open, onClose, onClosed }: UserOidcDialogProps) {
   const { t } = useI18n()
-  const query = useAdminUserOidc(user?.id ?? null)
+  const query = useAdminUserOidc(user.id)
   const unlink = useUnlinkUserOidc()
-  type OidcDialogState = { confirmUnlink: boolean; openFor: number | null }
-  const [state, setState] = useState<OidcDialogState>({ confirmUnlink: false, openFor: user?.id ?? null })
-  const { confirmUnlink } = state
-  const setConfirmUnlink = (value: boolean): void => setState((current) => ({ ...current, confirmUnlink: value }))
-  const openFor = user?.id ?? null
+  const [confirmUnlink, setConfirmUnlink] = useState(false)
   function describeError(error: unknown, fallback: string): string {
     if (error instanceof ApiError) {
       if (error.code === 'oidc.disabled') return t('oidc.single_sign_not_configured')
@@ -34,7 +40,7 @@ export function UserOidcDialog({ user, onClose }: UserOidcDialogProps) {
     return describeApiError(error, fallback)
   }
   function submitUnlink(): void {
-    if (user) unlink.mutate(user.id, { onSuccess: () => setConfirmUnlink(false) })
+    unlink.mutate(user.id, { onSuccess: () => setConfirmUnlink(false) })
   }
   const link = query.data
   const loadError = query.error ? describeError(query.error, t('oidc.could_not_load_connection_status')) : null
@@ -62,9 +68,10 @@ export function UserOidcDialog({ user, onClose }: UserOidcDialogProps) {
     )
   return (
     <Dialog
-      open={!!user}
-      title={user ? t('oidc.single_sign_for', { name: user.display_name || user.name }) : t('settings.single_sign_on')}
+      open={open}
+      title={t('oidc.single_sign_for', { name: user.display_name || user.name })}
       onClose={onClose}
+      onClosed={onClosed}
       actions={actions}
     >
       {query.isPending ? (

@@ -100,7 +100,7 @@ export function useBrowseActions(path: string, listing: BrowseListing) {
   }
 
   const share = (entry: Entry): void =>
-    openShareManager({ path: pathOf(entry), targetName: entry.name, targetIsDir: entry.kind === 'dir' })
+    void openShareManager({ path: pathOf(entry), targetName: entry.name, targetIsDir: entry.kind === 'dir' })
 
   const renameEntry = async (entry: Entry): Promise<void> => {
     const newName = await askNewName(entry.name)

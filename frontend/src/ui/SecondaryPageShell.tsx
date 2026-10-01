@@ -8,18 +8,10 @@ export interface SecondaryPageShellProps extends PropsWithChildren {
   refreshLabel: string
   onRefresh: () => void
   className?: string
-  overlay?: ReactNode
 }
 
 /** Shared frame for secondary routes with one consistent, keyboard-accessible heading and refresh action. */
-export function SecondaryPageShell({
-  title,
-  refreshLabel,
-  onRefresh,
-  className,
-  overlay,
-  children
-}: SecondaryPageShellProps) {
+export function SecondaryPageShell({ title, refreshLabel, onRefresh, className, children }: SecondaryPageShellProps) {
   return (
     <section className={cx(styles.root, className && className)}>
       <div className={styles.inner}>
@@ -31,7 +23,6 @@ export function SecondaryPageShell({
         </header>
         {children}
       </div>
-      {overlay}
     </section>
   )
 }

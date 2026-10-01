@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useMemo } from 'react'
 import { describeApiError } from '../../../api/error-text'
 import {
   useCreateShareLink,
@@ -79,7 +79,6 @@ export const editExpiryOptions = (t: (key: string) => string): SelectOption[] =>
 ]
 
 export function useShareManageController(
-  open: boolean,
   path: string,
   targetIsDir: boolean,
   t: (key: string, values?: Record<string, string | number>) => string,
@@ -105,10 +104,9 @@ export function useShareManageController(
     editExpiry,
     editExpiryDate,
     editMaxDownloads,
-    editLabel,
-    revokeTarget
+    editLabel
   } = state
-  const sharesQuery = useShareLinks(path, open)
+  const sharesQuery = useShareLinks(path)
   const createMut = useCreateShareLink()
   const updateMut = useUpdateShareLink()
   const deleteMut = useDeleteShareLink()
@@ -137,19 +135,6 @@ export function useShareManageController(
   )
   const newExpiryChoices = useMemo(() => newExpiryOptions(t), [t])
   const editExpiryChoices = useMemo(() => editExpiryOptions(t), [t])
-
-  useEffect(() => {
-    patch({ dialogOpen: open })
-    if (open)
-      patch({
-        justCreated: null,
-        issuedAcknowledged: false,
-        copyErrorId: null,
-        creatingOpen: false,
-        editingId: null,
-        revokeTarget: null
-      })
-  }, [open, patch])
 
   function resetCreateForm(): void {
     patch({
@@ -218,13 +203,9 @@ export function useShareManageController(
     patch({ issuedAcknowledged: true, justCreated: null, copyErrorId: null })
   }
 
+  /** Closes the manager, unless a new link is still on screen and not yet acknowledged. */
   function closeIssued(): void {
-    if (justCreated && !issuedAcknowledged) {
-      patch({ dialogOpen: true })
-      return
-    }
-    patch({ dialogOpen: false, justCreated: null })
-    closeParent()
+    if (!justCreated || issuedAcknowledged) closeParent()
   }
 
   function openEdit(link: ShareLinkInfo): void {
@@ -262,10 +243,8 @@ export function useShareManageController(
     }
   }
 
-  async function confirmRevoke(): Promise<void> {
-    if (!revokeTarget) return
-    const id = revokeTarget.id
-    patch({ revokeTarget: null })
+  async function revoke(link: ShareLinkInfo): Promise<void> {
+    const id = link.id
     if (justCreated?.id === id) patch({ justCreated: null })
     try {
       await deleteMut.mutateAsync(id)
@@ -297,6 +276,6 @@ export function useShareManageController(
     closeIssued,
     openEdit,
     submitEdit,
-    confirmRevoke
+    revoke
   }
 }

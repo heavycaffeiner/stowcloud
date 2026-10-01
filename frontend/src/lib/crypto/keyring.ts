@@ -10,8 +10,8 @@ const bump = (): void => {
 window.addEventListener('sc:unlock', bump)
 window.addEventListener('sc:lock', bump)
 
-/** Whether this session holds the key for `salt`. A component that calls it re-renders on unlock and lock. */
-export function shareUnlocked(salt: string): boolean {
+/** Whether this session holds the key for `salt`. The caller re-renders on unlock and lock. */
+export function useShareUnlocked(salt: string | undefined): boolean {
   void keyChanges.value
-  return isUnlocked(salt)
+  return salt !== undefined && isUnlocked(salt)
 }

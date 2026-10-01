@@ -5,7 +5,6 @@ import type { ApplyOutcome } from '../api'
 export type ServerSettingsGroup =
   'smb' | 'search' | 'thumbnail' | 'archive' | 'network' | 'db' | 'homes' | 'watch' | 'rate' | 'oidc'
 export type ServerSettingsValues = Record<string, unknown>
-export type ServerPathPicker = { mode: 'folder' | 'file'; key: string } | null
 
 export interface ServerSettingsState {
   values: ServerSettingsValues
@@ -14,8 +13,6 @@ export interface ServerSettingsState {
   activeGroup: ServerSettingsGroup | null
   validationError: string | null
   outcome: ApplyOutcome | null
-  restartOutcome: ApplyOutcome | null
-  pathPicker: ServerPathPicker
   secret: string
   announcement: string
 }
@@ -46,8 +43,6 @@ const initialServerSettingsState: ServerSettingsState = {
   activeGroup: null,
   validationError: null,
   outcome: null,
-  restartOutcome: null,
-  pathPicker: null,
   secret: '',
   announcement: ''
 }

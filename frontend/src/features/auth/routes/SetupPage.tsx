@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { scorePasswordStrength } from '../../../lib/format/password-strength'
 import { useI18n } from '../../../hooks/use-i18n'
 import { Button } from '../../../ui/Button'
-import { PathPickerDialog } from '../../files/PathPickerDialog'
+import { pickPath } from '../../files/PathPickerDialog'
 import { TextField } from '../../../ui/TextField'
 import { useDocumentTitle } from '../../../hooks/use-document-title'
 import { useSetupFlows, MIN_PASSWORD_LENGTH, toList } from '../hooks/use-setup-flows'
@@ -39,7 +39,6 @@ export function SetupPage() {
     shareRetryError,
     errorMessage,
     warnings,
-    pickerOpen,
     pickerAuthenticated,
     step
   } = state
@@ -60,6 +59,11 @@ export function SetupPage() {
     toList(appHosts).length > 0 &&
     (shareName.trim() === '') === (sharePath.trim() === '')
   useDocumentTitle(t('setup.create_administrator_account'))
+  // Before sign-in the setup token authorizes the browse.
+  const browseShareFolder = async (): Promise<void> => {
+    const picked = await pickPath({ mode: 'folder', start: sharePath, token: pickerAuthenticated ? undefined : token })
+    if (picked !== null) actions.setSharePath(picked)
+  }
   return (
     <main className={authStyles.page}>
       <form className={authStyles.card} onSubmit={flows.submit}>
@@ -109,7 +113,7 @@ export function SetupPage() {
                     className={authStyles.pathButton}
                     variant="outlined"
                     disabled={!pickerAuthenticated}
-                    onClick={() => actions.patch({ pickerOpen: true })}
+                    onClick={() => void browseShareFolder()}
                   >
                     {t('picker.browse_folder')}
                   </Button>
@@ -248,11 +252,7 @@ export function SetupPage() {
                     autoComplete="off"
                     onValueChange={actions.setSharePath}
                   />
-                  <Button
-                    className={authStyles.pathButton}
-                    variant="outlined"
-                    onClick={() => actions.patch({ pickerOpen: true })}
-                  >
+                  <Button className={authStyles.pathButton} variant="outlined" onClick={() => void browseShareFolder()}>
                     {t('picker.browse_folder')}
                   </Button>
                 </div>
@@ -299,14 +299,6 @@ export function SetupPage() {
           </>
         )}
       </form>
-      <PathPickerDialog
-        open={pickerOpen}
-        mode="folder"
-        start={sharePath}
-        token={pickerAuthenticated ? undefined : token}
-        onClose={() => actions.patch({ pickerOpen: false })}
-        onPick={(path) => actions.patch({ sharePath: path, pickerOpen: false })}
-      />
     </main>
   )
 }

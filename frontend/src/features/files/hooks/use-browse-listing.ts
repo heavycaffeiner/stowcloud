@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { joinPath } from '../../../lib/path-utils'
-import { shareUnlocked } from '../../../lib/crypto/keyring'
+import { useShareUnlocked } from '../../../lib/crypto/keyring'
 import { useSelectionStore } from '../selection'
 import { sortKey, sortOrder } from '../view-prefs'
 import { filterDate, filterType } from '../browse-page'
@@ -18,7 +18,7 @@ export function useBrowseListing(path: string) {
   const selected = useMemo(() => entries.filter((entry) => selectedNames.has(entry.name)), [entries, selectedNames])
   const encryption = useShareEncryption(path)
   const encrypted = encryption.data != null || encryption.isError
-  const unlocked = encryption.data != null && shareUnlocked(encryption.data.salt)
+  const unlocked = useShareUnlocked(encryption.data?.salt)
   const measured = useFolderSizes(
     selected.length
       ? selected.filter((entry) => entry.kind === 'dir').map((entry) => joinPath(path, entry.name))
