@@ -1,17 +1,17 @@
 import { useEffect, useState } from 'react'
-import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { Navigate, Outlet, useLocation, useNavigate } from '@tanstack/react-router'
 import { useRefEffect } from 'react-simplikit'
 import { useI18n } from '../../hooks/use-i18n'
-import { isUnauthenticated, screenOf, useSession, useSetupRequired } from '../../features/auth/api'
+import { isUnauthenticated, useSession } from '../../features/auth/api'
 import { JobTray } from '../../features/jobs/JobTray'
+import { SearchPage } from '../../features/search/SearchPage'
 import { SearchSheet } from '../../features/search/SearchSheet'
+import { useOpenedSearch } from '../../features/search/state'
 import { UploadTray } from '../../features/uploads/UploadTray'
 import { swReady } from '../../lib/crypto/download-sw'
 import { startLiveInvalidation } from '../../lib/query/live'
-import { Button } from '../../ui/Button'
 import { ErrorBoundary } from '../../ui/ErrorBoundary'
 import { NavigationBar, type NavigationBarItem } from '../../ui/NavigationBar'
-import { ProgressCircular } from '../../ui/ProgressCircular'
 import { cssVarName } from '../../ui/css-var'
 import { trayStackTop } from '../../ui/theme.css'
 import { useCompact } from '../../ui/use-compact'
@@ -20,49 +20,19 @@ import { ShellHeader } from './ShellHeader'
 import { useNavigation, type NavId } from './navigation'
 import { sidebar } from './sidebar'
 import * as styles from './AppShell.css'
-import * as routeErrorBoundaryStyles from '../RouteErrorBoundary.css'
 import { cx } from '../../ui/cx'
 
-/** Lets a signed-in session through to the app and sends everyone else to sign-in or first-run setup. */
+/** The signed-in app. A session that ends while it is open goes back to sign-in. */
 export function AppShell() {
-  const { t } = useI18n()
   const session = useSession()
-  const definitiveFailure = session.isError && isUnauthenticated(session.error)
-  const setup = useSetupRequired(definitiveFailure)
-  const screen = screenOf({
-    hasSession: session.data !== undefined && !definitiveFailure,
-    sessionFailed: definitiveFailure,
-    setupPending: definitiveFailure && setup.isPending,
-    setupRequired: setup.data === true
-  })
-  if (screen === 'login') return <Navigate to="/login" replace />
-  if (screen === 'first-run') return <Navigate to="/setup" replace />
-  if (session.isError && !definitiveFailure) {
-    return (
-      <main className={routeErrorBoundaryStyles.root}>
-        <section className={routeErrorBoundaryStyles.card} role="alert">
-          <h1>{t('session.connection_error')}</h1>
-          <p>{t('session.connection_error_hint')}</p>
-          <div>
-            <Button onClick={() => void session.refetch()}>{t('common.retry')}</Button>
-          </div>
-        </section>
-      </main>
-    )
-  }
-  if (screen !== 'browser') {
-    return (
-      <div className={styles.boot} role="status" aria-label={t('nav.checking_your_session')}>
-        <ProgressCircular size={40} />
-      </div>
-    )
-  }
+  if (session.isError && isUnauthenticated(session.error)) return <Navigate to="/login" replace />
   return <ShellLayout />
 }
 
 function ShellLayout() {
   const compact = useCompact()
   const collapsed = sidebar.value === 'collapsed'
+  const { scope } = useOpenedSearch()
   useEffect(() => {
     const stop = startLiveInvalidation()
     void swReady()
@@ -75,13 +45,13 @@ function ShellLayout() {
         <div className={styles.body}>
           {!compact ? <NavigationDrawer /> : null}
           <main className={cx(styles.main, !compact && (collapsed ? styles.mainCollapsed : styles.mainDrawer))}>
-            <Outlet />
+            {compact && scope !== undefined ? <SearchPage scope={scope} /> : <Outlet />}
           </main>
         </div>
         {compact ? <CompactNav /> : null}
       </div>
       <TrayStack compact={compact} />
-      {!compact ? <SearchSheet /> : null}
+      {!compact ? <SearchSheet scope={scope} /> : null}
     </>
   )
 }
@@ -92,7 +62,8 @@ const BAR_DESTINATIONS: readonly NavId[] = ['files', 'recent', 'links']
 function CompactNav() {
   const { t } = useI18n()
   const navigate = useNavigate()
-  const { key } = useLocation()
+  // Each history entry has its own key, so the drawer closes on any navigation, a search param included.
+  const key = useLocation({ select: (location) => location.state.__TSR_key ?? location.href })
   const { items, active } = useNavigation()
   const [openedAt, setOpenedAt] = useState<string | null>(null)
   const drawerOpen = openedAt === key
@@ -111,7 +82,7 @@ function CompactNav() {
     if (id === 'more') setOpenedAt(drawerOpen ? null : key)
     else {
       const href = bar.find((item) => item.id === id)?.href
-      if (href) void navigate(href)
+      if (href) void navigate({ href })
     }
   }
   return (

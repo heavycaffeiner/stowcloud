@@ -1,5 +1,5 @@
 import { useWatch } from 'react-hook-form'
-import { Link } from 'react-router-dom'
+import { Link } from '@tanstack/react-router'
 import { Button } from '../../../ui/Button'
 import { FormTextField } from '../../../ui/FormTextField'
 import { useDocumentTitle } from '../../../hooks/use-document-title'

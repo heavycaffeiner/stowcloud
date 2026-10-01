@@ -1,6 +1,4 @@
-import { useEffect, useEffectEvent } from 'react'
-import { useBlocker } from 'react-router-dom'
-import { useBeforeUnload } from '../../../hooks/use-before-unload'
+import { useBlocker } from '@tanstack/react-router'
 import { askLeaveEditor } from '../routes/EditDialogs'
 
 export interface EditNavigationOptions {
@@ -11,19 +9,21 @@ export interface EditNavigationOptions {
   discard: () => void
 }
 
-/** Holds a navigation away from unsaved changes until the user decides what happens to them. */
+/**
+ * Holds a navigation away from unsaved changes until the user decides what happens to them.
+ * Closing or reloading the tab gets the browser's own prompt.
+ */
 export function useEditNavigation({ name, dirty, canSave, save, discard }: EditNavigationOptions): void {
-  const blocker = useBlocker(
-    dirty ? ({ currentLocation, nextLocation }) => currentLocation.pathname !== nextLocation.pathname : false
-  )
-  const decide = useEffectEvent(async () => {
-    const choice = await askLeaveEditor(name, canSave)
-    if (choice === 'discard') discard()
-    if (choice === 'discard' || (choice === 'save' && (await save()))) blocker.proceed?.()
-    else blocker.reset?.()
+  useBlocker({
+    shouldBlockFn: async ({ current, next }) => {
+      if (current.pathname === next.pathname) return false
+      const choice = await askLeaveEditor(name, canSave)
+      if (choice === 'discard') {
+        discard()
+        return false
+      }
+      return !(choice === 'save' && (await save()))
+    },
+    disabled: !dirty
   })
-  useEffect(() => {
-    if (blocker.state === 'blocked') void decide()
-  }, [blocker.state])
-  useBeforeUnload(dirty)
 }

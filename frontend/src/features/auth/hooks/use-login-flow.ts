@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearch } from '@tanstack/react-router'
 import { t } from '../../../lib/i18n'
 import { startOidcLogin, useLogin, useLoginTotp, useOidcConfig } from '../api'
 import { ApiError } from '../../../api/fetcher'
@@ -8,7 +8,8 @@ import { oidcErrorMessage } from '../oidc-error'
 
 export type FactorMode = 'totp' | 'recovery'
 
-function safeReturnTo(raw: string | null): string | null {
+/** A same-origin path to return to after sign-in. Anything else could send the user off-site. */
+function safeReturnTo(raw: string | undefined): string | null {
   return raw && raw.startsWith('/') && !raw.startsWith('//') && !raw.startsWith('/\\') ? raw : null
 }
 
@@ -22,19 +23,19 @@ function errorText(error: unknown): string {
 /** Signs in with a password, then with a second factor when the account asks for one. */
 export function useLoginFlow() {
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
+  const search = useSearch({ from: '/login' })
   const form = useForm({ defaultValues: { username: '', password: '', code: '' } })
   // Set once the password is accepted and the account wants a second factor.
   const [challenge, setChallenge] = useState<string | null>(null)
   const [factorMode, setFactorMode] = useState<FactorMode>('totp')
-  const returnTo = safeReturnTo(searchParams.get('returnTo'))
+  const returnTo = safeReturnTo(search.returnTo)
   const oidcConfig = useOidcConfig()
   const login = useLogin()
   const loginTotp = useLoginTotp()
 
   const finishLogin = (): void => {
     if (returnTo) window.location.href = returnTo
-    else void navigate('/b/', { replace: true })
+    else void navigate({ to: '/b/$', params: { _splat: '' }, replace: true })
   }
 
   const pending = login.isPending || loginTotp.isPending
@@ -79,7 +80,7 @@ export function useLoginFlow() {
     pending,
     returnTo,
     ssoName: oidcConfig.data?.enabled ? oidcConfig.data.display_name : null,
-    ssoError: oidcErrorMessage(searchParams.get('oidc_error')),
+    ssoError: oidcErrorMessage(search.oidc_error),
     submit,
     switchFactor,
     backToPassword,

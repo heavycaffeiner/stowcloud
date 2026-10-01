@@ -20,7 +20,7 @@ test('selecting a share keeps permission dialogs open and creates the grant', as
   const archive = await filesystem.createShare(namespace('archive'), archiveDir)
   const user = await accounts.createUser(namespace('grant-user'), 'Password123!', { admin: false })
 
-  await page.goto(`${workerApp.baseURL}/admin#users`, { waitUntil: 'domcontentloaded' })
+  await page.goto(`${workerApp.baseURL}/admin/users`, { waitUntil: 'domcontentloaded' })
   await page.getByRole('button', { name: `Manage folders visible to ${user.name}` }).click()
 
   const grantsDialog = page.getByRole('alertdialog', { name: `Folders visible to ${user.name}` })

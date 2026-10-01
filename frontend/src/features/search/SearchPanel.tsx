@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent, ReactNode } from 'react'
 import { useI18n } from '../../hooks/use-i18n'
+import { useOpenedSearch, useSubmittedQuery } from './state'
 import { Icon } from '../../ui/Icon'
 import { useSearchController } from './hooks/use-search-controller'
 import { useSearchNavigation } from './hooks/use-search-navigation'
@@ -15,16 +16,17 @@ import { cx } from '../../ui/cx'
 export interface SearchPanelProps {
   readonly scope?: string
   readonly autoFocus?: boolean
-  readonly onNavigated?: () => void
   readonly trailing?: ReactNode
 }
 
-export function SearchPanel({ scope = '', autoFocus = false, onNavigated, trailing }: SearchPanelProps) {
+export function SearchPanel({ scope = '', autoFocus = false, trailing }: SearchPanelProps) {
   const { t } = useI18n()
   const resultsContainer = useRef<HTMLDivElement | null>(null)
   const categoriesRef = useRef<HTMLDivElement | null>(null)
-  const controller = useSearchController({ scope, resultsContainer, categoriesRef })
-  const navigation = useSearchNavigation({ scope, state: controller.state, onNavigated })
+  const { query: submitted } = useOpenedSearch()
+  const recordQuery = useSubmittedQuery()
+  const controller = useSearchController({ scope, submitted, resultsContainer, categoriesRef })
+  const navigation = useSearchNavigation({ scope, state: controller.state })
   const { state } = controller
   const [spokenStatus, setSpokenStatus] = useState('')
   const lastSpokenAt = useRef(0)
@@ -40,14 +42,22 @@ export function SearchPanel({ scope = '', autoFocus = false, onNavigated, traili
     setSpokenStatus(text)
   }, [controller.status.key, controller.status.values, state.running, state.scanned, t])
 
+  const run = (): void => {
+    controller.start()
+    recordQuery(state.query.trim())
+  }
+  const clear = (): void => {
+    controller.clear()
+    recordQuery('')
+  }
   const onSubmit = (event: FormEvent): void => {
     event.preventDefault()
-    controller.start()
+    run()
   }
   const onQueryKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
     if (event.key !== 'Enter') return
     event.preventDefault()
-    controller.start()
+    run()
   }
   const sortLabel = t(controller.sortLabelKey)
 
@@ -76,7 +86,7 @@ export function SearchPanel({ scope = '', autoFocus = false, onNavigated, traili
             type="button"
             className={cx(styles.clearBtn, iconButtonStyles.root)}
             aria-label={t('search.clear')}
-            onClick={controller.clear}
+            onClick={clear}
           >
             <Icon name="close" size={16} />
           </button>

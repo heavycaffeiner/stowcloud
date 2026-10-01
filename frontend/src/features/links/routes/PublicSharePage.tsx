@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { useForm, useWatch } from 'react-hook-form'
-import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams, useSearch, type HistoryState } from '@tanstack/react-router'
 import { Icon } from '../../../ui/Icon'
 import { Button } from '../../../ui/Button'
 import { FormTextField } from '../../../ui/FormTextField'
@@ -24,9 +24,6 @@ import * as styles from './PublicSharePage.css'
 import * as utilitiesStyles from '../../../ui/utilities.css'
 import { cx } from '../../../ui/cx'
 
-const shareRoute = (token: string, path: string): string =>
-  `/s/${encodeURIComponent(token)}${path ? `?path=${encodeURIComponent(path)}` : ''}`
-
 const childPath = (path: string, name: string): string => (path ? `${path}/${name}` : name)
 
 // Downloads are plain navigations, so the server's download cap counts only real ones.
@@ -36,16 +33,14 @@ const navigateTo = (url: string): void => {
 
 export function PublicSharePage() {
   const { t } = useI18n()
-  const { token = '' } = useParams()
-  const [searchParams] = useSearchParams()
-  const location = useLocation()
+  const token = useParams({ from: '/s/$token', select: (params) => params.token })
+  const path = useSearch({ from: '/s/$token', select: (search) => search.path ?? '' })
   const navigate = useNavigate()
-  const path = searchParams.get('path') ?? ''
   const share = usePublicShare(token, path)
   const { data: info, error } = share
   const needsPassword = error instanceof SharePasswordRequiredError
   // A folder that vanished sends the visitor back to the top, which then says why.
-  const pathGone = (location.state as { pathGone?: unknown } | null)?.pathGone === true
+  const pathGone = useLocation({ select: (location) => (location.state as { pathGone?: unknown }).pathGone === true })
   const loadError =
     error instanceof ShareNotFoundError
       ? t('public_share.link_has_expired_or_does')
@@ -56,10 +51,11 @@ export function PublicSharePage() {
 
   useEffect(() => {
     if (error instanceof SharePathGoneError)
-      void navigate(shareRoute(token, ''), { replace: true, state: { pathGone: true } })
+      void navigate({ to: '/s/$token', params: { token }, replace: true, state: { pathGone: true } as HistoryState })
   }, [error, navigate, token])
 
-  const openFolder = (next: string): void => void navigate(shareRoute(token, next))
+  const openFolder = (next: string): void =>
+    void navigate({ to: '/s/$token', params: { token }, search: { path: next || undefined } })
 
   return (
     <main className={styles.root}>

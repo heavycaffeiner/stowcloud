@@ -1,7 +1,7 @@
 // Signing in: the session, the login steps, first-run setup and the anonymous
 // half of single sign-on. Login and setup screens load this before there is a
 // session, so it imports nothing from the signed-in app.
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'
 import {
   client,
@@ -306,16 +306,12 @@ export function useLoadSession(): () => Promise<SessionInfo> {
   return useCallback(() => queryClient.fetchQuery({ ...sessionOptions, staleTime: 0 }), [queryClient])
 }
 
-/** Asked only after a failed session, which is when the answer matters. */
-export function useSetupRequired(enabled: boolean) {
-  return useQuery({
-    queryKey: keys.setupRequired(),
-    queryFn: fetchSetupRequired,
-    enabled,
-    staleTime: Infinity,
-    retry: false
-  })
-}
+const setupRequiredOptions = {
+  queryKey: keys.setupRequired(),
+  queryFn: fetchSetupRequired,
+  staleTime: Infinity,
+  retry: false
+} as const
 
 export function useOidcConfig() {
   return useQuery({ queryKey: keys.oidcConfig(), queryFn: fetchOidcConfig, staleTime: Infinity, retry: false })
@@ -356,21 +352,25 @@ export function useCreateInitialAdmin() {
   })
 }
 
-export type AuthScreen = 'loading' | 'browser' | 'login' | 'first-run'
+/** The session check got no answer: the server is unreachable or failed. */
+export class SessionUnreachableError extends Error {}
 
-/** Which screen the app is on. `setupPending` holds the loading state while
- *  the setup question is out, so a sign-in form never flashes at somebody
- *  with no account to sign in with. */
-export function screenOf(state: {
-  hasSession: boolean
-  sessionFailed: boolean
-  setupPending: boolean
-  setupRequired: boolean
-}): AuthScreen {
-  if (state.hasSession) return 'browser'
-  if (!state.sessionFailed) return 'loading'
-  if (state.setupPending) return 'loading'
-  return state.setupRequired ? 'first-run' : 'login'
+/**
+ * Where a visit to the signed-in app goes. A session already in hand lets it
+ * through at once and refreshes behind it when stale. Asks about first-run
+ * setup only after the session is refused, so a sign-in form never shows to
+ * somebody with no account to sign in with.
+ */
+export async function resolveAuthScreen(queryClient: QueryClient): Promise<'browser' | 'login' | 'first-run'> {
+  const state = queryClient.getQueryState(sessionOptions.queryKey)
+  try {
+    if (state?.status === 'success' && !state.isInvalidated) void queryClient.prefetchQuery(sessionOptions)
+    else await queryClient.fetchQuery(sessionOptions)
+    return 'browser'
+  } catch (error) {
+    if (!isUnauthenticated(error)) throw new SessionUnreachableError('session check failed', { cause: error })
+    return (await queryClient.fetchQuery(setupRequiredOptions)) ? 'first-run' : 'login'
+  }
 }
 
 /** True when a failed session means "not signed in" rather than "the server

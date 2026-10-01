@@ -64,6 +64,7 @@
     "@preact/signals-react": "^3.12.0",
     "@stowcloud/rclone-crypt": "github:Stowcloud/rclone-crypt#v0.1.0",
     "@tanstack/react-query": "^5.102.8",
+    "@tanstack/react-router": "^1.170.40",
     "@tanstack/react-virtual": "^3.14.11",
     "@zip.js/zip.js": "^2.11.1",
     "client-zip": "^2.5.0",
@@ -77,7 +78,6 @@
     "react-hook-form": "^7.89.0",
     "react-hotkeys-hook": "^5.3.3",
     "react-i18next": "^17.0.15",
-    "react-router-dom": "^7.18.3",
     "react-simplikit": "^0.3.1",
     "zustand": "^5.0.15"
   }

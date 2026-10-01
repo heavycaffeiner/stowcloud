@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from '@tanstack/react-router'
 import { describeApiError } from '../../../api/error-text'
 import { ApiError } from '../../../api/fetcher'
 import { t } from '../../../lib/i18n'
@@ -114,7 +114,7 @@ export function useSetup() {
         return
       }
     }
-    void navigate('/b/', { replace: true })
+    void navigate({ to: '/b/$', params: { _splat: '' }, replace: true })
   }
 
   const submit = form.handleSubmit(async (values) => {

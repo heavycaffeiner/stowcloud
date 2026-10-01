@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import type { AdminTab } from '../hooks/use-admin-tab'
+import type { AdminTab } from '../tabs'
 import { useI18n } from '../../../hooks/use-i18n'
 import { ErrorBoundary } from '../../../ui/ErrorBoundary'
 import { ProgressCircular } from '../../../ui/ProgressCircular'

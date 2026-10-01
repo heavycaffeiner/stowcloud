@@ -1,38 +1,67 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../../src/api/fetcher'
-import { isUnauthenticated, screenOf } from '../../../src/features/auth/api'
+import { isUnauthenticated, resolveAuthScreen, SessionUnreachableError } from '../../../src/features/auth/api'
+import { createTestQueryClient } from '../../../src/test/test-utils'
 
-describe('which screen the app is on', () => {
-  it('shows the browser as soon as there is a session', () => {
-    const screen = screenOf({ hasSession: true, sessionFailed: false, setupPending: false, setupRequired: true })
-    expect(screen).toBe('browser')
+const REFUSED = { status: 401, body: { error: { code: 'auth.required', message: 'no' } } }
+const SIGNED_IN = {
+  status: 200,
+  body: { id: '1', login: 'ada', admin: false, csrf: 'token', roots: [], features: { search: 'walk' } }
+}
+
+/** Answers each API path with a fixed reply, or a network fault when there is none. */
+function stubServer(replies: Record<string, { status: number; body: unknown }>) {
+  const fetchMock = vi.fn(async (request: Request) => {
+    const reply = replies[new URL(request.url).pathname]
+    if (!reply) throw new TypeError('network down')
+    return new Response(JSON.stringify(reply.body), {
+      status: reply.status,
+      headers: { 'Content-Type': 'application/json' }
+    })
   })
+  vi.stubGlobal('fetch', fetchMock)
+  return fetchMock
+}
 
-  it('waits while the session is still being checked', () => {
-    expect(screenOf({ hasSession: false, sessionFailed: false, setupPending: false, setupRequired: false })).toBe(
-      'loading'
-    )
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
+describe('which screen the app opens on', () => {
+  it('opens the browser when there is a session', async () => {
+    stubServer({ '/api/v1/auth/session': SIGNED_IN })
+    await expect(resolveAuthScreen(createTestQueryClient())).resolves.toBe('browser')
   })
 
   // The session route answers the same 401 whether the session expired or the
-  // server has never had an account, so the follow-up question decides. Landing
-  // on login first would flash a sign-in form at somebody with no account.
-  it('keeps waiting while the first-run question is still out', () => {
-    expect(screenOf({ hasSession: false, sessionFailed: true, setupPending: true, setupRequired: false })).toBe(
-      'loading'
-    )
+  // server has never had an account, so the follow-up question decides.
+  it('offers the create-administrator screen on a server with no account', async () => {
+    stubServer({ '/api/v1/auth/session': REFUSED, '/api/v1/system/setup': { status: 200, body: { required: true } } })
+    await expect(resolveAuthScreen(createTestQueryClient())).resolves.toBe('first-run')
   })
 
-  it('offers the create-administrator screen on a server with no account', () => {
-    expect(screenOf({ hasSession: false, sessionFailed: true, setupPending: false, setupRequired: true })).toBe(
-      'first-run'
-    )
+  it('offers login on a server that has one', async () => {
+    stubServer({ '/api/v1/auth/session': REFUSED, '/api/v1/system/setup': { status: 200, body: { required: false } } })
+    await expect(resolveAuthScreen(createTestQueryClient())).resolves.toBe('login')
   })
 
-  it('offers login on a server that has one', () => {
-    expect(screenOf({ hasSession: false, sessionFailed: true, setupPending: false, setupRequired: false })).toBe(
-      'login'
-    )
+  it('falls back to login when the first-run question fails', async () => {
+    stubServer({ '/api/v1/auth/session': REFUSED })
+    await expect(resolveAuthScreen(createTestQueryClient())).resolves.toBe('login')
+  })
+
+  it('reports an unreachable server instead of signing the user out', async () => {
+    stubServer({})
+    await expect(resolveAuthScreen(createTestQueryClient())).rejects.toBeInstanceOf(SessionUnreachableError)
+  })
+
+  it('opens at once on a cached session and refreshes it behind the page', async () => {
+    const fetchMock = stubServer({ '/api/v1/auth/session': SIGNED_IN })
+    const queryClient = createTestQueryClient()
+    await resolveAuthScreen(queryClient)
+    fetchMock.mockImplementation(() => new Promise<Response>(() => undefined))
+
+    await expect(resolveAuthScreen(queryClient)).resolves.toBe('browser')
   })
 })
 

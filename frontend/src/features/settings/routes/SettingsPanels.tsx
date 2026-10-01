@@ -1,4 +1,5 @@
 import { lazy, Suspense } from 'react'
+import { useSearch } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { useI18n } from '../../../hooks/use-i18n'
 import { i18n, setLocale } from '../../../lib/i18n/state'
@@ -65,9 +66,8 @@ export function SecurityPanel() {
   const { t } = useI18n()
   const session = useSession().data
   const oidcConfig = useOidcConfig().data
-  const oidcVisible =
-    oidcConfig !== undefined &&
-    (oidcConfig.enabled || !!session?.oidc.linked || new URLSearchParams(window.location.search).has('oidc_error'))
+  const oidcFailed = useSearch({ from: '/_app/settings/{-$tab}', select: (search) => search.oidc_error !== undefined })
+  const oidcVisible = oidcConfig !== undefined && (oidcConfig.enabled || !!session?.oidc.linked || oidcFailed)
   return (
     <Suspense fallback={<p>{t('common.loading')}</p>}>
       <div className={styles.pageGrid}>

@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from '@tanstack/react-router'
 import { describeApiError } from '../../../api/error-text'
 import { formatBytes } from '../../../lib/format/bytes'
 import { formatDateNs } from '../../../lib/i18n'
@@ -12,6 +12,7 @@ import { SecondaryPageState } from '../../../ui/SecondaryPageState'
 import * as styles from './RecentPage.css'
 import * as secondaryPageShellStyles from '../../../ui/SecondaryPageShell.css'
 import { useRecent, type RecentHit } from '../api'
+import { splatOf } from '../../files/browse-search'
 
 const RECENT_LIMIT = 100
 const RECENT_RETENTION_DAYS = 14
@@ -68,13 +69,12 @@ export function RecentPage() {
             estimateSize={56}
             renderItem={(hit) => {
               const parent = parentOfVpath(hit.vpath)
-              const href = `${parent === '/' ? '/b' : `/b${parent}`}?focus=${encodeURIComponent(hit.name)}`
               return (
                 <button
                   type="button"
                   className={secondaryPageShellStyles.row}
                   aria-label={t('recent.open_item', { name: hit.name, folder: parent })}
-                  onClick={() => void navigate(href)}
+                  onClick={() => void navigate({ to: '/b/$', params: splatOf(parent), search: { focus: hit.name } })}
                 >
                   <span className={secondaryPageShellStyles.icon}>
                     <Icon name="draft" />

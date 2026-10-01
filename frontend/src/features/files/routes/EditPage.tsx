@@ -1,12 +1,13 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
-import { normalizePath, parentOf } from '../../../lib/path-utils'
+import { useNavigate, useParams } from '@tanstack/react-router'
+import { parentOf } from '../../../lib/path-utils'
 import { describeApiError } from '../../../api/error-text'
 import { MAX_ENCRYPTABLE_BYTES } from '../../../lib/crypto/e2ee'
 import { useShareUnlocked } from '../../../lib/crypto/keyring'
 import { formatBytes } from '../../../lib/format/bytes'
 import { useI18n } from '../../../hooks/use-i18n'
 import { useShareEncryption, useStat } from '../api'
+import { splatOf, splatPath } from '../browse-search'
 import { Button } from '../../../ui/Button'
 import { ProgressCircular } from '../../../ui/ProgressCircular'
 import { CodeEditor, type CodeEditorHandle } from './CodeEditor'
@@ -22,8 +23,7 @@ import * as styles from './EditPage.css'
 import { cx } from '../../../ui/cx'
 
 export function EditPage() {
-  const { '*': rawPath } = useParams()
-  const path = normalizePath(`/${rawPath ?? ''}`)
+  const path = splatPath(useParams({ from: '/_app/edit/$', select: (params) => params._splat }))
   // Another file starts from a clean draft.
   return <Editor key={path} path={path} />
 }
@@ -73,7 +73,7 @@ function Editor({ path }: { path: string }) {
     asking.current = true
     const done = await askUnlock(share)
     asking.current = false
-    if (!done && !edit.dirty) void navigate(`/b${parentOf(path)}`)
+    if (!done && !edit.dirty) void navigate({ to: '/b/$', params: splatOf(parentOf(path)) })
   }
   const onLocked = useEffectEvent(() => void requestUnlock())
   useEffect(() => {
@@ -96,7 +96,10 @@ function Editor({ path }: { path: string }) {
   return (
     <main className={styles.root}>
       <header className={styles.toolbar}>
-        <IconButton label={t('editor.go_back')} onClick={() => void navigate(`/b${parentOf(path)}`)}>
+        <IconButton
+          label={t('editor.go_back')}
+          onClick={() => void navigate({ to: '/b/$', params: splatOf(parentOf(path)) })}
+        >
           <Icon name="chevron_left" />
         </IconButton>
         <span className={styles.fileIcon} aria-hidden="true">

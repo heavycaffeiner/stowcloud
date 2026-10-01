@@ -1,3 +1,4 @@
+import { useSearch } from '@tanstack/react-router'
 import { describeApiError } from '../../api/error-text'
 import { formatDateNs } from '../../lib/i18n'
 import { useI18n } from '../../hooks/use-i18n'
@@ -21,7 +22,9 @@ export function OidcSection() {
   const configured = config.data?.enabled ?? false
   const providerLabel = config.data?.display_name || t('oidc.identity_provider')
   const smbDedicated = session.data?.user.smb_credential === 'dedicated'
-  const flowError = oidcErrorMessage(new URLSearchParams(window.location.search).get('oidc_error'))
+  const flowError = oidcErrorMessage(
+    useSearch({ from: '/_app/settings/{-$tab}', select: (search) => search.oidc_error })
+  )
 
   function describe(value: unknown, fallback: string): string {
     if (value instanceof ApiError) {

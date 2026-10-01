@@ -1,37 +1,37 @@
 import { useEffect, useState } from 'react'
-import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from '@tanstack/react-router'
 import { useI18n } from '../../../hooks/use-i18n'
 import { useDocumentTitle } from '../../../hooks/use-document-title'
-import { normalizePath } from '../../../lib/path-utils'
+import { PreviewHost } from '../../preview/PreviewDialog'
+import { splatOf, splatPath } from '../browse-search'
 import { lastFolder } from '../location'
 import { useBrowseListing } from '../hooks/use-browse-listing'
 import { useBrowseActions } from '../hooks/use-browse-actions'
-import { useBrowsePageReset } from '../hooks/use-browse-route-effects'
+import { useBrowsePageReset, useBrowseSearch, usePreviewParam } from '../hooks/use-browse-route-effects'
 import { BrowseSelectionBar } from './BrowseSelectionBar'
 import { BrowseContent, BrowseNotice, BrowseOperation, BrowseToolbar } from './BrowseView'
 import * as styles from './BrowseRoute.css'
 
 export function BrowseRoute() {
-  const params = useParams()
-  const path = normalizePath(`/${params['*'] ?? ''}`)
+  const path = splatPath(useParams({ from: '/_app/b/$', select: (params) => params._splat }))
   return <BrowsePageContent key={path} path={path} />
 }
 
 function BrowsePageContent({ path }: { path: string }) {
   const { t } = useI18n()
-  const { search } = useLocation()
+  const { type = 'all', date = 'any' } = useBrowseSearch().search
   const [dragOver, setDragOver] = useState(false)
   useBrowsePageReset(path)
   useEffect(() => {
     lastFolder.value = path
   }, [path])
   useDocumentTitle(`${path.split('/').filter(Boolean).at(-1) ?? 'Stowcloud'} - Stowcloud`)
-  const listing = useBrowseListing(path)
+  const listing = useBrowseListing(path, { type, date })
   const actions = useBrowseActions(path, listing)
+  const preview = usePreviewParam(listing.entries, listing.listing)
   const { session, selected, selectionBytes, canCreate } = listing
 
-  if (path === '/' && session.data?.roots[0])
-    return <NavigateToRoot path={session.data.roots[0].label} search={search} />
+  if (path === '/' && session.data?.roots[0]) return <NavigateToRoot path={`/${session.data.roots[0].label}`} />
   return (
     <div
       className={styles.root}
@@ -55,14 +55,24 @@ function BrowsePageContent({ path }: { path: string }) {
       <BrowseOperation />
       <BrowseNotice />
       {actions.uploadInputs}
+      <PreviewHost
+        entries={listing.entries}
+        folder={path}
+        entry={preview.entry}
+        onShow={preview.show}
+        onClose={preview.close}
+        onDownload={(entry) => void actions.download([entry])}
+        onEdit={(entry) => void actions.openEditor(entry)}
+      />
     </div>
   )
 }
 
-function NavigateToRoot({ path, search }: { path: string; search: string }) {
+/** The top level lists nothing of its own, so it opens the first root and keeps the URL's params. */
+function NavigateToRoot({ path }: { path: string }) {
   const navigate = useNavigate()
   useEffect(() => {
-    void navigate(`/b/${encodeURIComponent(path)}${search}`, { replace: true })
-  }, [navigate, path, search])
+    void navigate({ to: '/b/$', params: splatOf(path), search: true, replace: true })
+  }, [navigate, path])
   return null
 }

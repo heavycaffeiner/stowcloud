@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from '@tanstack/react-router'
 import { describeApiError } from '../../api/error-text'
 import { useI18n } from '../../hooks/use-i18n'
 import { useSession, type RootEntry } from '../../features/auth/api'
@@ -32,7 +32,7 @@ export function NavigationDrawer({ overlay = false, onClose }: NavigationDrawerP
   const collapsed = !overlay && sidebar.value === 'collapsed'
 
   const go = (href: string): void => {
-    void navigate(href)
+    void navigate({ href })
     onClose?.()
   }
 

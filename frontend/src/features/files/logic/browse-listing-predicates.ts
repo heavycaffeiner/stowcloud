@@ -1,5 +1,5 @@
 import { isVideoFile } from '../../preview/logic/media-utils'
-import type { BrowseFilterDate, BrowseFilterType } from '../browse-page'
+import type { BrowseFilterDate, BrowseFilterType } from '../browse-search'
 import type { Entry } from '../api'
 
 const DOCUMENT_EXTENSIONS = new Set([

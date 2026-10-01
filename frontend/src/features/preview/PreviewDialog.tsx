@@ -1,6 +1,5 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { overlay } from 'overlay-kit'
 import { ApiError } from '../../api/fetcher'
 import {
   contentUrl,
@@ -51,42 +50,37 @@ interface PreviewDialogProps {
   onEdit: (entry: Entry) => void
 }
 
-export interface PreviewRequest {
+export interface PreviewHostProps {
   /** The folder's listing; previous and next step through its files. */
   readonly entries: readonly Entry[]
-  readonly index: number
   readonly folder: string
+  /** The file to show, or null to close. */
+  readonly entry: Entry | null
+  readonly onShow: (entry: Entry) => void
+  readonly onClose: () => void
   readonly onDownload: (entry: Entry) => void
   readonly onEdit: (entry: Entry) => void
 }
 
-export function openPreview(request: PreviewRequest): void {
-  overlay.open(({ isOpen, close, unmount }) => (
-    <PreviewOverlay {...request} open={isOpen} onClose={close} onClosed={unmount} />
-  ))
-}
-
-function PreviewOverlay({
-  entries,
-  index: first,
-  folder,
-  onDownload,
-  onEdit,
-  open,
-  onClose,
-  onClosed
-}: PreviewRequest & { open: boolean; onClose: () => void; onClosed: () => void }) {
+/** The preview for whichever file its owner names. The last one stays on screen while the dialog closes. */
+export function PreviewHost({ entries, folder, entry, onShow, onClose, onDownload, onEdit }: PreviewHostProps) {
   const { t } = useI18n()
-  const [index, setIndex] = useState(first)
-  const fileAt = (delta: number): number => {
+  const [kept, setKept] = useState(entry)
+  if (entry && entry !== kept) setKept(entry)
+  const shown = entry ?? kept
+  if (!shown) return null
+  const index = entries.findIndex((item) => item.name === shown.name)
+  const fileAt = (delta: number): Entry | null => {
+    if (index < 0) return null
     let at = index + delta
     while (at >= 0 && at < entries.length && entries[at].kind === 'dir') at += delta
-    return at >= 0 && at < entries.length ? at : -1
+    return entries[at] ?? null
   }
   const prev = fileAt(-1)
   const next = fileAt(1)
-  const entry = entries[index]
-  const path = joinPath(folder, entry.name)
+  const path = joinPath(folder, shown.name)
+  const open = entry !== null
+  const onClosed = (): void => setKept(null)
   return (
     <ErrorBoundary
       resetKey={path}
@@ -104,14 +98,14 @@ function PreviewOverlay({
     >
       <PreviewDialog
         open={open}
-        entry={entry}
+        entry={shown}
         path={path}
-        hasPrev={prev >= 0}
-        hasNext={next >= 0}
+        hasPrev={prev !== null}
+        hasNext={next !== null}
         onClose={onClose}
         onClosed={onClosed}
-        onPrev={() => prev >= 0 && setIndex(prev)}
-        onNext={() => next >= 0 && setIndex(next)}
+        onPrev={() => prev && onShow(prev)}
+        onNext={() => next && onShow(next)}
         onDownload={onDownload}
         onEdit={onEdit}
       />

@@ -54,11 +54,8 @@ await setLocale('en')
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, type RenderOptions } from '@testing-library/react'
 import type { ReactElement, PropsWithChildren } from 'react'
-import { MemoryRouter, type MemoryRouterProps } from 'react-router-dom'
 
 export interface RenderAppOptions extends Omit<RenderOptions, 'wrapper'> {
-  initialEntries?: MemoryRouterProps['initialEntries']
-  initialIndex?: MemoryRouterProps['initialIndex']
   queryClient?: QueryClient
 }
 
@@ -73,16 +70,12 @@ export function createTestQueryClient(): QueryClient {
 
 export function renderWithProviders(
   element: ReactElement,
-  { initialEntries = ['/'], initialIndex, queryClient = createTestQueryClient(), ...options }: RenderAppOptions = {}
+  { queryClient = createTestQueryClient(), ...options }: RenderAppOptions = {}
 ) {
   function Wrapper({ children }: PropsWithChildren) {
     return (
       <I18nextProvider i18n={i18n}>
-        <QueryClientProvider client={queryClient}>
-          <MemoryRouter initialEntries={initialEntries} initialIndex={initialIndex}>
-            {children}
-          </MemoryRouter>
-        </QueryClientProvider>
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
       </I18nextProvider>
     )
   }

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from '@tanstack/react-router'
 import { scorePasswordStrength } from '../../../lib/format/password-strength'
 import { useI18n } from '../../../hooks/use-i18n'
 import { Button } from '../../../ui/Button'
@@ -108,7 +108,11 @@ export function SetupPage() {
                   </p>
                 ) : null}
                 {outcome.shareRetryError && signedIn ? (
-                  <Link className={cx(authStyles.setupLink, utilitiesStyles.focusRing)} to="/admin#shares">
+                  <Link
+                    className={cx(authStyles.setupLink, utilitiesStyles.focusRing)}
+                    to="/admin/{-$tab}"
+                    params={{ tab: 'shares' }}
+                  >
                     {t('setup.go_to_admin_shares')}
                   </Link>
                 ) : null}

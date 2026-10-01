@@ -23,3 +23,9 @@ export const card = style({
   boxShadow: vars.shadow.level1,
   animation: `${scaleUp} 220ms cubic-bezier(0.2, 0, 0, 1)`
 })
+
+export const boot = style({
+  minHeight: ['100vh', '100dvh'],
+  display: 'grid',
+  placeItems: 'center'
+})

@@ -8,6 +8,7 @@ export type CategoryId = 'all' | 'file' | 'dir' | 'document' | 'image' | 'video'
 
 export interface SearchPanelState {
   query: string
+  submitted: string
   kind: Kind
   presets: readonly string[]
   extText: string
@@ -43,9 +44,11 @@ export const SORT_KEYS: readonly [SortKey, string][] = [
   ['date', /* i18n */ 'search.sort_date']
 ]
 
-export function initialSearchState(snapshot: SearchSnapshot | null): SearchPanelState {
+/** The panel as the snapshot left it, or empty with `submitted` waiting in the field to run. */
+export function initialSearchState(snapshot: SearchSnapshot | null, submitted = ''): SearchPanelState {
   return {
-    query: snapshot?.query ?? '',
+    query: snapshot?.query ?? submitted,
+    submitted: snapshot?.submitted ?? '',
     kind: snapshot?.kind ?? 'any',
     presets: snapshot ? [...snapshot.presets] : [],
     extText: snapshot?.extText ?? '',
@@ -71,6 +74,7 @@ export function toSnapshot(
   return {
     scope,
     query: state.query,
+    submitted: state.submitted,
     kind: state.kind,
     presets: state.presets,
     extText: state.extText,

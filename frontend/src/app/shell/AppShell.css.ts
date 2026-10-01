@@ -413,9 +413,3 @@ export const trayStackCompact = style({
   right: 'max(16px, env(safe-area-inset-right, 0px))',
   bottom: `calc(24px + ${vars.layout.navBarHeight} + env(safe-area-inset-bottom, 0px))`
 })
-
-export const boot = style({
-  minHeight: ['100vh', '100dvh'],
-  display: 'grid',
-  placeItems: 'center'
-})

@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
-import type { Signal } from '@preact/signals-react'
+import { useNavigate } from '@tanstack/react-router'
 import { useI18n } from '../../../hooks/use-i18n'
 import { t } from '../../../lib/i18n'
 import { describeApiError } from '../../../api/error-text'
@@ -18,15 +17,8 @@ import { DetailsPanel } from '../DetailsPanel'
 import { FileGrid } from '../FileGrid'
 import { FileTable, type FileViewHandle } from '../FileTable'
 import { FileTree } from '../FileTree'
-import {
-  filterDate,
-  filterType,
-  notice,
-  operation,
-  treeOpen,
-  type BrowseFilterDate,
-  type BrowseFilterType
-} from '../browse-page'
+import { notice, operation, treeOpen } from '../browse-page'
+import { splatOf, type BrowseFilterDate, type BrowseFilterType } from '../browse-search'
 import {
   chooseSort,
   cycleDensity,
@@ -39,7 +31,7 @@ import {
   viewMode
 } from '../view-prefs'
 import { useBrowseMarquee } from '../hooks/use-browse-marquee'
-import { useFocusParam } from '../hooks/use-browse-route-effects'
+import { useBrowseSearch, useFocusParam } from '../hooks/use-browse-route-effects'
 import { selection } from '../selection'
 import type { BrowseActions, BrowseListing } from '../hooks/use-browse-actions'
 import * as styles from './BrowseView.css'
@@ -95,6 +87,7 @@ export function BrowseToolbar({ path, listing, actions }: BrowseSectionProps) {
   const { t } = useI18n()
   const navigate = useNavigate()
   const compact = useCompact()
+  const { search, update } = useBrowseSearch()
   const { root, encrypted, unlocked, canCreate } = listing
   const crumbs = crumbsOf(path)
   const mode = viewMode.value
@@ -113,7 +106,7 @@ export function BrowseToolbar({ path, listing, actions }: BrowseSectionProps) {
     <header className={cx(styles.toolbar, compact && styles.toolbarCompact)}>
       <div className={styles.folderHeading}>
         <h1 className={utilitiesStyles.srOnly}>{crumbs.at(-1)?.label}</h1>
-        <Breadcrumb crumbs={crumbs} onNavigate={(next) => void navigate(`/b${next}`)} />
+        <Breadcrumb crumbs={crumbs} onNavigate={(next) => void navigate({ to: '/b/$', params: splatOf(next) })} />
         {root?.shared_externally ? (
           <span className={styles.externalBadge}>
             <Icon name="warning" size={14} />
@@ -150,10 +143,16 @@ export function BrowseToolbar({ path, listing, actions }: BrowseSectionProps) {
             <FilterPill
               name={t('browse.filter_type')}
               idleLabel={t('browse.filter_type')}
-              choice={filterType}
+              value={search.type ?? 'all'}
               options={typeOptions()}
+              onChoose={(type) => update({ type: type === 'all' ? undefined : type })}
             />
-            <FilterPill name={t('browse.filter_date')} choice={filterDate} options={dateOptions()} />
+            <FilterPill
+              name={t('browse.filter_date')}
+              value={search.date ?? 'any'}
+              options={dateOptions()}
+              onChoose={(date) => update({ date: date === 'any' ? undefined : date })}
+            />
             <button
               type="button"
               className={cx(styles.actionBtn, iconButtonStyles.root)}
@@ -207,15 +206,16 @@ export function BrowseToolbar({ path, listing, actions }: BrowseSectionProps) {
 function FilterPill<T extends string>({
   name,
   idleLabel,
-  choice,
-  options
+  value: current,
+  options,
+  onChoose
 }: {
   name: string
   idleLabel?: string
-  choice: Signal<T>
+  value: T
   options: readonly FilterOption<T>[]
+  onChoose: (value: T) => void
 }) {
-  const current = choice.value
   const idle = current === options[0][0]
   const label = idle && idleLabel ? idleLabel : options.find(([value]) => value === current)?.[1]
   return (
@@ -229,7 +229,7 @@ function FilterPill<T extends string>({
               key={value}
               checked={current === value}
               onClick={() => {
-                choice.value = value
+                onChoose(value)
                 close()
               }}
             >
@@ -295,7 +295,7 @@ function OverflowMenu({ close, onRefresh }: { close: () => void; onRefresh: () =
         treeOpen.value = !treeOpen.value
       })}
       {item(t('browse.density', { density: densityName }), cycleDensity)}
-      {item(t('browse.open_trash'), () => void navigate('/trash'))}
+      {item(t('browse.open_trash'), () => void navigate({ to: '/trash' }))}
     </MenuList>
   )
 }
@@ -310,7 +310,7 @@ export function BrowseContent({ path, listing, actions, dragOver }: BrowseSectio
   const { listing: query, directory, filteredEntries, selected, noShares, encrypted, session } = listing
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = query
   useFocusParam(view, query)
-  const all = filterType.value === 'all' && filterDate.value === 'any'
+  const all = !listing.filtered
   const dirs = all ? directory.dirs : filteredEntries.filter((entry) => entry.kind === 'dir').length
   const isAdmin = Boolean(session.data?.user.is_admin)
 
@@ -333,7 +333,7 @@ export function BrowseContent({ path, listing, actions, dragOver }: BrowseSectio
     onContextMenu: actions.openRowMenu,
     onRename: () => actions.runOnSelection('rename'),
     onDelete: () => actions.runOnSelection('delete'),
-    onSearchFocus: () => openSearch(path),
+    onSearchFocus: () => openSearch(path === '/' ? '' : path),
     encrypted
   }
   return (
@@ -341,7 +341,7 @@ export function BrowseContent({ path, listing, actions, dragOver }: BrowseSectio
       {treeOpen.value ? (
         <FileTree
           currentPath={path}
-          onNavigate={(next) => void navigate(`/b${next}`)}
+          onNavigate={(next) => void navigate({ to: '/b/$', params: splatOf(next) })}
           overlay={compact}
           onClose={() => (treeOpen.value = false)}
         />
@@ -367,7 +367,11 @@ export function BrowseContent({ path, listing, actions, dragOver }: BrowseSectio
                 ? t('browse.press_this_button_to_set_up_your_first_folder')
                 : t('browse.ask_an_administrator_for_a_folder')}
             </p>
-            {isAdmin ? <Button onClick={() => void navigate('/admin#shares')}>{t('common.add_folder')}</Button> : null}
+            {isAdmin ? (
+              <Button onClick={() => void navigate({ to: '/admin/{-$tab}', params: { tab: 'shares' } })}>
+                {t('common.add_folder')}
+              </Button>
+            ) : null}
           </div>
         ) : query.isPending ? (
           <div className={styles.loading}>

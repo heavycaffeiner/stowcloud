@@ -195,7 +195,7 @@ test.describe('README screenshots', () => {
       await settle(page)
       await shot(page, 'share-public', theme)
 
-      await page.goto(`${workerApp.baseURL}/admin#users`)
+      await page.goto(`${workerApp.baseURL}/admin/users`)
       await page.getByRole('button', { name: 'Manage folders visible to sujin', exact: true }).click()
       await page.getByRole('alertdialog').waitFor()
       await settle(page)

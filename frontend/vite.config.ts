@@ -1,19 +1,10 @@
 import { existsSync, readFileSync } from 'node:fs'
 import type { IncomingMessage } from 'node:http'
-import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath, URL } from 'node:url'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vitest/config'
 import { vanillaExtractPlugin } from '@vanilla-extract/vite-plugin'
-
-const require = createRequire(import.meta.url)
-const reactRouterRequire = createRequire(require.resolve('react-router-dom'))
-const reactRouterDevelopment = reactRouterRequire.resolve('react-router')
-const reactRouterProduction = reactRouterDevelopment.replace(/[\\/]dist[\\/]development[\\/]/, (match) =>
-  match.replace('development', 'production')
-)
-const reactRouterDomProduction = reactRouterProduction.replace(/[\\/]index\.mjs$/, '/dom-export.mjs')
 
 // The engine scripts/dev.sh starts speaks only TLS and refuses a signed-in request from an http Origin,
 // so `pnpm dev` serves https with the certificate dev.sh left in its data directory.
@@ -29,13 +20,6 @@ export default defineConfig({
     // Subscribes every component and hook that reads a signal's value to that signal.
     react({ babel: { plugins: [['module:@preact/signals-react-transform']] } })
   ],
-  resolve: {
-    alias: [
-      { find: 'react-router/dom', replacement: reactRouterDomProduction },
-      { find: 'react-router', replacement: reactRouterProduction }
-    ],
-    conditions: ['module', 'browser', 'production', 'import', 'default']
-  },
   build: {
     outDir: '../backend/internal/web/build',
     emptyOutDir: true,

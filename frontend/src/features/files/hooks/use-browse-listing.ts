@@ -3,13 +3,16 @@ import { joinPath } from '../../../lib/path-utils'
 import { useShareUnlocked } from '../../../lib/crypto/keyring'
 import { useSelectionStore } from '../selection'
 import { sortKey, sortOrder } from '../view-prefs'
-import { filterDate, filterType } from '../browse-page'
+import type { BrowseFilterDate, BrowseFilterType } from '../browse-search'
 import { matchesBrowseDate, matchesBrowseType } from '../logic/browse-listing-predicates'
 import { dirViewOf, useDirectory, useFolderSizes, useShareEncryption, type Entry } from '../api'
 import { useSession } from '../../auth/api'
 
-/** The folder at `path` as the page shows it: the listing, the current selection, and what may be done here. */
-export function useBrowseListing(path: string) {
+/**
+ * The folder at `path` as the page shows it: the listing, the current selection, and what may be done here.
+ * `filter` narrows the entries shown; it never changes what is fetched.
+ */
+export function useBrowseListing(path: string, filter: { type: BrowseFilterType; date: BrowseFilterDate }) {
   const session = useSession()
   const selectedNames = useSelectionStore((state) => state.names)
   const listing = useDirectory(path, { key: sortKey.value, order: sortOrder.value })
@@ -29,8 +32,8 @@ export function useBrowseListing(path: string) {
   const selectionBytes =
     selected.reduce((sum, entry) => sum + (entry.kind === 'dir' ? 0 : entry.size), 0) +
     measured.reduce((sum, query) => sum + (query.data?.bytes ?? 0), 0)
-  const type = filterType.value
-  const date = filterDate.value
+  const { type, date } = filter
+  const filtered = type !== 'all' || date !== 'any'
   const filteredEntries = useMemo(() => {
     const now = Date.now()
     return entries.filter((entry) => matchesBrowseType(entry, type) && matchesBrowseDate(entry, date, now))
@@ -44,6 +47,7 @@ export function useBrowseListing(path: string) {
     directory,
     entries,
     filteredEntries,
+    filtered,
     selected,
     selectedNames,
     encryption,

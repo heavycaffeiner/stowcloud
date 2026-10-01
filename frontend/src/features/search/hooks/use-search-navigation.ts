@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from '@tanstack/react-router'
 import { parentOf } from '../../../lib/path-utils'
+import { splatOf } from '../../files/browse-search'
 import { saveSnapshot } from '../state'
 import { toSnapshot, type SearchPanelState } from '../logic/search-state'
 import type { SearchHit } from '../api'
@@ -8,23 +9,22 @@ import type { SearchHit } from '../api'
 export interface SearchNavigationOptions {
   readonly scope: string
   readonly state: SearchPanelState
-  readonly onNavigated?: () => void
 }
 
 export interface SearchNavigation {
   readonly openResult: (hit: SearchHit) => void
 }
 
-export function useSearchNavigation({ scope, state, onNavigated }: SearchNavigationOptions): SearchNavigation {
+/** Opens a result in its folder. Leaving the search params behind closes search, and back reopens it. */
+export function useSearchNavigation({ scope, state }: SearchNavigationOptions): SearchNavigation {
   const navigate = useNavigate()
   return {
     openResult: useCallback(
       (hit: SearchHit): void => {
         saveSnapshot(toSnapshot(scope, state))
-        onNavigated?.()
-        void navigate(`/b${parentOf(hit.path)}?focus=${encodeURIComponent(hit.entry.name)}`)
+        void navigate({ to: '/b/$', params: splatOf(parentOf(hit.path)), search: { focus: hit.entry.name } })
       },
-      [navigate, onNavigated, scope, state]
+      [navigate, scope, state]
     )
   }
 }

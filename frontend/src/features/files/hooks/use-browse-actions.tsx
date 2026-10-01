@@ -1,6 +1,6 @@
 import type { DragEvent, ReactNode } from 'react'
 import { useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from '@tanstack/react-router'
 import { useSignalEffect } from '@preact/signals-react'
 import { joinPath } from '../../../lib/path-utils'
 import { batchErrorKey, describeApiError } from '../../../api/error-text'
@@ -17,7 +17,6 @@ import {
   supportsDirectoryPicker
 } from '../../../lib/upload/directory-picker'
 import { MenuItem, MenuList, openMenu, type MenuAnchor } from '../../../ui/Menu'
-import { openPreview } from '../../preview/PreviewDialog'
 import { askUnlock } from '../../shares/UnlockShareDialog'
 import { openShareManager } from '../../shares/ShareManageDialog'
 import type { ShareEncryption } from '../../shares/api'
@@ -25,6 +24,7 @@ import { askNewFolderName } from '../NewFolderDialog'
 import { askNewName } from '../RenameDialog'
 import { confirmDelete } from '../DeleteDialog'
 import { pickDestination } from '../DestinationPickerDialog'
+import { splatOf } from '../browse-search'
 import { createMenuRequest } from '../create-menu'
 import { notice, operation } from '../browse-page'
 import { selection } from '../selection'
@@ -33,6 +33,7 @@ import { runBrowseTransfer } from '../logic/browse-transfer'
 import { uploadEntries, uploadFiles } from '../logic/browse-upload'
 import { useArchiveTicket, useCopyFiles, useDeleteFiles, useMkdir, useMoveFiles, useRename, type Entry } from '../api'
 import type { useBrowseListing } from './use-browse-listing'
+import { useBrowseSearch } from './use-browse-route-effects'
 
 export type BrowseListing = ReturnType<typeof useBrowseListing>
 export type BrowseActions = ReturnType<typeof useBrowseActions>
@@ -52,6 +53,7 @@ async function ensureUnlocked(encryption: ShareEncryption | null): Promise<boole
  */
 export function useBrowseActions(path: string, listing: BrowseListing) {
   const navigate = useNavigate()
+  const { update: updateSearch } = useBrowseSearch()
   const mkdir = useMkdir()
   const rename = useRename()
   const remove = useDeleteFiles()
@@ -67,7 +69,7 @@ export function useBrowseActions(path: string, listing: BrowseListing) {
     if (entry.kind === 'dir') return
     try {
       if (await ensureUnlocked(await encryptionForLabel(shareLabelOf(entry.path))))
-        void navigate(`/edit${pathOf(entry)}`)
+        void navigate({ to: '/edit/$', params: splatOf(pathOf(entry)) })
     } catch (error) {
       fail(error, t('common.could_not_load_list'))
     }
@@ -259,17 +261,8 @@ export function useBrowseActions(path: string, listing: BrowseListing) {
   }
 
   const open = (entry: Entry): void => {
-    if (entry.kind === 'dir') {
-      void navigate(`/b${pathOf(entry)}`)
-      return
-    }
-    openPreview({
-      entries,
-      index: entries.indexOf(entry),
-      folder: path,
-      onDownload: (item) => void download([item]),
-      onEdit: (item) => void openEditor(item)
-    })
+    if (entry.kind === 'dir') void navigate({ to: '/b/$', params: splatOf(pathOf(entry)) })
+    else updateSearch({ preview: entry.name }, true)
   }
 
   const unlockFolder = (): void => {
@@ -308,6 +301,7 @@ export function useBrowseActions(path: string, listing: BrowseListing) {
 
   return {
     open,
+    openEditor,
     openRowMenu,
     runOnSelection,
     actionsFor,

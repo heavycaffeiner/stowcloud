@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from '@tanstack/react-router'
 import { useHotkeys } from 'react-hotkeys-hook'
 import { useBooleanState } from 'react-simplikit'
 import { useI18n } from '../../hooks/use-i18n'
@@ -38,7 +38,7 @@ export function ShellHeader() {
             <Icon name="menu" size={22} />
           </button>
         ) : null}
-        <button type="button" className={styles.headerBrandBtn} onClick={() => void navigate(files.href)}>
+        <button type="button" className={styles.headerBrandBtn} onClick={() => void navigate({ href: files.href })}>
           <span className={styles.headerBrand}>Stowcloud</span>
         </button>
       </div>
@@ -62,7 +62,7 @@ export function ShellHeader() {
               type="button"
               className={cx(styles.headerIconBtn, iconButtonStyles.root)}
               aria-label={t('common.settings')}
-              onClick={() => void navigate('/settings')}
+              onClick={() => void navigate({ to: '/settings/{-$tab}', params: {} })}
             >
               <Icon name="settings" size={20} />
             </button>
@@ -140,7 +140,7 @@ function AccountMenu() {
             className={styles.headerAccountItem}
             onClick={() => {
               close()
-              void navigate('/settings')
+              void navigate({ to: '/settings/{-$tab}', params: {} })
             }}
           >
             <Icon name="settings" size={18} />

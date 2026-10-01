@@ -29,6 +29,8 @@ type StateSetter = <K extends keyof SearchPanelState>(
 
 export interface SearchControllerOptions {
   readonly scope: string
+  /** The question in the URL. It brings back the snapshot that answered it, or runs again. */
+  readonly submitted: string
   readonly resultsContainer: RefObject<HTMLDivElement | null>
   readonly categoriesRef: RefObject<HTMLDivElement | null>
 }
@@ -55,11 +57,13 @@ export interface SearchController {
 
 export function useSearchController({
   scope,
+  submitted,
   resultsContainer,
   categoriesRef
 }: SearchControllerOptions): SearchController {
-  const [restored] = useState(() => snapshotFor(scope))
-  const [state, setState] = useState(() => initialSearchState(restored))
+  const [restored] = useState(() => snapshotFor(scope, submitted))
+  const [state, setState] = useState(() => initialSearchState(restored, submitted))
+  const [runOnMount] = useState(() => restored === null && submitted !== '')
   const set: StateSetter = useCallback((key, value) => {
     setState((current) => ({
       ...current,
@@ -122,6 +126,7 @@ export function useSearchController({
     restoredScrollTopRef.current = 0
     set('scrollTop', 0)
     const query = latestRef.current.query.trim()
+    set('submitted', query)
     if (query === '') {
       set('ran', false)
       set('running', false)
@@ -187,6 +192,7 @@ export function useSearchController({
     set('elapsedMs', null)
     set('scanned', null)
     set('query', '')
+    set('submitted', '')
     set('kind', 'any')
     set('presets', [])
     set('extText', '')
@@ -210,6 +216,10 @@ export function useSearchController({
   )
 
   useEffect(() => {
+    if (runOnMount) start()
+  }, [runOnMount, start])
+
+  useEffect(() => {
     const next = `${state.kind}|${state.presets.join(',')}|${state.extQuery.trim().toLowerCase()}`
     const previous = lastFiltersRef.current
     lastFiltersRef.current = next
@@ -221,6 +231,7 @@ export function useSearchController({
   }, [
     scope,
     state.query,
+    state.submitted,
     state.kind,
     state.presets,
     state.extText,

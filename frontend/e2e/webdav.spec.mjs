@@ -348,7 +348,7 @@ try {
     await setupAndLogIn(client, pageId)
 
     console.log('the webdav connection guide')
-    await client.callTool('navigate_page', { pageId, type: 'url', url: `${BASE}/settings#connections` })
+    await client.callTool('navigate_page', { pageId, type: 'url', url: `${BASE}/settings/connections` })
 
     const guidePresent = await waitForTestId(client, pageId, 'webdav-guide')
     check('the webdav guide section (data-testid=webdav-guide) is present', guidePresent === true)
