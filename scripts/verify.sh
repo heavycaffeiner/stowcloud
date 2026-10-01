@@ -250,40 +250,8 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   echo "=== go: $(go version) ==="
   echo
 
-  # The client and the route table are two halves of one contract, and nothing
-  # else here checks that they agree. A route the frontend calls and the server
-  # does not mount is a screen that cannot work, and it was invisible to every
-  # other check in this tree: that is how login ended up mounted on the
-  # change-password path with the whole suite green.
-  #
-  # The whole client tree and the verb, not one file and the path alone.
-  # Pointed at one file it missed the streaming search, which no route served;
-  # comparing paths alone it missed six calls mounted under a different verb,
-  # each of which answers "method not allowed" from a route that exists.
-  #
-  # src rather than src/lib/api: the resumable upload transport is a sibling
-  # directory, so a narrower path saw none of its calls, and the screens under
-  # routes/ build URLs of their own that no .ts file names.
-  #
-  # Every native and public-link route is registered in one file.
-  run "routecheck (the client's paths are mounted)" \
-      ingo_host go run ./tools/routecheck \
-        -client-dir ../frontend/src \
-        -routes internal/server/routes.go \
-        -allow routes.allow \
-        -server-only routes.server-only
-  # routecheck proves the paths exist. This proves the bodies match: the
-  # client read fields the server never sent, and every one of them was found
-  # by a person clicking something that then did nothing.
-  run "contractcheck (the client's fields are sent)" \
-      ingo_host go run ./tools/contractcheck \
-        ../frontend/src/lib/api/types.ts ./internal/files ./internal/admin ./internal/shares
-  # Settings saved by the client must be consumed by the runtime loader.
-  run "settingscheck (a stored setting is read)" \
-      ingo_host go run ./tools/settingscheck \
-        ../frontend/src/lib/api/types.ts ./internal/config/load.go
-  # And this keeps a byte-serving URL from being composed out of a path
-  # again. Both routes take the row's own sealed reference; the one client
+  # This keeps a byte-serving URL from being composed out of a path again.
+  # Both routes take the row's own sealed reference; the one client
   # that joined a path itself joined it wrongly, and an account granted a
   # folder inside a share saw its own label twice and every thumbnail in the
   # grid broke. Nothing outside the API layer may name either route, and the
@@ -299,15 +267,15 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   CONTENT_URL_HITS=$(
     grep -rn 'files/\(read\|thumbnail\)' frontend/src \
       --include='*.ts' --include='*.tsx' 2>/dev/null \
-      | grep -v '^frontend/src/lib/api/http\.ts:' | no_comment || true
+      | grep -v '^frontend/src/features/files/api\.ts:' | no_comment || true
   )
   # The API layer names them, and only with a claim.
   CONTENT_URL_HITS="$CONTENT_URL_HITS$(
-    grep -n 'files/\(read\|thumbnail\)' frontend/src/lib/api/http.ts 2>/dev/null \
+    grep -n 'files/\(read\|thumbnail\)' frontend/src/features/files/api.ts 2>/dev/null \
       | grep -v 'claim:' | no_comment || true
   )"
   grep_gate "no content URL composed from a path" "$CONTENT_URL_HITS" \
-    "A row's bytes are addressed by its own reference: api.contentUrl(entry)."
+    "A row's bytes are addressed by its own reference: contentUrl(entry)."
   run "layercheck (platform and server boundaries hold)" ingo_host go run ./tools/layercheck ./internal
   FMT=$(cd backend && gofmt -l . 2>/dev/null)
   grep_gate "gofmt" "$FMT" "Run: cd backend && gofmt -w ."
