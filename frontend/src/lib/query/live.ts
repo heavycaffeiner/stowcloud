@@ -86,13 +86,15 @@ export function startLiveInvalidation(): () => void {
   }
 
   function onClose(): void {
+    // Only a socket that opened can have stayed up; a failed attempt closes too.
+    const stayedUp = connected && Date.now() - connectedAt >= CONNECTED_RESET_MS
     connected = false
     window.clearInterval(pingTimer)
     pingTimer = 0
     if (stopped) return
-    backoffIndex =
-      Date.now() - connectedAt >= CONNECTED_RESET_MS ? 0 : Math.min(backoffIndex + 1, BACKOFF_MS.length - 1)
+    if (stayedUp) backoffIndex = 0
     reconnectTimer = window.setTimeout(open, BACKOFF_MS[backoffIndex])
+    backoffIndex = Math.min(backoffIndex + 1, BACKOFF_MS.length - 1)
   }
 
   function open(): void {
