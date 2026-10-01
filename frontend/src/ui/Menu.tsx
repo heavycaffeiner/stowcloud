@@ -1,26 +1,29 @@
 import 'mdui/components/menu.js'
 import type { MouseEventHandler, ReactNode } from 'react'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { overlay } from 'overlay-kit'
 import { useI18n } from '../hooks/use-i18n'
 import { useOutsideDismiss } from '../hooks/use-outside-dismiss'
 import { useRestoreFocus } from '../hooks/use-restore-focus'
 import { cx } from './cx'
 import { Modal } from './Modal'
+import { useCompact } from './use-compact'
 import * as styles from './Menu.css'
 
 export interface MenuProps {
   open: boolean
   onClose?: () => void
-  compact?: boolean
   x?: number
   y?: number
   align?: 'start' | 'end'
   children?: ReactNode
 }
 
-export function Menu({ open, onClose, compact = false, x, y, align = 'start', children }: MenuProps) {
+/** A popup menu at a point; on the compact layout it is a bottom sheet instead. */
+export function Menu({ open, onClose, x, y, align = 'start', children }: MenuProps) {
   const close = onClose ?? (() => undefined)
   const { t } = useI18n()
+  const compact = useCompact()
   const rootRef = useRef<HTMLDivElement>(null)
   const left = x === undefined ? undefined : align === 'start' ? Math.max(8, x) : undefined
   const right = x === undefined || align !== 'end' ? undefined : Math.max(8, window.innerWidth - x)
@@ -70,6 +73,70 @@ export function Menu({ open, onClose, compact = false, x, y, align = 'start', ch
     >
       <mdui-menu className={styles.menu}>{children}</mdui-menu>
     </div>
+  )
+}
+
+/** Where a menu opens. `align` says which edge `x` is; `trigger` gets focus back on close. */
+export interface MenuAnchor {
+  readonly x: number
+  readonly y: number
+  readonly align?: 'start' | 'end'
+  readonly trigger?: HTMLElement | null
+}
+
+/** Opens a menu that is not tied to a button, such as a context menu. */
+export function openMenu(at: MenuAnchor, content: (close: () => void) => ReactNode): void {
+  overlay.open(({ isOpen, unmount }) => {
+    const close = (): void => {
+      unmount()
+      at.trigger?.focus()
+    }
+    return (
+      <Menu open={isOpen} onClose={close} x={at.x} y={at.y} align={at.align}>
+        {content(close)}
+      </Menu>
+    )
+  })
+}
+
+export interface MenuButtonProps {
+  label: string
+  className?: string
+  /** Which edge of the button the menu lines up with. */
+  align?: 'start' | 'end'
+  children?: ReactNode
+  menu: (close: () => void) => ReactNode
+}
+
+/** A button that owns its menu: open state, position and focus return. */
+export function MenuButton({ label, className, align = 'start', children, menu }: MenuButtonProps) {
+  const [at, setAt] = useState<{ x: number; y: number } | null>(null)
+  const ref = useRef<HTMLButtonElement>(null)
+  const close = (): void => {
+    setAt(null)
+    ref.current?.focus()
+  }
+  return (
+    <>
+      <button
+        ref={ref}
+        type="button"
+        className={className}
+        aria-label={label}
+        aria-haspopup="menu"
+        aria-expanded={at !== null}
+        onClick={(event) => {
+          if (at) return close()
+          const rect = event.currentTarget.getBoundingClientRect()
+          setAt({ x: align === 'end' ? rect.right : rect.left, y: rect.bottom + 4 })
+        }}
+      >
+        {children}
+      </button>
+      <Menu open={at !== null} onClose={close} x={at?.x} y={at?.y} align={align}>
+        {at ? menu(close) : null}
+      </Menu>
+    </>
   )
 }
 

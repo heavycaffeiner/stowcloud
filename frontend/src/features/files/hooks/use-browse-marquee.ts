@@ -1,54 +1,51 @@
-import type { Dispatch, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react'
-import { useRef } from 'react'
-import { selection } from '../selection'
+import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, RefObject } from 'react'
+import { useRef, useState } from 'react'
+import { selection, useSelectionStore } from '../selection'
 import { autoScrollStep, movedFar, rectBetween } from '../logic/marquee'
-import type { FileGridHandle } from '../FileGrid'
 import type { FileViewHandle } from '../FileTable'
-import type { BrowseState } from '../logic/browse-types'
-import type { StatePatch } from '../../../lib/merge-state'
 
-type Patch = Dispatch<StatePatch<BrowseState>>
+/** The rubber band on screen, in viewport coordinates. */
+export interface MarqueeBox {
+  readonly left: number
+  readonly top: number
+  readonly width: number
+  readonly height: number
+}
 
-export function useBrowseMarquee({
-  mode,
-  selectedNames,
-  patch,
-  tableRef,
-  gridRef
-}: {
-  mode: 'list' | 'grid'
-  selectedNames: ReadonlySet<string>
-  patch: Patch
-  tableRef: React.RefObject<FileViewHandle | null>
-  gridRef: React.RefObject<FileGridHandle | null>
-}) {
+const controlSelector = 'button, input, a, [role="menuitem"], [role="menu"]'
+// File rows and grid cards are the only elements in the view that carry aria-selected.
+const contentSelector = `[aria-selected], ${controlSelector}`
+
+/** Rubber-band selection over the file view, and a click on empty space clearing the selection. */
+export function useBrowseMarquee(view: RefObject<FileViewHandle | null>) {
+  const [box, setBox] = useState<MarqueeBox | null>(null)
   const dragOrigin = useRef<{ x: number; y: number } | null>(null)
   const dragPointer = useRef({ x: 0, y: 0 })
   const dragBase = useRef<string[]>([])
   const dragFrame = useRef<number | null>(null)
   const marqueeActive = useRef(false)
-  const controlSelector = 'button, input, a, [role="menuitem"], [role="menu"]'
-  // File rows and grid cards are the only elements in the view that carry aria-selected.
-  const contentSelector = `[aria-selected], ${controlSelector}`
 
   const updateMarquee = () => {
     const origin = dragOrigin.current
     if (!origin) return
     const pointer = dragPointer.current
     const rect = rectBetween(origin.x, origin.y, pointer.x + window.scrollX, pointer.y + window.scrollY)
-    patch({ marqueeScroll: { x: window.scrollX, y: window.scrollY }, marqueeRect: rect })
-    const activeView = mode === 'grid' ? gridRef.current : tableRef.current
-    const hits = activeView?.entriesInRect(rect) ?? []
+    setBox({
+      left: rect.left - window.scrollX,
+      top: rect.top - window.scrollY,
+      width: rect.right - rect.left,
+      height: rect.bottom - rect.top
+    })
+    const hits = view.current?.entriesInRect(rect) ?? []
     selection.replace([...new Set([...dragBase.current, ...hits.map((entry) => entry.name)])])
   }
 
   const autoScrollTick = () => {
     if (!dragOrigin.current) return
-    const activeView = mode === 'grid' ? gridRef.current : tableRef.current
-    const bounds = activeView?.scrollBounds() ?? { top: 0, height: window.innerHeight }
+    const bounds = view.current?.scrollBounds() ?? { top: 0, height: window.innerHeight }
     const step = autoScrollStep(dragPointer.current.y - bounds.top, bounds.height)
     if (step !== 0) {
-      activeView?.scrollBy(step)
+      view.current?.scrollBy(step)
       updateMarquee()
     }
     dragFrame.current = requestAnimationFrame(autoScrollTick)
@@ -87,7 +84,7 @@ export function useBrowseMarquee({
     const wasDragging = marqueeActive.current
     marqueeActive.current = false
     dragOrigin.current = null
-    patch({ marqueeRect: null })
+    setBox(null)
     if (dragFrame.current !== null) cancelAnimationFrame(dragFrame.current)
     dragFrame.current = null
     window.removeEventListener('pointermove', onMarqueePointerMove)
@@ -105,27 +102,16 @@ export function useBrowseMarquee({
     marqueeActive.current = false
     dragOrigin.current = { x: event.clientX + window.scrollX, y: event.clientY + window.scrollY }
     dragPointer.current = { x: event.clientX, y: event.clientY }
-    dragBase.current = event.shiftKey || event.ctrlKey || event.metaKey ? [...selectedNames] : []
+    dragBase.current = event.shiftKey || event.ctrlKey || event.metaKey ? [...useSelectionStore.getState().names] : []
     window.addEventListener('pointermove', onMarqueePointerMove)
     window.addEventListener('pointerup', endMarquee)
     window.addEventListener('keydown', onMarqueeKeyDown)
   }
 
-  const onEmptyAreaClick = (event: ReactMouseEvent) => {
+  const onClick = (event: ReactMouseEvent) => {
     if ((event.target as HTMLElement).closest(contentSelector)) return
     selection.clear()
   }
 
-  const openBlankMenu = (event: ReactMouseEvent) => {
-    event.preventDefault()
-    selection.clear()
-    patch({
-      contextEntry: null,
-      contextMenu: null,
-      menuTrigger: event.currentTarget as HTMLElement,
-      blankMenu: { x: event.clientX, y: event.clientY }
-    })
-  }
-
-  return { onPointerDown, onEmptyAreaClick, openBlankMenu }
+  return { box, onPointerDown, onClick }
 }

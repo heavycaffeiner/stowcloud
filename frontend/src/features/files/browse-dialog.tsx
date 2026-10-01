@@ -6,13 +6,14 @@ export interface BrowseDialogProps {
   open: boolean
   title: string
   onClose: () => void
+  onClosed?: () => void
   children: ReactNode
   actions?: ReactNode
 }
 
-export function BrowseDialog({ open, title, onClose, children, actions }: BrowseDialogProps) {
+export function BrowseDialog({ open, title, onClose, onClosed, children, actions }: BrowseDialogProps) {
   return (
-    <Dialog open={open} title={title} onClose={onClose} actions={actions} className={styles.root}>
+    <Dialog open={open} title={title} onClose={onClose} onClosed={onClosed} actions={actions} className={styles.root}>
       <div className={styles.body}>{children}</div>
     </Dialog>
   )

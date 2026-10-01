@@ -1,28 +1,40 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { overlay } from 'overlay-kit'
 import { Button } from '../../ui/Button'
 import { TextField } from '../../ui/TextField'
 import { BrowseDialog } from './browse-dialog'
 import { useI18n } from '../../hooks/use-i18n'
-export function RenameDialog({
+
+/** Asks for a new name. Null when cancelled or left unchanged. */
+export function askNewName(currentName: string): Promise<string | null> {
+  return overlay.openAsync<string | null>(({ isOpen, close, unmount }) => (
+    <RenameDialog
+      open={isOpen}
+      currentName={currentName}
+      onClose={() => close(null)}
+      onClosed={unmount}
+      onRename={close}
+    />
+  ))
+}
+
+function RenameDialog({
   open,
   currentName,
   onClose,
+  onClosed,
   onRename
 }: {
   open: boolean
   currentName: string
   onClose: () => void
+  onClosed: () => void
   onRename: (name: string) => void
 }) {
   const { t } = useI18n()
-  const [form, setForm] = useState({ name: '', submitted: false })
-  useEffect(() => {
-    if (open) setForm({ name: currentName, submitted: false })
-  }, [open, currentName, setForm])
-  const submit = () => {
-    if (form.submitted) return
-    setForm((state) => ({ ...state, submitted: true }))
-    const value = form.name.trim()
+  const [name, setName] = useState(currentName)
+  const submit = (): void => {
+    const value = name.trim()
     if (value && value !== currentName) onRename(value)
     else onClose()
   }
@@ -31,6 +43,7 @@ export function RenameDialog({
       open={open}
       title={t('common.rename')}
       onClose={onClose}
+      onClosed={onClosed}
       actions={
         <>
           <Button variant="text" onClick={onClose}>
@@ -41,10 +54,10 @@ export function RenameDialog({
       }
     >
       <TextField
-        value={form.name}
+        value={name}
         label={t('rename.new_name')}
         autoFocus
-        onValueChange={(name) => setForm((state) => ({ ...state, name }))}
+        onValueChange={setName}
         onKeyDown={(event) => {
           if (event.key === 'Enter') {
             event.preventDefault()

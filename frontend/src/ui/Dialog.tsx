@@ -13,6 +13,8 @@ export interface DialogProps {
   hideTitle?: boolean
   /** Asks the owner to close: Escape, or a press on the scrim. Closing is up to the owner. */
   onClose?: () => void
+  /** Runs once the close animation has finished, so an overlay can unmount without cutting it short. */
+  onClosed?: () => void
   /** False keeps Escape and the scrim from asking to close. */
   dismissible?: boolean
   children?: ReactNode
@@ -32,6 +34,7 @@ export function Dialog({
   title,
   hideTitle = false,
   onClose,
+  onClosed,
   dismissible = true,
   children,
   actions,
@@ -45,6 +48,10 @@ export function Dialog({
   useRestoreFocus(open)
   useEventListener(ref, 'overlay-click', () => {
     if (dismissible) onClose?.()
+  })
+  // mdui popups nested inside the dialog fire their own bubbling `closed`.
+  useEventListener(ref, 'closed', (event) => {
+    if (event.target === ref.current) onClosed?.()
   })
 
   return (

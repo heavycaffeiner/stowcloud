@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
+import { overlay } from 'overlay-kit'
 import { ApiError } from '../../api/fetcher'
 import {
   contentUrl,
@@ -13,6 +14,7 @@ import {
 import { useEncryptedArchive } from './api'
 import { formatBytes } from '../../lib/format/bytes'
 import { formatEntrySize } from '../../lib/format/entry-size'
+import { joinPath } from '../../lib/path-utils'
 import { useI18n } from '../../hooks/use-i18n'
 import { useEventListener } from '../../hooks/use-event-listener'
 import { IMAGE_EXT, VIDEO_EXT, extensionOf, mimeTypeOf } from './logic/media-utils'
@@ -20,6 +22,7 @@ import { registerMediaSource, releaseMediaSource, swReady } from '../../lib/cryp
 import { decryptDownload, isUnlocked, MAX_ENCRYPTABLE_BYTES } from '../../lib/crypto/e2ee'
 import { Button } from '../../ui/Button'
 import { Dialog } from '../../ui/Dialog'
+import { ErrorBoundary } from '../../ui/ErrorBoundary'
 import { IconButton } from '../../ui/IconButton'
 import { ProgressCircular } from '../../ui/ProgressCircular'
 import { UnlockShareDialog } from '../shares/UnlockShareDialog'
@@ -41,10 +44,79 @@ interface PreviewDialogProps {
   hasPrev: boolean
   hasNext: boolean
   onClose: () => void
+  onClosed?: () => void
   onPrev: () => void
   onNext: () => void
   onDownload: (entry: Entry) => void
   onEdit: (entry: Entry) => void
+}
+
+export interface PreviewRequest {
+  /** The folder's listing; previous and next step through its files. */
+  readonly entries: readonly Entry[]
+  readonly index: number
+  readonly folder: string
+  readonly onDownload: (entry: Entry) => void
+  readonly onEdit: (entry: Entry) => void
+}
+
+export function openPreview(request: PreviewRequest): void {
+  overlay.open(({ isOpen, close, unmount }) => (
+    <PreviewOverlay {...request} open={isOpen} onClose={close} onClosed={unmount} />
+  ))
+}
+
+function PreviewOverlay({
+  entries,
+  index: first,
+  folder,
+  onDownload,
+  onEdit,
+  open,
+  onClose,
+  onClosed
+}: PreviewRequest & { open: boolean; onClose: () => void; onClosed: () => void }) {
+  const { t } = useI18n()
+  const [index, setIndex] = useState(first)
+  const fileAt = (delta: number): number => {
+    let at = index + delta
+    while (at >= 0 && at < entries.length && entries[at].kind === 'dir') at += delta
+    return at >= 0 && at < entries.length ? at : -1
+  }
+  const prev = fileAt(-1)
+  const next = fileAt(1)
+  const entry = entries[index]
+  const path = joinPath(folder, entry.name)
+  return (
+    <ErrorBoundary
+      resetKey={path}
+      fallback={
+        <Dialog
+          open={open}
+          title={t('preview.cannot_preview')}
+          onClose={onClose}
+          onClosed={onClosed}
+          actions={<Button onClick={onClose}>{t('common.close')}</Button>}
+        >
+          <p>{t('preview.failed')}</p>
+        </Dialog>
+      }
+    >
+      <PreviewDialog
+        open={open}
+        entry={entry}
+        path={path}
+        hasPrev={prev >= 0}
+        hasNext={next >= 0}
+        onClose={onClose}
+        onClosed={onClosed}
+        onPrev={() => prev >= 0 && setIndex(prev)}
+        onNext={() => next >= 0 && setIndex(next)}
+        onDownload={onDownload}
+        onEdit={onEdit}
+      />
+    </ErrorBoundary>
+  )
 }
 function levelOf(
   entries: ArchiveEntry[],
@@ -73,13 +145,14 @@ function levelOf(
   return [...[...dirs.values()].sort(sort), ...files.sort(sort)]
 }
 
-export function PreviewDialog({
+function PreviewDialog({
   open,
   entry,
   path,
   hasPrev,
   hasNext,
   onClose,
+  onClosed,
   onPrev,
   onNext,
   onDownload,
@@ -276,6 +349,7 @@ export function PreviewDialog({
         size="viewer"
         role="dialog"
         onClose={onClose}
+        onClosed={onClosed}
         onKeyDown={onKeyDown}
       >
         <div ref={previewRef} className={styles.root}>

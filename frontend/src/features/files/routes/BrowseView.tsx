@@ -1,103 +1,120 @@
-import type { ChangeEvent, Dispatch, MouseEvent as ReactMouseEvent, RefObject } from 'react'
-import { useEffect } from 'react'
-import type { FileGridHandle } from '../FileGrid'
-import type { FileViewHandle } from '../FileTable'
-import { FileGrid } from '../FileGrid'
-import { FileTable } from '../FileTable'
-import { FileTree } from '../FileTree'
-import { DetailsPanel } from '../DetailsPanel'
-import { NewFolderDialog } from '../NewFolderDialog'
-import { RenameDialog } from '../RenameDialog'
-import { DeleteDialog } from '../DeleteDialog'
-import { ConflictDialog } from '../ConflictDialog'
-import { DestinationPickerDialog } from '../DestinationPickerDialog'
-import { VirtualList } from '../../../ui/VirtualList'
-import { UnlockShareDialog } from '../../shares/UnlockShareDialog'
+import { useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
+import type { Signal } from '@preact/signals-react'
+import { useI18n } from '../../../hooks/use-i18n'
+import { t } from '../../../lib/i18n'
+import { describeApiError } from '../../../api/error-text'
 import { Button } from '../../../ui/Button'
 import { ErrorBoundary } from '../../../ui/ErrorBoundary'
 import { Icon } from '../../../ui/Icon'
-import { ShareManageDialog } from '../../shares/ShareManageDialog'
-import { Menu, MenuItem, MenuList } from '../../../ui/Menu'
-import { Breadcrumb } from '../Breadcrumb'
-import {
-  pickDirectory,
-  filesFromWebkitDirectoryInput,
-  supportsDirectoryPicker
-} from '../../../lib/upload/directory-picker'
-import { joinPath } from '../../../lib/path-utils'
-import type { BrowseState, BrowseFilterDate, BrowseFilterType } from '../logic/browse-types'
-import type { MenuAnchor, RowAction } from '../logic/row-actions'
-import type { StatePatch } from '../../../lib/merge-state'
+import { MenuButton, MenuItem, MenuList } from '../../../ui/Menu'
 import { ProgressCircular } from '../../../ui/ProgressCircular'
+import { VirtualList } from '../../../ui/VirtualList'
+import { useCompact } from '../../../ui/use-compact'
+import { cx } from '../../../ui/cx'
+import { useOpenSearch } from '../../search/state'
+import { Breadcrumb } from '../Breadcrumb'
+import { DetailsPanel } from '../DetailsPanel'
+import { FileGrid } from '../FileGrid'
+import { FileTable, type FileViewHandle } from '../FileTable'
+import { FileTree } from '../FileTree'
+import {
+  filterDate,
+  filterType,
+  notice,
+  operation,
+  treeOpen,
+  type BrowseFilterDate,
+  type BrowseFilterType
+} from '../browse-page'
+import {
+  chooseSort,
+  cycleDensity,
+  density,
+  detailsPanel,
+  sortKey,
+  sortOrder,
+  toggleDetails,
+  toggleViewMode,
+  viewMode
+} from '../view-prefs'
+import { useBrowseMarquee } from '../hooks/use-browse-marquee'
+import { useFocusParam } from '../hooks/use-browse-route-effects'
+import { selection } from '../selection'
+import type { BrowseActions, BrowseListing } from '../hooks/use-browse-actions'
 import * as styles from './BrowseView.css'
 import * as iconButtonStyles from '../../../ui/IconButton.css'
 import * as utilitiesStyles from '../../../ui/utilities.css'
-import { cx } from '../../../ui/cx'
-import type { Entry } from '../api'
-import type { Perms } from '../perms'
+import type { SortKey } from '../api'
 
-type Patch = Dispatch<StatePatch<BrowseState>>
-type Translate = (key: string, params?: Record<string, string | number>) => string
-
-type BrowseToolbarModel = {
-  compact: boolean
-  details: boolean
-  mode: 'list' | 'grid'
-  canCreate: boolean
-  filterType: BrowseFilterType
-  filterDate: BrowseFilterDate
-  filterTypeLabel: string
-  filterDateLabel: string
-  sortLabel: string
-  crumbs: { label: string; path: string }[]
-  external: boolean
-  encrypted: boolean
-  unlocked: boolean
-  broken: boolean
-  openMenus: { type: boolean; date: boolean; sort: boolean; new: boolean; overflow: boolean }
+export interface BrowseSectionProps {
+  path: string
+  listing: BrowseListing
+  actions: BrowseActions
 }
 
-type BrowseToolbarActions = {
-  onNavigate: (path: string) => void
-  onUnlock: () => void
-  onFilter: (kind: 'type' | 'date', event: ReactMouseEvent<HTMLElement>) => void
-  onRefresh: () => void
-  onToggleView: () => void
-  onToggleDetails: () => void
-  onSort: (event: ReactMouseEvent<HTMLElement>) => void
-  onNew: (event: ReactMouseEvent<HTMLElement>) => void
-  onOverflow: (event: ReactMouseEvent<HTMLElement>) => void
+type FilterOption<T extends string> = readonly [value: T, label: string]
+
+const SORT_KEYS: readonly SortKey[] = ['name', 'size', 'mtime', 'kind']
+
+const sortName = (key: SortKey): string =>
+  ({
+    name: t('browse.sort_by_name'),
+    size: t('browse.sort_by_size'),
+    mtime: t('browse.sort_by_modified'),
+    kind: t('browse.sort_by_kind')
+  })[key]
+
+const typeOptions = (): readonly FilterOption<BrowseFilterType>[] => [
+  ['all', t('browse.filter_all')],
+  ['folders', t('browse.filter_folders')],
+  ['documents', t('search.preset_document')],
+  ['images', t('search.preset_image')],
+  ['videos', t('search.preset_video')],
+  ['audio', t('search.preset_audio')],
+  ['archives', t('search.preset_archive')]
+]
+
+const dateOptions = (): readonly FilterOption<BrowseFilterDate>[] => [
+  ['any', t('browse.date_any')],
+  ['today', t('browse.date_today')],
+  ['7days', t('browse.date_last_7_days')],
+  ['30days', t('browse.date_last_30_days')],
+  ['this_year', t('browse.date_this_year')]
+]
+
+function crumbsOf(path: string): { label: string; path: string }[] {
+  const parts = path.split('/').filter(Boolean)
+  return [
+    { label: t('nav.files'), path: '/' },
+    ...parts.map((part, index) => ({ label: part, path: `/${parts.slice(0, index + 1).join('/')}` }))
+  ]
 }
 
-type ToolbarProps = { model: BrowseToolbarModel; actions: BrowseToolbarActions; t: Translate }
-
-export function BrowseToolbar(props: ToolbarProps) {
-  const { model, actions, t } = props
-  const {
-    compact,
-    details,
-    mode,
-    canCreate,
-    filterType,
-    filterDate,
-    filterTypeLabel,
-    filterDateLabel,
-    sortLabel,
-    crumbs,
-    external,
-    encrypted,
-    unlocked,
-    broken,
-    openMenus
-  } = model
-  const { onNavigate, onUnlock, onFilter, onRefresh, onToggleView, onToggleDetails, onSort, onNew, onOverflow } =
-    actions
+export function BrowseToolbar({ path, listing, actions }: BrowseSectionProps) {
+  const { t } = useI18n()
+  const navigate = useNavigate()
+  const compact = useCompact()
+  const { root, encrypted, unlocked, canCreate } = listing
+  const crumbs = crumbsOf(path)
+  const mode = viewMode.value
+  const details = detailsPanel.value === 'open'
+  const sortButton = (
+    <MenuButton
+      label={t('browse.sort_by', { key: sortName(sortKey.value) })}
+      className={cx(styles.actionBtn, iconButtonStyles.root)}
+      align="end"
+      menu={(close) => <SortMenu close={close} />}
+    >
+      <Icon name="sort" size={compact ? 20 : 18} />
+    </MenuButton>
+  )
   return (
     <header className={cx(styles.toolbar, compact && styles.toolbarCompact)}>
       <div className={styles.folderHeading}>
-        <h1 className={utilitiesStyles.srOnly}>{crumbs.at(-1)?.label ?? t('nav.files')}</h1>
-        <Breadcrumb crumbs={crumbs} onNavigate={onNavigate} />
-        {external ? (
+        <h1 className={utilitiesStyles.srOnly}>{crumbs.at(-1)?.label}</h1>
+        <Breadcrumb crumbs={crumbs} onNavigate={(next) => void navigate(`/b${next}`)} />
+        {root?.shared_externally ? (
           <span className={styles.externalBadge}>
             <Icon name="warning" size={14} />
             {t('common.shared_with_other_services')}
@@ -110,13 +127,17 @@ export function BrowseToolbar(props: ToolbarProps) {
               {t('browse.encrypted_badge')}
             </span>
           ) : (
-            <button type="button" className={cx(styles.encryptedBadge, styles.encryptedBadgeLocked)} onClick={onUnlock}>
+            <button
+              type="button"
+              className={cx(styles.encryptedBadge, styles.encryptedBadgeLocked)}
+              onClick={actions.unlockFolder}
+            >
               <Icon name="lock" size={14} />
               {t('browse.encrypted_locked_badge')}
             </button>
           )
         ) : null}
-        {broken ? (
+        {root?.broken_reason ? (
           <span className={styles.brokenBadge}>
             <Icon name="warning" size={14} />
             {t('browse.this_folder_is_unavailable')}
@@ -126,33 +147,18 @@ export function BrowseToolbar(props: ToolbarProps) {
       <div className={styles.toolbarActions}>
         {!compact ? (
           <>
-            <button
-              type="button"
-              className={cx(styles.filterPill, filterType !== 'all' && styles.filterPillActive)}
-              aria-label={t('browse.filter_type')}
-              aria-haspopup="menu"
-              aria-expanded={openMenus.type}
-              onClick={(event) => onFilter('type', event)}
-            >
-              <span>{filterTypeLabel}</span>
-              <Icon name="arrow-drop-down" size={16} />
-            </button>
-            <button
-              type="button"
-              className={cx(styles.filterPill, filterDate !== 'any' && styles.filterPillActive)}
-              aria-label={t('browse.filter_date')}
-              aria-haspopup="menu"
-              aria-expanded={openMenus.date}
-              onClick={(event) => onFilter('date', event)}
-            >
-              <span>{filterDateLabel}</span>
-              <Icon name="arrow-drop-down" size={16} />
-            </button>
+            <FilterPill
+              name={t('browse.filter_type')}
+              idleLabel={t('browse.filter_type')}
+              choice={filterType}
+              options={typeOptions()}
+            />
+            <FilterPill name={t('browse.filter_date')} choice={filterDate} options={dateOptions()} />
             <button
               type="button"
               className={cx(styles.actionBtn, iconButtonStyles.root)}
               aria-label={t('common.refresh')}
-              onClick={onRefresh}
+              onClick={() => void listing.listing.refetch()}
             >
               <Icon name="refresh" size={18} />
             </button>
@@ -160,7 +166,7 @@ export function BrowseToolbar(props: ToolbarProps) {
               type="button"
               className={cx(styles.actionBtn, iconButtonStyles.root)}
               aria-label={mode === 'list' ? t('browse.grid_view') : t('browse.list_view')}
-              onClick={onToggleView}
+              onClick={toggleViewMode}
             >
               <Icon name={mode === 'list' ? 'grid' : 'list'} size={18} />
             </button>
@@ -168,55 +174,28 @@ export function BrowseToolbar(props: ToolbarProps) {
               type="button"
               className={cx(styles.actionBtn, iconButtonStyles.root, details && styles.actionBtnActive)}
               aria-label={details ? t('details.hide') : t('details.show')}
-              onClick={onToggleDetails}
+              onClick={toggleDetails}
             >
               <Icon name="info" size={18} />
             </button>
-            <button
-              type="button"
-              className={cx(styles.actionBtn, iconButtonStyles.root)}
-              aria-label={sortLabel}
-              aria-haspopup="menu"
-              aria-expanded={openMenus.sort}
-              onClick={onSort}
-            >
-              <Icon name="sort" size={18} />
-            </button>
+            {sortButton}
           </>
         ) : (
           <>
             {canCreate ? (
-              <button
-                type="button"
-                className={styles.fabBtn}
-                aria-label={t('browse.new')}
-                aria-haspopup="menu"
-                aria-expanded={openMenus.new}
-                onClick={onNew}
-              >
+              <MenuButton label={t('browse.new')} className={styles.fabBtn} menu={actions.createMenu}>
                 <Icon name="add" size={20} />
-              </button>
+              </MenuButton>
             ) : null}
-            <button
-              type="button"
+            {sortButton}
+            <MenuButton
+              label={t('browse.more')}
               className={cx(styles.actionBtn, iconButtonStyles.root)}
-              aria-label={sortLabel}
-              aria-haspopup="menu"
-              aria-expanded={openMenus.sort}
-              onClick={onSort}
-            >
-              <Icon name="sort" size={20} />
-            </button>
-            <button
-              type="button"
-              className={cx(styles.actionBtn, iconButtonStyles.root)}
-              aria-label={t('browse.more')}
-              aria-haspopup="menu"
-              aria-expanded={openMenus.overflow}
-              onClick={onOverflow}
+              align="end"
+              menu={(close) => <OverflowMenu close={close} onRefresh={() => void listing.listing.refetch()} />}
             >
               <Icon name="more-vert" size={20} />
-            </button>
+            </MenuButton>
           </>
         )}
       </div>
@@ -224,106 +203,158 @@ export function BrowseToolbar(props: ToolbarProps) {
   )
 }
 
-type BrowseContentProps = {
-  path: string
-  compact: boolean
-  details: boolean
-  mode: 'list' | 'grid'
-  filteredEntries: readonly Entry[]
-  directory: { total: number; dirs: number; perms: Perms }
-  noShares: boolean
-  isAdmin: boolean
-  isPending: boolean
-  isFetchingMore: boolean
-  error: unknown
-  errorText: string
-  encrypted: boolean
-  dragOver: boolean
-  marqueeRect: BrowseState['marqueeRect']
-  marqueeScroll: BrowseState['marqueeScroll']
-  treeOpen: boolean
-  selected: readonly Entry[]
-  tableRef: RefObject<FileViewHandle | null>
-  gridRef: RefObject<FileGridHandle | null>
-  onPointerDown: (event: React.PointerEvent) => void
-  onEmptyClick: (event: React.MouseEvent) => void
-  onBlankMenu: (event: React.MouseEvent) => void
-  onOpen: (entry: Entry) => void
-  onContextMenu: (entry: Entry, anchor: MenuAnchor) => void
-  onRename: () => void
-  onDelete: () => void
-  onSearchFocus: () => void
-  onRequestMore: () => void
-  onTreeNavigate: (next: string) => void
-  onTreeClose: () => void
-  onDetailsClose: () => void
-  onDownload: () => void
-  onShare: () => void
-  onDetailsContext: (event: ReactMouseEvent) => void
-  onAddFolder: () => void
-  t: Translate
-  showingAll?: boolean
-  hasNextPage?: boolean
+/** A filter dropdown. The first option means no filter; `idleLabel` replaces its label on the pill. */
+function FilterPill<T extends string>({
+  name,
+  idleLabel,
+  choice,
+  options
+}: {
+  name: string
+  idleLabel?: string
+  choice: Signal<T>
+  options: readonly FilterOption<T>[]
+}) {
+  const current = choice.value
+  const idle = current === options[0][0]
+  const label = idle && idleLabel ? idleLabel : options.find(([value]) => value === current)?.[1]
+  return (
+    <MenuButton
+      label={name}
+      className={cx(styles.filterPill, !idle && styles.filterPillActive)}
+      menu={(close) => (
+        <MenuList>
+          {options.map(([value, text]) => (
+            <MenuItem
+              key={value}
+              checked={current === value}
+              onClick={() => {
+                choice.value = value
+                close()
+              }}
+            >
+              {current === value ? '✓ ' : ''}
+              {text}
+            </MenuItem>
+          ))}
+        </MenuList>
+      )}
+    >
+      <span>{label}</span>
+      <Icon name="arrow-drop-down" size={16} />
+    </MenuButton>
+  )
 }
 
-export function BrowseContent(props: BrowseContentProps) {
-  const {
-    path,
-    compact,
-    details,
-    mode,
-    filteredEntries,
-    directory,
-    noShares,
-    isAdmin,
-    isPending,
-    isFetchingMore,
-    error,
-    errorText,
-    encrypted,
-    dragOver,
-    marqueeRect,
-    marqueeScroll,
-    treeOpen,
-    selected,
-    tableRef,
-    gridRef,
-    onPointerDown,
-    onEmptyClick,
-    onBlankMenu,
-    onOpen,
-    onContextMenu,
-    onRename,
-    onDelete,
-    onSearchFocus,
-    onRequestMore,
-    onTreeNavigate,
-    onTreeClose,
-    onDetailsClose,
-    onDownload,
-    onShare,
-    onDetailsContext,
-    onAddFolder,
-    t,
-    showingAll,
-    hasNextPage
-  } = props
-  const all = showingAll ?? filteredEntries.length === directory.total
+function SortMenu({ close }: { close: () => void }) {
+  const { t } = useI18n()
+  const current = sortKey.value
+  const direction = sortOrder.value === 'asc' ? t('browse.sort_ascending') : t('browse.sort_descending')
+  return (
+    <MenuList>
+      {SORT_KEYS.map((key) => (
+        <MenuItem
+          key={key}
+          onClick={() => {
+            chooseSort(key)
+            close()
+          }}
+        >
+          {key === current ? t('browse.sort_selected', { label: sortName(key), direction }) : sortName(key)}
+        </MenuItem>
+      ))}
+    </MenuList>
+  )
+}
+
+/** The compact layout's overflow: view controls the wide toolbar shows as buttons, then page options. */
+function OverflowMenu({ close, onRefresh }: { close: () => void; onRefresh: () => void }) {
+  const { t } = useI18n()
+  const navigate = useNavigate()
+  const densityName = {
+    compact: t('browse.compact'),
+    comfortable: t('browse.comfortable'),
+    spacious: t('browse.spacious')
+  }[density.value]
+  const item = (label: string, run: () => void) => (
+    <MenuItem
+      onClick={() => {
+        close()
+        run()
+      }}
+    >
+      {label}
+    </MenuItem>
+  )
+  return (
+    <MenuList>
+      {item(viewMode.value === 'list' ? t('browse.grid_view') : t('browse.list_view'), toggleViewMode)}
+      {item(t('details.show'), toggleDetails)}
+      {item(t('common.refresh'), onRefresh)}
+      {item(treeOpen.value ? t('browse.hide_folder_tree') : t('browse.show_folder_tree'), () => {
+        treeOpen.value = !treeOpen.value
+      })}
+      {item(t('browse.density', { density: densityName }), cycleDensity)}
+      {item(t('browse.open_trash'), () => void navigate('/trash'))}
+    </MenuList>
+  )
+}
+
+export function BrowseContent({ path, listing, actions, dragOver }: BrowseSectionProps & { dragOver: boolean }) {
+  const { t } = useI18n()
+  const navigate = useNavigate()
+  const compact = useCompact()
+  const openSearch = useOpenSearch()
+  const view = useRef<FileViewHandle>(null)
+  const marquee = useBrowseMarquee(view)
+  const { listing: query, directory, filteredEntries, selected, noShares, encrypted, session } = listing
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = query
+  useFocusParam(view, query)
+  const all = filterType.value === 'all' && filterDate.value === 'any'
   const dirs = all ? directory.dirs : filteredEntries.filter((entry) => entry.kind === 'dir').length
+  const isAdmin = Boolean(session.data?.user.is_admin)
+
+  // A filter has to see the whole folder, so every page loads while one is on.
   useEffect(() => {
-    if (all || !hasNextPage || isFetchingMore) return
-    onRequestMore()
-  }, [all, hasNextPage, isFetchingMore, onRequestMore])
+    if (!all && hasNextPage && !isFetchingNextPage) void fetchNextPage()
+  }, [all, hasNextPage, isFetchingNextPage, fetchNextPage])
+
+  const viewProps = {
+    entries: filteredEntries,
+    total: all ? directory.total : filteredEntries.length,
+    dirs,
+    loading: query.isPending,
+    loadingMore: isFetchingNextPage,
+    requestMore: () => {
+      if (hasNextPage && !isFetchingNextPage) void fetchNextPage()
+    },
+    perms: directory.perms,
+    onOpen: actions.open,
+    onContextMenu: actions.openRowMenu,
+    onRename: () => actions.runOnSelection('rename'),
+    onDelete: () => actions.runOnSelection('delete'),
+    onSearchFocus: () => openSearch(path),
+    encrypted
+  }
   return (
     <div className={styles.content}>
-      {treeOpen ? (
-        <FileTree currentPath={path} onNavigate={onTreeNavigate} overlay={compact} onClose={onTreeClose} />
+      {treeOpen.value ? (
+        <FileTree
+          currentPath={path}
+          onNavigate={(next) => void navigate(`/b${next}`)}
+          overlay={compact}
+          onClose={() => (treeOpen.value = false)}
+        />
       ) : null}
       <div
-        className={cx(styles.tableWrap, dragOver && styles.tableWrapDragover, marqueeRect && styles.tableWrapMarquee)}
-        onPointerDown={onPointerDown}
-        onContextMenu={onBlankMenu}
-        onClick={onEmptyClick}
+        className={cx(styles.tableWrap, dragOver && styles.tableWrapDragover, marquee.box && styles.tableWrapMarquee)}
+        onPointerDown={marquee.onPointerDown}
+        onClick={marquee.onClick}
+        onContextMenu={(event) => {
+          event.preventDefault()
+          selection.clear()
+          actions.openCreateMenu({ x: event.clientX, y: event.clientY, trigger: event.currentTarget })
+        }}
       >
         {noShares ? (
           <div className={styles.nothing}>
@@ -336,54 +367,24 @@ export function BrowseContent(props: BrowseContentProps) {
                 ? t('browse.press_this_button_to_set_up_your_first_folder')
                 : t('browse.ask_an_administrator_for_a_folder')}
             </p>
-            {isAdmin ? <Button onClick={onAddFolder}>{t('common.add_folder')}</Button> : null}
+            {isAdmin ? <Button onClick={() => void navigate('/admin#shares')}>{t('common.add_folder')}</Button> : null}
           </div>
-        ) : isPending ? (
+        ) : query.isPending ? (
           <div className={styles.loading}>
             <ProgressCircular size={40} />
           </div>
-        ) : error ? (
+        ) : query.error ? (
           <p className={styles.error} role="alert">
-            {errorText}
+            {describeApiError(query.error, t('browse.this_folder_could_not_be_opened'))}
           </p>
         ) : (
           <div className={styles.view}>
-            {mode === 'list' ? (
-              <FileTable
-                ref={tableRef}
-                entries={filteredEntries}
-                total={all ? directory.total : filteredEntries.length}
-                dirs={dirs}
-                loading={isPending}
-                loadingMore={isFetchingMore}
-                requestMore={onRequestMore}
-                perms={directory.perms}
-                onOpen={onOpen}
-                onContextMenu={onContextMenu}
-                onRename={onRename}
-                onDelete={onDelete}
-                onSearchFocus={onSearchFocus}
-                encrypted={encrypted}
-              />
+            {viewMode.value === 'list' ? (
+              <FileTable ref={view} {...viewProps} />
             ) : (
-              <FileGrid
-                ref={gridRef}
-                entries={filteredEntries}
-                total={all ? directory.total : filteredEntries.length}
-                dirs={dirs}
-                loading={isPending}
-                loadingMore={isFetchingMore}
-                requestMore={onRequestMore}
-                perms={directory.perms}
-                onOpen={onOpen}
-                onContextMenu={onContextMenu}
-                onRename={onRename}
-                onDelete={onDelete}
-                onSearchFocus={onSearchFocus}
-                encrypted={encrypted}
-              />
+              <FileGrid ref={view} {...viewProps} />
             )}
-            {isFetchingMore ? (
+            {isFetchingNextPage ? (
               <div className={styles.loadingMore} role="status" aria-live="polite">
                 <ProgressCircular size={40} />
                 {t('common.loading')}
@@ -393,19 +394,8 @@ export function BrowseContent(props: BrowseContentProps) {
         )}
         {dragOver ? <div className={styles.dropOverlay}>{t('browse.drop_here_upload')}</div> : null}
       </div>
-      {marqueeRect ? (
-        <div
-          className={styles.marquee}
-          aria-hidden="true"
-          style={{
-            left: marqueeRect.left - marqueeScroll.x,
-            top: marqueeRect.top - marqueeScroll.y,
-            width: marqueeRect.right - marqueeRect.left,
-            height: marqueeRect.bottom - marqueeRect.top
-          }}
-        />
-      ) : null}
-      {details ? (
+      {marquee.box ? <div className={styles.marquee} aria-hidden="true" style={marquee.box} /> : null}
+      {detailsPanel.value === 'open' ? (
         <ErrorBoundary resetKey={path}>
           <DetailsPanel
             path={path}
@@ -413,10 +403,14 @@ export function BrowseContent(props: BrowseContentProps) {
             total={directory.total}
             dirs={directory.dirs}
             encrypted={encrypted}
-            onClose={onDetailsClose}
-            onDownload={onDownload}
-            onShare={onShare}
-            onContextMenu={onDetailsContext}
+            onClose={toggleDetails}
+            onDownload={() => void actions.download(selected)}
+            onShare={() => {
+              if (selected[0]) actions.share(selected[0])
+            }}
+            onContextMenu={(event) => {
+              if (selected[0]) actions.openRowMenu(selected[0], event)
+            }}
           />
         </ErrorBoundary>
       ) : null}
@@ -424,501 +418,56 @@ export function BrowseContent(props: BrowseContentProps) {
   )
 }
 
-type BrowseDialogsModel = {
-  state: BrowseState
-  path: string
-  root: { shared_externally?: boolean; trash_enabled?: boolean } | undefined
-  selectedCount: number
-  rowActions: readonly RowAction[]
-  fileInputRef: RefObject<HTMLInputElement | null>
-  dirInputRef: RefObject<HTMLInputElement | null>
-  compact: boolean
-  mode: 'list' | 'grid'
-  densityLabel: string
-  sortKey: string
-  sortOrder: 'asc' | 'desc'
-  treeOpen: boolean
-  canCreate: boolean
-}
-
-type BrowseDialogsActions = {
-  onPatch: Patch
-  onCloseSort: () => void
-  onCloseNew: () => void
-  onCloseOverflow: () => void
-  onToggleView: () => void
-  onToggleDetails: () => void
-  onToggleTree: () => void
-  onCycleDensity: () => void
-  onNavigateTrash: () => void
-  onRefresh: () => void
-  onChooseSort: (key: 'name' | 'size' | 'mtime' | 'kind') => void
-  onUploadFiles: (files: FileList | File[]) => void
-  onUploadEntries: (entries: readonly { file: File; relativePath: string }[]) => void
-  onCreateFolder: (name: string) => void
-  onRename: (name: string) => void
-  onDelete: () => void
-  onTransfer: (dest: string, kind: 'move' | 'copy') => void
-  onDownloadEntry: (entry: Entry) => void
-  onEdit: (entry: Entry) => void
-}
-
-type BrowseDialogsProps = { model: BrowseDialogsModel; actions: BrowseDialogsActions; t: Translate }
-
-export function BrowseDialogs(props: BrowseDialogsProps) {
-  const { model, actions, t } = props
-  const {
-    state,
-    path,
-    root,
-    selectedCount,
-    rowActions,
-    fileInputRef,
-    dirInputRef,
-    compact,
-    mode,
-    densityLabel,
-    sortKey,
-    sortOrder,
-    treeOpen,
-    canCreate
-  } = model
-  const {
-    onPatch,
-    onCloseSort,
-    onCloseNew,
-    onCloseOverflow,
-    onToggleView,
-    onToggleDetails,
-    onToggleTree,
-    onCycleDensity,
-    onNavigateTrash,
-    onRefresh,
-    onChooseSort,
-    onUploadFiles,
-    onUploadEntries,
-    onCreateFolder,
-    onRename,
-    onDelete,
-    onTransfer,
-    onDownloadEntry,
-    onEdit
-  } = actions
-  const {
-    contextMenu,
-    blankMenu,
-    menuTrigger,
-    sortMenuOpen,
-    sortMenuPosition,
-    newMenuOpen,
-    newMenuPosition,
-    overflowOpen,
-    overflowPosition,
-    typeMenuOpen,
-    typeMenuPosition,
-    dateMenuOpen,
-    dateMenuPosition,
-    newFolderOpen,
-    renameTarget,
-    deleteOpen,
-    destOpen,
-    destSources,
-    destCanCopy,
-    destCanMove,
-    conflictOpen,
-    conflictName,
-    conflictRetry,
-    unlockTarget,
-    shareTarget,
-    snackbar,
-    operation
-  } = state
-  const closeContext = () => {
-    onPatch({ contextMenu: null })
-    menuTrigger?.focus()
-    onPatch({ menuTrigger: null })
-  }
-  const folderUpload = async () => {
-    if (supportsDirectoryPicker()) {
-      try {
-        onUploadEntries(await pickDirectory())
-      } catch {
-        /* canceled */
-      }
-    } else dirInputRef.current?.click()
-  }
-  const sortName = (key: string) =>
-    key === 'name'
-      ? t('browse.sort_by_name')
-      : key === 'size'
-        ? t('browse.sort_by_size')
-        : key === 'mtime'
-          ? t('browse.sort_by_modified')
-          : t('browse.sort_by_kind')
+/** Per-item results of the last delete, move or copy. */
+export function BrowseOperation() {
+  const { t } = useI18n()
+  const current = operation.value
+  if (!current) return null
+  const skipped = current.results.filter((result) => result.skipped).length
   return (
-    <>
-      <Menu compact={compact} open={contextMenu !== null} onClose={closeContext} x={contextMenu?.x} y={contextMenu?.y}>
-        <MenuList>
-          {rowActions.map((action) => (
-            <MenuItem
-              key={action.key}
-              onClick={() => {
-                onPatch({ contextMenu: null })
-                action.run()
-              }}
-            >
-              {action.label}
-            </MenuItem>
-          ))}
-        </MenuList>
-      </Menu>
-      {operation ? (
-        <section className={styles.operation} role="status" aria-live="polite">
-          <div className={styles.operationHeading}>
-            <h2 className={styles.operationTitle}>
-              {operation.kind === 'delete'
-                ? t('common.delete')
-                : operation.kind === 'move'
-                  ? t('common.move')
-                  : t('common.copy')}
-            </h2>
-            <button type="button" className={styles.operationClose} onClick={() => onPatch({ operation: null })}>
-              {t('common.close')}
-            </button>
-          </div>
-          <VirtualList
-            className={styles.operationList}
-            items={operation.results}
-            itemKey={(result) => result.path}
-            estimateSize={48}
-            itemProps={(result) => ({
-              className: cx(styles.operationItem, !result.ok && styles.operationError)
-            })}
-            renderItem={(result) => (
-              <>
-                <span>{result.destination ? `${result.path} to ${result.destination}` : result.path}</span>
-                <span>
-                  {result.ok
-                    ? result.skipped
-                      ? t('browse.items_skipped_name_taken', { count: 1 })
-                      : t('common.done')
-                    : t('error.internal')}
-                </span>
-              </>
-            )}
-          />
-          {operation.results.some((result) => result.skipped) ? (
-            <p>
-              {t('browse.items_skipped_name_taken', {
-                count: operation.results.filter((result) => result.skipped).length
-              })}
-            </p>
-          ) : null}
-        </section>
-      ) : null}
-      <Menu
-        compact={compact}
-        open={blankMenu !== null}
-        onClose={() => {
-          onPatch({ blankMenu: null })
-          menuTrigger?.focus()
-          onPatch({ menuTrigger: null })
-        }}
-        x={blankMenu?.x}
-        y={blankMenu?.y}
-      >
-        <MenuList>
-          {canCreate ? (
-            <>
-              <MenuItem onClick={() => onPatch({ blankMenu: null, newFolderOpen: true })}>
-                {t('common.new_folder')}
-              </MenuItem>
-              <MenuItem
-                onClick={() => {
-                  onPatch({ blankMenu: null })
-                  fileInputRef.current?.click()
-                }}
-              >
-                {t('common.upload')}
-              </MenuItem>
-              <MenuItem
-                onClick={() => {
-                  onPatch({ blankMenu: null })
-                  void folderUpload()
-                }}
-              >
-                {t('browse.upload_folder')}
-              </MenuItem>
-            </>
-          ) : null}
-        </MenuList>
-      </Menu>
-      <Menu
-        compact={compact}
-        open={sortMenuOpen}
-        onClose={onCloseSort}
-        x={sortMenuPosition.x}
-        y={sortMenuPosition.y}
-        align="end"
-      >
-        <MenuList>
-          {(['name', 'size', 'mtime', 'kind'] as const).map((key) => (
-            <MenuItem key={key} onClick={() => onChooseSort(key)}>
-              {sortKey === key
-                ? t('browse.sort_selected', {
-                    label: sortName(key),
-                    direction: sortOrder === 'asc' ? t('browse.sort_ascending') : t('browse.sort_descending')
-                  })
-                : sortName(key)}
-            </MenuItem>
-          ))}
-        </MenuList>
-      </Menu>
-      {canCreate ? (
-        <Menu
-          compact={compact}
-          open={newMenuOpen}
-          onClose={onCloseNew}
-          x={newMenuPosition.x}
-          y={newMenuPosition.y}
-          align={newMenuPosition.align}
-        >
-          <MenuList>
-            <MenuItem
-              onClick={() => {
-                onCloseNew()
-                onPatch({ newFolderOpen: true })
-              }}
-            >
-              {t('common.new_folder')}
-            </MenuItem>
-            <MenuItem
-              onClick={() => {
-                onCloseNew()
-                fileInputRef.current?.click()
-              }}
-            >
-              {t('common.upload')}
-            </MenuItem>
-            <MenuItem
-              onClick={() => {
-                onCloseNew()
-                void folderUpload()
-              }}
-            >
-              {t('browse.upload_folder')}
-            </MenuItem>
-          </MenuList>
-        </Menu>
-      ) : null}
-      <Menu
-        compact={compact}
-        open={overflowOpen}
-        onClose={onCloseOverflow}
-        x={overflowPosition.x}
-        y={overflowPosition.y}
-        align="end"
-      >
-        <MenuList>
-          {compact ? (
-            <>
-              <MenuItem
-                onClick={() => {
-                  onToggleView()
-                  onCloseOverflow()
-                }}
-              >
-                {mode === 'list' ? t('browse.grid_view') : t('browse.list_view')}
-              </MenuItem>
-              <MenuItem
-                onClick={() => {
-                  onToggleDetails()
-                  onCloseOverflow()
-                }}
-              >
-                {t('details.show')}
-              </MenuItem>
-              <MenuItem
-                onClick={() => {
-                  onCloseOverflow()
-                  onRefresh()
-                }}
-              >
-                {t('common.refresh')}
-              </MenuItem>
-            </>
-          ) : null}
-          <MenuItem
-            onClick={() => {
-              onToggleTree()
-              onCloseOverflow()
-            }}
-          >
-            {treeOpen ? t('browse.hide_folder_tree') : t('browse.show_folder_tree')}
-          </MenuItem>
-          <MenuItem
-            onClick={() => {
-              onCycleDensity()
-              onCloseOverflow()
-            }}
-          >
-            {t('browse.density', { density: densityLabel })}
-          </MenuItem>
-          <MenuItem onClick={onNavigateTrash}>{t('browse.open_trash')}</MenuItem>
-        </MenuList>
-      </Menu>
-      <Menu
-        compact={compact}
-        open={typeMenuOpen}
-        onClose={() => onPatch({ typeMenuOpen: false })}
-        x={typeMenuPosition.x}
-        y={typeMenuPosition.y}
-      >
-        <MenuList>
-          {(
-            [
-              ['all', /* i18n */ 'browse.filter_all'],
-              ['folders', 'browse.filter_folders'],
-              ['documents', 'search.preset_document'],
-              ['images', 'search.preset_image'],
-              ['videos', 'search.preset_video'],
-              ['audio', 'search.preset_audio'],
-              ['archives', 'search.preset_archive']
-            ] as const
-          ).map(([value, key]) => (
-            <MenuItem
-              key={value}
-              checked={state.filterType === value}
-              onClick={() => onPatch({ filterType: value, typeMenuOpen: false })}
-            >
-              {state.filterType === value ? '✓ ' : ''}
-              {t(key)}
-            </MenuItem>
-          ))}
-        </MenuList>
-      </Menu>
-      <Menu
-        compact={compact}
-        open={dateMenuOpen}
-        onClose={() => onPatch({ dateMenuOpen: false })}
-        x={dateMenuPosition.x}
-        y={dateMenuPosition.y}
-      >
-        <MenuList>
-          {(
-            [
-              ['any', 'browse.date_any'],
-              ['today', 'browse.date_today'],
-              ['7days', 'browse.date_last_7_days'],
-              ['30days', 'browse.date_last_30_days'],
-              ['this_year', 'browse.date_this_year']
-            ] as const
-          ).map(([value, key]) => (
-            <MenuItem
-              key={value}
-              checked={state.filterDate === value}
-              onClick={() => onPatch({ filterDate: value, dateMenuOpen: false })}
-            >
-              {state.filterDate === value ? '✓ ' : ''}
-              {t(key)}
-            </MenuItem>
-          ))}
-        </MenuList>
-      </Menu>
-      <input
-        ref={fileInputRef}
-        type="file"
-        hidden
-        multiple
-        aria-label={t('browse.choose_files_upload')}
-        onChange={(event: ChangeEvent<HTMLInputElement>) => {
-          if (event.currentTarget.files) onUploadFiles(event.currentTarget.files)
-          event.currentTarget.value = ''
-        }}
+    <section className={styles.operation} role="status" aria-live="polite">
+      <div className={styles.operationHeading}>
+        <h2 className={styles.operationTitle}>
+          {current.kind === 'delete'
+            ? t('common.delete')
+            : current.kind === 'move'
+              ? t('common.move')
+              : t('common.copy')}
+        </h2>
+        <button type="button" className={styles.operationClose} onClick={() => (operation.value = null)}>
+          {t('common.close')}
+        </button>
+      </div>
+      <VirtualList
+        className={styles.operationList}
+        items={current.results}
+        itemKey={(result) => result.path}
+        estimateSize={48}
+        itemProps={(result) => ({ className: cx(styles.operationItem, !result.ok && styles.operationError) })}
+        renderItem={(result) => (
+          <>
+            <span>{result.destination ? `${result.path} to ${result.destination}` : result.path}</span>
+            <span>
+              {result.ok
+                ? result.skipped
+                  ? t('browse.items_skipped_name_taken', { count: 1 })
+                  : t('common.done')
+                : t('error.internal')}
+            </span>
+          </>
+        )}
       />
-      <input
-        ref={dirInputRef}
-        type="file"
-        hidden
-        aria-label={t('browse.choose_folder_upload')}
-        {...{ webkitdirectory: '' }}
-        onChange={(event: ChangeEvent<HTMLInputElement>) => {
-          onUploadEntries(filesFromWebkitDirectoryInput(event.currentTarget))
-          event.currentTarget.value = ''
-        }}
-      />
-      <NewFolderDialog
-        open={newFolderOpen}
-        onClose={() => onPatch({ newFolderOpen: false })}
-        onCreate={onCreateFolder}
-      />
-      <RenameDialog
-        open={renameTarget !== null}
-        currentName={renameTarget?.name ?? ''}
-        onClose={() => onPatch({ renameTarget: null })}
-        onRename={onRename}
-      />
-      <DeleteDialog
-        open={deleteOpen}
-        count={selectedCount}
-        externalShare={root?.shared_externally}
-        trashEnabled={root?.trash_enabled}
-        onClose={() => onPatch({ deleteOpen: false })}
-        onConfirm={onDelete}
-      />
-      <DestinationPickerDialog
-        open={destOpen}
-        sources={destSources}
-        canCopy={destCanCopy}
-        canMove={destCanMove}
-        onClose={() => onPatch({ destOpen: false })}
-        onPick={(dest, kind) => {
-          onPatch({ destOpen: false })
-          onTransfer(dest, kind)
-        }}
-      />
-      <ConflictDialog
-        open={conflictOpen}
-        name={conflictName}
-        onClose={() => onPatch({ conflictOpen: false })}
-        onKeepBoth={() => {
-          onPatch({ conflictOpen: false })
-          conflictRetry?.('rename')
-        }}
-        onOverwrite={() => {
-          onPatch({ conflictOpen: false })
-          conflictRetry?.('overwrite')
-        }}
-        onSkip={() => {
-          onPatch({ conflictOpen: false })
-          conflictRetry?.('skip')
-        }}
-      />
-      <UnlockShareDialog
-        open={unlockTarget !== null}
-        salt={unlockTarget?.salt ?? ''}
-        verifier={unlockTarget?.verifier ?? ''}
-        onUnlock={() => {
-          const retry = unlockTarget?.retry
-          onPatch({ unlockTarget: null })
-          retry?.()
-        }}
-        onClose={() => onPatch({ unlockTarget: null })}
-      />
-      {shareTarget ? (
-        <ShareManageDialog
-          open
-          path={joinPath(path, shareTarget.name)}
-          targetName={shareTarget.name}
-          targetIsDir={shareTarget.kind === 'dir'}
-          onClose={() => onPatch({ shareTarget: null })}
-        />
-      ) : null}
-      {snackbar ? (
-        <div role="status" className={styles.snackbar} onClick={() => onPatch({ snackbar: null })}>
-          {snackbar}
-        </div>
-      ) : null}
-    </>
+      {skipped ? <p>{t('browse.items_skipped_name_taken', { count: skipped })}</p> : null}
+    </section>
+  )
+}
+
+export function BrowseNotice() {
+  const message = notice.value
+  if (!message) return null
+  return (
+    <div role="status" className={styles.snackbar} onClick={() => (notice.value = null)}>
+      {message}
+    </div>
   )
 }

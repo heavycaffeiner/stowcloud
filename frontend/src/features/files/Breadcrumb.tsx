@@ -96,7 +96,6 @@ export function Breadcrumb({ crumbs, onNavigate }: BreadcrumbProps) {
 
       {shouldCollapse && (
         <Menu
-          compact={compact}
           open={menu.open}
           onClose={() => setMenu((state) => ({ ...state, open: false }))}
           x={menu.pos.x}

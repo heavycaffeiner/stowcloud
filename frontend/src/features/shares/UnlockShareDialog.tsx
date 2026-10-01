@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { overlay } from 'overlay-kit'
 import { useI18n } from '../../hooks/use-i18n'
 import { unlock, WrongPassphraseError } from '../../lib/crypto/e2ee'
 import { Button } from '../../ui/Button'
@@ -12,9 +13,24 @@ export interface UnlockShareDialogProps {
   verifier: string
   onUnlock: () => void
   onClose: () => void
+  onClosed?: () => void
 }
 
-export function UnlockShareDialog({ open, salt, verifier, onUnlock, onClose }: UnlockShareDialogProps) {
+/** Asks for a share's passphrase and unlocks it. True once unlocked, false when cancelled. */
+export function askUnlock(share: { salt: string; verifier: string }): Promise<boolean> {
+  return overlay.openAsync<boolean>(({ isOpen, close, unmount }) => (
+    <UnlockShareDialog
+      salt={share.salt}
+      verifier={share.verifier}
+      open={isOpen}
+      onUnlock={() => close(true)}
+      onClose={() => close(false)}
+      onClosed={unmount}
+    />
+  ))
+}
+
+export function UnlockShareDialog({ open, salt, verifier, onUnlock, onClose, onClosed }: UnlockShareDialogProps) {
   const { t } = useI18n()
   const [form, patch] = useUnlockShareState()
   const { passphrase, unlocking, error } = form
@@ -45,6 +61,7 @@ export function UnlockShareDialog({ open, salt, verifier, onUnlock, onClose }: U
       title={t('encryption.unlock_title')}
       role="dialog"
       dismissible={false}
+      onClosed={onClosed}
       actions={
         <>
           <Button variant="text" disabled={unlocking} onClick={onClose}>

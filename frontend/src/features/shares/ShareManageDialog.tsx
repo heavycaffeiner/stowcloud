@@ -1,3 +1,4 @@
+import { overlay } from 'overlay-kit'
 import { useI18n } from '../../hooks/use-i18n'
 import { Button } from '../../ui/Button'
 import { Switch } from '../../ui/Switch'
@@ -19,9 +20,22 @@ export interface ShareManageDialogProps {
   targetName: string
   targetIsDir: boolean
   onClose?: () => void
+  onClosed?: () => void
 }
 
-export function ShareManageDialog({ open, path, targetName, targetIsDir, onClose }: ShareManageDialogProps) {
+export interface ShareTarget {
+  path: string
+  targetName: string
+  targetIsDir: boolean
+}
+
+export function openShareManager(target: ShareTarget): void {
+  overlay.open(({ isOpen, close, unmount }) => (
+    <ShareManageDialog {...target} open={isOpen} onClose={close} onClosed={unmount} />
+  ))
+}
+
+export function ShareManageDialog({ open, path, targetName, targetIsDir, onClose, onClosed }: ShareManageDialogProps) {
   const { t } = useI18n()
   const closeParent = onClose ?? (() => undefined)
   const controller = useShareManageController(open, path, targetIsDir, t, closeParent)
@@ -82,6 +96,7 @@ export function ShareManageDialog({ open, path, targetName, targetIsDir, onClose
         open={dialogOpen}
         title={t('share.share_links', { name: targetName })}
         onClose={closeIssued}
+        onClosed={onClosed}
         role="dialog"
         actions={
           <Button variant="text" onClick={closeIssued}>

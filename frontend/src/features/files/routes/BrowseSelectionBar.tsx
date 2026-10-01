@@ -1,42 +1,24 @@
 import type { RowAction } from '../logic/row-actions'
+import { useI18n } from '../../../hooks/use-i18n'
 import { formatBytes } from '../../../lib/format/bytes'
 import { Icon } from '../../../ui/Icon'
+import { useCompact } from '../../../ui/use-compact'
+import { selection } from '../selection'
+import { detailsPanel, toggleDetails } from '../view-prefs'
 import * as styles from './BrowseSelectionBar.css'
 import * as iconButtonStyles from '../../../ui/IconButton.css'
 import { cx } from '../../../ui/cx'
-import type { Entry } from '../api'
 
-type SelectionBarState = {
-  compact: boolean
-  details: boolean
+interface BrowseSelectionBarProps {
   count: number
   bytes: number
-}
-
-type SelectionBarActions = {
-  onClear: () => void
-  onToggleDetails: () => void
   actions: readonly RowAction[]
 }
 
-type BrowseSelectionBarProps = {
-  state: SelectionBarState
-  actions: SelectionBarActions
-  t: (key: string, params?: Record<string, string | number>) => string
-}
-
-const actionIcons: Record<string, Parameters<typeof Icon>[0]['name']> = {
-  edit: 'edit-document',
-  download: 'download',
-  share: 'link',
-  rename: 'rename',
-  transfer: 'move',
-  duplicate: 'copy',
-  delete: 'delete'
-}
-
-export function BrowseSelectionBar({ state, actions, t }: BrowseSelectionBarProps) {
-  const { compact, details, count, bytes } = state
+export function BrowseSelectionBar({ count, bytes, actions }: BrowseSelectionBarProps) {
+  const { t } = useI18n()
+  const compact = useCompact()
+  const details = detailsPanel.value === 'open'
   return (
     <div className={styles.bar}>
       <div className={styles.barInner}>
@@ -44,7 +26,7 @@ export function BrowseSelectionBar({ state, actions, t }: BrowseSelectionBarProp
           type="button"
           className={cx(styles.iconBtn, iconButtonStyles.root)}
           aria-label={t('browse.clear_selection')}
-          onClick={actions.onClear}
+          onClick={selection.clear}
         >
           <Icon name="close" size={16} />
         </button>
@@ -58,11 +40,11 @@ export function BrowseSelectionBar({ state, actions, t }: BrowseSelectionBarProp
             className={cx(styles.iconBtn, iconButtonStyles.root)}
             aria-label={details ? t('details.hide') : t('details.show')}
             title={details ? t('details.hide') : t('details.show')}
-            onClick={actions.onToggleDetails}
+            onClick={toggleDetails}
           >
             <Icon name="info" size={18} />
           </button>
-          {actions.actions.map((action) => (
+          {actions.map((action) => (
             <button
               key={action.key}
               type="button"
@@ -71,7 +53,7 @@ export function BrowseSelectionBar({ state, actions, t }: BrowseSelectionBarProp
               title={action.label}
               onClick={action.run}
             >
-              <Icon name={actionIcons[action.key] ?? 'more-vert'} size={18} />
+              <Icon name={action.icon} size={18} />
             </button>
           ))}
         </div>

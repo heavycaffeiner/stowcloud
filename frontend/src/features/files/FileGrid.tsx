@@ -8,7 +8,7 @@ import { density as densityPref } from './view-prefs'
 import { computeScaleMapping, computeWindow, rowIndexToScrollTop } from '../../lib/virtual/windowing'
 import { cellPos, sectionRows, verticalTarget } from '../../lib/virtual/grid-sections'
 import { indicesInRect, type Rect } from './logic/marquee'
-import type { MenuAnchor } from './logic/row-actions'
+import type { RowMenuAnchor } from './logic/row-actions'
 import { isVideoFile } from '../preview/logic/media-utils'
 import { Thumbnail } from '../preview/Thumbnail'
 import { MiddleEllipsis } from './MiddleEllipsis'
@@ -33,7 +33,7 @@ export interface FileGridProps {
   requestMore: () => void
   perms: Perms
   onOpen: (entry: Entry) => void
-  onContextMenu: (entry: Entry, anchor: MenuAnchor) => void
+  onContextMenu: (entry: Entry, anchor: RowMenuAnchor) => void
   menuFor?: string | null
   onRename?: () => void
   onDelete?: () => void

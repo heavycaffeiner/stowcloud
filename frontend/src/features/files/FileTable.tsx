@@ -12,7 +12,7 @@ import {
   rowIndexToScrollTop
 } from '../../lib/virtual/windowing'
 import { indicesInRect, type Rect } from './logic/marquee'
-import type { MenuAnchor } from './logic/row-actions'
+import type { RowMenuAnchor } from './logic/row-actions'
 import { FileRow } from './FileRow'
 import { useFileActivation } from './hooks/use-file-activation'
 import { useFileFocusPreservation } from './hooks/use-file-focus-preservation'
@@ -42,7 +42,7 @@ export interface FileTableProps {
   requestMore: () => void
   perms: Perms
   onOpen: (entry: Entry) => void
-  onContextMenu: (entry: Entry, anchor: MenuAnchor) => void
+  onContextMenu: (entry: Entry, anchor: RowMenuAnchor) => void
   onRename?: () => void
   onDelete?: () => void
   onSearchFocus?: () => void

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
+import { overlay } from 'overlay-kit'
 import { destinationProblem } from '../../lib/path-utils'
 import { useSession } from '../auth/api'
 import { useStat } from './api'
@@ -8,20 +9,39 @@ import { BrowseDialog } from './browse-dialog'
 import { FileTreeList } from './FileTree'
 import * as styles from './DestinationPickerDialog.css'
 import { cx } from '../../ui/cx'
-export function DestinationPickerDialog({
+
+export interface DestinationRequest {
+  sources: readonly string[]
+  canCopy: boolean
+  canMove: boolean
+}
+
+/** Asks where to move or copy `sources`. Null when cancelled. */
+export function pickDestination(request: DestinationRequest): Promise<{ dest: string; kind: 'move' | 'copy' } | null> {
+  return overlay.openAsync<{ dest: string; kind: 'move' | 'copy' } | null>(({ isOpen, close, unmount }) => (
+    <DestinationPickerDialog
+      {...request}
+      open={isOpen}
+      onClose={() => close(null)}
+      onClosed={unmount}
+      onPick={(dest, kind) => close({ dest, kind })}
+    />
+  ))
+}
+
+function DestinationPickerDialog({
   open,
   sources,
   canCopy,
   canMove,
   onClose,
+  onClosed,
   onPick
-}: {
+}: DestinationRequest & {
   open: boolean
-  sources: string[]
-  canCopy: boolean
-  canMove: boolean
   onClose: () => void
-  onPick: (dest: string, mode: 'move' | 'copy') => void
+  onClosed: () => void
+  onPick: (dest: string, kind: 'move' | 'copy') => void
 }) {
   const { t } = useI18n()
   const session = useSession()
@@ -29,8 +49,7 @@ export function DestinationPickerDialog({
     () => (session.data?.roots ?? []).map((root) => ({ path: `/${root.label}`, name: root.label })),
     [session.data?.roots]
   )
-  const [state, setState] = useState<{ selected: string | null }>({ selected: null })
-  const selected = state.selected
+  const [selected, setSelected] = useState<string | null>(null)
   const stat = useStat(selected ?? '', open && selected !== null)
   const problem = selected ? destinationProblem(selected, sources) : null
   const writable = stat.data?.perms.create ?? false
@@ -38,17 +57,12 @@ export function DestinationPickerDialog({
   const move = canMove && selected !== null && problem === null && writable
   const isWarn = problem !== null || (selected !== null && stat.data && !writable)
 
-  useEffect(() => {
-    if (!open) {
-      setState({ selected: null })
-    }
-  }, [open, setState])
-
   return (
     <BrowseDialog
       open={open}
       title={t('dest.move_or_copy')}
       onClose={onClose}
+      onClosed={onClosed}
       actions={
         <>
           <Button variant="text" onClick={onClose}>
@@ -73,7 +87,7 @@ export function DestinationPickerDialog({
           <FileTreeList
             roots={roots}
             currentPath={selected ?? ''}
-            onNavigate={(selected) => setState({ selected })}
+            onNavigate={setSelected}
             aria-label={t('dest.destination_folder')}
           />
         </div>

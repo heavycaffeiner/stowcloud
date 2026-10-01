@@ -1,91 +1,65 @@
-import type { Dispatch } from 'react'
-import { baseName, joinPath } from '../../../lib/path-utils'
+import { baseName } from '../../../lib/path-utils'
 import { batchErrorKey, describeApiError } from '../../../api/error-text'
-import { jobTray } from '../../jobs/tray-store'
-import { selection } from '../selection'
-import type { BrowseState } from './browse-types'
-import type { StatePatch } from '../../../lib/merge-state'
 import { ApiError } from '../../../api/fetcher'
-import type { BatchResult, CopyResult, Entry, OnConflict } from '../api'
+import { t } from '../../../lib/i18n'
+import { jobTray } from '../../jobs/tray-store'
+import { askConflictPolicy } from '../ConflictDialog'
+import { notice, operation } from '../browse-page'
+import { selection } from '../selection'
+import type { BatchResult, CopyResult, OnConflict } from '../api'
 
-type Patch = Dispatch<StatePatch<BrowseState>>
-type Translate = (key: string, params?: Record<string, string | number>) => string
-type Mutation = {
+export type TransferKind = 'move' | 'copy'
+
+export type TransferMutation = {
   mutateAsync: (args: { paths: string[]; dest: string; onConflict: OnConflict }) => Promise<BatchResult | CopyResult>
 }
 
+/** Moves or copies `paths` into `dest`. On a name conflict it asks once, then retries only the conflicting items. */
 export async function runBrowseTransfer(
   paths: string[],
   dest: string,
-  kind: 'move' | 'copy',
+  kind: TransferKind,
   onConflict: OnConflict,
-  mutations: { move: Mutation; copy: Mutation },
-  patch: Patch,
-  t: Translate,
-  retry: (paths: string[], dest: string, kind: 'move' | 'copy', policy: OnConflict) => void
+  mutation: TransferMutation
 ): Promise<void> {
   if (!paths.length) return
+  const failedText = kind === 'move' ? t('browse.move_job_failed') : t('browse.copy_job_failed')
+  const quotaText =
+    kind === 'move' ? t('browse.not_enough_storage_space_move') : t('browse.not_enough_storage_space_copy')
+  const retry = async (retryPaths: string[], conflictPath: string): Promise<void> => {
+    const policy = await askConflictPolicy(baseName(conflictPath))
+    if (policy) await runBrowseTransfer(retryPaths, dest, kind, policy, mutation)
+  }
+
+  let result: BatchResult | CopyResult
   try {
-    const result = await (kind === 'move' ? mutations.move : mutations.copy).mutateAsync({ paths, dest, onConflict })
-    const jobs = 'jobs' in result ? (result.jobs ?? []) : []
-    patch({ operation: { kind, results: result.results, jobs } })
-    if (jobs.length) jobTray.track(...jobs)
-    const conflicts = result.results.filter((item) => item.error?.code === 'fs.conflict')
-    if (conflicts.length) {
-      const first = conflicts[0]
-      const detailPath = first.error?.detail?.path
-      const namedPath = typeof detailPath === 'string' ? detailPath : (first.destination ?? first.path)
-      patch({
-        conflictName: baseName(namedPath),
-        conflictRetry: () => (next: OnConflict) =>
-          retry(
-            conflicts.map((item) => item.path),
-            dest,
-            kind,
-            next
-          ),
-        conflictOpen: true
-      })
-      return
-    }
-    const failed = result.results.find((item) => !item.ok)
-    if (failed) {
-      if (failed.error?.code === 'quota.exceeded')
-        patch({
-          snackbar:
-            kind === 'move' ? t('browse.not_enough_storage_space_move') : t('browse.not_enough_storage_space_copy')
-        })
-      else {
-        const key = batchErrorKey(failed.error)
-        patch({
-          snackbar: key
-            ? t(key.key, key.params)
-            : t(kind === 'move' ? 'browse.move_job_failed' : 'browse.copy_job_failed')
-        })
-      }
-    } else {
-      selection.clear()
-      patch({ snackbar: t('common.done') })
-    }
+    result = await mutation.mutateAsync({ paths, dest, onConflict })
   } catch (error) {
     if (error instanceof ApiError && error.code === 'fs.conflict')
-      patch({
-        conflictName: baseName(typeof error.detail?.path === 'string' ? error.detail.path : (paths[0] ?? '')),
-        conflictRetry: () => (next: OnConflict) => retry(paths, dest, kind, next),
-        conflictOpen: true
-      })
-    else if (error instanceof ApiError && error.code === 'quota.exceeded')
-      patch({
-        snackbar:
-          kind === 'move' ? t('browse.not_enough_storage_space_move') : t('browse.not_enough_storage_space_copy')
-      })
-    else
-      patch({
-        snackbar: describeApiError(error, kind === 'move' ? t('browse.move_job_failed') : t('browse.copy_job_failed'))
-      })
+      return retry(paths, typeof error.detail?.path === 'string' ? error.detail.path : paths[0])
+    notice.value =
+      error instanceof ApiError && error.code === 'quota.exceeded' ? quotaText : describeApiError(error, failedText)
+    return
   }
-}
 
-export function browseTransferSources(path: string, selected: readonly Entry[], contextEntry: Entry | null): string[] {
-  return (selected.length ? selected : contextEntry ? [contextEntry] : []).map((entry) => joinPath(path, entry.name))
+  const jobs = 'jobs' in result ? (result.jobs ?? []) : []
+  operation.value = { kind, results: result.results, jobs }
+  if (jobs.length) jobTray.track(...jobs)
+  const conflicts = result.results.filter((item) => item.error?.code === 'fs.conflict')
+  if (conflicts.length) {
+    const first = conflicts[0]
+    const detailPath = first.error?.detail?.path
+    return retry(
+      conflicts.map((item) => item.path),
+      typeof detailPath === 'string' ? detailPath : (first.destination ?? first.path)
+    )
+  }
+  const failed = result.results.find((item) => !item.ok)
+  if (!failed) {
+    selection.clear()
+    notice.value = t('common.done')
+    return
+  }
+  const key = batchErrorKey(failed.error)
+  notice.value = failed.error?.code === 'quota.exceeded' ? quotaText : key ? t(key.key, key.params) : failedText
 }

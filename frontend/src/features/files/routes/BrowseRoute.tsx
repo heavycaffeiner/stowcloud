@@ -1,41 +1,15 @@
-import { useEffect, useMemo, useRef } from 'react'
-import { useNavigate, useParams, useLocation } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useI18n } from '../../../hooks/use-i18n'
-import { useCompact } from '../../../ui/use-compact'
-import {
-  chooseSort,
-  cycleDensity,
-  density as densityPref,
-  detailsPanel,
-  sortKey as sortKeyPref,
-  sortOrder as sortOrderPref,
-  toggleDetails,
-  toggleViewMode,
-  viewMode
-} from '../view-prefs'
-import { lastFolder } from '../location'
-import { selection } from '../selection'
-import { useOpenSearch } from '../../search/state'
-import { joinPath, normalizePath } from '../../../lib/path-utils'
-import { describeApiError } from '../../../api/error-text'
-import type { FileGridHandle } from '../FileGrid'
-import type { FileViewHandle } from '../FileTable'
-import type { MenuAnchor } from '../logic/row-actions'
-import { PreviewDialog } from '../../preview/PreviewDialog'
-import { Button } from '../../../ui/Button'
-import { Dialog } from '../../../ui/Dialog'
-import { ErrorBoundary } from '../../../ui/ErrorBoundary'
 import { useDocumentTitle } from '../../../hooks/use-document-title'
-import { useBrowseState } from '../hooks/use-browse-state'
+import { normalizePath } from '../../../lib/path-utils'
+import { lastFolder } from '../location'
 import { useBrowseListing } from '../hooks/use-browse-listing'
 import { useBrowseActions } from '../hooks/use-browse-actions'
-import { useBrowseMarquee } from '../hooks/use-browse-marquee'
-import { useBrowseMenus } from '../hooks/use-browse-menus'
-import { useBrowsePathSelection, useBrowseRouteFocus } from '../hooks/use-browse-route-effects'
+import { useBrowsePageReset } from '../hooks/use-browse-route-effects'
 import { BrowseSelectionBar } from './BrowseSelectionBar'
-import { BrowseToolbar, BrowseContent, BrowseDialogs } from './BrowseView'
+import { BrowseContent, BrowseNotice, BrowseOperation, BrowseToolbar } from './BrowseView'
 import * as styles from './BrowseRoute.css'
-import type { Entry, SortKey } from '../api'
 
 export function BrowseRoute() {
   const params = useParams()
@@ -45,172 +19,19 @@ export function BrowseRoute() {
 
 function BrowsePageContent({ path }: { path: string }) {
   const { t } = useI18n()
-  const navigate = useNavigate()
-  const location = useLocation()
-  const compact = useCompact()
-  const openSearch = useOpenSearch()
-  const details = detailsPanel.value === 'open'
-  const mode = viewMode.value
-  const density = densityPref.value
-  const sortKey = sortKeyPref.value
-  const sortOrder = sortOrderPref.value
-  const [state, stateActions] = useBrowseState()
-  const { patch } = stateActions
-  const { filterType, filterDate, previewIndex } = state
-  const listing = useBrowseListing(path, filterType, filterDate)
-  const {
-    session,
-    listing: query,
-    directory,
-    entries,
-    filteredEntries,
-    selected,
-    selectedNames,
-    encryption,
-    encrypted,
-    unlocked,
-    root,
-    noShares,
-    selectionBytes,
-    canCreate
-  } = listing
-  const tableRef = useRef<FileViewHandle>(null)
-  const gridRef = useRef<FileGridHandle>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const dirInputRef = useRef<HTMLInputElement>(null)
-  const actions = useBrowseActions({
-    path,
-    entries,
-    selected,
-    contextEntry: state.contextEntry,
-    renameTarget: state.renameTarget,
-    canCreate,
-    navigate,
-    t,
-    patch
-  })
-  const menus = useBrowseMenus({ state, patch, canCreate, t })
-  const marquee = useBrowseMarquee({ mode, selectedNames, patch, tableRef, gridRef })
-  const crumbs = useMemo(() => {
-    const parts = path.split('/').filter(Boolean)
-    const result = [{ label: t('nav.files'), path: '/' }]
-    let current = ''
-    for (const part of parts) {
-      current += `/${part}`
-      result.push({ label: part, path: current })
-    }
-    return result
-  }, [path, t])
-  const focusName = new URLSearchParams(location.search).get('focus')
-  useDocumentTitle(`${path.split('/').filter(Boolean).at(-1) ?? 'Stowcloud'} - Stowcloud`)
-
-  useBrowsePathSelection(path)
+  const { search } = useLocation()
+  const [dragOver, setDragOver] = useState(false)
+  useBrowsePageReset(path)
   useEffect(() => {
     lastFolder.value = path
   }, [path])
-  useBrowseRouteFocus({
-    focusName,
-    isPending: query.isPending,
-    hasNextPage: query.hasNextPage,
-    isFetchingNextPage: query.isFetchingNextPage,
-    mode,
-    pathname: location.pathname,
-    search: location.search,
-    navigate,
-    tableRef,
-    gridRef,
-    fetchNextPage: query.fetchNextPage
-  })
+  useDocumentTitle(`${path.split('/').filter(Boolean).at(-1) ?? 'Stowcloud'} - Stowcloud`)
+  const listing = useBrowseListing(path)
+  const actions = useBrowseActions(path, listing)
+  const { session, selected, selectionBytes, canCreate } = listing
 
-  const densityLabel =
-    density === 'compact'
-      ? t('browse.compact')
-      : density === 'spacious'
-        ? t('browse.spacious')
-        : t('browse.comfortable')
-  const sortLabel =
-    sortKey === 'name'
-      ? t('browse.sort_by_name')
-      : sortKey === 'size'
-        ? t('browse.sort_by_size')
-        : sortKey === 'mtime'
-          ? t('browse.sort_by_modified')
-          : t('browse.sort_by_kind')
-  const filterTypeLabel =
-    filterType === 'folders'
-      ? t('browse.filter_folders')
-      : filterType === 'documents'
-        ? t('search.preset_document')
-        : filterType === 'images'
-          ? t('search.preset_image')
-          : filterType === 'videos'
-            ? t('search.preset_video')
-            : filterType === 'audio'
-              ? t('search.preset_audio')
-              : filterType === 'archives'
-                ? t('search.preset_archive')
-                : t('browse.filter_type')
-  const filterDateLabel =
-    filterDate === 'today'
-      ? t('browse.date_today')
-      : filterDate === '7days'
-        ? t('browse.date_last_7_days')
-        : filterDate === '30days'
-          ? t('browse.date_last_30_days')
-          : filterDate === 'this_year'
-            ? t('browse.date_this_year')
-            : t('browse.date_any')
-  const previewEntry = previewIndex >= 0 ? (entries[previewIndex] ?? null) : null
-  const previewOpen = state.previewOpen && previewEntry !== null
-  const previewPath = previewEntry ? joinPath(path, previewEntry.name) : ''
-  const closePreview = () => patch({ previewOpen: false })
-  const hasPreviewNeighbour = (delta: number) => {
-    let index = previewIndex + delta
-    while (index >= 0 && index < entries.length) {
-      if (entries[index].kind !== 'dir') return true
-      index += delta
-    }
-    return false
-  }
-  const stepPreview = (delta: number) => {
-    let index = previewIndex + delta
-    while (index >= 0 && index < entries.length) {
-      if (entries[index].kind !== 'dir') {
-        patch({ previewIndex: index })
-        return
-      }
-      index += delta
-    }
-  }
-  const actionTarget = selected[0] ?? state.contextEntry
-  // A keyboard shortcut runs only what the row menu would offer for the selection.
-  const runRowAction = (key: string) => actions.actions.find((action) => action.key === key)?.run()
-  const openContextFor = (entry: Entry, anchor: MenuAnchor) => {
-    if (!selectedNames.has(entry.name)) selection.only(entry.name, entries.indexOf(entry))
-    patch({
-      contextEntry: entry,
-      blankMenu: null,
-      menuTrigger: anchor.currentTarget instanceof HTMLElement ? anchor.currentTarget : null,
-      contextMenu: { x: anchor.clientX, y: anchor.clientY }
-    })
-  }
-  const onDetailsContext = (event: React.MouseEvent) => {
-    if (actionTarget) openContextFor(actionTarget, event)
-  }
-  const onToggleTree = () => patch((current) => ({ treeOpen: !current.treeOpen }))
-  const onChooseSort = (key: SortKey) => {
-    chooseSort(key)
-    menus.closeSort()
-  }
-  const onUnlock = () => {
-    if (encryption.data)
-      patch({
-        unlockTarget: { salt: encryption.data.salt, verifier: encryption.data.verifier, retry: () => undefined }
-      })
-  }
   if (path === '/' && session.data?.roots[0])
-    return <NavigateToRoot path={session.data.roots[0].label} search={location.search} />
-  const showingAll = filterType === 'all' && filterDate === 'any'
+    return <NavigateToRoot path={session.data.roots[0].label} search={search} />
   return (
     <div
       className={styles.root}
@@ -218,170 +39,26 @@ function BrowsePageContent({ path }: { path: string }) {
       aria-label={t('browse.file_browser')}
       onDragOver={(event) => {
         event.preventDefault()
-        patch({ dragOver: canCreate })
+        setDragOver(canCreate)
       }}
-      onDragLeave={() => patch({ dragOver: false })}
-      onDrop={actions.onDrop}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(event) => {
+        setDragOver(false)
+        void actions.drop(event)
+      }}
     >
-      <BrowseToolbar
-        model={{
-          compact,
-          details,
-          mode,
-          canCreate,
-          filterType,
-          filterDate,
-          filterTypeLabel,
-          filterDateLabel,
-          sortLabel: t('browse.sort_by', { key: sortLabel }),
-          crumbs,
-          external: Boolean(root?.shared_externally),
-          encrypted,
-          unlocked,
-          broken: Boolean(root?.broken_reason),
-          openMenus: {
-            type: state.typeMenuOpen,
-            date: state.dateMenuOpen,
-            sort: state.sortMenuOpen,
-            new: state.newMenuOpen,
-            overflow: state.overflowOpen
-          }
-        }}
-        actions={{
-          onNavigate: (next) => void navigate(`/b${next}`),
-          onUnlock,
-          onFilter: menus.openFilterMenu,
-          onRefresh: () => void query.refetch(),
-          onToggleView: toggleViewMode,
-          onToggleDetails: toggleDetails,
-          onSort: menus.openSort,
-          onNew: menus.openNewMenu,
-          onOverflow: menus.openOverflow
-        }}
-        t={t}
-      />
+      <BrowseToolbar path={path} listing={listing} actions={actions} />
       {selected.length ? (
-        <BrowseSelectionBar
-          state={{ compact, details, count: selected.length, bytes: selectionBytes }}
-          actions={{ onClear: selection.clear, onToggleDetails: toggleDetails, actions: actions.actions }}
-          t={t}
-        />
+        <BrowseSelectionBar count={selected.length} bytes={selectionBytes} actions={actions.actionsFor(selected)} />
       ) : null}
-      <BrowseContent
-        path={path}
-        compact={compact}
-        details={details}
-        mode={mode}
-        filteredEntries={filteredEntries}
-        directory={directory}
-        noShares={noShares}
-        isAdmin={Boolean(session.data?.user.is_admin)}
-        isPending={query.isPending}
-        isFetchingMore={query.isFetchingNextPage}
-        hasNextPage={Boolean(query.hasNextPage)}
-        error={query.error}
-        errorText={query.error ? describeApiError(query.error, t('browse.this_folder_could_not_be_opened')) : ''}
-        encrypted={encrypted}
-        dragOver={state.dragOver}
-        marqueeRect={state.marqueeRect}
-        marqueeScroll={state.marqueeScroll}
-        treeOpen={state.treeOpen}
-        selected={selected}
-        tableRef={tableRef}
-        gridRef={gridRef}
-        onPointerDown={marquee.onPointerDown}
-        onEmptyClick={marquee.onEmptyAreaClick}
-        onBlankMenu={marquee.openBlankMenu}
-        onOpen={actions.onOpen}
-        onContextMenu={openContextFor}
-        onRename={() => runRowAction('rename')}
-        onDelete={() => runRowAction('delete')}
-        onSearchFocus={() => openSearch(path)}
-        onRequestMore={() => {
-          if (query.hasNextPage && !query.isFetchingNextPage) void query.fetchNextPage()
-        }}
-        onTreeNavigate={(next) => void navigate(`/b${next}`)}
-        onTreeClose={() => patch({ treeOpen: false })}
-        onDetailsClose={toggleDetails}
-        onDownload={actions.downloadSelection}
-        onShare={() => {
-          const entry = selected[0] ?? state.contextEntry
-          if (entry) patch({ shareTarget: entry })
-        }}
-        onDetailsContext={onDetailsContext}
-        onAddFolder={() => void navigate('/admin#shares')}
-        t={t}
-        showingAll={showingAll}
-      />
-      <BrowseDialogs
-        model={{
-          state,
-          path,
-          root,
-          selectedCount: selected.length || (state.contextEntry ? 1 : 0),
-          rowActions: actions.actions,
-          fileInputRef,
-          dirInputRef,
-          compact,
-          mode,
-          densityLabel,
-          sortKey,
-          sortOrder,
-          treeOpen: state.treeOpen,
-          canCreate
-        }}
-        actions={{
-          onPatch: patch,
-          onCloseSort: menus.closeSort,
-          onCloseNew: menus.closeNewMenu,
-          onCloseOverflow: menus.closeOverflow,
-          onToggleView: toggleViewMode,
-          onToggleDetails: toggleDetails,
-          onToggleTree,
-          onCycleDensity: cycleDensity,
-          onNavigateTrash: () => void navigate('/trash'),
-          onRefresh: () => void query.refetch(),
-          onChooseSort,
-          onUploadFiles: actions.handleUploadFiles,
-          onUploadEntries: actions.handleUploadEntries,
-          onCreateFolder: actions.createFolder,
-          onRename: actions.doRename,
-          onDelete: actions.doDelete,
-          onTransfer: (dest, kind) => void actions.transfer(state.destSources, dest, kind, 'fail'),
-          onDownloadEntry: actions.downloadEntry,
-          onEdit: (entry) => void actions.openEditor(entry)
-        }}
-        t={t}
-      />
-      <ErrorBoundary
-        resetKey={previewOpen ? previewPath : ''}
-        fallback={
-          <Dialog
-            open={previewOpen}
-            title={t('preview.cannot_preview')}
-            onClose={closePreview}
-            actions={<Button onClick={closePreview}>{t('common.close')}</Button>}
-          >
-            <p>{t('preview.failed')}</p>
-          </Dialog>
-        }
-      >
-        <PreviewDialog
-          open={previewOpen}
-          entry={previewEntry}
-          path={previewPath}
-          hasPrev={hasPreviewNeighbour(-1)}
-          hasNext={hasPreviewNeighbour(1)}
-          onClose={closePreview}
-          onPrev={() => stepPreview(-1)}
-          onNext={() => stepPreview(1)}
-          onDownload={actions.downloadEntry}
-          onEdit={(entry) => void actions.openEditor(entry)}
-        />
-      </ErrorBoundary>
+      <BrowseContent path={path} listing={listing} actions={actions} dragOver={dragOver} />
+      <BrowseOperation />
+      <BrowseNotice />
+      {actions.uploadInputs}
     </div>
   )
 }
+
 function NavigateToRoot({ path, search }: { path: string; search: string }) {
   const navigate = useNavigate()
   useEffect(() => {

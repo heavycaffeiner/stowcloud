@@ -1,4 +1,5 @@
 import { Navigate, createBrowserRouter } from 'react-router-dom'
+import { RootLayout } from './RootLayout'
 import { RouteErrorBoundary } from './RouteErrorBoundary'
 
 function SettingsSecurityRedirect() {
@@ -10,6 +11,7 @@ function SettingsSecurityRedirect() {
 export const router = createBrowserRouter([
   {
     path: '/',
+    element: <RootLayout />,
     errorElement: <RouteErrorBoundary />,
     children: [
       { index: true, element: <Navigate to="/b/" replace /> },

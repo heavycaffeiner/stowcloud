@@ -1,20 +1,28 @@
+import { overlay } from 'overlay-kit'
 import { Button } from '../../ui/Button'
 import { BrowseDialog } from './browse-dialog'
 import { useI18n } from '../../hooks/use-i18n'
-export function ConflictDialog({
+import type { OnConflict } from './api'
+
+/** Asks what to do about a name that is already taken. Null when dismissed. */
+export function askConflictPolicy(name: string): Promise<OnConflict | null> {
+  return overlay.openAsync<OnConflict | null>(({ isOpen, close, unmount }) => (
+    <ConflictDialog open={isOpen} name={name} onClose={() => close(null)} onClosed={unmount} onChoose={close} />
+  ))
+}
+
+function ConflictDialog({
   open,
   name,
   onClose,
-  onKeepBoth,
-  onOverwrite,
-  onSkip
+  onClosed,
+  onChoose
 }: {
   open: boolean
   name: string
   onClose: () => void
-  onKeepBoth: () => void
-  onOverwrite: () => void
-  onSkip: () => void
+  onClosed: () => void
+  onChoose: (policy: OnConflict) => void
 }) {
   const { t } = useI18n()
   return (
@@ -22,15 +30,16 @@ export function ConflictDialog({
       open={open}
       title={t('conflict.name_already_exists')}
       onClose={onClose}
+      onClosed={onClosed}
       actions={
         <>
-          <Button variant="text" onClick={onSkip}>
+          <Button variant="text" onClick={() => onChoose('skip')}>
             {t('conflict.skip')}
           </Button>
-          <Button variant="outlined" onClick={onKeepBoth}>
+          <Button variant="outlined" onClick={() => onChoose('rename')}>
             {t('conflict.keep_both')}
           </Button>
-          <Button onClick={onOverwrite}>{t('conflict.overwrite')}</Button>
+          <Button onClick={() => onChoose('overwrite')}>{t('conflict.overwrite')}</Button>
         </>
       }
     >

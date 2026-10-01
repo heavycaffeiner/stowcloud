@@ -1,34 +1,40 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { overlay } from 'overlay-kit'
 import { Button } from '../../ui/Button'
 import { TextField } from '../../ui/TextField'
 import { BrowseDialog } from './browse-dialog'
 import { useI18n } from '../../hooks/use-i18n'
-export function NewFolderDialog({
+
+/** Asks for the name of a new folder. Null when cancelled. */
+export function askNewFolderName(): Promise<string | null> {
+  return overlay.openAsync<string | null>(({ isOpen, close, unmount }) => (
+    <NewFolderDialog open={isOpen} onClose={() => close(null)} onClosed={unmount} onCreate={close} />
+  ))
+}
+
+function NewFolderDialog({
   open,
   onClose,
+  onClosed,
   onCreate
 }: {
   open: boolean
   onClose: () => void
+  onClosed: () => void
   onCreate: (name: string) => void
 }) {
   const { t } = useI18n()
-  const [form, setForm] = useState({ name: '', submitted: false })
-  useEffect(() => {
-    if (open) setForm({ name: t('common.new_folder'), submitted: false })
-  }, [open, t, setForm])
-  const submit = () => {
-    if (form.submitted) return
-    const value = form.name.trim()
-    if (!value) return
-    setForm((state) => ({ ...state, submitted: true }))
-    onCreate(value)
+  const [name, setName] = useState(() => t('common.new_folder'))
+  const submit = (): void => {
+    const value = name.trim()
+    if (value) onCreate(value)
   }
   return (
     <BrowseDialog
       open={open}
       title={t('common.new_folder')}
       onClose={onClose}
+      onClosed={onClosed}
       actions={
         <>
           <Button variant="text" onClick={onClose}>
@@ -39,10 +45,10 @@ export function NewFolderDialog({
       }
     >
       <TextField
-        value={form.name}
+        value={name}
         label={t('new_folder.folder_name')}
         autoFocus
-        onValueChange={(name) => setForm((state) => ({ ...state, name }))}
+        onValueChange={setName}
         onKeyDown={(event) => {
           if (event.key === 'Enter') {
             event.preventDefault()

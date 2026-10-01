@@ -1,112 +1,64 @@
-import type { Dispatch } from 'react'
 import { addEntries, addFiles } from '../../uploads/queue'
-import type { BrowseState } from './browse-types'
-import type { StatePatch } from '../../../lib/merge-state'
-import type { Entry, OnConflict } from '../api'
+import { askConflictPolicy } from '../ConflictDialog'
+import type { PickedFile } from '../../../lib/upload/directory-picker'
+import type { Entry } from '../api'
 
-type Patch = Dispatch<StatePatch<BrowseState>>
-type PickedEntry = { file: File; relativePath: string }
-
-type UploadContext = {
-  entries: readonly Entry[]
-  path: string
-  patch: Patch
-}
-
-function uniqueUploadName(name: string, isTaken: (candidate: string) => boolean): string {
-  if (!isTaken(name)) return name
+function uniqueUploadName(name: string, taken: ReadonlySet<string>): string {
+  if (!taken.has(name)) return name
   const dot = name.lastIndexOf('.')
   const stem = dot > 0 ? name.slice(0, dot) : name
   const ext = dot > 0 ? name.slice(dot) : ''
   let count = 1
-  while (isTaken(`${stem} (${count})${ext}`)) count += 1
+  while (taken.has(`${stem} (${count})${ext}`)) count += 1
   return `${stem} (${count})${ext}`
 }
 
-export function createBrowseUploadActions({ entries, path, patch }: UploadContext) {
-  const showConflict = (name: string, retry: (policy: OnConflict) => void, count: number): void =>
-    patch({
-      conflictName: count === 1 ? name : `${name} (+${count - 1})`,
-      conflictRetry: () => retry,
-      conflictOpen: true
-    })
-  const handleFiles = (files: FileList | File[]): void => {
-    const incoming = Array.from(files)
-    if (!incoming.length) return
-    const conflicts = incoming.filter((file) => entries.some((entry) => entry.name === file.name))
-    if (!conflicts.length) {
-      void addFiles(incoming, path)
-      return
-    }
-    showConflict(
-      conflicts[0].name,
-      (policy) => {
-        patch({ conflictOpen: false })
-        if (policy === 'overwrite') {
-          void addFiles(incoming, path)
-          return
-        }
-        if (policy === 'skip') {
-          const conflictNames = new Set(conflicts.map((file) => file.name))
-          const remaining = incoming.filter((file) => !conflictNames.has(file.name))
-          if (remaining.length) void addFiles(remaining, path)
-          return
-        }
-        const handedOut = new Set<string>()
-        const renamed = incoming.map((file) => {
-          if (!entries.some((entry) => entry.name === file.name)) return file
-          const name = uniqueUploadName(
-            file.name,
-            (candidate) => entries.some((entry) => entry.name === candidate) || handedOut.has(candidate)
-          )
-          handedOut.add(name)
-          return new File([file], name, { type: file.type, lastModified: file.lastModified })
-        })
-        void addFiles(renamed, path)
-      },
-      conflicts.length
-    )
-  }
-  const handleEntries = (picked: readonly PickedEntry[]): void => {
-    if (!picked.length) return
-    const conflicts = picked.filter(
-      (entry) => !entry.relativePath && entries.some((listed) => listed.name === entry.file.name)
-    )
-    if (!conflicts.length) {
-      void addEntries(picked, path)
-      return
-    }
-    showConflict(
-      conflicts[0].file.name,
-      (policy) => {
-        patch({ conflictOpen: false })
-        if (policy === 'overwrite') {
-          void addEntries(picked, path)
-          return
-        }
-        if (policy === 'skip') {
-          const conflictNames = new Set(conflicts.map((entry) => entry.file.name))
-          const remaining = picked.filter((entry) => entry.relativePath || !conflictNames.has(entry.file.name))
-          if (remaining.length) void addEntries(remaining, path)
-          return
-        }
-        const handedOut = new Set<string>()
-        const renamed = picked.map((entry) => {
-          if (entry.relativePath || !entries.some((listed) => listed.name === entry.file.name)) return entry
-          const name = uniqueUploadName(
-            entry.file.name,
-            (candidate) => entries.some((listed) => listed.name === candidate) || handedOut.has(candidate)
-          )
-          handedOut.add(name)
-          return {
-            file: new File([entry.file], name, { type: entry.file.type, lastModified: entry.file.lastModified }),
-            relativePath: entry.relativePath
-          }
-        })
-        void addEntries(renamed, path)
-      },
-      conflicts.length
-    )
-  }
-  return { handleFiles, handleEntries }
+/**
+ * The items to upload once name conflicts with `listed` are settled. Asks once for all conflicts and
+ * returns nothing when the question is dismissed. `nameOf` gives an item's top-level name, or '' for an
+ * item inside a picked folder, which never conflicts.
+ */
+async function settleConflicts<T>(
+  items: readonly T[],
+  listed: readonly Entry[],
+  nameOf: (item: T) => string,
+  withName: (item: T, name: string) => T
+): Promise<readonly T[]> {
+  const taken = new Set(listed.map((entry) => entry.name))
+  const conflicted = items.filter((item) => taken.has(nameOf(item)))
+  if (!conflicted.length) return items
+  const first = nameOf(conflicted[0])
+  const policy = await askConflictPolicy(conflicted.length === 1 ? first : `${first} (+${conflicted.length - 1})`)
+  const conflicts = new Set(conflicted)
+  if (policy === 'overwrite') return items
+  if (policy === 'skip') return items.filter((item) => !conflicts.has(item))
+  if (policy !== 'rename') return []
+  return items.map((item) => {
+    if (!conflicts.has(item)) return item
+    const name = uniqueUploadName(nameOf(item), taken)
+    taken.add(name)
+    return withName(item, name)
+  })
+}
+
+const renamedFile = (file: File, name: string): File =>
+  new File([file], name, { type: file.type, lastModified: file.lastModified })
+
+export async function uploadFiles(files: readonly File[], dest: string, listed: readonly Entry[]): Promise<void> {
+  const settled = await settleConflicts(files, listed, (file) => file.name, renamedFile)
+  if (settled.length) await addFiles(settled, dest)
+}
+
+export async function uploadEntries(
+  picked: readonly PickedFile[],
+  dest: string,
+  listed: readonly Entry[]
+): Promise<void> {
+  const settled = await settleConflicts(
+    picked,
+    listed,
+    (entry) => (entry.relativePath ? '' : entry.file.name),
+    (entry, name) => ({ file: renamedFile(entry.file, name), relativePath: entry.relativePath })
+  )
+  if (settled.length) await addEntries(settled, dest)
 }

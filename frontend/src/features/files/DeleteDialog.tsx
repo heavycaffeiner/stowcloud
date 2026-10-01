@@ -1,22 +1,41 @@
+import { overlay } from 'overlay-kit'
 import { Button } from '../../ui/Button'
 import { BrowseDialog } from './browse-dialog'
 import { Icon } from '../../ui/Icon'
 import { useI18n } from '../../hooks/use-i18n'
 import * as styles from './DeleteDialog.css'
 
-export function DeleteDialog({
+export interface DeleteConfirmation {
+  count: number
+  externalShare: boolean
+  trashEnabled: boolean
+}
+
+/** Asks to confirm a delete. True when confirmed. */
+export function confirmDelete(what: DeleteConfirmation): Promise<boolean> {
+  return overlay.openAsync<boolean>(({ isOpen, close, unmount }) => (
+    <DeleteDialog
+      {...what}
+      open={isOpen}
+      onClose={() => close(false)}
+      onClosed={unmount}
+      onConfirm={() => close(true)}
+    />
+  ))
+}
+
+function DeleteDialog({
   open,
   count,
-  externalShare = false,
-  trashEnabled = false,
+  externalShare,
+  trashEnabled,
   onClose,
+  onClosed,
   onConfirm
-}: {
+}: DeleteConfirmation & {
   open: boolean
-  count: number
-  externalShare?: boolean
-  trashEnabled?: boolean
   onClose: () => void
+  onClosed: () => void
   onConfirm: () => void
 }) {
   const { t, tp } = useI18n()
@@ -25,6 +44,7 @@ export function DeleteDialog({
       open={open}
       title={t('delete.delete')}
       onClose={onClose}
+      onClosed={onClosed}
       actions={
         <>
           <Button variant="text" onClick={onClose}>

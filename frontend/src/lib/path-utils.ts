@@ -54,7 +54,7 @@ export function isWithin(p: string, ancestor: string): boolean {
  */
 export type DestinationProblem = 'same_folder' | 'into_itself'
 
-export function destinationProblem(dest: string, sources: string[]): DestinationProblem | null {
+export function destinationProblem(dest: string, sources: readonly string[]): DestinationProblem | null {
   const d = normalizePath(dest)
   let sameFolder = false
   for (const src of sources) {
