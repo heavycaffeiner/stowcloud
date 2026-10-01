@@ -56,10 +56,7 @@ export interface Entry {
    *  instead. */
   etag_weak: boolean
   perms: Perms
-  id?: number
   preview?: { available: boolean }
-  link?: { target: string; openable: boolean }
-  confusable?: boolean
 }
 
 export type SortKey = 'name' | 'size' | 'mtime' | 'kind'

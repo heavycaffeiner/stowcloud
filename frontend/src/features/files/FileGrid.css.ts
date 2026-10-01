@@ -253,12 +253,6 @@ export const kebab = style({
   }
 })
 
-export const badge = style({
-  display: 'inline-flex',
-  flex: 'none',
-  color: `rgb(${vars.color.error})`
-})
-
 export const skeleton = style({
   display: 'flex',
   flexDirection: 'column',

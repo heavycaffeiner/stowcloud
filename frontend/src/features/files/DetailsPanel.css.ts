@@ -93,19 +93,6 @@ export const sectionHeading = style({
   margin: '12px 0 8px'
 })
 
-export const warning = style({
-  display: 'flex',
-  alignItems: 'center',
-  gap: '8px',
-  margin: '0 0 12px',
-  padding: '8px 12px',
-  borderRadius: vars.radius.small,
-  background: vars.state.error,
-  color: vars.state.errorContent,
-  fontSize: vars.typescale.bodySmall.size,
-  lineHeight: vars.typescale.bodySmall.lineHeight
-})
-
 export const fields = style({
   display: 'flex',
   flexDirection: 'column',

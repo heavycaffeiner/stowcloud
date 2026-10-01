@@ -128,7 +128,7 @@ export function PreviewDialog({
   const archiveListing = encryption ? (encryptedArchiveQuery.data ?? null) : (archiveQuery.data ?? null)
   const archiveError = encryption ? encryptedArchiveQuery.error : archiveQuery.error
   const archivePending = encryption ? encryptedArchiveQuery.isPending : archiveQuery.isPending
-  const previewKey = open && entry ? `${body.kind}\x00${path}\x00${entry.id ?? ''}\x00${entry.size}` : null
+  const previewKey = open && entry ? `${body.kind}\x00${path}\x00${entry.size}` : null
 
   useEffect(() => {
     if (locked) setPreviewState((state) => ({ ...state, unlockOpen: true }))

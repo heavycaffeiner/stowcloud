@@ -5,10 +5,12 @@ import { rowActions, type RowActionHandlers } from '../../../../src/features/fil
 function entry(name: string, kind: 'file' | 'dir', perms: Partial<Entry['perms']> = {}): Entry {
   return {
     name,
+    path: `share/${name}`,
     kind,
     size: 1,
     mtime_ns: '0',
     etag: 'e',
+    etag_weak: false,
     perms: {
       read: true,
       write: true,
@@ -19,9 +21,8 @@ function entry(name: string, kind: 'file' | 'dir', perms: Partial<Entry['perms']
       share: true,
       download: true,
       ...perms
-    },
-    id: undefined
-  } as Entry
+    }
+  }
 }
 
 const handlers: RowActionHandlers = {

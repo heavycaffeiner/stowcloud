@@ -87,11 +87,6 @@ function FileCardHeader({
     </span>
   )
   const name = <MiddleEllipsis name={entry.name} className={styles.name} />
-  const badge = entry.confusable ? (
-    <span className={styles.badge} title={t('common.look_alike_characters')}>
-      <Icon name="warning" />
-    </span>
-  ) : null
   const kebab = (
     <button
       type="button"
@@ -119,14 +114,12 @@ function FileCardHeader({
         <Icon name="folder" />
       </span>
       {name}
-      {badge}
       {kebab}
     </>
   ) : (
     <div className={styles.head}>
       {check}
       {name}
-      {badge}
       {kebab}
     </div>
   )

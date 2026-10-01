@@ -163,11 +163,6 @@ export function FileRow({
             )}
           </span>
         </span>
-        {entry.confusable ? (
-          <span className={styles.badge} title={t('common.look_alike_characters')}>
-            <Icon name="warning" />
-          </span>
-        ) : null}
       </span>
       <span className={cx(styles.cell, styles.cellSize)} role="gridcell">
         {entry.kind === 'dir' ? '-' : formatEntrySize(entry.size, encrypted)}

@@ -149,7 +149,6 @@ export function DetailsPanel({
           : []),
         { label: t('details.modified'), value: formatModifiedDateNs(one.mtime_ns) },
         { label: t('details.location'), value: joinPath(location, one.name) },
-        ...(one.link ? [{ label: t('details.symlink_target'), value: one.link.target }] : []),
         { label: t('details.permissions'), value: permissionSummary(one) }
       ]
     }
@@ -221,13 +220,6 @@ export function DetailsPanel({
             </IconButton>
           ) : null}
         </div>
-      ) : null}
-
-      {one?.confusable ? (
-        <p className={styles.warning}>
-          <Icon name="warning" size={16} />
-          <span>{t('common.look_alike_characters')}</span>
-        </p>
       ) : null}
 
       <div className={styles.sectionHeading}>{t('details.title')}</div>

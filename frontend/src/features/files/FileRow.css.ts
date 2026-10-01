@@ -212,12 +212,6 @@ export const mobileMeta = style({
   }
 })
 
-export const badge = style({
-  display: 'inline-flex',
-  flex: 'none',
-  color: `rgb(${vars.color.error})`
-})
-
 export const moreBtn = style({
   width: vars.control.minDesktop,
   height: vars.control.minDesktop,
