@@ -1,8 +1,7 @@
 // frontend/src/lib/api/oidc.ts: the OIDC surface that has to work before anyone
 // is logged in. Standalone, the same reasoning as setup.ts: it does NOT
-// import ./client, ./mock or ./http, so the unauthenticated bundle (the login
-// screen) never pulls in the full fs mock or the rest of the authenticated
-// app just to decide whether to draw a button.
+// import ./client or ./http, so the unauthenticated bundle (the login screen)
+// never pulls in the authenticated app just to decide whether to draw a button.
 //
 // The authenticated half of OIDC (linking, unlinking, the admin routes) does
 // go through the normal api client, because it needs the CSRF token and the
@@ -10,17 +9,7 @@
 import { t } from '../i18n'
 import type { OidcConfig } from './types'
 
-const IS_MOCK = import.meta.env.VITE_API_MOCK === '1'
 const BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api/v1'
-
-/** What the mock backend answers for `GET /api/v1/auth/oidc/config`.
- *
- *  Enabled, so both screens render their single-sign-on surface under
- *  `VITE_API_MOCK=1` and can be worked on without a server. There is no
- *  identity provider behind it: `mock.ts::oidcLinkStart` refuses with
- *  `oidc.provider_unavailable` rather than inventing an authorize URL that
- *  would navigate the browser out of the app. */
-const MOCK_CONFIG: OidcConfig = { enabled: true, display_name: 'Mock IdP' }
 
 /**
  * `GET /api/v1/auth/oidc/config`, unauthenticated by necessity: the login
@@ -33,7 +22,6 @@ const MOCK_CONFIG: OidcConfig = { enabled: true, display_name: 'Mock IdP' }
  * guessing wrong costs a login method, not the login screen.
  */
 export async function fetchOidcConfig(): Promise<OidcConfig> {
-  if (IS_MOCK) return MOCK_CONFIG
   try {
     const res = await fetch(`${BASE}/auth/oidc/config`, {
       method: 'GET',
@@ -58,8 +46,6 @@ export async function fetchOidcConfig(): Promise<OidcConfig> {
  * JSON response and never reach the identity provider.
  */
 export async function startOidcLogin(returnTo?: string | null): Promise<void> {
-  if (IS_MOCK) return
-
   const q = returnTo ? `?return_to=${encodeURIComponent(returnTo)}` : ''
   try {
     const res = await fetch(`${BASE}/auth/oidc/start${q}`, {

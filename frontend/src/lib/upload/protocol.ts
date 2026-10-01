@@ -35,7 +35,7 @@ export type Cmd =
   | { t: 'direct-capability'; supported: boolean }
 export type Evt =
   | { t: 'progress'; id: string; sent: number; total: number; rate: number; etaSec: number }
-  | { t: 'done'; id: string; dest: string; name: string; size: number; mtimeNs: string }
+  | { t: 'done'; id: string; dest: string; size: number }
   | { t: 'error'; id: string; code: string; message: string; retryIn?: number }
   | { t: 'chunk-size-adjusted'; id: string; size: number }
   | { t: 'queued'; id: string; name: string; dest: string; total: number }

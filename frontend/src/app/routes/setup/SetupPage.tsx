@@ -66,12 +66,6 @@ export function SetupPage() {
         <h1 className={authStyles.title}>{t('setup.create_administrator_account')}</h1>
         <p className={authStyles.subtitle}>
           {t('setup.on_server_s_first_start')} <code>setup-token</code> {t('setup.file_data_directory')}
-          {flows.isMock ? (
-            <>
-              <br />
-              <em>{t('setup.mock_mode_any_token_value')}</em>
-            </>
-          ) : null}
         </p>
         {accountCreated ? (
           <>

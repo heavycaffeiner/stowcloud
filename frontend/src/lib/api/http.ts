@@ -1,8 +1,5 @@
-// frontend/src/lib/api/http.ts: real HTTP implementation of the same surface as
-// mock.ts. Talks to the real server. This module is only
-// ever exercised once VITE_API_MOCK is unset/0; it is untested against a
-// live server here (the backend does not exist yet) but the shape mirrors
-// exactly so swapping the flag is the only integration step.
+// frontend/src/lib/api/http.ts: the API surface the app calls, over HTTP to the
+// server. Reached through ./client; nothing else imports it directly.
 import {
   ApiError,
   type ActiveSession,
@@ -2109,19 +2106,11 @@ async function adminLogsTimeline(query: AdminLogsTimelineQuery = {}): Promise<Ad
   }
 }
 
-/** The real `hit` SSE event (`sc-http::routes::hit_json`) is flat --
- *  `{path, name, is_dir, size, mtime_ns, score}` -- not the `SearchHit`
- *  (`{path, entry: Entry}`) shape the UI reads (mock.ts's `searchStream`
- *  built its hits from full directory-listing `Entry` objects, since the mock
- *  answers search by re-scanning its own seeded tree). Passing the raw event
- *  straight through as `onHit(JSON.parse(...))` left `hit.entry` `undefined`
- *  against the real backend -- every hit's `.entry.kind`/`.name` read as
- *  undefined, so results silently never rendered (the search UI showed
- *  "No results" for a query that had 100+ real matches).
- *  `etag`/`perms`/`id` aren't in the wire shape at all; search doesn't carry
- *  them, and nothing downstream of a search hit (only `onSearchResultClick`,
- *  which reads just `.path`) needs them, so they're synthesized placeholders
- *  rather than guesses at real values. */
+/** The `hit` SSE event is flat (`{path, name, is_dir, size, mtime_ns, score}`),
+ *  not the `SearchHit` (`{path, entry: Entry}`) shape the UI reads, so it is
+ *  mapped here. `etag`/`perms`/`id` are not in the wire shape, and nothing
+ *  downstream of a search hit needs them (`onSearchResultClick` reads only
+ *  `.path`), so they are placeholders rather than guesses at real values. */
 interface RawSearchHit {
   /** The share's numeric id. Not a label, so it is never part of a path. */
   share: string
@@ -2413,9 +2402,5 @@ export const httpApi = {
   browseHostPath,
   browseSetupPath,
   adminIndexStatus,
-  setRootOrder,
-  registerUploadedEntry(): void {
-    // no-op for the real backend: the server's own state is authoritative;
-    // the browse UI calls refresh() after an upload completes instead.
-  }
+  setRootOrder
 }

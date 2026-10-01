@@ -4,7 +4,6 @@
 // paths are "wanted", and what an `inval` should do about it belong one layer
 // up; this never reconnects on its own, so the caller's backoff is the only
 // backoff.
-import { isMock } from './client'
 import type { ClientMsg, ServerMsg } from './types'
 
 export interface EventsTransport {
@@ -76,17 +75,4 @@ class WsEventsTransport implements EventsTransport {
   }
 }
 
-/** `VITE_API_MOCK=1` never starts a real backend (`client.ts`'s own header
- *  comment) and there is no multi-client scenario to simulate within one
- *  browser tab, so this is a deliberate no-op rather than a fake event
- *  source: `onOpen` never fires, `send` is inert, and `EventsHub` built
- *  against it just permanently believes it's still connecting, which is
- *  the correct mock-mode behavior (nothing calls it a live connection that
- *  isn't one). */
-class NullEventsTransport implements EventsTransport {
-  connect(): void {}
-  send(): void {}
-  close(): void {}
-}
-
-export const eventsTransport: EventsTransport = isMock ? new NullEventsTransport() : new WsEventsTransport()
+export const eventsTransport: EventsTransport = new WsEventsTransport()

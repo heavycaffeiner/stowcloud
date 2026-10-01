@@ -2,7 +2,7 @@
 //
 // Standalone, like setup.ts and for a sharper version of the same reason: this
 // module is loaded on a server whose engine may not have come up at all, so it
-// must not pull in ./client, ./mock or ./http and with them the whole
+// must not pull in ./client or ./http and with them the whole
 // authenticated surface. The four calls below are the entire contract, and
 // they are the only routes the emergency mux mounts.
 import { ApiError, type ApiErrorBody } from './types'

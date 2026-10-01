@@ -1,33 +1,14 @@
-// The ONE flip switch between the mock backend
-// and the real server. `VITE_API_MOCK=1` lives in `.env.development`,
-// which `npm run dev` applies and `npm run build` does not. Nothing else in
-// the app imports mock.ts or http.ts directly.
+// The app's one entry point to the server API. Nothing else in the app
+// imports http.ts directly.
 import { setEncryptedSharesSource } from '../crypto/encrypted-shares'
 import { httpApi } from './http'
-import { mockApi } from './mock'
 
-export const isMock = import.meta.env.VITE_API_MOCK === '1'
+export const api = httpApi
 
-// A production build is what gets baked into the server binary by
-// the embedded bundle. A mock one there is not a degraded product, it is a
-// counterfeit: it accepts invented credentials and lists files that do not
-// exist, and the real account is rejected by a server that never heard of it.
-// It shipped exactly once, which is why this is a hard failure at module load
-// rather than a warning nobody reads in a build log.
-if (import.meta.env.PROD && isMock) {
-  throw new Error(
-    'VITE_API_MOCK=1 in a production build. The mock backend must never be embedded ' +
-      'in the server binary. Move the flag to frontend/.env.development.'
-  )
-}
-
-export const api = isMock ? mockApi : httpApi
-
-// The encrypted-share cache reads through whichever backend was just
-// chosen. Pushed in from here rather than imported there, because
-// `api/http.ts` reads that module's own label logic and an import back the
-// other way would close a cycle through this file, whose eager `api` const
-// would then be captured undefined.
+// The encrypted-share cache reads through the API client. Pushed in from here
+// rather than imported there, because `api/http.ts` reads that module's own
+// label logic and an import back the other way would close a cycle through
+// this file, whose eager `api` const would then be captured undefined.
 setEncryptedSharesSource(() => api.shareEncryptionList().then((r) => r.shares))
 
 export type {

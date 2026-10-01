@@ -1,12 +1,10 @@
 // The first-run form.
-// Standalone module, same reasoning as share.ts: it does NOT import
-// ./client, ./mock, or ./http, so the not-yet-authenticated bundle (login +
-// first-run screens) never pulls in the full fs mock or the rest of the
-// authenticated app surface.
+// Standalone module, same reasoning as share.ts: it does NOT import ./client
+// or ./http, so the not-yet-authenticated bundle (login + first-run screens)
+// never pulls in the authenticated app surface.
 //
 // `createInitialAdmin` is THE seam: it is the only function in the entire
 // frontend that knows this request shape.
-import { t } from '../i18n'
 import { ApiError, type ApiErrorBody, type SetupFinding } from './types'
 
 export interface SetupCreateAdminReq {
@@ -73,47 +71,10 @@ function setupFindings(body: unknown): SetupFinding[] | null {
   return findings.length === body.findings.length ? findings : null
 }
 
-const IS_MOCK = import.meta.env.VITE_API_MOCK === '1'
 const BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api/v1'
 
-// Mock-only bridge to mock.ts's login(): sessionStorage is used instead of a
-// direct import so this module stays standalone (see header comment) while
-// still letting a dev-mode-created admin log back in with the exact
-// credentials just typed into the first-run form. Keep this key in sync with
-// mock.ts's MOCK_SETUP_ADMIN_KEY (duplicated by convention, not by import,
-// for the same reason).
-const MOCK_SETUP_ADMIN_KEY = 'sc.mock.setup_admin'
-
-async function mockCreateAdmin(req: SetupCreateAdminReq): Promise<SetupResult> {
-  await new Promise((r) => setTimeout(r, 200))
-  if (!req.token.trim()) {
-    throw new ApiError(401, { code: 'setup.invalid_token', message: t('setup.invalid_setup_token') })
-  }
-  try {
-    sessionStorage.setItem(MOCK_SETUP_ADMIN_KEY, JSON.stringify({ username: req.username, password: req.password }))
-  } catch {
-    /* private browsing etc.: the mock auto-login after setup just won't work; non-fatal */
-  }
-  // The one warning a browser can work out for itself, which is also the one
-  // that matters: the list does not name where this page is being read from.
-  const self = location.hostname
-  if (req.app_hosts.length > 0 && !req.app_hosts.some((h) => h.toLowerCase() === self.toLowerCase())) {
-    return {
-      warnings: [
-        {
-          section: 'network',
-          field: 'app_hosts',
-          reason: 'settings.would_lock_you_out',
-          args: { host: self },
-          blocking: false
-        }
-      ]
-    }
-  }
-  return { warnings: [] }
-}
-
-async function httpCreateAdmin(req: SetupCreateAdminReq): Promise<SetupResult> {
+/** THE SEAM: see file header. */
+export async function createInitialAdmin(req: SetupCreateAdminReq): Promise<SetupResult> {
   const res = await fetch(`${BASE}/system/setup`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json; charset=utf-8' },
@@ -139,11 +100,6 @@ async function httpCreateAdmin(req: SetupCreateAdminReq): Promise<SetupResult> {
   throw new ApiError(res.status, err)
 }
 
-/** THE SEAM: see file header. */
-export function createInitialAdmin(req: SetupCreateAdminReq): Promise<SetupResult> {
-  return IS_MOCK ? mockCreateAdmin(req) : httpCreateAdmin(req)
-}
-
 /**
  * `GET /api/v1/system/setup` → `{"required": bool}`. Unauthenticated and deliberately
  * one field: it says only whether an account exists, which a junk `POST`
@@ -160,7 +116,6 @@ export function createInitialAdmin(req: SetupCreateAdminReq): Promise<SetupResul
  * carries a manual `/setup` link for the case where we guessed wrong.
  */
 export async function setupRequired(): Promise<boolean> {
-  if (IS_MOCK) return false
   try {
     const res = await fetch(`${BASE}/system/setup`, {
       method: 'GET',

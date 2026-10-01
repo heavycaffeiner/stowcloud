@@ -1,11 +1,8 @@
 // TUS 1.0.0 + Sc-Random-Access transport.
-// Runs inside the dedicated upload Worker. Picks mock
-// vs real the same way api/client.ts does, via VITE_API_MOCK, so the worker
-// never needs a live backend during frontend development either.
+// Runs inside the dedicated upload Worker.
 
 import { classifyFailure, retryAfterMs, retryDelay } from './retry'
 
-const IS_MOCK = import.meta.env.VITE_API_MOCK === '1'
 const BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api/v1'
 
 // The session cookie is `__Host-sc_sid` (auth), and state-changing requests
@@ -571,94 +568,4 @@ export class HttpTransport implements Transport {
   }
 }
 
-// ── Mock transport (in-memory, lives inside the worker realm) ──
-
-interface MockSession {
-  id: string
-  dest: string
-  filename: string
-  totalSize: number
-  chunkSize: number // fixed at creation, mirrors the real session's server-fixed value
-  received: number // contiguous prefix length; sufficient since real-world chunk
-  // completion order is near-sequential and out-of-order gaps are rare in the
-  // mock (no IntervalSet needed client-side either, see chunk-planner.ts).
-  gaps: Map<number, number> // offset -> length, for out-of-order chunks awaiting the gap to close
-}
-
-const mockSessions = new Map<string, MockSession>()
-
-function absorbGaps(s: MockSession): void {
-  let advanced = true
-  while (advanced) {
-    advanced = false
-    for (const [offset, length] of s.gaps) {
-      if (offset === s.received) {
-        s.received += length
-        s.gaps.delete(offset)
-        advanced = true
-      }
-    }
-  }
-}
-
-class MockTransport implements Transport {
-  async createSession(p: CreateSessionParams): Promise<{ id: string; offset: number }> {
-    const id = `mock-${Math.random().toString(36).slice(2, 10)}`
-    mockSessions.set(id, {
-      id,
-      dest: p.dest,
-      filename: p.filename,
-      totalSize: p.totalSize,
-      chunkSize: p.chunkSize,
-      received: 0,
-      gaps: new Map()
-    })
-    return { id, offset: 0 }
-  }
-
-  async patchChunk(
-    id: string,
-    offset: number,
-    body: Blob,
-    signal?: AbortSignal,
-    onProgress?: (bytesSent: number) => void
-  ): Promise<{ offset: number }> {
-    const s = mockSessions.get(id)
-    if (!s) throw new UploadHttpError(404, 'no such mock session')
-    // simulate network latency proportional to chunk size (~50 MB/s)
-    const durationMs = Math.max(5, (body.size / (50 * 1024 * 1024)) * 1000)
-    const steps = Math.min(10, Math.max(1, Math.floor(durationMs / 5)))
-    const stepMs = durationMs / steps
-    for (let i = 1; i <= steps; i++) {
-      if (signal?.aborted) {
-        throw new DOMException('The user aborted a request.', 'AbortError')
-      }
-      await new Promise((r) => setTimeout(r, stepMs))
-      onProgress?.(Math.round((body.size * i) / steps))
-    }
-    if (offset === s.received) {
-      s.received += body.size
-      absorbGaps(s)
-    } else if (offset > s.received) {
-      s.gaps.set(offset, body.size)
-    } // offset < received: duplicate resend, ignore
-    return { offset: s.received }
-  }
-
-  async headSession(id: string): Promise<{ offset: number; totalSize: number; chunkSize?: number }> {
-    const s = mockSessions.get(id)
-    if (!s) throw new UploadHttpError(404, 'no such mock session')
-    return { offset: s.received, totalSize: s.totalSize, chunkSize: s.chunkSize }
-  }
-
-  async deleteSession(id: string): Promise<void> {
-    mockSessions.delete(id)
-  }
-
-  getSession(id: string): MockSession | undefined {
-    return mockSessions.get(id)
-  }
-}
-
-export const mockTransport = new MockTransport()
-export const transport: Transport = IS_MOCK ? mockTransport : new HttpTransport()
+export const transport: Transport = new HttpTransport()

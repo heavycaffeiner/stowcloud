@@ -49,8 +49,7 @@ export function swReady(): Promise<ServiceWorkerRegistration | null> {
       // shim that `import`s the real file, which only a module worker can
       // evaluate; the production build emits an ordinary classic-script
       // bundle instead. `import.meta.env.DEV` is Vite's own compile-time
-      // flag for exactly this split, already used the same way for
-      // `VITE_API_MOCK` elsewhere in this codebase.
+      // flag for exactly this split.
       const reg = await navigator.serviceWorker.register(SERVICE_WORKER_URL, {
         type: import.meta.env.DEV ? 'module' : 'classic'
       })

@@ -1,31 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { HttpTransport, mockTransport } from '../../../src/lib/upload/transport'
+import { HttpTransport } from '../../../src/lib/upload/transport'
 import type { Transport } from '../../../src/lib/upload/transport'
-
-describe('mockTransport.patchChunk', () => {
-  it('reports intra-chunk progress via onProgress callback', async () => {
-    const session = await mockTransport.createSession({
-      dest: '/test',
-      filename: 'file.bin',
-      totalSize: 1000,
-      chunkSize: 1000
-    })
-
-    const progressReports: number[] = []
-    const blob = new Blob([new Uint8Array(1000)])
-
-    const res = await mockTransport.patchChunk(session.id, 0, blob, undefined, (bytes) => {
-      progressReports.push(bytes)
-    })
-
-    expect(res.offset).toBe(1000)
-    expect(progressReports.length).toBeGreaterThan(0)
-    expect(progressReports[progressReports.length - 1]).toBe(1000)
-    for (let i = 1; i < progressReports.length; i++) {
-      expect(progressReports[i]).toBeGreaterThanOrEqual(progressReports[i - 1])
-    }
-  })
-})
 
 describe('HttpTransport.patchChunk with XMLHttpRequest', () => {
   const origXHR = globalThis.XMLHttpRequest

@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { ApiError, api, isMock, type CreateShareReq } from '../../../../lib/api/client'
+import { ApiError, api, type CreateShareReq } from '../../../../lib/api/client'
 import { describeApiError } from '../../../../lib/api/error-text'
 import { createInitialAdmin, SetupValidationError } from '../../../../lib/api/setup'
 import type { SetupActions, SetupState } from './use-setup-state'
@@ -94,5 +94,5 @@ export function useSetupFlows(state: SetupState, actions: SetupActions) {
       actions.patch({ errorMessage: messageFor(error) })
     }
   }
-  return { setup, login, retryShare, continueAfterSetup, submit, isMock }
+  return { setup, login, retryShare, continueAfterSetup, submit }
 }

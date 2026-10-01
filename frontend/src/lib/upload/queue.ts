@@ -77,29 +77,6 @@ export function handle(evt: Evt): void {
     }
     case 'done':
       uploads.patch(evt.id, { sent: evt.size, status: 'done' })
-      // A no-op against the real server, whose own state is authoritative;
-      // the mock backend has no other way to learn the file exists.
-      api.registerUploadedEntry(evt.dest, {
-        name: evt.name,
-        path: `${evt.dest}/${evt.name}`.replace(/\/{2,}/g, '/').replace(/^\/+/, ''),
-        kind: 'file',
-        size: evt.size,
-        mtime_ns: evt.mtimeNs,
-        // Locally minted for a row this client just created, so never exact.
-        etag: Math.random().toString(16).slice(2),
-        etag_weak: true,
-        perms: {
-          read: true,
-          write: true,
-          create: false,
-          delete: true,
-          rename: true,
-          move: true,
-          share: true,
-          download: true
-        },
-        id: undefined
-      })
       // What makes the new file appear wherever it was uploaded to, in every
       // screen showing that directory.
       invalidateDirs([evt.dest])

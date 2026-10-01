@@ -1,8 +1,7 @@
 // Standalone client for the public share page.
-// Deliberately does NOT import ./client, ./mock, or ./http: those pull in
-// the full fs mock (100k-row generator) and admin-adjacent surface. The
-// public share bundle must stay small and must not
-// ship code the anonymous visitor has no use for.
+// Deliberately does NOT import ./client or ./http: those pull in the
+// authenticated and admin-adjacent surface. The public share bundle must stay
+// small and must not ship code the anonymous visitor has no use for.
 //
 // Talks to `GET/POST /s/{token}[...]`, not `/api/shares/{id}`. That second
 // path exists too, but it's the *owner's* authenticated CRUD surface for
@@ -63,65 +62,9 @@ export class SharePasswordRequiredError extends Error {}
  *  send a visitor looking in the wrong place. */
 export class ShareUnlockFailedError extends Error {}
 
-const IS_MOCK = import.meta.env.VITE_API_MOCK === '1'
 // Deliberately NOT `/api`: see header comment. `/s/...` is a top-level
 // route, same reasoning `vite.config.ts`'s proxy list keys off of.
 const ORIGIN = import.meta.env.VITE_API_BASE ?? ''
-
-/** The mock drop link's ceiling: `HttpConfig::body_limit_bytes`'s own
- *  default, so the mock refuses exactly what the server would. */
-const MOCK_DROP_LIMIT = 16 * 1024 * 1024
-/** Names the mock drop box already holds, so a repeat upload demonstrates the
- *  server's auto-rename instead of silently looking like an overwrite. */
-const mockDropped = new Set<string>()
-
-/** A two-level tree, so the mock exercises the subpath the real link now
- *  carries rather than only its root. */
-const MOCK_TREE: Record<string, ShareEntry[]> = {
-  '': [
-    { name: '2026-07', kind: 'dir', size: 0 },
-    { name: '휴가-2026-07-01.jpg', kind: 'file', size: 4_213_665 },
-    { name: '여행사진.png', kind: 'file', size: 2_112_004 }
-  ],
-  '2026-07': [
-    { name: 'beach', kind: 'dir', size: 0 },
-    { name: '휴가-2026-07-02.jpg', kind: 'file', size: 3_982_211 }
-  ],
-  '2026-07/beach': [{ name: 'IMG_0001.jpg', kind: 'file', size: 5_002_318 }]
-}
-
-async function mockGetShare(token: string, path: string): Promise<ShareInfo> {
-  await new Promise((r) => setTimeout(r, 150))
-  if (token === 'expired') throw new ShareNotFoundError('expired')
-  if (token === 'locked') throw new SharePasswordRequiredError(token)
-  if (token === 'drop') {
-    return {
-      name: 'Drop box',
-      isDir: true,
-      size: 0,
-      label: 'Drop box',
-      isDrop: true,
-      maxUploadBytes: MOCK_DROP_LIMIT,
-      canDownload: false,
-      entries: null,
-      path: ''
-    }
-  }
-  const entries = MOCK_TREE[path]
-  if (!entries) throw new SharePathGoneError(path)
-  const name = path === '' ? '공유된 사진' : (path.split('/').pop() ?? '')
-  return {
-    name,
-    isDir: true,
-    size: 0,
-    label: '공유된 사진',
-    isDrop: false,
-    maxUploadBytes: null,
-    canDownload: true,
-    entries,
-    path
-  }
-}
 
 interface RawLinkGetResponse {
   protected: boolean
@@ -136,7 +79,7 @@ interface RawLinkGetResponse {
   entries?: { name: string; kind: 'file' | 'dir'; size: number }[]
 }
 
-async function httpGetShare(token: string, path: string): Promise<ShareInfo> {
+export async function getShare(token: string, path = ''): Promise<ShareInfo> {
   // `/s/{token}` is both the page a visitor opens and the endpoint this
   // reads: the address in a share link has to be the one that works when
   // pasted into a browser. The Accept header is what tells the two apart, so
@@ -176,15 +119,6 @@ function shareQuery(path: string): string {
   return path ? `?path=${encodeURIComponent(path)}` : ''
 }
 
-export function getShare(token: string, path = ''): Promise<ShareInfo> {
-  return IS_MOCK ? mockGetShare(token, path) : httpGetShare(token, path)
-}
-
-async function mockUnlockShare(token: string, password: string): Promise<boolean> {
-  await new Promise((r) => setTimeout(r, 100))
-  return password === 'hunter2' || token !== 'locked'
-}
-
 /** `POST /s/{token}/auth`. On success the server sets an HttpOnly,
  *  `Path=/s/{token}`-scoped cookie (`Secure`, requires HTTPS, so this
  *  never succeeds over a plain-`http://` dev origin even with the right
@@ -200,7 +134,6 @@ async function mockUnlockShare(token: string, password: string): Promise<boolean
  *  one, so the page never reports "incorrect password" for something else.
  */
 export function unlockShare(token: string, password: string): Promise<boolean> {
-  if (IS_MOCK) return mockUnlockShare(token, password)
   return fetch(`${ORIGIN}/s/${encodeURIComponent(token)}/auth`, {
     method: 'POST',
     credentials: 'include',
@@ -240,25 +173,6 @@ export function shareZipUrl(token: string, path = ''): string {
   return `${ORIGIN}/s/${encodeURIComponent(token)}/zip${shareQuery(path)}`
 }
 
-/** Mirrors the core's own collision handling (`sc-core::links::unique_name`):
- *  `a.txt` becomes `a (1).txt`, never an overwrite. */
-function mockUniqueName(name: string): string {
-  if (!mockDropped.has(name)) return name
-  const dot = name.lastIndexOf('.')
-  const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, '']
-  let n = 1
-  while (mockDropped.has(`${stem} (${n})${ext}`)) n += 1
-  return `${stem} (${n})${ext}`
-}
-
-async function mockDropUpload(file: File): Promise<string> {
-  await new Promise((r) => setTimeout(r, 200))
-  if (file.size > MOCK_DROP_LIMIT) throw new ShareTooLargeError(file.name)
-  const stored = mockUniqueName(file.name)
-  mockDropped.add(stored)
-  return stored
-}
-
 /** `POST /s/{token}/drop?name=…`: upload one file through a file-drop link.
  *  Resolves to the name the file was **stored** under, which is not always
  *  `file.name`: the core never overwrites, so a collision comes back renamed
@@ -270,7 +184,6 @@ async function mockDropUpload(file: File): Promise<string> {
  *  is still admitted as a visitor. This bundle has no session surface to
  *  read a token from in any case. */
 export function dropUpload(token: string, file: File): Promise<string> {
-  if (IS_MOCK) return mockDropUpload(file)
   const url = `${ORIGIN}/s/${encodeURIComponent(token)}/drop?name=${encodeURIComponent(file.name)}`
   return fetch(url, { method: 'POST', credentials: 'include', body: file }).then(async (res) => {
     if (res.status === 413) throw new ShareTooLargeError(file.name)

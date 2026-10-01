@@ -458,9 +458,7 @@ async function tryDirectUpload(item: AddItem, id: string): Promise<boolean> {
     t: 'done',
     id,
     dest: item.dest,
-    name: item.relativePath ? item.relativePath.split('/').pop()! : item.file.name,
-    size: item.file.size,
-    mtimeNs: String(BigInt(item.file.lastModified) * 1_000_000n)
+    size: item.file.size
   })
   return true
 }
@@ -742,9 +740,7 @@ async function finalizeIfDone(f: FileState): Promise<boolean> {
       t: 'done',
       id: f.id,
       dest: f.dest,
-      name: f.relativePath ? f.relativePath.split('/').pop()! : f.file.name,
-      size: f.file.size,
-      mtimeNs: String(BigInt(f.file.lastModified) * 1_000_000n)
+      size: f.file.size
     })
     forgetChunkRetries(f.id)
     scheduler.removeFile(f.id)

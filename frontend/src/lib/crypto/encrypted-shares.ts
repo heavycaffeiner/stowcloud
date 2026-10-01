@@ -14,15 +14,14 @@
 // This module imports nothing from the api layer at runtime, and that is
 // deliberate rather than incidental: `api/http.ts` reads the label logic
 // below, so a runtime import back into `api/client.ts` would close a cycle
-// through it, and `client.ts`'s eager `export const api = isMock ? mockApi :
-// httpApi` evaluates before such a cycle resolves, capturing `api` as
-// undefined for the process's whole life. `client.ts` pushes its fetcher in
+// through it, and `client.ts`'s eager `export const api = httpApi` evaluates
+// before such a cycle resolves, capturing `api` as undefined for the
+// process's whole life. `client.ts` pushes its fetcher in
 // here instead, so the dependency runs one way. The type-only import below
 // is erased at compile time and closes nothing.
 import type { ShareEncryption } from '../api/types'
 
-/** The fetcher `client.ts` installs once it has picked the real or the mock
- *  backend. Unset until then, which is a programming error rather than a
+/** The fetcher `client.ts` installs when it loads. Unset until then, which is a programming error rather than a
  *  state to tolerate: see `encryptedShares`. */
 let source: (() => Promise<ShareEncryption[]>) | null = null
 
