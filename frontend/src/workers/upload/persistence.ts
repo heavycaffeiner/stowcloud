@@ -2,6 +2,7 @@
 // account/session context and destination, and carry source and ciphertext
 // digests so metadata collisions cannot resume the wrong byte stream.
 // Runs inside the upload Worker (IndexedDB is available there too).
+import type { AddItem } from './protocol'
 
 const DB_NAME = 'sc-uploads'
 const DB_VERSION = 3
@@ -64,6 +65,75 @@ export function resumeKey(name: string, size: number, lastModified: number, cont
     size,
     lastModified
   ])}`
+}
+
+function sourceDetails(item: AddItem): { name: string; size: number; lastModified: number } {
+  return {
+    name: item.sourceName ?? item.file.name,
+    size: item.sourceSize ?? item.file.size,
+    lastModified: item.sourceLastModified ?? item.file.lastModified
+  }
+}
+
+/** The resume key for an item, or undefined when the page sent too little to resume it safely. */
+export function resumeKeyOf(item: AddItem): string | undefined {
+  const context = resumeContextOf(item)
+  if (!context) return undefined
+  const source = sourceDetails(item)
+  return resumeKey(source.name, source.size, source.lastModified, context)
+}
+
+function resumeContextOf(item: AddItem): ResumeKeyContext | undefined {
+  if (!item.accountId || !item.sessionContext || !item.sourceIdentity || !item.ciphertextIdentity) return undefined
+  return {
+    accountId: item.accountId,
+    sessionContext: item.sessionContext,
+    dest: item.dest,
+    relativePath: item.relativePath
+  }
+}
+
+export function resumeRecordMatches(record: ResumeRecord, item: AddItem, key: string): boolean {
+  const source = sourceDetails(item)
+  return (
+    record.key === key &&
+    record.accountId === item.accountId &&
+    record.sessionContext === item.sessionContext &&
+    record.dest === item.dest &&
+    record.relativePath === (item.relativePath ?? '') &&
+    record.sourceName === source.name &&
+    record.sourceSize === source.size &&
+    record.sourceLastModified === source.lastModified &&
+    record.sourceIdentity === item.sourceIdentity &&
+    record.ciphertextIdentity === item.ciphertextIdentity
+  )
+}
+
+export function resumeRecordFor(
+  item: AddItem,
+  key: string,
+  sessionId: string,
+  chunkSize: number
+): ResumeRecord | undefined {
+  const context = resumeContextOf(item)
+  if (!context || !item.sourceIdentity || !item.ciphertextIdentity) return undefined
+  const source = sourceDetails(item)
+  return {
+    key,
+    sessionId,
+    accountId: context.accountId,
+    sessionContext: context.sessionContext,
+    dest: context.dest,
+    relativePath: context.relativePath ?? '',
+    sourceName: source.name,
+    sourceSize: source.size,
+    sourceLastModified: source.lastModified,
+    sourceIdentity: item.sourceIdentity,
+    ciphertextIdentity: item.ciphertextIdentity,
+    chunkSize,
+    totalSize: item.file.size,
+    updatedAt: Date.now()
+  }
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null

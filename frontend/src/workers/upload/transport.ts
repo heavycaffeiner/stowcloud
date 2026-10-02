@@ -6,11 +6,10 @@ import { classifyFailure, retryAfterMs, retryDelay } from '../../lib/upload/retr
 const BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api/v1'
 
 // The session cookie is `__Host-sc_sid` (auth), and state-changing requests
-// additionally need the `Sc-Csrf` header: the same requirement `api/http.ts`
+// additionally need the `Sc-Csrf` header: the same requirement `api/fetcher.ts`
 // satisfies for every other endpoint. This module runs inside the dedicated
-// upload Worker, a separate module realm from `http.ts`'s module-scoped
-// `csrfToken`, so the token is passed over `worker.ts`'s message channel and
-// lands here.
+// upload Worker, a separate module realm from the page's token, so the token
+// comes over the worker's message channel and lands here.
 let csrfToken = ''
 export function setCsrfToken(t: string): void {
   csrfToken = t
@@ -25,6 +24,15 @@ export class UploadHttpError extends Error {
     this.status = status
     this.retryAfterMs = retryAfterMs
   }
+}
+
+/** The HTTP status a failure carries, or 0 when it carries none. */
+export function statusOf(err: unknown): number {
+  if (err instanceof UploadHttpError) return err.status
+  if (typeof err === 'object' && err !== null && 'status' in err && typeof err.status === 'number') {
+    return err.status
+  }
+  return 0
 }
 
 /**

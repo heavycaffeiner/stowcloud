@@ -42,3 +42,8 @@ export type Evt =
   | { t: 'canceled'; id: string }
   /** The worker no longer retains the prepared File for this item. */
   | { t: 'released'; id: string }
+
+/** Sends one event to the page. Only the worker calls this; the page reads these types alone. */
+export function post(evt: Evt): void {
+  self.postMessage(evt)
+}
