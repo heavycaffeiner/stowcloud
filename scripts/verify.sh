@@ -267,11 +267,11 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   CONTENT_URL_HITS=$(
     grep -rn 'files/\(read\|thumbnail\)' frontend/src \
       --include='*.ts' --include='*.tsx' 2>/dev/null \
-      | grep -v '^frontend/src/features/files/api\.ts:' | no_comment || true
+      | grep -v '^frontend/src/features/file-browser/api\.ts:' | no_comment || true
   )
   # The API layer names them, and only with a claim.
   CONTENT_URL_HITS="$CONTENT_URL_HITS$(
-    grep -n 'files/\(read\|thumbnail\)' frontend/src/features/files/api.ts 2>/dev/null \
+    grep -n 'files/\(read\|thumbnail\)' frontend/src/features/file-browser/api.ts 2>/dev/null \
       | grep -v 'claim:' | no_comment || true
   )"
   grep_gate "no content URL composed from a path" "$CONTENT_URL_HITS" \
