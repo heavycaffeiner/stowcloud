@@ -27,6 +27,7 @@ export const encAnnounce = style({
 })
 
 export const pathRowButton = style({
+  flex: 'none',
   '@media': {
     [media.compact]: {
       alignSelf: 'flex-start'

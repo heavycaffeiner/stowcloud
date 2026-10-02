@@ -208,6 +208,7 @@ export const pathField = style({
 })
 
 export const pathButton = style({
+  flex: 'none',
   '@media': {
     [media.compact]: {
       width: '100%'
