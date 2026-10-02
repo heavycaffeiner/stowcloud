@@ -1,7 +1,7 @@
 // The preview's own read: a ZIP on an encrypted share, which the browser lists
 // because the server holds no key to do it.
 import { useQuery } from '@tanstack/react-query'
-import { listEncryptedArchive } from '../../lib/crypto/zip-listing'
+import { listEncryptedArchive } from './zip-listing'
 import type { ShareEncryption } from '../shares/api'
 import type { Entry } from '../files/api'
 

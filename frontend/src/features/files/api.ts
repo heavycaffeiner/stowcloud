@@ -25,8 +25,8 @@ import {
 import type { components } from '../../api/generated/schema'
 import { isWithin, parentOf } from '../../lib/path-utils'
 import { decryptDownload, encryptForUpload } from '../../lib/crypto/e2ee'
-import { encryptionForLabel, shareLabelOf } from '../../lib/crypto/encrypted-shares'
-import { keys, type Sort } from '../../lib/query/keys'
+import { encryptionForLabel, shareLabelOf } from '../shares/encrypted-shares'
+import { keys, type Sort } from '../../api/query-keys'
 import { permsFromNames, type Perms } from './perms'
 
 type Schemas = components['schemas']

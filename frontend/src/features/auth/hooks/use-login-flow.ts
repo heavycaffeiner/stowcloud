@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import { t } from '../../../lib/i18n'
+import { t } from '../../../i18n'
 import { startOidcLogin, useLogin, useLoginTotp, useOidcConfig } from '../api'
 import { ApiError } from '../../../api/fetcher'
 import { oidcErrorMessage } from '../oidc-error'

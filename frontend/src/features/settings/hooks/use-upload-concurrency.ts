@@ -1,6 +1,6 @@
 import { useState, useSyncExternalStore } from 'react'
 import { DEFAULT_CONCURRENCY } from '../../../lib/upload/chunk-planner'
-import { loadStoredConcurrency, subscribeUploadPreferences } from '../../../lib/upload/preferences'
+import { loadStoredConcurrency, subscribeUploadPreferences } from '../../uploads/preferences'
 import { setUploadConcurrency } from '../../uploads/queue'
 
 const PRESETS: readonly number[] = [1, 2, 4, 8]

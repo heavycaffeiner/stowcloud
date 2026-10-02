@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { describeApiError } from '../../../api/error-text'
-import { t } from '../../../lib/i18n'
+import { t } from '../../../i18n'
 import { baseName, normalizePath } from '../../../lib/path-utils'
 import { useFileCache } from '../../files/api'
-import { openShareManager } from '../../shares/ShareManageDialog'
+import { openShareManager } from '../../shares/components/ShareManageDialog'
 import type { OwnedShareLinkInfo, ShareLinkInfo } from '../api'
 import type { Perms } from '../../files/perms'
 

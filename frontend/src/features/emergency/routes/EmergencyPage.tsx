@@ -7,7 +7,7 @@ import { useI18n } from '../../../hooks/use-i18n'
 import { Button } from '../../../ui/Button'
 import { FormTextField } from '../../../ui/FormTextField'
 import { useDocumentTitle } from '../../../hooks/use-document-title'
-import { EmergencyEditor } from './EmergencyEditor'
+import { EmergencyEditor } from '../components/EmergencyEditor'
 import * as styles from './EmergencyPage.css'
 
 export function EmergencyPage() {

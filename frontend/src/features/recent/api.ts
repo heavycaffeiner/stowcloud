@@ -2,7 +2,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { client, decimal, oneOf, unwrap } from '../../api/fetcher'
 import type { components } from '../../api/generated/schema'
-import { keys } from '../../lib/query/keys'
+import { keys } from '../../api/query-keys'
 
 export type RecentOp = 'upload' | 'edit' | 'copy' | 'move' | 'restore'
 

@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { client, decimal, unwrap } from '../../api/fetcher'
 import type { components } from '../../api/generated/schema'
-import { keys } from '../../lib/query/keys'
+import { keys } from '../../api/query-keys'
 import type { BatchItemResult, BatchResult } from '../files/api'
 
 type Schemas = components['schemas']

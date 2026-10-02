@@ -11,7 +11,7 @@ type Catalogue = Record<string, string>
 const FOLDER = 'align'
 
 function catalogue(locale: string): Catalogue {
-  return JSON.parse(fs.readFileSync(new URL(`../../src/lib/i18n/${locale}.json`, import.meta.url), 'utf8'))
+  return JSON.parse(fs.readFileSync(new URL(`../../src/i18n/${locale}.json`, import.meta.url), 'utf8'))
 }
 
 async function settle(page: Page): Promise<void> {

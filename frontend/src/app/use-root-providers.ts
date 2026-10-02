@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
-import { localeTag } from '../lib/i18n'
-import type { Locale } from '../lib/i18n/state'
+import { localeTag } from '../i18n'
+import type { Locale } from '../i18n/state'
 import { applyMduiLocale } from '../ui/mdui-runtime'
 
 /** Keeps the document language and MDUI's translated components aligned. */

@@ -1,6 +1,6 @@
 import { addEntries, addFiles } from '../../uploads/queue'
-import { askConflictPolicy } from '../ConflictDialog'
-import type { PickedFile } from '../../../lib/upload/directory-picker'
+import { askConflictPolicy } from '../components/ConflictDialog'
+import type { PickedFile } from '../../uploads/directory-picker'
 import type { Entry } from '../api'
 
 function uniqueUploadName(name: string, taken: ReadonlySet<string>): string {

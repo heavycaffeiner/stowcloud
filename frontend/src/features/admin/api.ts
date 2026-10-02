@@ -12,8 +12,8 @@ import {
   pureToQuery,
   type LogFilters
 } from './logic/log-view'
-import { invalidateEncryptedShares } from '../../lib/crypto/encrypted-shares'
-import { keys, type GrantScope } from '../../lib/query/keys'
+import { invalidateEncryptedShares } from '../shares/encrypted-shares'
+import { keys, type GrantScope } from '../../api/query-keys'
 import { jobFromWire } from '../jobs/api'
 
 type Schemas = components['schemas']

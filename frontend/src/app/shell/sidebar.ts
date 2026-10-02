@@ -1,4 +1,4 @@
-import { persistedSignal } from '../../lib/persisted-signal'
+import { persistedSignal } from '../../hooks/persisted-signal'
 
 export const sidebar = persistedSignal<'expanded' | 'collapsed'>('sc.sidebar', ['expanded', 'collapsed'], 'expanded')
 

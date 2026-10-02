@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form'
 import { useNavigate } from '@tanstack/react-router'
 import { describeApiError } from '../../../api/error-text'
 import { ApiError } from '../../../api/fetcher'
-import { t } from '../../../lib/i18n'
+import { t } from '../../../i18n'
 import { useCreateShare } from '../../admin/api'
 import { type SetupFinding, SetupValidationError, useCreateInitialAdmin, useLoadSession, useLogin } from '../api'
 

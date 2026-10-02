@@ -6,11 +6,11 @@
 // what keeps them right across a re-login that rotates the session.
 import type { SessionInfo } from '../auth/api'
 import { invalidateDirs } from '../files/api'
-import { encryptionForLabel, shareLabelOf } from '../../lib/crypto/encrypted-shares'
+import { encryptionForLabel, shareLabelOf } from '../shares/encrypted-shares'
 import { encryptForUpload, FileTooLargeError, LockedSessionError } from '../../lib/crypto/e2ee'
 import { bytesToMb } from '../../lib/format/bytes'
-import { queryClient } from '../../lib/query/client'
-import { keys } from '../../lib/query/keys'
+import { queryClient } from '../../api/query-client'
+import { keys } from '../../api/query-keys'
 import { uploads } from './store'
 import { CHUNK_SIZE_MIN } from '../../lib/upload/chunk-planner'
 import {
@@ -19,7 +19,7 @@ import {
   storeChunkSize,
   storeConcurrency,
   subscribeUploadPreferences
-} from '../../lib/upload/preferences'
+} from './preferences'
 import type { AddItem, Cmd, Evt } from '../../lib/upload/protocol'
 
 let worker: Worker | null = null

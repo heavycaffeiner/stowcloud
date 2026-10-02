@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import { describeApiError } from '../../../api/error-text'
 import { useEventListener } from '../../../hooks/use-event-listener'
 import { openSessionValue, sealSessionValue } from '../../../lib/crypto/e2ee'
-import { t } from '../../../lib/i18n'
-import { askEditConflict } from '../routes/EditDialogs'
+import { t } from '../../../i18n'
+import { askEditConflict } from '../components/EditDialogs'
 import { type Entry, useFileCache, useFileContent, useWriteFile } from '../api'
 
 /** Unsaved text sealed under the session key while its share is locked. */

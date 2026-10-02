@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, type RefObject } from 'react'
 import { useCanGoBack, useNavigate, useRouter, useSearch } from '@tanstack/react-router'
-import type { FileViewHandle } from '../FileTable'
+import type { FileViewHandle } from '../components/FileTable'
 import type { Entry } from '../api'
 import { resetBrowsePage } from '../browse-page'
 import type { BrowseSearch } from '../browse-search'

@@ -3,7 +3,7 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { client, decimal, oneOf, unwrap, unwrapEmpty } from '../../api/fetcher'
 import type { components } from '../../api/generated/schema'
-import { keys } from '../../lib/query/keys'
+import { keys } from '../../api/query-keys'
 import type { BatchItemResult } from '../files/api'
 
 export type JobState = 'queued' | 'running' | 'paused' | 'retrying' | 'done' | 'error' | 'cancelled' | 'interrupted'

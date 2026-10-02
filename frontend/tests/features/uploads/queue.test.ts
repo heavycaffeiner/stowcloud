@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { type UploadItem, uploads, useUploadStore } from '../../../src/features/uploads/store'
 import { addFiles, handle } from '../../../src/features/uploads/queue'
 
-vi.mock('../../../src/lib/crypto/encrypted-shares', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../src/lib/crypto/encrypted-shares')>()
+vi.mock('../../../src/features/shares/encrypted-shares', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/features/shares/encrypted-shares')>()
   return {
     ...actual,
     encryptionForLabel: vi.fn(async () => ({ salt: 'test-salt' })),

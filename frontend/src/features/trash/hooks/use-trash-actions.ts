@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { describeApiError } from '../../../api/error-text'
-import { t, tp } from '../../../lib/i18n'
+import { t, tp } from '../../../i18n'
 import type { BatchItemResult } from '../../files/api'
 import { usePurgeTrash, useRestoreTrash } from '../api'
-import { confirmPurge } from '../routes/TrashView'
+import { confirmPurge } from '../components/TrashView'
 import type { TrashSelection } from './use-trash-selection'
 
 export interface TrashOperationResult {

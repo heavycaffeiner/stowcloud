@@ -377,8 +377,7 @@ try {
     // en.json alone failed on three of the four headings while the guide was
     // in fact naming all four. The check is that every client family is named,
     // and either translation of a heading proves that.
-    const catalogue = (name) =>
-      JSON.parse(readFileSync(new URL(`../src/lib/i18n/${name}.json`, import.meta.url), 'utf8'))
+    const catalogue = (name) => JSON.parse(readFileSync(new URL(`../src/i18n/${name}.json`, import.meta.url), 'utf8'))
     const locales = { en: catalogue('en'), ko: catalogue('ko') }
     const headingKeys = [
       'webdav.macos_heading',

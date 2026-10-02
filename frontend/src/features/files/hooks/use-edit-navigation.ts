@@ -1,5 +1,5 @@
 import { useBlocker } from '@tanstack/react-router'
-import { askLeaveEditor } from '../routes/EditDialogs'
+import { askLeaveEditor } from '../components/EditDialogs'
 
 export interface EditNavigationOptions {
   name: string

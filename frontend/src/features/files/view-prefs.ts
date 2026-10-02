@@ -1,7 +1,7 @@
 // How the file browser is laid out and ordered. Each choice outlives the page:
 // a toggle that resets on reload is one the user has to re-set on reload.
 import { batch } from '@preact/signals-react'
-import { persistedSignal } from '../../lib/persisted-signal'
+import { persistedSignal } from '../../hooks/persisted-signal'
 import type { Order, SortKey } from './api'
 
 export type ViewMode = 'list' | 'grid'

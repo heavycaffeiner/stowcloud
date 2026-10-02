@@ -15,7 +15,7 @@
 // by substring, so a one-word copy edit on the server silently dropped it to
 // a generic fallback.
 import { ApiError } from './fetcher'
-import { t } from '../lib/i18n'
+import { t } from '../i18n'
 
 /** Every `reason_key` the server can send, as literals so `i18n-check.mjs`
  *  sees them: they reach `t()` through a variable, and a key nothing names

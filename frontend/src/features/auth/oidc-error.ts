@@ -1,6 +1,6 @@
 // The sentence for a failed single sign-on. The callback redirects with a
 // symbolic code in `?oidc_error=` because a person arrives there in a browser.
-import { t } from '../../lib/i18n'
+import { t } from '../../i18n'
 
 /** An unknown code gets the generic failure: the value comes from a query
  *  parameter anybody can write, so showing it verbatim would let an attacker

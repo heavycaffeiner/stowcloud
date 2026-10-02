@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { joinPath } from '../../../lib/path-utils'
-import { useShareUnlocked } from '../../../lib/crypto/keyring'
+import { useShareUnlocked } from '../../shares/e2ee-store'
 import { useSelectionStore } from '../selection'
 import { sortKey, sortOrder } from '../view-prefs'
 import type { BrowseFilterDate, BrowseFilterType } from '../browse-search'

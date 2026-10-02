@@ -14,9 +14,9 @@ import {
   useMoveFiles,
   useWriteFile
 } from '../../../src/features/files/api'
-import { invalidateEncryptedShares } from '../../../src/lib/crypto/encrypted-shares'
+import { invalidateEncryptedShares } from '../../../src/features/shares/encrypted-shares'
 import { batchErrorKey, describeApiError } from '../../../src/api/error-text'
-import { t } from '../../../src/lib/i18n'
+import { t } from '../../../src/i18n'
 import { createTestQueryClient } from '../../../src/test/test-utils'
 
 // Every case here is about a plain share. The set is empty rather than

@@ -1,4 +1,4 @@
-// CI gate for the catalogues in src/lib/i18n.
+// CI gate for the catalogues in src/i18n.
 // Walk every TypeScript call site and fail the build on any drift:
 //
 //   * a key missing from a catalogue: that language would render the raw key;
@@ -18,12 +18,11 @@ import { dirname, join, relative } from 'node:path'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const SRC = join(root, 'src')
-const I18N = join(SRC, 'lib', 'i18n')
+const I18N = join(SRC, 'i18n')
 const LOCALES = ['ko', 'en']
 
-/** Fixtures, tests, API samples, and catalogue implementation carry no UI copy. */
-const SKIP =
-  /(?:^|[\\/])(?:__tests__[\\/]|.*\.(?:test|spec)\.(?:ts|tsx)$|mock(?:-seed)?\.ts$|api[\\/]share\.ts$|lib[\\/]i18n(?:[\\/]|$))/
+/** Tests and the catalogue implementation carry no UI copy. */
+const SKIP = /(?:^|[\\/])(?:__tests__[\\/]|.*\.(?:test|spec)\.(?:ts|tsx)$|src[\\/]i18n(?:[\\/]|$))/
 
 /**
  * @param {string} dir

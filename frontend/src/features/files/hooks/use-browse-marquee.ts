@@ -2,7 +2,7 @@ import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, 
 import { useRef, useState } from 'react'
 import { selection, useSelectionStore } from '../selection'
 import { autoScrollStep, movedFar, rectBetween } from '../logic/marquee'
-import type { FileViewHandle } from '../FileTable'
+import type { FileViewHandle } from '../components/FileTable'
 
 /** The rubber band on screen, in viewport coordinates. */
 export interface MarqueeBox {

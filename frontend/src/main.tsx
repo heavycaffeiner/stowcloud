@@ -6,7 +6,7 @@ import { RouterProvider } from '@tanstack/react-router'
 import { RootProviders } from './app/RootProviders'
 import { router } from './app/router'
 import { theme } from './features/settings/theme'
-import { currentLocale, initLocale } from './lib/i18n/state'
+import { currentLocale, initLocale } from './i18n/state'
 import { applyMduiTheme, initMdui } from './ui/mdui-runtime'
 import '@fontsource-variable/google-sans-flex/opsz.css'
 

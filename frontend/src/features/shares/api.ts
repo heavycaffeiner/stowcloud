@@ -2,7 +2,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { client, unwrap } from '../../api/fetcher'
 import type { components } from '../../api/generated/schema'
-import { keys } from '../../lib/query/keys'
+import { keys } from '../../api/query-keys'
 
 /** One share's encryption parameters. The server holds no key: `salt` is the
  *  string the user types into rclone as `password2`, and `verifier` is base64.

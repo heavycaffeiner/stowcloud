@@ -1,7 +1,7 @@
 import { useNavigate } from '@tanstack/react-router'
 import { describeApiError } from '../../../api/error-text'
 import { formatBytes } from '../../../lib/format/bytes'
-import { formatDateNs } from '../../../lib/i18n'
+import { formatDateNs } from '../../../i18n'
 import { useI18n } from '../../../hooks/use-i18n'
 import { normalizePath, parentOf } from '../../../lib/path-utils'
 import { useDocumentTitle } from '../../../hooks/use-document-title'
