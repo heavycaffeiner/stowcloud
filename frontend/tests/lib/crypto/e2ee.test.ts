@@ -180,8 +180,7 @@ describe('encryptForUpload + decryptDownload', () => {
 
   it('refuses to encrypt without an unlocked session', async () => {
     expect(isUnlocked()).toBe(false)
-    await expect(encryptForUpload(new Uint8Array([1, 2, 3]), generateSalt()))
-      .rejects.toThrow(LockedSessionError)
+    await expect(encryptForUpload(new Uint8Array([1, 2, 3]), generateSalt())).rejects.toThrow(LockedSessionError)
   })
 
   it('rejects a real Blob read when the share is locked before it completes', async () => {
@@ -212,8 +211,7 @@ describe('encryptForUpload + decryptDownload', () => {
 
   it('refuses to decrypt without an unlocked session, distinctly from a corrupt file', async () => {
     expect(isUnlocked()).toBe(false)
-    await expect(decryptDownload(new Uint8Array(40), generateSalt()))
-      .rejects.toThrow(LockedSessionError)
+    await expect(decryptDownload(new Uint8Array(40), generateSalt())).rejects.toThrow(LockedSessionError)
   })
 
   // The silent data-loss case this binding exists for: with one share
@@ -226,10 +224,8 @@ describe('encryptForUpload + decryptDownload', () => {
     expect(other).not.toBe(salt)
     expect(isUnlocked(salt)).toBe(true)
     expect(isUnlocked(other)).toBe(false)
-    await expect(encryptForUpload(new Uint8Array([1, 2, 3]), other))
-      .rejects.toThrow(LockedSessionError)
-    await expect(decryptDownload(new Uint8Array(40), other))
-      .rejects.toThrow(LockedSessionError)
+    await expect(encryptForUpload(new Uint8Array([1, 2, 3]), other)).rejects.toThrow(LockedSessionError)
+    await expect(decryptDownload(new Uint8Array(40), other)).rejects.toThrow(LockedSessionError)
   })
 
   it('fails a tampered ciphertext rather than returning corrupted plaintext', async () => {
@@ -402,7 +398,10 @@ describe('ciphertextSpanForRange', () => {
   })
 
   it('a mid-file range entirely inside one later block fetches only that block', () => {
-    expect(ciphertextSpanForRange(70000, 70100, PLAINTEXT_SIZE)).toEqual({ offset: 32 + (65536 + 16), length: 65536 + 16 })
+    expect(ciphertextSpanForRange(70000, 70100, PLAINTEXT_SIZE)).toEqual({
+      offset: 32 + (65536 + 16),
+      length: 65536 + 16
+    })
   })
 
   it('a range spanning a block boundary fetches both blocks it touches', () => {
@@ -432,7 +431,12 @@ describe('ciphertextSpanForRange', () => {
 describe('decryptPlaintextRange', () => {
   const PLAINTEXT_SIZE = 65536 * 2 + 100
 
-  async function encryptedFixture(): Promise<{ salt: string; original: Uint8Array; ciphertext: Uint8Array; nonce0: Uint8Array }> {
+  async function encryptedFixture(): Promise<{
+    salt: string
+    original: Uint8Array
+    ciphertext: Uint8Array
+    nonce0: Uint8Array
+  }> {
     const { salt } = await unlockedFixture()
     const original = new Uint8Array(PLAINTEXT_SIZE)
     for (let i = 0; i < original.length; i++) original[i] = i & 0xff

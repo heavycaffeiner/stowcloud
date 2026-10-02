@@ -1,0 +1,168 @@
+// Builds only on Linux, which is where the sandbox policy names and the SMB
+// renderer this package calls into exist.
+//go:build linux
+
+// The checker probes a proposed settings change by trying it, rather than by
+// describing it.
+//
+// Declared ranges answer only what a number may be. They cannot answer whether
+// a directory can be written, whether the renderer will accept a workgroup, or
+// whether a new host list still admits the administrator sending it. Each of
+// those needs the value tried against the running system, which is what the
+// probes here do.
+//
+// The settings screen, the first-run form and the emergency editor all save the
+// same document. Sharing one checker is what stops them accepting different
+// things.
+//
+// Nothing here chooses a transport. A finding carries a reason key and its
+// arguments, the presentation layer maps the refusal to a status exactly once
+// in its own error table, and nothing here imports presentation.
+
+package config
+
+// Finding is a single observation a probe made about a proposed value.
+type Finding struct {
+	// Section and Field name where to put the message. Field is empty when the
+	// finding is about the section as a whole.
+	Section string
+	Field   string
+
+	// ReasonKey is the i18n key the client renders, and Args are its
+	// substitutions in pairs of name and value. The rendering contract is the
+	// client's; this package only says which key and with what.
+	ReasonKey string
+	Args      []string
+
+	// Blocking refuses the save. Non-blocking findings are stored and shown:
+	// an observation worth surfacing is not automatically an objection.
+	Blocking bool
+}
+
+// Arg reads one argument by name, which is what a renderer and a test both
+// want rather than counting positions.
+func (f Finding) Arg(name string) (string, bool) {
+	for i := 0; i+1 < len(f.Args); i += 2 {
+		if f.Args[i] == name {
+			return f.Args[i+1], true
+		}
+	}
+	return "", false
+}
+
+// Blocked reports whether any finding in the list is blocking.
+func Blocked(findings []Finding) bool {
+	for _, f := range findings {
+		if f.Blocking {
+			return true
+		}
+	}
+	return false
+}
+
+// Blocking is the subset that refuses.
+func Blocking(findings []Finding) []Finding {
+	out := make([]Finding, 0, len(findings))
+	for _, f := range findings {
+		if f.Blocking {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// Advisory is the non-blocking subset, which is what a screen displays
+// alongside a save that succeeded.
+func Advisory(findings []Finding) []Finding {
+	out := make([]Finding, 0, len(findings))
+	for _, f := range findings {
+		if !f.Blocking {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// Lockout selects how a host list that drops the caller's own host is treated.
+//
+// The correct answer differs per surface, so the caller supplies it instead of
+// this package assuming one.
+type Lockout int
+
+const (
+	// LockoutBlocks refuses the save, which is what the settings screen wants.
+	// There the guard is already live, so the change would take hold before any
+	// correction could be submitted, and the correction is what gets rejected.
+	LockoutBlocks Lockout = iota
+	// LockoutWarns stores the change and surfaces the observation. It suits the
+	// surfaces the guard does not cover. On the first-run form, reaching the
+	// server by IP while entering the eventual DNS name is ordinary setup, and
+	// is indistinguishable from an error. In the emergency editor the whole
+	// purpose may be to repair a list that already excluded the operator, so a
+	// refusal keyed on the current host would block the repair itself.
+	LockoutWarns
+)
+
+// Input carries a proposed change together with the context the probes need.
+type Input struct {
+	Section string
+	Body    map[string]any
+
+	// SelfHost is the portless host the request arrived on, used by the lockout
+	// probe to test the proposed list. Leave empty to skip that probe.
+	SelfHost string
+
+	// DataDir supplies the base for the default homes root when none is given.
+	DataDir string
+	// SMBConfigDir is the sidecar's mounted directory. Writability is probed
+	// only while enabling SMB. Leave empty to skip that probe.
+	SMBConfigDir string
+
+	// HasSecret reports whether the oidc client secret is already stored,
+	// for the section that owns one. It is a fact about the store, not the
+	// body: extractSecrets removes client_secret from Body before this ever
+	// runs, so checkOIDC could not otherwise tell "a secret was supplied on
+	// this save" from "no secret was ever stored" without it.
+	HasSecret bool
+
+	Lockout Lockout
+}
+
+// blocking and advisory build findings, so a caller reads the intent rather
+// than a bool at the end of an argument list.
+func blocking(section, field, key string, args ...string) Finding {
+	return Finding{Section: section, Field: field, ReasonKey: key, Args: args, Blocking: true}
+}
+
+func advisory(section, field, key string, args ...string) Finding {
+	return Finding{Section: section, Field: field, ReasonKey: key, Args: args}
+}
+
+// Sections lists the section names a settings document may contain.
+//
+// An allow-list rather than a pass-through, because the store keeps whatever
+// name it is given: a client asking for a section that does not exist would
+// create one, and the screen would then display a setting no code reads.
+//
+// Two of these are here because the settings snapshot offers a control for
+// them. A field the interface presents as editable and this list omits is a
+// save that answers "no such section" with nothing on screen explaining why:
+// "rate" carries the request bounds, and "security" carries the sandbox
+// policy, which has no configuration file to fall back on.
+func Sections() []string {
+	return []string{
+		"network", "db", "symlink-policy", "homes", "smb",
+		"search", "archive", "watch", "paths", "oidc",
+		"rate", "security", "thumbnail",
+	}
+}
+
+// Known reports whether section is one this build accepts.
+func Known(section string) bool {
+	for _, s := range Sections() {
+		if s == section {
+			return true
+		}
+	}
+	return false
+}

@@ -5,7 +5,13 @@
 // environment does not provide, so they are exercised by the manual browser
 // run recorded in the delivery notes instead of here.
 import { describe, expect, it } from 'vitest'
-import { contentDisposition, handleDownload, mediaSuccessResponseInit, parseRangeHeader, receiveWorkerMessage } from '../../src/workers/service-worker'
+import {
+  contentDisposition,
+  handleDownload,
+  mediaSuccessResponseInit,
+  parseRangeHeader,
+  receiveWorkerMessage
+} from '../../src/workers/service-worker'
 
 describe('contentDisposition', () => {
   it('carries an ASCII fallback and the UTF-8 percent-encoded real name, in that order', () => {
@@ -126,7 +132,10 @@ describe('the one-shot download claim', () => {
   }
 
   it('answers the transferred stream with the right headers, once', async () => {
-    receiveWorkerMessage({ kind: 'sc-download', id: 'abc', filename: 'a.zip', size: 3, stream: streamOf([1, 2, 3]) }, 'client-a')
+    receiveWorkerMessage(
+      { kind: 'sc-download', id: 'abc', filename: 'a.zip', size: 3, stream: streamOf([1, 2, 3]) },
+      'client-a'
+    )
 
     const res = handleDownload('abc', 'client-a')
     expect(res.status).toBe(200)
@@ -151,7 +160,10 @@ describe('the one-shot download claim', () => {
   })
 
   it('omits Content-Length when no size was given, since a zip stream has none to report', () => {
-    receiveWorkerMessage({ kind: 'sc-download', id: 'no-size', filename: 'archive.zip', stream: streamOf([1]) }, 'client-a')
+    receiveWorkerMessage(
+      { kind: 'sc-download', id: 'no-size', filename: 'archive.zip', stream: streamOf([1]) },
+      'client-a'
+    )
     const res = handleDownload('no-size', 'client-a')
     expect(res.headers.has('Content-Length')).toBe(false)
   })

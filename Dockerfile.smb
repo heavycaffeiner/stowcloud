@@ -42,7 +42,7 @@ ARG GO_IMAGE=golang:1.27.1-bookworm
 #
 # They must agree. The core server renders an account file naming this gid and
 # the agent refuses a sync with "no group exists for N" when nothing here
-# resolves it. backend/internal/feature/smb/publish.go's defaultServiceGID is the third
+# resolves it. backend/internal/smb/publish/publish.go's defaultServiceGID is the third
 # copy of this number.
 ARG PUID=1000
 ARG PGID=1000

@@ -1,0 +1,6982 @@
+{
+  "components": {
+    "schemas": {
+      "AccessRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "current": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "opt_out": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "AdminCreateUserRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "display": {
+            "type": "string"
+          },
+          "login": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AdminMemberRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "user": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AdminSetupFSRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AdminUpdateUserRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "clear_quota": {
+            "type": "boolean"
+          },
+          "disabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "quota_bytes": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "AggregateView": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "type": "string"
+          },
+          "etag": {
+            "type": "string"
+          },
+          "size": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "etag",
+          "size",
+          "count"
+        ],
+        "type": "object"
+      },
+      "AppPasswordCreatedView": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "token"
+        ],
+        "type": "object"
+      },
+      "AppPasswordRequestTransport": {
+        "additionalProperties": false,
+        "properties": {
+          "current": {
+            "type": "string"
+          },
+          "expires_in_days": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/AppPasswordScopeTransport"
+          }
+        },
+        "type": "object"
+      },
+      "AppPasswordScopeTransport": {
+        "additionalProperties": false,
+        "properties": {
+          "perms": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "shares": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "AppPasswordView": {
+        "additionalProperties": false,
+        "properties": {
+          "created_ns": {
+            "type": "string"
+          },
+          "expires_ns": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "last_used_ns": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "perms": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "shares": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "perms",
+          "shares",
+          "created_ns"
+        ],
+        "type": "object"
+      },
+      "ApplyOutcomeView": {
+        "additionalProperties": false,
+        "properties": {
+          "active_jobs": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "active_uploads": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "applied": {
+            "type": "boolean"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/FindingView"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "restart_required": {
+            "type": "boolean"
+          },
+          "stored": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "stored",
+          "applied",
+          "restart_required",
+          "findings"
+        ],
+        "type": "object"
+      },
+      "ArchiveEntryView": {
+        "additionalProperties": false,
+        "properties": {
+          "compressed": {
+            "type": "string"
+          },
+          "is_dir": {
+            "type": "boolean"
+          },
+          "mtime_ns": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "is_dir",
+          "size",
+          "compressed"
+        ],
+        "type": "object"
+      },
+      "ArchiveListingView": {
+        "additionalProperties": false,
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/ArchiveEntryView"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "skipped": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "total_uncompressed": {
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "entries",
+          "total_uncompressed"
+        ],
+        "type": "object"
+      },
+      "ArchiveRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "AuditPageView": {
+        "additionalProperties": false,
+        "properties": {
+          "next": {
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/AuditRowView"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "type": "object"
+      },
+      "AuditRowView": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "actor_name": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "event": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ip": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "target": {
+            "type": "string"
+          },
+          "ts_ns": {
+            "type": "string"
+          },
+          "ua": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ts_ns",
+          "event",
+          "ok"
+        ],
+        "type": "object"
+      },
+      "BatchBody": {
+        "additionalProperties": false,
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "BatchOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/TrashBatchItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "results"
+        ],
+        "type": "object"
+      },
+      "CopyStartView": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "skipped": {
+            "type": "boolean"
+          },
+          "started": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "started",
+          "skipped"
+        ],
+        "type": "object"
+      },
+      "CreateLinkRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_ns": {},
+          "label": {
+            "type": "string"
+          },
+          "max_downloads": {},
+          "note": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "perms": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "CreateShareRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "backend": {
+            "type": "string"
+          },
+          "host": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "s3": {
+            "$ref": "#/components/schemas/ShareS3Request"
+          },
+          "veracrypt": {
+            "$ref": "#/components/schemas/ShareVeracryptRequest"
+          }
+        },
+        "type": "object"
+      },
+      "DirectCompletePart": {
+        "additionalProperties": false,
+        "properties": {
+          "checksum": {
+            "type": "string"
+          },
+          "etag": {
+            "type": "string"
+          },
+          "part_number": {},
+          "size": {}
+        },
+        "type": "object"
+      },
+      "DirectCompleteRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "parts": {
+            "items": {
+              "$ref": "#/components/schemas/DirectCompletePart"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "DirectPartRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "checksum": {
+            "type": "string"
+          },
+          "part_number": {},
+          "size": {}
+        },
+        "type": "object"
+      },
+      "DirectPartURLView": {
+        "additionalProperties": false,
+        "properties": {
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "part_number": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "part_number",
+          "url",
+          "headers"
+        ],
+        "type": "object"
+      },
+      "DirectUploadPartView": {
+        "additionalProperties": false,
+        "properties": {
+          "checksum": {
+            "type": "string"
+          },
+          "etag": {
+            "type": "string"
+          },
+          "part_number": {
+            "type": "string"
+          },
+          "size": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "part_number",
+          "size"
+        ],
+        "type": "object"
+      },
+      "DirectUploadRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "checksum": {
+            "type": "string"
+          },
+          "if_match": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "size": {}
+        },
+        "type": "object"
+      },
+      "DirectUploadView": {
+        "additionalProperties": false,
+        "properties": {
+          "capability": {
+            "type": "boolean"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "part_size": {
+            "type": "string"
+          },
+          "parts": {
+            "items": {
+              "$ref": "#/components/schemas/DirectUploadPartView"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "size": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "state",
+          "part_size",
+          "size",
+          "expires_at",
+          "capability"
+        ],
+        "type": "object"
+      },
+      "EnableRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "salt": {
+            "type": "string"
+          },
+          "scheme": {
+            "type": "string"
+          },
+          "verifier": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "EnrollRequestTransport": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "current": {
+            "type": "string"
+          },
+          "secret": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "EntryView": {
+        "additionalProperties": false,
+        "properties": {
+          "btime_ns": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "etag": {
+            "type": "string"
+          },
+          "etag_weak": {
+            "type": "boolean"
+          },
+          "is_dir": {
+            "type": "boolean"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "mtime_ns": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "perms": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "preview": {
+            "$ref": "#/components/schemas/PreviewView"
+          },
+          "size": {
+            "type": "string"
+          },
+          "thumb": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "path",
+          "kind",
+          "is_dir",
+          "size",
+          "mtime_ns",
+          "etag",
+          "etag_weak",
+          "perms"
+        ],
+        "type": "object"
+      },
+      "ErrorDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "location": {
+            "description": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+            "type": "string"
+          },
+          "message": {
+            "description": "Error message text",
+            "type": "string"
+          },
+          "value": {
+            "description": "The value at the given location"
+          }
+        },
+        "type": "object"
+      },
+      "ErrorModel": {
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "description": "A human-readable explanation specific to this occurrence of the problem.",
+            "examples": [
+              "Property foo is required but is missing."
+            ],
+            "type": "string"
+          },
+          "errors": {
+            "description": "Optional list of individual error details",
+            "items": {
+              "$ref": "#/components/schemas/ErrorDetail"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "instance": {
+            "description": "A URI reference that identifies the specific occurrence of the problem.",
+            "examples": [
+              "https://example.com/error-log/abc123"
+            ],
+            "format": "uri",
+            "type": "string"
+          },
+          "status": {
+            "description": "HTTP status code",
+            "examples": [
+              400
+            ],
+            "format": "int64",
+            "type": "integer"
+          },
+          "title": {
+            "description": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+            "examples": [
+              "Bad Request"
+            ],
+            "type": "string"
+          },
+          "type": {
+            "default": "about:blank",
+            "description": "A URI reference to human-readable documentation for the error.",
+            "examples": [
+              "https://example.com/errors/example"
+            ],
+            "format": "uri",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "FeaturesView": {
+        "additionalProperties": false,
+        "properties": {
+          "direct_uploads": {
+            "type": "boolean"
+          },
+          "preview": {
+            "type": "boolean"
+          },
+          "search": {
+            "type": "string"
+          },
+          "shares": {
+            "type": "boolean"
+          },
+          "smb": {
+            "type": "boolean"
+          },
+          "trash": {
+            "type": "boolean"
+          },
+          "webdav": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "webdav",
+          "smb",
+          "preview",
+          "trash",
+          "shares",
+          "search",
+          "direct_uploads"
+        ],
+        "type": "object"
+      },
+      "Field": {
+        "additionalProperties": false,
+        "properties": {
+          "empty_means_key": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "range": {
+            "$ref": "#/components/schemas/Range"
+          },
+          "restart_required": {
+            "type": "boolean"
+          },
+          "source": {
+            "type": "string"
+          },
+          "value": {}
+        },
+        "required": [
+          "key",
+          "value",
+          "range",
+          "source",
+          "restart_required"
+        ],
+        "type": "object"
+      },
+      "FindingView": {
+        "additionalProperties": false,
+        "properties": {
+          "args": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "blocking": {
+            "type": "boolean"
+          },
+          "field": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "section": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "section",
+          "reason",
+          "blocking"
+        ],
+        "type": "object"
+      },
+      "GrantPrincipalView": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "id"
+        ],
+        "type": "object"
+      },
+      "GrantRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "allow": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "deny": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "group": {
+            "type": "string"
+          },
+          "inherit": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
+          },
+          "share": {
+            "type": "string"
+          },
+          "subpath": {
+            "type": "string"
+          },
+          "user": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "GrantView": {
+        "additionalProperties": false,
+        "properties": {
+          "allow": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "created_ns": {
+            "type": "string"
+          },
+          "deny": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "group": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "inherit": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
+          },
+          "principal": {
+            "$ref": "#/components/schemas/GrantPrincipalView"
+          },
+          "share": {
+            "type": "string"
+          },
+          "subpath": {
+            "type": "string"
+          },
+          "user": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "share",
+          "allow",
+          "deny",
+          "inherit",
+          "created_ns"
+        ],
+        "type": "object"
+      },
+      "GroupRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "GroupView": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "members": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "members"
+        ],
+        "type": "object"
+      },
+      "Health": {
+        "additionalProperties": false,
+        "properties": {
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "revision": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "reasons"
+        ],
+        "type": "object"
+      },
+      "HopView": {
+        "additionalProperties": false,
+        "properties": {
+          "client": {
+            "type": "string"
+          },
+          "forwarded_seen": {
+            "type": "boolean"
+          },
+          "peer": {
+            "type": "string"
+          },
+          "peer_trusted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "peer_trusted",
+          "client",
+          "forwarded_seen"
+        ],
+        "type": "object"
+      },
+      "HostEntryView": {
+        "additionalProperties": false,
+        "properties": {
+          "is_dir": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "path",
+          "is_dir"
+        ],
+        "type": "object"
+      },
+      "HostListingView": {
+        "additionalProperties": false,
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/HostEntryView"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "parent": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "parent",
+          "entries",
+          "truncated"
+        ],
+        "type": "object"
+      },
+      "IdentityView": {
+        "additionalProperties": false,
+        "properties": {
+          "admin": {
+            "type": "boolean"
+          },
+          "csrf": {
+            "type": "string"
+          },
+          "display": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "login": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "login",
+          "admin",
+          "csrf"
+        ],
+        "type": "object"
+      },
+      "IndexEstimateView": {
+        "additionalProperties": false,
+        "properties": {
+          "build_rate_measured": {
+            "type": "boolean"
+          },
+          "build_secs": {
+            "format": "double",
+            "type": "number"
+          },
+          "confidence": {
+            "type": "string"
+          },
+          "files": {
+            "type": "string"
+          },
+          "formula": {
+            "type": "string"
+          },
+          "index_bytes": {
+            "type": "string"
+          },
+          "name_bytes": {
+            "type": "string"
+          },
+          "partial": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "index_bytes",
+          "confidence",
+          "build_secs",
+          "build_rate_measured",
+          "formula",
+          "files",
+          "name_bytes",
+          "partial"
+        ],
+        "type": "object"
+      },
+      "IndexStatusView": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "entries": {
+            "type": "string"
+          },
+          "incomplete": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled",
+          "entries",
+          "incomplete"
+        ],
+        "type": "object"
+      },
+      "LimitsView": {
+        "additionalProperties": false,
+        "properties": {
+          "chunk_min": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "chunk_size": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "max_file_size": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "parallel": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "chunk_size",
+          "chunk_min",
+          "max_file_size",
+          "parallel"
+        ],
+        "type": "object"
+      },
+      "LinkDeleteInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "current": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LinkStartRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "current": {
+            "type": "string"
+          },
+          "return_to": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LinkView": {
+        "additionalProperties": false,
+        "properties": {
+          "created_ns": {
+            "type": "string"
+          },
+          "downloads": {
+            "type": "string"
+          },
+          "drop": {
+            "type": "boolean"
+          },
+          "exhausted": {
+            "type": "boolean"
+          },
+          "expired": {
+            "type": "boolean"
+          },
+          "expires_ns": {
+            "type": "string"
+          },
+          "has_password": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "max_downloads": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "perms": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "share": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "path",
+          "share",
+          "perms",
+          "drop",
+          "has_password",
+          "created_ns",
+          "downloads",
+          "expired",
+          "exhausted"
+        ],
+        "type": "object"
+      },
+      "ListView": {
+        "additionalProperties": false,
+        "properties": {
+          "shares": {
+            "items": {
+              "$ref": "#/components/schemas/ShareEncryptionView"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "shares"
+        ],
+        "type": "object"
+      },
+      "LogPageView": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "type": "string"
+          },
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/LogRecordView"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "segments": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "stored_bytes": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "records",
+          "cursor",
+          "stored_bytes",
+          "segments"
+        ],
+        "type": "object"
+      },
+      "LogRecordView": {
+        "additionalProperties": false,
+        "properties": {
+          "attrs": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "level": {
+            "type": "string"
+          },
+          "msg": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "subsystem": {
+            "type": "string"
+          },
+          "ts_ns": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ts_ns",
+          "level",
+          "msg",
+          "subsystem",
+          "request_id",
+          "attrs"
+        ],
+        "type": "object"
+      },
+      "LoginRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "login": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LoginResult": {
+        "additionalProperties": false,
+        "properties": {
+          "admin": {
+            "type": "boolean"
+          },
+          "challenge": {
+            "type": "string"
+          },
+          "csrf": {
+            "type": "string"
+          },
+          "display": {
+            "type": "string"
+          },
+          "expires_in_seconds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "login": {
+            "type": "string"
+          },
+          "required": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LogoutView": {
+        "additionalProperties": false,
+        "properties": {
+          "end_session_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "end_session_url"
+        ],
+        "type": "object"
+      },
+      "LogsTimelineBucketView": {
+        "additionalProperties": false,
+        "properties": {
+          "audit": {
+            "additionalProperties": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "object"
+          },
+          "server": {
+            "additionalProperties": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "object"
+          },
+          "start_ns": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_ns",
+          "server",
+          "audit"
+        ],
+        "type": "object"
+      },
+      "LogsTimelineView": {
+        "additionalProperties": false,
+        "properties": {
+          "bucket_ns": {
+            "type": "string"
+          },
+          "buckets": {
+            "items": {
+              "$ref": "#/components/schemas/LogsTimelineBucketView"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "bucket_ns",
+          "buckets",
+          "truncated"
+        ],
+        "type": "object"
+      },
+      "MintedLinkView": {
+        "additionalProperties": false,
+        "properties": {
+          "link": {
+            "$ref": "#/components/schemas/LinkView"
+          },
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "link",
+          "token"
+        ],
+        "type": "object"
+      },
+      "MoveView": {
+        "additionalProperties": false,
+        "properties": {
+          "copied": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          },
+          "skipped": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "copied",
+          "skipped"
+        ],
+        "type": "object"
+      },
+      "OIDCConfigView": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "OIDCEndpointsView": {
+        "additionalProperties": false,
+        "properties": {
+          "post_logout_redirect_uris": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "redirect_uris": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "redirect_uris",
+          "post_logout_redirect_uris"
+        ],
+        "type": "object"
+      },
+      "OIDCLinkView": {
+        "additionalProperties": false,
+        "properties": {
+          "issuer": {
+            "type": "string"
+          },
+          "last_login_ns": {
+            "type": "string"
+          },
+          "linked": {
+            "type": "boolean"
+          },
+          "linked_ns": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "linked"
+        ],
+        "type": "object"
+      },
+      "OIDCStartView": {
+        "additionalProperties": false,
+        "properties": {
+          "authorize_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "authorize_url"
+        ],
+        "type": "object"
+      },
+      "OperationItemView": {
+        "additionalProperties": false,
+        "properties": {
+          "index": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "path",
+          "ok"
+        ],
+        "type": "object"
+      },
+      "OperationView": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt": {
+            "type": "string"
+          },
+          "attempting": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "error_key": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "max_attempts": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "next_run_ns": {
+            "type": "string"
+          },
+          "pending": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "progress": {
+            "type": "string"
+          },
+          "progress_unit": {
+            "type": "string"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/OperationItemView"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "state": {
+            "type": "string"
+          },
+          "total": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "state",
+          "progress",
+          "total"
+        ],
+        "type": "object"
+      },
+      "OwnedLinkView": {
+        "additionalProperties": false,
+        "properties": {
+          "created_ns": {
+            "type": "string"
+          },
+          "downloads": {
+            "type": "string"
+          },
+          "drop": {
+            "type": "boolean"
+          },
+          "exhausted": {
+            "type": "boolean"
+          },
+          "expired": {
+            "type": "boolean"
+          },
+          "expires_ns": {
+            "type": "string"
+          },
+          "has_password": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "max_downloads": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "owner_name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "perms": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "share": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner",
+          "id",
+          "path",
+          "share",
+          "perms",
+          "drop",
+          "has_password",
+          "created_ns",
+          "downloads",
+          "expired",
+          "exhausted"
+        ],
+        "type": "object"
+      },
+      "PageView": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "type": "string"
+          },
+          "dir_etag": {
+            "type": "string"
+          },
+          "dir_etag_weak": {
+            "type": "boolean"
+          },
+          "dir_perms": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "dirs": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/EntryView"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "total": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "entries",
+          "dirs",
+          "total",
+          "dir_etag",
+          "dir_etag_weak",
+          "dir_perms"
+        ],
+        "type": "object"
+      },
+      "PasswordRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "current": {
+            "type": "string"
+          },
+          "new": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PasswordRequestTransport": {
+        "additionalProperties": false,
+        "properties": {
+          "current": {
+            "type": "string"
+          },
+          "new": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PathRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PreviewView": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "available"
+        ],
+        "type": "object"
+      },
+      "PublicLinkEntryView": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "size"
+        ],
+        "type": "object"
+      },
+      "PublicLinkView": {
+        "additionalProperties": false,
+        "properties": {
+          "can_download": {
+            "type": "boolean"
+          },
+          "drop": {
+            "type": "boolean"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/PublicLinkEntryView"
+            },
+            "type": "array"
+          },
+          "has_password": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "is_dir": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
+          },
+          "max_upload_bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "protected": {
+            "type": "boolean"
+          },
+          "size": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "protected"
+        ],
+        "type": "object"
+      },
+      "Range": {
+        "additionalProperties": false,
+        "properties": {
+          "choices": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "max": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "min": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "RecentView": {
+        "additionalProperties": false,
+        "properties": {
+          "at_ns": {
+            "type": "string"
+          },
+          "mtime_ns": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "op": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "size": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "name",
+          "op",
+          "size",
+          "at_ns",
+          "mtime_ns"
+        ],
+        "type": "object"
+      },
+      "ReconfirmRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "current": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ReconfirmRequestTransport": {
+        "additionalProperties": false,
+        "properties": {
+          "current": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RecoveryCodesView": {
+        "additionalProperties": false,
+        "properties": {
+          "recovery_codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "recovery_codes"
+        ],
+        "type": "object"
+      },
+      "RecoveryRemainingView": {
+        "additionalProperties": false,
+        "properties": {
+          "remaining": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "remaining"
+        ],
+        "type": "object"
+      },
+      "RenameRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "new_name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RestartResult": {
+        "additionalProperties": false,
+        "properties": {
+          "active_jobs": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "active_uploads": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "restarting": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "restarting",
+          "active_uploads",
+          "active_jobs"
+        ],
+        "type": "object"
+      },
+      "RootOrderRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "order": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "RootView": {
+        "additionalProperties": false,
+        "properties": {
+          "broken_reason": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "perms": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "shared_externally": {
+            "type": "boolean"
+          },
+          "trash_enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "label",
+          "perms",
+          "shared_externally",
+          "trash_enabled"
+        ],
+        "type": "object"
+      },
+      "SMBAgentView": {
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "type": "string"
+          },
+          "hosts_allow": {
+            "type": "string"
+          },
+          "interfaces": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "missing_passdb": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "missing_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "shares": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "smbd": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "ok",
+          "shares",
+          "interfaces",
+          "hosts_allow",
+          "smbd",
+          "missing_paths",
+          "missing_passdb"
+        ],
+        "type": "object"
+      },
+      "SMBClearedView": {
+        "additionalProperties": false,
+        "properties": {
+          "revertible": {
+            "type": "boolean"
+          },
+          "state": {
+            "$ref": "#/components/schemas/SMBStateView"
+          }
+        },
+        "required": [
+          "state",
+          "revertible"
+        ],
+        "type": "object"
+      },
+      "SMBReportView": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "hosts_allow": {
+            "type": "string"
+          },
+          "interfaces": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "missing_credentials": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "missing_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "shares": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "ok",
+          "shares",
+          "interfaces",
+          "hosts_allow",
+          "action",
+          "missing_paths",
+          "missing_credentials"
+        ],
+        "type": "object"
+      },
+      "SMBStateView": {
+        "additionalProperties": false,
+        "properties": {
+          "credential": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "opt_out": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "opt_out",
+          "enabled",
+          "credential"
+        ],
+        "type": "object"
+      },
+      "SessionOidcView": {
+        "additionalProperties": false,
+        "properties": {
+          "linked": {
+            "type": "boolean"
+          },
+          "linked_ns": {
+            "type": "string"
+          },
+          "subject_hint": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "linked"
+        ],
+        "type": "object"
+      },
+      "SessionView": {
+        "additionalProperties": false,
+        "properties": {
+          "absolute_ns": {
+            "type": "string"
+          },
+          "created_ns": {
+            "type": "string"
+          },
+          "current": {
+            "type": "boolean"
+          },
+          "handle": {
+            "type": "string"
+          },
+          "ip": {
+            "type": "string"
+          },
+          "last_seen_ns": {
+            "type": "string"
+          },
+          "ua": {
+            "type": "string"
+          },
+          "ua_display": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "handle",
+          "created_ns",
+          "last_seen_ns",
+          "absolute_ns",
+          "current"
+        ],
+        "type": "object"
+      },
+      "SettingsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "cache_enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "chunk_default": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "chunk_min": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "SettingsView": {
+        "additionalProperties": false,
+        "properties": {
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/Field"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "hop": {
+            "$ref": "#/components/schemas/HopView"
+          },
+          "smb_agent": {
+            "$ref": "#/components/schemas/SMBAgentView"
+          }
+        },
+        "required": [
+          "fields",
+          "hop"
+        ],
+        "type": "object"
+      },
+      "SetupAccountView": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "SetupRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "app_hosts": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "first_share": {
+            "$ref": "#/components/schemas/SetupShareRequest"
+          },
+          "password": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "trusted_proxies": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SetupResult": {
+        "additionalProperties": false,
+        "properties": {
+          "active_jobs": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "active_uploads": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "applied": {
+            "type": "boolean"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/FindingView"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "restart_required": {
+            "type": "boolean"
+          },
+          "share": {
+            "$ref": "#/components/schemas/ShareView"
+          },
+          "share_failed": {
+            "type": "boolean"
+          },
+          "stored": {
+            "type": "boolean"
+          },
+          "user": {
+            "$ref": "#/components/schemas/SetupAccountView"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/FindingView"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "SetupShareRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "host": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SetupStateView": {
+        "additionalProperties": false,
+        "properties": {
+          "required": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "required"
+        ],
+        "type": "object"
+      },
+      "ShareEncryptionView": {
+        "additionalProperties": false,
+        "properties": {
+          "created_ns": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "labels": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "salt": {
+            "type": "string"
+          },
+          "scheme": {
+            "type": "string"
+          },
+          "share": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "verifier": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "share",
+          "labels",
+          "scheme",
+          "salt",
+          "verifier",
+          "created_ns"
+        ],
+        "type": "object"
+      },
+      "ShareS3Request": {
+        "additionalProperties": false,
+        "properties": {
+          "access_key_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bucket": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "endpoint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path_style": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "prefix": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "region": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "secret_access_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "ShareUsageView": {
+        "additionalProperties": false,
+        "properties": {
+          "free_bytes": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "share": {
+            "type": "string"
+          },
+          "total_bytes": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "share",
+          "label"
+        ],
+        "type": "object"
+      },
+      "ShareVeracryptRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "container": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "create": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pim": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "size_mib": {
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "ShareView": {
+        "additionalProperties": false,
+        "properties": {
+          "backend": {
+            "type": "string"
+          },
+          "broken": {
+            "type": "string"
+          },
+          "empty": {
+            "type": "boolean"
+          },
+          "host": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "shared_externally": {
+            "type": "boolean"
+          },
+          "source": {
+            "type": "string"
+          },
+          "trash": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "host",
+          "backend",
+          "source",
+          "trash"
+        ],
+        "type": "object"
+      },
+      "StorageView": {
+        "additionalProperties": false,
+        "properties": {
+          "db_bytes": {
+            "type": "string"
+          },
+          "shares": {
+            "items": {
+              "$ref": "#/components/schemas/ShareUsageView"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "db_bytes",
+          "shares"
+        ],
+        "type": "object"
+      },
+      "TOTPSetupView": {
+        "additionalProperties": false,
+        "properties": {
+          "secret": {
+            "type": "string"
+          },
+          "uri": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "secret",
+          "uri"
+        ],
+        "type": "object"
+      },
+      "TicketView": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "name",
+          "url"
+        ],
+        "type": "object"
+      },
+      "TotpRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "challenge": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TransferRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "on_conflict": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TrashBatchItem": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/Wire"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "ok"
+        ],
+        "type": "object"
+      },
+      "TrashView": {
+        "additionalProperties": false,
+        "properties": {
+          "deleted_at_ns": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "is_dir": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "orig_path": {
+            "type": "string"
+          },
+          "size": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "is_dir",
+          "size",
+          "deleted_at_ns"
+        ],
+        "type": "object"
+      },
+      "UnlockRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "password": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateGrantRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "allow": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "deny": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "inherit": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateLinkRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_ns": {},
+          "label": {
+            "type": "string"
+          },
+          "max_downloads": {},
+          "note": {
+            "type": "string"
+          },
+          "password": {},
+          "perms": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "UpdateShareRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "backend": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "host": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "s3": {
+            "$ref": "#/components/schemas/ShareS3Request"
+          },
+          "trash_enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "veracrypt": {
+            "$ref": "#/components/schemas/ShareVeracryptRequest"
+          }
+        },
+        "type": "object"
+      },
+      "UploadSettingsView": {
+        "additionalProperties": false,
+        "properties": {
+          "cache_available": {
+            "type": "boolean"
+          },
+          "cache_enabled": {
+            "type": "boolean"
+          },
+          "chunk_default": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "chunk_min": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "chunk_min",
+          "chunk_default",
+          "cache_enabled",
+          "cache_available"
+        ],
+        "type": "object"
+      },
+      "UserView": {
+        "additionalProperties": false,
+        "properties": {
+          "admin": {
+            "type": "boolean"
+          },
+          "created_ns": {
+            "type": "string"
+          },
+          "disabled": {
+            "type": "boolean"
+          },
+          "display": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "login": {
+            "type": "string"
+          },
+          "quota_bytes": {
+            "type": "string"
+          },
+          "smb": {
+            "type": "boolean"
+          },
+          "totp": {
+            "type": "boolean"
+          },
+          "usage_bytes": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "login",
+          "admin",
+          "disabled",
+          "totp",
+          "smb",
+          "created_ns",
+          "usage_bytes"
+        ],
+        "type": "object"
+      },
+      "WhoAmIView": {
+        "additionalProperties": false,
+        "properties": {
+          "admin": {
+            "type": "boolean"
+          },
+          "csrf": {
+            "type": "string"
+          },
+          "display": {
+            "type": "string"
+          },
+          "features": {
+            "$ref": "#/components/schemas/FeaturesView"
+          },
+          "id": {
+            "type": "string"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/LimitsView"
+          },
+          "login": {
+            "type": "string"
+          },
+          "oidc": {
+            "$ref": "#/components/schemas/SessionOidcView"
+          },
+          "roots": {
+            "items": {
+              "$ref": "#/components/schemas/RootView"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "smb_credential": {
+            "type": "string"
+          },
+          "smb_enabled": {
+            "type": "boolean"
+          },
+          "smb_opt_out": {
+            "type": "boolean"
+          },
+          "smb_unavailable_reason": {
+            "type": "string"
+          },
+          "totp_enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "totp_enabled",
+          "smb_opt_out",
+          "smb_enabled",
+          "roots",
+          "oidc",
+          "limits",
+          "features",
+          "id",
+          "login",
+          "admin",
+          "csrf"
+        ],
+        "type": "object"
+      },
+      "Wire": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "reason_key": {
+            "type": "string"
+          },
+          "reason_params": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "browserSession": {
+        "description": "Browser session. Mutating requests also require the Sc-Csrf header.",
+        "in": "cookie",
+        "name": "__Host-sc_sid",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "description": "Typed JSON endpoints. Streaming and compatibility protocols are mounted separately.",
+    "title": "Stowcloud API",
+    "version": "1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/account/app-passwords": {
+      "get": {
+        "operationId": "account.app_passwords.list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AppPasswordView"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      },
+      "post": {
+        "operationId": "account.app_passwords.create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppPasswordRequestTransport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppPasswordCreatedView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/account/app-passwords/{id}": {
+      "delete": {
+        "operationId": "account.app_passwords.delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/account/app-passwords/{id}/wipe": {
+      "post": {
+        "operationId": "account.app_passwords.wipe",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/account/oidc-link": {
+      "delete": {
+        "operationId": "account.oidc_link.delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkDeleteInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/account/oidc-link/start": {
+      "post": {
+        "operationId": "account.oidc_link.start",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OIDCStartView"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/account/password": {
+      "post": {
+        "operationId": "account.password.set",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordRequestTransport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/account/roots/order": {
+      "post": {
+        "operationId": "account.roots.order",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RootOrderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/account/sessions": {
+      "get": {
+        "operationId": "account.sessions.list",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "__Host-sc_sid",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SessionView"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/account/sessions/{id}": {
+      "delete": {
+        "operationId": "account.sessions.delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/account/smb": {
+      "post": {
+        "operationId": "account.smb.create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccessRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SMBStateView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/account/smb/password": {
+      "delete": {
+        "operationId": "account.smb.password.delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReconfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SMBClearedView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      },
+      "post": {
+        "operationId": "account.smb.password.set",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SMBStateView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/account/totp/disable": {
+      "post": {
+        "operationId": "account.totp.disable",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReconfirmRequestTransport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/account/totp/enroll": {
+      "post": {
+        "operationId": "account.totp.enroll",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnrollRequestTransport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoveryCodesView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/account/totp/recovery-codes": {
+      "get": {
+        "operationId": "account.recovery_codes.count",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoveryRemainingView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      },
+      "post": {
+        "operationId": "account.recovery_codes.create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReconfirmRequestTransport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoveryCodesView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/account/totp/setup": {
+      "post": {
+        "operationId": "account.totp.setup",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReconfirmRequestTransport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TOTPSetupView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/audit": {
+      "get": {
+        "operationId": "admin.audit",
+        "parameters": [
+          {
+            "explode": false,
+            "in": "query",
+            "name": "event",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "before",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditPageView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/fs": {
+      "get": {
+        "operationId": "admin.fs.browse",
+        "parameters": [
+          {
+            "explode": false,
+            "in": "query",
+            "name": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostListingView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/grants": {
+      "get": {
+        "operationId": "admin.grants.list",
+        "parameters": [
+          {
+            "explode": false,
+            "in": "query",
+            "name": "user",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "group",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "share",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GrantView"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      },
+      "post": {
+        "operationId": "admin.grants.create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrantRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrantView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/grants/{id}": {
+      "delete": {
+        "operationId": "admin.grants.delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "admin.grants.update",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateGrantRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrantView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/groups": {
+      "get": {
+        "operationId": "admin.groups.list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GroupView"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      },
+      "post": {
+        "operationId": "admin.groups.create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/groups/{id}": {
+      "delete": {
+        "operationId": "admin.groups.delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "admin.groups.update",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/groups/{id}/members": {
+      "post": {
+        "operationId": "admin.groups.members.add",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminMemberRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/groups/{id}/members/{user}": {
+      "delete": {
+        "operationId": "admin.groups.members.remove",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/index/build": {
+      "post": {
+        "operationId": "admin.index.build",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/index/estimate": {
+      "get": {
+        "operationId": "admin.index.estimate",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexEstimateView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/index/status": {
+      "get": {
+        "operationId": "admin.index.status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexStatusView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/links": {
+      "get": {
+        "operationId": "admin.links.list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OwnedLinkView"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/logs": {
+      "get": {
+        "operationId": "admin.logs.list",
+        "parameters": [
+          {
+            "explode": false,
+            "in": "query",
+            "name": "since",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "until",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "level",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "text",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "subsystem",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "request_id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogPageView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/logs/timeline": {
+      "get": {
+        "operationId": "admin.logs.timeline",
+        "parameters": [
+          {
+            "explode": false,
+            "in": "query",
+            "name": "since",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "until",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "level",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "text",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "subsystem",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "request_id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "bucket_ns",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogsTimelineView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/oidc/endpoints": {
+      "get": {
+        "operationId": "admin.oidc.endpoints",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OIDCEndpointsView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/settings": {
+      "get": {
+        "operationId": "admin.settings.get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "CF-Connecting-IP",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Forwarded-For",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/settings/upload": {
+      "patch": {
+        "operationId": "admin.settings.upload",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadSettingsView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/settings/{section}": {
+      "patch": {
+        "operationId": "admin.settings.update",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "section",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": {},
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplyOutcomeView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/shares": {
+      "get": {
+        "operationId": "admin.shares.list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ShareView"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      },
+      "post": {
+        "operationId": "admin.shares.create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateShareRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/shares/{id}": {
+      "delete": {
+        "operationId": "admin.shares.delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "admin.shares.update",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateShareRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/shares/{id}/retry": {
+      "post": {
+        "operationId": "admin.shares.retry",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/smb/apply": {
+      "post": {
+        "operationId": "admin.smb.apply",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SMBReportView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/storage": {
+      "get": {
+        "operationId": "admin.storage",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/system/restart": {
+      "post": {
+        "operationId": "admin.system.restart",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestartResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users": {
+      "get": {
+        "operationId": "admin.users.list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UserView"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      },
+      "post": {
+        "operationId": "admin.users.create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminCreateUserRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users/{id}": {
+      "delete": {
+        "operationId": "admin.users.delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "admin.users.update",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminUpdateUserRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users/{id}/oidc": {
+      "delete": {
+        "operationId": "admin.users.oidc.delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      },
+      "get": {
+        "operationId": "admin.users.oidc.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OIDCLinkView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "operationId": "auth.login",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Content-Type",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "User-Agent",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResult"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/api/v1/auth/login/totp": {
+      "post": {
+        "operationId": "auth.login.totp",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Content-Type",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "User-Agent",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TotpRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityView"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "operationId": "auth.logout",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "__Host-sc_sid",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogoutView"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/oidc/config": {
+      "get": {
+        "operationId": "auth.oidc.config",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OIDCConfigView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/api/v1/auth/oidc/start": {
+      "get": {
+        "operationId": "auth.oidc.start",
+        "parameters": [
+          {
+            "explode": false,
+            "in": "query",
+            "name": "return_to",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OIDCStartView"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/api/v1/auth/session": {
+      "get": {
+        "operationId": "auth.session",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "__Host-sc_sid",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhoAmIView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/direct-uploads": {
+      "post": {
+        "operationId": "direct_uploads.create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectUploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectUploadView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/direct-uploads/{id}": {
+      "get": {
+        "operationId": "direct_uploads.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectUploadView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/direct-uploads/{id}/cancel": {
+      "post": {
+        "operationId": "direct_uploads.cancel",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/direct-uploads/{id}/complete": {
+      "post": {
+        "operationId": "direct_uploads.complete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectCompleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectUploadView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/direct-uploads/{id}/parts": {
+      "post": {
+        "operationId": "direct_uploads.parts",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectPartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectPartURLView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/encryption": {
+      "get": {
+        "operationId": "encryption.list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/encryption/{id}": {
+      "delete": {
+        "operationId": "admin.encryption.disable",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      },
+      "post": {
+        "operationId": "admin.encryption.enable",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnableRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/files/archive": {
+      "post": {
+        "operationId": "files.archive",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArchiveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/files/archive/list": {
+      "get": {
+        "operationId": "files.archive.list",
+        "parameters": [
+          {
+            "explode": false,
+            "in": "query",
+            "name": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveListingView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/files/copy": {
+      "post": {
+        "operationId": "files.copy",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CopyStartView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/files/delete": {
+      "post": {
+        "operationId": "files.delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PathRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/files/download": {
+      "post": {
+        "operationId": "files.download",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PathRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/files/list": {
+      "get": {
+        "operationId": "files.list",
+        "parameters": [
+          {
+            "explode": false,
+            "in": "query",
+            "name": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "sort",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "order",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/files/mkdir": {
+      "post": {
+        "operationId": "files.mkdir",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PathRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntryView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/files/move": {
+      "post": {
+        "operationId": "files.move",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MoveView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/files/recent": {
+      "get": {
+        "operationId": "files.recent",
+        "parameters": [
+          {
+            "explode": false,
+            "in": "query",
+            "name": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "since",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RecentView"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/files/rename": {
+      "post": {
+        "operationId": "files.rename",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntryView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/files/size": {
+      "get": {
+        "operationId": "files.size",
+        "parameters": [
+          {
+            "explode": false,
+            "in": "query",
+            "name": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AggregateView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/files/stat": {
+      "get": {
+        "operationId": "files.stat",
+        "parameters": [
+          {
+            "explode": false,
+            "in": "query",
+            "name": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntryView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/jobs": {
+      "get": {
+        "operationId": "jobs.list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OperationView"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/{id}": {
+      "get": {
+        "operationId": "jobs.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/{id}/cancel": {
+      "post": {
+        "operationId": "jobs.cancel",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/{id}/pause": {
+      "post": {
+        "operationId": "jobs.pause",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/{id}/resume": {
+      "post": {
+        "operationId": "jobs.resume",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/{id}/retry": {
+      "post": {
+        "operationId": "jobs.retry",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/links": {
+      "get": {
+        "operationId": "links.list",
+        "parameters": [
+          {
+            "explode": false,
+            "in": "query",
+            "name": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LinkView"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      },
+      "post": {
+        "operationId": "links.create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateLinkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MintedLinkView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/links/{id}": {
+      "delete": {
+        "operationId": "links.delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "links.update",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateLinkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinkView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/system/health": {
+      "get": {
+        "operationId": "system.health",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/api/v1/system/setup": {
+      "get": {
+        "operationId": "system.setup.state",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupStateView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {}
+        ]
+      },
+      "post": {
+        "operationId": "system.setup.complete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/api/v1/system/setup/browse": {
+      "post": {
+        "operationId": "system.setup.browse",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminSetupFSRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostListingView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/api/v1/trash": {
+      "get": {
+        "operationId": "trash.list",
+        "parameters": [
+          {
+            "explode": false,
+            "in": "query",
+            "name": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TrashView"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/trash/purge": {
+      "post": {
+        "operationId": "trash.purge",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/trash/restore": {
+      "post": {
+        "operationId": "trash.restore",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/s/{token}": {
+      "get": {
+        "operationId": "links.public.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicLinkView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/s/{token}/auth": {
+      "post": {
+        "operationId": "links.unlock",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "User-Agent",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnlockRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content",
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    }
+  },
+  "security": [
+    {
+      "browserSession": []
+    }
+  ]
+}

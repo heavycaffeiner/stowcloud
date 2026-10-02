@@ -43,7 +43,7 @@ fi
 # once for this run and the embed check together.
 if [ "${SC_BUNDLE_FRESH:-0}" = 1 ]; then
   echo "==> the frontend was built already"
-  if [ ! -f backend/internal/http/spa/build/index.html ]; then
+  if [ ! -f backend/internal/web/build/index.html ]; then
     echo "FAIL: SC_BUNDLE_FRESH is set, but the bundle is not there" >&2
     exit 1
   fi
@@ -53,8 +53,8 @@ else
 fi
 
 echo "==> building the binary"
-BIN=$(mktemp -d)/sc-engine
-(cd backend && CGO_ENABLED=0 GOOS=linux go build -tags embed_ui -o "$BIN" ./cmd/sc-engine)
+BIN=$(mktemp -d)/stowcloud
+(cd backend && CGO_ENABLED=0 GOOS=linux go build -tags embed_ui -o "$BIN" ./cmd/stowcloud)
 
 DIR=$(mktemp -d)
 mkdir -p "$DIR/data" "$DIR/share/sub"
@@ -73,7 +73,7 @@ echo '{"per_sec":2000,"burst":5000}' | seed rate
 echo '{"hardening":"off"}' | seed security
 
 echo "==> serving"
-"$BIN" -data "$DIR/data" > "$DIR/log" 2>&1 &
+"$BIN" --data-dir "$DIR/data" > "$DIR/log" 2>&1 &
 SERVER=$!
 trap 'kill "$SERVER" 2>/dev/null || true' EXIT
 # Ready when it answers, not after a fixed wait. Six seconds was a guess with

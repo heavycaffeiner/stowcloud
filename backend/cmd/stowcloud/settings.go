@@ -1,0 +1,167 @@
+//go:build linux
+
+// The settings escape hatch.
+//
+// Configuration lives in the database and the web interface is where it is
+// edited. That leaves one case with no way out: a stored value that stops the
+// server answering at all. A bind address nothing can bind takes every
+// interface down with the ordinary one, because all of them need a socket.
+//
+// So there is a command. It writes one section the same way the API does, on
+// a data directory nothing is serving, and it is the only way to change a
+// setting without a running server.
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"path/filepath"
+
+	"github.com/heavycaffeiner/stowcloud/backend/internal/config"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/dbfile"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/instance"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
+)
+
+func takeSettingsLock(out *log.Logger, dataDir string) (*instance.Lock, bool) {
+	lock, err := instance.Take(dataDir)
+	if err != nil {
+		out.Printf("stowcloud settings: cannot edit settings while the server is running: %v\n", err)
+		return nil, false
+	}
+	return lock, true
+}
+
+func releaseSettingsLock(out *log.Logger, lock *instance.Lock) {
+	if err := lock.Release(); err != nil {
+		out.Printf("stowcloud settings: releasing the data-directory lock: %v\n", err)
+	}
+}
+
+// runSettings dispatches the settings verbs. `set` replaces one section from
+// a JSON document on standard input; `get` prints the whole stored document.
+func runSettings(argv []string) int {
+	if len(argv) == 0 {
+		return settingsUsage()
+	}
+	switch argv[0] {
+	case "set":
+		return runSettingsSet(argv[1:])
+	case "get":
+		return runSettingsGet(argv[1:])
+	}
+	return settingsUsage()
+}
+
+func settingsUsage() int {
+	out := log.New(os.Stderr, "", 0)
+	out.Println("usage: stowcloud settings get [--data-dir DIR]")
+	out.Println("       stowcloud settings set <section> [--data-dir DIR] < document.json")
+	out.Println()
+	out.Println("  Reads or writes the stored settings directly, for a deployment whose")
+	out.Println("  stored configuration stops the server answering. The document is one")
+	out.Println("  section's JSON object on standard input, and it replaces that section")
+	out.Println("  whole. Every other section is left alone.")
+	out.Println()
+	out.Println("  The document passes the same checks as a save from the settings screen.")
+	out.Println("  Both commands refuse while a server holds the data directory.")
+	return 2
+}
+
+// runSettingsSet replaces one section from a JSON document on standard input.
+// The document passes the same validation an administrator's save does, and
+// the write takes the data-directory lock, so it refuses while a server runs.
+func runSettingsSet(argv []string) int {
+	out := log.New(os.Stderr, "", 0)
+	dataDir, rest, perr := config.ParseDataDirArgs("stowcloud settings set", argv, os.Stderr)
+	if perr != nil || len(rest) != 1 {
+		return settingsUsage()
+	}
+	section := rest[0]
+
+	raw, rerr := io.ReadAll(io.LimitReader(os.Stdin, 1<<20))
+	if rerr != nil {
+		out.Printf("stowcloud settings: reading the document: %v\n", rerr)
+		return 1
+	}
+	var sectionBody map[string]any
+	if jerr := json.Unmarshal(raw, &sectionBody); jerr != nil {
+		out.Printf("stowcloud settings: the document is not a JSON object: %v\n", jerr)
+		return 1
+	}
+	if !config.Known(section) {
+		out.Printf("stowcloud settings: unknown section %q\n", section)
+		return 1
+	}
+	findings := config.Section(config.Input{Section: section, Body: sectionBody, DataDir: dataDir, Lockout: config.LockoutWarns})
+	if config.Blocked(findings) {
+		out.Printf("stowcloud settings: settings refused: %v\n", findings)
+		return 1
+	}
+	lock, ok := takeSettingsLock(out, dataDir)
+	if !ok {
+		return 1
+	}
+	defer releaseSettingsLock(out, lock)
+	stateFile, err := dbfile.Open(context.Background(), state.Spec(filepath.Join(dataDir, "state.db")))
+	if err != nil {
+		out.Printf("stowcloud settings: opening the store: %v\n", err)
+		return 1
+	}
+	defer func() {
+		if cerr := stateFile.Close(); cerr != nil {
+			out.Printf("stowcloud settings: closing the store: %v\n", cerr)
+		}
+	}()
+	st := state.New(stateFile)
+	if merr := st.MergeSettings(context.Background(), section, sectionBody); merr != nil {
+		out.Printf("stowcloud settings: writing %s: %v\n", section, merr)
+		return 1
+	}
+	out.Printf("wrote the %s section\n", section)
+	return 0
+}
+
+func runSettingsGet(argv []string) int {
+	out := log.New(os.Stderr, "", 0)
+	dataDir, rest, perr := config.ParseDataDirArgs("stowcloud settings get", argv, os.Stderr)
+	if perr != nil || len(rest) > 0 {
+		return settingsUsage()
+	}
+	lock, ok := takeSettingsLock(out, dataDir)
+	if !ok {
+		return 1
+	}
+	defer releaseSettingsLock(out, lock)
+
+	stateFile, err := dbfile.Open(context.Background(), state.Spec(filepath.Join(dataDir, "state.db")))
+	if err != nil {
+		out.Printf("stowcloud settings: opening the store: %v\n", err)
+		return 1
+	}
+	defer func() {
+		if cerr := stateFile.Close(); cerr != nil {
+			out.Printf("stowcloud settings: closing the store: %v\n", cerr)
+		}
+	}()
+	st := state.New(stateFile)
+	all, aerr := st.Settings(context.Background())
+	if aerr != nil {
+		out.Printf("stowcloud settings: reading them: %v\n", aerr)
+		return 1
+	}
+	body, jerr := json.MarshalIndent(all, "", "  ")
+	if jerr != nil {
+		out.Printf("stowcloud settings: rendering them: %v\n", jerr)
+		return 1
+	}
+	if _, werr := fmt.Fprintln(os.Stdout, string(body)); werr != nil {
+		out.Printf("stowcloud settings: writing them out: %v\n", werr)
+		return 1
+	}
+	return 0
+}

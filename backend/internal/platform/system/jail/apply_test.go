@@ -53,7 +53,7 @@ func TestOffAttemptsNothing(t *testing.T) {
 	if f.restrictCalls != 0 || f.seccompCalls != 0 {
 		t.Errorf("off touched the kernel: %d restrict, %d seccomp", f.restrictCalls, f.seccompCalls)
 	}
-	if st.Degraded() {
+	if degraded(st) {
 		t.Error("off reported itself degraded")
 	}
 }
@@ -70,7 +70,7 @@ func TestRequiredRefusesAFailedLandlockStep(t *testing.T) {
 	if f.seccompCalls != 0 {
 		t.Errorf("seccomp ran after a refused landlock step")
 	}
-	if st.LandlockApplied() {
+	if landlockApplied(st) {
 		t.Error("the status claims the domain applied")
 	}
 }
@@ -96,10 +96,10 @@ func TestPreferredRecordsAndContinues(t *testing.T) {
 	if f.seccompCalls != 1 {
 		t.Errorf("seccomp ran %d times, want 1", f.seccompCalls)
 	}
-	if !st.Degraded() {
+	if !degraded(st) {
 		t.Error("a preferred run that lost a step is not degraded")
 	}
-	if st.LandlockApplied() {
+	if landlockApplied(st) {
 		t.Error("the status claims a domain that was never installed")
 	}
 }
@@ -115,7 +115,7 @@ func TestPreferredRecordsAFailedRestrict(t *testing.T) {
 	if f.restrictCalls != 1 {
 		t.Errorf("restrict ran %d times, want 1", f.restrictCalls)
 	}
-	if st.LandlockApplied() {
+	if landlockApplied(st) {
 		t.Error("a failed restrict was recorded as applied")
 	}
 }
@@ -131,10 +131,10 @@ func TestAReexecedImageInheritsTheDomain(t *testing.T) {
 	if f.restrictCalls != 0 {
 		t.Error("the re-exec'd image restricted a second time")
 	}
-	if !st.LandlockApplied() {
+	if !landlockApplied(st) {
 		t.Error("the inherited domain was not recorded")
 	}
-	if st.Degraded() {
+	if degraded(st) {
 		t.Error("a fully applied re-exec'd image reported itself degraded")
 	}
 	if f.seccompCalls != 1 {
@@ -184,7 +184,7 @@ func TestTheDomainGrantsWhatTheSequenceItselfNeeds(t *testing.T) {
 // The marker round-trips: the sequence runs once, and a missing marker
 // afterwards is a bug rather than a loop.
 func TestReexecMarkerRoundTrips(t *testing.T) {
-	marker := ReexecMarker()
+	marker := reexecMarker
 	if marker == "" {
 		t.Fatal("the marker is empty")
 	}
@@ -364,4 +364,27 @@ func TestDefaultLimitsBoundTheDecoder(t *testing.T) {
 		t.Errorf("the address-space bound of %d is below the measured decode cost",
 			l.AddressSpaceBytes)
 	}
+}
+
+// landlockApplied reports whether the filesystem domain step went through.
+func landlockApplied(s Status) bool {
+	for _, st := range s.Steps {
+		if st.Name == StepLandlock {
+			return st.Applied
+		}
+	}
+	return false
+}
+
+// degraded reports a policy whose request went unfulfilled.
+func degraded(s Status) bool {
+	if s.Policy == Off {
+		return false
+	}
+	for _, st := range s.Steps {
+		if !st.Applied {
+			return true
+		}
+	}
+	return false
 }

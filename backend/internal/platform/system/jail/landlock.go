@@ -112,11 +112,6 @@ const readExecute = unix.LANDLOCK_ACCESS_FS_READ_FILE | unix.LANDLOCK_ACCESS_FS_
 // streams.
 const discardDevice = unix.LANDLOCK_ACCESS_FS_READ_FILE | unix.LANDLOCK_ACCESS_FS_WRITE_FILE
 
-// ReadOnly grants file reads and directory listings and nothing further. It
-// suits a path the server reads but must never write, such as the operator's own
-// configuration.
-const ReadOnly = unix.LANDLOCK_ACCESS_FS_READ_FILE | unix.LANDLOCK_ACCESS_FS_READ_DIR
-
 // restrict constructs spec's domain and applies it to the calling thread.
 //
 // The caller must already be locked to the OS thread. Landlock restricts only

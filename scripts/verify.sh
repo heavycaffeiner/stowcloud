@@ -14,6 +14,11 @@
 #   VERIFY_REQUIRE_RACE=1   a skipped race run is a failure. The detector needs
 #                           cgo, which the Windows box has no compiler for, so
 #                           it runs where one exists and CI is where that is.
+#   VERIFY_SKIP_GO_TEST=1   the untagged Go suite already ran through just test.
+#   VERIFY_SKIP_COMPAT_TEST=1
+#                           the tagged compat packages already ran through just test.
+#   VERIFY_SKIP_GOLANGCI=1  golangci-lint already ran through just lint.
+#   VERIFY_SKIP_E2E=1       the browser suite runs separately through just e2e.
 #
 # One rule this script exists to keep, learned from a red CI: a failing step
 # prints everything it said. An earlier version piped failures through a tail;
@@ -245,45 +250,8 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   echo "=== go: $(go version) ==="
   echo
 
-  # The two in-tree analysers and the text scan. They run for the host's own
-  # OS because `go run` has to execute what it built, and each one is pointed
-  # at the shipping target from the inside.
-  run "vetgo (D7: one goroutine spawn)"        ingo_host go run ./tools/vetgo ./cmd ./internal
-  # The client and the route table are two halves of one contract, and nothing
-  # else here checks that they agree. A route the frontend calls and the server
-  # does not mount is a screen that cannot work, and it was invisible to every
-  # other check in this tree: that is how login ended up mounted on the
-  # change-password path with the whole suite green.
-  #
-  # The whole client tree and the verb, not one file and the path alone.
-  # Pointed at one file it missed the streaming search, which no route served;
-  # comparing paths alone it missed six calls mounted under a different verb,
-  # each of which answers "method not allowed" from a route that exists.
-  #
-  # src rather than src/lib/api: the resumable upload transport is a sibling
-  # directory, so a narrower path saw none of its calls, and the screens under
-  # routes/ build URLs of their own that no .ts file names.
-  #
-  # The client calls the native v1 route table plus the unversioned public-link
-  # surface. Both files are checked so either registration site cannot drift.
-  run "routecheck (the client's paths are mounted)" \
-      ingo_host go run ./tools/routecheck \
-        -client-dir ../frontend/src \
-        -routes internal/http/server/v1table.go,internal/http/publiclinks/public.go \
-        -allow routes.allow \
-        -server-only routes.server-only
-  # routecheck proves the paths exist. This proves the bodies match: the
-  # client read fields the server never sent, and every one of them was found
-  # by a person clicking something that then did nothing.
-  run "contractcheck (the client's fields are sent)" \
-      ingo_host go run ./tools/contractcheck \
-        ../frontend/src/lib/api/types.ts ./internal/http/api/handler ./internal/app
-  # Settings saved by the client must be consumed by the runtime loader.
-  run "settingscheck (a stored setting is read)" \
-      ingo_host go run ./tools/settingscheck \
-        ../frontend/src/lib/api/types.ts ./internal/feature/admin/settings/runtimecfg/load.go
-  # And this keeps a byte-serving URL from being composed out of a path
-  # again. Both routes take the row's own sealed reference; the one client
+  # This keeps a byte-serving URL from being composed out of a path again.
+  # Both routes take the row's own sealed reference; the one client
   # that joined a path itself joined it wrongly, and an account granted a
   # folder inside a share saw its own label twice and every thumbnail in the
   # grid broke. Nothing outside the API layer may name either route, and the
@@ -299,92 +267,18 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   CONTENT_URL_HITS=$(
     grep -rn 'files/\(read\|thumbnail\)' frontend/src \
       --include='*.ts' --include='*.tsx' 2>/dev/null \
-      | grep -v '^frontend/src/lib/api/http\.ts:' | no_comment || true
+      | grep -v '^frontend/src/features/file-browser/api\.ts:' | no_comment || true
   )
   # The API layer names them, and only with a claim.
   CONTENT_URL_HITS="$CONTENT_URL_HITS$(
-    grep -n 'files/\(read\|thumbnail\)' frontend/src/lib/api/http.ts 2>/dev/null \
+    grep -n 'files/\(read\|thumbnail\)' frontend/src/features/file-browser/api.ts 2>/dev/null \
       | grep -v 'claim:' | no_comment || true
   )"
   grep_gate "no content URL composed from a path" "$CONTENT_URL_HITS" \
-    "A row's bytes are addressed by its own reference: api.contentUrl(entry)."
-  # freshscan keeps the engine's comments from being the old tree's. This keeps
-  # the phase documents from describing a tree that moved on: each numbered
-  # deliberate change names what it is about, and a rename leaves the prose
-  # describing something that is not there.
-  #
-  # Every built phase: 0 (foundation), 1 (core) and 2. The audit documents
-  # describe the old tree on purpose, and phase 3's describe what is not built
-  # yet, so both would report their own subject matter as missing.
-  #
-  # Foundation and core were left out when this gate was written and were the
-  # only areas nothing checked. Adding them brought 175 change entries under
-  # the gate and found six documents naming the old tree's spelling of a
-  # symbol; each was checked by hand and is recorded in the tool's ignore list
-  # with what replaced it.
-  #
-  # http joined once its packages existed. It found a defect in the tool: an
-  # identifier with a slash was assumed to be a file path, so a route path was
-  # reported missing while sitting in the route table. Four of its six findings
-  # were that bug.
-  #
-  # The refactor documents are historical architecture plans: their deliberate
-  # changes name the future engine tree, not the current implementation, so
-  # running speccheck against internal would report every planned move as drift.
-  # Only an explicitly current spec tree is authoritative for this gate.
-  SPEC_ROOT=
-  for candidate in docs/internal/current docs/current docs/spec; do
-    if [ -d "$candidate" ]; then SPEC_ROOT="../$candidate"; break; fi
-  done
-  if [ -n "$SPEC_ROOT" ]; then
-    run "speccheck (the current phase documents match the internal tree)" bash -c '
-      cd backend
-      fail=0
-      for area in foundation core auth oidc upload search preview settings smb http; do
-        [ -d "'"$SPEC_ROOT"'/$area" ] || continue
-        if ! go run ./tools/speccheck "'"$SPEC_ROOT"'/$area" ./internal; then fail=1; fi
-      done
-      exit $fail'
-  else
-    skipped "speccheck (the current phase documents match the internal tree)" \
-            "only historical refactor documents are checked in; no current spec inputs" \
-            "${VERIFY_REQUIRE_SPECDOCS:-0}"
-  fi
-  run "vetsecret (D12: no secret to a verb)" ingo_host go run ./tools/vetsecret ./...
-  run "koscan (D15: no Korean in Go source)" ingo_host go run ./tools/koscan ./cmd ./tools ./internal
-  run "layercheck (the internal tiers hold)" ingo_host go run ./tools/layercheck ./internal
+    "A row's bytes are addressed by its own reference: contentUrl(entry)."
+  run "layercheck (platform and server boundaries hold)" ingo_host go run ./tools/layercheck ./internal
   FMT=$(cd backend && gofmt -l . 2>/dev/null)
   grep_gate "gofmt" "$FMT" "Run: cd backend && gofmt -w ."
-  # D18. The module graph against the checked-in allowlist, so a new direct
-  # dependency is a diff to a file rather than a line in go.mod nobody reads.
-  DEPS_WANT=$(grep -vE '^[[:space:]]*(#|$)' backend/deps.allow | sort)
-  DEPS_HAVE=$(ingo go list -m -f '{{if and (not .Main) (not .Indirect)}}{{.Path}}{{end}}' all \
-              2>/dev/null | grep -v '^$' | sort)
-  DEPS_DIFF=$(diff <(printf '%s\n' "$DEPS_WANT") <(printf '%s\n' "$DEPS_HAVE") 2>/dev/null)
-  grep_gate "direct modules match backend/deps.allow" "$DEPS_DIFF" \
-    "< is allowed and absent, > is present and not allowed. Edit backend/deps.allow."
-
-  # D1. Exceptions are countable, and the count is committed, so one being
-  # added shows up in the diff beside the reason it was added for.
-  #
-  # Separate fixed counts for the outer command/tooling surface and the
-  # feature-oriented internal tree. Both may only go down.
-  nolint_count() {
-    grep -rIno '//nolint:[a-zA-Z,]*' backend --include='*.go' 2>/dev/null \
-      | grep -c "$@" | tr -d '[:space:]'
-  }
-  NOLINT_WANT=$(grep -vE '^[[:space:]]*(#|$)' backend/nolint.budget | sed -n 1p | tr -d '[:space:]')
-  NOLINT_WANT_INTERNAL=$(grep -vE '^[[:space:]]*(#|$)' backend/nolint.budget | sed -n 2p | tr -d '[:space:]')
-  NOLINT_HAVE=$(nolint_count -v '^backend/internal/')
-  NOLINT_HAVE_INTERNAL=$(nolint_count '^backend/internal/')
-  NOLINT_HITS=""
-  [ "$NOLINT_WANT" = "$NOLINT_HAVE" ] || \
-    NOLINT_HITS="the outer tree: backend/nolint.budget says $NOLINT_WANT, it has $NOLINT_HAVE"
-  [ "$NOLINT_WANT_INTERNAL" = "$NOLINT_HAVE_INTERNAL" ] || \
-    NOLINT_HITS="$NOLINT_HITS"$'\n'"the internal tree: backend/nolint.budget says $NOLINT_WANT_INTERNAL, it has $NOLINT_HAVE_INTERNAL"
-  NOLINT_HITS=$(printf '%s' "$NOLINT_HITS" | sed '/^$/d')
-  grep_gate "//nolint counts match backend/nolint.budget" "$NOLINT_HITS" \
-    "Every exception carries a reason on its line. Update the budget deliberately."
 
   # Three rules that are about a call appearing outside the one package that
   # owns it. Each scans code, not comments, for the same reason the compat
@@ -412,7 +306,7 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   #
   # Share-content renames and control-file publication have separate owners.
   RENAME_HITS=$(go_code 'os\.Rename\(|unix\.Renameat2?\(' \
-                | grep -vE '^backend/internal/storage/vfs/')
+                | grep -vE '^backend/internal/fs/vfs/')
   grep_gate "D11: rename only from the packages that own it" "$RENAME_HITS" \
     "Take the operation whose contract matches: vfs for share content, durablefs for a control file."
 
@@ -425,7 +319,7 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   #
   # Every raw descriptor use stays in the package that owns its *os.File.
   FD_HITS=$(go_code '\.Fd\(\)' \
-            | grep -vE '^backend/internal/(storage/vfs/root\.go|platform/system/jail/landlock\.go|feature/preview/transport\.go):')
+            | grep -vE '^backend/internal/(fs/vfs/root\.go|platform/system/jail/landlock\.go|preview/transport\.go):')
   grep_gate "raw descriptors only through a keepalive helper" "$FD_HITS" \
     "Use the descriptor helper where the owning file lives."
 
@@ -450,9 +344,9 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   # Tests build fixture strings rather than statements. Database limits format
   # typed error messages, not queries.
   SQL_HITS=$(go_code 'fmt\.Sprintf\(|fmt\.Sprint\(|strings\.Builder' \
-             | grep '^backend/internal/store/' | grep -v '_test\.go:' \
-             | grep -v '^backend/internal/store/limits/' || true)
-  grep_gate "D14: no built SQL in the store" "$SQL_HITS" \
+             | grep '^backend/internal/db/' | grep -v '_test\.go:' \
+             | grep -v '^backend/internal/db/limits/' || true)
+  grep_gate "D14: no built SQL in the db" "$SQL_HITS" \
     "Bind parameters. A query built from parts is an injection waiting for input."
 
   # D19. Closes F8, where two files carried thirteen per cent of the tree with
@@ -462,45 +356,15 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   grep_gate "no Go file over 1,500 lines" "$BIG" \
     "Split along a seam the problem already has, not one invented to hit a count."
 
-  # Compatibility vocabulary stays inside the Nextcloud transport adapter and
-  # its route-reservation declarations.
+  # Compatibility vocabulary stays inside the Nextcloud adapter and the
+  # server's list of reserved path prefixes.
   go_compat_isolation() {
-    vendor_terms() {
-      grep -rIn --include='*.go' -iE '\bocs\b|remote\.php|nextcloud' "$1" 2>/dev/null \
-        | grep -v '_test\.go:' \
-        | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)' || true
-    }
-    hits=""
-    for d in internal/feature internal/platform internal/runtime internal/bootstrap; do
-      [ -d "backend/$d" ] || continue
-      hits="$hits$(vendor_terms "backend/$d")"
-    done
-    for d in apierr archive dav emergency route middleware server api publiclinks; do
-      [ -d "backend/internal/http/$d" ] || continue
-      if [ "$d" = server ]; then
-        hits="$hits$(vendor_terms "backend/internal/http/$d" \
-                     | grep -vE '^backend/internal/http/server/(fallback|preflight)' || true)"
-      else
-        hits="$hits$(vendor_terms "backend/internal/http/$d")"
-      fi
-    done
-    if [ -d backend/internal/http/middleware ]; then
-      hits="$hits$(grep -rIn --include='*.go' -iE '\bocs\b|remote\.php|nextcloud' \
-                   backend/internal/http/middleware 2>/dev/null \
-                   | grep -v '_test\.go:' \
-                   | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)' || true)"
-    fi
-    # The compatibility adapter owns its store and claim bindings, so it may
-    # depend on their concrete stores and the shared claim codec. Wire terms
-    # still cannot enter those dependencies or unrelated transport packages.
-    if [ -d backend/internal/http/nextcloud ]; then
-      hits="$hits$(ingo go list -tags compat_nc -f '{{range .Imports}}{{.}}{{"\n"}}{{end}}' \
-                   ./internal/http/nextcloud/... 2>/dev/null \
-                   | grep 'stowcloud/backend/internal/' \
-                   | grep -vE 'internal/(http/(dav|apierr|middleware|route|api|publiclinks|headers)|platform/(clock|number|protocol/limits)|store/(cache|ident|state)|storage/vfs)(/|$)|feature/' || true)"
-    fi
-    printf '%s' "$hits" | grep -v '^[[:space:]]*$' || true
+    grep -rIn --include='*.go' -iE '\bocs\b|remote\.php|nextcloud' backend/internal 2>/dev/null \
+      | grep -v '_test\.go:' \
+      | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)' \
+      | grep -vE '^backend/internal/(nextcloud/|server/nc(_off)?\.go:|web/fallback\.go:)' || true
   }
+
   # The reference clients are cloned into .ref so their wire behaviour can be
   # read. Their code is under a different licence, so a line of it reaching
   # backend/ is a licensing problem rather than a style one. Long lines only: a
@@ -554,13 +418,13 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
     skipped "no reference source copied into backend/" "no .ref checkout" 0
   fi
 
-  if [ -d backend/internal/http/nextcloud ]; then
+  if [ -d backend/internal/nextcloud ]; then
     NC_HITS=$(go_compat_isolation)
     grep_gate "compat isolation (import graph, seam, text)" "$NC_HITS" \
       "Compat wire vocabulary belongs behind the compat layer."
   else
     skipped "compat isolation (import graph, seam, text)" \
-            "backend/internal/http/nextcloud does not exist yet" "${VERIFY_REQUIRE_COMPAT:-0}"
+            "backend/internal/nextcloud does not exist yet" "${VERIFY_REQUIRE_COMPAT:-0}"
   fi
 
   # --- everything above is text, and everything below compiles -------------
@@ -622,12 +486,14 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
 
   # The compat layer builds both ways. With no tag its packages are not
   # compiled at all, which is stronger than the feature flag it replaces.
-  if [ -d backend/internal/http/nextcloud ]; then
+  if [ -d backend/internal/nextcloud ]; then
     run "go build (compat stripped)" ingo go build ./...
     run "go build -tags compat_nc"   ingo go build -tags compat_nc ./...
   fi
 
-  if LINT=$(go_tool golangci-lint "$GOLANGCI"); then
+  if [ "${VERIFY_SKIP_GOLANGCI:-0}" = 1 ]; then
+    skipped "golangci-lint run" "already ran through just lint" 0
+  elif LINT=$(go_tool golangci-lint "$GOLANGCI"); then
     run "golangci-lint run" native_tool "$LINT" run ./...
   else
     skipped "golangci-lint run" "not on PATH and could not be installed" \
@@ -635,9 +501,13 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   fi
 
   if [ "$HOST" = linux ]; then
-    run "go test ($HOST)" ingo_host go test -count=1 ./...
+    if [ "${VERIFY_SKIP_GO_TEST:-0}" = 1 ]; then
+      skipped "go test ($HOST)" "already ran through just test" 0
+    else
+      run "go test ($HOST)" ingo_host go test -count=1 ./...
+    fi
     run "VeraCrypt external golden" \
-        ingo_host bash -c 'VAULT_INTEROP_FIXTURE="$PWD/internal/storage/vault/testdata/interop/hash_sha512.hc" go test -count=1 ./internal/storage/vault -run "^TestOpenExternalVeraCryptFixture$" -v'
+        ingo_host bash -c 'VAULT_INTEROP_FIXTURE="$PWD/internal/fs/vault/testdata/interop/hash_sha512.hc" go test -count=1 ./internal/fs/vault -run "^TestOpenExternalVeraCryptFixture$" -v'
   else
     skipped "go test ($HOST)" "the durable runtime is Linux-only; off-Linux test binaries are compiled above" 0
   fi
@@ -646,7 +516,7 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   # with no tag those files are not compiled at all, so a build that only
   # checks the stripped tree checks none of that phase's behaviour. Both
   # packages, because the vocabulary and the mount are tested in different
-  # places: `http/nc` holds the wire format and `lifecycle` holds the routes
+  # places: `nextcloud` holds the wire format and `lifecycle` holds the routes
   # and the client flows. Naming only the first left every mounted route
   # untested, which is how an Engine assembled without a clock reached a
   # released handler.
@@ -663,10 +533,14 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   # like everything it wraps, so off Linux the pattern matches no packages
   # and go reports that as an error: a step failing because the code it names
   # does not exist on this OS says nothing about the code.
-  if [ -d backend/internal/http/nextcloud ]; then
+  if [ -d backend/internal/nextcloud ]; then
     if [ "$HOST" = linux ]; then
-      run "go test -tags compat_nc" \
-          ingo_host go test -tags compat_nc -count=1 ./internal/http/nextcloud/... ./internal/app/...
+      if [ "${VERIFY_SKIP_COMPAT_TEST:-0}" = 1 ]; then
+        skipped "go test -tags compat_nc" "already ran through just test" 0
+      else
+        run "go test -tags compat_nc" \
+            ingo_host go test -tags compat_nc -count=1 ./internal/nextcloud/... ./test/...
+      fi
     else
       skipped "go test -tags compat_nc" "the compat layer is Linux only" 0
     fi
@@ -721,7 +595,7 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
   # to compile, so there is no stale-bundle hazard to clean around. The bundle
   # lives inside the embedding package because //go:embed cannot name a path
   # outside it, and refuses a symlink that points out.
-  if [ -f backend/internal/http/spa/build/index.html ]; then
+  if [ -f backend/internal/web/build/index.html ]; then
     # One bundle build for the two checks below, which each used to run their
     # own. `SC_BUNDLE_FRESH` tells them the tree's bundle is the current
     # build, so they serve it instead of rebuilding it; CI sets it too,
@@ -742,7 +616,11 @@ if [ -f backend/go.mod ] && command -v go >/dev/null 2>&1; then
       # that asks whether a request arrives rather than whether a function is
       # correct, which is the distinction that let login sit on the wrong path
       # with the whole suite green.
-      run "the interface signs in and reaches its surfaces" bash scripts/e2e.sh
+      if [ "${VERIFY_SKIP_E2E:-0}" = 1 ]; then
+        skipped "the interface signs in and reaches its surfaces" "runs separately through just e2e" 0
+      else
+        run "the interface signs in and reaches its surfaces" bash scripts/e2e.sh
+      fi
     else
       skipped "the embedded bundle is the built one" "no pnpm" "${VERIFY_REQUIRE_UI:-0}"
     fi

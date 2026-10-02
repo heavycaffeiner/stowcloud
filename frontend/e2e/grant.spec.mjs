@@ -53,8 +53,7 @@ try {
   // The share the server was configured with.
   const shares = await api('GET', '/api/v1/admin/shares')
   const shareList = Array.isArray(shares.body) ? shares.body : (shares.body?.shares ?? [])
-  check('the configured share is listed', shareList.length > 0,
-    JSON.stringify(shares.body).slice(0, 120))
+  check('the configured share is listed', shareList.length > 0, JSON.stringify(shares.body).slice(0, 120))
   const shareID = shareList[0]?.id
   const shareName = shareList[0]?.name
 
@@ -64,10 +63,12 @@ try {
   // in account the wrong subject for this test, which is about what a grant
   // does rather than about what setup did.
   const member = `grant-probe-${Date.now()}`
-  const madeUser = await api('POST', '/api/v1/admin/users',
-    { login: member, password: 'grant-probe-password' }, csrf)
-  check('a second account is created', madeUser.status === 201,
-    `status ${madeUser.status} ${JSON.stringify(madeUser.body).slice(0, 120)}`)
+  const madeUser = await api('POST', '/api/v1/admin/users', { login: member, password: 'grant-probe-password' }, csrf)
+  check(
+    'a second account is created',
+    madeUser.status === 201,
+    `status ${madeUser.status} ${JSON.stringify(madeUser.body).slice(0, 120)}`
+  )
   const memberID = madeUser.body?.id
 
   // Signed in as that account, in its own browser context, so the two
@@ -124,27 +125,32 @@ try {
     },
     csrf
   )
-  check('the grant is created', created.status === 201,
-    `status ${created.status} ${JSON.stringify(created.body).slice(0, 140)}`)
+  check(
+    'the grant is created',
+    created.status === 201,
+    `status ${created.status} ${JSON.stringify(created.body).slice(0, 140)}`
+  )
 
   // The point of the whole test: the grant is live in the process answering
   // requests, without a restart.
   const after = await memberApi('GET', `/api/v1/files/list?path=${shareName}`)
-  check('the granted share lists immediately, with no restart', after.status === 200,
-    `status ${after.status}`)
-  check('the listing reports whether its change token is exact',
+  check('the granted share lists immediately, with no restart', after.status === 200, `status ${after.status}`)
+  check(
+    'the listing reports whether its change token is exact',
     typeof after.body?.dir_etag_weak === 'boolean',
-    `dir_etag_weak=${after.body?.dir_etag_weak}`)
-  check('the listing carries entries', Array.isArray(after.body?.entries),
-    `${after.body?.entries?.length} entries`)
+    `dir_etag_weak=${after.body?.dir_etag_weak}`
+  )
+  check('the listing carries entries', Array.isArray(after.body?.entries), `${after.body?.entries?.length} entries`)
 
   // And an entry says whether its own token is exact, which is what the
   // editor's conflict handling branches on.
   const entry = after.body?.entries?.[0]
   if (entry) {
-    check('an entry reports whether its change token is exact',
+    check(
+      'an entry reports whether its change token is exact',
       typeof entry.etag_weak === 'boolean',
-      `etag_weak=${entry.etag_weak}`)
+      `etag_weak=${entry.etag_weak}`
+    )
   }
 
   // Removing it takes the access away again, also without a restart.

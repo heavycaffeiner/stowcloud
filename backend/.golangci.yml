@@ -26,15 +26,20 @@ linters:
     - staticcheck
     - ineffassign
     - unused
+    # Every //nolint names its linter and carries a reason on the same line.
+    - nolintlint
 
   settings:
     errcheck:
       # D1 says an empty exclude list, so the built-in one goes too. Every
-      # ignored return needs a nolint with a reason on the line, and the gate
-      # counts those against a committed budget.
+      # ignored return needs a nolint with a reason on the line.
       disable-default-exclusions: true
       check-type-assertions: true
       check-blank: true
+
+    nolintlint:
+      require-explanation: true
+      require-specific: true
 
     gosec:
       excludes:
@@ -65,8 +70,8 @@ linters:
       # `revision` is written by the linker (-X main.revision=...), which is
       # the only mechanism Go offers for stamping a build. It cannot be a
       # const, and nothing at runtime writes it: it is read once to answer
-      # `sc-engine version` and to report what a deployment is running.
-      - path: cmd/sc-engine/main\.go
+      # `stowcloud version` and to report what a deployment is running.
+      - path: cmd/stowcloud/main\.go
         linters:
           - gochecknoglobals
 
@@ -119,11 +124,10 @@ linters:
       # bucket-scoped identifier that is persisted verbatim in
       # share_definition.backend_config on purpose. The credential is
       # `secret_access_key`, which travels as a `secret.Secret` and never
-      # enters this struct, and `vetsecret` is the gate that keeps it that
-      # way. The JSON key is a stored contract and cannot be renamed to dodge
-      # a pattern match. Scoped to the one file, so G117 still applies
-      # everywhere else.
-      - path: internal/storage/objstore/config\.go
+      # enters this struct. The JSON key is a stored contract and cannot be
+      # renamed to dodge a pattern match. Scoped to the one file, so G117
+      # still applies everywhere else.
+      - path: internal/fs/objstore/config\.go
         linters:
           - gosec
         text: "G117"
@@ -138,7 +142,7 @@ linters:
       # lines of key schedule and MDS matrix with nothing to gain, and
       # `AGENTS.md` says cryptography is where a dependency is taken rather
       # than reimplemented. Scoped to the one file that imports it.
-      - path: internal/storage/vault/algorithm\.go
+      - path: internal/fs/vault/algorithm\.go
         linters:
           - staticcheck
         text: "SA1019"

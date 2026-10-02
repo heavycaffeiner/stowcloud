@@ -1,0 +1,8 @@
+node_modules
+build
+../backend/internal/web/build
+coverage
+test-results
+playwright-report
+pnpm-lock.yaml
+src/api/generated

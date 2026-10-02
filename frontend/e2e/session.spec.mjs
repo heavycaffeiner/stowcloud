@@ -69,14 +69,13 @@ const violations = []
 // behaviour here and not a content-policy violation. Matched narrowly, by
 // both the registration and the certificate, so a real worker error still
 // fails this check.
-const isSelfSignedWorkerRefusal = (text) =>
-  /register a ServiceWorker/i.test(text) && /certificate/i.test(text)
+const isSelfSignedWorkerRefusal = (text) => /register a ServiceWorker/i.test(text) && /certificate/i.test(text)
 
-page.on('console', m => {
+page.on('console', (m) => {
   const t = m.text()
   if (m.type() === 'error' && /Content Security Policy/i.test(t)) violations.push(t)
 })
-page.on('pageerror', e => {
+page.on('pageerror', (e) => {
   if (isSelfSignedWorkerRefusal(e.message)) return
   violations.push('pageerror: ' + e.message)
 })
@@ -86,9 +85,10 @@ try {
   const res = await page.goto(BASE, { waitUntil: 'domcontentloaded' })
   check('the document is served', res?.status() === 200, `status ${res?.status()}`)
   const assets = await page.evaluate(async () => {
-    const script = [...document.querySelectorAll('script[type="module"][src]')]
-      .map((node) => node.getAttribute('src') ?? '')
-      .find((src) => /(?:^|\/)app\/[^/]+\.js(?:$|\?)/.test(src)) ?? ''
+    const script =
+      [...document.querySelectorAll('script[type="module"][src]')]
+        .map((node) => node.getAttribute('src') ?? '')
+        .find((src) => /(?:^|\/)app\/[^/]+\.js(?:$|\?)/.test(src)) ?? ''
     const worker = await fetch('/service-worker.js', { cache: 'no-store' })
     const bundle = script ? await fetch(script, { cache: 'no-store' }) : null
     return {
@@ -99,10 +99,12 @@ try {
     }
   })
   check('the generated module script is under app/', assets.script !== '', assets.markup.slice(0, 160))
-  check('the generated module script is reachable', assets.bundleStatus === 200,
-    `${assets.script || 'missing'} status ${assets.bundleStatus}`)
-  check('the root service worker is reachable', assets.workerStatus === 200,
-    `status ${assets.workerStatus}`)
+  check(
+    'the generated module script is reachable',
+    assets.bundleStatus === 200,
+    `${assets.script || 'missing'} status ${assets.bundleStatus}`
+  )
+  check('the root service worker is reachable', assets.workerStatus === 200, `status ${assets.workerStatus}`)
 
   // The bundle referenced is not the bundle running. Everything below drives
   // the API with fetch, which no content policy stops, so the whole suite
@@ -110,19 +112,24 @@ try {
   // bootstrap: every request succeeded and the screen was blank.
   //
   // This is the one check that fails when the interface does not start.
-  await page.waitForFunction(() => (document.body?.innerText ?? '').trim().length > 0,
-    null, { timeout: 15000 }).catch(() => {})
-  const rendered = (await page.evaluate(() => (document.body?.innerText ?? '').trim()))
-  check('the interface renders something', rendered.length > 0,
-    rendered.length > 0 ? '' : 'the page is blank; the app never started')
-  check('nothing was blocked by the content policy', violations.length === 0,
-    violations.join(' | '))
+  await page
+    .waitForFunction(() => (document.body?.innerText ?? '').trim().length > 0, null, { timeout: 15000 })
+    .catch(() => {})
+  const rendered = await page.evaluate(() => (document.body?.innerText ?? '').trim())
+  check(
+    'the interface renders something',
+    rendered.length > 0,
+    rendered.length > 0 ? '' : 'the page is blank; the app never started'
+  )
+  check('nothing was blocked by the content policy', violations.length === 0, violations.join(' | '))
 
   console.log('first run')
   const setupState = await api(page, 'GET', '/api/v1/system/setup')
-  check('the setup question answers the field the client reads',
+  check(
+    'the setup question answers the field the client reads',
     typeof setupState.body?.required === 'boolean',
-    JSON.stringify(setupState.body))
+    JSON.stringify(setupState.body)
+  )
 
   if (setupState.body?.required && TOKEN) {
     const created = await api(page, 'POST', '/api/v1/system/setup', {
@@ -135,8 +142,11 @@ try {
       app_hosts: [new URL(BASE).hostname],
       trusted_proxies: []
     })
-    check('the administrator is created', created.status === 200 || created.status === 201,
-      `status ${created.status} ${JSON.stringify(created.body).slice(0, 160)}`)
+    check(
+      'the administrator is created',
+      created.status === 200 || created.status === 201,
+      `status ${created.status} ${JSON.stringify(created.body).slice(0, 160)}`
+    )
   }
 
   console.log('signing in')
@@ -144,9 +154,11 @@ try {
   // Refused as an address that is not there. Every route but the public ones
   // answers a credential-less request that way, so a stranger with a word
   // list cannot tell a real route from one that was never mounted.
-  check('no credential is refused as a path that is not there',
+  check(
+    'no credential is refused as a path that is not there',
     noSession.status === 404 && noSession.body?.error === 'not_found',
-    JSON.stringify(noSession.body))
+    JSON.stringify(noSession.body)
+  )
 
   // The wrong password first, while there is no session. Once one exists this
   // is a state-changing request from an authenticated caller, so CSRF refuses
@@ -156,8 +168,11 @@ try {
   check('a wrong password is refused', wrong.status === 401, `status ${wrong.status}`)
 
   const login = await api(page, 'POST', '/api/v1/auth/login', { login: USER, password: PASSWORD })
-  check('signing in succeeds on the path the client calls', login.status === 200,
-    `status ${login.status} ${JSON.stringify(login.body)}`)
+  check(
+    'signing in succeeds on the path the client calls',
+    login.status === 200,
+    `status ${login.status} ${JSON.stringify(login.body)}`
+  )
 
   const session = await api(page, 'GET', '/api/v1/auth/session')
   check('the session is established', session.status === 200, `status ${session.status}`)
@@ -168,13 +183,16 @@ try {
   // A fresh deployment serves nothing: no file declares a folder, so the
   // first share is one the administrator creates from the interface.
   const existing = await api(page, 'GET', '/api/v1/admin/shares')
-  const already = (Array.isArray(existing.body) ? existing.body : (existing.body?.shares ?? []))
-    .some((s) => s.name === 'docs')
+  const already = (Array.isArray(existing.body) ? existing.body : (existing.body?.shares ?? [])).some(
+    (s) => s.name === 'docs'
+  )
   if (!already && SHARE) {
-    const made = await api(page, 'POST', '/api/v1/admin/shares',
-      { name: 'docs', host: SHARE }, csrf)
-    check('the first share is created from the interface', made.status === 201,
-      `status ${made.status} ${JSON.stringify(made.body).slice(0, 160)}`)
+    const made = await api(page, 'POST', '/api/v1/admin/shares', { name: 'docs', host: SHARE }, csrf)
+    check(
+      'the first share is created from the interface',
+      made.status === 201,
+      `status ${made.status} ${JSON.stringify(made.body).slice(0, 160)}`
+    )
   }
 
   console.log('browsing')
@@ -187,28 +205,36 @@ try {
   // the root projects the grant as share-<id>, so every path a person types
   // is a 404 against a share that is definitely there.
   const shareRow = (await api(page, 'GET', '/api/v1/admin/shares')).body
-  const docs = (Array.isArray(shareRow) ? shareRow : (shareRow?.shares ?? []))
-    .find((s) => s.name === 'docs')
-  check('the share this run browses exists', docs !== undefined,
-    JSON.stringify(shareRow).slice(0, 160))
+  const docs = (Array.isArray(shareRow) ? shareRow : (shareRow?.shares ?? [])).find((s) => s.name === 'docs')
+  check('the share this run browses exists', docs !== undefined, JSON.stringify(shareRow).slice(0, 160))
   if (docs) {
-    const again = await api(page, 'POST', '/api/v1/admin/grants', {
-      user: String(session.body?.user?.id ?? 1),
-      share: String(docs.id),
-      allow: ['read', 'download', 'write', 'create', 'delete'],
-      inherit: true,
-      label: 'docs'
-    }, csrf)
-    check('a second grant over the same target is refused',
+    const again = await api(
+      page,
+      'POST',
+      '/api/v1/admin/grants',
+      {
+        user: String(session.body?.user?.id ?? 1),
+        share: String(docs.id),
+        allow: ['read', 'download', 'write', 'create', 'delete'],
+        inherit: true,
+        label: 'docs'
+      },
+      csrf
+    )
+    check(
+      'a second grant over the same target is refused',
       again.status === 409 && again.body?.error?.detail?.reason_key === 'admin.grant_exists',
-      `status ${again.status} ${JSON.stringify(again.body).slice(0, 160)}`)
+      `status ${again.status} ${JSON.stringify(again.body).slice(0, 160)}`
+    )
   }
 
   const list = await api(page, 'GET', '/api/v1/files/list?path=docs')
   check('the granted share is readable', list.status === 200, `status ${list.status}`)
-  check('the listing carries the rows it found',
+  check(
+    'the listing carries the rows it found',
     Array.isArray(list.body?.entries) && list.body.entries.length > 0,
-    JSON.stringify(list.body).slice(0, 160))
+    JSON.stringify(list.body).slice(0, 160)
+  )
 
   // The client's own path spelling is rooted, and it has to be accepted: its
   // URLs are rooted, so this is what every request the interface makes looks
@@ -222,36 +248,47 @@ try {
   // absent cursor and a null one have to stay distinguishable, because the
   // pager reads null as "stop".
   const firstPage = await api(page, 'GET', '/api/v1/files/list?path=docs&limit=1')
-  check('a bounded page is the size that was asked for',
+  check(
+    'a bounded page is the size that was asked for',
     firstPage.body?.entries?.length === 1,
-    `entries=${firstPage.body?.entries?.length}`)
-  check('the page reports the total behind it',
-    typeof firstPage.body?.total === 'number', JSON.stringify(firstPage.body).slice(0, 160))
+    `entries=${firstPage.body?.entries?.length}`
+  )
+  check(
+    'the page reports the total behind it',
+    typeof firstPage.body?.total === 'number',
+    JSON.stringify(firstPage.body).slice(0, 160)
+  )
   if (firstPage.body?.cursor) {
-    const nextPage = await api(page, 'GET',
-      `/api/v1/files/list?path=docs&limit=1&cursor=${encodeURIComponent(firstPage.body.cursor)}`)
-    check('the cursor walks to the next page', nextPage.status === 200,
-      `status ${nextPage.status}`)
-    check('the second page is not the first',
+    const nextPage = await api(
+      page,
+      'GET',
+      `/api/v1/files/list?path=docs&limit=1&cursor=${encodeURIComponent(firstPage.body.cursor)}`
+    )
+    check('the cursor walks to the next page', nextPage.status === 200, `status ${nextPage.status}`)
+    check(
+      'the second page is not the first',
       nextPage.body?.entries?.[0]?.name !== firstPage.body?.entries?.[0]?.name,
-      `both pages start at ${nextPage.body?.entries?.[0]?.name}`)
+      `both pages start at ${nextPage.body?.entries?.[0]?.name}`
+    )
   }
 
   // The change token the client conditions on, which is what lets it skip a
   // redraw when nothing moved.
-  check('the listing carries a change token',
+  check(
+    'the listing carries a change token',
     typeof list.body?.dir_etag === 'string' && list.body.dir_etag.length > 0,
-    `dir_etag=${list.body?.dir_etag}`)
+    `dir_etag=${list.body?.dir_etag}`
+  )
 
   // The existence rule: a path that does not exist and one this account may
   // not see answer identically, so a stranger cannot probe for what is there.
   const missing = await api(page, 'GET', '/api/v1/files/list?path=docs/no-such-directory')
   const outside = await api(page, 'GET', '/api/v1/files/list?path=secret/anything')
-  check('a missing path and a forbidden one are indistinguishable',
-    missing.status === 404 &&
-      outside.status === 404 &&
-      JSON.stringify(missing.body) === JSON.stringify(outside.body),
-    `${missing.status}/${outside.status}`)
+  check(
+    'a missing path and a forbidden one are indistinguishable',
+    missing.status === 404 && outside.status === 404 && JSON.stringify(missing.body) === JSON.stringify(outside.body),
+    `${missing.status}/${outside.status}`
+  )
 
   console.log('the surfaces the admin screens call')
   const surfaces = [
@@ -274,9 +311,7 @@ try {
     // handler. A subsystem that is not built answers that it is not
     // implemented, which is a status a client can act on; a route that is not
     // mounted answers 404, which is the defect this whole run exists for.
-    check(`${method} ${path} reaches a handler`,
-      r.status !== 404 && r.status !== 405,
-      `status ${r.status}`)
+    check(`${method} ${path} reaches a handler`, r.status !== 404 && r.status !== 405, `status ${r.status}`)
   }
 
   console.log('a state-changing request needs its token')
@@ -288,8 +323,7 @@ try {
     })
     return res.status
   })
-  check('a request without the token is refused', noToken === 400 || noToken === 403,
-    `status ${noToken}`)
+  check('a request without the token is refused', noToken === 400 || noToken === 403, `status ${noToken}`)
 
   // A fresh name per run, because a name another row holds is a conflict and
   // this check is about the token rather than about the name.
@@ -305,8 +339,7 @@ try {
     },
     [csrf, group]
   )
-  check('a request with the token is accepted', withToken.status === 201,
-    `status ${withToken.status}`)
+  check('a request with the token is accepted', withToken.status === 201, `status ${withToken.status}`)
 
   console.log('signing out')
   const out = await page.evaluate(

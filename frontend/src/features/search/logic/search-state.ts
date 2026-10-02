@@ -1,5 +1,6 @@
-import type { SearchHit, SearchProgress } from '../../../lib/api/client'
-import type { SearchSnapshot, SearchSortKey } from '../../../lib/store/search.store'
+import type { SearchSnapshot, SearchSortKey } from '../state'
+import type { SearchHit, SearchProgress } from '../api'
+import type { IconName } from '@/shared/ui'
 
 export type Kind = 'any' | 'file' | 'dir'
 export type SortKey = SearchSortKey
@@ -8,6 +9,7 @@ export type CategoryId = 'all' | 'file' | 'dir' | 'document' | 'image' | 'video'
 
 export interface SearchPanelState {
   query: string
+  submitted: string
   kind: Kind
   presets: readonly string[]
   extText: string
@@ -20,11 +22,10 @@ export interface SearchPanelState {
   truncated: boolean
   elapsedMs: number | null
   scanned: SearchProgress | null
-  sortOpen: boolean
   scrollTop: number
 }
 
-export const CATEGORIES: readonly { id: CategoryId; labelKey: string; icon: string }[] = [
+export const CATEGORIES: readonly { id: CategoryId; labelKey: string; icon: IconName }[] = [
   { id: 'all', labelKey: /* i18n */ 'search.kind_any', icon: 'search' },
   { id: 'file', labelKey: /* i18n */ 'search.kind_file', icon: 'draft' },
   { id: 'dir', labelKey: /* i18n */ 'search.kind_dir', icon: 'folder' },
@@ -43,9 +44,11 @@ export const SORT_KEYS: readonly [SortKey, string][] = [
   ['date', /* i18n */ 'search.sort_date']
 ]
 
-export function initialSearchState(snapshot: SearchSnapshot | null): SearchPanelState {
+/** The panel as the snapshot left it, or empty with `submitted` waiting in the field to run. */
+export function initialSearchState(snapshot: SearchSnapshot | null, submitted = ''): SearchPanelState {
   return {
-    query: snapshot?.query ?? '',
+    query: snapshot?.query ?? submitted,
+    submitted: snapshot?.submitted ?? '',
     kind: snapshot?.kind ?? 'any',
     presets: snapshot ? [...snapshot.presets] : [],
     extText: snapshot?.extText ?? '',
@@ -54,19 +57,23 @@ export function initialSearchState(snapshot: SearchSnapshot | null): SearchPanel
     hits: snapshot?.hits ?? [],
     running: snapshot?.running ?? false,
     ran: snapshot?.ran ?? false,
-    failure: snapshot?.running ? 'stopped' : snapshot?.failure ?? null,
+    failure: snapshot?.running ? 'stopped' : (snapshot?.failure ?? null),
     truncated: snapshot?.truncated ?? false,
     elapsedMs: snapshot?.elapsedMs ?? null,
     scanned: snapshot?.scanned ?? null,
-    sortOpen: false,
     scrollTop: snapshot?.scrollTop ?? 0
   }
 }
 
-export function toSnapshot(scope: string, state: SearchPanelState, overrides: Partial<SearchSnapshot> = {}): SearchSnapshot {
+export function toSnapshot(
+  scope: string,
+  state: SearchPanelState,
+  overrides: Partial<SearchSnapshot> = {}
+): SearchSnapshot {
   return {
     scope,
     query: state.query,
+    submitted: state.submitted,
     kind: state.kind,
     presets: state.presets,
     extText: state.extText,
@@ -89,11 +96,12 @@ export function sortHits(list: readonly SearchHit[], key: SortKey): readonly Sea
   const result = [...list]
   if (key === 'name') result.sort((a, b) => a.entry.name.localeCompare(b.entry.name))
   else if (key === 'size') result.sort((a, b) => b.entry.size - a.entry.size)
-  else result.sort((a, b) => {
-    const left = BigInt(b.entry.mtime_ns || '0')
-    const right = BigInt(a.entry.mtime_ns || '0')
-    return left === right ? 0 : left > right ? 1 : -1
-  })
+  else
+    result.sort((a, b) => {
+      const left = BigInt(b.entry.mtime_ns || '0')
+      const right = BigInt(a.entry.mtime_ns || '0')
+      return left === right ? 0 : left > right ? 1 : -1
+    })
   return result
 }
 export interface SearchStatus {

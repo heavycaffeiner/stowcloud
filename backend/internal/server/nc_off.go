@@ -1,0 +1,13 @@
+//go:build linux && !compat_nc
+
+package server
+
+import "github.com/gin-gonic/gin"
+
+// A build without the tag carries no compatibility surface, so the mount
+// claims nothing and the paths fall through to whatever else answers them.
+func (e *Engine) mountNCTagged(gin.IRoutes, typed, typed, gin.IRoutes) {}
+
+// No compatibility surface means no direct stream, so no route belongs to a
+// content host and a named one serves nothing.
+func (e *Engine) contentRoute(string, string) bool { return false }

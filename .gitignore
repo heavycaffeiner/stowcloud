@@ -7,8 +7,8 @@ venv/
 # path outside its own package directory, and refuses a symlink out of one.
 # Contents are ignored but the directory itself is kept (a .gitkeep), because
 # //go:embed all:build needs the directory to exist at compile time.
-backend/internal/http/spa/build/*
-!backend/internal/http/spa/build/.gitkeep
+backend/internal/web/build/*
+!backend/internal/web/build/.gitkeep
 # Where it used to build, kept ignored so an old checkout does not commit one.
 frontend/build
 /checks/consumers/web/dist/
@@ -29,18 +29,15 @@ frontend/playwright-report/
 # `go build ./cmd/<name>` or `./tools/<name>` from inside backend/ drops the binary
 # beside the source. One entry per command, because a bare `/backend/*` would hide
 # a new directory.
-/backend/differ
-/backend/enginedrive
-/backend/sc-engine
-/backend/sc-smb-agent
 /backend/stowcloud
+/backend/sc-smb-agent
 # Runtime state the testbed compose stack creates beside its own file.
 /deploy/testbed/data
 /deploy/testbed/secrets
 /deploy/testbed/smbcfg
 /deploy/testbed/shares
 # Unanchored: the token lands in `<data_dir>/setup-token`, and a data dir is
-# wherever sc.toml points. The root-anchored form missed every dir but one.
+# wherever --data-dir points. The root-anchored form missed every dir but one.
 setup-token
 
 # Screenshots and fixtures left behind by browser verification runs.
@@ -48,9 +45,8 @@ setup-token
 .tmp-*
 frontend/.tmp-*
 
-# Gate tooling and cross-compiled test binaries: build products, not source.
+# Gate tooling: build products, not source.
 /backend/.tools/
-/backend/.testbin/
 
 # CPython's bytecode cache, dropped beside a script the moment it is imported.
 # The e2e helpers under scripts/ are importable, so this appears from a plain
@@ -62,6 +58,7 @@ __pycache__/
 # reached a commit from a manual boot inside the package directory; the tests
 # themselves use temp dirs and never write here.
 *.db
+!backend/internal/db/state/testdata/release-v0.19.1/state.db
 *.db-wal
 *.db-shm
 
@@ -74,3 +71,4 @@ docs/internal/
 /.agents/
 /scripts/*
 !/scripts/*.sh
+!/scripts/clean.py

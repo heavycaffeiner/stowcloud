@@ -1,0 +1,323 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { batchErrorKey } from '../../../api/error-text'
+import { useI18n } from '../../../hooks/use-i18n'
+import { t } from '../../../i18n'
+import { jobTray, useJobTrayStore } from '../tray-store'
+import { Icon, StowIconButton, StowProgressLinear, StowTray, trayStyles as styles, VirtualList } from '@/shared/ui'
+import { srOnly } from '@/shared/theme'
+import { useInvalidateAllPaths } from '../../file-browser/api'
+import { useJobAction, useJobList, useJobStatuses, type JobKind, type JobState, type JobStatus } from '../api'
+
+interface JobRow {
+  id: string
+  kind: 'delete' | 'copy' | 'index'
+  done: number
+  total: number
+  status: JobState
+  message?: string
+  messageParams?: Record<string, string>
+  attempting: string[]
+  pending: string[]
+  attempt: number
+  maxAttempts: number
+  nextRunNs: string
+}
+
+function frontendKind(kind: JobKind): JobRow['kind'] {
+  return kind === 'index_build' ? 'index' : kind === 'delete' ? 'delete' : 'copy'
+}
+
+function kindLabel(kind: JobRow['kind']): string {
+  return kind === 'delete' ? t('common.delete') : kind === 'copy' ? t('common.copy') : t('job.index_build')
+}
+
+function rowFor(id: string, status: JobStatus | undefined, error: boolean): JobRow {
+  if (!status || error) {
+    return {
+      id,
+      kind: 'copy',
+      done: 0,
+      total: 0,
+      status: error ? 'error' : 'running',
+      message: error ? /* i18n */ 'job.could_not_check_job_status' : undefined,
+      attempting: [],
+      pending: [],
+      attempt: 0,
+      maxAttempts: 0,
+      nextRunNs: '0'
+    }
+  }
+  const kind = frontendKind(status.kind)
+  if (status.state === 'error') {
+    const first = batchErrorKey(status.results.find((result) => !result.ok)?.error)
+    return {
+      id,
+      kind,
+      done: status.done,
+      total: status.total,
+      status: 'error',
+      message: first?.key,
+      messageParams: first?.params,
+      attempting: status.attempting,
+      pending: status.pending,
+      attempt: status.attempt,
+      maxAttempts: status.max_attempts,
+      nextRunNs: status.next_run_ns
+    }
+  }
+  return {
+    id,
+    kind,
+    done: status.done,
+    total: status.total,
+    status: status.state,
+    attempting: status.attempting,
+    pending: status.pending,
+    attempt: status.attempt,
+    maxAttempts: status.max_attempts,
+    nextRunNs: status.next_run_ns
+  }
+}
+
+function jobProgressValue(item: JobRow): number | undefined {
+  if (item.status !== 'running') return item.status === 'done' ? 1 : undefined
+  if (item.total <= 0) return undefined
+  return Math.min(Math.max(item.done / item.total, 0), 1)
+}
+
+function useJobTray() {
+  const { t, tp } = useI18n()
+  const ids = useJobTrayStore((state) => state.ids)
+  const open = useJobTrayStore((state) => state.open)
+  const [trayState, setTrayState] = useState<{ expandedJobs: ReadonlySet<string> }>({
+    expandedJobs: new Set()
+  })
+  const { expandedJobs } = trayState
+  const cancel = useJobAction('cancel')
+  const retry = useJobAction('retry')
+  const pause = useJobAction('pause')
+  const resume = useJobAction('resume')
+  const list = useJobList()
+  const statuses = useJobStatuses(ids)
+  const invalidatePaths = useInvalidateAllPaths()
+  const rows = useMemo(
+    () => ids.map((id, index) => rowFor(id, statuses[index]?.data, statuses[index]?.isError === true)),
+    [ids, statuses]
+  )
+  const previous = useRef(new Map<string, JobState>())
+  const politeRef = useRef<HTMLDivElement | null>(null)
+  const assertiveRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    jobTray.track(...(list.data ?? []).map((job) => job.id))
+  }, [list.data])
+
+  useEffect(() => {
+    setTrayState((state) => {
+      const tracked = new Set(ids)
+      const retained = new Set([...state.expandedJobs].filter((id) => tracked.has(id)))
+      return retained.size === state.expandedJobs.size ? state : { expandedJobs: retained }
+    })
+  }, [ids, setTrayState])
+
+  const announce = (target: 'polite' | 'assertive', text: string): void => {
+    const element = (target === 'polite' ? politeRef : assertiveRef).current
+    if (!element) return
+    element.textContent = ''
+    window.setTimeout(() => {
+      element.textContent = text
+    }, 0)
+  }
+
+  useEffect(() => {
+    const seen = new Set<string>()
+    for (const item of rows) {
+      seen.add(item.id)
+      const prior = previous.current.get(item.id)
+      if (prior !== undefined && prior !== item.status) {
+        invalidatePaths()
+        const label = kindLabel(item.kind)
+        if (item.status === 'done')
+          announce(
+            'polite',
+            tp('job.job_finished_items_processed', item.total > 0 ? item.total : item.done, { kind: label })
+          )
+        else if (item.status === 'cancelled')
+          announce('polite', tp('job.job_cancelled_items_completed', item.done, { kind: label }))
+        else if (item.status === 'interrupted') {
+          const left = item.attempting.length + item.pending.length
+          announce(
+            'assertive',
+            `${tp('job.job_was_interrupted_by_server', item.done, { kind: label })}${left > 0 ? ` ${t('job.left', { count: left })}` : ''}`
+          )
+        } else if (item.status === 'error') {
+          announce(
+            'assertive',
+            `${t('job.job_failed', { kind: label })} ${item.message ? t(item.message, item.messageParams) : ''}`.trim()
+          )
+        }
+      }
+      previous.current.set(item.id, item.status)
+    }
+    for (const id of previous.current.keys()) if (!seen.has(id)) previous.current.delete(id)
+  }, [invalidatePaths, rows, t, tp])
+
+  const activeCount = rows.filter((row) => ['queued', 'running', 'paused', 'retrying'].includes(row.status)).length
+  const clearFinished = (): void =>
+    jobTray.forget(
+      ...rows.filter((row) => !['queued', 'running', 'paused', 'retrying'].includes(row.status)).map((row) => row.id)
+    )
+
+  return {
+    rows,
+    open,
+    expandedJobs,
+    setTrayState,
+    cancel,
+    retry,
+    pause,
+    resume,
+    list,
+    politeRef,
+    assertiveRef,
+    activeCount,
+    clearFinished
+  }
+}
+
+export function JobTray() {
+  const { t } = useI18n()
+  const {
+    rows,
+    open,
+    expandedJobs,
+    setTrayState,
+    cancel,
+    retry,
+    pause,
+    resume,
+    list,
+    politeRef,
+    assertiveRef,
+    activeCount,
+    clearFinished
+  } = useJobTray()
+
+  if (rows.length === 0 && !list.isError) {
+    return (
+      <>
+        <div ref={politeRef} className={srOnly} role="status" aria-live="polite" aria-atomic="true"></div>
+        <div ref={assertiveRef} className={srOnly} role="alert" aria-live="assertive" aria-atomic="true"></div>
+      </>
+    )
+  }
+  return (
+    <>
+      <div ref={politeRef} className={srOnly} role="status" aria-live="polite" aria-atomic="true"></div>
+      <div ref={assertiveRef} className={srOnly} role="alert" aria-live="assertive" aria-atomic="true"></div>
+      <StowTray
+        title={t('job.jobs')}
+        icon="refresh"
+        status={activeCount > 0 ? `(${activeCount})` : t('common.done')}
+        open={open}
+        onOpenChange={jobTray.setOpen}
+        onClearFinished={clearFinished}
+        notice={list.isError ? t('job.server_unreachable_so_may_not') : null}
+        items={rows}
+        itemKey={(item) => item.id}
+        estimateSize={128}
+        renderItem={(item) => {
+          const label = kindLabel(item.kind)
+          const outstandingCount = item.attempting.length + item.pending.length
+          return (
+            <>
+              <div className={styles.row}>
+                <span className={styles.name}>
+                  <Icon name={item.kind === 'delete' ? 'delete' : item.kind === 'copy' ? 'content_copy' : 'search'} />
+                  {label}
+                </span>
+                <span className={styles.meta}>
+                  {item.done} / {item.total || '?'}
+                </span>
+              </div>
+              <StowProgressLinear value={jobProgressValue(item)} label={t('job.job', { kind: label })} />
+              {item.status === 'queued' ? <p>{t('job.queued')}</p> : null}
+              {item.status === 'paused' ? <p>{t('job.paused')}</p> : null}
+              {item.status === 'retrying' ? (
+                <p>{t('job.retrying', { attempt: item.attempt, max: item.maxAttempts || '?' })}</p>
+              ) : null}
+              {item.status === 'error' && item.message ? <p>{t(item.message, item.messageParams)}</p> : null}
+              {item.status === 'cancelled' ? <p>{t('job.cancelled_completed', { count: item.done })}</p> : null}
+              {item.status === 'interrupted' ? (
+                <p>{t('job.interrupted_by_server_restart_completed', { count: item.done })}</p>
+              ) : null}
+              {outstandingCount > 0 ? (
+                <details
+                  open={expandedJobs.has(item.id)}
+                  onToggle={(event) => {
+                    const expanded = event.currentTarget.open
+                    setTrayState((state) => {
+                      if (state.expandedJobs.has(item.id) === expanded) return state
+                      const next = new Set(state.expandedJobs)
+                      if (expanded) next.add(item.id)
+                      else next.delete(item.id)
+                      return { expandedJobs: next }
+                    })
+                  }}
+                >
+                  <summary>{t('job.items_left', { count: outstandingCount })}</summary>
+                  {expandedJobs.has(item.id) ? (
+                    <div>
+                      <VirtualList
+                        items={[...item.attempting, ...item.pending]}
+                        itemKey={(path, index) =>
+                          `${index < item.attempting.length ? 'attempting' : 'pending'}-${path}`
+                        }
+                        estimateSize={32}
+                        renderItem={(path, index) => (
+                          <>
+                            {index < item.attempting.length ? (
+                              <span>{t('job.needs_checking')}</span>
+                            ) : (
+                              <span>{t('job.not_started')}</span>
+                            )}
+                            {path}
+                          </>
+                        )}
+                      />
+                    </div>
+                  ) : null}
+                  {item.attempting.length > 0 ? <p>{t('job.server_stopped_mid_item_anything')}</p> : null}
+                  <p>{t('job.anything_marked_not_started_untouched')}</p>
+                </details>
+              ) : null}
+              <div className={styles.controls}>
+                {item.status === 'running' ? (
+                  <>
+                    <StowIconButton label={t('job.pause_job')} onClick={() => pause.mutate(item.id)} icon="pause" />
+                    <StowIconButton label={t('job.cancel_job')} onClick={() => cancel.mutate(item.id)} icon="close" />
+                  </>
+                ) : item.status === 'queued' || item.status === 'retrying' ? (
+                  <StowIconButton label={t('job.cancel_job')} onClick={() => cancel.mutate(item.id)} icon="close" />
+                ) : item.status === 'paused' ? (
+                  <>
+                    <StowIconButton
+                      label={t('job.resume_job')}
+                      onClick={() => resume.mutate(item.id)}
+                      icon="play_arrow"
+                    />
+                    <StowIconButton label={t('job.cancel_job')} onClick={() => cancel.mutate(item.id)} icon="close" />
+                  </>
+                ) : item.status === 'error' || item.status === 'interrupted' ? (
+                  <StowIconButton label={t('job.retry_job')} onClick={() => retry.mutate(item.id)} icon="refresh" />
+                ) : (
+                  <StowIconButton label={t('common.clear')} onClick={() => jobTray.forget(item.id)} icon="close" />
+                )}
+              </div>
+            </>
+          )
+        }}
+      />
+    </>
+  )
+}

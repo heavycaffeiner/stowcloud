@@ -26,7 +26,7 @@ def create_sample_state() -> BrowserState:
             InteractiveElement(id=4, tag="input", role="file", name="Upload files", enabled=True),
         ],
         containers=[
-            ScrollContainer(id=1, role="grid", selector=".sc-file-grid", scroll_top=0, max_scroll=500),
+            ScrollContainer(id=1, role="grid", selector='[role="grid"]', scroll_top=0, max_scroll=500),
         ],
         available_fixtures=["sample-1k.txt", "sample-5m.bin"],
     )

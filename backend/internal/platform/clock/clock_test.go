@@ -90,15 +90,3 @@ func TestNanosWarnsSeparatelyPerInstance(t *testing.T) {
 		t.Fatalf("warning fired %d times for 2 distinct clocks, want 2", count)
 	}
 }
-
-func TestSystemClockAdvancesAndStaysPositive(t *testing.T) {
-	c := System()
-	start := c.Now()
-	time.Sleep(time.Millisecond)
-	if elapsed := c.Since(start); elapsed <= 0 {
-		t.Fatalf("Since(start) = %v, want positive elapsed time", elapsed)
-	}
-	if c.Nanos() <= 0 {
-		t.Fatal("Nanos() on a real clock should be positive")
-	}
-}

@@ -1,4 +1,3 @@
-import '../lib/ui/logic/mdui'
 if (!('ResizeObserver' in globalThis)) {
   class TestResizeObserver {
     observe(): void {}
@@ -32,21 +31,9 @@ if (typeof Range.prototype.getBoundingClientRect !== 'function') {
   Range.prototype.getBoundingClientRect = () => new DOMRect()
 }
 
-function normalizeMediaQuery(query: MediaQueryList): MediaQueryList {
-  const addEventListener = typeof query.addEventListener === 'function' ? query.addEventListener.bind(query) : undefined
-  const removeEventListener = typeof query.removeEventListener === 'function' ? query.removeEventListener.bind(query) : undefined
-  return Object.assign(query, {
-    addListener(listener: (event: MediaQueryListEvent) => void): void {
-      addEventListener?.('change', listener)
-    },
-    removeListener(listener: (event: MediaQueryListEvent) => void): void {
-      removeEventListener?.('change', listener)
-    }
-  })
-}
-
-if (typeof globalThis.matchMedia !== 'function') {
-  globalThis.matchMedia = (media: string) => normalizeMediaQuery({
+// jsdom has no matchMedia, which Mantine and the layout hooks read.
+globalThis.matchMedia = (media: string) =>
+  ({
     matches: false,
     media,
     onchange: null,
@@ -54,26 +41,23 @@ if (typeof globalThis.matchMedia !== 'function') {
     removeListener(): void {},
     addEventListener(): void {},
     removeEventListener(): void {},
-    dispatchEvent(): boolean { return false }
-  } as MediaQueryList)
-} else {
-  const nativeMatchMedia = globalThis.matchMedia.bind(globalThis)
-  globalThis.matchMedia = (media: string) => normalizeMediaQuery(nativeMatchMedia(media))
-}
+    dispatchEvent(): boolean {
+      return false
+    }
+  }) as MediaQueryList
 
-import { setLocale } from '../lib/i18n'
+import { setLocale } from '../i18n'
 import { I18nextProvider } from 'react-i18next'
-import { i18n } from '../lib/i18n/state'
+import { i18n } from '../i18n/state'
 await setLocale('en')
 
+import { signal } from '@preact/signals-react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, type RenderOptions } from '@testing-library/react'
 import type { ReactElement, PropsWithChildren } from 'react'
-import { MemoryRouter, type MemoryRouterProps } from 'react-router-dom'
+import { StowThemeProvider } from '../shared/theme/StowThemeProvider'
 
 export interface RenderAppOptions extends Omit<RenderOptions, 'wrapper'> {
-  initialEntries?: MemoryRouterProps['initialEntries']
-  initialIndex?: MemoryRouterProps['initialIndex']
   queryClient?: QueryClient
 }
 
@@ -86,23 +70,18 @@ export function createTestQueryClient(): QueryClient {
   })
 }
 
+const themePref = signal<'light'>('light')
+
 export function renderWithProviders(
   element: ReactElement,
-  {
-    initialEntries = ['/'],
-    initialIndex,
-    queryClient = createTestQueryClient(),
-    ...options
-  }: RenderAppOptions = {}
+  { queryClient = createTestQueryClient(), ...options }: RenderAppOptions = {}
 ) {
   function Wrapper({ children }: PropsWithChildren) {
     return (
       <I18nextProvider i18n={i18n}>
-        <QueryClientProvider client={queryClient}>
-          <MemoryRouter initialEntries={initialEntries} initialIndex={initialIndex}>
-            {children}
-          </MemoryRouter>
-        </QueryClientProvider>
+        <StowThemeProvider pref={themePref}>
+          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        </StowThemeProvider>
       </I18nextProvider>
     )
   }

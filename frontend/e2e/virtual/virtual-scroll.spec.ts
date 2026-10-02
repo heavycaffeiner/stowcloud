@@ -1,112 +1,102 @@
-import { test, expect } from '@playwright/test';
-import { createServer, type ViteDevServer } from 'vite';
-import { fileURLToPath } from 'node:url';
+import * as fs from 'node:fs'
+import * as path from 'node:path'
+import type { Page } from '@playwright/test'
+import { test, expect } from '../fixtures'
+import { fileEntries } from '../helpers/browse'
+import { assertNoUnexpectedErrors } from '../helpers/ux-invariants'
 
-let viteServer: ViteDevServer;
-let viteBase: string;
+// The file views render a window of rows and move it as the view scrolls.
+// Reading the scroll offset off the wrong element freezes that window at its
+// first screenful, which no unit test sees: the maths is right and the input is
+// wrong. These drive a real wheel over a real layout at several viewport sizes.
+const VIEWPORTS = [
+  [1920, 1080],
+  [1440, 900],
+  [1280, 720],
+  [800, 600],
+  [390, 844]
+] as const
+// Far more rows than the deepest wheel below reaches, in either view.
+const ROWS = 5000
+const FOLDER = 'bench'
 
-test.beforeAll(async () => {
-  viteServer = await createServer({
-    root: fileURLToPath(new URL('../..', import.meta.url)),
-    mode: 'development',
-    define: { 'import.meta.env.VITE_API_MOCK': JSON.stringify('1') },
-    server: { host: '127.0.0.1', port: 0, open: false },
-    logLevel: 'error',
-  });
-  await viteServer.listen();
-  viteBase = viteServer.resolvedUrls?.local[0] || '';
-});
-
-test.afterAll(async () => {
-  if (viteServer) {
-    await viteServer.close();
+async function wheelDown(page: Page, width: number, height: number): Promise<void> {
+  await page.mouse.move(Math.round(width / 2), Math.round(height / 2))
+  for (let step = 0; step < 60; step++) {
+    await page.mouse.wheel(0, 800)
+    await page.waitForTimeout(16)
   }
-});
+}
 
-test.describe('Virtual Scrolling Invariants', () => {
-  test('100,000-entry deep-scroll advances window in list mode', async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 720 });
-    await page.addInitScript(() => {
-      localStorage.setItem('sc.locale', 'en');
-      localStorage.setItem('sc.view', 'list');
-    });
-
-    await page.goto(`${viteBase}b/home/bench`, { waitUntil: 'domcontentloaded' });
-    const cell = page.locator('.sc-row').first();
-    await cell.waitFor();
-    const beforeText = await cell.textContent();
-
-    // Wheel scroll
-    await page.mouse.move(640, 360);
-    for (let i = 0; i < 40; i++) {
-      await page.mouse.wheel(0, 800);
-      const { promise, resolve } = Promise.withResolvers<void>();
-      setTimeout(resolve, 16);
-      await promise;
+test.describe('virtual scrolling of the file views', () => {
+  test.beforeEach(async ({ filesystem, workerApp, grants }) => {
+    const shares = await filesystem.listShares()
+    const docs =
+      shares.find((share) => share.name === 'docs') ?? (await filesystem.createShare('docs', workerApp.shareDir))
+    const existing = await grants.listGrants()
+    if (!existing.some((grant) => grant.share === String(docs.id))) {
+      await grants.createGrant({
+        user: workerApp.adminUser.id,
+        share: String(docs.id),
+        label: 'docs',
+        allow: ['read', 'write', 'create', 'delete', 'download', 'rename', 'move', 'share']
+      })
     }
-    const { promise: settlePromise, resolve: settleResolve } = Promise.withResolvers<void>();
-    setTimeout(settleResolve, 400);
-    await settlePromise;
-
-    const offset = await page.locator('.sc-file-table').evaluate((el) => el.scrollTop);
-    const afterText = await page.locator('.sc-row').first().textContent();
-    const renderedCount = await page.locator('.sc-row').count();
-
-    expect(offset).toBeGreaterThan(0);
-    expect(afterText).not.toBe(beforeText);
-    expect(renderedCount).toBeGreaterThan(0);
-  });
-
-  test('100,000-entry deep-scroll advances window in grid mode', async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 720 });
-    await page.addInitScript(() => {
-      localStorage.setItem('sc.locale', 'en');
-      localStorage.setItem('sc.view', 'grid');
-    });
-
-    await page.goto(`${viteBase}b/home/bench`, { waitUntil: 'domcontentloaded' });
-    const card = page.locator('.sc-file-grid-card').first();
-    await card.waitFor();
-    const beforeText = await card.textContent();
-
-    await page.mouse.move(640, 360);
-    for (let i = 0; i < 40; i++) {
-      await page.mouse.wheel(0, 800);
-      const { promise, resolve } = Promise.withResolvers<void>();
-      setTimeout(resolve, 16);
-      await promise;
+    const bench = path.join(workerApp.shareDir, FOLDER)
+    if (!fs.existsSync(bench)) {
+      fs.mkdirSync(`${bench}.tmp`)
+      for (let index = 0; index < ROWS; index++) {
+        fs.writeFileSync(path.join(`${bench}.tmp`, `f${String(index).padStart(4, '0')}.txt`), '')
+      }
+      // Renamed into place whole, so a listing never sees a half-written folder.
+      fs.renameSync(`${bench}.tmp`, bench)
     }
-    const { promise: settlePromise, resolve: settleResolve } = Promise.withResolvers<void>();
-    setTimeout(settleResolve, 400);
-    await settlePromise;
+  })
 
-    const offset = await page.locator('.sc-file-grid').evaluate((el) => el.scrollTop);
-    const afterText = await page.locator('.sc-file-grid-card').first().textContent();
-    const renderedCount = await page.locator('.sc-file-grid-card').count();
+  for (const [width, height] of VIEWPORTS) {
+    for (const mode of ['list', 'grid'] as const) {
+      test(`a deep wheel moves the rendered window at ${width}x${height} in ${mode} view`, async ({
+        authedPage: page,
+        workerApp,
+        artifacts
+      }) => {
+        await page.setViewportSize({ width, height })
+        await page.addInitScript((view) => localStorage.setItem('sc.view', view), mode)
+        await page.goto(`${workerApp.baseURL}/b/docs/${FOLDER}`, { waitUntil: 'domcontentloaded' })
 
-    expect(offset).toBeGreaterThan(0);
-    expect(afterText).not.toBe(beforeText);
-    expect(renderedCount).toBeGreaterThan(0);
-  });
+        const view = page.getByRole('grid', { name: mode === 'grid' ? 'File grid' : 'File list' })
+        const first = fileEntries(page).first()
+        await expect(first).toBeVisible()
+        const before = await first.textContent()
 
-  test('virtual list keyboard navigation: ArrowDown and Home/End', async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 720 });
-    await page.addInitScript(() => {
-      localStorage.setItem('sc.locale', 'en');
-      localStorage.setItem('sc.view', 'list');
-    });
+        await wheelDown(page, width, height)
 
-    await page.goto(`${viteBase}b/home/bench`, { waitUntil: 'domcontentloaded' });
-    const firstRow = page.locator('.sc-row').first();
-    await firstRow.waitFor();
+        // The view itself must own the scroll, or the wheel moved nothing it reads.
+        expect(await view.evaluate((element) => element.scrollTop)).toBeGreaterThan(0)
+        await expect(first).not.toHaveText(before ?? '')
+        expect(await fileEntries(page).count()).toBeGreaterThan(0)
 
-    await firstRow.click();
-    await page.keyboard.press('ArrowDown');
-    await page.keyboard.press('ArrowDown');
+        await assertNoUnexpectedErrors(artifacts)
+      })
+    }
+  }
 
-    // Home returns to top
-    await page.keyboard.press('Home');
-    const tableOffset = await page.locator('.sc-file-table').evaluate((el) => el.scrollTop);
-    expect(tableOffset).toBe(0);
-  });
-});
+  test('Home in the list returns the view to its top', async ({ authedPage: page, workerApp, artifacts }) => {
+    await page.setViewportSize({ width: 1280, height: 720 })
+    await page.addInitScript(() => localStorage.setItem('sc.view', 'list'))
+    await page.goto(`${workerApp.baseURL}/b/docs/${FOLDER}`, { waitUntil: 'domcontentloaded' })
+
+    const list = page.getByRole('grid', { name: 'File list' })
+    await fileEntries(page).first().click()
+    await page.keyboard.press('ArrowDown')
+    await page.keyboard.press('ArrowDown')
+    await wheelDown(page, 1280, 720)
+    expect(await list.evaluate((element) => element.scrollTop)).toBeGreaterThan(0)
+
+    await page.keyboard.press('Home')
+    await expect.poll(() => list.evaluate((element) => element.scrollTop)).toBe(0)
+    await expect(fileEntries(page).first()).toContainText('f0000.txt')
+
+    await assertNoUnexpectedErrors(artifacts)
+  })
+})

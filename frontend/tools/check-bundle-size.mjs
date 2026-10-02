@@ -1,8 +1,7 @@
 // Enforces the two byte budgets for the browser payload: initial JavaScript gzip
 // is at most 256 KiB and the public-share route adds at most 60 KiB marginal.
-// The Svelte-era initial limit was 150 KiB; the React 19, React Router 7,
-// TanStack Query and mdui boot graph measured 225.7 KiB gzip after production
-// router resolution and static color tokens, so 256 KiB leaves about 13% headroom.
+// It also fails when a page that runs without a session pulls in the signed-in
+// shell.
 // Run after `pnpm build`; Vite's manifest is the source of truth for emitted chunks.
 
 import { gzipSync } from 'node:zlib'
@@ -11,12 +10,12 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
 const webRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
-const buildDir = path.resolve(webRoot, '../backend/internal/http/spa/build')
+const buildDir = path.resolve(webRoot, '../backend/internal/web/build')
 const manifestPath = path.join(buildDir, '.vite', 'manifest.json')
 const indexHtmlPath = path.join(buildDir, 'index.html')
 
 const INITIAL_JS_BUDGET = 256 * 1024
-// Measured 225.7 KiB initial and 7.6 KiB public-share marginal on 2026-09-12.
+// Measured 211.1 KiB initial and 42.3 KiB public-share marginal on 2026-10-01.
 const SHARE_PAGE_JS_BUDGET = 60 * 1024
 
 for (const [label, file] of [
@@ -32,18 +31,25 @@ for (const [label, file] of [
 const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
 const html = readFileSync(indexHtmlPath, 'utf8')
 const records = Object.entries(manifest)
-const byFile = new Map(records
-  .filter(([, value]) => typeof value.file === 'string')
-  .map(([key, value]) => [value.file, { key, ...value }]))
+const byFile = new Map(
+  records.filter(([, value]) => typeof value.file === 'string').map(([key, value]) => [value.file, { key, ...value }])
+)
 
+/** @param {string} value */
 function relativeAsset(value) {
   return value.replace(/^\//, '').replace(/^\.\//, '')
 }
 
+/** @param {string} file */
 function gzipSize(file) {
   return gzipSync(readFileSync(path.join(buildDir, relativeAsset(file))), { level: 9 }).length
 }
 
+/**
+ * @param {string} key
+ * @param {Set<string>} files
+ * @param {Set<string>} seen
+ */
 function addRecordClosure(key, files = new Set(), seen = new Set(), includeDynamic = false) {
   if (seen.has(key)) return files
   seen.add(key)
@@ -62,6 +68,7 @@ function addRecordClosure(key, files = new Set(), seen = new Set(), includeDynam
   return files
 }
 
+/** @param {string} file */
 function recordKeyForFile(file) {
   return byFile.get(relativeAsset(file))?.key
 }
@@ -90,35 +97,51 @@ if (initialFiles.size === 0) {
   console.error('check-bundle-size: index.html references no JavaScript entry script.')
   process.exit(1)
 }
-// React Router's lazy route module is represented by its source key when the
-// route is split. Do not depend on a framework-generated route id: Vite keeps
-// the source pathname stable even as chunk names and hashes change.
-const publicRecord = records.find(([key, record]) => {
-  const normalizedKey = key.replaceAll('\\\\', '/')
-  return normalizedKey.endsWith('/PublicSharePage.tsx') || normalizedKey.endsWith('/PublicSharePage.ts') ||
-    normalizedKey.endsWith('/PublicSharePage.jsx') || normalizedKey.endsWith('/PublicSharePage.js') ||
-    `${normalizedKey} ${record.src ?? ''} ${record.name ?? ''}`.toLowerCase().includes('public-share')
-})
+// Every page is a lazy route, so each has a manifest record keyed by its source
+// path. Hashed chunk names change between builds; source paths do not.
+/** @param {string} source */
+function pageFiles(source) {
+  if (!manifest[source]) {
+    console.error(`check-bundle-size: ${source} has no chunk of its own; it must stay a lazy route.`)
+    process.exit(1)
+  }
+  return addRecordClosure(source, new Set(), new Set(), true)
+}
 
-// If React routes are in the single app entry, the public share page has no
-// marginal chunk. When a future build splits it, follow its manifest imports
-// and dynamic imports so the budget covers exactly the route's reachable code.
-const publicFiles = publicRecord
-  ? addRecordClosure(publicRecord[0], new Set(), new Set(), true)
-  : new Set(initialFiles)
+const shellFile = manifest['src/app/shell/AppShell.tsx']?.file
+const sessionlessPages = [
+  'src/features/links/routes/PublicSharePage.tsx',
+  'src/features/auth/routes/LoginPage.tsx',
+  'src/features/auth/routes/SetupPage.tsx',
+  'src/features/emergency/routes/EmergencyPage.tsx'
+]
+const shellLeaks = sessionlessPages.filter((source) => shellFile && pageFiles(source).has(relativeAsset(shellFile)))
+
+const publicFiles = pageFiles('src/features/links/routes/PublicSharePage.tsx')
 const marginalFiles = [...publicFiles].filter((file) => !initialFiles.has(file) && file.endsWith('.js'))
-const initialBytes = [...initialFiles].filter((file) => file.endsWith('.js')).reduce((sum, file) => sum + gzipSize(file), 0)
+const initialBytes = [...initialFiles]
+  .filter((file) => file.endsWith('.js'))
+  .reduce((sum, file) => sum + gzipSize(file), 0)
 const shareBytes = marginalFiles.reduce((sum, file) => sum + gzipSize(file), 0)
 
+/**
+ * @param {string} name
+ * @param {number} actual
+ * @param {number} budget
+ */
 function report(name, actual, budget) {
   const ok = actual <= budget
-  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}: ${(actual / 1024).toFixed(1)} KiB (budget ${(budget / 1024).toFixed(0)} KiB)`)
+  console.log(
+    `${ok ? 'PASS' : 'FAIL'}  ${name}: ${(actual / 1024).toFixed(1)} KiB (budget ${(budget / 1024).toFixed(0)} KiB)`
+  )
   return ok
 }
 
 const okInitial = report('Initial JS (gzip)', initialBytes, INITIAL_JS_BUDGET)
 const okShare = report('Public-share JS (gzip, marginal)', shareBytes, SHARE_PAGE_JS_BUDGET)
-if (!okInitial || !okShare) {
-  console.error('\ncheck-bundle-size: a budget was exceeded.')
+for (const source of shellLeaks) console.log(`FAIL  ${source} loads the signed-in shell`)
+if (!shellFile) console.log('FAIL  src/app/shell/AppShell.tsx has no chunk of its own')
+if (!okInitial || !okShare || shellLeaks.length > 0 || !shellFile) {
+  console.error('\ncheck-bundle-size: a check failed.')
   process.exit(1)
 }

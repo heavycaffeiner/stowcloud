@@ -44,14 +44,14 @@ jobs:
           pnpm build
           pnpm exec playwright install --with-deps ${{ matrix.project }}
 
-      - name: Build sc-engine
+      - name: Build stowcloud
         run: |
           cd backend
-          CGO_ENABLED=0 go build -tags embed_ui -o /tmp/sc-engine-e2e ./cmd/sc-engine
+          CGO_ENABLED=0 go build -tags embed_ui -o /tmp/stowcloud-e2e ./cmd/stowcloud
 
       - name: Run Playwright deterministic E2E (${{ matrix.project }})
         env:
-          SC_TEST_BIN: /tmp/sc-engine-e2e
+          SC_TEST_BIN: /tmp/stowcloud-e2e
         run: |
           cd frontend
           pnpm exec playwright test --project=${{ matrix.project }}

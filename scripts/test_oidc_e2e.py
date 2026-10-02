@@ -345,7 +345,7 @@ def main():
         pki.finish_jwt(hostile_signing_input, material["hostile_signature"]))
 
     # Written inside data_dir, not a separate bind mount: the server's own
-    # Landlock domain (see go/cmd/sc-engine/main.go's jailSpec) grants
+    # Landlock domain (built in backend/internal/bootstrap/sandbox) grants
     # filesystem access only beneath its data directory, its share roots and
     # a short, fixed list of system paths for outbound TLS. A CA bundle
     # mounted anywhere else is a file this sandboxed process cannot open,

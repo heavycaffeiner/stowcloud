@@ -11,26 +11,18 @@
 
 golang.org/x/sys
 
-# Hanami owns reusable process bootstrap, security policy, ownership, Fx
-# lifecycle, and managed listener generations. It is confined to command
-# composition plus internal/bootstrap/sandbox, internal/app composition, and
-# internal/runtime/listener; feature, platform, and transport code stay unaware
-# of the lifecycle framework.
+# Hanami supplies the Linux security re-exec and policy, and the managed
+# listener generations. The command and internal/bootstrap/sandbox use the
+# security half; internal/server/listener.go is the one file that uses the
+# lifecycle half.
 github.com/heavycaffeiner/hanami
-github.com/heavycaffeiner/hanami/gin
-github.com/heavycaffeiner/hanami/api
 
 # Huma supplies typed native REST operations and OpenAPI generation. Product
 # authorization and the established JSON error contract remain local.
 github.com/danielgtaylor/huma/v2
 
-# Fx is the explicit dependency-composition boundary. It is used only by cmd,
-# bootstrap/sandbox, app composition, and runtime/listener; no feature or
-# platform package may depend on it.
-go.uber.org/fx
-
-# Gin is the native HTTP router and handler context. The layer gate confines it
-# to internal/http, internal/app, and internal/runtime/listener.
+# Gin is the native HTTP router and the handler context of every route the
+# feature packages mount.
 github.com/gin-gonic/gin
 
 # Argon2id password hashing, XChaCha20-Poly1305 at rest and MD4 for the SMB NT

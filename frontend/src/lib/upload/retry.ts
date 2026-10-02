@@ -46,7 +46,6 @@ export function classifyFailure(status: number, retriesSoFar: number): RetryVerd
   // Permission denied (ACL refusal).
   if (status === 403) return { kind: 'give-up', reason: 'denied' }
 
-
   // Anything the server refused outright, other than the cases above, is a
   // refusal rather than a fault: 400, 401, 403 and their neighbours mean the
   // next identical request is refused identically. 429 is excluded because it

@@ -1,0 +1,96 @@
+import { currentLocale, i18n } from './state'
+
+export type { Locale } from './state'
+export { setLocale } from './state'
+
+/** Resolves a flat catalog key, retaining the raw key for unknown server values. */
+export function t(key: string, params?: Record<string, string | number>): string {
+  return i18n.t(key, { ...params, nsSeparator: false })
+}
+
+/**
+ * Plural helper: selects `${key}_one` when count is 1, and `${key}_other`
+ * otherwise. The count is passed as `{count}` in params unless overridden.
+ */
+export function tp(key: string, count: number, params?: Record<string, string | number>): string {
+  const suffix = count === 1 ? '_one' : '_other'
+  return t(`${key}${suffix}`, { count, ...params })
+}
+
+/** BCP 47 tag for the current locale: what `Intl` takes, and what the root
+ *  layout writes into `<html lang>`. */
+export function localeTag(): string {
+  return currentLocale() === 'ko' ? 'ko-KR' : 'en-US'
+}
+
+/** mtime_ns (nanoseconds-as-string, per) → localized date/time. */
+export function formatDateNs(mtimeNs: string): string {
+  const ms = Number(BigInt(mtimeNs) / 1_000_000n)
+  return new Intl.DateTimeFormat(localeTag(), { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(ms))
+}
+
+/** File modification times use local time with a fixed day-before-month order. */
+export function formatModifiedDateNs(mtimeNs: string): string {
+  return formatModifiedDate(Number(BigInt(mtimeNs) / 1_000_000n))
+}
+
+/** `formatModifiedDateNs` for a time in milliseconds since the epoch. */
+export function formatModifiedDate(ms: number): string {
+  const date = new Date(ms)
+  if (Number.isNaN(date.getTime())) throw new RangeError('Invalid modification time')
+  const year = String(date.getFullYear()).padStart(4, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const hour = String(date.getHours()).padStart(2, '0')
+  const minute = String(date.getMinutes()).padStart(2, '0')
+  return `${year}-${day}-${month} ${hour}:${minute}`
+}
+
+const RELATIVE_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
+  ['year', 31_536_000],
+  ['month', 2_592_000],
+  ['day', 86_400],
+  ['hour', 3_600],
+  ['minute', 60],
+  ['second', 1]
+]
+
+export function formatRelativeNs(mtimeNs: string, now = Date.now()): string {
+  const ms = Number(BigInt(mtimeNs) / 1_000_000n)
+  const diffSec = (ms - now) / 1000
+  const rtf = new Intl.RelativeTimeFormat(localeTag(), { numeric: 'auto' })
+  const abs = Math.abs(diffSec)
+  for (const [unit, secs] of RELATIVE_UNITS) {
+    if (abs >= secs || unit === 'second') return rtf.format(Math.round(diffSec / secs), unit)
+  }
+  return rtf.format(0, 'second')
+}
+
+export function formatNumber(n: number): string {
+  return new Intl.NumberFormat(localeTag()).format(n)
+}
+
+/**
+ * A rough duration in the unit a person would say out loud ("3 minutes",
+ * "2.5 hours", "45초") for estimates, where a stopwatch reading like
+ * "1h 12m 04s" implies a precision the number does not have.
+ *
+ * `Intl` supplies both the unit word and its plural, so this needs no
+ * catalogue entry per unit and reads correctly in a language that has no
+ * plural forms at all.
+ */
+export function formatDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return '-'
+  const [unit, value] =
+    seconds < 60
+      ? (['second', Math.max(1, Math.round(seconds))] as const)
+      : seconds < 3600
+        ? (['minute', Math.round(seconds / 60)] as const)
+        : (['hour', Math.round((seconds / 3600) * 10) / 10] as const)
+  return new Intl.NumberFormat(localeTag(), {
+    style: 'unit',
+    unit,
+    unitDisplay: 'long',
+    maximumFractionDigits: 1
+  }).format(value)
+}

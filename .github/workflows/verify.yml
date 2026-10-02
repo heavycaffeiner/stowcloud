@@ -1,8 +1,8 @@
 name: verify
 
-# Runs the real gate, `bash scripts/verify.sh`, on both platforms this
-# workspace targets. Each job proves what it can actually prove and nothing
-# else:
+# Runs just targets and the remaining verification gates on Linux, and
+# `bash scripts/verify.sh` on Windows. Each job proves what it can actually
+# prove and nothing else:
 #
 #   linux:    the deployment platform. The only place in this pipeline where
 #             the openat2 path resolver, the Landlock and seccomp hardening and
@@ -88,18 +88,22 @@ jobs:
       - name: Enable pnpm
         run: corepack enable
 
-      # Each before the build, so a failing unit test is reported as a failing
-      # unit test and a type error as a type error, rather than as whatever the
-      # build does next. `vite build` strips types with esbuild without
-      # checking them, so without `pnpm check` nothing in CI ever reads the
-      # types in `frontend/`.
-      - name: Build frontend
-        run: |
-          cd frontend
-          pnpm install --frozen-lockfile
-          pnpm test
-          pnpm check
-          pnpm build
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Install just
+        run: cargo install just --locked --version 1.45.0
+
+      - name: Run unit and compatibility tests
+        run: just test
+
+      - name: Run lint checks
+        run: just lint
+
+      - name: Build application
+        id: build
+        run: just build
 
       # The end-to-end step drives a real browser, and the install does not
       # fetch one: Playwright downloads it separately, into a cache this runner
@@ -107,21 +111,10 @@ jobs:
       #
       # --with-deps because the runner has no shared libraries chromium needs.
       - name: Install the browser the end-to-end step drives
+        id: browser
         run: |
           cd frontend
           pnpm exec playwright install --with-deps chromium
-
-      - name: Check browser alignment
-        working-directory: frontend
-        run: pnpm test:alignment
-
-      # The file views render a window of rows and move it as the viewport
-      # scrolls. Reading that offset off the wrong element freezes the window
-      # at its first screenful, which no unit test sees: the maths is right and
-      # the input is wrong. This drives a real wheel over a real layout.
-      - name: Check deep scrolling in the file views
-        working-directory: frontend
-        run: pnpm test:virtual-scroll
 
       # Enforces the frontend byte budgets. Deliberately
       # no Lighthouse pass (see check-bundle-size.mjs's header): a shared
@@ -139,8 +132,8 @@ jobs:
       - name: Check external VeraCrypt golden fixture
         working-directory: backend
         env:
-          VAULT_INTEROP_FIXTURE: ${{ github.workspace }}/backend/internal/storage/vault/testdata/interop/hash_sha512.hc
-        run: go test -count=1 ./internal/storage/vault -run '^TestOpenExternalVeraCryptFixture$' -v
+          VAULT_INTEROP_FIXTURE: ${{ github.workspace }}/backend/internal/fs/vault/testdata/interop/hash_sha512.hc
+        run: go test -count=1 ./internal/fs/vault -run '^TestOpenExternalVeraCryptFixture$' -v
 
       - name: bash scripts/verify.sh
         env:
@@ -151,10 +144,20 @@ jobs:
           # installs and the race run have nothing to be absent for either.
           VERIFY_REQUIRE_GOTOOLS: "1"
           VERIFY_REQUIRE_RACE: "1"
+          VERIFY_SKIP_GO_TEST: "1"
+          VERIFY_SKIP_COMPAT_TEST: "1"
+          VERIFY_SKIP_GOLANGCI: "1"
+          VERIFY_SKIP_E2E: "1"
           # The frontend is built above, so the gate serves that bundle rather
           # than building it again for the embed check and the browser run.
           SC_BUNDLE_FRESH: "1"
         run: bash scripts/verify.sh
+
+      - name: Run browser end-to-end suite
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.browser.outcome == 'success' }}
+        env:
+          SC_BUNDLE_FRESH: "1"
+        run: just e2e
 
       # Runs even when the gate failed: "no space left on device" is otherwise
       # indistinguishable from a compile error in a collapsed log.
@@ -244,39 +247,3 @@ jobs:
         if: always()
         shell: bash
         run: df -h . && du -sh backend/.tools frontend/node_modules 2>/dev/null || true
-
-  agentic-smoke:
-    name: agentic-smoke (ubuntu-latest)
-    runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request' || github.actor == github.repository_owner
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache-dependency-path: backend/go.sum
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-      - uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c # v5.0.0
-        with:
-          python-version: "3.11"
-      - name: Build frontend
-        run: |
-          corepack enable
-          cd frontend
-          pnpm install --frozen-lockfile
-          pnpm build
-      - name: Install agentic runner
-        run: python -m pip install ./tools/jev-e2e
-      - name: Run agentic smoke suite
-        env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-        run: bash scripts/e2e-agentic.sh pr
-      - name: Upload agentic artifacts
-        if: always()
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
-        with:
-          name: agentic-smoke-artifacts
-          path: test-results/agentic

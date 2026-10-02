@@ -1,10 +1,11 @@
-// CI gate for the catalogues in src/lib/i18n.
+// CI gate for the catalogues in src/i18n.
 // Walk every TypeScript call site and fail the build on any drift:
 //
 //   * a key missing from a catalogue: that language would render the raw key;
 //   * a catalogue entry no call site uses: dead copy, or a renamed key;
 //   * `{placeholder}` sets that disagree between languages: a dropped hole
 //     renders as a missing word, an invented one renders literally;
+//   * a key defined twice in one catalogue: only the last copy takes effect;
 //   * a `t()` argument that is not a dotted key at all: the fingerprint of
 //     someone passing display text straight into `t()`.
 //
@@ -17,12 +18,16 @@ import { dirname, join, relative } from 'node:path'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const SRC = join(root, 'src')
-const I18N = join(SRC, 'lib', 'i18n')
+const I18N = join(SRC, 'i18n')
 const LOCALES = ['ko', 'en']
 
-/** Fixtures, tests, API samples, and catalogue implementation carry no UI copy. */
-const SKIP = /(?:^|[\\/])(?:__tests__[\\/]|.*\.(?:test|spec)\.(?:ts|tsx)$|mock(?:-seed)?\.ts$|api[\\/]share\.ts$|lib[\\/]i18n(?:[\\/]|$))/
+/** Tests and the catalogue implementation carry no UI copy. */
+const SKIP = /(?:^|[\\/])(?:__tests__[\\/]|.*\.(?:test|spec)\.(?:ts|tsx)$|src[\\/]i18n(?:[\\/]|$))/
 
+/**
+ * @param {string} dir
+ * @param {string[]} out
+ */
 function walk(dir, out = []) {
   for (const name of readdirSync(dir)) {
     const path = join(dir, name)
@@ -37,7 +42,7 @@ function walk(dir, out = []) {
 // silently missing one is worse than not allowing it.
 const CALL = /(?:^|[^\w.$])t\(\s*(['"])((?:\\.|(?!\1)[^\\])*)\1/g
 const TP_CALL = /(?:^|[^\w.$])tp\(\s*(['"])((?:\\.|(?!\1)[^\\])*)\1/g
-const DEFERRED = /\/\* i18n \*\/\s*(['"])((?:\\.|(?!\1)[^\\])*)\1/g
+const DEFERRED = /\/\* i18n \*\/\s*;?\s*(?:\(\s*)?(['"])((?:\\.|(?!\1)[^\\])*)\1/g
 const KEY_SHAPE = /^[a-z][a-z0-9_]*\.[a-z0-9_]+$/
 const used = new Map() // key -> first "file:line"
 
@@ -69,13 +74,28 @@ for (const file of walk(SRC)) {
   }
 }
 
-const catalogue = Object.fromEntries(LOCALES.map((l) => [l, JSON.parse(readFileSync(join(I18N, `${l}.json`), 'utf8'))]))
-const holes = (s) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join()
+const sources = Object.fromEntries(LOCALES.map((l) => [l, readFileSync(join(I18N, `${l}.json`), 'utf8')]))
+const catalogue = Object.fromEntries(LOCALES.map((l) => [l, JSON.parse(sources[l])]))
+const holes = (/** @type {string} */ s) =>
+  [...s.matchAll(/\{(\w+)\}/g)]
+    .map((m) => m[1])
+    .sort()
+    .join()
 
 const malformed = []
 const missing = []
 const orphaned = []
 const mismatched = []
+const duplicated = []
+
+// JSON.parse keeps the last of two equal keys, so a stale earlier copy would never show up as drift.
+for (const l of LOCALES) {
+  const seen = new Set()
+  for (const [, key] of sources[l].matchAll(/^\s*"((?:\\.|[^"\\])*)"\s*:/gm)) {
+    if (seen.has(key)) duplicated.push(`  ${key}  [${l}]`)
+    seen.add(key)
+  }
+}
 
 for (const [key, where] of used) {
   if (!KEY_SHAPE.test(key)) {
@@ -85,11 +105,14 @@ for (const [key, where] of used) {
   for (const l of LOCALES) if (!(key in catalogue[l])) missing.push(`  ${where}  ${key}  [${l}]`)
   const present = LOCALES.filter((l) => key in catalogue[l])
   if (present.length === LOCALES.length && new Set(present.map((l) => holes(catalogue[l][key]))).size > 1)
-    mismatched.push(`  ${where}  ${key}  ` + present.map((l) => `${l}: ${JSON.stringify(catalogue[l][key])}`).join(' | '))
+    mismatched.push(
+      `  ${where}  ${key}  ` + present.map((l) => `${l}: ${JSON.stringify(catalogue[l][key])}`).join(' | ')
+    )
 }
-for (const l of LOCALES) for (const key of Object.keys(catalogue[l])) if (!used.has(key)) orphaned.push(`  ${key}  [${l}]`)
+for (const l of LOCALES)
+  for (const key of Object.keys(catalogue[l])) if (!used.has(key)) orphaned.push(`  ${key}  [${l}]`)
 
-const report = (title, lines) => {
+const report = (/** @type {string} */ title, /** @type {string[]} */ lines) => {
   if (lines.length === 0) return
   console.error(`\n${title} (${lines.length}):`)
   for (const l of lines) console.error(l)
@@ -99,8 +122,9 @@ report('Not a catalogue key: display text passed to t()?', malformed)
 report('Key missing from a catalogue', missing)
 report('Placeholders disagree between languages', mismatched)
 report('Catalogue entry with no call site', orphaned)
+report('Key defined twice in a catalogue', duplicated)
 
-if (malformed.length || missing.length || orphaned.length || mismatched.length) {
+if (malformed.length || missing.length || orphaned.length || mismatched.length || duplicated.length) {
   console.error(`\ni18n-check failed. ${used.size} keys in use.`)
   process.exit(1)
 }

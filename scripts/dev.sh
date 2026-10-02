@@ -95,8 +95,8 @@ else
 fi
 
 echo "==> building the binary"
-BIN="$PWD/$DIR/sc-engine"
-(cd backend && CGO_ENABLED=0 go build -tags "embed_ui compat_nc" -o "$BIN" ./cmd/sc-engine) \
+BIN="$PWD/$DIR/stowcloud"
+(cd backend && CGO_ENABLED=0 go build -tags "embed_ui compat_nc" -o "$BIN" ./cmd/stowcloud) \
   || { echo "the build failed" >&2; exit 1; }
 
 # Written every run: the tailnet name can change, and a stale host list is a
@@ -138,10 +138,10 @@ if ss -tln 2>/dev/null | grep -q ":$PORT "; then
 fi
 
 echo "==> serving"
-# Truncated, so the readiness check below reads this run rather than matching
-# a "listening" line the previous one left behind.
+# Truncated, so the token read below is this run's rather than one the
+# previous run left behind.
 : > "$DIR/log"
-"$BIN" -data "$PWD/$DIR/data" >> "$DIR/log" 2>&1 &
+"$BIN" --data-dir "$PWD/$DIR/data" >> "$DIR/log" 2>&1 &
 SERVER=$!
 echo "$SERVER" > "$DIR/pid"
 
@@ -152,7 +152,7 @@ READY=
 for _ in $(seq 1 60); do
   sleep 0.25
   if ! kill -0 "$SERVER" 2>/dev/null; then break; fi
-  if grep -q "msg=listening" "$DIR/log" 2>/dev/null; then READY=1; break; fi
+  if ss -tln 2>/dev/null | grep -q ":$PORT "; then READY=1; break; fi
 done
 
 if [ -z "$READY" ]; then
@@ -163,7 +163,7 @@ if [ -z "$READY" ]; then
   exit 1
 fi
 
-TOKEN=$(grep -oE 'setup token \(valid[^)]*\): [a-f0-9]+' "$DIR/log" | tail -1 | awk '{print $NF}')
+TOKEN=$(grep -oE 'setup_token=[a-f0-9]+' "$DIR/log" | tail -1 | cut -d= -f2)
 
 # Whether the account already exists, asked of the server rather than inferred
 # from the token line: the token is minted at startup and stays in the log
@@ -211,6 +211,8 @@ else
   echo "    sudo tailscale set --operator=\$USER"
   echo "  then: bash scripts/dev.sh --fresh"
 fi
+echo
+echo "  hot reload against this server: cd frontend && pnpm dev"
 echo
 echo "  log:  $DIR/log"
 echo "  stop: kill \$(cat $DIR/pid)"

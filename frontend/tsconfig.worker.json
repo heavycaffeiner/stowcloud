@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/worker.tsbuildinfo",
+    "lib": ["ES2024", "WebWorker"],
+    "types": ["vite/client"]
+  },
+  "include": ["src/workers/upload", "tests/workers/upload"]
+}

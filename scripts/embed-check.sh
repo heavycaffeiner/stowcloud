@@ -14,7 +14,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-BUNDLE_DIR=backend/internal/http/spa/build
+BUNDLE_DIR=backend/internal/web/build
 
 # The binary below is built for the shipping target and then run, so this only
 # works where the host is that target. Elsewhere it built a Linux binary and
@@ -46,8 +46,8 @@ fi
 echo "    built bundle: $WANT"
 
 echo "==> building the binary with the embed tag"
-BIN=$(mktemp -d)/sc-engine
-(cd backend && CGO_ENABLED=0 GOOS=linux go build -tags embed_ui -o "$BIN" ./cmd/sc-engine)
+BIN=$(mktemp -d)/stowcloud
+(cd backend && CGO_ENABLED=0 GOOS=linux go build -tags embed_ui -o "$BIN" ./cmd/stowcloud)
 
 # The tag is what turns the embed on. A build without it serves no interface at
 # all, which is correct for a build with no bundle and would quietly pass a
@@ -74,7 +74,7 @@ echo '{"bind":"127.0.0.1:18500","app_hosts":["localhost"]}' \
 echo '{"hardening":"off"}' \
   | "$BIN" settings set security --data-dir "$DIR/data" >/dev/null
 
-"$BIN" -data "$DIR/data" > "$DIR/log" 2>&1 &
+"$BIN" --data-dir "$DIR/data" > "$DIR/log" 2>&1 &
 SERVER=$!
 trap 'kill "$SERVER" 2>/dev/null || true' EXIT
 # Ready when it answers, not after a fixed wait. Four seconds was tuned on one

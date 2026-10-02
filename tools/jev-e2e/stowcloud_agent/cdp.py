@@ -157,7 +157,7 @@ class ChromeCDP:
         (() => {
             const elements = [];
             let root = document;
-            const dialogs = document.querySelectorAll('mdui-dialog, .sc-browse-dialog, .sc-delete-dialog');
+            const dialogs = document.querySelectorAll('dialog, [role="dialog"], [role="alertdialog"]');
             for (const d of dialogs) {
                 if (d.open === true || (d.hasAttribute('open') && d.getAttribute('open') !== 'false' && d.offsetWidth > 0)) {
                     root = d;
@@ -166,7 +166,7 @@ class ChromeCDP:
             }
 
             const candidates = root.querySelectorAll(
-                'button, a, input, select, textarea, [role="button"], [role="menuitem"], [role="tab"], [role="row"], .sc-filename, .sc-file-grid__card, mdui-button, mdui-text-field'
+                'button, a, input, select, textarea, [role="button"], [role="menuitem"], [role="tab"], [role="row"], [aria-selected], mdui-button, mdui-text-field'
             );
 
             let id = 1;
@@ -176,9 +176,6 @@ class ChromeCDP:
                     let name = (el.getAttribute('aria-label') || el.innerText || el.getAttribute('placeholder') || '').trim();
                     if (!name && el.tagName === 'MDUI-TEXT-FIELD') {
                         name = el.getAttribute('label') || '';
-                    }
-                    if (el.classList && el.classList.contains('sc-nav-drawer__new-btn')) {
-                        name = '새로 만들기 (New)';
                     }
                     name = name.replace(/\\s+/g, ' ').slice(0, 40);
                     if (name) {

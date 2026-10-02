@@ -1,0 +1,139 @@
+//go:build linux
+
+// The health probe the container orchestrator runs.
+package main
+
+import (
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/json"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/heavycaffeiner/stowcloud/backend/internal/config"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/server"
+)
+
+const healthExitNoAnswer = int(server.HealthExitUnhealthy)
+
+// runHealthcheck probes the TLS listener over 127.0.0.1 and verifies the
+// presented certificate against the pair in data/tls.
+//
+// Verifying properly rather than skipping verification is the point: a cert
+// that no longer matches what the server holds is a server answering with
+// material a healthcheck cannot account for.
+//
+//	healthcheck [--data-dir DIR]
+func runHealthcheck(argv []string) int {
+	errOut := log.New(os.Stderr, "", 0)
+	dataDir, rest, perr := config.ParseDataDirArgs("stowcloud healthcheck", argv, os.Stderr)
+	if perr != nil || len(rest) > 0 {
+		return healthExitNoAnswer
+	}
+
+	// Where to dial and what name to ask under. The settings live in a
+	// database the running server holds, so this reads the snapshot that
+	// server writes beside the certificate it is about to verify.
+	probe := server.ReadProbe(filepath.Join(dataDir, ".probe.json"))
+
+	var client *http.Client
+	scheme := "https"
+	if probe.Plain {
+		client = &http.Client{Timeout: 5 * time.Second}
+		scheme = "http"
+	} else {
+		certPEM, err := os.ReadFile(filepath.Join(dataDir, "tls", "cert.pem")) //nolint:gosec // G703 reads the variable: the path is the operator's argument.
+		if err != nil {
+			return healthExitNoAnswer
+		}
+		roots := x509.NewCertPool()
+		if !roots.AppendCertsFromPEM(certPEM) {
+			errOut.Println("stowcloud healthcheck: the stored certificate does not parse")
+			return healthExitNoAnswer
+		}
+		client = &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, ServerName: "localhost"}}, Timeout: 5 * time.Second}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, scheme+"://127.0.0.1"+tlsPortOf(probe.Addr)+"/api/v1/system/health", nil)
+	if err != nil {
+		return healthExitNoAnswer
+	}
+	// The host guard answers a request for a name it does not serve with a
+	// refusal. The loopback address is not necessarily one of the configured
+	// names, so the probe asks under the first name in the live snapshot. TLS
+	// remains checked as localhost because the probe dials the loopback listener
+	// and the generated certificate always covers that name. An empty host
+	// before setup leaves the request carrying the dial host, which the guard
+	// admits because there is no configured host list yet.
+	if probe.Host != "" {
+		req.Host = probe.Host
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return healthExitNoAnswer
+	}
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			errOut.Printf("stowcloud healthcheck: closing the body: %v\n", cerr)
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		// A server that answered something other than the health document is
+		// a server that did not answer the question.
+		errOut.Printf("stowcloud healthcheck: the server answered %d\n", resp.StatusCode)
+		return healthExitNoAnswer
+	}
+
+	var doc struct {
+		Status  string `json:"status"`
+		Reasons []struct {
+			Kind   string `json:"kind"`
+			Detail string `json:"detail"`
+		} `json:"reasons"`
+	}
+	body, rerr := io.ReadAll(io.LimitReader(resp.Body, healthBodyLimit))
+	if rerr != nil {
+		return healthExitNoAnswer
+	}
+	if jerr := json.Unmarshal(body, &doc); jerr != nil {
+		errOut.Println("stowcloud healthcheck: the health document did not parse")
+		return healthExitNoAnswer
+	}
+
+	// Zero for degraded as well as ok. A degraded server is a configuration
+	// state and restarting it does not fix one, so mapping it to unhealthy
+	// would make the runtime restart-loop a problem forever without resolving
+	// it. What the reasons are still gets printed, because the operator
+	// running this by hand is asking exactly that.
+	for _, r := range doc.Reasons {
+		errOut.Printf("degraded: %s %s\n", r.Kind, r.Detail)
+	}
+	exit := server.HealthExitFor(doc.Status, nil)
+	if exit != server.HealthExitOK {
+		errOut.Printf("stowcloud healthcheck: unrecognised status %q\n", doc.Status)
+	}
+	return int(exit)
+}
+
+// healthBodyLimit bounds what the probe reads. The document is a status and a
+// short list, and the probe is talking to a server that may be misbehaving.
+const healthBodyLimit = 64 << 10
+
+// tlsPortOf turns a listen address into a dial port. The healthcheck always
+// dials the loopback address, whatever the bind address is.
+func tlsPortOf(listen string) string {
+	for i := len(listen) - 1; i >= 0; i-- {
+		if listen[i] == ':' {
+			return listen[i:]
+		}
+	}
+	return ":8443"
+}

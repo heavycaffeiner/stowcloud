@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	securitylinux "github.com/heavycaffeiner/hanami/security/linux"
-	"github.com/heavycaffeiner/stowcloud/backend/internal/feature/admin/settings/runtimecfg"
+	"github.com/heavycaffeiner/stowcloud/backend/internal/config"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/system/jail"
 )
 
@@ -41,7 +41,7 @@ func TestBuildPolicyMapsHardeningModes(t *testing.T) {
 		{"off", jail.Off, securitylinux.ModeOff},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			values := runtimecfg.Defaults()
+			values := config.Defaults()
 			values.Hardening = tc.set
 			if got := BuildPolicy(values, t.TempDir(), nil, nil, nil).Mode; got != tc.want {
 				t.Fatalf("mode = %v, want %v", got, tc.want)
@@ -51,7 +51,7 @@ func TestBuildPolicyMapsHardeningModes(t *testing.T) {
 }
 
 func TestBuildPolicyPreservesProcessHardeningLayers(t *testing.T) {
-	values := runtimecfg.Defaults()
+	values := config.Defaults()
 	policy := BuildPolicy(values, t.TempDir(), nil, nil, nil)
 	if !policy.Landlock || !policy.Seccomp || !policy.ExceptExec {
 		t.Fatalf("hardening layers = landlock %v seccomp %v except-exec %v", policy.Landlock, policy.Seccomp, policy.ExceptExec)
@@ -71,7 +71,7 @@ func TestBuildPolicyGrantsRuntimeExecutableWhenPresent(t *testing.T) {
 	if _, err := os.Stat("/stowcloud"); err != nil {
 		t.Skip("runtime executable is not present outside the container image")
 	}
-	policy := BuildPolicy(runtimecfg.Defaults(), t.TempDir(), nil, nil, nil)
+	policy := BuildPolicy(config.Defaults(), t.TempDir(), nil, nil, nil)
 	grant, ok := findGrant(policy, "/stowcloud")
 	want := securitylinux.RightReadFile
 	if !ok || grant.Access&want != want {
@@ -80,7 +80,7 @@ func TestBuildPolicyGrantsRuntimeExecutableWhenPresent(t *testing.T) {
 }
 
 func TestBuildPolicyGrantsConfiguredDirectories(t *testing.T) {
-	values := runtimecfg.Defaults()
+	values := config.Defaults()
 	values.SMB.Enabled = true
 	values.SMBConfigDir = filepath.Join(t.TempDir(), "smb-config")
 	values.SMBSocket = filepath.Join(t.TempDir(), "run", "smb.sock")
@@ -99,7 +99,7 @@ func TestBuildPolicyGrantsConfiguredDirectories(t *testing.T) {
 func TestBuildPolicyRefusesRootAndGrantsExactContainerRights(t *testing.T) {
 	containerDir := t.TempDir()
 	container := filepath.Join(containerDir, "photos.hc")
-	policy := BuildPolicy(runtimecfg.Defaults(), t.TempDir(), []string{"/"}, []string{"/srv"}, []string{"/", container})
+	policy := BuildPolicy(config.Defaults(), t.TempDir(), []string{"/"}, []string{"/srv"}, []string{"/", container})
 	if hasWritablePath(policy, "/") {
 		t.Fatal("policy grants filesystem root")
 	}
@@ -123,7 +123,7 @@ func TestBuildPolicyResolverGrantIsReadOnly(t *testing.T) {
 	if _, err := os.Stat("/etc/resolv.conf"); err != nil {
 		t.Skip("this host has no /etc/resolv.conf")
 	}
-	policy := BuildPolicy(runtimecfg.Defaults(), t.TempDir(), nil, nil, nil)
+	policy := BuildPolicy(config.Defaults(), t.TempDir(), nil, nil, nil)
 	grant, ok := findGrant(policy, "/etc/resolv.conf")
 	if !ok {
 		t.Fatalf("resolver grant missing: %+v", policy.Grants)

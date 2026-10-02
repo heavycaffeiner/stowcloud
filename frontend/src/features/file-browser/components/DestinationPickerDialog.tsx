@@ -1,0 +1,105 @@
+import { useMemo, useState } from 'react'
+import { overlay } from 'overlay-kit'
+import { destinationProblem } from '../../../lib/path-utils'
+import { useSession } from '../../auth/api'
+import { useStat } from '../api'
+import { useI18n } from '../../../hooks/use-i18n'
+import { cx, StowButton } from '@/shared/ui'
+import { BrowseDialog } from './browse-dialog'
+import { FolderTreeList } from './FolderTree'
+import * as styles from './DestinationPickerDialog.css'
+
+export interface DestinationRequest {
+  sources: readonly string[]
+  canCopy: boolean
+  canMove: boolean
+}
+
+/** Asks where to move or copy `sources`. Null when cancelled. */
+export function pickDestination(request: DestinationRequest): Promise<{ dest: string; kind: 'move' | 'copy' } | null> {
+  return overlay.openAsync<{ dest: string; kind: 'move' | 'copy' } | null>(({ isOpen, close, unmount }) => (
+    <DestinationPickerDialog
+      {...request}
+      open={isOpen}
+      onClose={() => close(null)}
+      onClosed={unmount}
+      onPick={(dest, kind) => close({ dest, kind })}
+    />
+  ))
+}
+
+function DestinationPickerDialog({
+  open,
+  sources,
+  canCopy,
+  canMove,
+  onClose,
+  onClosed,
+  onPick
+}: DestinationRequest & {
+  open: boolean
+  onClose: () => void
+  onClosed: () => void
+  onPick: (dest: string, kind: 'move' | 'copy') => void
+}) {
+  const { t } = useI18n()
+  const session = useSession()
+  const roots = useMemo(
+    () => (session.data?.roots ?? []).map((root) => ({ path: `/${root.label}`, name: root.label })),
+    [session.data?.roots]
+  )
+  const [selected, setSelected] = useState<string | null>(null)
+  const stat = useStat(selected ?? '', open && selected !== null)
+  const problem = selected ? destinationProblem(selected, sources) : null
+  const writable = stat.data?.perms.create ?? false
+  const copy = canCopy && selected !== null && problem !== 'into_itself' && writable
+  const move = canMove && selected !== null && problem === null && writable
+  const isWarn = problem !== null || (selected !== null && stat.data && !writable)
+
+  return (
+    <BrowseDialog
+      open={open}
+      title={t('dest.move_or_copy')}
+      onClose={onClose}
+      onClosed={onClosed}
+      actions={
+        <>
+          <StowButton variant="text" onClick={onClose}>
+            {t('common.cancel')}
+          </StowButton>
+          {canCopy ? (
+            <StowButton variant="outlined" disabled={!copy} onClick={() => selected && onPick(selected, 'copy')}>
+              {t('common.copy')}
+            </StowButton>
+          ) : null}
+          {canMove ? (
+            <StowButton disabled={!move} onClick={() => selected && onPick(selected, 'move')}>
+              {t('common.move')}
+            </StowButton>
+          ) : null}
+        </>
+      }
+    >
+      <div className={styles.root}>
+        <p className={styles.prompt}>{t('dest.choose_destination_folder', { count: sources.length })}</p>
+        <div className={styles.tree}>
+          <FolderTreeList
+            roots={roots}
+            currentPath={selected ?? ''}
+            onNavigate={setSelected}
+            aria-label={t('dest.destination_folder')}
+          />
+        </div>
+        <p className={cx(styles.status, isWarn && styles.statusWarn)} aria-live="polite">
+          {problem === 'into_itself'
+            ? t('dest.cannot_move_folder_into_itself')
+            : problem === 'same_folder'
+              ? t('dest.already_in_this_folder')
+              : selected !== null && stat.data && !writable
+                ? t('dest.cannot_write_into_folder')
+                : (selected ?? t('dest.no_folder_chosen'))}
+        </p>
+      </div>
+    </BrowseDialog>
+  )
+}
