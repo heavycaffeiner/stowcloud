@@ -178,14 +178,10 @@ export function SearchPanel({ scope = '', autoFocus = false, trailing }: SearchP
         ran={state.ran}
         running={state.running}
         view={controller.view}
-        rows={controller.rows}
-        windowed={controller.windowed}
         activeFilters={controller.activeFilters}
         onOpen={navigation.openResult}
         onScroll={(scrollTop) => controller.set('scrollTop', scrollTop)}
-        resultsRef={(node) => {
-          resultsContainer.current = node
-        }}
+        resultsRef={resultsContainer}
       />
     </div>
   )

@@ -1,7 +1,7 @@
-import { forwardRef, useMemo } from 'react'
+import { forwardRef, useLayoutEffect, useMemo } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { useCompact } from '@/hooks/use-compact'
 import { useI18n } from '../../../../hooks/use-i18n'
-import { computeScaleMapping, computeWindow, rowIndexToScrollTop } from '../../../../lib/virtual/windowing'
 import { cx, StowCheckboxIndicator } from '@/shared/ui'
 import { touchTarget } from '@/shared/theme'
 import { indicesInRect } from '../../logic/marquee'
@@ -22,28 +22,30 @@ const MOBILE_MAX_WIDTH = 600
 const SORTABLE = ['name', 'size', 'mtime'] as const
 const COLUMN = { name: itemStyles.colName, size: itemStyles.colSize, mtime: itemStyles.colModified }
 
-const measure = (element: HTMLDivElement) => ({
-  scroll: element.scrollTop,
-  height: element.clientHeight,
-  width: element.clientWidth
-})
+const measure = (element: HTMLDivElement) => ({ width: element.clientWidth })
 
 /** The folder as rows under sortable column headings. Only the rows in view are drawn. */
 export const FileList = forwardRef<FileViewHandle, FileViewProps>(function FileList(props, ref) {
   const { items, total, loading } = props
   const { t } = useI18n()
   const compact = useCompact()
-  const { viewport, metrics } = useViewportMetrics(measure, { scroll: 0, height: 0, width: 0 })
+  const { viewport, metrics } = useViewportMetrics(measure, { width: 0 })
   const mobile = compact && metrics.width > 0 && metrics.width < MOBILE_MAX_WIDTH
   const rowHeight = mobile ? MOBILE_ROW_HEIGHT : ROW_HEIGHT[densityPref.value]
-  const visibleHeight = Math.max(0, metrics.height - HEADER_HEIGHT)
-  const win = computeWindow({
-    scrollTop: metrics.scroll,
-    viewportHeight: visibleHeight,
-    rowHeight,
-    itemCount: total,
-    overscan: 8
+  // The sticky header sits above the first row and covers the top of the view.
+  const virtualizer = useVirtualizer({
+    count: total,
+    getScrollElement: () => viewport.current,
+    estimateSize: () => rowHeight,
+    overscan: 8,
+    scrollMargin: HEADER_HEIGHT,
+    scrollPaddingStart: HEADER_HEIGHT
   })
+  // The virtualizer keeps its row offsets until told the estimate changed.
+  useLayoutEffect(() => virtualizer.measure(), [virtualizer, rowHeight])
+  const rows = virtualizer.getVirtualItems()
+  const first = rows[0]?.index ?? 0
+  const end = (rows.at(-1)?.index ?? -1) + 1
 
   const view = useFileView(
     props,
@@ -52,13 +54,7 @@ export const FileList = forwardRef<FileViewHandle, FileViewProps>(function FileL
     {
       step: (key, from) =>
         key === 'ArrowDown' ? (from === null ? 0 : from + 1) : key === 'ArrowUp' ? (from ?? total) - 1 : null,
-      reveal(index) {
-        const mapping = computeScaleMapping(total, rowHeight)
-        const top = rowIndexToScrollTop(index, mapping, rowHeight)
-        const bottom = rowIndexToScrollTop(index + 1, mapping, rowHeight)
-        if (top < metrics.scroll) viewport.current?.scrollTo({ top })
-        else if (bottom > metrics.scroll + visibleHeight) viewport.current?.scrollTo({ top: bottom - visibleHeight })
-      },
+      reveal: (index) => virtualizer.scrollToIndex(index),
       indicesInRect(rect) {
         const element = viewport.current
         if (!element) return []
@@ -75,8 +71,8 @@ export const FileList = forwardRef<FileViewHandle, FileViewProps>(function FileL
           count: total
         })
       },
-      rendered: (index) => index >= win.start && index < win.end,
-      needed: win.end
+      rendered: (index) => index >= first && index < end,
+      needed: end
     },
     'sc-row'
   )
@@ -137,10 +133,12 @@ export const FileList = forwardRef<FileViewHandle, FileViewProps>(function FileL
             })}
             <span className={cx(itemStyles.cell, itemStyles.colActions)} role="columnheader" />
           </div>
-          <div className={viewStyles.spacer} style={{ blockSize: win.totalHeight }}>
-            <div className={viewStyles.window} style={{ transform: `translate3d(0, ${win.padTop}px, 0)` }}>
-              {Array.from({ length: win.count }, (_, offset) => {
-                const index = win.start + offset
+          <div className={viewStyles.spacer} style={{ blockSize: virtualizer.getTotalSize() }}>
+            <div
+              className={viewStyles.window}
+              style={{ transform: `translate3d(0, ${(rows[0]?.start ?? HEADER_HEIGHT) - HEADER_HEIGHT}px, 0)` }}
+            >
+              {rows.map(({ index }) => {
                 const item = items[index]
                 const style = { blockSize: rowHeight }
                 return item ? (

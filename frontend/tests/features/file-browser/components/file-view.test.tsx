@@ -26,6 +26,9 @@ function tap(target: HTMLElement, options: PointerEventInit = {}) {
 }
 
 beforeEach(() => {
+  // jsdom has no layout, and the virtualizers draw nothing in a viewport with no height.
+  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(600)
+  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(800)
   selection.reset()
   vi.useFakeTimers()
   vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
@@ -35,6 +38,7 @@ afterEach(async () => {
   cleanup()
   selection.reset()
   vi.useRealTimers()
+  vi.restoreAllMocks()
 })
 
 describe.each([

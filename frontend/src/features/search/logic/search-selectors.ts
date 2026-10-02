@@ -1,9 +1,8 @@
 import { EXTENSION_PRESETS, parseExtensions } from './filters'
-import { computeWindow, type WindowResult } from '../../../lib/virtual/windowing'
 import { SORT_KEYS, sortHits, type CategoryId, type SearchPanelState, type SearchStatus } from './search-state'
 import type { SearchHit } from '../api'
 
-/** Every result row is this tall, so the window can be computed without measuring. */
+/** Every result row is this tall, so the virtualizer places rows without measuring them. */
 export const RESULT_ROW_HEIGHT = 56
 
 export function activeCategoryFor(state: SearchPanelState): CategoryId {
@@ -52,14 +51,4 @@ export function statusFor(state: SearchPanelState, view: readonly SearchHit[]): 
   if (state.elapsedMs !== null)
     return { key: /* i18n */ 'search.found_in', values: { count: String(view.length), ms: String(state.elapsedMs) } }
   return { key: /* i18n */ 'search.found', values: { count: String(view.length) } }
-}
-
-export function windowFor(state: SearchPanelState, view: readonly SearchHit[], viewportHeight: number): WindowResult {
-  return computeWindow({
-    scrollTop: state.scrollTop,
-    viewportHeight,
-    rowHeight: RESULT_ROW_HEIGHT,
-    itemCount: view.length,
-    overscan: 8
-  })
 }

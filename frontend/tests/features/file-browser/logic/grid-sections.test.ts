@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cellPos, sectionRows, verticalTarget } from '../../../src/lib/virtual/grid-sections'
+import { cellPos, sectionRows, verticalTarget } from '../../../../src/features/file-browser/logic/grid-sections'
 
 // A listing of 5 folders and 7 files at 4 columns:
 //

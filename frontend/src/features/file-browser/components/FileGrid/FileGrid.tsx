@@ -1,10 +1,10 @@
-import { forwardRef, useCallback, useRef, type ReactNode } from 'react'
+import { forwardRef, useCallback, useLayoutEffect, useRef, type ReactNode } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { useI18n } from '../../../../hooks/use-i18n'
 import { cssVarName } from '@/lib/css-var'
-import { computeScaleMapping, computeWindow, rowIndexToScrollTop } from '../../../../lib/virtual/windowing'
-import { cellPos, sectionRows, verticalTarget } from '../../../../lib/virtual/grid-sections'
 import { cx } from '@/shared/ui'
 import { vars } from '@/shared/theme'
+import { cellPos, sectionRows, verticalTarget } from '../../logic/grid-sections'
 import { indicesInRect } from '../../logic/marquee'
 import type { FileEntry } from '../../model/file-entry'
 import { density as densityPref, type Density } from '../../model/view-prefs'
@@ -13,7 +13,7 @@ import { FileItem, FileItemSkeleton } from '../FileItem'
 import * as viewStyles from '../file-view.css'
 import * as styles from './FileGrid.css'
 
-// Card sizes in pixels. The window maths needs them as numbers, so they live here rather than in the stylesheet.
+// Card sizes in pixels. The virtualizers need them as numbers, so they live here rather than in the stylesheet.
 const CARD: Record<Density, { width: number; folder: number; file: number; columnGap: number; rowGap: number }> = {
   compact: { width: 192, folder: 44, file: 176, columnGap: 8, rowGap: 12 },
   comfortable: { width: 224, folder: 52, file: 208, columnGap: 12, rowGap: 16 },
@@ -36,8 +36,6 @@ export const FileGrid = forwardRef<FileViewHandle, FileGridProps>(function FileG
   const measure = useCallback(
     (element: HTMLDivElement) => ({
       width: element.clientWidth,
-      scroll: element.scrollTop,
-      height: element.clientHeight,
       foldersTop: folderEl.current?.offsetTop ?? 0,
       filesTop: fileEl.current?.offsetTop ?? 0,
       inlinePad: Number.parseFloat(getComputedStyle(element).getPropertyValue(cssVarName(vars.layout.contentPad))) || 0
@@ -46,8 +44,6 @@ export const FileGrid = forwardRef<FileViewHandle, FileGridProps>(function FileG
   )
   const { viewport, metrics } = useViewportMetrics(measure, {
     width: 0,
-    scroll: 0,
-    height: 0,
     foldersTop: 0,
     filesTop: 0,
     inlinePad: 0
@@ -59,20 +55,56 @@ export const FileGrid = forwardRef<FileViewHandle, FileGridProps>(function FileG
   const cardWidth = Math.max(MIN_CARD_WIDTH, Math.floor((available - (columns - 1) * card.columnGap) / columns))
   const folderCount = Math.min(dirs, total)
   const fileCount = Math.max(0, total - folderCount)
+  const folderRows = sectionRows(folderCount, columns)
+  const fileRows = sectionRows(fileCount, columns)
+  const folderRowHeight = card.folder + card.rowGap
+  const fileRowHeight = card.file + card.rowGap
+  // One virtualizer per section on the same scrolling element, each offset by where its section starts.
+  const folderVirtualizer = useVirtualizer({
+    count: folderRows,
+    getScrollElement: () => viewport.current,
+    estimateSize: () => folderRowHeight,
+    overscan: OVERSCAN,
+    scrollMargin: metrics.foldersTop
+  })
+  const fileVirtualizer = useVirtualizer({
+    count: fileRows,
+    getScrollElement: () => viewport.current,
+    estimateSize: () => fileRowHeight,
+    overscan: OVERSCAN,
+    scrollMargin: metrics.filesTop
+  })
+  // The virtualizers keep their row offsets until told the estimate changed.
+  useLayoutEffect(() => {
+    folderVirtualizer.measure()
+    fileVirtualizer.measure()
+  }, [folderVirtualizer, fileVirtualizer, folderRowHeight, fileRowHeight])
   const sections = [
-    { start: 0, count: folderCount, cardHeight: card.folder, top: metrics.foldersTop, el: folderEl },
-    { start: folderCount, count: fileCount, cardHeight: card.file, top: metrics.filesTop, el: fileEl }
+    {
+      start: 0,
+      count: folderCount,
+      cardHeight: card.folder,
+      top: metrics.foldersTop,
+      rows: folderRows,
+      rowHeight: folderRowHeight,
+      virtualizer: folderVirtualizer,
+      el: folderEl
+    },
+    {
+      start: folderCount,
+      count: fileCount,
+      cardHeight: card.file,
+      top: metrics.filesTop,
+      rows: fileRows,
+      rowHeight: fileRowHeight,
+      virtualizer: fileVirtualizer,
+      el: fileEl
+    }
   ].map((section) => {
-    const rows = sectionRows(section.count, columns)
-    const rowHeight = section.cardHeight + card.rowGap
-    const win = computeWindow({
-      scrollTop: Math.max(0, metrics.scroll - section.top),
-      viewportHeight: metrics.height,
-      rowHeight,
-      itemCount: rows,
-      overscan: OVERSCAN
-    })
-    return { ...section, rows, rowHeight, win }
+    const drawn = section.virtualizer.getVirtualItems()
+    const first = drawn[0]?.index ?? 0
+    const end = (drawn.at(-1)?.index ?? -1) + 1
+    return { ...section, drawn, first, end }
   })
   const [folders, files] = sections
 
@@ -88,15 +120,17 @@ export const FileGrid = forwardRef<FileViewHandle, FileGridProps>(function FileG
           return from === null ? 0 : from + (key === 'ArrowRight' ? 1 : -1)
         return null
       },
+      // scrollToIndex sends a section's last row to the bottom of the view, past the section below it.
       reveal(index) {
+        const element = viewport.current
+        if (!element) return
         const position = cellPos(index, folderCount, columns)
         const section = sections[position.section]
-        const top =
-          section.top +
-          rowIndexToScrollTop(position.row, computeScaleMapping(section.rows, section.rowHeight), section.rowHeight)
+        const top = section.top + position.row * section.rowHeight
         const bottom = top + section.rowHeight
-        if (top < metrics.scroll) viewport.current?.scrollTo({ top })
-        else if (bottom > metrics.scroll + metrics.height) viewport.current?.scrollTo({ top: bottom - metrics.height })
+        if (top < element.scrollTop) element.scrollTo({ top })
+        else if (bottom > element.scrollTop + element.clientHeight)
+          element.scrollTo({ top: bottom - element.clientHeight })
       },
       indicesInRect(rect) {
         const left = (viewport.current?.getBoundingClientRect().left ?? 0) + window.scrollX + metrics.inlinePad
@@ -116,10 +150,10 @@ export const FileGrid = forwardRef<FileViewHandle, FileGridProps>(function FileG
       },
       rendered(index) {
         const position = cellPos(index, folderCount, columns)
-        const { win } = sections[position.section]
-        return position.row >= win.start && position.row < win.end
+        const { first, end } = sections[position.section]
+        return position.row >= first && position.row < end
       },
-      needed: Math.min(total, Math.max(folders.win.end * columns, folderCount + files.win.end * columns))
+      needed: Math.min(total, Math.max(folders.end * columns, folderCount + files.end * columns))
     },
     'sc-grid-cell'
   )
@@ -134,14 +168,13 @@ export const FileGrid = forwardRef<FileViewHandle, FileGridProps>(function FileG
         className={viewStyles.spacer}
         role="rowgroup"
         aria-label={label}
-        style={{ blockSize: section.win.totalHeight }}
+        style={{ blockSize: section.virtualizer.getTotalSize() }}
       >
         <div
           className={cx(viewStyles.window, styles.window)}
-          style={{ transform: `translate3d(0, ${section.win.padTop}px, 0)` }}
+          style={{ transform: `translate3d(0, ${section.first * section.rowHeight}px, 0)` }}
         >
-          {Array.from({ length: section.win.count }, (_, offset) => {
-            const row = section.win.start + offset
+          {section.drawn.map(({ index: row }) => {
             const first = section.start + row * columns
             const cells = Math.min(columns, section.start + section.count - first)
             return (

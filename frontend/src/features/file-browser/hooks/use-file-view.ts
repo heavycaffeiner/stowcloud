@@ -51,8 +51,9 @@ const sameNumbers = <M extends Record<string, number>>(a: M, b: M): boolean =>
   Object.keys(a).every((key) => a[key] === b[key])
 
 /**
- * Reads `measure` from the scrolling element on scroll, on resize, and after every render, since what the view
- * renders moves its own sections. `measure` must be stable. An unchanged reading does not re-render.
+ * Reads `measure` from the scrolling element on resize and after every render, since what the view renders moves
+ * its own sections. Scrolling is left to the virtualizers. `measure` must be stable. An unchanged reading does not
+ * re-render.
  */
 export function useViewportMetrics<M extends Record<string, number>>(
   measure: (element: HTMLDivElement) => M,
@@ -68,14 +69,10 @@ export function useViewportMetrics<M extends Record<string, number>>(
   useLayoutEffect(update)
   useEffect(() => {
     const element = viewport.current
-    if (!element) return
-    element.addEventListener('scroll', update, { passive: true })
-    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update)
-    observer?.observe(element)
-    return () => {
-      element.removeEventListener('scroll', update)
-      observer?.disconnect()
-    }
+    if (!element || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(update)
+    observer.observe(element)
+    return () => observer.disconnect()
   }, [update])
   return { viewport, metrics }
 }

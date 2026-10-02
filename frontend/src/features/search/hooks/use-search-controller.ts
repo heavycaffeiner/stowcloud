@@ -10,15 +10,7 @@ import {
   type SearchPanelState,
   type SearchStatus
 } from '../logic/search-state'
-import {
-  activeCategoryFor,
-  activeFiltersFor,
-  sortLabelKeyFor,
-  statusFor,
-  viewFor,
-  windowFor
-} from '../logic/search-selectors'
-import type { WindowResult } from '../../../lib/virtual/windowing'
+import { activeCategoryFor, activeFiltersFor, sortLabelKeyFor, statusFor, viewFor } from '../logic/search-selectors'
 import { searchStream, type SearchDone, type SearchHit, type SearchProgress } from '../api'
 const FLUSH_MS = 100
 
@@ -40,8 +32,6 @@ export interface SearchController {
   readonly set: StateSetter
   readonly inputRef: MutableRefObject<HTMLInputElement | null>
   readonly view: readonly SearchHit[]
-  readonly rows: readonly SearchHit[]
-  readonly windowed: WindowResult
   readonly activeCategory: CategoryId
   readonly activeFilters: string
   readonly sortLabelKey: string
@@ -304,15 +294,12 @@ export function useSearchController({
   const activeFilters = activeFiltersFor(state)
   const sortLabelKey = sortLabelKeyFor(state)
   const status: SearchStatus = statusFor(state, view)
-  const windowed = windowFor(state, view, resultsContainer.current?.clientHeight ?? 480)
 
   return {
     state,
     set,
     inputRef,
     view,
-    rows: view.slice(windowed.start, windowed.end),
-    windowed,
     activeCategory,
     activeFilters,
     sortLabelKey,
