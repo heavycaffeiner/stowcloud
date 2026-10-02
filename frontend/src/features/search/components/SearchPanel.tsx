@@ -137,6 +137,7 @@ export function SearchPanel({ scope = '', autoFocus = false, trailing }: SearchP
         >
           <StowButton
             variant="text"
+            className={styles.sort}
             icon={<Icon name="sort" size={18} />}
             aria-label={t('search.sort_by', { key: sortLabel })}
           >

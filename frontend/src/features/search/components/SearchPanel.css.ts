@@ -24,35 +24,32 @@ export const queryField = style({
   selectors: { [`${queryBar} &`]: { flex: 1, maxInlineSize: 'none' } }
 })
 
+// When the kinds do not fit beside the scope and sort, they take their own lines and those two wrap below.
 export const filterBar = style({
   display: 'flex',
+  flexWrap: 'wrap',
   alignItems: 'center',
   justifyContent: 'space-between',
   gap: vars.space.sm,
   padding: `${vars.space.xxs} 0 ${vars.space.xs}`,
   overflow: 'visible',
-  scrollbarWidth: 'none',
-  '@media': {
-    [media.compact]: {
-      alignItems: 'stretch',
-      flexDirection: 'column',
-      gap: vars.space.sm,
-      overflow: 'visible'
-    }
-  }
+  scrollbarWidth: 'none'
 })
 
+// A phone keeps the kinds on one full-width line that scrolls sideways, with the scope and sort below.
 export const categories = style({
   display: 'flex',
+  flex: '1 1 auto',
+  flexWrap: 'wrap',
   alignItems: 'center',
   gap: vars.space.xs,
-  flex: '1 1 auto',
-  overflowX: 'auto',
-  scrollbarWidth: 'none',
   '@media': {
     [media.compact]: {
-      width: '100%',
       flex: 'none',
+      flexWrap: 'nowrap',
+      overflowX: 'auto',
+      scrollbarWidth: 'none',
+      width: '100%',
       paddingBottom: vars.space.xxs,
       overscrollBehaviorInline: 'contain',
       scrollSnapType: 'x proximity'
@@ -61,7 +58,11 @@ export const categories = style({
 })
 
 export const scope = style({
-  '@media': { [media.compact]: { alignSelf: 'flex-start' } }
+  flex: 'none'
+})
+
+export const sort = style({
+  flex: 'none'
 })
 
 export const statusBar = style({
