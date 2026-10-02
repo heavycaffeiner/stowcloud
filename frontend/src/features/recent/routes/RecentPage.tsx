@@ -8,7 +8,7 @@ import { useDocumentTitle } from '../../../hooks/use-document-title'
 import { Icon, SecondaryPageShell, SecondaryPageState, secondaryPageStyles, VirtualList } from '@/shared/ui'
 import * as styles from './RecentPage.css'
 import { useRecent, type RecentHit } from '../api'
-import { splatOf } from '../../files/browse-search'
+import { splatOf } from '../../file-browser/browse-search'
 
 const RECENT_LIMIT = 100
 const RECENT_RETENTION_DAYS = 14

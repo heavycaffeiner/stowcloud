@@ -4,7 +4,7 @@
 // query it touched: `['path', p]` covers that path's listing, stat, size and
 // content, and `keys.admin()` covers every admin screen.
 import type { AdminLogQuery, AdminLogsTimelineQuery, AuditQuery } from '../features/admin/api'
-import type { Order, SortKey } from '../features/files/api'
+import type { Order, SortKey } from '../features/file-browser/api'
 
 export interface Sort {
   readonly key: SortKey

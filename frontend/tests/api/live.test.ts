@@ -1,14 +1,14 @@
 import { QueryObserver } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { eventsTransport, type ServerMsg } from '../../src/api/events-transport'
-import { invalidateDirs } from '../../src/features/files/api'
+import { invalidateDirs } from '../../src/features/file-browser/api'
 import { queryClient } from '../../src/api/query-client'
 import { startLiveInvalidation } from '../../src/api/live'
 
 vi.mock('../../src/api/events-transport', () => ({
   eventsTransport: { connect: vi.fn(), send: vi.fn(), close: vi.fn() }
 }))
-vi.mock('../../src/features/files/api', () => ({ invalidateDirs: vi.fn() }))
+vi.mock('../../src/features/file-browser/api', () => ({ invalidateDirs: vi.fn() }))
 
 const connect = vi.mocked(eventsTransport.connect)
 const send = vi.mocked(eventsTransport.send)

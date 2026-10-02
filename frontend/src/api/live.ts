@@ -5,7 +5,7 @@
 // an `inval` frame is an `invalidateQueries` for that path. A change made over
 // SMB, by a sync client or in another tab therefore lands on screen through
 // the same path as a change made here.
-import { invalidateDirs } from '../features/files/api'
+import { invalidateDirs } from '../features/file-browser/api'
 import { eventsTransport, type ServerMsg } from './events-transport'
 import { queryClient } from './query-client'
 

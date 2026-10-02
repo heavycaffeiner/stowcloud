@@ -1,7 +1,7 @@
 import { useCallback } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { parentOf } from '../../../lib/path-utils'
-import { splatOf } from '../../files/browse-search'
+import { splatOf } from '../../file-browser/browse-search'
 import { saveSnapshot } from '../state'
 import { toSnapshot, type SearchPanelState } from '../logic/search-state'
 import type { SearchHit } from '../api'

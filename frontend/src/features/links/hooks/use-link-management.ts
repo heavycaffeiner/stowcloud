@@ -2,10 +2,10 @@ import { useState } from 'react'
 import { describeApiError } from '../../../api/error-text'
 import { t } from '../../../i18n'
 import { baseName, normalizePath } from '../../../lib/path-utils'
-import { useFileCache } from '../../files/api'
+import { useFileCache } from '../../file-browser/api'
 import { openShareManager } from '../../shares/components/ShareManageDialog'
 import type { OwnedShareLinkInfo, ShareLinkInfo } from '../api'
-import type { Perms } from '../../files/perms'
+import type { Perms } from '../../file-browser/perms'
 
 type LinkRow = ShareLinkInfo | OwnedShareLinkInfo
 export type { LinkRow }

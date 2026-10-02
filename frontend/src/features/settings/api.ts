@@ -8,7 +8,7 @@ import type { components } from '../../api/generated/schema'
 import { lock } from '../../lib/crypto/e2ee'
 import { invalidateEncryptedShares } from '../shares/encrypted-shares'
 import { keys } from '../../api/query-keys'
-import { resetUploadQueue } from '../uploads/queue'
+import { resetUploadQueue } from '../upload/queue'
 import { isProviderUrl, logout } from '../auth/api'
 
 type Schemas = components['schemas']

@@ -71,7 +71,7 @@ test.describe('Upload State Machine and Recovery E2E', () => {
     }
   })
 
-  test('pause and resume upload in UploadTray', async ({ authedPage: page, workerApp, namespace, artifacts }) => {
+  test('pause and resume upload in the upload queue', async ({ authedPage: page, workerApp, namespace, artifacts }) => {
     await page.goto(`${workerApp.baseURL}/b/docs`, { waitUntil: 'domcontentloaded' })
     await expect(page.getByRole('banner')).toBeVisible()
 
@@ -100,7 +100,7 @@ test.describe('Upload State Machine and Recovery E2E', () => {
     }
   })
 
-  test('cancel upload in UploadTray', async ({ authedPage: page, workerApp, namespace, artifacts }) => {
+  test('cancel upload in the upload queue', async ({ authedPage: page, workerApp, namespace, artifacts }) => {
     await page.goto(`${workerApp.baseURL}/b/docs`, { waitUntil: 'domcontentloaded' })
     await expect(page.getByRole('banner')).toBeVisible()
 

@@ -4,7 +4,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/rea
 import { client, decimal, oneOf, unwrap, unwrapEmpty } from '../../api/fetcher'
 import type { components } from '../../api/generated/schema'
 import { keys } from '../../api/query-keys'
-import type { BatchItemResult } from '../files/api'
+import type { BatchItemResult } from '../file-browser/api'
 
 export type JobState = 'queued' | 'running' | 'paused' | 'retrying' | 'done' | 'error' | 'cancelled' | 'interrupted'
 

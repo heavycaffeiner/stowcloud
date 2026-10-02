@@ -12,8 +12,8 @@ import {
   MIN_CONCURRENCY,
   validChunkSizeOverride
 } from '../../../lib/upload/chunk-planner'
-import { loadStoredChunkSize, loadStoredConcurrency, subscribeUploadPreferences } from '../../uploads/preferences'
-import { setUploadChunkSize, setUploadConcurrency } from '../../uploads/queue'
+import { loadStoredChunkSize, loadStoredConcurrency, subscribeUploadPreferences } from '../../upload/preferences'
+import { setUploadChunkSize, setUploadConcurrency } from '../../upload/queue'
 import { Icon, StowButton, StowFormTextField, StowSwitch } from '@/shared/ui'
 import { AdminCard } from './AdminCard'
 import * as styles from './UploadSettingsSection.css'

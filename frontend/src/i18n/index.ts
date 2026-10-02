@@ -31,7 +31,12 @@ export function formatDateNs(mtimeNs: string): string {
 
 /** File modification times use local time with a fixed day-before-month order. */
 export function formatModifiedDateNs(mtimeNs: string): string {
-  const date = new Date(Number(BigInt(mtimeNs) / 1_000_000n))
+  return formatModifiedDate(Number(BigInt(mtimeNs) / 1_000_000n))
+}
+
+/** `formatModifiedDateNs` for a time in milliseconds since the epoch. */
+export function formatModifiedDate(ms: number): string {
+  const date = new Date(ms)
   if (Number.isNaN(date.getTime())) throw new RangeError('Invalid modification time')
   const year = String(date.getFullYear()).padStart(4, '0')
   const day = String(date.getDate()).padStart(2, '0')

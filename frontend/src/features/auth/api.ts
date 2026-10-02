@@ -16,7 +16,7 @@ import {
 } from '../../api/fetcher'
 import type { components } from '../../api/generated/schema'
 import { keys } from '../../api/query-keys'
-import { permsFromNames, type Perms } from '../files/perms'
+import { permsFromNames, type Perms } from '../file-browser/perms'
 
 type Schemas = components['schemas']
 

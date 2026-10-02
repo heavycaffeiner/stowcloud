@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { client, decimal, errorFrom, malformed, oneOf, send, serverRoot, unwrap, unwrapEmpty } from '../../api/fetcher'
 import type { components } from '../../api/generated/schema'
 import { keys } from '../../api/query-keys'
-import { permNamesOf, permsFromNames, type Perms } from '../files/perms'
+import { permNamesOf, permsFromNames, type Perms } from '../file-browser/perms'
 
 type Schemas = components['schemas']
 

@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import { contentUrl, thumbUrl, type Entry } from '../../files/api'
+import { contentUrl, thumbUrl, type Entry } from '../../file-browser/api'
 import { isVideoFile, mimeTypeOf } from '../logic/media-utils'
-import { registerMediaSource, releaseMediaSource, swReady } from '../../files/download-sw'
+import { registerMediaSource, releaseMediaSource, swReady } from '../../file-browser/download-sw'
 import { decryptDownload } from '../../../lib/crypto/e2ee'
 import { useE2eeStore } from '../../shares/e2ee-store'
 import { encryptionForLabel, shareLabelOf } from '../../shares/encrypted-shares'
-import { cx, Icon, type IconName } from '@/shared/ui'
+import { Icon, type IconName } from '@/shared/ui'
 import * as styles from './Thumbnail.css'
 
 const CACHE = new Map<string, string>()
@@ -88,10 +88,9 @@ export interface ThumbnailProps {
   dim: number
   fallback: IconName
   iconSize: number
-  imageClassName?: string
 }
 
-export function Thumbnail({ entry, dim, fallback, iconSize, imageClassName }: ThumbnailProps) {
+export function Thumbnail({ entry, dim, fallback, iconSize }: ThumbnailProps) {
   const [state, setState] = useState<{ url: string | null }>({ url: null })
   const { url } = state
   const key = `${entry.name}\x00${entry.etag}`
@@ -180,14 +179,7 @@ export function Thumbnail({ entry, dim, fallback, iconSize, imageClassName }: Th
     )
   return (
     <div className={styles.wrap}>
-      <img
-        className={cx(styles.img, imageClassName)}
-        src={url}
-        alt=""
-        loading="lazy"
-        decoding="async"
-        onError={onError}
-      />
+      <img className={styles.img} src={url} alt="" loading="lazy" decoding="async" onError={onError} />
       {isVid ? (
         <span className={styles.badge} aria-hidden="true">
           <Icon name="video" />

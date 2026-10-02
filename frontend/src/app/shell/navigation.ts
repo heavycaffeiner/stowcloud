@@ -1,7 +1,7 @@
 import { useLocation, useMatch, useRouter } from '@tanstack/react-router'
 import { useSession } from '../../features/auth/api'
-import { splatOf, splatPath } from '../../features/files/browse-search'
-import { lastFolder } from '../../features/files/location'
+import { splatOf, splatPath } from '../../features/file-browser/browse-search'
+import { lastFolder } from '../../features/file-browser/location'
 import { useI18n } from '../../hooks/use-i18n'
 import type { IconName } from '@/shared/ui'
 

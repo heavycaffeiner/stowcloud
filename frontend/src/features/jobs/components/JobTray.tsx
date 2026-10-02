@@ -6,7 +6,7 @@ import { jobTray, useJobTrayStore } from '../tray-store'
 import { Icon, StowIconButton, StowProgressLinear, VirtualList } from '@/shared/ui'
 import * as styles from './JobTray.css'
 import { srOnly } from '@/shared/theme'
-import { useInvalidateAllPaths } from '../../files/api'
+import { useInvalidateAllPaths } from '../../file-browser/api'
 import { useJobAction, useJobList, useJobStatuses, type JobKind, type JobState, type JobStatus } from '../api'
 
 interface JobRow {

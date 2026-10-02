@@ -2,7 +2,7 @@
 // done or reports that its bounded walk stopped early.
 import { apiUrl } from '../../api/fetcher'
 import { normalizePath } from '../../lib/path-utils'
-import type { Entry } from '../files/api'
+import type { Entry } from '../file-browser/api'
 
 export interface SearchHit {
   path: string

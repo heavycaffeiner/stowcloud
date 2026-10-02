@@ -3,7 +3,7 @@
 // holds no key for an encrypted share, so it cannot list this itself.
 // Character-encoding fallback mirrors archive.go's ListArchive.
 import { ZipReader, Reader } from '@zip.js/zip.js'
-import { contentUrl, type ArchiveEntry, type ArchiveListing, type Entry } from '../files/api'
+import { contentUrl, type ArchiveEntry, type ArchiveListing, type Entry } from '../file-browser/api'
 import {
   BLOCK_SIZE,
   ciphertextSpanForRange,

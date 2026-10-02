@@ -5,7 +5,7 @@ import { formatDateNs, t } from '../../../i18n'
 import { formatBytes } from '../../../lib/format/bytes'
 import { cx, StowButton, StowDialog, StowIconButton, VirtualList } from '@/shared/ui'
 import * as styles from './TrashView.css'
-import type { BatchItemResult } from '../../files/api'
+import type { BatchItemResult } from '../../file-browser/api'
 import type { TrashEntry } from '../api'
 import type { TrashOperationResult } from '../hooks/use-trash-actions'
 

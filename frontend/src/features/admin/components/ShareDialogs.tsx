@@ -8,7 +8,7 @@ import { deriveKeys, generateSalt, makeVerifier } from '../../../lib/crypto/e2ee
 import { t } from '../../../i18n'
 import { useI18n } from '../../../hooks/use-i18n'
 import { Icon, StowButton, StowDialog, StowFormTextField, StowSelect, StowSwitch } from '@/shared/ui'
-import { pickPath } from '../../files/components/PathPickerDialog'
+import { pickPath } from '../../file-browser/components/PathPickerDialog'
 import { unlockShare } from '../../shares/e2ee-store'
 import { backendLabel } from './ShareManagementList'
 import * as styles from './ShareManagementSection.css'

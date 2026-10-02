@@ -8,7 +8,7 @@ import {
 } from '@tanstack/react-router'
 import { adminTabs } from '../features/admin/tabs'
 import { resolveAuthScreen } from '../features/auth/api'
-import { splatOf, validateBrowseSearch } from '../features/files/browse-search'
+import { splatOf, validateBrowseSearch } from '../features/file-browser/browse-search'
 import { validateSearchParams } from '../features/search/search-params'
 import { settingsTabs } from '../features/settings/tabs'
 import { queryClient } from '../api/query-client'
@@ -90,14 +90,14 @@ const browseRoute = createRoute({
   path: 'b/$',
   validateSearch: validateBrowseSearch,
   errorComponent: ShellPageError,
-  component: lazyRouteComponent(() => import('../features/files/routes/BrowseRoute'), 'BrowseRoute')
+  component: lazyRouteComponent(() => import('../features/file-browser/routes/BrowseRoute'), 'BrowseRoute')
 })
 
 const editRoute = createRoute({
   getParentRoute: () => appRoute,
   path: 'edit/$',
   errorComponent: ShellPageError,
-  component: lazyRouteComponent(() => import('../features/files/routes/EditPage'), 'EditPage')
+  component: lazyRouteComponent(() => import('../features/file-browser/routes/EditPage'), 'EditPage')
 })
 
 const linksRoute = createRoute({

@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { listEncryptedArchive } from './zip-listing'
 import type { ShareEncryption } from '../shares/api'
-import type { Entry } from '../files/api'
+import type { Entry } from '../file-browser/api'
 
 /** `unlocked` is in the key so a listing that failed while locked is retried
  *  once the share is unlocked. */

@@ -7,8 +7,8 @@ import { JobTray } from '../../features/jobs/components/JobTray'
 import { SearchPage } from '../../features/search/components/SearchPage'
 import { SearchSheet } from '../../features/search/components/SearchSheet'
 import { useOpenedSearch } from '../../features/search/state'
-import { UploadTray } from '../../features/uploads/components/UploadTray'
-import { swReady } from '../../features/files/download-sw'
+import { UploadQueue } from '../../features/upload/components/UploadQueue'
+import { swReady } from '../../features/file-browser/download-sw'
 import { startLiveInvalidation } from '../../api/live'
 import { cx, ErrorBoundary } from '@/shared/ui'
 import { NavigationBar, type NavigationBarItem } from './NavigationBar'
@@ -115,7 +115,7 @@ function TrayStack({ compact }: { readonly compact: boolean }) {
         <JobTray />
       </ErrorBoundary>
       <ErrorBoundary>
-        <UploadTray />
+        <UploadQueue />
       </ErrorBoundary>
     </div>
   )
