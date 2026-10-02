@@ -23,7 +23,7 @@ export interface NavigationDrawerProps {
 export function NavigationDrawer({ overlay = false, onClose }: NavigationDrawerProps) {
   const { t } = useI18n()
   const navigate = useNavigate()
-  const { items, active } = useNavigation()
+  const { items, active, roots } = useNavigation()
   const user = useSession().data?.user
   const collapsed = !overlay && sidebar.value === 'collapsed'
 
@@ -68,15 +68,17 @@ export function NavigationDrawer({ overlay = false, onClose }: NavigationDrawerP
           </div>
         ) : null}
 
-        {!collapsed ? <div className={styles.divider} role="separator" /> : null}
+        {!collapsed ? <RootList overlay={overlay} onSelect={go} /> : null}
+
+        {!collapsed && (active === 'files' || roots.length > 0) ? (
+          <div className={styles.divider} role="separator" />
+        ) : null}
         <Destinations
           items={items.filter((item) => FILE_DESTINATIONS.includes(item.id))}
           active={active}
           collapsed={collapsed}
           onSelect={go}
         />
-
-        {!collapsed ? <RootList overlay={overlay} onSelect={go} /> : null}
 
         <div className={styles.divider} role="separator" />
         {!collapsed ? <div className={styles.sectionTitle}>{t('common.settings')}</div> : null}
@@ -174,7 +176,7 @@ function RootList({ overlay, onSelect }: { readonly overlay: boolean; readonly o
   }
 
   return (
-    <div className={styles.rootsSection}>
+    <div>
       <div className={styles.sectionHeader}>
         <span className={styles.sectionTitle}>{t('nav.folders')}</span>
         <StowButton variant="text" onClick={() => setReordering((current) => !current)}>

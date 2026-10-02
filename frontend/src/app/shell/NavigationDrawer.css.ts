@@ -58,7 +58,6 @@ export const body = style({
 
 export const newWrap = style({
   flex: 'none',
-  order: -2,
   padding: `${vars.space.lg} ${vars.space.md} ${vars.space.md}`,
   selectors: {
     [`${collapsed} &`]: { display: 'flex', justifyContent: 'center', paddingInline: 0 }
@@ -69,10 +68,6 @@ export const newWrap = style({
 export const newBtn = style({
   inlineSize: '100%',
   paddingInline: vars.space.xl
-})
-
-export const rootsSection = style({
-  order: -1
 })
 
 export const sectionHeader = style({
