@@ -1,4 +1,3 @@
-import { render } from '@testing-library/react'
 import {
   createMemoryHistory,
   createRootRoute,
@@ -8,7 +7,7 @@ import {
   RouterProvider
 } from '@tanstack/react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, screen } from '../../src/test/test-utils'
+import { cleanup, render, screen } from '../../src/test/test-utils'
 import { RouteProblem } from '../../src/app/RouteFallbacks'
 
 function Broken(): never {

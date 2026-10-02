@@ -1,5 +1,4 @@
 import { style } from '@vanilla-extract/css'
-import { buttonMinHeight, buttonWidth } from '../../../ui/Button.css'
 import { vars } from '@/shared/theme'
 
 export const root = style({
@@ -71,10 +70,8 @@ export const actions = style({
   alignItems: 'center',
   '@media': {
     '(max-width: 599.98px)': {
-      vars: {
-        [buttonMinHeight]: '44px',
-        [buttonWidth]: '100%'
-      }
+      flexDirection: 'column',
+      alignItems: 'stretch'
     }
   }
 })

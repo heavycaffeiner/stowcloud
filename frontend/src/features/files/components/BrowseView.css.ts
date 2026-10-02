@@ -1,135 +1,11 @@
-import { fallbackVar, keyframes, style } from '@vanilla-extract/css'
+import { style } from '@vanilla-extract/css'
 import * as appShellStyles from '../../../app/shell/AppShell.css'
 import { hostContainer } from './FileTree.css'
-import { fadeInUp, trayStackTop, vars } from '@/shared/theme'
+import { compactFloatBottom, fadeInUp, vars } from '@/shared/theme'
 
-const snackbarEnter = keyframes({
-  from: {
-    opacity: '0',
-    transform: 'translate(-50%, 12px) scale(0.96)'
-  },
-  to: {
-    opacity: '1',
-    transform: 'translate(-50%, 0) scale(1)'
-  }
-})
-
-export const filterPill = style({
-  selectors: {
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    },
-    '&:hover': {
-      background: `color-mix(in srgb, ${vars.color.text.primary} 10%, transparent)`,
-      color: vars.color.text.primary
-    }
-  },
-  minHeight: vars.density.control,
-  padding: '0 12px',
-  borderRadius: '10px',
-  background: `color-mix(in srgb, ${vars.color.text.primary} 5%, transparent)`,
-  border: `1px solid ${vars.color.border.subtle}`,
-  color: vars.color.text.secondary,
-  fontFamily: 'inherit',
-  fontSize: vars.typography.label.size,
-  lineHeight: vars.typography.label.lineHeight,
-  fontWeight: '500',
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: '4px',
-  cursor: 'pointer',
-  transition: 'background-color 140ms ease, border-color 140ms ease, color 140ms ease'
-})
-
-export const actionBtn = style({
-  selectors: {
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    },
-    '&:hover': {
-      background: `color-mix(in srgb, ${vars.color.text.primary} 8%, transparent)`,
-      color: vars.color.text.primary
-    }
-  },
-  width: vars.density.control,
-  height: vars.density.control,
-  borderRadius: '10px',
-  border: 'none',
-  background: 'transparent',
-  color: vars.color.text.secondary,
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  cursor: 'pointer',
-  transition: 'background-color 120ms ease, color 120ms ease'
-})
-
-export const fabBtn = style({
-  selectors: {
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    },
-    '&:hover': {
-      background: `color-mix(in srgb, ${vars.color.accent.solid} 88%, ${vars.color.text.primary})`
-    }
-  },
-  width: vars.density.control,
-  height: vars.density.control,
-  borderRadius: '12px',
-  border: 'none',
-  background: vars.color.accent.solid,
-  color: vars.color.accent.onSolid,
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  cursor: 'pointer',
-  boxShadow: `0 2px 6px color-mix(in srgb, ${vars.color.accent.solid} 22%, transparent)`
-})
-
-export const operationClose = style({
-  selectors: {
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    },
-    '&:active': {
-      transform: 'scale(0.96)'
-    }
-  },
-  minHeight: vars.density.control,
-  border: '0',
-  padding: '4px 12px',
-  borderRadius: '20px',
-  color: vars.color.accent.solid,
-  background: 'transparent',
-  cursor: 'pointer',
-  font: 'inherit',
-  transition: 'background-color 140ms ease, transform 100ms ease'
-})
-
+// The notice sits above the compact layout's navigation bar.
 export const snackbar = style({
-  position: 'fixed',
-  left: '50%',
-  bottom: '24px',
-  transform: 'translateX(-50%)',
-  zIndex: '120',
-  maxWidth: 'calc(100vw - 32px)',
-  boxSizing: 'border-box',
-  padding: '12px 16px',
-  borderRadius: vars.radius.sm,
-  background: vars.color.surface.inverse,
-  color: vars.color.text.inverse,
-  fontSize: vars.typography.body.size,
-  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.28)',
-  animation: `${snackbarEnter} 200ms cubic-bezier(0.2, 0, 0, 1)`,
-  selectors: {
-    [`${appShellStyles.compact} &`]: {
-      bottom: `max(calc(16px + ${vars.layout.navBar} + env(safe-area-inset-bottom, 0px)), ${fallbackVar(trayStackTop, '0px')})`
-    }
-  }
+  selectors: { [`${appShellStyles.compact} &`]: { insetBlockEnd: compactFloatBottom } }
 })
 
 export const toolbar = style({
@@ -181,22 +57,6 @@ export const toolbarActions = style({
   marginInlineStart: 'auto'
 })
 
-export const filterPillActive = style({
-  background: vars.color.selection.bg,
-  borderColor: `color-mix(in srgb, ${vars.color.selection.fg} 35%, transparent)`,
-  color: vars.color.selection.fg,
-  fontWeight: '600'
-})
-
-export const actionBtnActive = style({
-  selectors: {
-    [`${actionBtn}&`]: {
-      color: vars.color.selection.fg,
-      background: vars.color.selection.bg
-    }
-  }
-})
-
 export const operation = style({
   margin: `12px ${vars.layout.pagePad}`,
   padding: '16px',
@@ -241,78 +101,6 @@ export const operationItem = style({
 
 export const operationError = style({
   color: vars.color.danger.solid
-})
-
-export const externalBadge = style({
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: '4px',
-  minHeight: '24px',
-  maxWidth: '100%',
-  boxSizing: 'border-box',
-  paddingInline: '8px',
-  borderRadius: vars.radius.full,
-  fontSize: vars.typography.caption.size,
-  lineHeight: vars.typography.caption.lineHeight,
-  overflowWrap: 'anywhere',
-  transition: 'background-color 150ms ease, color 150ms ease, transform 120ms ease',
-  flexShrink: '0',
-  background: vars.color.highlight.soft,
-  color: vars.color.highlight.onSoft
-})
-
-export const brokenBadge = style({
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: '4px',
-  minHeight: '24px',
-  maxWidth: '100%',
-  boxSizing: 'border-box',
-  paddingInline: '8px',
-  borderRadius: vars.radius.full,
-  fontSize: vars.typography.caption.size,
-  lineHeight: vars.typography.caption.lineHeight,
-  overflowWrap: 'anywhere',
-  transition: 'background-color 150ms ease, color 150ms ease, transform 120ms ease',
-  flexShrink: '0',
-  background: vars.color.danger.soft,
-  color: vars.color.danger.onSoft
-})
-
-export const encryptedBadge = style({
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: '4px',
-  minHeight: '24px',
-  maxWidth: '100%',
-  boxSizing: 'border-box',
-  paddingInline: '8px',
-  borderRadius: vars.radius.full,
-  fontSize: vars.typography.caption.size,
-  lineHeight: vars.typography.caption.lineHeight,
-  overflowWrap: 'anywhere',
-  transition: 'background-color 150ms ease, color 150ms ease, transform 120ms ease',
-  flexShrink: '0',
-  background: vars.color.surface.fill,
-  color: vars.color.text.secondary
-})
-
-export const encryptedBadgeLocked = style({
-  minHeight: vars.density.control,
-  paddingInline: '12px',
-  border: 'none',
-  cursor: 'pointer',
-  background: vars.color.selection.bg,
-  color: vars.color.selection.fg,
-  selectors: {
-    '&:active': {
-      transform: 'scale(0.95)'
-    },
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    }
-  }
 })
 
 export const tableWrapMarquee = style({

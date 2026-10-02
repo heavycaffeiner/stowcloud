@@ -3,14 +3,21 @@ import { useNavigate } from '@tanstack/react-router'
 import { useI18n } from '../../../hooks/use-i18n'
 import { t } from '../../../i18n'
 import { describeApiError } from '../../../api/error-text'
-import { Button } from '../../../ui/Button'
-import { ErrorBoundary } from '../../../ui/ErrorBoundary'
-import { Icon } from '../../../ui/Icon'
-import { MenuButton, MenuItem, MenuList } from '../../../ui/Menu'
-import { ProgressCircular } from '../../../ui/ProgressCircular'
-import { VirtualList } from '../../../ui/VirtualList'
-import { useCompact } from '../../../ui/use-compact'
-import { cx } from '../../../ui/cx'
+import {
+  cx,
+  ErrorBoundary,
+  Icon,
+  StowBadge,
+  StowButton,
+  StowIconButton,
+  StowMenuButton,
+  StowMenuItem,
+  StowProgressCircular,
+  StowSnackbar,
+  VirtualList,
+  type IconName
+} from '@/shared/ui'
+import { useCompact } from '@/hooks/use-compact'
 import { useOpenSearch } from '../../search/state'
 import { Breadcrumb } from './Breadcrumb'
 import { DetailsPanel } from './DetailsPanel'
@@ -35,8 +42,7 @@ import { useBrowseSearch, useFocusParam } from '../hooks/use-browse-route-effect
 import { selection } from '../selection'
 import type { BrowseActions, BrowseListing } from '../hooks/use-browse-actions'
 import * as styles from './BrowseView.css'
-import * as iconButtonStyles from '../../../ui/IconButton.css'
-import * as utilitiesStyles from '../../../ui/utilities.css'
+import { srOnly } from '@/shared/theme'
 import type { SortKey } from '../api'
 
 export interface BrowseSectionProps {
@@ -92,49 +98,35 @@ export function BrowseToolbar({ path, listing, actions }: BrowseSectionProps) {
   const crumbs = crumbsOf(path)
   const mode = viewMode.value
   const details = detailsPanel.value === 'open'
+  const sortLabel = t('browse.sort_by', { key: sortName(sortKey.value) })
   const sortButton = (
-    <MenuButton
-      label={t('browse.sort_by', { key: sortName(sortKey.value) })}
-      className={cx(styles.actionBtn, iconButtonStyles.root)}
-      align="end"
-      menu={(close) => <SortMenu close={close} />}
-    >
-      <Icon name="sort" size={compact ? 20 : 18} />
-    </MenuButton>
+    <StowMenuButton label={sortLabel} align="end" menu={(close) => <SortMenu close={close} />}>
+      <StowIconButton label={sortLabel} icon="sort" />
+    </StowMenuButton>
   )
   return (
     <header className={cx(styles.toolbar, compact && styles.toolbarCompact)}>
       <div className={styles.folderHeading}>
-        <h1 className={utilitiesStyles.srOnly}>{crumbs.at(-1)?.label}</h1>
+        <h1 className={srOnly}>{crumbs.at(-1)?.label}</h1>
         <Breadcrumb crumbs={crumbs} onNavigate={(next) => void navigate({ to: '/b/$', params: splatOf(next) })} />
         {root?.shared_externally ? (
-          <span className={styles.externalBadge}>
-            <Icon name="warning" size={14} />
+          <StowBadge tone="warning" icon="warning">
             {t('common.shared_with_other_services')}
-          </span>
+          </StowBadge>
         ) : null}
         {encrypted ? (
           unlocked ? (
-            <span className={styles.encryptedBadge}>
-              <Icon name="lock" size={14} />
-              {t('browse.encrypted_badge')}
-            </span>
+            <StowBadge icon="lock">{t('browse.encrypted_badge')}</StowBadge>
           ) : (
-            <button
-              type="button"
-              className={cx(styles.encryptedBadge, styles.encryptedBadgeLocked)}
-              onClick={actions.unlockFolder}
-            >
-              <Icon name="lock" size={14} />
+            <StowButton variant="tonal" icon={<Icon name="lock" size={18} />} onClick={actions.unlockFolder}>
               {t('browse.encrypted_locked_badge')}
-            </button>
+            </StowButton>
           )
         ) : null}
         {root?.broken_reason ? (
-          <span className={styles.brokenBadge}>
-            <Icon name="warning" size={14} />
+          <StowBadge tone="danger" icon="warning">
             {t('browse.this_folder_is_unavailable')}
-          </span>
+          </StowBadge>
         ) : null}
       </div>
       <div className={styles.toolbarActions}>
@@ -153,48 +145,30 @@ export function BrowseToolbar({ path, listing, actions }: BrowseSectionProps) {
               options={dateOptions()}
               onChoose={(date) => update({ date: date === 'any' ? undefined : date })}
             />
-            <button
-              type="button"
-              className={cx(styles.actionBtn, iconButtonStyles.root)}
-              aria-label={t('common.refresh')}
-              onClick={() => void listing.listing.refetch()}
-            >
-              <Icon name="refresh" size={18} />
-            </button>
-            <button
-              type="button"
-              className={cx(styles.actionBtn, iconButtonStyles.root)}
-              aria-label={mode === 'list' ? t('browse.grid_view') : t('browse.list_view')}
+            <StowIconButton label={t('common.refresh')} icon="refresh" onClick={() => void listing.listing.refetch()} />
+            <StowIconButton
+              label={mode === 'list' ? t('browse.grid_view') : t('browse.list_view')}
+              icon={mode === 'list' ? 'grid' : 'list'}
               onClick={toggleViewMode}
-            >
-              <Icon name={mode === 'list' ? 'grid' : 'list'} size={18} />
-            </button>
-            <button
-              type="button"
-              className={cx(styles.actionBtn, iconButtonStyles.root, details && styles.actionBtnActive)}
-              aria-label={details ? t('details.hide') : t('details.show')}
-              onClick={toggleDetails}
-            >
-              <Icon name="info" size={18} />
-            </button>
+            />
+            <StowIconButton label={t('details.title')} icon="info" selected={details} onClick={toggleDetails} />
             {sortButton}
           </>
         ) : (
           <>
             {canCreate ? (
-              <MenuButton label={t('browse.new')} className={styles.fabBtn} menu={actions.createMenu}>
-                <Icon name="add" size={20} />
-              </MenuButton>
+              <StowMenuButton label={t('browse.new')} menu={actions.createMenu}>
+                <StowIconButton label={t('browse.new')} icon="add" variant="filled" />
+              </StowMenuButton>
             ) : null}
             {sortButton}
-            <MenuButton
+            <StowMenuButton
               label={t('browse.more')}
-              className={cx(styles.actionBtn, iconButtonStyles.root)}
               align="end"
               menu={(close) => <OverflowMenu close={close} onRefresh={() => void listing.listing.refetch()} />}
             >
-              <Icon name="more-vert" size={20} />
-            </MenuButton>
+              <StowIconButton label={t('browse.more')} icon="more-vert" />
+            </StowMenuButton>
           </>
         )}
       </div>
@@ -219,30 +193,31 @@ function FilterPill<T extends string>({
   const idle = current === options[0][0]
   const label = idle && idleLabel ? idleLabel : options.find(([value]) => value === current)?.[1]
   return (
-    <MenuButton
+    <StowMenuButton
       label={name}
-      className={cx(styles.filterPill, !idle && styles.filterPillActive)}
-      menu={(close) => (
-        <MenuList>
-          {options.map(([value, text]) => (
-            <MenuItem
-              key={value}
-              checked={current === value}
-              onClick={() => {
-                onChoose(value)
-                close()
-              }}
-            >
-              {current === value ? <span aria-hidden="true">✓ </span> : null}
-              {text}
-            </MenuItem>
-          ))}
-        </MenuList>
-      )}
+      menu={(close) =>
+        options.map(([value, text]) => (
+          <StowMenuItem
+            key={value}
+            checked={current === value}
+            onClick={() => {
+              onChoose(value)
+              close()
+            }}
+          >
+            {text}
+          </StowMenuItem>
+        ))
+      }
     >
-      <span>{label}</span>
-      <Icon name="arrow-drop-down" size={16} />
-    </MenuButton>
+      <StowButton
+        variant={idle ? 'outlined' : 'tonal'}
+        endIcon={<Icon name="arrow-drop-down" size={18} />}
+        aria-label={label === name ? name : `${name}: ${label}`}
+      >
+        {label}
+      </StowButton>
+    </StowMenuButton>
   )
 }
 
@@ -250,21 +225,18 @@ function SortMenu({ close }: { close: () => void }) {
   const { t } = useI18n()
   const current = sortKey.value
   const direction = sortOrder.value === 'asc' ? t('browse.sort_ascending') : t('browse.sort_descending')
-  return (
-    <MenuList>
-      {SORT_KEYS.map((key) => (
-        <MenuItem
-          key={key}
-          onClick={() => {
-            chooseSort(key)
-            close()
-          }}
-        >
-          {key === current ? t('browse.sort_selected', { label: sortName(key), direction }) : sortName(key)}
-        </MenuItem>
-      ))}
-    </MenuList>
-  )
+  return SORT_KEYS.map((key) => (
+    <StowMenuItem
+      key={key}
+      checked={key === current}
+      onClick={() => {
+        chooseSort(key)
+        close()
+      }}
+    >
+      {key === current ? t('browse.sort_selected', { label: sortName(key), direction }) : sortName(key)}
+    </StowMenuItem>
+  ))
 }
 
 /** The compact layout's overflow: view controls the wide toolbar shows as buttons, then page options. */
@@ -276,27 +248,29 @@ function OverflowMenu({ close, onRefresh }: { close: () => void; onRefresh: () =
     comfortable: t('browse.comfortable'),
     spacious: t('browse.spacious')
   }[density.value]
-  const item = (label: string, run: () => void) => (
-    <MenuItem
+  const item = (icon: IconName, label: string, run: () => void) => (
+    <StowMenuItem
+      icon={icon}
       onClick={() => {
         close()
         run()
       }}
     >
       {label}
-    </MenuItem>
+    </StowMenuItem>
   )
+  const list = viewMode.value === 'list'
   return (
-    <MenuList>
-      {item(viewMode.value === 'list' ? t('browse.grid_view') : t('browse.list_view'), toggleViewMode)}
-      {item(t('details.show'), toggleDetails)}
-      {item(t('common.refresh'), onRefresh)}
-      {item(treeOpen.value ? t('browse.hide_folder_tree') : t('browse.show_folder_tree'), () => {
+    <>
+      {item(list ? 'grid' : 'list', list ? t('browse.grid_view') : t('browse.list_view'), toggleViewMode)}
+      {item('info', t('details.show'), toggleDetails)}
+      {item('refresh', t('common.refresh'), onRefresh)}
+      {item('folder-tree', treeOpen.value ? t('browse.hide_folder_tree') : t('browse.show_folder_tree'), () => {
         treeOpen.value = !treeOpen.value
       })}
-      {item(t('browse.density', { density: densityName }), cycleDensity)}
-      {item(t('browse.open_trash'), () => void navigate({ to: '/trash' }))}
-    </MenuList>
+      {item('tune', t('browse.density', { density: densityName }), cycleDensity)}
+      {item('trash', t('browse.open_trash'), () => void navigate({ to: '/trash' }))}
+    </>
   )
 }
 
@@ -368,14 +342,14 @@ export function BrowseContent({ path, listing, actions, dragOver }: BrowseSectio
                 : t('browse.ask_an_administrator_for_a_folder')}
             </p>
             {isAdmin ? (
-              <Button onClick={() => void navigate({ to: '/admin/{-$tab}', params: { tab: 'shares' } })}>
+              <StowButton onClick={() => void navigate({ to: '/admin/{-$tab}', params: { tab: 'shares' } })}>
                 {t('common.add_folder')}
-              </Button>
+              </StowButton>
             ) : null}
           </div>
         ) : query.isPending ? (
           <div className={styles.loading}>
-            <ProgressCircular size={40} />
+            <StowProgressCircular size={40} />
           </div>
         ) : query.error ? (
           <p className={styles.error} role="alert">
@@ -390,7 +364,7 @@ export function BrowseContent({ path, listing, actions, dragOver }: BrowseSectio
             )}
             {isFetchingNextPage ? (
               <div className={styles.loadingMore} role="status" aria-live="polite">
-                <ProgressCircular size={40} />
+                <StowProgressCircular size={40} />
                 {t('common.loading')}
               </div>
             ) : null}
@@ -438,9 +412,9 @@ export function BrowseOperation() {
               ? t('common.move')
               : t('common.copy')}
         </h2>
-        <button type="button" className={styles.operationClose} onClick={() => (operation.value = null)}>
+        <StowButton variant="text" onClick={() => (operation.value = null)}>
           {t('common.close')}
-        </button>
+        </StowButton>
       </div>
       <VirtualList
         className={styles.operationList}
@@ -467,11 +441,5 @@ export function BrowseOperation() {
 }
 
 export function BrowseNotice() {
-  const message = notice.value
-  if (!message) return null
-  return (
-    <div role="status" className={styles.snackbar} onClick={() => (notice.value = null)}>
-      {message}
-    </div>
-  )
+  return <StowSnackbar className={styles.snackbar} message={notice.value} onDismiss={() => (notice.value = null)} />
 }

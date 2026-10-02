@@ -1,6 +1,6 @@
 import type { FormEvent, ReactNode } from 'react'
 import { AdminCard } from './AdminCard'
-import { Icon } from '../../../ui/Icon'
+import { Icon } from '@/shared/ui'
 import * as styles from './ServerSettingsCard.css'
 
 export interface ServerSettingsCardProps {

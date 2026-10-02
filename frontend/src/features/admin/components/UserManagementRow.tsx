@@ -1,12 +1,8 @@
 import { formatBytes } from '../../../lib/format/bytes'
 import { useI18n } from '../../../hooks/use-i18n'
-import { Button } from '../../../ui/Button'
-import { Icon } from '../../../ui/Icon'
-import { ListItem } from '../../../ui/ListItem'
-import { Switch } from '../../../ui/Switch'
+import { cx, StowButton, StowIconButton, StowListItem, StowSwitch } from '@/shared/ui'
 import * as styles from './UserManagementRow.css'
 import * as adminStyles from './admin.css'
-import { cx } from '../../../ui/cx'
 import type { AdminUser } from '../api'
 
 interface UserManagementRowProps {
@@ -35,7 +31,7 @@ export function UserManagementRow({
   const { t } = useI18n()
   const used = formatBytes(Number(BigInt(user.usage_bytes)))
   return (
-    <ListItem
+    <StowListItem
       headline={
         <>
           <span className={adminStyles.rowName}>{user.display_name || user.name}</span>
@@ -47,47 +43,36 @@ export function UserManagementRow({
       trailing={
         <>
           <span title={locked ? t('user.last_active_administrator_cannot_deactivated') : undefined}>
-            <Switch
+            <StowSwitch
               checked={!user.disabled}
               disabled={locked}
               label={t('user.enable_account', { name: user.name })}
-              showLabel={false}
+              hideLabel
               onChange={onToggle}
             />
           </span>
-          <button className={cx(adminStyles.chip, styles.chipMuted)} type="button" onClick={onQuota}>
+          <StowButton variant="outlined" onClick={onQuota}>
             {user.quota_bytes ? `${used} / ${formatBytes(Number(BigInt(user.quota_bytes)))}` : t('user.used', { used })}
-          </button>
+          </StowButton>
           <div className={adminStyles.rowActions}>
-            <Button
-              variant="text"
-              square
-              ariaLabel={t('common.manage_folders_visible', { name: user.name })}
+            <StowIconButton
+              label={t('common.manage_folders_visible', { name: user.name })}
               onClick={onGrants}
-            >
-              <Icon name="account_tree" />
-            </Button>
-            <Button
-              variant="text"
-              square
-              ariaLabel={t('oidc.manage_single_sign_connection', { name: user.name })}
+              icon="account_tree"
+            />
+            <StowIconButton
+              label={t('oidc.manage_single_sign_connection', { name: user.name })}
               onClick={onOidc}
-            >
-              <Icon name="link" />
-            </Button>
-            <Button variant="text" square ariaLabel={t('password.change_password')} onClick={onPassword}>
-              <Icon name="lock" />
-            </Button>
-            <Button
-              variant="text"
+              icon="link"
+            />
+            <StowIconButton label={t('password.change_password')} onClick={onPassword} icon="lock" />
+            <StowIconButton
               danger
-              square
-              ariaLabel={t('common.delete_2', { name: user.name })}
+              label={t('common.delete_2', { name: user.name })}
               disabled={locked || toggling}
               onClick={onDelete}
-            >
-              <Icon name="delete" />
-            </Button>
+              icon="delete"
+            />
           </div>
         </>
       }

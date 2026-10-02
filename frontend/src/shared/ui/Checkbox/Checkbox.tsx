@@ -32,10 +32,18 @@ export function StowCheckbox({ checked = false, label, hideLabel = false, onChan
 }
 
 /** Shows a selection state without taking input or focus; the surrounding control does both. */
-export function StowCheckboxIndicator({ checked, label }: { checked: boolean; label: string }) {
+export function StowCheckboxIndicator({
+  checked,
+  indeterminate = false,
+  label
+}: {
+  checked: boolean
+  indeterminate?: boolean
+  label: string
+}) {
   return (
     <div className={styles.indicator}>
-      <Checkbox.Indicator checked={checked} />
+      <Checkbox.Indicator checked={checked} indeterminate={indeterminate} />
       <span className={srOnly}>{label}</span>
     </div>
   )

@@ -17,11 +17,6 @@ function catalogue(locale: string): Catalogue {
 async function settle(page: Page): Promise<void> {
   await page.evaluate(async () => {
     await document.fonts.ready
-    await Promise.all(
-      [...document.querySelectorAll('mdui-button, mdui-button-icon, mdui-segmented-button')].map(
-        (element) => (element as Element & { updateComplete?: Promise<unknown> }).updateComplete
-      )
-    )
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
   })
 }
@@ -32,7 +27,7 @@ async function checkButtons(page: Page, root: Locator = page.locator('body')): P
     const errors: string[] = []
     let count = 0
     for (const root of roots) {
-      for (const button of root.querySelectorAll('button, mdui-button, mdui-button-icon, mdui-segmented-button')) {
+      for (const button of root.querySelectorAll('button')) {
         const rect = button.getBoundingClientRect()
         if (!rect.width || !rect.height || !button.checkVisibility()) continue
         const parts: DOMRect[] = []
@@ -41,7 +36,7 @@ async function checkButtons(page: Page, root: Locator = page.locator('body')): P
             const range = document.createRange()
             range.selectNodeContents(node)
             parts.push(range.getBoundingClientRect())
-          } else if (node instanceof Element && node.checkVisibility() && !node.matches('[slot="icon"]:empty')) {
+          } else if (node instanceof Element && node.checkVisibility()) {
             parts.push(node.getBoundingClientRect())
           }
         }
@@ -235,7 +230,7 @@ test.describe('alignment of buttons, groups and the date column', () => {
       const dialog = page.getByRole('alertdialog')
       await dialog.waitFor()
       await checkButtons(page, dialog)
-      await checkGroup(dialog.locator('[slot="action"]'), 'y')
+      await checkGroup(dialog.getByRole('button', { name: t['common.cancel'], exact: true }).locator('..'), 'y')
       await page.keyboard.press('Escape')
       await dialog.waitFor({ state: 'hidden' })
 

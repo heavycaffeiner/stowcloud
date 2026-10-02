@@ -1,19 +1,15 @@
-import { useState } from 'react'
+import { useState, type MouseEvent } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { describeApiError } from '../../api/error-text'
 import { useI18n } from '../../hooks/use-i18n'
 import { useSession, type RootEntry } from '../../features/auth/api'
 import { createMenuRequest } from '../../features/files/create-menu'
 import { useSetRootOrder } from '../../features/settings/api'
-import { Icon } from '../../ui/Icon'
-import { IconButton } from '../../ui/IconButton'
-import { Modal } from '../../ui/Modal'
-import { VirtualList } from '../../ui/VirtualList'
+import { cx, Icon, StowButton, StowDrawer, StowIconButton, VirtualList } from '@/shared/ui'
 import { useNavigation, type NavId, type NavItem } from './navigation'
 import { sidebar } from './sidebar'
+import { avatar } from './AppShell.css'
 import * as styles from './NavigationDrawer.css'
-import * as iconButtonStyles from '../../ui/IconButton.css'
-import { cx } from '../../ui/cx'
 
 const FILE_DESTINATIONS: readonly NavId[] = ['recent', 'trash', 'links']
 const SETTING_DESTINATIONS: readonly NavId[] = ['settings', 'admin']
@@ -35,21 +31,20 @@ export function NavigationDrawer({ overlay = false, onClose }: NavigationDrawerP
     void navigate({ href })
     onClose?.()
   }
+  const openCreateMenu = (event: MouseEvent<HTMLElement>): void => {
+    // The sidebar sits on the left, so the menu anchors its left edge to the button.
+    const rect = event.currentTarget.getBoundingClientRect()
+    createMenuRequest.value = { x: rect.left, y: rect.bottom + 4, align: 'start' }
+    onClose?.()
+  }
 
   const content = (
     <>
       {overlay ? (
         <div className={styles.overlayHeader}>
-          <button
-            type="button"
-            className={cx(styles.overlayClose, iconButtonStyles.root)}
-            aria-label={t('common.close')}
-            onClick={onClose}
-          >
-            <Icon name="close" />
-          </button>
+          <StowIconButton label={t('common.close')} icon="close" onClick={onClose} />
           <span className={styles.appName}>Stowcloud</span>
-          <span className={styles.userAvatar} aria-hidden="true">
+          <span className={avatar} aria-hidden="true">
             {(user?.display_name || user?.name || 'S').slice(0, 1).toUpperCase()}
           </span>
         </div>
@@ -58,21 +53,18 @@ export function NavigationDrawer({ overlay = false, onClose }: NavigationDrawerP
       <div className={styles.body}>
         {active === 'files' ? (
           <div className={styles.newWrap}>
-            <button
-              type="button"
-              className={cx(styles.newBtn, collapsed && styles.newBtnCollapsed)}
-              aria-label={t('browse.new')}
-              title={t('browse.new')}
-              onClick={(event) => {
-                // The sidebar sits on the left, so the menu anchors its left edge to the button.
-                const rect = event.currentTarget.getBoundingClientRect()
-                createMenuRequest.value = { x: rect.left, y: rect.bottom + 4, align: 'start' }
-                onClose?.()
-              }}
-            >
-              <Icon name="add" size={20} />
-              {!collapsed ? <span>{t('browse.new')}</span> : null}
-            </button>
+            {collapsed ? (
+              <StowIconButton label={t('browse.new')} icon="add" onClick={openCreateMenu} />
+            ) : (
+              <StowButton
+                variant="outlined"
+                icon={<Icon name="add" size={20} />}
+                className={styles.newBtn}
+                onClick={openCreateMenu}
+              >
+                {t('browse.new')}
+              </StowButton>
+            )}
           </div>
         ) : null}
 
@@ -106,15 +98,15 @@ export function NavigationDrawer({ overlay = false, onClose }: NavigationDrawerP
     )
   }
   return (
-    <Modal
+    <StowDrawer
       open
       id="sc-shell-drawer"
-      className={cx(styles.root, styles.overlay)}
       label={t('common.main_menu')}
+      className={styles.overlay}
       onClose={() => onClose?.()}
     >
       {content}
-    </Modal>
+    </StowDrawer>
   )
 }
 
@@ -185,14 +177,9 @@ function RootList({ overlay, onSelect }: { readonly overlay: boolean; readonly o
     <div className={styles.rootsSection}>
       <div className={styles.sectionHeader}>
         <span className={styles.sectionTitle}>{t('nav.folders')}</span>
-        <button
-          type="button"
-          className={styles.reorderToggle}
-          aria-pressed={reordering}
-          onClick={() => setReordering((current) => !current)}
-        >
+        <StowButton variant="text" onClick={() => setReordering((current) => !current)}>
           {reordering ? t('nav.reorder_done') : t('nav.reorder')}
-        </button>
+        </StowButton>
       </div>
       <ul className={styles.list} aria-label={t('nav.folder_selector')}>
         <li className={styles.entry}>
@@ -203,13 +190,13 @@ function RootList({ overlay, onSelect }: { readonly overlay: boolean; readonly o
             estimateSize={reordering || overlay ? 48 : 40}
             renderItem={(root, index) =>
               reordering ? (
-                <div className={cx(styles.subitem, styles.subitemReorder)}>
+                <div className={styles.reorderRow}>
                   <span className={styles.itemIcon}>
                     <Icon name="folder" size={18} />
                   </span>
-                  <span className={styles.subitemLabel}>{root.label}</span>
+                  <span className={styles.itemLabel}>{root.label}</span>
                   <span className={styles.reorderActions}>
-                    <IconButton
+                    <StowIconButton
                       label={t('nav.move_up', { name: root.label })}
                       disabled={index === 0}
                       onClick={() => moveRoot(index, -1)}
@@ -217,8 +204,8 @@ function RootList({ overlay, onSelect }: { readonly overlay: boolean; readonly o
                       <span className={cx(styles.reorderChevron, styles.reorderChevronUp)}>
                         <Icon name="chevron_right" size={16} />
                       </span>
-                    </IconButton>
-                    <IconButton
+                    </StowIconButton>
+                    <StowIconButton
                       label={t('nav.move_down', { name: root.label })}
                       disabled={index === displayRoots.length - 1}
                       onClick={() => moveRoot(index, 1)}
@@ -226,20 +213,20 @@ function RootList({ overlay, onSelect }: { readonly overlay: boolean; readonly o
                       <span className={cx(styles.reorderChevron, styles.reorderChevronDown)}>
                         <Icon name="chevron_right" size={16} />
                       </span>
-                    </IconButton>
+                    </StowIconButton>
                   </span>
                 </div>
               ) : (
                 <button
                   type="button"
-                  className={cx(styles.subitem, activeRoot === root.label && styles.subitemActive)}
+                  className={cx(styles.item, activeRoot === root.label && styles.itemActive)}
                   aria-current={activeRoot === root.label ? 'location' : undefined}
                   onClick={() => onSelect(`/b/${encodeURIComponent(root.label)}`)}
                 >
                   <span className={styles.itemIcon}>
                     <Icon name="folder" size={18} />
                   </span>
-                  <span className={styles.subitemLabel}>{root.label}</span>
+                  <span className={styles.itemLabel}>{root.label}</span>
                 </button>
               )
             }

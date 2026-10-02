@@ -2,10 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { useForm, useWatch } from 'react-hook-form'
 import { useLocation, useNavigate, useParams, useSearch, type HistoryState } from '@tanstack/react-router'
-import { Icon } from '../../../ui/Icon'
-import { Button } from '../../../ui/Button'
-import { FormTextField } from '../../../ui/FormTextField'
-import { VirtualList } from '../../../ui/VirtualList'
+import { cx, Icon, StowButton, StowFormTextField, VirtualList } from '@/shared/ui'
 import { formatBytes } from '../../../lib/format/bytes'
 import { useDocumentTitle } from '../../../hooks/use-document-title'
 import { useI18n } from '../../../hooks/use-i18n'
@@ -21,8 +18,7 @@ import {
 } from '../api'
 import { createPublicShareQueue, type DropItem } from '../logic/public-share-queue'
 import * as styles from './PublicSharePage.css'
-import * as utilitiesStyles from '../../../ui/utilities.css'
-import { cx } from '../../../ui/cx'
+import { focusRing } from '@/shared/theme'
 
 const childPath = (path: string, name: string): string => (path ? `${path}/${name}` : name)
 
@@ -68,14 +64,14 @@ export function PublicSharePage() {
         <section role="alert" className={cx(styles.state, styles.stateError)}>
           <p className={styles.stateText}>{loadError}</p>
           {error instanceof ShareNotFoundError ? null : (
-            <Button
+            <StowButton
               className={styles.stateAction}
               variant="outlined"
               loading={share.isFetching}
               onClick={() => void share.refetch()}
             >
               {t('public_share.retry')}
-            </Button>
+            </StowButton>
           )}
         </section>
       ) : null}
@@ -91,7 +87,9 @@ export function PublicSharePage() {
             <>
               <p className={styles.status}>{formatBytes(info.size)}</p>
               {info.canDownload ? (
-                <Button onClick={() => navigateTo(shareDownloadUrl(token, path))}>{t('common.download')}</Button>
+                <StowButton onClick={() => navigateTo(shareDownloadUrl(token, path))}>
+                  {t('common.download')}
+                </StowButton>
               ) : null}
             </>
           ) : (
@@ -127,7 +125,7 @@ function UnlockForm({ token, onUnlocked }: { token: string; onUnlocked: () => Pr
   return (
     <form className={styles.unlock} onSubmit={(event) => void submit(event)}>
       <h1 className={styles.unlockTitle}>{t('public_share.link_password_protected')}</h1>
-      <FormTextField
+      <StowFormTextField
         control={control}
         name="password"
         label={t('common.password')}
@@ -136,9 +134,9 @@ function UnlockForm({ token, onUnlocked }: { token: string; onUnlocked: () => Pr
         autoComplete="off"
       />
       <div className={styles.unlockActions}>
-        <Button type="submit" disabled={!password} loading={unlock.isPending}>
+        <StowButton type="submit" disabled={!password} loading={unlock.isPending}>
           {t('public_share.unlock')}
-        </Button>
+        </StowButton>
       </div>
     </form>
   )
@@ -154,7 +152,7 @@ function Breadcrumbs({ path, onOpen }: { path: string; onOpen: (path: string) =>
     <nav className={styles.crumbs} aria-label={t('public_share.location')}>
       <ol className={styles.crumbList}>
         <li className={styles.crumbItem}>
-          <button type="button" className={cx(styles.crumb, utilitiesStyles.focusRing)} onClick={() => onOpen('')}>
+          <button type="button" className={cx(styles.crumb, focusRing)} onClick={() => onOpen('')}>
             {t('public_share.top_folder')}
           </button>
         </li>
@@ -168,11 +166,7 @@ function Breadcrumbs({ path, onOpen }: { path: string; onOpen: (path: string) =>
                 {crumb.name}
               </span>
             ) : (
-              <button
-                type="button"
-                className={cx(styles.crumb, utilitiesStyles.focusRing)}
-                onClick={() => onOpen(crumb.path)}
-              >
+              <button type="button" className={cx(styles.crumb, focusRing)} onClick={() => onOpen(crumb.path)}>
                 {crumb.name}
               </button>
             )}
@@ -202,9 +196,9 @@ function DropZone({ token, maxUploadBytes }: { token: string; maxUploadBytes: nu
       <p className={styles.status}>{t('public_share.link_upload_only_nothing_can')}</p>
       <div className={styles.drop}>
         <input ref={fileInput} className={styles.file} type="file" multiple onChange={pickFiles} />
-        <Button disabled={state.uploading} onClick={() => fileInput.current?.click()}>
+        <StowButton disabled={state.uploading} onClick={() => fileInput.current?.click()}>
           {t('share_drop.pick_files')}
-        </Button>
+        </StowButton>
         {maxUploadBytes !== null ? (
           <p className={styles.status}>{t('share_drop.limit_hint', { size: formatBytes(maxUploadBytes) })}</p>
         ) : null}
@@ -234,12 +228,12 @@ function DropZone({ token, maxUploadBytes }: { token: string; maxUploadBytes: nu
                 </span>
                 {item.status === 'error' ? (
                   <div className={styles.rowActions}>
-                    <Button className={styles.rowAction} variant="text" onClick={() => queue.retry(index)}>
+                    <StowButton className={styles.rowAction} variant="text" onClick={() => queue.retry(index)}>
                       {t('share_drop.retry')}
-                    </Button>
-                    <Button className={styles.rowAction} variant="text" onClick={() => queue.removeFailed(index)}>
+                    </StowButton>
+                    <StowButton className={styles.rowAction} variant="text" onClick={() => queue.removeFailed(index)}>
                       {t('share_drop.remove')}
-                    </Button>
+                    </StowButton>
                   </div>
                 ) : null}
               </>
@@ -279,7 +273,7 @@ function FolderListing({ token, path, info, onOpen }: FolderListingProps) {
               {entry.kind === 'dir' ? (
                 <button
                   type="button"
-                  className={cx(styles.name, styles.folder, utilitiesStyles.focusRing)}
+                  className={cx(styles.name, styles.folder, focusRing)}
                   aria-label={t('public_share.open_folder', { name: entry.name })}
                   onClick={() => onOpen(childPath(path, entry.name))}
                 >
@@ -291,12 +285,12 @@ function FolderListing({ token, path, info, onOpen }: FolderListingProps) {
               <span className={styles.size}>{entry.kind === 'dir' ? '-' : formatBytes(entry.size)}</span>
               <span className={styles.action}>
                 {entry.kind === 'file' && info.canDownload ? (
-                  <Button
+                  <StowButton
                     variant="text"
                     onClick={() => navigateTo(shareDownloadUrl(token, childPath(path, entry.name)))}
                   >
                     {t('common.download')}
-                  </Button>
+                  </StowButton>
                 ) : null}
               </span>
             </>
@@ -308,7 +302,9 @@ function FolderListing({ token, path, info, onOpen }: FolderListingProps) {
         </ul>
       )}
       {info.canDownload ? (
-        <Button onClick={() => navigateTo(shareZipUrl(token, path))}>{t('public_share.download_folder')}</Button>
+        <StowButton onClick={() => navigateTo(shareZipUrl(token, path))}>
+          {t('public_share.download_folder')}
+        </StowButton>
       ) : null}
     </>
   )

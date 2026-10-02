@@ -169,6 +169,15 @@ export function StowMenuButton({ label, align = 'start', children, menu }: StowM
   )
 }
 
+/** A heading inside a menu, such as whose account it is. Keyboard focus passes over it. */
+export function StowMenuLabel({ children }: { children: ReactNode }) {
+  return use(InSheet) ? (
+    <div className={cx(Menu.classes.label, styles.heading)}>{children}</div>
+  ) : (
+    <Menu.Label className={styles.heading}>{children}</Menu.Label>
+  )
+}
+
 export interface StowMenuItemProps {
   /** Makes the item one choice of a radio group, checked or not. */
   checked?: boolean

@@ -117,7 +117,6 @@
   "browse.too_many_zip_downloads_at": "동시 압축 다운로드 요청이 너무 많습니다. 잠시 후 다시 시도하세요.",
   "browse.upload_folder": "폴더 업로드",
   "browse.zip_download_failed": "압축 다운로드에 실패했습니다",
-  "button.working": "처리 중",
   "common.add": "추가",
   "common.add_folder": "폴더 추가",
   "common.administrator": "관리자",

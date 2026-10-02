@@ -7,13 +7,10 @@ import { formatModifiedDateNs } from '../../../i18n'
 import { useEventListener } from '../../../hooks/use-event-listener'
 import { useI18n } from '../../../hooks/use-i18n'
 import { useRestoreFocus } from '../../../hooks/use-restore-focus'
-import { useCompact } from '../../../ui/use-compact'
-import { Button } from '../../../ui/Button'
-import { IconButton } from '../../../ui/IconButton'
-import { Icon } from '../../../ui/Icon'
+import { useCompact } from '@/hooks/use-compact'
+import { cx, Icon, StowButton, StowIconButton, type IconName } from '@/shared/ui'
 import { getEntryIcon } from './FileRow'
 import * as styles from './DetailsPanel.css'
-import { cx } from '../../../ui/cx'
 import { vars } from '@/shared/theme'
 import { ApiError } from '../../../api/fetcher'
 import { useFolderSizes, type Entry } from '../api'
@@ -163,7 +160,7 @@ export function DetailsPanel({
   const title = many
     ? t('details.multiple_selected', { count: selected.length })
     : (one?.name ?? path.split('/').filter(Boolean).at(-1) ?? t('nav.files'))
-  const heroIcon = one
+  const heroIcon: { name: IconName; color?: string } = one
     ? getEntryIcon(one)
     : many
       ? { name: 'check', color: vars.color.text.icon }
@@ -185,9 +182,7 @@ export function DetailsPanel({
         <h2 className={styles.title}>
           <bdi>{title}</bdi>
         </h2>
-        <IconButton label={t('common.close')} onClick={onClose}>
-          <Icon name="close" />
-        </IconButton>
+        <StowIconButton label={t('common.close')} icon="close" onClick={onClose} />
       </header>
 
       <div className={styles.summary}>
@@ -205,19 +200,13 @@ export function DetailsPanel({
       {one || many ? (
         <div className={styles.actions}>
           {onDownload ? (
-            <Button className={styles.action} icon={<Icon name="download" size={18} />} onClick={onDownload}>
+            <StowButton className={styles.action} icon={<Icon name="download" size={18} />} onClick={onDownload}>
               {t('common.download')}
-            </Button>
+            </StowButton>
           ) : null}
-          {onShare && one ? (
-            <IconButton label={t('details.perm_share')} onClick={onShare}>
-              <Icon name="link" />
-            </IconButton>
-          ) : null}
+          {onShare && one ? <StowIconButton label={t('details.perm_share')} onClick={onShare} icon="link" /> : null}
           {onContextMenu && one ? (
-            <IconButton label={t('browse.more')} onClick={onContextMenu}>
-              <Icon name="more-vert" />
-            </IconButton>
+            <StowIconButton label={t('browse.more')} onClick={onContextMenu} icon="more-vert" />
           ) : null}
         </div>
       ) : null}
@@ -249,9 +238,9 @@ export function DetailsPanel({
                       ? t('details.size_hidden_by_permissions')
                       : t('details.could_not_measure')}
                   </small>
-                  <Button variant="text" onClick={() => queries.forEach((query) => void query.refetch())}>
+                  <StowButton variant="text" onClick={() => queries.forEach((query) => void query.refetch())}>
                     {t('common.retry')}
-                  </Button>
+                  </StowButton>
                 </>
               ) : (
                 <small className={styles.fieldNote} role="status">

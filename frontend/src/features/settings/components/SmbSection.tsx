@@ -6,11 +6,9 @@ import { t } from '../../../i18n'
 import { useI18n } from '../../../hooks/use-i18n'
 import { useSession } from '../../auth/api'
 import { useClearSmbPassword, useSetSmbPassword, useSmbSettings } from '../api'
-import { Button } from '../../../ui/Button'
-import { FormTextField } from '../../../ui/FormTextField'
+import { StowButton, StowFormTextField, StowSwitch } from '@/shared/ui'
 import { askPassword } from './PasswordPrompt'
 import { SettingsDialog } from './SettingsDialog'
-import { Switch } from '../../../ui/Switch'
 import * as styles from './SmbSection.css'
 import * as settingsCardStyles from './SettingsCard.css'
 import { ApiError } from '../../../api/fetcher'
@@ -93,23 +91,27 @@ export function SmbSection() {
       <p className={styles.note}>{t('smb.smb_reachable_only_from_local')}</p>
       <p className={styles.state}>{stateLine}</p>
       <div>
-        <Switch checked={enabled} label={t('smb.allow_smb_access')} onChange={(checked) => toggle(optOut, checked)} />
+        <StowSwitch
+          checked={enabled}
+          label={t('smb.allow_smb_access')}
+          onChange={(checked) => toggle(optOut, checked)}
+        />
       </div>
       <div>
-        <Switch
+        <StowSwitch
           checked={optOut}
           label={t('smb.do_not_store_smb_credentials')}
           onChange={(checked) => toggle(checked, checked ? false : enabled)}
         />
       </div>
       <div className={styles.actions}>
-        <Button variant={credential === 'dedicated' ? 'outlined' : 'filled'} onClick={() => void setSeparate()}>
+        <StowButton variant={credential === 'dedicated' ? 'outlined' : 'filled'} onClick={() => void setSeparate()}>
           {credential === 'dedicated' ? t('smb.change_separate_password') : t('smb.set_separate_password')}
-        </Button>
+        </StowButton>
         {credential === 'dedicated' ? (
-          <Button variant="text" onClick={() => void clearSeparate()}>
+          <StowButton variant="text" onClick={() => void clearSeparate()}>
             {t('smb.remove_separate_password')}
-          </Button>
+          </StowButton>
         ) : null}
       </div>
       <p className={styles.announce} aria-live="polite">
@@ -153,24 +155,28 @@ function SmbPasswordDialog({ open, onDone, onClosed }: SmbPasswordDialogProps) {
       onSubmit={(event) => void submit(event)}
       actions={
         <>
-          <Button variant="text" disabled={save.isPending} onClick={cancel}>
+          <StowButton variant="text" disabled={save.isPending} onClick={cancel}>
             {t('common.cancel')}
-          </Button>
-          <Button disabled={!currentPassword || !smbPassword} loading={save.isPending} onClick={() => void submit()}>
+          </StowButton>
+          <StowButton
+            disabled={!currentPassword || !smbPassword}
+            loading={save.isPending}
+            onClick={() => void submit()}
+          >
             {t('common.save')}
-          </Button>
+          </StowButton>
         </>
       }
     >
       <p className={settingsCardStyles.text}>{t('smb.set_password_hint')}</p>
-      <FormTextField
+      <StowFormTextField
         control={control}
         name="currentPassword"
         type="password"
         label={t('common.current_password')}
         autoComplete="current-password"
       />
-      <FormTextField
+      <StowFormTextField
         control={control}
         name="smbPassword"
         type="password"

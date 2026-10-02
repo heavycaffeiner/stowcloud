@@ -225,32 +225,10 @@ export const check = style({
   height: vars.density.control
 })
 
+// The card's own text color, so the button follows the card into its selected state.
 export const kebab = style({
-  display: 'inline-flex',
   flex: 'none',
-  alignItems: 'center',
-  justifyContent: 'center',
-  width: vars.density.control,
-  height: vars.density.control,
-  padding: '0',
-  border: 'none',
-  borderRadius: '50%',
-  background: 'none',
-  color: 'inherit',
-  cursor: 'pointer',
-  transition: 'background-color 120ms ease, transform 100ms ease',
-  selectors: {
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    },
-    '&:hover': {
-      background: 'color-mix(in srgb, currentColor 12%, transparent)'
-    },
-    '&:active': {
-      transform: 'scale(0.92)'
-    }
-  }
+  color: 'inherit'
 })
 
 export const skeleton = style({

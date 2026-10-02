@@ -6,11 +6,7 @@ import { formatDateNs } from '../../../i18n'
 import { useCopyText } from '../../../hooks/use-copy-text'
 import { useI18n } from '../../../hooks/use-i18n'
 import { useAppPasswords, useCreateAppPassword, useRevokeAppPassword } from '../api'
-import { confirmAction } from '../../../ui/ActionDialog'
-import { Button } from '../../../ui/Button'
-import { FormTextField } from '../../../ui/FormTextField'
-import { Switch } from '../../../ui/Switch'
-import { VirtualList } from '../../../ui/VirtualList'
+import { confirmAction, StowButton, StowFormTextField, StowSwitch, VirtualList } from '@/shared/ui'
 import { SettingsDialog } from './SettingsDialog'
 import * as styles from './AppPasswordsSection.css'
 import * as settingsCardStyles from './SettingsCard.css'
@@ -89,30 +85,30 @@ export function AppPasswordsSection() {
               </div>
               <div className={styles.itemActions}>
                 {!isExpired(item) ? (
-                  <Button
+                  <StowButton
                     variant="text"
-                    ariaLabel={t('app_password.wipe', { name: item.name })}
+                    aria-label={t('app_password.wipe', { name: item.name })}
                     onClick={() => void remove(item, true)}
                   >
                     {t('app_password.wipe_2')}
-                  </Button>
+                  </StowButton>
                 ) : null}
-                <Button
+                <StowButton
                   variant="text"
-                  ariaLabel={t('app_password.revoke', { name: item.name })}
+                  aria-label={t('app_password.revoke', { name: item.name })}
                   onClick={() => void remove(item, false)}
                 >
                   {t('app_password.revoke_2')}
-                </Button>
+                </StowButton>
               </div>
             </>
           )}
         />
       )}
       <div className={styles.actions}>
-        <Button variant="outlined" onClick={() => void create()}>
+        <StowButton variant="outlined" onClick={() => void create()}>
           {t('app_password.new_app_password')}
-        </Button>
+        </StowButton>
       </div>
     </div>
   )
@@ -159,12 +155,16 @@ function NewAppPasswordDialog({ open, onDone, onClosed }: NewAppPasswordDialogPr
       onSubmit={(event) => void submit(event)}
       actions={
         <>
-          <Button variant="text" disabled={create.isPending} onClick={cancel}>
+          <StowButton variant="text" disabled={create.isPending} onClick={cancel}>
             {t('common.cancel')}
-          </Button>
-          <Button disabled={!name.trim() || !currentPassword} loading={create.isPending} onClick={() => void submit()}>
+          </StowButton>
+          <StowButton
+            disabled={!name.trim() || !currentPassword}
+            loading={create.isPending}
+            onClick={() => void submit()}
+          >
             {t('common.create')}
-          </Button>
+          </StowButton>
         </>
       }
     >
@@ -176,13 +176,13 @@ function NewAppPasswordDialog({ open, onDone, onClosed }: NewAppPasswordDialogPr
         </p>
       ) : null}
       <p className={settingsCardStyles.text}>{t('app_password.use_one_where_your_account')}</p>
-      <FormTextField
+      <StowFormTextField
         control={control}
         name="name"
         label={t('common.name')}
         placeholder={t('app_password.e_g_rclone_backup')}
       />
-      <FormTextField
+      <StowFormTextField
         control={control}
         name="currentPassword"
         type="password"
@@ -193,7 +193,7 @@ function NewAppPasswordDialog({ open, onDone, onClosed }: NewAppPasswordDialogPr
         control={control}
         name="readOnly"
         render={({ field }) => (
-          <Switch
+          <StowSwitch
             checked={field.value}
             label={t('app_password.read_only_download_only_no')}
             onChange={field.onChange}
@@ -228,7 +228,7 @@ function IssuedTokenDialog({ open, token, onDone, onClosed }: IssuedTokenDialogP
       title={t('app_password.app_password_issued')}
       onClosed={onClosed}
       dismissible={false}
-      actions={<Button onClick={onDone}>{t('app_password.acknowledge_saved')}</Button>}
+      actions={<StowButton onClick={onDone}>{t('app_password.acknowledge_saved')}</StowButton>}
     >
       <p className={settingsCardStyles.text}>{t('app_password.once_you_close_cannot_shown')}</p>
       <div className={styles.tokenRow}>
@@ -238,9 +238,9 @@ function IssuedTokenDialog({ open, token, onDone, onClosed }: IssuedTokenDialogP
           value={token}
           aria-label={t('app_password.app_password_issued')}
         />
-        <Button variant="text" onClick={() => copy.mutate(token)}>
+        <StowButton variant="text" onClick={() => copy.mutate(token)}>
           {copy.isSuccess ? t('common.copied') : t('common.copy')}
-        </Button>
+        </StowButton>
       </div>
       {copy.isError ? (
         <p className={styles.copyFeedback} role="alert">

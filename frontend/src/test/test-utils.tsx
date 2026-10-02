@@ -31,7 +31,7 @@ if (typeof Range.prototype.getBoundingClientRect !== 'function') {
   Range.prototype.getBoundingClientRect = () => new DOMRect()
 }
 
-// jsdom has no matchMedia, and the one mdui's ssr-window fills in returns an empty object.
+// jsdom has no matchMedia, which Mantine and the layout hooks read.
 globalThis.matchMedia = (media: string) =>
   ({
     matches: false,
@@ -51,9 +51,11 @@ import { I18nextProvider } from 'react-i18next'
 import { i18n } from '../i18n/state'
 await setLocale('en')
 
+import { signal } from '@preact/signals-react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, type RenderOptions } from '@testing-library/react'
 import type { ReactElement, PropsWithChildren } from 'react'
+import { StowThemeProvider } from '../shared/theme/StowThemeProvider'
 
 export interface RenderAppOptions extends Omit<RenderOptions, 'wrapper'> {
   queryClient?: QueryClient
@@ -68,6 +70,8 @@ export function createTestQueryClient(): QueryClient {
   })
 }
 
+const themePref = signal<'light'>('light')
+
 export function renderWithProviders(
   element: ReactElement,
   { queryClient = createTestQueryClient(), ...options }: RenderAppOptions = {}
@@ -75,7 +79,9 @@ export function renderWithProviders(
   function Wrapper({ children }: PropsWithChildren) {
     return (
       <I18nextProvider i18n={i18n}>
-        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        <StowThemeProvider pref={themePref}>
+          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        </StowThemeProvider>
       </I18nextProvider>
     )
   }

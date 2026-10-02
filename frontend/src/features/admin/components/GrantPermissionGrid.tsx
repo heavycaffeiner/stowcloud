@@ -1,5 +1,5 @@
 import { useI18n } from '../../../hooks/use-i18n'
-import { Checkbox } from '../../../ui/Checkbox'
+import { StowCheckbox } from '@/shared/ui'
 import * as styles from './GrantPermissionGrid.css'
 import { ALL_GRANT_PERMS, type GrantPermName } from '../api'
 
@@ -37,7 +37,7 @@ export function GrantPermissionGrid({ allow, deny, onAllowChange, onDenyChange }
         <div className={styles.row} key={permission}>
           <span>{permLabel[permission]}</span>
           <span className={styles.cell}>
-            <Checkbox
+            <StowCheckbox
               checked={allow.includes(permission)}
               hideLabel
               label={t('grant.allow_2', { perm: permLabel[permission] })}
@@ -45,7 +45,7 @@ export function GrantPermissionGrid({ allow, deny, onAllowChange, onDenyChange }
             />
           </span>
           <span className={styles.cell}>
-            <Checkbox
+            <StowCheckbox
               checked={deny.includes(permission)}
               hideLabel
               label={t('grant.deny_2', { perm: permLabel[permission] })}

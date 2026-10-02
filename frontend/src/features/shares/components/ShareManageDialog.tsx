@@ -4,14 +4,16 @@ import { overlay } from 'overlay-kit'
 import { describeApiError } from '../../../api/error-text'
 import { useI18n } from '../../../hooks/use-i18n'
 import { formatDateNs, t } from '../../../i18n'
-import { confirmAction } from '../../../ui/ActionDialog'
-import { Button } from '../../../ui/Button'
-import { Dialog } from '../../../ui/Dialog'
-import { Icon } from '../../../ui/Icon'
-import { IconButton } from '../../../ui/IconButton'
-import { ProgressCircular } from '../../../ui/ProgressCircular'
-import { VirtualList } from '../../../ui/VirtualList'
-import { cx } from '../../../ui/cx'
+import {
+  confirmAction,
+  cx,
+  Icon,
+  StowButton,
+  StowDialog,
+  StowIconButton,
+  StowProgressCircular,
+  VirtualList
+} from '@/shared/ui'
 import { useDeleteShareLink, useShareLinks, type ShareLinkInfo } from '../../links/api'
 import { EditLinkForm, NewLinkForm } from './ShareLinkForms'
 import * as styles from './ShareManageDialog.css'
@@ -104,7 +106,7 @@ function ShareManageDialog({ open, path, targetName, targetIsDir, onClose, onClo
   }
 
   return (
-    <Dialog
+    <StowDialog
       size="wide"
       open={open}
       title={t('share.share_links', { name: targetName })}
@@ -112,15 +114,15 @@ function ShareManageDialog({ open, path, targetName, targetIsDir, onClose, onClo
       onClosed={onClosed}
       role="dialog"
       actions={
-        <Button variant="text" onClick={close}>
+        <StowButton variant="text" onClick={close}>
           {t('common.close')}
-        </Button>
+        </StowButton>
       }
     >
       {issued ? <IssuedLink link={issued} onAcknowledge={() => setIssued(null)} /> : null}
       {links.isPending ? (
         <div className={styles.loading}>
-          <ProgressCircular />
+          <StowProgressCircular />
         </div>
       ) : links.error ? (
         <p className={styles.error} role="alert">
@@ -158,13 +160,13 @@ function ShareManageDialog({ open, path, targetName, targetIsDir, onClose, onClo
               onCancel={() => setCreating(false)}
             />
           ) : (
-            <Button variant="tonal" onClick={() => setCreating(true)} icon={<Icon name="add" size={18} />}>
+            <StowButton variant="tonal" onClick={() => setCreating(true)} icon={<Icon name="add" size={18} />}>
               {t('share.create_new_link')}
-            </Button>
+            </StowButton>
           )}
         </>
       )}
-    </Dialog>
+    </StowDialog>
   )
 }
 
@@ -176,9 +178,7 @@ function IssuedLink({ link, onAcknowledge }: { link: ShareLinkInfo; onAcknowledg
       <p className={styles.issuedNote}>{t('share.link_shown_only_now_cannot')}</p>
       <div className={styles.urlRow}>
         <textarea className={styles.url} readOnly rows={3} aria-label={t('share.copy_link')} value={link.url ?? ''} />
-        <IconButton label={t('share.copy_link')} onClick={() => copy.mutate(link.url ?? '')}>
-          <Icon name="copy" />
-        </IconButton>
+        <StowIconButton label={t('share.copy_link')} onClick={() => copy.mutate(link.url ?? '')} icon="copy" />
       </div>
       {copy.isSuccess ? (
         <p className={styles.copyFeedback} role="status">
@@ -190,9 +190,9 @@ function IssuedLink({ link, onAcknowledge }: { link: ShareLinkInfo; onAcknowledg
           {t('share.copy_failed')}
         </p>
       ) : null}
-      <Button variant="text" onClick={onAcknowledge}>
+      <StowButton variant="text" onClick={onAcknowledge}>
         {t('share.acknowledge_link_saved')}
-      </Button>
+      </StowButton>
     </div>
   )
 }
@@ -223,19 +223,15 @@ function LinkSummary({ link, onEdit, onRevoke }: LinkSummaryProps) {
       </div>
       <div className={styles.itemActions}>
         {link.url ? (
-          <IconButton
+          <StowIconButton
             label={copy.isSuccess ? t('share.copied') : t('share.copy_link')}
             onClick={() => copy.mutate(link.url ?? '')}
           >
             <Icon name={copy.isSuccess ? 'check' : 'copy'} />
-          </IconButton>
+          </StowIconButton>
         ) : null}
-        <IconButton label={t('share.edit')} onClick={onEdit}>
-          <Icon name="rename" />
-        </IconButton>
-        <IconButton label={t('share.revoke')} onClick={onRevoke}>
-          <Icon name="close" />
-        </IconButton>
+        <StowIconButton label={t('share.edit')} onClick={onEdit} icon="rename" />
+        <StowIconButton label={t('share.revoke')} onClick={onRevoke} icon="close" />
       </div>
     </div>
   )

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Dialog } from '../../../ui/Dialog'
+import { StowDialog } from '@/shared/ui'
 import * as styles from './browse-dialog.css'
 
 export interface BrowseDialogProps {
@@ -13,8 +13,8 @@ export interface BrowseDialogProps {
 
 export function BrowseDialog({ open, title, onClose, onClosed, children, actions }: BrowseDialogProps) {
   return (
-    <Dialog open={open} title={title} onClose={onClose} onClosed={onClosed} actions={actions} className={styles.root}>
+    <StowDialog open={open} title={title} onClose={onClose} onClosed={onClosed} actions={actions}>
       <div className={styles.body}>{children}</div>
-    </Dialog>
+    </StowDialog>
   )
 }

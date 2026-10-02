@@ -2,10 +2,7 @@ import { useMemo, useState } from 'react'
 import { useI18n } from '../../../hooks/use-i18n'
 import { useCopyText } from '../../../hooks/use-copy-text'
 import { describeApiError } from '../../../api/error-text'
-import { confirmAction } from '../../../ui/ActionDialog'
-import { Button } from '../../../ui/Button'
-import { Icon } from '../../../ui/Icon'
-import { ProgressCircular } from '../../../ui/ProgressCircular'
+import { confirmAction, Icon, StowButton, StowProgressCircular } from '@/shared/ui'
 import { askEnableEncryption, askShare, shareErrorText } from './ShareDialogs'
 import { ShareManagementList } from './ShareManagementList'
 import * as styles from './ShareManagementSection.css'
@@ -81,7 +78,7 @@ export function ShareManagementSection() {
       <h2 className={adminStyles.sectionTitle}>{t('folder_share.folder_shares')}</h2>
       <p className={adminStyles.hint}>{t('folder_share.registers_real_folder_on_server')}</p>
       {sharesQuery.isPending ? (
-        <ProgressCircular />
+        <StowProgressCircular />
       ) : sharesQuery.error ? (
         <p className={adminStyles.error} role="alert">
           {describeApiError(sharesQuery.error, t('folder_share.could_not_load_share_list'))}
@@ -123,9 +120,9 @@ export function ShareManagementSection() {
           <p className={styles.encAnnounce} aria-live="polite">
             {announcement}
           </p>
-          <Button variant="tonal" icon={<Icon name="add" />} onClick={() => void askShare()}>
+          <StowButton variant="tonal" icon={<Icon name="add" />} onClick={() => void askShare()}>
             {t('common.add_folder')}
-          </Button>
+          </StowButton>
         </>
       )}
     </section>

@@ -30,7 +30,7 @@ const BUILD_TAGS = 'embed_ui compat_nc'
 // `frontend/package.json` is a build tool.
 const JS_RUNTIME = [
   'react', 'react-dom', 'react-router-dom', '@tanstack/react-query', 'zustand',
-  'mdui', 'clsx', '@ktibow/iconset-material-symbols', '@stowcloud/rclone-crypt',
+  '@mantine/core', '@mantine/hooks', 'clsx', '@ktibow/iconset-material-symbols', '@stowcloud/rclone-crypt',
   '@fontsource-variable/google-sans-flex',
   'codemirror', '@marijn/find-cluster-break', 'style-mod', 'w3c-keyname', 'crelt',
 ]

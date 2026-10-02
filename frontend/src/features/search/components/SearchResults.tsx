@@ -4,7 +4,7 @@ import { useI18n } from '../../../hooks/use-i18n'
 import { parentOf } from '../../../lib/path-utils'
 import { extensionOf } from '../logic/filters'
 import { computeWindow, type WindowResult } from '../../../lib/virtual/windowing'
-import { Icon } from '../../../ui/Icon'
+import { Icon, type IconName } from '@/shared/ui'
 import * as styles from './SearchResults.css'
 import { vars } from '@/shared/theme'
 import type { SearchHit } from '../api'
@@ -21,7 +21,7 @@ export interface SearchResultsProps {
   readonly resultsRef: (node: HTMLDivElement | null) => void
 }
 
-function getHitIcon(hit: SearchHit): { name: string; color?: string } {
+function getHitIcon(hit: SearchHit): { name: IconName; color?: string } {
   if (hit.entry.kind === 'dir') return { name: 'folder', color: vars.color.text.icon }
   const ext = extensionOf(hit.entry.name).toLowerCase()
   if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'zst', 'iso'].includes(ext))

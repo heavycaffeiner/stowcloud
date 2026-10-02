@@ -6,13 +6,11 @@ import { useCopyText } from '../../../hooks/use-copy-text'
 import { useI18n } from '../../../hooks/use-i18n'
 import { useReissueRecoveryCodes, useRecoveryCodesRemaining, useTotpDisable, useTotpEnroll, useTotpSetup } from '../api'
 import { useSession } from '../../auth/api'
-import { Button } from '../../../ui/Button'
-import { FormTextField } from '../../../ui/FormTextField'
+import { cx, StowButton, StowFormTextField } from '@/shared/ui'
 import { askPassword } from './PasswordPrompt'
 import { SettingsDialog } from './SettingsDialog'
 import * as styles from './TotpSection.css'
 import * as settingsCardStyles from './SettingsCard.css'
-import { cx } from '../../../ui/cx'
 import { ApiError } from '../../../api/fetcher'
 
 export function TotpSection() {
@@ -65,11 +63,11 @@ export function TotpSection() {
       <div className={styles.status}>
         <span className={cx(styles.badge, enabled && styles.badgeOn)}>{enabled ? t('totp.on') : t('totp.off')}</span>
         {enabled ? (
-          <Button variant="outlined" onClick={turnOff}>
+          <StowButton variant="outlined" onClick={turnOff}>
             {t('totp.turn_off_two_factor_authentication')}
-          </Button>
+          </StowButton>
         ) : (
-          <Button onClick={() => void setUp()}>{t('totp.set_up_two_factor_authentication')}</Button>
+          <StowButton onClick={() => void setUp()}>{t('totp.set_up_two_factor_authentication')}</StowButton>
         )}
       </div>
       {enabled ? (
@@ -80,9 +78,9 @@ export function TotpSection() {
               {recovery.data <= 3 ? ` ${t('totp.running_low_reissue_them_now')}` : ''}
             </p>
           ) : null}
-          <Button variant="outlined" onClick={() => void reissueCodes()}>
+          <StowButton variant="outlined" onClick={() => void reissueCodes()}>
             {t('totp.reissue_recovery_codes')}
-          </Button>
+          </StowButton>
         </div>
       ) : null}
     </div>
@@ -142,16 +140,16 @@ function EnrollDialog({ open, onDone, onClosed }: EnrollDialogProps) {
       onSubmit={(event) => void submit(event)}
       actions={
         <>
-          <Button variant="text" onClick={cancel} disabled={busy}>
+          <StowButton variant="text" onClick={cancel} disabled={busy}>
             {t('common.cancel')}
-          </Button>
-          <Button onClick={() => void submit()} disabled={secret ? code.length !== 6 : !password} loading={busy}>
+          </StowButton>
+          <StowButton onClick={() => void submit()} disabled={secret ? code.length !== 6 : !password} loading={busy}>
             {secret ? t('totp.enable') : t('common.continue')}
-          </Button>
+          </StowButton>
         </>
       }
     >
-      <FormTextField
+      <StowFormTextField
         control={control}
         name="password"
         type="password"
@@ -169,9 +167,9 @@ function EnrollDialog({ open, onDone, onClosed }: EnrollDialogProps) {
               value={secret}
               aria-label={t('totp.add_key_below_authenticator_app')}
             />
-            <Button variant="text" onClick={() => copy.mutate(secret)}>
+            <StowButton variant="text" onClick={() => copy.mutate(secret)}>
               {copy.isSuccess ? t('common.copied') : t('common.copy')}
-            </Button>
+            </StowButton>
           </div>
           {copy.isError ? (
             <p className={styles.copyFeedback} role="alert">
@@ -179,7 +177,7 @@ function EnrollDialog({ open, onDone, onClosed }: EnrollDialogProps) {
             </p>
           ) : null}
           <p className={styles.url}>{setup.data?.uri}</p>
-          <FormTextField control={control} name="code" label={t('totp.6_digit_code')} error={errorText} />
+          <StowFormTextField control={control} name="code" label={t('totp.6_digit_code')} error={errorText} />
         </>
       ) : errorText ? (
         <p className={styles.smbWarning} role="alert">
@@ -213,7 +211,7 @@ function RecoveryCodesDialog({ open, codes, onDone, onClosed }: RecoveryCodesDia
       title={t('totp.recovery_codes')}
       onClosed={onClosed}
       dismissible={false}
-      actions={<Button onClick={onDone}>{t('totp.acknowledge_codes_saved')}</Button>}
+      actions={<StowButton onClick={onDone}>{t('totp.acknowledge_codes_saved')}</StowButton>}
     >
       <p className={settingsCardStyles.text}>{t('totp.each_code_works_once_save')}</p>
       <ul className={styles.codes}>
@@ -223,9 +221,9 @@ function RecoveryCodesDialog({ open, codes, onDone, onClosed }: RecoveryCodesDia
           </li>
         ))}
       </ul>
-      <Button variant="outlined" onClick={() => copy.mutate(codes.join('\n'))}>
+      <StowButton variant="outlined" onClick={() => copy.mutate(codes.join('\n'))}>
         {copy.isSuccess ? t('common.copied') : t('totp.copy_codes')}
-      </Button>
+      </StowButton>
       {copy.isError ? (
         <p className={styles.copyFeedback} role="alert">
           {t('totp.copy_codes_failed')}

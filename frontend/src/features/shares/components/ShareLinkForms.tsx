@@ -2,10 +2,7 @@ import { Controller, useForm, useWatch, type Control } from 'react-hook-form'
 import { describeApiError } from '../../../api/error-text'
 import { t } from '../../../i18n'
 import { useI18n } from '../../../hooks/use-i18n'
-import { Button } from '../../../ui/Button'
-import { FormTextField } from '../../../ui/FormTextField'
-import { Select, type SelectOption } from '../../../ui/Select'
-import { Switch } from '../../../ui/Switch'
+import { StowButton, StowFormTextField, StowSelect, type StowSelectOption, StowSwitch } from '@/shared/ui'
 import { useCreateShareLink, useUpdateShareLink, type ShareLinkInfo } from '../../links/api'
 import * as styles from './ShareManageDialog.css'
 
@@ -29,21 +26,21 @@ function expiryUnusable(choice: string, iso: string): boolean {
   return ns === undefined || BigInt(ns) <= BigInt(Date.now()) * 1_000_000n
 }
 
-const newExpiryOptions = (): SelectOption[] => [
-  { value: 'none', text: t('share.none') },
-  { value: '1d', text: t('share.1_day') },
-  { value: '7d', text: t('share.7_days') },
-  { value: '30d', text: t('share.30_days_default') },
-  { value: 'custom', text: t('share.pick_a_date') }
+const newExpiryOptions = (): StowSelectOption[] => [
+  { value: 'none', label: t('share.none') },
+  { value: '1d', label: t('share.1_day') },
+  { value: '7d', label: t('share.7_days') },
+  { value: '30d', label: t('share.30_days_default') },
+  { value: 'custom', label: t('share.pick_a_date') }
 ]
 
-const editExpiryOptions = (): SelectOption[] => [
-  { value: 'keep', text: t('share.leave_unchanged') },
-  { value: 'none', text: t('share.none') },
-  { value: '1d', text: t('share.1_day') },
-  { value: '7d', text: t('share.7_days') },
-  { value: '30d', text: t('share.30_days') },
-  { value: 'custom', text: t('share.pick_a_date') }
+const editExpiryOptions = (): StowSelectOption[] => [
+  { value: 'keep', label: t('share.leave_unchanged') },
+  { value: 'none', label: t('share.none') },
+  { value: '1d', label: t('share.1_day') },
+  { value: '7d', label: t('share.7_days') },
+  { value: '30d', label: t('share.30_days') },
+  { value: 'custom', label: t('share.pick_a_date') }
 ]
 
 const downloadLimit = (value: string): string | true => {
@@ -72,18 +69,22 @@ function PermSwitches({ control }: { control: Control<LinkValues> }) {
       <Controller
         control={control}
         name="read"
-        render={({ field }) => <Switch checked={field.value} label={t('share.read_view')} onChange={field.onChange} />}
+        render={({ field }) => (
+          <StowSwitch checked={field.value} label={t('share.read_view')} onChange={field.onChange} />
+        )}
       />
       <Controller
         control={control}
         name="download"
-        render={({ field }) => <Switch checked={field.value} label={t('common.download')} onChange={field.onChange} />}
+        render={({ field }) => (
+          <StowSwitch checked={field.value} label={t('common.download')} onChange={field.onChange} />
+        )}
       />
     </div>
   )
 }
 
-function ExpiryFields({ control, options }: { control: Control<LinkValues>; options: SelectOption[] }) {
+function ExpiryFields({ control, options }: { control: Control<LinkValues>; options: StowSelectOption[] }) {
   const { t } = useI18n()
   const expiry = useWatch({ control, name: 'expiry' })
   return (
@@ -92,11 +93,11 @@ function ExpiryFields({ control, options }: { control: Control<LinkValues>; opti
         control={control}
         name="expiry"
         render={({ field }) => (
-          <Select label={t('share.expiry')} options={options} value={field.value} onValueChange={field.onChange} />
+          <StowSelect label={t('share.expiry')} options={options} value={field.value} onChange={field.onChange} />
         )}
       />
       {expiry === 'custom' ? (
-        <FormTextField
+        <StowFormTextField
           control={control}
           name="expiryDate"
           rules={{
@@ -151,9 +152,9 @@ export function NewLinkForm({ path, targetName, targetIsDir, onCreated, onCancel
       { onSuccess: onCreated }
     )
   })
-  const kindOptions: SelectOption[] = [
-    { value: 'download', text: t('share.kind_download') },
-    ...(targetIsDir ? [{ value: 'drop', text: t('share.kind_drop') }] : [])
+  const kindOptions: StowSelectOption[] = [
+    { value: 'download', label: t('share.kind_download') },
+    ...(targetIsDir ? [{ value: 'drop', label: t('share.kind_drop') }] : [])
   ]
 
   return (
@@ -163,19 +164,19 @@ export function NewLinkForm({ path, targetName, targetIsDir, onCreated, onCancel
         control={control}
         name="kind"
         render={({ field }) => (
-          <Select
+          <StowSelect
             label={t('share.kind_label')}
             options={kindOptions}
             value={field.value}
-            onValueChange={field.onChange}
+            onChange={field.onChange}
           />
         )}
       />
       {kind === 'drop' ? <p className={styles.hint}>{t('share.drop_hint')}</p> : <PermSwitches control={control} />}
       <ExpiryFields control={control} options={newExpiryOptions()} />
-      <FormTextField control={control} name="password" type="password" label={t('share.password_optional')} />
+      <StowFormTextField control={control} name="password" type="password" label={t('share.password_optional')} />
       {kind !== 'drop' ? (
-        <FormTextField
+        <StowFormTextField
           control={control}
           name="maxDownloads"
           rules={{ validate: downloadLimit }}
@@ -183,19 +184,19 @@ export function NewLinkForm({ path, targetName, targetIsDir, onCreated, onCancel
           placeholder={t('share.no_limit')}
         />
       ) : null}
-      <FormTextField control={control} name="label" label={t('share.label_optional')} placeholder={targetName} />
+      <StowFormTextField control={control} name="label" label={t('share.label_optional')} placeholder={targetName} />
       {create.error ? (
         <p className={styles.error} role="alert">
           {describeApiError(create.error, t('share.could_not_create_share_link'))}
         </p>
       ) : null}
       <div className={styles.editActions}>
-        <Button variant="text" onClick={onCancel}>
+        <StowButton variant="text" onClick={onCancel}>
           {t('common.cancel')}
-        </Button>
-        <Button type="submit" disabled={create.isPending || (kind !== 'drop' && !read && !download)}>
+        </StowButton>
+        <StowButton type="submit" disabled={create.isPending || (kind !== 'drop' && !read && !download)}>
           {t('common.create')}
-        </Button>
+        </StowButton>
       </div>
     </form>
   )
@@ -244,25 +245,25 @@ export function EditLinkForm({ link, onDone }: EditLinkFormProps) {
     <form className={styles.editForm} onSubmit={(event) => void submit(event)}>
       <PermSwitches control={control} />
       <ExpiryFields control={control} options={editExpiryOptions()} />
-      <FormTextField
+      <StowFormTextField
         control={control}
         name="maxDownloads"
         rules={{ validate: downloadLimit }}
         label={t('share.download_limit_optional')}
         placeholder={t('share.no_limit')}
       />
-      <FormTextField control={control} name="label" label={t('share.label_optional')} />
+      <StowFormTextField control={control} name="label" label={t('share.label_optional')} />
       {link.has_password && !clearPassword ? (
         <Controller
           control={control}
           name="clearPassword"
           render={({ field }) => (
-            <Switch checked={field.value} label={t('share.remove_password')} onChange={field.onChange} />
+            <StowSwitch checked={field.value} label={t('share.remove_password')} onChange={field.onChange} />
           )}
         />
       ) : null}
       {!clearPassword ? (
-        <FormTextField control={control} name="password" type="password" label={t('share.new_password_optional')} />
+        <StowFormTextField control={control} name="password" type="password" label={t('share.new_password_optional')} />
       ) : null}
       {update.error ? (
         <p className={styles.error} role="alert">
@@ -270,12 +271,12 @@ export function EditLinkForm({ link, onDone }: EditLinkFormProps) {
         </p>
       ) : null}
       <div className={styles.editActions}>
-        <Button variant="text" onClick={onDone}>
+        <StowButton variant="text" onClick={onDone}>
           {t('common.cancel')}
-        </Button>
-        <Button type="submit" disabled={update.isPending}>
+        </StowButton>
+        <StowButton type="submit" disabled={update.isPending}>
           {t('common.save')}
-        </Button>
+        </StowButton>
       </div>
     </form>
   )

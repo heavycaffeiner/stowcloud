@@ -16,7 +16,6 @@ import {
   pickedFilesFromDataTransfer,
   supportsDirectoryPicker
 } from '../../uploads/directory-picker'
-import { MenuItem, MenuList, openMenu, type MenuAnchor } from '../../../ui/Menu'
 import { askUnlock } from '../../shares/components/UnlockShareDialog'
 import { openShareManager } from '../../shares/components/ShareManageDialog'
 import type { ShareEncryption } from '../../shares/api'
@@ -30,6 +29,7 @@ import { notice, operation } from '../browse-page'
 import { selection } from '../selection'
 import { rowActions, type RowAction, type RowMenuAnchor } from '../logic/row-actions'
 import { runBrowseTransfer } from '../logic/browse-transfer'
+import { openMenu, StowMenuItem, type MenuAnchor } from '@/shared/ui'
 import { uploadEntries, uploadFiles } from '../logic/browse-upload'
 import { useArchiveTicket, useCopyFiles, useDeleteFiles, useMkdir, useMoveFiles, useRename, type Entry } from '../api'
 import type { useBrowseListing } from './use-browse-listing'
@@ -162,23 +162,24 @@ export function useBrowseActions(path: string, listing: BrowseListing) {
   const openRowMenu = (entry: Entry, anchor: RowMenuAnchor): void => {
     const inSelection = selectedNames.has(entry.name)
     if (!inSelection) selection.only(entry.name, entries.indexOf(entry))
-    const actions = actionsFor(inSelection ? selected : [entry])
+    const targets = inSelection ? selected : [entry]
+    const actions = actionsFor(targets)
     const trigger = anchor.currentTarget instanceof HTMLElement ? anchor.currentTarget : null
-    openMenu({ x: anchor.clientX, y: anchor.clientY, trigger }, (close) => (
-      <MenuList>
-        {actions.map((action) => (
-          <MenuItem
-            key={action.key}
-            onClick={() => {
-              close()
-              action.run()
-            }}
-          >
-            {action.label}
-          </MenuItem>
-        ))}
-      </MenuList>
-    ))
+    const label = targets.length > 1 ? t('details.multiple_selected', { count: String(targets.length) }) : entry.name
+    openMenu({ x: anchor.clientX, y: anchor.clientY, trigger }, label, (close) =>
+      actions.map((action) => (
+        <StowMenuItem
+          key={action.key}
+          icon={action.icon}
+          onClick={() => {
+            close()
+            action.run()
+          }}
+        >
+          {action.label}
+        </StowMenuItem>
+      ))
+    )
   }
 
   /** Runs a row action on the selection, if the row menu would offer it there. */
@@ -208,36 +209,39 @@ export function useBrowseActions(path: string, listing: BrowseListing) {
   }
 
   const createMenu = (close: () => void): ReactNode => (
-    <MenuList>
-      <MenuItem
+    <>
+      <StowMenuItem
+        icon="new-folder"
         onClick={() => {
           close()
           void createFolder()
         }}
       >
         {t('common.new_folder')}
-      </MenuItem>
-      <MenuItem
+      </StowMenuItem>
+      <StowMenuItem
+        icon="upload"
         onClick={() => {
           close()
           fileInput.current?.click()
         }}
       >
         {t('common.upload')}
-      </MenuItem>
-      <MenuItem
+      </StowMenuItem>
+      <StowMenuItem
+        icon="upload-folder"
         onClick={() => {
           close()
           void chooseFolder()
         }}
       >
         {t('browse.upload_folder')}
-      </MenuItem>
-    </MenuList>
+      </StowMenuItem>
+    </>
   )
 
   const openCreateMenu = (at: MenuAnchor): void => {
-    if (canCreate) openMenu(at, createMenu)
+    if (canCreate) openMenu(at, t('browse.new'), createMenu)
   }
 
   // The sidebar's New button asks for the create menu from outside the page.
@@ -245,7 +249,7 @@ export function useBrowseActions(path: string, listing: BrowseListing) {
     const at = createMenuRequest.value
     if (at === null) return
     createMenuRequest.value = null
-    if (canCreate) openMenu(at, createMenu)
+    if (canCreate) openMenu(at, t('browse.new'), createMenu)
     else notice.value = t('error.acl_denied')
   })
 

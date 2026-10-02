@@ -3,12 +3,9 @@ import { batchErrorKey } from '../../../api/error-text'
 import { useI18n } from '../../../hooks/use-i18n'
 import { t } from '../../../i18n'
 import { jobTray, useJobTrayStore } from '../tray-store'
-import { Icon } from '../../../ui/Icon'
-import { IconButton } from '../../../ui/IconButton'
-import { VirtualList } from '../../../ui/VirtualList'
-import { ProgressLinear } from '../../../ui/ProgressLinear'
+import { Icon, StowIconButton, StowProgressLinear, VirtualList } from '@/shared/ui'
 import * as styles from './JobTray.css'
-import * as utilitiesStyles from '../../../ui/utilities.css'
+import { srOnly } from '@/shared/theme'
 import { useInvalidateAllPaths } from '../../files/api'
 import { useJobAction, useJobList, useJobStatuses, type JobKind, type JobState, type JobStatus } from '../api'
 
@@ -210,33 +207,15 @@ export function JobTray() {
   if (rows.length === 0 && !list.isError) {
     return (
       <>
-        <div
-          ref={politeRef}
-          className={utilitiesStyles.srOnly}
-          role="status"
-          aria-live="polite"
-          aria-atomic="true"
-        ></div>
-        <div
-          ref={assertiveRef}
-          className={utilitiesStyles.srOnly}
-          role="alert"
-          aria-live="assertive"
-          aria-atomic="true"
-        ></div>
+        <div ref={politeRef} className={srOnly} role="status" aria-live="polite" aria-atomic="true"></div>
+        <div ref={assertiveRef} className={srOnly} role="alert" aria-live="assertive" aria-atomic="true"></div>
       </>
     )
   }
   return (
     <>
-      <div ref={politeRef} className={utilitiesStyles.srOnly} role="status" aria-live="polite" aria-atomic="true"></div>
-      <div
-        ref={assertiveRef}
-        className={utilitiesStyles.srOnly}
-        role="alert"
-        aria-live="assertive"
-        aria-atomic="true"
-      ></div>
+      <div ref={politeRef} className={srOnly} role="status" aria-live="polite" aria-atomic="true"></div>
+      <div ref={assertiveRef} className={srOnly} role="alert" aria-live="assertive" aria-atomic="true"></div>
       <section className={styles.root} aria-label={t('job.jobs')}>
         <header className={styles.header}>
           <button className={styles.title} type="button" onClick={() => jobTray.setOpen(!open)} aria-expanded={open}>
@@ -245,16 +224,14 @@ export function JobTray() {
             <span>{activeCount > 0 ? `(${activeCount})` : t('common.done')}</span>
           </button>
           <div className={styles.actions}>
-            <IconButton label={t('common.clear_finished_items')} onClick={clearFinished}>
-              <Icon name="check" />
-            </IconButton>
-            <IconButton
+            <StowIconButton label={t('common.clear_finished_items')} onClick={clearFinished} icon="check" />
+            <StowIconButton
               label={open ? t('common.collapse') : t('common.expand')}
               expanded={open}
               onClick={() => jobTray.setOpen(!open)}
             >
               <Icon name={open ? 'chevron_right' : 'chevron_left'} />
-            </IconButton>
+            </StowIconButton>
           </div>
         </header>
         {list.isError ? <p>{t('job.server_unreachable_so_may_not')}</p> : null}
@@ -282,7 +259,7 @@ export function JobTray() {
                         {item.done} / {item.total || '?'}
                       </span>
                     </div>
-                    <ProgressLinear value={jobProgressValue(item)} label={t('job.job', { kind: label })} />
+                    <StowProgressLinear value={jobProgressValue(item)} label={t('job.job', { kind: label })} />
                     {item.status === 'queued' ? <p>{t('job.queued')}</p> : null}
                     {item.status === 'paused' ? <p>{t('job.paused')}</p> : null}
                     {item.status === 'retrying' ? (
@@ -336,34 +313,48 @@ export function JobTray() {
                     <div className={styles.controls}>
                       {item.status === 'running' ? (
                         <>
-                          <IconButton label={t('job.pause_job')} onClick={() => pause.mutate(item.id)}>
-                            <Icon name="pause" />
-                          </IconButton>
-                          <IconButton label={t('job.cancel_job')} onClick={() => cancel.mutate(item.id)}>
-                            <Icon name="close" />
-                          </IconButton>
+                          <StowIconButton
+                            label={t('job.pause_job')}
+                            onClick={() => pause.mutate(item.id)}
+                            icon="pause"
+                          />
+                          <StowIconButton
+                            label={t('job.cancel_job')}
+                            onClick={() => cancel.mutate(item.id)}
+                            icon="close"
+                          />
                         </>
                       ) : item.status === 'queued' || item.status === 'retrying' ? (
-                        <IconButton label={t('job.cancel_job')} onClick={() => cancel.mutate(item.id)}>
-                          <Icon name="close" />
-                        </IconButton>
+                        <StowIconButton
+                          label={t('job.cancel_job')}
+                          onClick={() => cancel.mutate(item.id)}
+                          icon="close"
+                        />
                       ) : item.status === 'paused' ? (
                         <>
-                          <IconButton label={t('job.resume_job')} onClick={() => resume.mutate(item.id)}>
-                            <Icon name="play_arrow" />
-                          </IconButton>
-                          <IconButton label={t('job.cancel_job')} onClick={() => cancel.mutate(item.id)}>
-                            <Icon name="close" />
-                          </IconButton>
+                          <StowIconButton
+                            label={t('job.resume_job')}
+                            onClick={() => resume.mutate(item.id)}
+                            icon="play_arrow"
+                          />
+                          <StowIconButton
+                            label={t('job.cancel_job')}
+                            onClick={() => cancel.mutate(item.id)}
+                            icon="close"
+                          />
                         </>
                       ) : item.status === 'error' || item.status === 'interrupted' ? (
-                        <IconButton label={t('job.retry_job')} onClick={() => retry.mutate(item.id)}>
-                          <Icon name="refresh" />
-                        </IconButton>
+                        <StowIconButton
+                          label={t('job.retry_job')}
+                          onClick={() => retry.mutate(item.id)}
+                          icon="refresh"
+                        />
                       ) : (
-                        <IconButton label={t('common.clear')} onClick={() => jobTray.forget(item.id)}>
-                          <Icon name="close" />
-                        </IconButton>
+                        <StowIconButton
+                          label={t('common.clear')}
+                          onClick={() => jobTray.forget(item.id)}
+                          icon="close"
+                        />
                       )}
                     </div>
                   </>

@@ -3,13 +3,8 @@ import { batchErrorKey } from '../../../api/error-text'
 import { useI18n } from '../../../hooks/use-i18n'
 import { formatDateNs, t } from '../../../i18n'
 import { formatBytes } from '../../../lib/format/bytes'
-import { Button } from '../../../ui/Button'
-import { Dialog } from '../../../ui/Dialog'
-import { Icon } from '../../../ui/Icon'
-import { VirtualList } from '../../../ui/VirtualList'
+import { cx, StowButton, StowDialog, StowIconButton, VirtualList } from '@/shared/ui'
 import * as styles from './TrashView.css'
-import * as secondaryPageShellStyles from '../../../ui/SecondaryPageShell.css'
-import { cx } from '../../../ui/cx'
 import type { BatchItemResult } from '../../files/api'
 import type { TrashEntry } from '../api'
 import type { TrashOperationResult } from '../hooks/use-trash-actions'
@@ -17,22 +12,22 @@ import type { TrashOperationResult } from '../hooks/use-trash-actions'
 /** Asks to confirm a permanent delete of `count` items. True when confirmed. */
 export function confirmPurge(count: number): Promise<boolean> {
   return overlay.openAsync<boolean>(({ isOpen, close, unmount }) => (
-    <Dialog
+    <StowDialog
       open={isOpen}
       title={t('trash.delete_permanently')}
       onClose={() => close(false)}
       onClosed={unmount}
       actions={
         <>
-          <Button variant="text" onClick={() => close(false)}>
+          <StowButton variant="text" onClick={() => close(false)}>
             {t('common.cancel')}
-          </Button>
-          <Button onClick={() => close(true)}>{t('common.delete')}</Button>
+          </StowButton>
+          <StowButton onClick={() => close(true)}>{t('common.delete')}</StowButton>
         </>
       }
     >
       <p>{t('trash.permanently_deletes_items_cannot_undone', { count })}</p>
-    </Dialog>
+    </StowDialog>
   ))
 }
 
@@ -49,9 +44,9 @@ export function TrashOperation({ operation, onClose }: { operation: TrashOperati
         <h2 className={styles.operationTitle}>
           {operation.kind === 'restore' ? t('trash.restore') : t('trash.purge')}
         </h2>
-        <button type="button" className={styles.operationClose} onClick={onClose}>
+        <StowButton variant="text" onClick={onClose}>
           {t('common.close')}
-        </button>
+        </StowButton>
       </div>
       <VirtualList
         className={styles.operationList}
@@ -100,24 +95,8 @@ export function TrashRow({ entry, selected, disabled, onToggle, onRestore, onPur
       {!entry.is_dir ? <span className={styles.meta}>{formatBytes(entry.size)}</span> : null}
       <span className={styles.meta}>{t('trash.deleted', { date: formatDateNs(entry.deleted_at_ns) })}</span>
       <div className={styles.rowActions}>
-        <button
-          type="button"
-          className={secondaryPageShellStyles.routeIconButton}
-          disabled={disabled}
-          aria-label={t('trash.restore')}
-          onClick={onRestore}
-        >
-          <Icon name="restore" />
-        </button>
-        <button
-          type="button"
-          className={cx(secondaryPageShellStyles.routeIconButton, secondaryPageShellStyles.routeIconButtonDanger)}
-          disabled={disabled}
-          aria-label={t('trash.purge')}
-          onClick={onPurge}
-        >
-          <Icon name="delete" />
-        </button>
+        <StowIconButton label={t('trash.restore')} icon="restore" disabled={disabled} onClick={onRestore} />
+        <StowIconButton label={t('trash.purge')} icon="delete" danger disabled={disabled} onClick={onPurge} />
       </div>
     </>
   )

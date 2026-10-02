@@ -1,9 +1,7 @@
 // Enforces the two byte budgets for the browser payload: initial JavaScript gzip
 // is at most 256 KiB and the public-share route adds at most 60 KiB marginal.
-// The Svelte-era initial limit was 150 KiB; the React 19, TanStack Router,
-// TanStack Query and mdui boot graph measured 211.1 KiB gzip, so 256 KiB leaves
-// about 20% headroom. It also fails when a page that runs without a session
-// pulls in the signed-in shell.
+// It also fails when a page that runs without a session pulls in the signed-in
+// shell.
 // Run after `pnpm build`; Vite's manifest is the source of truth for emitted chunks.
 
 import { gzipSync } from 'node:zlib'

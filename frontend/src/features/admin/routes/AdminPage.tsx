@@ -3,14 +3,13 @@ import { useI18n } from '../../../hooks/use-i18n'
 import { t } from '../../../i18n'
 import { useSession } from '../../auth/api'
 import { useDocumentTitle } from '../../../hooks/use-document-title'
-import { PageTabs, type PageTabItem } from '../../../ui/PageTabs'
+import { type StowPageTab, StowPageTabs, StowTabbedPage } from '@/shared/ui'
 import { AdminPanels, SectionLoading } from '../components/AdminPanels'
 import { useAdminTab } from '../hooks/use-admin-tab'
 import type { AdminTab } from '../tabs'
 import * as styles from './AdminPage.css'
-import * as pageTabsStyles from '../../../ui/PageTabs.css'
 
-type AdminTabItem = PageTabItem<AdminTab>
+type AdminTabItem = StowPageTab<AdminTab>
 
 function adminTabs(): readonly AdminTabItem[] {
   return [
@@ -24,14 +23,7 @@ function adminTabs(): readonly AdminTabItem[] {
 
 function AdminFrame({ children }: { children: ReactNode }) {
   const { t } = useI18n()
-  return (
-    <section className={pageTabsStyles.page}>
-      <header className={pageTabsStyles.header}>
-        <h1 className={pageTabsStyles.title}>{t('common.administrator')}</h1>
-      </header>
-      {children}
-    </section>
-  )
+  return <StowTabbedPage title={t('common.administrator')}>{children}</StowTabbedPage>
 }
 
 export function AdminPage() {
@@ -73,7 +65,7 @@ export function AdminPage() {
 
   return (
     <AdminFrame>
-      <PageTabs label={t('admin.admin_sections')} items={adminTabs()} active={tab} onSelect={selectTab} />
+      <StowPageTabs label={t('admin.admin_sections')} items={adminTabs()} active={tab} onSelect={selectTab} />
       <AdminPanels tab={tab} />
     </AdminFrame>
   )

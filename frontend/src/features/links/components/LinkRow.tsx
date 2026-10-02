@@ -1,10 +1,7 @@
 import { useI18n } from '../../../hooks/use-i18n'
-import { Icon } from '../../../ui/Icon'
+import { cx, Icon, secondaryPageStyles, StowProgressCircular } from '@/shared/ui'
 import { isDropLink, isExpired, isExhausted, type LinkRow } from '../hooks/use-link-management'
-import { ProgressCircular } from '../../../ui/ProgressCircular'
 import * as styles from './LinkRow.css'
-import * as secondaryPageShellStyles from '../../../ui/SecondaryPageShell.css'
-import { cx } from '../../../ui/cx'
 import type { OwnedShareLinkInfo } from '../api'
 interface LinkRowProps {
   link: LinkRow
@@ -29,7 +26,7 @@ export function LinkListRow({ link, mine, resolving, targetSummary, onOpen }: Li
     <>
       <button
         type="button"
-        className={cx(secondaryPageShellStyles.row, styles.row, !mine && styles.rowReadonly)}
+        className={cx(secondaryPageStyles.row, styles.row, !mine && styles.rowReadonly)}
         aria-disabled={!mine || resolving ? 'true' : undefined}
         aria-busy={resolving ? 'true' : undefined}
         aria-label={
@@ -39,18 +36,18 @@ export function LinkListRow({ link, mine, resolving, targetSummary, onOpen }: Li
         }
         onClick={onOpen}
       >
-        <span className={secondaryPageShellStyles.icon}>
+        <span className={secondaryPageStyles.icon}>
           <Icon name={link.has_password ? 'lock' : 'link'} />
         </span>
-        <span className={secondaryPageShellStyles.text}>
-          <span className={secondaryPageShellStyles.name}>{link.path}</span>
-          {mine ? <span className={secondaryPageShellStyles.path}>{targetSummary}</span> : null}
+        <span className={secondaryPageStyles.text}>
+          <span className={secondaryPageStyles.name}>{link.path}</span>
+          {mine ? <span className={secondaryPageStyles.path}>{targetSummary}</span> : null}
           <span className={styles.meta}>
             {meta}
             {usage} - {link.has_password ? t('links.password_protected') : t('links.no_password')}
           </span>
         </span>
-        {resolving && mine ? <ProgressCircular className={styles.progress} /> : null}
+        {resolving && mine ? <StowProgressCircular className={styles.progress} /> : null}
         {status ? <span className={styles.flag}>{status}</span> : null}
       </button>
     </>

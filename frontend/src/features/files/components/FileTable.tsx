@@ -1,7 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { selection, useSelectionStore } from '../selection'
-import { useCompact } from '../../../ui/use-compact'
+import { useCompact } from '@/hooks/use-compact'
 import { chooseSort, density as densityPref, sortKey as sortKeyPref, sortOrder as sortOrderPref } from '../view-prefs'
 import { useI18n } from '../../../hooks/use-i18n'
 import {
@@ -17,11 +17,9 @@ import { FileRow } from './FileRow'
 import { useFileActivation } from '../hooks/use-file-activation'
 import { useFileFocusPreservation } from '../hooks/use-file-focus-preservation'
 import { FileRowSkeleton } from './FileRowSkeleton'
-import { Icon } from '../../../ui/Icon'
+import { cx, StowCheckboxIndicator } from '@/shared/ui'
 import * as styles from './FileTable.css'
-import * as fileRowStyles from './FileRow.css'
-import * as utilitiesStyles from '../../../ui/utilities.css'
-import { cx } from '../../../ui/cx'
+import { touchTarget } from '@/shared/theme'
 import type { Entry, SortKey } from '../api'
 import type { Perms } from '../perms'
 
@@ -282,29 +280,18 @@ export const FileTable = forwardRef<FileViewHandle, FileTableProps>(function Fil
           <div className={styles.header} role="row" aria-rowindex={1}>
             <button
               type="button"
-              className={cx(styles.headerCell, styles.headerCellSelect, utilitiesStyles.touchTarget)}
+              className={cx(styles.headerCell, styles.headerCellSelect, touchTarget)}
               role="columnheader"
-              aria-label={t('browse.select_all')}
               onClick={() => {
                 if (names.size === entries.length && entries.length > 0) selection.clear()
                 else selection.all(loadedNames)
               }}
             >
-              <span
-                className={cx(
-                  fileRowStyles.customCheckbox,
-                  names.size > 0 && names.size === entries.length
-                    ? fileRowStyles.customCheckboxChecked
-                    : names.size > 0 && fileRowStyles.customCheckboxIndeterminate
-                )}
-                aria-hidden="true"
-              >
-                {names.size > 0 && names.size === entries.length ? (
-                  <Icon name="check" size={13} />
-                ) : names.size > 0 ? (
-                  <span className={fileRowStyles.customCheckboxBar} />
-                ) : null}
-              </span>
+              <StowCheckboxIndicator
+                checked={names.size > 0 && names.size === entries.length}
+                indeterminate={names.size > 0 && names.size < entries.length}
+                label={t('browse.select_all')}
+              />
             </button>
             {(['name', 'size', 'mtime'] as const).map((key) => (
               <span

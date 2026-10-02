@@ -14,15 +14,10 @@ import {
 } from '../api'
 import { useJobStatus } from '../../jobs/api'
 import { jobTray } from '../../jobs/tray-store'
-import { Button } from '../../../ui/Button'
-import { Icon } from '../../../ui/Icon'
-import { Switch } from '../../../ui/Switch'
-import { ProgressCircular } from '../../../ui/ProgressCircular'
-import { VirtualList } from '../../../ui/VirtualList'
+import { cx, Icon, StowButton, StowProgressCircular, StowSwitch, VirtualList } from '@/shared/ui'
 import { AdminCard } from './AdminCard'
 import * as styles from './StorageIndexSection.css'
 import * as adminStyles from './admin.css'
-import { cx } from '../../../ui/cx'
 
 const ACCURACY: Record<string, string> = {
   measured: 'storage.accuracy_counted_everything',
@@ -82,7 +77,7 @@ export function StorageIndexSection() {
         icon={<Icon name="storage" />}
       >
         {storage.isPending ? (
-          <ProgressCircular />
+          <StowProgressCircular />
         ) : storage.error ? (
           <p className={adminStyles.error}>
             {describeApiError(storage.error, t('storage.could_not_load_storage_information'))}
@@ -128,7 +123,7 @@ export function StorageIndexSection() {
         <div className={styles.statusRow}>
           <span>{t('storage.index_status')}</span>
           <span className={cx(styles.statusBadge, status.data?.enabled && styles.statusBadgeOn)}>
-            {status.isPending ? <ProgressCircular size={16} /> : statusText}
+            {status.isPending ? <StowProgressCircular size={16} /> : statusText}
           </span>
         </div>
 
@@ -149,11 +144,11 @@ export function StorageIndexSection() {
         ) : null}
 
         {settings.isPending ? (
-          <ProgressCircular />
+          <StowProgressCircular />
         ) : (
           <>
             <div className={adminStyles.storageToggleRow}>
-              <Switch
+              <StowSwitch
                 checked={nameEnabled}
                 label={t('storage.enable_name_index')}
                 onChange={(checked) => toggle.mutate(checked)}
@@ -190,9 +185,9 @@ export function StorageIndexSection() {
                 <p className={adminStyles.note}>{t('storage.measure_before_turning_on')}</p>
               )}
               <div className={adminStyles.row}>
-                <Button variant="outlined" loading={estimate.isFetching} onClick={estimateCost}>
+                <StowButton variant="outlined" loading={estimate.isFetching} onClick={estimateCost}>
                   {estimate.data ? t('storage.measure_again') : t('storage.measure_the_cost')}
-                </Button>
+                </StowButton>
               </div>
               {estimate.error ? (
                 <p className={adminStyles.error}>
@@ -202,14 +197,14 @@ export function StorageIndexSection() {
             </div>
 
             <div className={adminStyles.row}>
-              <Button
+              <StowButton
                 variant="filled"
                 loading={build.isPending}
                 disabled={!nameEnabled || job.data?.state === 'running'}
                 onClick={startBuild}
               >
                 {t('storage.start_index_build')}
-              </Button>
+              </StowButton>
             </div>
             {jobText ? (
               <p className={adminStyles.note} aria-live="polite">

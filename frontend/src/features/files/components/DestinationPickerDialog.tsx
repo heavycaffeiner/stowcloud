@@ -4,11 +4,10 @@ import { destinationProblem } from '../../../lib/path-utils'
 import { useSession } from '../../auth/api'
 import { useStat } from '../api'
 import { useI18n } from '../../../hooks/use-i18n'
-import { Button } from '../../../ui/Button'
+import { cx, StowButton } from '@/shared/ui'
 import { BrowseDialog } from './browse-dialog'
 import { FileTreeList } from './FileTree'
 import * as styles from './DestinationPickerDialog.css'
-import { cx } from '../../../ui/cx'
 
 export interface DestinationRequest {
   sources: readonly string[]
@@ -65,18 +64,18 @@ function DestinationPickerDialog({
       onClosed={onClosed}
       actions={
         <>
-          <Button variant="text" onClick={onClose}>
+          <StowButton variant="text" onClick={onClose}>
             {t('common.cancel')}
-          </Button>
+          </StowButton>
           {canCopy ? (
-            <Button variant="outlined" disabled={!copy} onClick={() => selected && onPick(selected, 'copy')}>
+            <StowButton variant="outlined" disabled={!copy} onClick={() => selected && onPick(selected, 'copy')}>
               {t('common.copy')}
-            </Button>
+            </StowButton>
           ) : null}
           {canMove ? (
-            <Button disabled={!move} onClick={() => selected && onPick(selected, 'move')}>
+            <StowButton disabled={!move} onClick={() => selected && onPick(selected, 'move')}>
               {t('common.move')}
-            </Button>
+            </StowButton>
           ) : null}
         </>
       }

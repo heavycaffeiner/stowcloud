@@ -1,13 +1,11 @@
 import { useWatch } from 'react-hook-form'
 import { Link } from '@tanstack/react-router'
-import { Button } from '../../../ui/Button'
-import { FormTextField } from '../../../ui/FormTextField'
+import { cx, StowButton, StowFormTextField } from '@/shared/ui'
 import { useDocumentTitle } from '../../../hooks/use-document-title'
 import { useI18n } from '../../../hooks/use-i18n'
 import { useLoginFlow } from '../hooks/use-login-flow'
 import * as authStyles from './auth.css'
-import * as utilitiesStyles from '../../../ui/utilities.css'
-import { cx } from '../../../ui/cx'
+import { focusRing } from '@/shared/theme'
 
 const SOURCE_URL = 'https://github.com/heavycaffeiner/stowcloud'
 
@@ -39,14 +37,14 @@ export function LoginPage() {
         </p>
         {step === 'credentials' ? (
           <>
-            <FormTextField
+            <StowFormTextField
               control={control}
               name="username"
               label={t('login.username')}
               autoFocus
               autoComplete="username"
             />
-            <FormTextField
+            <StowFormTextField
               control={control}
               name="password"
               label={t('common.password')}
@@ -59,7 +57,7 @@ export function LoginPage() {
             <p className={authStyles.subtitle}>
               {factorMode === 'totp' ? t('login.enter_your_two_factor_code') : t('login.recovery_code_hint')}
             </p>
-            <FormTextField
+            <StowFormTextField
               control={control}
               name="code"
               label={factorMode === 'totp' ? t('login.verification_code') : t('login.recovery_code')}
@@ -67,9 +65,9 @@ export function LoginPage() {
               autoFocus
               autoComplete="one-time-code"
             />
-            <Button variant="text" onClick={switchFactor}>
+            <StowButton variant="text" onClick={switchFactor}>
               {factorMode === 'totp' ? t('login.use_recovery_code') : t('login.use_authenticator_code')}
-            </Button>
+            </StowButton>
           </>
         )}
         {ssoError && step === 'credentials' ? (
@@ -84,31 +82,31 @@ export function LoginPage() {
         ) : null}
         <div className={authStyles.actions}>
           {step === 'totp' ? (
-            <Button className={authStyles.action} variant="text" onClick={backToPassword}>
+            <StowButton className={authStyles.action} variant="text" onClick={backToPassword}>
               {t('login.back')}
-            </Button>
+            </StowButton>
           ) : null}
-          <Button
+          <StowButton
             className={authStyles.action}
             type="submit"
             loading={pending}
             disabled={step === 'credentials' ? !username.trim() || !password : !code.trim()}
           >
             {step === 'credentials' ? t('login.sign') : t('common.ok')}
-          </Button>
+          </StowButton>
         </div>
         {step === 'credentials' && ssoName !== null ? (
           <>
             <div className={authStyles.divider}>
               <span>{t('login.or')}</span>
             </div>
-            <Button variant="tonal" onClick={() => startOidcLogin(returnTo)}>
+            <StowButton variant="tonal" onClick={() => startOidcLogin(returnTo)}>
               {ssoName ? t('login.sign_with', { provider: ssoName }) : t('login.sign_with_single_sign')}
-            </Button>
+            </StowButton>
           </>
         ) : null}
         {step === 'credentials' ? (
-          <Link className={cx(authStyles.setupLink, utilitiesStyles.focusRing)} to="/setup">
+          <Link className={cx(authStyles.setupLink, focusRing)} to="/setup">
             {t('login.first_time_here_create_administrator')}
           </Link>
         ) : null}

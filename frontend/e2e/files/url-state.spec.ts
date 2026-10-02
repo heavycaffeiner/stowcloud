@@ -71,7 +71,7 @@ test.describe('the URL holds the view', () => {
     await page.reload({ waitUntil: 'domcontentloaded' })
     await expect(fileEntry(page, 'sub')).toBeVisible()
     await expect(fileEntry(page, 'f.txt')).toBeHidden()
-    await expect(page.getByRole('button', { name: 'Type', exact: true })).toContainText('Folders')
+    await expect(page.getByRole('button', { name: 'Type: Folders', exact: true })).toContainText('Folders')
 
     await assertNoUnexpectedErrors(artifacts)
   })

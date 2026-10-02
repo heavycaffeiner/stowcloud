@@ -4,23 +4,24 @@ import { Controller, useForm, useWatch } from 'react-hook-form'
 import { describeApiError } from '../../../api/error-text'
 import { t } from '../../../i18n'
 import { useI18n } from '../../../hooks/use-i18n'
-import { confirmAction } from '../../../ui/ActionDialog'
-import { Button } from '../../../ui/Button'
+import {
+  confirmAction,
+  cx,
+  Icon,
+  StowBadge,
+  StowButton,
+  StowDialog,
+  StowFormTextField,
+  StowIconButton,
+  StowListItem,
+  StowProgressCircular,
+  StowSelect,
+  StowSwitch,
+  VirtualList
+} from '@/shared/ui'
 import { GrantPermissionGrid, usePermLabels } from './GrantPermissionGrid'
-import { Chip } from '../../../ui/Chip'
-import { Dialog } from '../../../ui/Dialog'
-import { FormTextField } from '../../../ui/FormTextField'
-import { Switch } from '../../../ui/Switch'
-import { Icon } from '../../../ui/Icon'
-import { IconButton } from '../../../ui/IconButton'
-import { ListItem } from '../../../ui/ListItem'
-import { ProgressCircular } from '../../../ui/ProgressCircular'
-import { Select } from '../../../ui/Select'
-import { VirtualList } from '../../../ui/VirtualList'
 import * as styles from './GrantManagementSection.css'
 import * as adminStyles from './admin.css'
-import * as buttonStyles from '../../../ui/Button.css'
-import { cx } from '../../../ui/cx'
 import {
   ALL_GRANT_PERMS,
   useAdminGrants,
@@ -60,19 +61,19 @@ function GrantsDialog({
 }: GrantsTarget & { open: boolean; onClose: () => void; onClosed: () => void }) {
   const { t } = useI18n()
   return (
-    <Dialog
+    <StowDialog
       open={open}
       title={title}
       onClose={onClose}
       onClosed={onClosed}
       actions={
-        <Button variant="text" onClick={onClose}>
+        <StowButton variant="text" onClick={onClose}>
           {t('common.close')}
-        </Button>
+        </StowButton>
       }
     >
       <GrantManagementSection principal={principal} label={label} />
-    </Dialog>
+    </StowDialog>
   )
 }
 
@@ -139,7 +140,7 @@ function GrantManagementSection({ principal, label }: Omit<GrantsTarget, 'title'
         {t('grant.sees_only_folders_granted_here')}
       </p>
       {sharesQuery.isPending || grantsQuery.isPending ? (
-        <ProgressCircular />
+        <StowProgressCircular />
       ) : loadError ? (
         <p className={adminStyles.sectionError} role="alert">
           {loadError}
@@ -164,11 +165,11 @@ function GrantManagementSection({ principal, label }: Omit<GrantsTarget, 'title'
                 const overlap = grant.allow.filter((permission) => grant.deny.includes(permission))
                 const grantName = grant.label || shareNameOf(shares, grant.share)
                 return (
-                  <ListItem
+                  <StowListItem
                     headline={
                       <>
                         <span className={adminStyles.rowName}>{grantName}</span>
-                        {!grant.inherit ? <Chip variant="assist">{t('grant.path_only')}</Chip> : null}
+                        {!grant.inherit ? <StowBadge>{t('grant.path_only')}</StowBadge> : null}
                       </>
                     }
                     supporting={
@@ -200,14 +201,14 @@ function GrantManagementSection({ principal, label }: Omit<GrantsTarget, 'title'
                         {expanded ? (
                           <span className={styles.perms}>
                             {grant.allow.map((permission) => (
-                              <Chip key={`allow-${permission}`} variant="filter" selected>
+                              <StowBadge key={`allow-${permission}`} tone="accent">
                                 {permLabel[permission]}
-                              </Chip>
+                              </StowBadge>
                             ))}
                             {grant.deny.map((permission) => (
-                              <Chip key={`deny-${permission}`} variant="input">
+                              <StowBadge key={`deny-${permission}`} tone="danger">
                                 {t('grant.denied', { perms: permLabel[permission] })}
-                              </Chip>
+                              </StowBadge>
                             ))}
                           </span>
                         ) : null}
@@ -215,7 +216,7 @@ function GrantManagementSection({ principal, label }: Omit<GrantsTarget, 'title'
                     }
                     trailing={
                       <span className={adminStyles.rowActions}>
-                        <IconButton
+                        <StowIconButton
                           label={
                             expanded ? t('grant.collapse_permission_details') : t('grant.expand_permission_details')
                           }
@@ -225,21 +226,18 @@ function GrantManagementSection({ principal, label }: Omit<GrantsTarget, 'title'
                           <span className={cx(styles.chevron, expanded && styles.chevronOpen)}>
                             <Icon name="chevron-right" size={18} />
                           </span>
-                        </IconButton>
-                        <IconButton
+                        </StowIconButton>
+                        <StowIconButton
                           label={t('common.edit', { name: grantName })}
+                          icon="settings"
                           onClick={() => void withPinned(grant, () => askGrant(principal, grant))}
-                        >
-                          <Icon name="settings" size={18} />
-                        </IconButton>
-                        <span className={buttonStyles.danger}>
-                          <IconButton
-                            label={t('common.remove', { name: grantName })}
-                            onClick={() => void remove(grant)}
-                          >
-                            <Icon name="delete" size={18} />
-                          </IconButton>
-                        </span>
+                        />
+                        <StowIconButton
+                          label={t('common.remove', { name: grantName })}
+                          icon="delete"
+                          danger
+                          onClick={() => void remove(grant)}
+                        />
                       </span>
                     }
                   />
@@ -247,9 +245,9 @@ function GrantManagementSection({ principal, label }: Omit<GrantsTarget, 'title'
               }}
             />
           )}
-          <Button variant="tonal" icon={<Icon name="add" />} onClick={() => void askGrant(principal)}>
+          <StowButton variant="tonal" icon={<Icon name="add" />} onClick={() => void askGrant(principal)}>
             {t('common.add_folder')}
-          </Button>
+          </StowButton>
         </>
       )}
     </section>
@@ -345,19 +343,19 @@ function GrantDialog({ principal, grant, open, onDone, onClosed }: GrantDialogPr
   }
 
   return (
-    <Dialog
+    <StowDialog
       open={open}
       title={grant ? t('grant.edit_folder_permission') : t('common.add_folder')}
       onClose={cancel}
       onClosed={onClosed}
       actions={
         <>
-          <Button variant="text" disabled={save.isPending} onClick={cancel}>
+          <StowButton variant="text" disabled={save.isPending} onClick={cancel}>
             {t('common.cancel')}
-          </Button>
-          <Button loading={save.isPending} onClick={() => void submit()}>
+          </StowButton>
+          <StowButton loading={save.isPending} onClick={() => void submit()}>
             {grant ? t('common.save') : t('common.add')}
-          </Button>
+          </StowButton>
         </>
       }
     >
@@ -374,19 +372,19 @@ function GrantDialog({ principal, grant, open, onDone, onClosed }: GrantDialogPr
               control={control}
               name="shareId"
               render={({ field }) => (
-                <Select
+                <StowSelect
                   label={t('common.share')}
                   options={[
-                    { value: '', text: t('grant.select_share'), disabled: true },
-                    ...shares.map((share) => ({ value: String(share.id), text: share.name }))
+                    { value: '', label: t('grant.select_share'), disabled: true },
+                    ...shares.map((share) => ({ value: String(share.id), label: share.name }))
                   ]}
                   value={field.value}
                   required
-                  onValueChange={field.onChange}
+                  onChange={field.onChange}
                 />
               )}
             />
-            <FormTextField
+            <StowFormTextField
               control={control}
               name="subpath"
               label={t('grant.subpath_leave_empty_whole_share')}
@@ -412,10 +410,10 @@ function GrantDialog({ principal, grant, open, onDone, onClosed }: GrantDialogPr
           control={control}
           name="inherit"
           render={({ field }) => (
-            <Switch checked={field.value} label={t('grant.apply_subfolders')} onChange={field.onChange} />
+            <StowSwitch checked={field.value} label={t('grant.apply_subfolders')} onChange={field.onChange} />
           )}
         />
-        <FormTextField
+        <StowFormTextField
           control={control}
           name="label"
           label={t('grant.display_name_optional')}
@@ -428,7 +426,7 @@ function GrantDialog({ principal, grant, open, onDone, onClosed }: GrantDialogPr
           </p>
         ) : null}
       </form>
-    </Dialog>
+    </StowDialog>
   )
 }
 

@@ -32,6 +32,14 @@ export const item = style({
   ...typography('body')
 })
 
+export const heading = style({
+  paddingBlock: vars.space.sm,
+  paddingInline: vars.space.md,
+  color: vars.color.text.primary,
+  overflowWrap: 'anywhere',
+  ...typography('titleSmall')
+})
+
 export const label = style({
   minInlineSize: 0,
   overflowWrap: 'anywhere'

@@ -3,9 +3,7 @@ import { overlay } from 'overlay-kit'
 import { describeApiError } from '../../../api/error-text'
 import { useI18n } from '../../../hooks/use-i18n'
 import { useRestartServer, useSystemHealth } from '../api'
-import { Button } from '../../../ui/Button'
-import { Dialog } from '../../../ui/Dialog'
-import { ProgressCircular } from '../../../ui/ProgressCircular'
+import { StowButton, StowDialog, StowProgressCircular } from '@/shared/ui'
 import { nextRestartWaitStep } from '../logic/restart-wait'
 import * as styles from './RestartDialog.css'
 import type { ApplyOutcome } from '../api'
@@ -77,34 +75,34 @@ function RestartDialog({ open, outcome, onClose, onClosed }: RestartDialogProps)
   const actions =
     phase === 'confirm' ? (
       <>
-        <Button variant="text" onClick={close}>
+        <StowButton variant="text" onClick={close}>
           {t('common.cancel')}
-        </Button>
-        <Button danger onClick={confirmRestart}>
+        </StowButton>
+        <StowButton danger onClick={confirmRestart}>
           {t('restart.restart_now')}
-        </Button>
+        </StowButton>
       </>
     ) : phase === 'submitting' ? (
       <>
-        <Button variant="text" disabled>
+        <StowButton variant="text" disabled>
           {t('common.cancel')}
-        </Button>
-        <Button loading>{t('restart.restart_now')}</Button>
+        </StowButton>
+        <StowButton loading>{t('restart.restart_now')}</StowButton>
       </>
     ) : phase === 'timeout' ? (
       <>
-        <Button variant="text" onClick={close}>
+        <StowButton variant="text" onClick={close}>
           {t('common.close')}
-        </Button>
-        <Button onClick={beginWaiting}>{t('common.retry')}</Button>
+        </StowButton>
+        <StowButton onClick={beginWaiting}>{t('common.retry')}</StowButton>
       </>
     ) : (
-      <Button variant="text" onClick={close}>
+      <StowButton variant="text" onClick={close}>
         {t('common.close')}
-      </Button>
+      </StowButton>
     )
   return (
-    <Dialog open={open} title={t('restart.title')} onClose={close} onClosed={onClosed} actions={actions}>
+    <StowDialog open={open} title={t('restart.title')} onClose={close} onClosed={onClosed} actions={actions}>
       {phase === 'confirm' || phase === 'submitting' ? (
         <p>
           {activeUploads > 0 || activeJobs > 0
@@ -119,7 +117,7 @@ function RestartDialog({ open, outcome, onClose, onClosed }: RestartDialogProps)
       ) : null}
       {phase === 'waiting' ? (
         <p className={styles.status} role="status" aria-live="polite">
-          <ProgressCircular />
+          <StowProgressCircular />
           {t('restart.waiting_for_server', { seconds: WAIT_BUDGET_SECONDS })}
         </p>
       ) : null}
@@ -133,6 +131,6 @@ function RestartDialog({ open, outcome, onClose, onClosed }: RestartDialogProps)
           {t('restart.came_back')}
         </p>
       ) : null}
-    </Dialog>
+    </StowDialog>
   )
 }

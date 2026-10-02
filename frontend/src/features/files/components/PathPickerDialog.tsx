@@ -2,13 +2,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { overlay } from 'overlay-kit'
 import { useI18n } from '../../../hooks/use-i18n'
 import { useHostListing } from '../../admin/api'
-import { Button } from '../../../ui/Button'
-import { Dialog } from '../../../ui/Dialog'
-import { Icon } from '../../../ui/Icon'
-import { VirtualList } from '../../../ui/VirtualList'
+import { cx, Icon, StowButton, StowDialog, VirtualList } from '@/shared/ui'
 import * as styles from './PathPickerDialog.css'
-import * as utilitiesStyles from '../../../ui/utilities.css'
-import { cx } from '../../../ui/cx'
+import { focusRing } from '@/shared/theme'
 
 export interface PathPickerOptions {
   mode: 'folder' | 'file'
@@ -79,7 +75,7 @@ export function PathPickerDialog({ open, mode, start, token, onClose, onPick, on
   }
 
   return (
-    <Dialog
+    <StowDialog
       open={open}
       title={title}
       role="dialog"
@@ -87,24 +83,24 @@ export function PathPickerDialog({ open, mode, start, token, onClose, onPick, on
       onClosed={onClosed}
       actions={
         <>
-          <Button variant="text" onClick={onClose}>
+          <StowButton variant="text" onClick={onClose}>
             {t('common.cancel')}
-          </Button>
-          <Button disabled={!canConfirm} onClick={confirm}>
+          </StowButton>
+          <StowButton disabled={!canConfirm} onClick={confirm}>
             {t('picker.choose')}
-          </Button>
+          </StowButton>
         </>
       }
     >
       <div className={styles.root}>
         <div className={styles.nav}>
-          <Button
+          <StowButton
             variant="text"
             disabled={!listing.data || listing.data.parent === ''}
             onClick={() => listing.data && navigate(listing.data.parent)}
           >
             {t('picker.up')}
-          </Button>
+          </StowButton>
           <p className={styles.here} aria-live="polite">
             {hereText}
           </p>
@@ -131,7 +127,7 @@ export function PathPickerDialog({ open, mode, start, token, onClose, onPick, on
                   entry.is_dir ? (
                     <button
                       type="button"
-                      className={cx(styles.entry, utilitiesStyles.focusRing)}
+                      className={cx(styles.entry, focusRing)}
                       aria-label={t('picker.open_folder', { name: entry.name })}
                       onClick={() => navigate(entry.path)}
                     >
@@ -141,11 +137,7 @@ export function PathPickerDialog({ open, mode, start, token, onClose, onPick, on
                   ) : mode === 'file' ? (
                     <button
                       type="button"
-                      className={cx(
-                        styles.entry,
-                        utilitiesStyles.focusRing,
-                        selected === entry.path && styles.entrySelected
-                      )}
+                      className={cx(styles.entry, focusRing, selected === entry.path && styles.entrySelected)}
                       aria-pressed={selected === entry.path}
                       onClick={() => setSelected(entry.path)}
                     >
@@ -169,6 +161,6 @@ export function PathPickerDialog({ open, mode, start, token, onClose, onPick, on
           ) : null}
         </div>
       </div>
-    </Dialog>
+    </StowDialog>
   )
 }

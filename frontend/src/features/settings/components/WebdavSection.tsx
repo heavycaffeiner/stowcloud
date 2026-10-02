@@ -1,9 +1,8 @@
 import { useState } from 'react'
 import { useI18n } from '../../../hooks/use-i18n'
-import { Button } from '../../../ui/Button'
+import { cx, StowButton } from '@/shared/ui'
 import * as styles from './WebdavSection.css'
 import * as settingsCardStyles from './SettingsCard.css'
-import { cx } from '../../../ui/cx'
 
 export function WebdavSection() {
   const { t } = useI18n()
@@ -59,9 +58,9 @@ export function WebdavSection() {
           {value}
         </code>
       )}
-      <Button variant="text" ariaLabel={t('common.copy_named', { name })} onClick={() => void copy(value, name)}>
+      <StowButton variant="text" aria-label={t('common.copy_named', { name })} onClick={() => void copy(value, name)}>
         {t('common.copy')}
-      </Button>
+      </StowButton>
     </div>
   )
 

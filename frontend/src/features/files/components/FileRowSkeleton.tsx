@@ -1,5 +1,5 @@
 import * as styles from './FileRowSkeleton.css'
-import { cx } from '../../../ui/cx'
+import { cx } from '@/shared/ui'
 
 export function FileRowSkeleton({ rowIndex }: { rowIndex: number }) {
   return (

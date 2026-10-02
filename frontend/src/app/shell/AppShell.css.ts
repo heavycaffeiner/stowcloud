@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '@/shared/theme'
+import { typography, vars } from '@/shared/theme'
 
 export const root = style({
   width: '100%',
@@ -191,52 +191,6 @@ export const headerRight = style({
   flex: 'none'
 })
 
-export const headerAvatarBtn = style({
-  selectors: {
-    [`${compact} &`]: {
-      marginLeft: '0'
-    },
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    }
-  },
-  width: '44px',
-  height: '44px',
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  border: 'none',
-  background: 'none',
-  padding: '0',
-  cursor: 'pointer',
-  borderRadius: '50%',
-  marginLeft: '4px'
-})
-
-export const headerMenuBtn = style({
-  width: vars.density.control,
-  height: vars.density.control,
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  borderRadius: '50%',
-  border: 'none',
-  background: 'transparent',
-  color: vars.color.text.primary,
-  cursor: 'pointer',
-  transition: 'background-color 150ms ease',
-  selectors: {
-    '&:hover': {
-      background: `color-mix(in srgb, ${vars.color.text.primary} 8%, transparent)`
-    },
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    }
-  }
-})
-
 export const headerSearchIcon = style({
   display: 'inline-flex',
   alignItems: 'center',
@@ -261,108 +215,17 @@ export const headerFilterIcon = style({
   color: vars.color.text.secondary
 })
 
-export const headerIconBtn = style({
-  width: vars.density.control,
-  height: vars.density.control,
+export const avatar = style({
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
-  borderRadius: '50%',
-  border: 'none',
-  background: 'transparent',
-  color: vars.color.text.primary,
-  cursor: 'pointer',
-  transition: 'background-color 150ms ease',
-  selectors: {
-    '&:hover': {
-      background: `color-mix(in srgb, ${vars.color.text.primary} 8%, transparent)`
-    },
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    }
-  }
-})
-
-export const headerAvatar = style({
-  width: '32px',
-  height: '32px',
-  borderRadius: '50%',
+  inlineSize: vars.space.xxl,
+  blockSize: vars.space.xxl,
+  border: `${vars.stroke.thin} solid ${vars.color.border.subtle}`,
+  borderRadius: vars.radius.full,
   background: vars.color.selection.bg,
   color: vars.color.selection.fg,
-  fontSize: vars.typography.labelSmall.size,
-  lineHeight: vars.typography.labelSmall.lineHeight,
-  fontWeight: '600',
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  border: `1px solid ${vars.color.border.subtle}`,
-  transition: 'transform 120ms ease',
-  selectors: {
-    [`${headerAvatarBtn}:hover &`]: {
-      transform: 'scale(1.05)'
-    }
-  }
-})
-
-export const headerAccountWrap = style({
-  position: 'relative',
-  display: 'flex',
-  alignItems: 'center'
-})
-
-export const headerAccountMenu = style({
-  position: 'absolute',
-  top: 'calc(100% + 8px)',
-  right: '0',
-  zIndex: '60',
-  minWidth: '200px',
-  padding: '6px',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '2px',
-  border: `1px solid ${vars.color.border.subtle}`,
-  borderRadius: '12px',
-  background: vars.color.surface.overlay,
-  boxShadow: '0 12px 32px rgba(0, 0, 0, 0.28)'
-})
-
-export const headerAccountName = style({
-  padding: '8px 10px 6px',
-  fontSize: vars.typography.label.size,
-  lineHeight: vars.typography.label.lineHeight,
-  fontWeight: '600',
-  color: vars.color.text.primary,
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap'
-})
-
-export const headerAccountItem = style({
-  display: 'flex',
-  alignItems: 'center',
-  gap: '10px',
-  minHeight: vars.density.control,
-  padding: '0 10px',
-  border: 'none',
-  borderRadius: '8px',
-  background: 'transparent',
-  color: vars.color.text.primary,
-  font: 'inherit',
-  fontSize: vars.typography.label.size,
-  lineHeight: vars.typography.label.lineHeight,
-  textAlign: 'left',
-  cursor: 'pointer',
-  transition: 'background-color 120ms ease',
-  selectors: {
-    '&:hover': {
-      background: `color-mix(in srgb, ${vars.color.text.primary} 8%, transparent)`
-    },
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    }
-  }
+  ...typography('labelSmall')
 })
 
 export const body = style({

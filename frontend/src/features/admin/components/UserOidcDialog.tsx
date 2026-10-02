@@ -4,9 +4,7 @@ import { describeApiError } from '../../../api/error-text'
 import { formatDateNs } from '../../../i18n'
 import { useI18n } from '../../../hooks/use-i18n'
 import { useAdminUserOidc, useUnlinkUserOidc } from '../api'
-import { Button } from '../../../ui/Button'
-import { Dialog } from '../../../ui/Dialog'
-import { ProgressCircular } from '../../../ui/ProgressCircular'
+import { StowButton, StowDialog, StowProgressCircular } from '@/shared/ui'
 import * as styles from './UserOidcDialog.css'
 import { ApiError } from '../../../api/fetcher'
 import type { AdminUser } from '../api'
@@ -47,27 +45,27 @@ function UserOidcDialog({ user, open, onClose, onClosed }: UserOidcDialogProps) 
   const actions =
     link?.linked && confirmUnlink ? (
       <>
-        <Button variant="text" onClick={() => setConfirmUnlink(false)} disabled={unlink.isPending}>
+        <StowButton variant="text" onClick={() => setConfirmUnlink(false)} disabled={unlink.isPending}>
           {t('common.cancel')}
-        </Button>
-        <Button danger variant="filled" loading={unlink.isPending} onClick={submitUnlink}>
+        </StowButton>
+        <StowButton danger variant="filled" loading={unlink.isPending} onClick={submitUnlink}>
           {t('oidc.disconnect_anyway')}
-        </Button>
+        </StowButton>
       </>
     ) : (
       <>
-        <Button variant="text" onClick={onClose}>
+        <StowButton variant="text" onClick={onClose}>
           {t('common.close')}
-        </Button>
+        </StowButton>
         {link?.linked ? (
-          <Button danger variant="outlined" onClick={() => setConfirmUnlink(true)}>
+          <StowButton danger variant="outlined" onClick={() => setConfirmUnlink(true)}>
             {t('oidc.disconnect')}
-          </Button>
+          </StowButton>
         ) : null}
       </>
     )
   return (
-    <Dialog
+    <StowDialog
       open={open}
       title={t('oidc.single_sign_for', { name: user.display_name || user.name })}
       onClose={onClose}
@@ -75,7 +73,7 @@ function UserOidcDialog({ user, open, onClose, onClosed }: UserOidcDialogProps) 
       actions={actions}
     >
       {query.isPending ? (
-        <ProgressCircular />
+        <StowProgressCircular />
       ) : loadError ? (
         <p className={styles.error} role="alert">
           {loadError}
@@ -123,6 +121,6 @@ function UserOidcDialog({ user, open, onClose, onClosed }: UserOidcDialogProps) 
           <p className={styles.hint}>{t('oidc.no_identity_connected_user_must_link')}</p>
         </>
       )}
-    </Dialog>
+    </StowDialog>
   )
 }

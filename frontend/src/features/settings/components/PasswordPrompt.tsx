@@ -4,8 +4,7 @@ import { overlay } from 'overlay-kit'
 import { useForm, useWatch } from 'react-hook-form'
 import { ApiError } from '../../../api/fetcher'
 import { useI18n } from '../../../hooks/use-i18n'
-import { Button } from '../../../ui/Button'
-import { FormTextField } from '../../../ui/FormTextField'
+import { StowButton, StowFormTextField } from '@/shared/ui'
 import { SettingsDialog } from './SettingsDialog'
 
 interface PasswordPromptOptions<T> {
@@ -65,17 +64,17 @@ function PasswordPrompt<T>({
       onSubmit={(event) => void submit(event)}
       actions={
         <>
-          <Button variant="text" disabled={task.isPending} onClick={cancel}>
+          <StowButton variant="text" disabled={task.isPending} onClick={cancel}>
             {t('common.cancel')}
-          </Button>
-          <Button disabled={!password} loading={task.isPending} onClick={() => void submit()}>
+          </StowButton>
+          <StowButton disabled={!password} loading={task.isPending} onClick={() => void submit()}>
             {action}
-          </Button>
+          </StowButton>
         </>
       }
     >
       {body}
-      <FormTextField
+      <StowFormTextField
         control={control}
         name="password"
         type="password"

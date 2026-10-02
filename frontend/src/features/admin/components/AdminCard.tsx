@@ -1,7 +1,5 @@
 import type { ReactNode } from 'react'
 import * as styles from './AdminCard.css'
-import * as textFieldStyles from '../../../ui/TextField.css'
-import { cx } from '../../../ui/cx'
 
 interface AdminCardProps {
   readonly id: string
@@ -18,7 +16,7 @@ export function AdminCard({ id, title, subtitle, icon, headingLevel = 'h3', body
   const Heading = headingLevel
   const headingId = `${id}-title`
   return (
-    <article className={cx(styles.root, textFieldStyles.onLowSurface)} id={id} aria-labelledby={headingId}>
+    <article className={styles.root} id={id} aria-labelledby={headingId}>
       <div className={styles.head}>
         <div className={styles.icon}>{icon}</div>
         <div className={styles.meta}>

@@ -2,8 +2,7 @@ import { useState } from 'react'
 import { formatDateNs } from '../../../i18n'
 import { useI18n } from '../../../hooks/use-i18n'
 import { useActiveSessions, useRevokeSession } from '../api'
-import { Button } from '../../../ui/Button'
-import { VirtualList } from '../../../ui/VirtualList'
+import { StowButton, VirtualList } from '@/shared/ui'
 import { SettingsDialog } from './SettingsDialog'
 import * as styles from './SessionsSection.css'
 import * as settingsCardStyles from './SettingsCard.css'
@@ -53,9 +52,9 @@ export function SessionsSection() {
                 </p>
               </div>
               {!session.current ? (
-                <Button variant="text" onClick={() => setRevokeTarget(session)}>
+                <StowButton variant="text" onClick={() => setRevokeTarget(session)}>
                   {t('session.sign_out_session')}
-                </Button>
+                </StowButton>
               ) : null}
             </>
           )}
@@ -67,12 +66,12 @@ export function SessionsSection() {
         onClose={() => setRevokeTarget(null)}
         actions={
           <>
-            <Button variant="text" onClick={() => setRevokeTarget(null)}>
+            <StowButton variant="text" onClick={() => setRevokeTarget(null)}>
               {t('common.cancel')}
-            </Button>
-            <Button onClick={confirmRevoke} loading={revoke.isPending}>
+            </StowButton>
+            <StowButton onClick={confirmRevoke} loading={revoke.isPending}>
               {t('common.sign_out')}
-            </Button>
+            </StowButton>
           </>
         }
       >

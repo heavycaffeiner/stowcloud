@@ -3,14 +3,19 @@ import { overlay } from 'overlay-kit'
 import { describeApiError } from '../../../api/error-text'
 import { t } from '../../../i18n'
 import { useI18n } from '../../../hooks/use-i18n'
-import { confirmAction, promptText } from '../../../ui/ActionDialog'
-import { Button } from '../../../ui/Button'
-import { Dialog } from '../../../ui/Dialog'
-import { Icon } from '../../../ui/Icon'
-import { ProgressCircular } from '../../../ui/ProgressCircular'
-import { Select } from '../../../ui/Select'
-import { VirtualList } from '../../../ui/VirtualList'
-import { ListItem } from '../../../ui/ListItem'
+import {
+  confirmAction,
+  cx,
+  Icon,
+  promptText,
+  StowButton,
+  StowIconButton,
+  StowDialog,
+  StowListItem,
+  StowProgressCircular,
+  StowSelect,
+  VirtualList
+} from '@/shared/ui'
 import { showGrants } from './GrantManagementSection'
 import * as styles from './GroupManagementSection.css'
 import * as adminStyles from './admin.css'
@@ -89,13 +94,13 @@ export function GroupManagementSection() {
     <section className={adminStyles.section}>
       <div className={adminStyles.sectionHeader}>
         <p className={adminStyles.sectionHint}>{t('group.create_group_grant_folder_permissions')}</p>
-        <Button className={adminStyles.sectionHeaderAction} icon={<Icon name="add" />} onClick={addGroup}>
+        <StowButton className={adminStyles.sectionHeaderAction} icon={<Icon name="add" />} onClick={addGroup}>
           {t('group.add_group')}
-        </Button>
+        </StowButton>
       </div>
 
       {groupsQuery.isPending || usersQuery.isPending ? (
-        <ProgressCircular />
+        <StowProgressCircular />
       ) : groupsQuery.error || usersQuery.error ? (
         <p className={adminStyles.sectionError} role="alert">
           {describeApiError(groupsQuery.error ?? usersQuery.error, t('group.could_not_load_group_list'))}
@@ -114,7 +119,7 @@ export function GroupManagementSection() {
           itemProps={() => ({ className: adminStyles.item })}
           pinnedKeys={pinned === null ? undefined : [pinned]}
           renderItem={(group) => (
-            <ListItem
+            <StowListItem
               headline={
                 <>
                   <span className={adminStyles.rowName}>{group.name}</span>
@@ -123,18 +128,13 @@ export function GroupManagementSection() {
               }
               trailing={
                 <div className={adminStyles.rowActions}>
-                  <Button
-                    variant="text"
-                    square
-                    ariaLabel={t('group.manage_members', { name: group.name })}
+                  <StowIconButton
+                    label={t('group.manage_members', { name: group.name })}
                     onClick={() => void withPinned(group, () => showGroupMembers(group.id))}
-                  >
-                    <Icon name="settings" />
-                  </Button>
-                  <Button
-                    variant="text"
-                    square
-                    ariaLabel={t('common.manage_folders_visible', { name: group.name })}
+                    icon="settings"
+                  />
+                  <StowIconButton
+                    label={t('common.manage_folders_visible', { name: group.name })}
                     onClick={() =>
                       void withPinned(group, () =>
                         showGrants({
@@ -144,26 +144,19 @@ export function GroupManagementSection() {
                         })
                       )
                     }
-                  >
-                    <Icon name="account_tree" />
-                  </Button>
-                  <Button
-                    variant="text"
-                    square
-                    ariaLabel={t('group.rename', { name: group.name })}
+                    icon="account_tree"
+                  />
+                  <StowIconButton
+                    label={t('group.rename', { name: group.name })}
                     onClick={() => void renameGroup(group)}
-                  >
-                    <Icon name="rename" />
-                  </Button>
-                  <Button
-                    variant="text"
+                    icon="rename"
+                  />
+                  <StowIconButton
                     danger
-                    square
-                    ariaLabel={t('common.delete_2', { name: group.name })}
+                    label={t('common.delete_2', { name: group.name })}
                     onClick={() => void deleteGroup(group)}
-                  >
-                    <Icon name="delete" />
-                  </Button>
+                    icon="delete"
+                  />
                 </div>
               }
             />
@@ -224,15 +217,15 @@ function GroupMembersDialog({ groupId, open, onClose, onClosed }: GroupMembersDi
   }
 
   return (
-    <Dialog
+    <StowDialog
       open={open}
       title={group ? t('group.members_2', { name: group.name }) : t('group.members_3')}
       onClose={onClose}
       onClosed={onClosed}
       actions={
-        <Button variant="text" onClick={onClose}>
+        <StowButton variant="text" onClick={onClose}>
           {t('common.close')}
-        </Button>
+        </StowButton>
       }
     >
       <div className={adminStyles.form}>
@@ -244,18 +237,14 @@ function GroupMembersDialog({ groupId, open, onClose, onClosed }: GroupMembersDi
             estimateSize={44}
             pinnedKeys={memberBusyId === null ? undefined : [memberBusyId]}
             renderItem={(id) => (
-              <span className={adminStyles.chip}>
+              <span className={cx(adminStyles.chip, adminStyles.removableChip)}>
                 {memberBusyId === id ? t('common.loading') : userName(id)}
-                <Button
-                  className={adminStyles.chipAction}
-                  variant="text"
-                  square
-                  ariaLabel={t('group.remove_member', { name: userName(id) })}
+                <StowIconButton
+                  label={t('group.remove_member', { name: userName(id) })}
+                  icon="close"
                   disabled={memberBusyId === id}
                   onClick={() => removeUser(id)}
-                >
-                  <Icon name="close" size={14} />
-                </Button>
+                />
               </span>
             )}
           />
@@ -264,18 +253,18 @@ function GroupMembersDialog({ groupId, open, onClose, onClosed }: GroupMembersDi
         )}
         {availableUsers.length ? (
           <div className={styles.formRow}>
-            <Select
-              ariaLabel={t('group.add_member')}
+            <StowSelect
+              aria-label={t('group.add_member')}
               value={addMemberId}
               options={[
-                { value: '', text: t('group.add_member') },
-                ...availableUsers.map((user) => ({ value: String(user.id), text: user.display_name || user.name }))
+                { value: '', label: t('group.add_member') },
+                ...availableUsers.map((user) => ({ value: String(user.id), label: user.display_name || user.name }))
               ]}
-              onValueChange={setAddMemberId}
+              onChange={setAddMemberId}
             />
-            <Button variant="tonal" disabled={!addMemberId} loading={addMember.isPending} onClick={add}>
+            <StowButton variant="tonal" disabled={!addMemberId} loading={addMember.isPending} onClick={add}>
               {t('common.add')}
-            </Button>
+            </StowButton>
           </div>
         ) : null}
         {memberError ? (
@@ -284,6 +273,6 @@ function GroupMembersDialog({ groupId, open, onClose, onClosed }: GroupMembersDi
           </p>
         ) : null}
       </div>
-    </Dialog>
+    </StowDialog>
   )
 }

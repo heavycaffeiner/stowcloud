@@ -149,41 +149,6 @@ export const label = style({
   }
 })
 
-export const ellipsisBtn = style({
-  selectors: {
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    },
-    '&:hover': {
-      background: vars.color.surface.fill,
-      color: vars.color.text.primary
-    }
-  },
-  display: 'inline-flex',
-  flex: 'none',
-  alignItems: 'center',
-  justifyContent: 'center',
-  width: '40px',
-  height: '40px',
-  padding: '0',
-  border: '0',
-  borderRadius: vars.radius.sm,
-  background: 'transparent',
-  color: vars.color.text.secondary,
-  cursor: 'pointer',
-  font: 'inherit',
-  fontWeight: '700',
-  letterSpacing: '.08em',
-  transition: 'background-color 120ms ease, color 120ms ease',
-  '@media': {
-    '(max-width: 599.98px)': {
-      width: '44px',
-      height: '44px'
-    }
-  }
-})
-
 export const sep = style({
   display: 'inline-flex',
   flex: 'none',
@@ -200,29 +165,4 @@ export const sep = style({
       height: '44px'
     }
   }
-})
-
-export const menu = style({
-  boxSizing: 'border-box',
-  width: 'max-content',
-  minWidth: '200px',
-  maxWidth: 'min(320px, calc(100vw - 16px))'
-})
-
-export const menuItem = style({
-  display: 'flex',
-  alignItems: 'center',
-  gap: '8px',
-  width: '100%',
-  minWidth: '0'
-})
-
-export const menuIcon = style({
-  flex: 'none'
-})
-
-export const menuLabel = style({
-  minWidth: '0',
-  overflowWrap: 'anywhere',
-  whiteSpace: 'normal'
 })

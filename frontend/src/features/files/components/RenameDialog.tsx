@@ -1,7 +1,6 @@
 import { overlay } from 'overlay-kit'
 import { useForm } from 'react-hook-form'
-import { Button } from '../../../ui/Button'
-import { FormTextField } from '../../../ui/FormTextField'
+import { StowButton, StowFormTextField } from '@/shared/ui'
 import { BrowseDialog } from './browse-dialog'
 import { useI18n } from '../../../hooks/use-i18n'
 
@@ -46,15 +45,15 @@ function RenameDialog({
       onClosed={onClosed}
       actions={
         <>
-          <Button variant="text" onClick={onClose}>
+          <StowButton variant="text" onClick={onClose}>
             {t('common.cancel')}
-          </Button>
-          <Button onClick={() => void submit()}>{t('common.ok')}</Button>
+          </StowButton>
+          <StowButton onClick={() => void submit()}>{t('common.ok')}</StowButton>
         </>
       }
     >
       <form onSubmit={(event) => void submit(event)}>
-        <FormTextField control={control} name="name" label={t('rename.new_name')} autoFocus />
+        <StowFormTextField control={control} name="name" label={t('rename.new_name')} autoFocus />
       </form>
     </BrowseDialog>
   )

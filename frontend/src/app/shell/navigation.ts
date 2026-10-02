@@ -3,13 +3,14 @@ import { useSession } from '../../features/auth/api'
 import { splatOf, splatPath } from '../../features/files/browse-search'
 import { lastFolder } from '../../features/files/location'
 import { useI18n } from '../../hooks/use-i18n'
+import type { IconName } from '@/shared/ui'
 
 export type NavId = 'files' | 'recent' | 'trash' | 'links' | 'settings' | 'admin'
 
 export interface NavItem {
   readonly id: NavId
   readonly label: string
-  readonly icon: string
+  readonly icon: IconName
   readonly href: string
 }
 

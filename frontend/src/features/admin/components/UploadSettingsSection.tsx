@@ -14,10 +14,7 @@ import {
 } from '../../../lib/upload/chunk-planner'
 import { loadStoredChunkSize, loadStoredConcurrency, subscribeUploadPreferences } from '../../uploads/preferences'
 import { setUploadChunkSize, setUploadConcurrency } from '../../uploads/queue'
-import { Button } from '../../../ui/Button'
-import { FormTextField } from '../../../ui/FormTextField'
-import { Icon } from '../../../ui/Icon'
-import { Switch } from '../../../ui/Switch'
+import { Icon, StowButton, StowFormTextField, StowSwitch } from '@/shared/ui'
 import { AdminCard } from './AdminCard'
 import * as styles from './UploadSettingsSection.css'
 import * as adminStyles from './admin.css'
@@ -127,23 +124,23 @@ function ServerUploadCards({ serverMin, serverDefault }: ServerSizes) {
         icon={<Icon name="upload" />}
       >
         <form className={styles.form} onSubmit={(event) => void submit(event)}>
-          <FormTextField
+          <StowFormTextField
             control={control}
             name="minMb"
             className={styles.field}
             label={t('upload_settings.minimum_chunk_size_mb')}
             placeholder={String(bytesToMb(serverMin))}
           />
-          <FormTextField
+          <StowFormTextField
             control={control}
             name="defaultMb"
             className={styles.field}
             label={t('upload_settings.default_chunk_size_mb')}
             placeholder={String(bytesToMb(serverDefault))}
           />
-          <Button type="submit" loading={save.isPending}>
+          <StowButton type="submit" loading={save.isPending}>
             {t('common.save')}
-          </Button>
+          </StowButton>
         </form>
         {error ? (
           <p className={adminStyles.error} role="alert">
@@ -182,7 +179,7 @@ function ServerUploadCards({ serverMin, serverDefault }: ServerSizes) {
           </p>
         ) : (
           <div className={adminStyles.storageToggleRow}>
-            <Switch
+            <StowSwitch
               checked={cacheOn === true}
               label={t('upload_settings.cache_spool_enable')}
               onChange={setCacheDraft}
@@ -230,7 +227,7 @@ function ChunkOverrideCard({ serverMin, serverDefault }: ServerSizes) {
       icon={<Icon name="settings" />}
     >
       <form className={styles.form} onSubmit={(event) => void submit(event)}>
-        <FormTextField
+        <StowFormTextField
           control={control}
           name="mb"
           rules={{ validate: (value) => overrideProblem(value, serverMin) }}
@@ -239,10 +236,10 @@ function ChunkOverrideCard({ serverMin, serverDefault }: ServerSizes) {
           placeholder={String(bytesToMb(serverDefault))}
         />
         <div className={styles.actions}>
-          <Button type="submit">{t('common.save')}</Button>
-          <Button variant="text" onClick={resetOverride} disabled={override === null}>
+          <StowButton type="submit">{t('common.save')}</StowButton>
+          <StowButton variant="text" onClick={resetOverride} disabled={override === null}>
             {t('upload_settings.reset_server_default')}
-          </Button>
+          </StowButton>
         </div>
       </form>
       {saved ? (
@@ -285,7 +282,7 @@ function ConcurrencyCard() {
       icon={<Icon name="speed" />}
     >
       <form className={styles.form} onSubmit={(event) => void submit(event)}>
-        <FormTextField
+        <StowFormTextField
           control={control}
           name="count"
           rules={{ validate: concurrencyProblem }}
@@ -294,10 +291,10 @@ function ConcurrencyCard() {
           placeholder={String(DEFAULT_CONCURRENCY)}
         />
         <div className={styles.actions}>
-          <Button type="submit">{t('common.save')}</Button>
-          <Button variant="text" onClick={resetConcurrency} disabled={active === DEFAULT_CONCURRENCY}>
+          <StowButton type="submit">{t('common.save')}</StowButton>
+          <StowButton variant="text" onClick={resetConcurrency} disabled={active === DEFAULT_CONCURRENCY}>
             {t('upload_settings.reset_concurrency_default')}
-          </Button>
+          </StowButton>
         </div>
       </form>
       {saved ? (

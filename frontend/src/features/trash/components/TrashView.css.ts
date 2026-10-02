@@ -1,31 +1,6 @@
 import { style } from '@vanilla-extract/css'
 import { vars } from '@/shared/theme'
 
-export const operationClose = style({
-  selectors: {
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    }
-  },
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  minWidth: '40px',
-  minHeight: '40px',
-  padding: '4px 8px',
-  border: '0',
-  borderRadius: '20px',
-  background: 'transparent',
-  color: 'inherit',
-  cursor: 'pointer',
-  '@media': {
-    '(max-width: 599.98px)': {
-      minHeight: '44px'
-    }
-  }
-})
-
 export const checkbox = style({
   display: 'inline-flex',
   alignItems: 'center',
@@ -39,7 +14,7 @@ export const rowActions = style({
   display: 'flex',
   flex: 'none',
   alignItems: 'center',
-  gap: '4px'
+  gap: vars.space.xs
 })
 
 export const name = style({

@@ -1,5 +1,5 @@
 import * as styles from './MiddleEllipsis.css'
-import { cx } from '../../../ui/cx'
+import { cx } from '@/shared/ui'
 
 const FILENAME_SUFFIX_GRAPHEMES = 8
 const filenameSegmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' })

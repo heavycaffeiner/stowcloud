@@ -1,14 +1,8 @@
 import { t } from '../../../i18n'
 import { useI18n } from '../../../hooks/use-i18n'
-import { Button } from '../../../ui/Button'
-import { Icon } from '../../../ui/Icon'
-import { IconButton } from '../../../ui/IconButton'
-import { ListItem } from '../../../ui/ListItem'
-import { Switch } from '../../../ui/Switch'
-import { VirtualList } from '../../../ui/VirtualList'
+import { Icon, StowButton, StowIconButton, StowListItem, StowSwitch, VirtualList } from '@/shared/ui'
 import * as styles from './ShareManagementList.css'
 import * as adminStyles from './admin.css'
-import * as buttonStyles from '../../../ui/Button.css'
 import type { AdminShare, ShareBackend } from '../api'
 import type { ShareEncryption } from '../../shares/api'
 
@@ -85,7 +79,7 @@ export function ShareManagementList({
       renderItem={(share) => {
         const encryption = encryptionByShare.get(share.id)
         return (
-          <ListItem
+          <StowListItem
             className={styles.row}
             leading={<Icon name="folder" size={20} />}
             headline={
@@ -110,22 +104,22 @@ export function ShareManagementList({
                           <Icon name="lock" size={14} />
                           {t('encryption.encrypted_note')}
                         </span>
-                        <Button
+                        <StowButton
                           variant="text"
-                          ariaLabel={t('encryption.disable_title', { name: share.name })}
+                          aria-label={t('encryption.disable_title', { name: share.name })}
                           onClick={() => onDisableEncryption(share)}
                         >
                           {t('encryption.disable')}
-                        </Button>
+                        </StowButton>
                       </>
                     ) : share.empty ? (
-                      <Button
+                      <StowButton
                         variant="text"
-                        ariaLabel={t('encryption.enable_title', { name: share.name })}
+                        aria-label={t('encryption.enable_title', { name: share.name })}
                         onClick={() => onEnableEncryption(share)}
                       >
                         {t('encryption.enable')}
-                      </Button>
+                      </StowButton>
                     ) : null}
                   </span>
                 ) : null}
@@ -135,13 +129,13 @@ export function ShareManagementList({
                     <code className={styles.encSalt} data-testid="share-encryption-salt">
                       {encryption.salt}
                     </code>
-                    <Button
+                    <StowButton
                       variant="text"
-                      ariaLabel={t('encryption.copy_salt', { name: share.name })}
+                      aria-label={t('encryption.copy_salt', { name: share.name })}
                       onClick={() => onCopySalt(encryption.salt, share.name)}
                     >
                       {t('common.copy')}
-                    </Button>
+                    </StowButton>
                   </span>
                 ) : null}
               </>
@@ -153,31 +147,30 @@ export function ShareManagementList({
                   title={trashTogglingId === share.id ? t('folder_share.applying') : undefined}
                 >
                   <span className={styles.trashLabel}>{t('folder_share.use_trash')}</span>
-                  <Switch
+                  <StowSwitch
                     checked={share.trash_enabled}
                     disabled={trashTogglingId === share.id}
                     label={t('folder_share.trash', { name: share.name })}
-                    showLabel={false}
+                    hideLabel
                     onChange={(enabled) => onToggleTrash(share, enabled)}
                   />
                 </span>
                 {share.broken_reason ? (
-                  <Button variant="tonal" loading={retryingId === share.id} onClick={() => onRetry(share)}>
+                  <StowButton variant="tonal" loading={retryingId === share.id} onClick={() => onRetry(share)}>
                     {t('folder_share.retry')}
-                  </Button>
+                  </StowButton>
                 ) : null}
-                <IconButton
+                <StowIconButton
                   label={t('common.edit', { name: share.name })}
                   icon="rename"
                   onClick={() => onEdit(share)}
                 />
-                <span className={buttonStyles.danger}>
-                  <IconButton
-                    label={t('common.remove', { name: share.name })}
-                    icon="delete"
-                    onClick={() => onDelete(share)}
-                  />
-                </span>
+                <StowIconButton
+                  label={t('common.remove', { name: share.name })}
+                  icon="delete"
+                  danger
+                  onClick={() => onDelete(share)}
+                />
               </>
             }
           />

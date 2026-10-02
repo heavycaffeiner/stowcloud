@@ -1,8 +1,7 @@
 import { useRef } from 'react'
 import { useI18n } from '../../../hooks/use-i18n'
-import { Icon } from '../../../ui/Icon'
+import { cx, Icon } from '@/shared/ui'
 import * as styles from './FileTreeItem.css'
-import { cx } from '../../../ui/cx'
 
 export interface FileTreeItemProps {
   path: string
@@ -12,6 +11,8 @@ export interface FileTreeItemProps {
   ancestor: boolean
   expanded: boolean
   tabIndex: number
+  /** Makes this row the one a surrounding dialog focuses first. */
+  autoFocus?: boolean
   onNavigate: (path: string) => void
   onToggle: (path: string) => void
 }
@@ -24,6 +25,7 @@ export function FileTreeItem({
   ancestor,
   expanded,
   tabIndex,
+  autoFocus = false,
   onNavigate,
   onToggle
 }: FileTreeItemProps) {
@@ -56,6 +58,7 @@ export function FileTreeItem({
         type="button"
         className={styles.label}
         data-tree-label
+        data-autofocus={autoFocus || undefined}
         tabIndex={tabIndex}
         onClick={() => onNavigate(path)}
       >

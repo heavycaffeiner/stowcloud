@@ -1,5 +1,4 @@
 import { style } from '@vanilla-extract/css'
-import { buttonMinHeight } from '../../../ui/Button.css'
 import { vars } from '@/shared/theme'
 
 export const root = style({
@@ -11,10 +10,7 @@ export const root = style({
   padding: vars.layout.pagePad,
   '@media': {
     '(max-width: 599.98px)': {
-      paddingBlock: '16px',
-      vars: {
-        [buttonMinHeight]: '44px'
-      }
+      paddingBlock: '16px'
     }
   }
 })

@@ -7,12 +7,7 @@ import { ApiError } from '../../../api/fetcher'
 import { deriveKeys, generateSalt, makeVerifier } from '../../../lib/crypto/e2ee'
 import { t } from '../../../i18n'
 import { useI18n } from '../../../hooks/use-i18n'
-import { Button } from '../../../ui/Button'
-import { Dialog } from '../../../ui/Dialog'
-import { FormTextField } from '../../../ui/FormTextField'
-import { Icon } from '../../../ui/Icon'
-import { Select } from '../../../ui/Select'
-import { Switch } from '../../../ui/Switch'
+import { Icon, StowButton, StowDialog, StowFormTextField, StowSelect, StowSwitch } from '@/shared/ui'
 import { pickPath } from '../../files/components/PathPickerDialog'
 import { unlockShare } from '../../shares/e2ee-store'
 import { backendLabel } from './ShareManagementList'
@@ -203,25 +198,25 @@ function ShareDialog({ share, open, onDone, onClosed }: DialogControls<AdminShar
       : null)
 
   return (
-    <Dialog
+    <StowDialog
       open={open}
       title={share ? t('folder_share.edit_folder') : t('common.add_folder')}
       onClose={cancel}
       onClosed={onClosed}
       actions={
         <>
-          <Button variant="text" disabled={save.isPending} onClick={cancel}>
+          <StowButton variant="text" disabled={save.isPending} onClick={cancel}>
             {t('common.cancel')}
-          </Button>
-          <Button loading={save.isPending} onClick={() => void submit()}>
+          </StowButton>
+          <StowButton loading={save.isPending} onClick={() => void submit()}>
             {share ? t('common.save') : t('common.add')}
-          </Button>
+          </StowButton>
         </>
       }
     >
       <FormProvider {...form}>
         <form className={adminStyles.form} onSubmit={(event) => void submit(event)}>
-          <FormTextField
+          <StowFormTextField
             control={control}
             name="name"
             label={t('common.name')}
@@ -237,16 +232,15 @@ function ShareDialog({ share, open, onDone, onClosed }: DialogControls<AdminShar
               control={control}
               name="backend"
               render={({ field }) => (
-                <Select
+                <StowSelect
                   label={t('folder_share.backend')}
                   options={[
-                    { value: 'local', text: t('folder_share.backend_local') },
-                    { value: 's3', text: t('folder_share.backend_s3') },
-                    { value: 'veracrypt', text: t('folder_share.backend_veracrypt') }
+                    { value: 'local', label: t('folder_share.backend_local') },
+                    { value: 's3', label: t('folder_share.backend_s3') },
+                    { value: 'veracrypt', label: t('folder_share.backend_veracrypt') }
                   ]}
                   value={field.value}
-                  testid="share-backend-select"
-                  onValueChange={(value) => field.onChange(value as ShareBackend)}
+                  onChange={(value) => field.onChange(value as ShareBackend)}
                 />
               )}
             />
@@ -280,7 +274,7 @@ function ShareDialog({ share, open, onDone, onClosed }: DialogControls<AdminShar
           ) : null}
         </form>
       </FormProvider>
-    </Dialog>
+    </StowDialog>
   )
 }
 
@@ -300,7 +294,7 @@ function PathField({ name, mode, label, placeholder }: PathFieldProps) {
   }
   return (
     <div className={styles.pathRow}>
-      <FormTextField
+      <StowFormTextField
         control={control}
         name={name}
         className={styles.pathRowField}
@@ -308,14 +302,14 @@ function PathField({ name, mode, label, placeholder }: PathFieldProps) {
         placeholder={placeholder}
         autoComplete="off"
       />
-      <Button
+      <StowButton
         className={styles.pathRowButton}
         variant="outlined"
         icon={<Icon name={mode} />}
         onClick={() => void browse()}
       >
         {mode === 'folder' ? t('picker.browse_folder') : t('picker.browse_file')}
-      </Button>
+      </StowButton>
     </div>
   )
 }
@@ -325,7 +319,7 @@ function S3Fields({ creating }: { creating: boolean }) {
   const { control, setValue } = useFormContext<ShareValues>()
   return (
     <>
-      <FormTextField
+      <StowFormTextField
         control={control}
         name="s3Endpoint"
         label={t('folder_share.s3_endpoint')}
@@ -333,23 +327,28 @@ function S3Fields({ creating }: { creating: boolean }) {
         autoComplete="off"
       />
       <p className={adminStyles.hint}>{t('folder_share.s3_endpoint_scheme_hint')}</p>
-      <FormTextField
+      <StowFormTextField
         control={control}
         name="s3Bucket"
         label={t('folder_share.s3_bucket')}
         placeholder={t('folder_share.e_g_s3_bucket')}
         autoComplete="off"
       />
-      <FormTextField control={control} name="s3Region" label={t('folder_share.s3_region')} autoComplete="off" />
-      <FormTextField
+      <StowFormTextField control={control} name="s3Region" label={t('folder_share.s3_region')} autoComplete="off" />
+      <StowFormTextField
         control={control}
         name="s3Prefix"
         label={t('folder_share.s3_prefix')}
         placeholder={t('folder_share.e_g_s3_prefix')}
         autoComplete="off"
       />
-      <FormTextField control={control} name="s3AccessKey" label={t('folder_share.s3_access_key')} autoComplete="off" />
-      <FormTextField
+      <StowFormTextField
+        control={control}
+        name="s3AccessKey"
+        label={t('folder_share.s3_access_key')}
+        autoComplete="off"
+      />
+      <StowFormTextField
         control={control}
         name="s3SecretKey"
         label={t('folder_share.s3_secret_key')}
@@ -361,7 +360,7 @@ function S3Fields({ creating }: { creating: boolean }) {
         control={control}
         name="s3PathStyle"
         render={({ field }) => (
-          <Switch
+          <StowSwitch
             checked={field.value}
             label={t('folder_share.s3_path_style')}
             onChange={(checked) => {
@@ -388,7 +387,7 @@ function VaultFields({ creating }: { creating: boolean }) {
         label={t('folder_share.vault_container')}
         placeholder={t('folder_share.e_g_vault_container')}
       />
-      <FormTextField
+      <StowFormTextField
         control={control}
         name="vaultPIM"
         label={t('folder_share.vault_pim')}
@@ -397,7 +396,7 @@ function VaultFields({ creating }: { creating: boolean }) {
         max={MAX_VAULT_PIM}
       />
       <p className={adminStyles.hint}>{t('folder_share.vault_pim_hint')}</p>
-      <FormTextField
+      <StowFormTextField
         control={control}
         name="vaultPassword"
         label={t('folder_share.vault_password')}
@@ -410,11 +409,11 @@ function VaultFields({ creating }: { creating: boolean }) {
             control={control}
             name="vaultCreate"
             render={({ field }) => (
-              <Switch checked={field.value} label={t('folder_share.vault_create')} onChange={field.onChange} />
+              <StowSwitch checked={field.value} label={t('folder_share.vault_create')} onChange={field.onChange} />
             )}
           />
           {vaultCreate ? (
-            <FormTextField
+            <StowFormTextField
               control={control}
               name="vaultSizeMiB"
               label={t('folder_share.vault_size')}
@@ -467,23 +466,23 @@ function EnableEncryptionDialog({ share, open, onDone, onClosed }: DialogControl
     if (!enable.isPending) onDone(false)
   }
   return (
-    <Dialog
+    <StowDialog
       open={open}
       title={t('encryption.enable_title', { name: share.name })}
       onClose={cancel}
       onClosed={onClosed}
       actions={
         <>
-          <Button variant="text" disabled={enable.isPending} onClick={cancel}>
+          <StowButton variant="text" disabled={enable.isPending} onClick={cancel}>
             {t('common.cancel')}
-          </Button>
-          <Button
+          </StowButton>
+          <StowButton
             loading={enable.isPending}
             disabled={!passphrase || !confirm || mismatch}
             onClick={() => void submit()}
           >
             {t('encryption.enable')}
-          </Button>
+          </StowButton>
         </>
       }
     >
@@ -491,14 +490,14 @@ function EnableEncryptionDialog({ share, open, onDone, onClosed }: DialogControl
         <p>{t('encryption.enable_hint')}</p>
         <p className={adminStyles.warning}>{t('encryption.passphrase_warning')}</p>
         <p className={adminStyles.hint}>{t('encryption.verifier_note')}</p>
-        <FormTextField
+        <StowFormTextField
           control={control}
           name="passphrase"
           type="password"
           label={t('encryption.passphrase')}
           autoComplete="new-password"
         />
-        <FormTextField
+        <StowFormTextField
           control={control}
           name="confirm"
           type="password"
@@ -514,6 +513,6 @@ function EnableEncryptionDialog({ share, open, onDone, onClosed }: DialogControl
           </p>
         ) : null}
       </form>
-    </Dialog>
+    </StowDialog>
   )
 }

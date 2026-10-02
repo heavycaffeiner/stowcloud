@@ -3,10 +3,8 @@ import { joinPath } from '../../../lib/path-utils'
 import { useSession } from '../../auth/api'
 import { useI18n } from '../../../hooks/use-i18n'
 import { FileTreeItem } from './FileTreeItem'
-import { VirtualList } from '../../../ui/VirtualList'
-import { Modal } from '../../../ui/Modal'
+import { cx, StowDrawer, StowIconButton, VirtualList } from '@/shared/ui'
 import * as styles from './FileTree.css'
-import { cx } from '../../../ui/cx'
 import { dirViewOf, useDirectory, type Entry } from '../api'
 
 export interface FileTreeProps {
@@ -185,12 +183,15 @@ export function FileTreeList({
   currentPath,
   onNavigate,
   rowSize = 40,
+  autoFocus = false,
   'aria-label': ariaLabel
 }: {
   roots: readonly TreeRoot[]
   currentPath: string
   onNavigate: (path: string) => void
   rowSize?: number
+  /** Marks the row that holds focus as the one a surrounding dialog focuses first. */
+  autoFocus?: boolean
   'aria-label'?: string
 }) {
   const { t } = useI18n()
@@ -393,6 +394,7 @@ export function FileTreeList({
               ancestor={currentPath.startsWith(`${row.path}/`)}
               expanded={expanded.has(row.path)}
               tabIndex={focusedKey === row.key ? 0 : -1}
+              autoFocus={autoFocus && focusedKey === row.key}
               onNavigate={navigate}
               onToggle={toggle}
             />
@@ -402,6 +404,7 @@ export function FileTreeList({
               className={styles.treeRowMore}
               style={{ paddingInlineStart: row.depth * 16 + 8 }}
               data-tree-more
+              data-autofocus={(autoFocus && focusedKey === row.key) || undefined}
               tabIndex={focusedKey === row.key ? 0 : -1}
               aria-busy={row.fetching || undefined}
               onClick={() => {
@@ -442,7 +445,13 @@ export function FileTree({ currentPath, onNavigate, overlay = false, onClose }: 
   )
 
   const tree = (
-    <FileTreeList roots={roots} currentPath={currentPath} onNavigate={onNavigate} rowSize={overlay ? 44 : 40} />
+    <FileTreeList
+      roots={roots}
+      currentPath={currentPath}
+      onNavigate={onNavigate}
+      rowSize={overlay ? 44 : 40}
+      autoFocus={overlay}
+    />
   )
   if (!overlay)
     return (
@@ -451,26 +460,11 @@ export function FileTree({ currentPath, onNavigate, overlay = false, onClose }: 
       </nav>
     )
   return (
-    <Modal
-      open
-      className={cx(styles.root, styles.overlay)}
-      label={t('tree.folder_tree')}
-      onClose={() => onClose?.()}
-      initialFocus={(dialog) =>
-        dialog.querySelector<HTMLElement>('[data-tree-label][tabindex="0"], [data-tree-more][tabindex="0"]')
-      }
-    >
+    <StowDrawer open label={t('tree.folder_tree')} className={styles.overlay} onClose={() => onClose?.()}>
       <div className={styles.overlayHeader}>
-        <button
-          type="button"
-          className={styles.overlayClose}
-          onClick={onClose}
-          aria-label={t('tree.close_folder_tree')}
-        >
-          ×
-        </button>
+        <StowIconButton label={t('tree.close_folder_tree')} icon="close" onClick={onClose} />
       </div>
       <nav aria-label={t('tree.folder_tree')}>{tree}</nav>
-    </Modal>
+    </StowDrawer>
   )
 }

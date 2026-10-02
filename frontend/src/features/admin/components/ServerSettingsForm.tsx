@@ -4,11 +4,7 @@ import { describeApiError } from '../../../api/error-text'
 import { BYTES_PER_MB, bytesToMb } from '../../../lib/format/bytes'
 import { t } from '../../../i18n'
 import { useI18n } from '../../../hooks/use-i18n'
-import { Button } from '../../../ui/Button'
-import { FormTextField } from '../../../ui/FormTextField'
-import { Switch } from '../../../ui/Switch'
-import { VirtualList } from '../../../ui/VirtualList'
-import { cx } from '../../../ui/cx'
+import { cx, StowButton, StowFormTextField, StowSwitch, VirtualList } from '@/shared/ui'
 import { pickPath } from '../../files/components/PathPickerDialog'
 import { offerRestart } from './RestartDialog'
 import { ServerSettingsCard } from './ServerSettingsCard'
@@ -364,9 +360,9 @@ export function SettingsGroupCard({ group, id, title, subtitle, snapshot, childr
             {outcomeText(outcome)}
           </p>
         ) : null}
-        <Button type="submit" loading={save.isPending}>
+        <StowButton type="submit" loading={save.isPending}>
           {t('common.save')}
-        </Button>
+        </StowButton>
         {outcome ? <Findings outcome={outcome} /> : null}
         {footer}
       </FormProvider>
@@ -384,7 +380,7 @@ interface SettingInputProps {
 export function SettingInput({ name, label, type, placeholder }: SettingInputProps) {
   const { control } = useFormContext<Values>()
   return (
-    <FormTextField
+    <StowFormTextField
       control={control}
       name={name}
       className={styles.field}
@@ -401,7 +397,7 @@ export function SettingSwitch({ name, label }: { name: string; label: string }) 
     <Controller
       control={control}
       name={name}
-      render={({ field }) => <Switch checked={Boolean(field.value)} label={label} onChange={field.onChange} />}
+      render={({ field }) => <StowSwitch checked={Boolean(field.value)} label={label} onChange={field.onChange} />}
     />
   )
 }
@@ -416,9 +412,9 @@ export function SettingPath({ name, label, mode }: { name: string; label: string
   return (
     <div className={styles.pathRow}>
       <SettingInput name={name} label={label} />
-      <Button className={styles.pathButton} variant="outlined" onClick={() => void browse()}>
+      <StowButton className={styles.pathButton} variant="outlined" onClick={() => void browse()}>
         {mode === 'folder' ? t('picker.browse_folder') : t('picker.browse_file')}
-      </Button>
+      </StowButton>
     </div>
   )
 }

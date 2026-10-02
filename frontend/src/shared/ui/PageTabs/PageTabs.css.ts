@@ -1,6 +1,20 @@
 import { style } from '@vanilla-extract/css'
 import { media, typography, vars } from '@/shared/theme'
 
+export const page = style({
+  flex: 1,
+  inlineSize: 'min(100%, 60rem)',
+  minInlineSize: 0,
+  marginInline: 'auto',
+  padding: vars.layout.pagePad
+})
+
+export const title = style({
+  margin: 0,
+  color: vars.color.text.primary,
+  ...typography('heading')
+})
+
 export const tabs = style({
   display: 'flex',
   gap: vars.space.xs,

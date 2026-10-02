@@ -3,12 +3,9 @@ import { useI18n } from '../../../hooks/use-i18n'
 import { formatBytes, formatEta, formatRate } from '../../../lib/format/bytes'
 import { pauseUpload, resumeUpload, cancelUpload } from '../queue'
 import { type UploadItem, uploads, useUploadStore } from '../store'
-import { Icon } from '../../../ui/Icon'
-import { IconButton } from '../../../ui/IconButton'
-import { VirtualList } from '../../../ui/VirtualList'
-import { ProgressLinear } from '../../../ui/ProgressLinear'
+import { Icon, StowIconButton, StowProgressLinear, VirtualList } from '@/shared/ui'
 import * as styles from './UploadTray.css'
-import * as utilitiesStyles from '../../../ui/utilities.css'
+import { srOnly } from '@/shared/theme'
 
 export function UploadTray() {
   const { t } = useI18n()
@@ -78,14 +75,8 @@ export function UploadTray() {
 
   return (
     <>
-      <div ref={politeRef} className={utilitiesStyles.srOnly} role="status" aria-live="polite" aria-atomic="true"></div>
-      <div
-        ref={assertiveRef}
-        className={utilitiesStyles.srOnly}
-        role="alert"
-        aria-live="assertive"
-        aria-atomic="true"
-      ></div>
+      <div ref={politeRef} className={srOnly} role="status" aria-live="polite" aria-atomic="true"></div>
+      <div ref={assertiveRef} className={srOnly} role="alert" aria-live="assertive" aria-atomic="true"></div>
       {items.length > 0 ? (
         <section className={styles.root} aria-label={t('common.upload')}>
           <header className={styles.header}>
@@ -101,16 +92,18 @@ export function UploadTray() {
               </span>
             </button>
             <div className={styles.actions}>
-              <IconButton label={t('common.clear_finished_items')} onClick={() => uploads.clearFinished()}>
-                <Icon name="check" />
-              </IconButton>
-              <IconButton
+              <StowIconButton
+                label={t('common.clear_finished_items')}
+                onClick={() => uploads.clearFinished()}
+                icon="check"
+              />
+              <StowIconButton
                 label={open ? t('common.collapse') : t('common.expand')}
                 expanded={open}
                 onClick={() => uploads.setOpen(!open)}
               >
                 <Icon name={open ? 'chevron_right' : 'chevron_left'} />
-              </IconButton>
+              </StowIconButton>
             </div>
           </header>
           {open ? (
@@ -132,27 +125,27 @@ export function UploadTray() {
                         {item.status === 'paused' ? ` - ${t('upload.paused')}` : ''}
                       </span>
                     </div>
-                    <ProgressLinear value={item.total > 0 ? item.sent / item.total : 0} label={item.name} />
+                    <StowProgressLinear value={item.total > 0 ? item.sent / item.total : 0} label={item.name} />
                     {item.message ? <p>{t(item.message, item.messageParams)}</p> : null}
                     <div className={styles.controls}>
                       {item.status === 'uploading' ? (
-                        <IconButton label={t('upload.pause')} onClick={() => pauseUpload(item.id)}>
-                          <Icon name="pause" />
-                        </IconButton>
+                        <StowIconButton label={t('upload.pause')} onClick={() => pauseUpload(item.id)} icon="pause" />
                       ) : null}
                       {item.status === 'paused' ? (
-                        <IconButton label={t('upload.resume')} onClick={() => resumeUpload(item.id)}>
-                          <Icon name="play_arrow" />
-                        </IconButton>
+                        <StowIconButton
+                          label={t('upload.resume')}
+                          onClick={() => resumeUpload(item.id)}
+                          icon="play_arrow"
+                        />
                       ) : null}
                       {item.status === 'done' || item.status === 'canceled' || item.status === 'error' ? (
-                        <IconButton label={t('common.clear')} onClick={() => uploads.dismiss(item.id)}>
-                          <Icon name="close" />
-                        </IconButton>
+                        <StowIconButton
+                          label={t('common.clear')}
+                          onClick={() => uploads.dismiss(item.id)}
+                          icon="close"
+                        />
                       ) : (
-                        <IconButton label={t('common.cancel')} onClick={() => cancelUpload(item.id)}>
-                          <Icon name="close" />
-                        </IconButton>
+                        <StowIconButton label={t('common.cancel')} onClick={() => cancelUpload(item.id)} icon="close" />
                       )}
                     </div>
                   </>

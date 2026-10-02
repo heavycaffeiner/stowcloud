@@ -5,10 +5,8 @@ import type { ReactNode } from 'react'
 import { useNavigate, useRouter, type ErrorComponentProps } from '@tanstack/react-router'
 import { SessionUnreachableError } from '../features/auth/api'
 import { useI18n } from '../hooks/use-i18n'
-import { Button } from '../ui/Button'
-import { ProgressCircular } from '../ui/ProgressCircular'
+import { cx, StowButton, StowProgressCircular } from '@/shared/ui'
 import * as styles from './RouteFallbacks.css'
-import { cx } from '../ui/cx'
 
 function Card({ embedded, children }: { readonly embedded: boolean; readonly children: ReactNode }) {
   const card = (
@@ -33,13 +31,13 @@ export function RouteProblem({ notFound = false, embedded = false }: { notFound?
       <h1>{notFound ? t('error.page_not_found') : t('error.page_failed')}</h1>
       <p>{notFound ? t('error.page_not_found_hint') : t('error.page_failed_hint')}</p>
       <div>
-        {notFound ? null : <Button onClick={() => window.location.reload()}>{t('common.retry')}</Button>}
-        <Button
+        {notFound ? null : <StowButton onClick={() => window.location.reload()}>{t('common.retry')}</StowButton>}
+        <StowButton
           variant={notFound ? 'filled' : 'text'}
           onClick={() => void navigate({ to: '/b/$', params: { _splat: '' }, replace: true })}
         >
           {t('error.go_to_files')}
-        </Button>
+        </StowButton>
       </div>
     </Card>
   )
@@ -54,7 +52,7 @@ function SessionError() {
       <h1>{t('session.connection_error')}</h1>
       <p>{t('session.connection_error_hint')}</p>
       <div>
-        <Button onClick={() => void router.invalidate()}>{t('common.retry')}</Button>
+        <StowButton onClick={() => void router.invalidate()}>{t('common.retry')}</StowButton>
       </div>
     </Card>
   )
@@ -64,7 +62,7 @@ export function SessionPending() {
   const { t } = useI18n()
   return (
     <div className={styles.boot} role="status" aria-label={t('nav.checking_your_session')}>
-      <ProgressCircular size={40} />
+      <StowProgressCircular size={40} />
     </div>
   )
 }

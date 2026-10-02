@@ -28,13 +28,12 @@ test('selecting a share keeps permission dialogs open and creates the grant', as
   await grantsDialog.getByRole('button', { name: 'Add folder' }).click()
 
   const addDialog = page.getByRole('alertdialog', { name: 'Add folder' })
-  const shareSelect = addDialog.getByRole('textbox', { name: 'Share', exact: true })
-  await shareSelect.click()
-  await addDialog.getByText(archive.name, { exact: true }).click()
+  const shareSelect = addDialog.getByRole('combobox', { name: 'Share', exact: true })
+  await shareSelect.selectOption({ label: archive.name })
 
   await expect(grantsDialog).toBeVisible()
   await expect(addDialog).toBeVisible()
-  await expect(shareSelect).toHaveValue(archive.name)
+  await expect(shareSelect).toHaveValue(String(archive.id))
 
   await addDialog.getByRole('button', { name: 'Add', exact: true }).click()
   await expect(addDialog).toBeHidden()

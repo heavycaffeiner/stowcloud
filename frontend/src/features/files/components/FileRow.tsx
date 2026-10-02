@@ -4,16 +4,13 @@ import { formatEntrySize } from '../entry-size'
 import { formatModifiedDateNs } from '../../../i18n'
 import { useI18n } from '../../../hooks/use-i18n'
 import { isVideoFile } from '../../preview/logic/media-utils'
-import { Icon } from '../../../ui/Icon'
+import { cx, Icon, StowCheckboxIndicator, StowIconButton, type IconName } from '@/shared/ui'
 import { MiddleEllipsis } from './MiddleEllipsis'
 import * as styles from './FileRow.css'
-import * as iconButtonStyles from '../../../ui/IconButton.css'
-import * as utilitiesStyles from '../../../ui/utilities.css'
-import { cx } from '../../../ui/cx'
-import { vars } from '@/shared/theme'
+import { touchTarget, vars } from '@/shared/theme'
 import type { Entry } from '../api'
 
-export function getEntryIcon(entry: Entry): { name: string; color?: string } {
+export function getEntryIcon(entry: Entry): { name: IconName; color?: string } {
   if (entry.kind === 'dir') return { name: 'folder', color: vars.color.text.icon }
   const dot = entry.name.lastIndexOf('.')
   const ext = dot > 0 ? entry.name.slice(dot + 1).toLowerCase() : ''
@@ -125,8 +122,8 @@ export function FileRow({
       aria-selected={selected}
       onContextMenu={onContextMenu}
     >
-      <span
-        className={cx(styles.cell, styles.cellSelect, utilitiesStyles.touchTarget)}
+      <div
+        className={cx(styles.cell, styles.cellSelect, touchTarget)}
         role="gridcell"
         onClick={(event) => {
           event.stopPropagation()
@@ -140,11 +137,8 @@ export function FileRow({
         }}
         onDoubleClick={(event) => event.stopPropagation()}
       >
-        <span className={cx(styles.customCheckbox, selected && styles.customCheckboxChecked)} aria-hidden="true">
-          {selected ? <Icon name="check" size={13} /> : null}
-        </span>
-        <span className={utilitiesStyles.srOnly}>{t('common.select', { name: entry.name })}</span>
-      </span>
+        <StowCheckboxIndicator checked={selected} label={t('common.select', { name: entry.name })} />
+      </div>
       <span className={cx(styles.cell, styles.cellName)} role="gridcell">
         <span className={styles.iconBadge} style={{ color: fileIcon.color }}>
           <Icon name={fileIcon.name} size={20} />
@@ -171,17 +165,15 @@ export function FileRow({
         {formatModifiedDateNs(entry.mtime_ns)}
       </span>
       <span className={cx(styles.cell, styles.cellActions)} role="gridcell">
-        <button
-          type="button"
-          className={cx(styles.moreBtn, iconButtonStyles.root)}
-          aria-label={t('browse.more')}
+        <StowIconButton
+          className={styles.moreBtn}
+          label={t('browse.more')}
+          icon="more-vert"
           onClick={(event) => {
             event.stopPropagation()
             onContextMenu(event)
           }}
-        >
-          <Icon name="more-vert" size={18} />
-        </button>
+        />
       </span>
     </div>
   )

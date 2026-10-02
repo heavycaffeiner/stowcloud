@@ -37,37 +37,7 @@ export const navItems = style({
 })
 
 export const navButton = style({
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  flex: 'none',
-  minBlockSize: vars.density.control,
-  padding: '0 16px',
-  border: 'none',
-  borderRadius: vars.radius.full,
-  color: vars.color.text.primary,
-  background: vars.color.surface.overlay,
-  cursor: 'pointer',
-  whiteSpace: 'nowrap',
-  fontSize: vars.typography.label.size,
-  lineHeight: vars.typography.label.lineHeight,
-  fontWeight: '500',
-  transition: 'background-color 120ms ease, color 120ms ease',
-  selectors: {
-    '&:hover': {
-      background: vars.color.surface.fill,
-      color: vars.color.accent.solid
-    },
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    }
-  },
-  '@media': {
-    '(max-width: 599.98px)': {
-      minBlockSize: '44px'
-    }
-  }
+  flex: 'none'
 })
 
 export const pathRow = style({

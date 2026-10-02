@@ -31,14 +31,9 @@ import {
   type AdminUser,
   type AuditRow
 } from '../api'
-import { Button } from '../../../ui/Button'
-import { FormTextField } from '../../../ui/FormTextField'
-import { ProgressCircular } from '../../../ui/ProgressCircular'
-import { Checkbox } from '../../../ui/Checkbox'
-import { VirtualList } from '../../../ui/VirtualList'
+import { cx, StowButton, StowCheckbox, StowFormTextField, StowProgressCircular, VirtualList } from '@/shared/ui'
 import * as styles from './LogsSection.css'
-import * as utilitiesStyles from '../../../ui/utilities.css'
-import { cx } from '../../../ui/cx'
+import { srOnly } from '@/shared/theme'
 
 const SOURCE_MODES: readonly { mode: LogSourceMode; key: string }[] = [
   { mode: 'all', key: 'logs.source_all' },
@@ -170,7 +165,7 @@ export function LogsSection() {
       </dl>
       <FilterForm control={control} knownSubsystems={pureKnownSubsystems(records)} />
       <LogTimeline key={settledKey} filters={settled} />
-      <p className={utilitiesStyles.srOnly} role="status" aria-live="polite">
+      <p className={srOnly} role="status" aria-live="polite">
         {loading
           ? t('logs.loading_logs')
           : failed
@@ -180,7 +175,7 @@ export function LogsSection() {
               : tp('logs.showing_records', items.length)}
       </p>
       {loading ? (
-        <ProgressCircular label={t('logs.loading_logs')} />
+        <StowProgressCircular label={t('logs.loading_logs')} />
       ) : failed ? (
         <p className={styles.error} role="alert">
           {t('logs.could_not_load_logs')}
@@ -199,9 +194,9 @@ export function LogsSection() {
             </p>
           ) : hasMore ? (
             <div className={styles.more}>
-              <Button variant="text" onClick={loadMore} loading={loadingMore}>
+              <StowButton variant="text" onClick={loadMore} loading={loadingMore}>
                 {t('logs.load_more')}
-              </Button>
+              </StowButton>
             </div>
           ) : null}
         </>
@@ -232,17 +227,16 @@ function FilterForm({
           control={control}
           name="sourceMode"
           render={({ field }) => (
-            <div role="group" aria-labelledby="sc-logs-source-label">
+            <div className={styles.sourceGroup} role="group" aria-labelledby="sc-logs-source-label">
               {SOURCE_MODES.map((option) => (
-                <button
+                <StowButton
                   key={option.mode}
-                  type="button"
-                  className={cx(styles.sourceButton, field.value === option.mode && styles.sourceButtonActive)}
-                  aria-pressed={field.value === option.mode}
+                  variant={field.value === option.mode ? 'tonal' : 'outlined'}
+                  pressed={field.value === option.mode}
                   onClick={() => field.onChange(option.mode)}
                 >
                   {t(option.key)}
-                </button>
+                </StowButton>
               ))}
             </div>
           )}
@@ -256,7 +250,7 @@ function FilterForm({
           render={({ field }) => (
             <div className={styles.levelBoxes}>
               {ALL_LOG_LEVELS.map((level) => (
-                <Checkbox
+                <StowCheckbox
                   key={level}
                   checked={field.value.includes(level)}
                   label={levelText(level)}
@@ -270,7 +264,7 @@ function FilterForm({
         />
       </fieldset>
       <div className={styles.fields}>
-        <FormTextField
+        <StowFormTextField
           control={control}
           name="text"
           className={styles.field}
@@ -279,7 +273,7 @@ function FilterForm({
           type="search"
           autoComplete="off"
         />
-        <FormTextField
+        <StowFormTextField
           control={control}
           name="subsystem"
           className={styles.field}
@@ -293,7 +287,7 @@ function FilterForm({
             <option key={value} value={value} />
           ))}
         </datalist>
-        <FormTextField
+        <StowFormTextField
           control={control}
           name="requestId"
           className={styles.field}
@@ -301,14 +295,14 @@ function FilterForm({
           placeholder={t('logs.e_g_request_id')}
           autoComplete="off"
         />
-        <FormTextField
+        <StowFormTextField
           control={control}
           name="since"
           className={styles.field}
           label={t('logs.from')}
           type="datetime-local"
         />
-        <FormTextField
+        <StowFormTextField
           control={control}
           name="until"
           className={styles.field}
@@ -360,7 +354,7 @@ function LogTimeline({ filters }: { filters: LogFilters }) {
         <p className={styles.hint}>{t('logs.timeline_description')}</p>
       </div>
       {timeline.isPending && !view ? (
-        <ProgressCircular label={t('logs.loading_timeline')} />
+        <StowProgressCircular label={t('logs.loading_timeline')} />
       ) : timeline.isError && !view ? (
         <p className={styles.note} role="status">
           {t('logs.could_not_load_timeline')}
@@ -391,7 +385,7 @@ function LogTimeline({ filters }: { filters: LogFilters }) {
                   </li>
                 ))}
               </ul>
-              <p className={utilitiesStyles.srOnly} id="sc-logs-plot-hint">
+              <p className={srOnly} id="sc-logs-plot-hint">
                 {t('logs.arrow_keys_move_between_buckets')}
               </p>
               <div

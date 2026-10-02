@@ -1,35 +1,10 @@
-import { fallbackVar, keyframes, style } from '@vanilla-extract/css'
+import { keyframes, style } from '@vanilla-extract/css'
 import * as appShellStyles from '../../../app/shell/AppShell.css'
-import { trayStackTop, vars } from '@/shared/theme'
+import { compactFloatBottom, vars } from '@/shared/theme'
 
 const barEnter = keyframes({
   from: { opacity: '0', transform: 'translate(-50%, 16px) scale(0.96)' },
   to: { opacity: '1', transform: 'translate(-50%, 0) scale(1)' }
-})
-
-export const iconBtn = style({
-  selectors: {
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    },
-    '&:hover': {
-      background: `color-mix(in srgb, ${vars.color.text.primary} 10%, transparent)`,
-      color: vars.color.text.primary
-    }
-  },
-  width: vars.density.control,
-  height: vars.density.control,
-  borderRadius: '50%',
-  border: 'none',
-  background: 'transparent',
-  color: vars.color.text.secondary,
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  cursor: 'pointer',
-  padding: '0',
-  transition: 'background-color 120ms ease, color 120ms ease'
 })
 
 export const bar = style({
@@ -46,7 +21,7 @@ export const bar = style({
   animation: `${barEnter} 180ms cubic-bezier(0.2, 0, 0, 1)`,
   selectors: {
     [`${appShellStyles.compact} &`]: {
-      bottom: `max(calc(16px + ${vars.layout.navBar} + env(safe-area-inset-bottom, 0px)), ${fallbackVar(trayStackTop, '0px')})`
+      insetBlockEnd: compactFloatBottom
     }
   }
 })

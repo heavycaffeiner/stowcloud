@@ -5,9 +5,7 @@ import { registerMediaSource, releaseMediaSource, swReady } from '../../files/do
 import { decryptDownload } from '../../../lib/crypto/e2ee'
 import { useE2eeStore } from '../../shares/e2ee-store'
 import { encryptionForLabel, shareLabelOf } from '../../shares/encrypted-shares'
-import type { IconName } from '../../../ui/icons'
-import { Icon } from '../../../ui/Icon'
-import { cx } from '../../../ui/cx'
+import { cx, Icon, type IconName } from '@/shared/ui'
 import * as styles from './Thumbnail.css'
 
 const CACHE = new Map<string, string>()

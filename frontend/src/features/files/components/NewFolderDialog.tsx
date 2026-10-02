@@ -1,7 +1,6 @@
 import { overlay } from 'overlay-kit'
 import { useForm } from 'react-hook-form'
-import { Button } from '../../../ui/Button'
-import { FormTextField } from '../../../ui/FormTextField'
+import { StowButton, StowFormTextField } from '@/shared/ui'
 import { BrowseDialog } from './browse-dialog'
 import { useI18n } from '../../../hooks/use-i18n'
 
@@ -37,15 +36,15 @@ function NewFolderDialog({
       onClosed={onClosed}
       actions={
         <>
-          <Button variant="text" onClick={onClose}>
+          <StowButton variant="text" onClick={onClose}>
             {t('common.cancel')}
-          </Button>
-          <Button onClick={() => void submit()}>{t('common.create')}</Button>
+          </StowButton>
+          <StowButton onClick={() => void submit()}>{t('common.create')}</StowButton>
         </>
       }
     >
       <form onSubmit={(event) => void submit(event)}>
-        <FormTextField control={control} name="name" label={t('new_folder.folder_name')} autoFocus />
+        <StowFormTextField control={control} name="name" label={t('new_folder.folder_name')} autoFocus />
       </form>
     </BrowseDialog>
   )

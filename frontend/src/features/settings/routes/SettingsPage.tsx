@@ -1,12 +1,10 @@
 import { SwitchCase } from 'react-simplikit'
 import { useI18n } from '../../../hooks/use-i18n'
 import { useDocumentTitle } from '../../../hooks/use-document-title'
-import { PageTabs } from '../../../ui/PageTabs'
+import { ErrorBoundary, StowPageTabs, StowTabbedPage, type IconName } from '@/shared/ui'
 import { AccountPanel, AppearancePanel, ConnectionsPanel, SecurityPanel } from '../components/SettingsPanels'
 import { useSettingsTabs } from '../hooks/use-settings-tabs'
 import type { SettingsTab } from '../tabs'
-import { ErrorBoundary } from '../../../ui/ErrorBoundary'
-import * as pageTabsStyles from '../../../ui/PageTabs.css'
 
 const TAB_LABELS: Record<SettingsTab, string> = {
   account: /* i18n */ 'settings.account',
@@ -15,7 +13,7 @@ const TAB_LABELS: Record<SettingsTab, string> = {
   appearance: /* i18n */ 'settings.browser_preferences'
 }
 
-const TAB_ICONS: Record<SettingsTab, string> = {
+const TAB_ICONS: Record<SettingsTab, IconName> = {
   account: 'admin',
   security: 'lock',
   connections: 'folder-tree',
@@ -28,11 +26,8 @@ export function SettingsPage() {
   useDocumentTitle(t('settings.settings_stowcloud'))
 
   return (
-    <section className={pageTabsStyles.page}>
-      <header className={pageTabsStyles.header}>
-        <h1 className={pageTabsStyles.title}>{t('common.settings')}</h1>
-      </header>
-      <PageTabs
+    <StowTabbedPage title={t('common.settings')}>
+      <StowPageTabs
         label={t('common.settings')}
         items={visibleTabs.map((value) => ({ value, label: t(TAB_LABELS[value]), icon: TAB_ICONS[value] }))}
         active={tab}
@@ -49,6 +44,6 @@ export function SettingsPage() {
           }}
         />
       </ErrorBoundary>
-    </section>
+    </StowTabbedPage>
   )
 }

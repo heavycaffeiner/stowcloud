@@ -1,13 +1,10 @@
 import { lazy, Suspense } from 'react'
 import type { AdminTab } from '../tabs'
 import { useI18n } from '../../../hooks/use-i18n'
-import { ErrorBoundary } from '../../../ui/ErrorBoundary'
-import { ProgressCircular } from '../../../ui/ProgressCircular'
+import { cx, ErrorBoundary, StowProgressCircular } from '@/shared/ui'
 import * as styles from './AdminPanels.css'
 import * as adminPageStyles from '../routes/AdminPage.css'
 import * as settingsCardStyles from '../../settings/components/SettingsCard.css'
-import * as textFieldStyles from '../../../ui/TextField.css'
-import { cx } from '../../../ui/cx'
 
 // Keep each admin section lazy so inactive tabs do not load their query graphs.
 const UserManagementSection = lazy(async () => {
@@ -42,7 +39,7 @@ const LogsSection = lazy(async () => {
 export function SectionLoading({ label }: { label: string }) {
   return (
     <div className={styles.loading} role="status" aria-live="polite">
-      <ProgressCircular size={40} />
+      <StowProgressCircular size={40} />
       <span>{label}</span>
     </div>
   )
@@ -56,18 +53,18 @@ export function AdminPanels({ tab }: { tab: AdminTab }) {
         <Suspense fallback={<SectionLoading label={t('common.loading')} />}>
           {tab === 'users' ? (
             <>
-              <section className={cx(styles.pageSection, settingsCardStyles.card, textFieldStyles.onLowSurface)}>
+              <section className={cx(styles.pageSection, settingsCardStyles.card)}>
                 <h2 className={styles.pageTitle}>{t('admin.users')}</h2>
                 <UserManagementSection />
               </section>
-              <section className={cx(styles.pageSection, settingsCardStyles.card, textFieldStyles.onLowSurface)}>
+              <section className={cx(styles.pageSection, settingsCardStyles.card)}>
                 <h2 className={styles.pageTitle}>{t('admin.groups')}</h2>
                 <GroupManagementSection />
               </section>
             </>
           ) : null}
           {tab === 'shares' ? (
-            <section className={cx(styles.pageSection, settingsCardStyles.card, textFieldStyles.onLowSurface)}>
+            <section className={cx(styles.pageSection, settingsCardStyles.card)}>
               <ShareManagementSection />
             </section>
           ) : null}
@@ -83,7 +80,7 @@ export function AdminPanels({ tab }: { tab: AdminTab }) {
             </section>
           ) : null}
           {tab === 'logs' ? (
-            <section className={cx(styles.pageSection, settingsCardStyles.card, textFieldStyles.onLowSurface)}>
+            <section className={cx(styles.pageSection, settingsCardStyles.card)}>
               <LogsSection />
             </section>
           ) : null}

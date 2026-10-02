@@ -1,5 +1,6 @@
 import type { SearchSnapshot, SearchSortKey } from '../state'
 import type { SearchHit, SearchProgress } from '../api'
+import type { IconName } from '@/shared/ui'
 
 export type Kind = 'any' | 'file' | 'dir'
 export type SortKey = SearchSortKey
@@ -21,11 +22,10 @@ export interface SearchPanelState {
   truncated: boolean
   elapsedMs: number | null
   scanned: SearchProgress | null
-  sortOpen: boolean
   scrollTop: number
 }
 
-export const CATEGORIES: readonly { id: CategoryId; labelKey: string; icon: string }[] = [
+export const CATEGORIES: readonly { id: CategoryId; labelKey: string; icon: IconName }[] = [
   { id: 'all', labelKey: /* i18n */ 'search.kind_any', icon: 'search' },
   { id: 'file', labelKey: /* i18n */ 'search.kind_file', icon: 'draft' },
   { id: 'dir', labelKey: /* i18n */ 'search.kind_dir', icon: 'folder' },
@@ -61,7 +61,6 @@ export function initialSearchState(snapshot: SearchSnapshot | null, submitted = 
     truncated: snapshot?.truncated ?? false,
     elapsedMs: snapshot?.elapsedMs ?? null,
     scanned: snapshot?.scanned ?? null,
-    sortOpen: false,
     scrollTop: snapshot?.scrollTop ?? 0
   }
 }

@@ -1,21 +1,15 @@
-import { useRef } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useHotkeys } from 'react-hotkeys-hook'
-import { useBooleanState } from 'react-simplikit'
 import { useI18n } from '../../hooks/use-i18n'
-import { useOutsideDismiss } from '../../hooks/use-outside-dismiss'
-import { useRestoreFocus } from '../../hooks/use-restore-focus'
 import { useSession } from '../../features/auth/api'
 import { useOpenSearch } from '../../features/search/state'
 import { useSignOut } from '../../features/settings/hooks/use-sign-out'
-import { Icon } from '../../ui/Icon'
-import { useCompact } from '../../ui/use-compact'
+import { cx, Icon, StowIconButton, StowMenuButton, StowMenuItem, StowMenuLabel } from '@/shared/ui'
+import { useCompact } from '@/hooks/use-compact'
 import { useCurrentFolder, useNavigation } from './navigation'
 import { sidebar, toggleSidebar } from './sidebar'
 import * as styles from './AppShell.css'
-import * as iconButtonStyles from '../../ui/IconButton.css'
-import * as utilitiesStyles from '../../ui/utilities.css'
-import { cx } from '../../ui/cx'
+import { focusRing } from '@/shared/theme'
 
 const REPOSITORY = 'https://github.com/heavycaffeiner/Stowcloud'
 
@@ -28,15 +22,12 @@ export function ShellHeader() {
     <header className={styles.header}>
       <div className={styles.headerLeft}>
         {!compact ? (
-          <button
-            type="button"
-            className={cx(styles.headerMenuBtn, iconButtonStyles.root)}
-            aria-label={t('nav.toggle_sidebar')}
-            aria-expanded={sidebar.value === 'expanded'}
+          <StowIconButton
+            label={t('nav.toggle_sidebar')}
+            icon="menu"
+            expanded={sidebar.value === 'expanded'}
             onClick={toggleSidebar}
-          >
-            <Icon name="menu" size={22} />
-          </button>
+          />
         ) : null}
         <button type="button" className={styles.headerBrandBtn} onClick={() => void navigate({ href: files.href })}>
           <span className={styles.headerBrand}>Stowcloud</span>
@@ -50,22 +41,16 @@ export function ShellHeader() {
       <div className={styles.headerRight}>
         {!compact ? (
           <>
-            <button
-              type="button"
-              className={cx(styles.headerIconBtn, iconButtonStyles.root)}
-              aria-label={t('nav.help')}
+            <StowIconButton
+              label={t('nav.help')}
+              icon="help"
               onClick={() => window.open(REPOSITORY, '_blank', 'noopener,noreferrer')}
-            >
-              <Icon name="help" size={20} />
-            </button>
-            <button
-              type="button"
-              className={cx(styles.headerIconBtn, iconButtonStyles.root)}
-              aria-label={t('common.settings')}
+            />
+            <StowIconButton
+              label={t('common.settings')}
+              icon="settings"
               onClick={() => void navigate({ to: '/settings/{-$tab}', params: {} })}
-            >
-              <Icon name="settings" size={20} />
-            </button>
+            />
           </>
         ) : null}
         <AccountMenu />
@@ -89,12 +74,7 @@ function SearchLauncher() {
     preventDefault: true
   })
   return (
-    <button
-      className={cx(styles.headerSearch, utilitiesStyles.focusRing)}
-      type="button"
-      onClick={open}
-      aria-label={t('common.search')}
-    >
+    <button className={cx(styles.headerSearch, focusRing)} type="button" onClick={open} aria-label={t('common.search')}>
       <span className={styles.headerSearchIcon}>
         <Icon name="search" size={18} />
       </span>
@@ -114,52 +94,38 @@ function AccountMenu() {
   const navigate = useNavigate()
   const user = useSession().data?.user
   const { signOut } = useSignOut()
-  const [open, , close, toggle] = useBooleanState(false)
-  const wrapRef = useRef<HTMLDivElement | null>(null)
-  const name = user?.display_name || user?.name
-  useOutsideDismiss(open, wrapRef, close)
-  useRestoreFocus(open)
+  const name = user?.display_name || user?.name || t('settings.account')
   return (
-    <div className={styles.headerAccountWrap} ref={wrapRef}>
-      <button
-        type="button"
-        className={styles.headerAvatarBtn}
-        aria-label={name || 'User'}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={toggle}
-      >
-        <span className={styles.headerAvatar}>{(name || 'S').slice(0, 1).toUpperCase()}</span>
-      </button>
-      {open ? (
-        <div className={styles.headerAccountMenu} role="menu">
-          <div className={styles.headerAccountName}>{name}</div>
-          <button
-            type="button"
-            role="menuitem"
-            className={styles.headerAccountItem}
+    <StowMenuButton
+      label={t('settings.account')}
+      align="end"
+      menu={(close) => (
+        <>
+          <StowMenuLabel>{name}</StowMenuLabel>
+          <StowMenuItem
+            icon="settings"
             onClick={() => {
               close()
               void navigate({ to: '/settings/{-$tab}', params: {} })
             }}
           >
-            <Icon name="settings" size={18} />
             {t('common.settings')}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className={styles.headerAccountItem}
+          </StowMenuItem>
+          <StowMenuItem
+            icon="close"
             onClick={() => {
               close()
               signOut()
             }}
           >
-            <Icon name="close" size={18} />
             {t('common.sign_out')}
-          </button>
-        </div>
-      ) : null}
-    </div>
+          </StowMenuItem>
+        </>
+      )}
+    >
+      <StowIconButton label={name}>
+        <span className={styles.avatar}>{name.slice(0, 1).toUpperCase()}</span>
+      </StowIconButton>
+    </StowMenuButton>
   )
 }

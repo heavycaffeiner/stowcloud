@@ -3,14 +3,11 @@ import { normalizePath } from '../../../lib/path-utils'
 import { useI18n } from '../../../hooks/use-i18n'
 import { useSession } from '../../auth/api'
 import { useAllShareLinks, useShareLinks } from '../api'
-import { VirtualList } from '../../../ui/VirtualList'
+import { SecondaryPageShell, SecondaryPageState, secondaryPageStyles, VirtualList } from '@/shared/ui'
 import { useDocumentTitle } from '../../../hooks/use-document-title'
-import { SecondaryPageShell } from '../../../ui/SecondaryPageShell'
-import { SecondaryPageState } from '../../../ui/SecondaryPageState'
 import { LinkListRow } from '../components/LinkRow'
 import { useLinkManagement, type LinkRow } from '../hooks/use-link-management'
 import * as styles from './LinksPage.css'
-import * as secondaryPageShellStyles from '../../../ui/SecondaryPageShell.css'
 
 export function LinksPage() {
   const { t } = useI18n()
@@ -40,7 +37,7 @@ export function LinksPage() {
       >
         {rows.length > 0 ? (
           <VirtualList
-            className={secondaryPageShellStyles.list}
+            className={secondaryPageStyles.list}
             items={rows}
             itemKey={(link) => link.id}
             estimateSize={80}

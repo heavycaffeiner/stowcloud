@@ -4,10 +4,7 @@ import { describeApiError } from '../../../api/error-text'
 import { scorePasswordStrength } from '../../auth/password-strength'
 import { t } from '../../../i18n'
 import { useI18n } from '../../../hooks/use-i18n'
-import { Button } from '../../../ui/Button'
-import { Dialog } from '../../../ui/Dialog'
-import { FormTextField } from '../../../ui/FormTextField'
-import { ProgressLinear } from '../../../ui/ProgressLinear'
+import { StowButton, StowDialog, StowFormTextField, StowProgressLinear } from '@/shared/ui'
 import * as adminStyles from './admin.css'
 import { ApiError } from '../../../api/fetcher'
 import { useCreateUser, useSetUserPassword, type AdminUser } from '../api'
@@ -22,7 +19,7 @@ function StrengthMeter({ password, label }: { password: string; label: (level: s
   const strength = scorePasswordStrength(password)
   return (
     <div>
-      <ProgressLinear value={strength.ratio} tone={strength.tier} label={label(strength.label)} />
+      <StowProgressLinear value={strength.ratio} tone={strength.tier} label={label(strength.label)} />
       <span className={adminStyles.sectionFieldHint}>{strength.label}</span>
     </div>
   )
@@ -54,25 +51,25 @@ function NewUserDialog({ open, onDone, onClosed }: DialogControls<AdminUser | nu
     if (!create.isPending) onDone(null)
   }
   return (
-    <Dialog
+    <StowDialog
       open={open}
       title={t('user.add_user')}
       onClose={cancel}
       onClosed={onClosed}
       actions={
         <>
-          <Button variant="text" disabled={create.isPending} onClick={cancel}>
+          <StowButton variant="text" disabled={create.isPending} onClick={cancel}>
             {t('common.cancel')}
-          </Button>
-          <Button loading={create.isPending} onClick={() => void submit()}>
+          </StowButton>
+          <StowButton loading={create.isPending} onClick={() => void submit()}>
             {t('common.add')}
-          </Button>
+          </StowButton>
         </>
       }
     >
       <form className={adminStyles.form} onSubmit={(event) => void submit(event)}>
-        <FormTextField control={control} name="name" label={t('user.username')} autoComplete="off" autoFocus />
-        <FormTextField
+        <StowFormTextField control={control} name="name" label={t('user.username')} autoComplete="off" autoFocus />
+        <StowFormTextField
           control={control}
           name="password"
           rules={{ validate: longEnough }}
@@ -90,7 +87,7 @@ function NewUserDialog({ open, onDone, onClosed }: DialogControls<AdminUser | nu
           </p>
         ) : null}
       </form>
-    </Dialog>
+    </StowDialog>
   )
 }
 
@@ -120,24 +117,28 @@ function UserPasswordDialog({ user, open, onDone, onClosed }: DialogControls<boo
     if (!save.isPending) onDone(false)
   }
   return (
-    <Dialog
+    <StowDialog
       open={open}
       title={t('password.change_password')}
       onClose={cancel}
       onClosed={onClosed}
       actions={
         <>
-          <Button variant="text" disabled={save.isPending} onClick={cancel}>
+          <StowButton variant="text" disabled={save.isPending} onClick={cancel}>
             {t('common.cancel')}
-          </Button>
-          <Button loading={save.isPending} disabled={!password || password !== confirm} onClick={() => void submit()}>
+          </StowButton>
+          <StowButton
+            loading={save.isPending}
+            disabled={!password || password !== confirm}
+            onClick={() => void submit()}
+          >
             {t('common.save')}
-          </Button>
+          </StowButton>
         </>
       }
     >
       <form className={adminStyles.form} onSubmit={(event) => void submit(event)}>
-        <FormTextField
+        <StowFormTextField
           control={control}
           name="password"
           rules={{ validate: longEnough }}
@@ -146,7 +147,7 @@ function UserPasswordDialog({ user, open, onDone, onClosed }: DialogControls<boo
           autoComplete="new-password"
           autoFocus
         />
-        <FormTextField
+        <StowFormTextField
           control={control}
           name="confirm"
           rules={{ validate: (value, values) => value === values.password || t('password.new_passwords_do_not_match') }}
@@ -164,6 +165,6 @@ function UserPasswordDialog({ user, open, onDone, onClosed }: DialogControls<boo
           </p>
         ) : null}
       </form>
-    </Dialog>
+    </StowDialog>
   )
 }

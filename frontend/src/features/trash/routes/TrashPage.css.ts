@@ -1,31 +1,6 @@
 import { style } from '@vanilla-extract/css'
 import { vars } from '@/shared/theme'
 
-export const noticeClose = style({
-  selectors: {
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    }
-  },
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  minWidth: '40px',
-  minHeight: '40px',
-  padding: '4px 8px',
-  border: '0',
-  borderRadius: '20px',
-  background: 'transparent',
-  color: 'inherit',
-  cursor: 'pointer',
-  '@media': {
-    '(max-width: 599.98px)': {
-      minHeight: '44px'
-    }
-  }
-})
-
 export const toolbar = style({
   display: 'flex',
   alignItems: 'center',

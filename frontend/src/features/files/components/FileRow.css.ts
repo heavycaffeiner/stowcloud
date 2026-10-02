@@ -212,74 +212,11 @@ export const mobileMeta = style({
   }
 })
 
+// Shown on hover, focus and selection, and always on touch rows where there is no hover.
 export const moreBtn = style({
-  width: vars.density.controlDesktop,
-  height: vars.density.controlDesktop,
-  borderRadius: '50%',
-  border: 'none',
-  background: 'transparent',
-  color: vars.color.text.secondary,
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  cursor: 'pointer',
-  opacity: '0',
-  padding: '0',
-  transition: 'opacity 120ms ease, background-color 120ms ease, color 120ms ease',
+  opacity: 0,
+  transition: `opacity ${vars.motion.short} ${vars.motion.easing}`,
   selectors: {
-    [`${root}:hover &`]: {
-      opacity: '1'
-    },
-    [`${selected} &`]: {
-      opacity: '1'
-    },
-    [`${focused} &`]: {
-      opacity: '1'
-    },
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    },
-    '&:hover': {
-      background: `color-mix(in srgb, ${vars.color.text.primary} 10%, transparent)`,
-      color: vars.color.text.primary
-    },
-    [`${fileTableStyles.mobileRows} &`]: {
-      width: '44px',
-      height: '44px',
-      opacity: '1'
-    }
+    [`${root}:hover &, ${selected} &, ${focused} &, &:focus-visible, ${fileTableStyles.mobileRows} &`]: { opacity: 1 }
   }
-})
-
-export const customCheckbox = style({
-  width: '18px',
-  height: '18px',
-  borderRadius: '4px',
-  border: `1.5px solid ${vars.color.border.strong}`,
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  background: 'transparent',
-  color: vars.color.accent.onSolid,
-  boxSizing: 'border-box',
-  cursor: 'pointer',
-  transition: 'background-color 120ms ease, border-color 120ms ease'
-})
-
-export const customCheckboxChecked = style({
-  background: vars.color.accent.solid,
-  borderColor: vars.color.accent.solid
-})
-
-export const customCheckboxIndeterminate = style({
-  background: vars.color.accent.solid,
-  borderColor: vars.color.accent.solid
-})
-
-export const customCheckboxBar = style({
-  width: '10px',
-  height: '2px',
-  borderRadius: '1px',
-  background: vars.color.accent.onSolid
 })

@@ -1,7 +1,6 @@
 import type { FormEvent, ReactNode } from 'react'
 import { useI18n } from '../../../hooks/use-i18n'
-import { Button } from '../../../ui/Button'
-import { Dialog } from '../../../ui/Dialog'
+import { StowButton, StowDialog } from '@/shared/ui'
 import * as styles from './SettingsDialog.css'
 interface SettingsDialogProps {
   open: boolean
@@ -27,12 +26,12 @@ export function SettingsDialog({
 }: SettingsDialogProps) {
   const { t } = useI18n()
   const defaultActions = (
-    <Button variant="text" onClick={onClose}>
+    <StowButton variant="text" onClick={onClose}>
       {t('common.close')}
-    </Button>
+    </StowButton>
   )
   return (
-    <Dialog
+    <StowDialog
       open={open}
       title={title}
       onClose={onClose}
@@ -48,6 +47,6 @@ export function SettingsDialog({
       ) : (
         <div className={styles.body}>{children}</div>
       )}
-    </Dialog>
+    </StowDialog>
   )
 }

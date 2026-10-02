@@ -32,30 +32,3 @@ export const title = style({
   lineHeight: vars.typography.heading.lineHeight,
   letterSpacing: vars.typography.heading.tracking
 })
-
-export const routeBack = style({
-  selectors: {
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    }
-  },
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  width: '40px',
-  height: '40px',
-  padding: '0',
-  border: '0',
-  borderRadius: '50%',
-  background: 'transparent',
-  color: 'inherit',
-  cursor: 'pointer',
-  flex: 'none',
-  '@media': {
-    '(max-width: 599.98px)': {
-      width: '44px',
-      height: '44px'
-    }
-  }
-})

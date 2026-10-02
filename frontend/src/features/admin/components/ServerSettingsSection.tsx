@@ -3,8 +3,7 @@ import { useFormContext } from 'react-hook-form'
 import { t } from '../../../i18n'
 import { useI18n } from '../../../hooks/use-i18n'
 import { useCopyText } from '../../../hooks/use-copy-text'
-import { Button } from '../../../ui/Button'
-import { ProgressCircular } from '../../../ui/ProgressCircular'
+import { StowButton, StowProgressCircular } from '@/shared/ui'
 import { ServerSettingsCard } from './ServerSettingsCard'
 import { EmptyNote, SettingInput, SettingPath, SettingSwitch, SettingsGroupCard, split } from './ServerSettingsForm'
 import * as styles from './ServerSettingsSection.css'
@@ -119,7 +118,7 @@ export function ServerSettingsSection() {
     return (
       <section className={adminStyles.section}>
         <h3 className={adminStyles.sectionTitle}>{t('server.server_settings')}</h3>
-        <ProgressCircular size={40} />
+        <StowProgressCircular size={40} />
       </section>
     )
   if (settings.isError || !snapshot)
@@ -143,14 +142,14 @@ export function ServerSettingsSection() {
       <nav className={styles.nav} aria-label={t('admin.server_settings_navigation')}>
         <div className={styles.navItems}>
           {NAV.map(([id, key]) => (
-            <button
+            <StowButton
               key={id}
-              type="button"
+              variant="outlined"
               className={styles.navButton}
               onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
             >
               {t(key)}
-            </button>
+            </StowButton>
           ))}
         </div>
       </nav>
@@ -392,9 +391,9 @@ function HopHint({ hop }: { hop: Hop }) {
       {!hop.peer_trusted && hop.forwarded_seen ? (
         <div className={adminStyles.warning} role="alert">
           <p>{t('server.forwarding_headers_ignored_hint', { address })}</p>
-          <Button variant="text" onClick={trustObserved} disabled={!address}>
+          <StowButton variant="text" onClick={trustObserved} disabled={!address}>
             {t('server.add_observed_address_to_trusted', { address })}
-          </Button>
+          </StowButton>
         </div>
       ) : null}
     </>
@@ -421,15 +420,15 @@ function OidcEndpoints() {
           {uris.map((uri) => (
             <div className={styles.endpointRow} key={uri}>
               <code className={styles.endpointUri}>{uri}</code>
-              <Button
+              <StowButton
                 variant="text"
-                ariaLabel={t('common.copy_named', { name: uri })}
+                aria-label={t('common.copy_named', { name: uri })}
                 onClick={() =>
                   copy.mutate(uri, { onSuccess: () => setAnnouncement(t('settings.oidc_endpoint_copied', { name })) })
                 }
               >
                 {t('common.copy')}
-              </Button>
+              </StowButton>
             </div>
           ))}
         </Fragment>

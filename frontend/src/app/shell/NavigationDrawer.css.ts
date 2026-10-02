@@ -1,182 +1,151 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '@/shared/theme'
+import { focusOutline, typography, vars } from '@/shared/theme'
 
 export const root = style({
   position: 'fixed',
-  zIndex: '10',
-  top: vars.layout.header,
-  bottom: '0',
-  left: '0',
-  width: vars.layout.navDrawer,
+  zIndex: 10,
+  insetBlock: `${vars.layout.header} 0`,
+  insetInlineStart: 0,
+  inlineSize: vars.layout.navDrawer,
   display: 'flex',
   flexDirection: 'column',
   overflow: 'hidden',
   background: `color-mix(in srgb, ${vars.color.surface.container} 78%, ${vars.color.surface.page})`,
-  borderRight: `1px solid ${vars.color.border.subtle}`,
+  borderInlineEnd: `${vars.stroke.thin} solid ${vars.color.border.subtle}`,
   color: vars.color.text.primary,
-  transition: 'width 200ms cubic-bezier(0.2, 0, 0, 1), transform 220ms cubic-bezier(0.2, 0, 0, 1)'
+  transition: `inline-size ${vars.motion.medium} ${vars.motion.easing}`
 })
 
 export const collapsed = style({
-  width: vars.layout.navDrawerCollapsed
+  inlineSize: vars.layout.navDrawerCollapsed
+})
+
+// The compact layout's drawer: the header stays put while the body scrolls.
+export const overlay = style({
+  display: 'flex',
+  flexDirection: 'column',
+  overflow: 'hidden'
+})
+
+export const overlayHeader = style({
+  flex: 'none',
+  display: 'flex',
+  alignItems: 'center',
+  gap: vars.space.sm,
+  blockSize: vars.layout.header,
+  paddingInline: vars.space.sm,
+  borderBlockEnd: `${vars.stroke.thin} solid ${vars.color.border.subtle}`
+})
+
+export const appName = style({
+  flex: 1,
+  color: vars.color.text.primary,
+  ...typography('title')
 })
 
 export const body = style({
-  minHeight: '0',
-  flex: '1',
+  flex: 1,
+  minBlockSize: 0,
   display: 'flex',
   flexDirection: 'column',
-  overflowY: 'auto',
   overflowX: 'hidden',
+  overflowY: 'auto',
   overscrollBehavior: 'contain',
   scrollbarWidth: 'thin',
   scrollbarColor: `color-mix(in srgb, ${vars.color.text.secondary} 35%, transparent) transparent`,
-  selectors: {
-    [`${collapsed} &`]: {
-      paddingTop: '12px'
-    }
-  }
+  selectors: { [`${collapsed} &`]: { paddingBlockStart: vars.space.md } }
 })
 
 export const newWrap = style({
-  padding: '16px 12px 12px',
   flex: 'none',
-  order: '-2'
-})
-
-export const rootsSection = style({
-  order: '-1'
-})
-
-export const newBtn = style({
-  width: '100%',
-  height: '44px',
-  borderRadius: '12px',
-  background: vars.color.surface.raised,
-  border: `1px solid ${vars.color.border.subtle}`,
-  color: vars.color.text.primary,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  gap: '14px',
-  padding: '0 13px',
-  cursor: 'pointer',
-  fontSize: vars.typography.label.size,
-  lineHeight: vars.typography.label.lineHeight,
-  fontWeight: '500',
-  textAlign: 'center',
-  transition: 'background-color 150ms ease, transform 100ms ease',
+  order: -2,
+  padding: `${vars.space.lg} ${vars.space.md} ${vars.space.md}`,
   selectors: {
-    '&:hover': {
-      background: vars.color.surface.overlay
-    },
-    '&:active': {
-      transform: 'scale(0.98)'
-    },
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    }
+    [`${collapsed} &`]: { display: 'flex', justifyContent: 'center', paddingInline: 0 }
   }
 })
 
-export const newBtnCollapsed = style({
-  width: '44px',
-  height: '44px',
-  borderRadius: '12px',
-  padding: '0',
-  justifyContent: 'center',
-  margin: '0 auto'
+// Even padding on both sides keeps the icon and label centered in the full-width button.
+export const newBtn = style({
+  inlineSize: '100%',
+  paddingInline: vars.space.xl
+})
+
+export const rootsSection = style({
+  order: -1
 })
 
 export const sectionHeader = style({
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
-  padding: '8px 16px 4px',
-  minHeight: '32px'
+  padding: `${vars.space.sm} ${vars.space.sm} ${vars.space.xs} ${vars.space.lg}`
 })
 
 export const sectionTitle = style({
-  margin: '12px 16px 6px 16px',
+  margin: `${vars.space.md} ${vars.space.lg} ${vars.space.sm}`,
   color: vars.color.text.secondary,
-  fontSize: vars.typography.labelSmall.size,
-  lineHeight: vars.typography.labelSmall.lineHeight,
-  fontWeight: '600',
-  letterSpacing: '0.04em',
   textTransform: 'uppercase',
-  selectors: {
-    [`${sectionHeader} &`]: {
-      margin: '0'
-    }
-  }
+  ...typography('labelSmall'),
+  selectors: { [`${sectionHeader} &`]: { margin: 0 } }
+})
+
+export const divider = style({
+  blockSize: vars.stroke.thin,
+  margin: `${vars.space.sm} ${vars.space.md}`,
+  background: vars.color.border.subtle
 })
 
 export const list = style({
-  listStyle: 'none',
-  margin: '0',
   display: 'flex',
   flexDirection: 'column',
-  gap: '2px',
-  padding: '0 10px',
-  selectors: {
-    [`${collapsed} &`]: {
-      padding: '8px 0'
-    }
-  }
+  gap: vars.space.xxs,
+  margin: 0,
+  paddingBlock: 0,
+  paddingInline: vars.space.sm,
+  listStyle: 'none',
+  selectors: { [`${collapsed} &`]: { paddingBlock: vars.space.sm, paddingInline: 0 } }
 })
 
 export const sublist = style({
-  listStyle: 'none',
-  margin: '0',
   display: 'flex',
   flexDirection: 'column',
-  gap: '2px',
-  padding: '0'
+  gap: vars.space.xxs,
+  margin: 0,
+  padding: 0,
+  listStyle: 'none'
 })
 
 export const entry = style({
-  margin: '0'
+  margin: 0
 })
 
+// One navigation row, for a destination or a root folder.
 export const item = style({
-  width: '100%',
-  minHeight: vars.density.control,
-  padding: '0 14px',
   display: 'flex',
   alignItems: 'center',
-  gap: '14px',
-  border: '0',
-  borderRadius: '10px',
+  gap: vars.space.md,
+  inlineSize: '100%',
+  minBlockSize: vars.density.control,
+  paddingBlock: 0,
+  paddingInline: vars.space.md,
+  border: 0,
+  borderRadius: vars.radius.md,
   background: 'transparent',
   color: vars.color.text.secondary,
-  cursor: 'pointer',
   font: 'inherit',
-  fontSize: vars.typography.label.size,
-  lineHeight: vars.typography.label.lineHeight,
-  fontWeight: '500',
-  textAlign: 'left',
-  transition: 'background-color 140ms ease, color 140ms ease',
+  ...typography('label'),
+  textAlign: 'start',
+  cursor: 'pointer',
+  transition: `background-color ${vars.motion.short} ${vars.motion.easing}, color ${vars.motion.short} ${vars.motion.easing}`,
   selectors: {
-    '&:hover': {
-      background: `color-mix(in srgb, ${vars.color.text.primary} 6%, transparent)`,
-      color: vars.color.text.primary
-    },
+    '&:hover': { background: vars.color.surface.fill, color: vars.color.text.primary },
+    '&:focus-visible': focusOutline,
     [`${collapsed} &`]: {
-      width: '44px',
-      height: '44px',
-      minHeight: '44px',
-      padding: '0',
       justifyContent: 'center',
-      borderRadius: '12px',
-      margin: '2px auto'
-    },
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    },
-    '&:active': {
-      transform: 'scale(0.99)'
+      inlineSize: vars.density.control,
+      padding: 0,
+      marginInline: 'auto'
     }
   }
 })
@@ -184,65 +153,6 @@ export const item = style({
 export const itemActive = style({
   background: vars.color.selection.bg,
   color: vars.color.selection.fg,
-  fontWeight: '600',
-  selectors: {
-    '&:hover': {
-      background: `color-mix(in srgb, ${vars.color.selection.bg} 88%, ${vars.color.text.primary})`,
-      color: vars.color.selection.fg
-    }
-  }
-})
-
-export const itemLabel = style({
-  minWidth: '0',
-  flex: '1',
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap'
-})
-
-export const divider = style({
-  height: '1px',
-  background: vars.color.border.subtle,
-  margin: '10px 12px'
-})
-
-export const subitem = style({
-  width: '100%',
-  minHeight: '40px',
-  padding: '0 14px',
-  display: 'flex',
-  alignItems: 'center',
-  gap: '14px',
-  border: '0',
-  borderRadius: '10px',
-  background: 'transparent',
-  color: vars.color.text.secondary,
-  cursor: 'pointer',
-  font: 'inherit',
-  fontSize: vars.typography.label.size,
-  lineHeight: vars.typography.label.lineHeight,
-  textAlign: 'left',
-  transition: 'background-color 140ms ease, color 140ms ease',
-  selectors: {
-    '&:hover': {
-      background: `color-mix(in srgb, ${vars.color.text.primary} 6%, transparent)`,
-      color: vars.color.text.primary
-    },
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    },
-    '&:active': {
-      transform: 'scale(0.99)'
-    }
-  }
-})
-
-export const subitemActive = style({
-  background: vars.color.selection.bg,
-  color: vars.color.selection.fg,
-  fontWeight: '600',
   selectors: {
     '&:hover': {
       background: `color-mix(in srgb, ${vars.color.selection.bg} 88%, ${vars.color.text.primary})`,
@@ -253,62 +163,35 @@ export const subitemActive = style({
 
 export const itemIcon = style({
   display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
   flex: 'none',
-  selectors: {
-    [`${itemActive} &`]: {
-      color: vars.color.selection.fg
-    },
-    [`${subitemActive} &`]: {
-      color: vars.color.selection.fg
-    }
-  }
+  alignItems: 'center',
+  justifyContent: 'center'
 })
 
-export const subitemLabel = style({
-  minWidth: '0',
-  flex: '1',
+export const itemLabel = style({
+  flex: 1,
+  minInlineSize: 0,
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap'
 })
 
-export const reorderToggle = style({
-  minHeight: vars.density.control,
-  display: 'inline-flex',
-  alignItems: 'center',
-  background: 'transparent',
-  border: 'none',
-  color: vars.color.accent.solid,
-  fontSize: vars.typography.label.size,
-  lineHeight: vars.typography.label.lineHeight,
-  cursor: 'pointer',
-  padding: '0 8px',
-  borderRadius: '8px',
-  selectors: {
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    }
-  }
-})
-
-export const subitemReorder = style({
+export const reorderRow = style({
   display: 'flex',
   alignItems: 'center',
-  gap: '8px',
-  minHeight: '48px',
-  padding: '2px 12px',
-  fontSize: vars.typography.body.size,
-  lineHeight: vars.typography.body.lineHeight
+  gap: vars.space.sm,
+  minBlockSize: vars.density.row,
+  paddingBlock: vars.space.xxs,
+  paddingInline: vars.space.md,
+  color: vars.color.text.secondary,
+  ...typography('body')
 })
 
 export const reorderActions = style({
   display: 'flex',
   alignItems: 'center',
-  gap: '2px',
-  marginLeft: 'auto'
+  gap: vars.space.xxs,
+  marginInlineStart: 'auto'
 })
 
 export const reorderChevron = style({
@@ -326,87 +209,8 @@ export const reorderChevronDown = style({
 })
 
 export const reorderError = style({
-  margin: '0 12px',
-  padding: '4px 12px',
-  color: vars.color.danger.onSoft,
-  fontSize: vars.typography.bodySmall.size,
-  lineHeight: vars.typography.bodySmall.lineHeight
-})
-
-export const overlay = style({
-  position: 'fixed',
-  inset: '0 auto 0 0',
-  top: '0',
-  bottom: '0',
-  width: 'min(300px, 85vw)',
-  maxWidth: 'none',
-  height: ['100vh', '100dvh'],
-  minHeight: '100dvh',
-  margin: '0',
-  padding: '0',
-  border: 'none',
-  borderRadius: '0 16px 16px 0',
-  background: vars.color.surface.container,
-  boxShadow: '4px 0 24px rgba(0, 0, 0, 0.35)',
-  zIndex: '60',
-  display: 'flex',
-  flexDirection: 'column',
-  overflow: 'hidden',
-  selectors: {
-    '&::backdrop': {
-      background: `color-mix(in srgb, ${vars.color.scrim} 50%, transparent)`,
-      backdropFilter: 'blur(4px)'
-    }
-  }
-})
-
-export const overlayHeader = style({
-  height: '56px',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  padding: '0 16px',
-  borderBottom: `1px solid ${vars.color.border.subtle}`,
-  flex: 'none'
-})
-
-export const appName = style({
-  fontSize: vars.typography.title.size,
-  lineHeight: vars.typography.title.lineHeight,
-  fontWeight: '700',
-  color: vars.color.text.primary
-})
-
-export const userAvatar = style({
-  width: '32px',
-  height: '32px',
-  borderRadius: '50%',
-  background: vars.color.selection.bg,
-  color: vars.color.selection.fg,
-  fontSize: vars.typography.labelSmall.size,
-  lineHeight: vars.typography.labelSmall.lineHeight,
-  fontWeight: '600',
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  border: `1px solid ${vars.color.border.subtle}`
-})
-
-export const overlayClose = style({
-  width: '44px',
-  height: '44px',
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  borderRadius: '50%',
-  border: 'none',
-  background: 'transparent',
-  color: vars.color.text.primary,
-  cursor: 'pointer',
-  selectors: {
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    }
-  }
+  margin: `0 ${vars.space.md}`,
+  padding: `${vars.space.xs} ${vars.space.md}`,
+  color: vars.color.danger.solid,
+  ...typography('bodySmall')
 })

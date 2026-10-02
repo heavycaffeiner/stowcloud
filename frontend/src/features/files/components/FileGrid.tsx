@@ -3,7 +3,7 @@ import type { KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent } from 
 import { formatEntrySize } from '../entry-size'
 import { useI18n } from '../../../hooks/use-i18n'
 import { selection, useSelectionStore } from '../selection'
-import { useCompact } from '../../../ui/use-compact'
+import { useCompact } from '@/hooks/use-compact'
 import { density as densityPref } from '../view-prefs'
 import { computeScaleMapping, computeWindow, rowIndexToScrollTop } from '../../../lib/virtual/windowing'
 import { cellPos, sectionRows, verticalTarget } from '../../../lib/virtual/grid-sections'
@@ -14,13 +14,10 @@ import { Thumbnail } from '../../preview/components/Thumbnail'
 import { MiddleEllipsis } from './MiddleEllipsis'
 import { useFileActivation } from '../hooks/use-file-activation'
 import { useFileFocusPreservation } from '../hooks/use-file-focus-preservation'
-import { Icon } from '../../../ui/Icon'
-import { CheckboxIndicator } from '../../../ui/Checkbox'
+import { cx, Icon, StowCheckboxIndicator, StowIconButton } from '@/shared/ui'
 import * as styles from './FileGrid.css'
-import * as utilitiesStyles from '../../../ui/utilities.css'
-import { cx } from '../../../ui/cx'
-import { cssVarName } from '../../../ui/css-var'
-import { vars } from '@/shared/theme'
+import { cssVarName } from '@/lib/css-var'
+import { touchTarget, vars } from '@/shared/theme'
 import type { Entry } from '../api'
 import type { Perms } from '../perms'
 
@@ -72,8 +69,8 @@ function FileCardHeader({
     onCancel()
   }
   const check = (
-    <span
-      className={cx(styles.check, utilitiesStyles.touchTarget)}
+    <div
+      className={cx(styles.check, touchTarget)}
       onClick={(event) => {
         event.stopPropagation()
         onCancel()
@@ -83,18 +80,18 @@ function FileCardHeader({
       onPointerUp={(event) => event.stopPropagation()}
       onDoubleClick={(event) => event.stopPropagation()}
     >
-      <CheckboxIndicator checked={selected} label={t('common.select', { name: entry.name })} />
-    </span>
+      <StowCheckboxIndicator checked={selected} label={t('common.select', { name: entry.name })} />
+    </div>
   )
   const name = <MiddleEllipsis name={entry.name} className={styles.name} />
   const kebab = (
-    <button
-      type="button"
+    <StowIconButton
       className={styles.kebab}
+      label={t('grid.more_actions', { name: entry.name })}
+      icon="more-vert"
       tabIndex={-1}
       aria-haspopup="menu"
-      aria-expanded={menuFor === entry.name}
-      aria-label={t('grid.more_actions', { name: entry.name })}
+      expanded={menuFor === entry.name}
       onClick={(event) => {
         event.stopPropagation()
         onCancel()
@@ -103,9 +100,7 @@ function FileCardHeader({
       onPointerDown={cancelControlPointer}
       onPointerUp={(event) => event.stopPropagation()}
       onDoubleClick={(event) => event.stopPropagation()}
-    >
-      <Icon name="more-vert" size={18} />
-    </button>
+    />
   )
   return isFolder ? (
     <>

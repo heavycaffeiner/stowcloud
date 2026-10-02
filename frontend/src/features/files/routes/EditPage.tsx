@@ -8,19 +8,14 @@ import { formatBytes } from '../../../lib/format/bytes'
 import { useI18n } from '../../../hooks/use-i18n'
 import { useShareEncryption, useStat } from '../api'
 import { splatOf, splatPath } from '../browse-search'
-import { Button } from '../../../ui/Button'
-import { ProgressCircular } from '../../../ui/ProgressCircular'
+import { cx, Icon, StowButton, StowIconButton, StowProgressCircular, StowSnackbar } from '@/shared/ui'
 import { CodeEditor, type CodeEditorHandle } from '../components/CodeEditor'
 import { useEditDocument } from '../hooks/use-edit-document'
 import { useEditNavigation } from '../hooks/use-edit-navigation'
-import { Snackbar } from '../../../ui/Snackbar'
 import { askUnlock } from '../../shares/components/UnlockShareDialog'
-import { Icon } from '../../../ui/Icon'
-import { IconButton } from '../../../ui/IconButton'
 import { MiddleEllipsis } from '../components/MiddleEllipsis'
 import { useDocumentTitle } from '../../../hooks/use-document-title'
 import * as styles from './EditPage.css'
-import { cx } from '../../../ui/cx'
 
 export function EditPage() {
   const path = splatPath(useParams({ from: '/_app/edit/$', select: (params) => params._splat }))
@@ -96,12 +91,11 @@ function Editor({ path }: { path: string }) {
   return (
     <main className={styles.root}>
       <header className={styles.toolbar}>
-        <IconButton
+        <StowIconButton
           label={t('editor.go_back')}
           onClick={() => void navigate({ to: '/b/$', params: splatOf(parentOf(path)) })}
-        >
-          <Icon name="chevron_left" />
-        </IconButton>
+          icon="chevron_left"
+        />
         <span className={styles.fileIcon} aria-hidden="true">
           <Icon name="edit_document" />
         </span>
@@ -123,20 +117,20 @@ function Editor({ path }: { path: string }) {
           </div>
         </div>
         <div className={styles.actions}>
-          <Button loading={edit.saving} disabled={!edit.canSave} onClick={() => void edit.save()}>
+          <StowButton loading={edit.saving} disabled={!edit.canSave} onClick={() => void edit.save()}>
             {t('editor.save_ctrl_s')}
-          </Button>
+          </StowButton>
         </div>
       </header>
       <div className={styles.body}>
         {locked ? (
           <div className={styles.locked} role="status">
             <p>{t('encryption.unlock_hint')}</p>
-            <Button onClick={() => void requestUnlock()}>{t('encryption.unlock')}</Button>
+            <StowButton onClick={() => void requestUnlock()}>{t('encryption.unlock')}</StowButton>
           </div>
         ) : loading ? (
           <div className={styles.loading}>
-            <ProgressCircular size={40} />
+            <StowProgressCircular size={40} />
           </div>
         ) : loadError ? (
           <p className={styles.error} role="alert">
@@ -161,7 +155,7 @@ function Editor({ path }: { path: string }) {
           {edit.saveError}
         </p>
       ) : null}
-      <Snackbar className={styles.snackbar} message={snackbar} onDismiss={() => setSnackbar(null)} />
+      <StowSnackbar className={styles.snackbar} message={snackbar} onDismiss={() => setSnackbar(null)} />
     </main>
   )
 }

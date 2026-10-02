@@ -1,10 +1,7 @@
 import { describeApiError } from '../../../api/error-text'
 import { useI18n } from '../../../hooks/use-i18n'
-import { Button } from '../../../ui/Button'
-import { VirtualList } from '../../../ui/VirtualList'
+import { SecondaryPageShell, SecondaryPageState, StowButton, VirtualList } from '@/shared/ui'
 import { useDocumentTitle } from '../../../hooks/use-document-title'
-import { SecondaryPageShell } from '../../../ui/SecondaryPageShell'
-import { SecondaryPageState } from '../../../ui/SecondaryPageState'
 import { TrashOperation, TrashRow } from '../components/TrashView'
 import { useTrashActions } from '../hooks/use-trash-actions'
 import { useTrashSelection } from '../hooks/use-trash-selection'
@@ -54,15 +51,15 @@ export function TrashPage() {
             {t('trash.select_all', { selected: selected.size, total: entries.length })}
           </label>
           <div className={styles.toolbarActions}>
-            <Button
+            <StowButton
               variant="text"
               disabled={selected.size === 0 || busy}
               loading={restorePending}
               onClick={() => void restoreItems([...selected])}
             >
               {t('trash.restore')}
-            </Button>
-            <Button
+            </StowButton>
+            <StowButton
               variant="text"
               danger
               disabled={selected.size === 0 || busy}
@@ -70,16 +67,16 @@ export function TrashPage() {
               onClick={() => void purgeItems(null)}
             >
               {t('trash.purge')}
-            </Button>
+            </StowButton>
           </div>
         </div>
       ) : null}
       {notice ? (
         <p className={styles.notice} role="status" aria-live="polite">
           {notice}{' '}
-          <button type="button" className={styles.noticeClose} onClick={dismissNotice}>
+          <StowButton variant="text" onClick={dismissNotice}>
             {t('common.close')}
-          </button>
+          </StowButton>
         </p>
       ) : null}
       {operation ? <TrashOperation operation={operation} onClose={dismissOperation} /> : null}

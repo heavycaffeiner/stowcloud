@@ -1,5 +1,4 @@
 import { style } from '@vanilla-extract/css'
-import { buttonMaxWidth, buttonMinHeight, buttonWidth } from '../../../ui/Button.css'
 import { scaleUp, vars } from '@/shared/theme'
 
 export const page = style({
@@ -35,10 +34,7 @@ export const card = style({
     '(max-width: 599.98px)': {
       gap: '14px',
       padding: '20px 16px',
-      borderRadius: vars.radius.xl,
-      vars: {
-        [buttonMinHeight]: '44px'
-      }
+      borderRadius: vars.radius.xl
     }
   }
 })
@@ -125,10 +121,8 @@ export const actions = style({
   width: '100%',
   '@media': {
     '(max-width: 599.98px)': {
-      vars: {
-        [buttonWidth]: '100%',
-        [buttonMaxWidth]: '100%'
-      }
+      flexDirection: 'column',
+      alignItems: 'stretch'
     }
   }
 })
@@ -207,10 +201,7 @@ export const pathRow = style({
   '@media': {
     '(max-width: 599.98px)': {
       alignItems: 'stretch',
-      flexDirection: 'column',
-      vars: {
-        [buttonWidth]: '100%'
-      }
+      flexDirection: 'column'
     }
   }
 })

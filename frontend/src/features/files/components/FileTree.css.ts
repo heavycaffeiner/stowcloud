@@ -31,49 +31,13 @@ export const list = style({
   minWidth: '0'
 })
 
+// The tree as a drawer on compact layouts, where the list leaves no room beside it.
 export const overlay = style({
-  position: 'fixed',
-  top: '0',
-  bottom: `calc(${vars.layout.navBar} + env(safe-area-inset-bottom, 0px))`,
-  insetInlineStart: '0',
-  margin: '0',
-  maxWidth: 'min(320px, 85vw)',
-  width: '100%',
-  height: 'auto',
-  padding: '0',
-  border: 'none',
-  boxShadow: vars.elevation.md,
-  translate: '0 0',
-  transition: `translate ${vars.motion.easing}, display ${vars.motion.medium} allow-discrete, overlay ${vars.motion.medium} allow-discrete`,
-  selectors: {
-    '&:not([open])': {
-      translate: '-100% 0'
-    },
-    '&[open]': {
-      '@starting-style': {
-        translate: '-100% 0'
-      }
-    },
-    '&::backdrop': {
-      background: `color-mix(in srgb, ${vars.color.scrim} 32%, transparent)`,
-      transition: `background-color ${vars.motion.easing}, display ${vars.motion.medium} allow-discrete, overlay ${vars.motion.medium} allow-discrete`
-    },
-    '&:not([open])::backdrop': {
-      background: `color-mix(in srgb, ${vars.color.scrim} 0%, transparent)`
-    },
-    '&[open]::backdrop': {
-      '@starting-style': {
-        background: `color-mix(in srgb, ${vars.color.scrim} 0%, transparent)`
-      }
-    }
-  }
+  paddingBlockEnd: vars.space.sm
 })
 
 export const treeRowMore = style({
   selectors: {
-    [`${overlay} &`]: {
-      minHeight: '44px'
-    },
     '&:focus-visible': {
       outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
@@ -95,7 +59,7 @@ export const treeRowMore = style({
 export const treeRowStatus = style({
   selectors: {
     [`${overlay} &`]: {
-      minHeight: '44px'
+      minHeight: vars.density.control
     }
   },
   display: 'flex',
@@ -111,31 +75,13 @@ export const treeRowStatus = style({
 
 export const overlayHeader = style({
   position: 'sticky',
-  top: '0',
-  zIndex: '1',
+  insetBlockStart: 0,
+  zIndex: 1,
   display: 'flex',
-  alignItems: 'center',
   justifyContent: 'flex-end',
-  height: '56px',
-  paddingInline: '8px',
-  boxShadow: `0 1px 0 ${vars.color.border.subtle}`,
-  background: vars.color.surface.page
-})
-
-export const overlayClose = style({
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  width: vars.density.control,
-  height: vars.density.control,
-  padding: '0',
-  border: '0',
-  borderRadius: '50%',
-  background: 'transparent',
-  color: 'inherit',
-  fontSize: '1.5rem',
-  lineHeight: '1',
-  cursor: 'pointer'
+  padding: vars.space.xs,
+  borderBlockEnd: `${vars.stroke.thin} solid ${vars.color.border.subtle}`,
+  background: vars.color.surface.container
 })
 
 export const treeRowStatusError = style({

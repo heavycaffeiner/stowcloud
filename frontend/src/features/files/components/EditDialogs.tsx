@@ -1,7 +1,6 @@
 import { overlay } from 'overlay-kit'
 import { useI18n } from '../../../hooks/use-i18n'
-import { Button } from '../../../ui/Button'
-import { Dialog } from '../../../ui/Dialog'
+import { StowButton, StowDialog } from '@/shared/ui'
 import { useKeyChange } from '../../shares/e2ee-store'
 
 export type ConflictChoice = 'reload' | 'overwrite' | null
@@ -41,20 +40,20 @@ function EditConflictDialog({
     if (change.kind === 'lock') onChoose(null)
   })
   return (
-    <Dialog
+    <StowDialog
       open={open}
       title={weak ? t('edit_conflict.file_may_have_changed') : t('edit_conflict.file_changed_elsewhere')}
       dismissible={false}
       onClosed={onClosed}
       actions={
         <>
-          <Button variant="text" onClick={() => onChoose(null)}>
+          <StowButton variant="text" onClick={() => onChoose(null)}>
             {t('common.cancel')}
-          </Button>
-          <Button variant="outlined" onClick={() => onChoose('reload')}>
+          </StowButton>
+          <StowButton variant="outlined" onClick={() => onChoose('reload')}>
             {t('edit_conflict.reload_newer_version')}
-          </Button>
-          <Button onClick={() => onChoose('overwrite')}>{t('edit_conflict.overwrite_with_my_changes')}</Button>
+          </StowButton>
+          <StowButton onClick={() => onChoose('overwrite')}>{t('edit_conflict.overwrite_with_my_changes')}</StowButton>
         </>
       }
     >
@@ -65,7 +64,7 @@ function EditConflictDialog({
       </p>
       <p>{t('edit_conflict.choose_whether_keep_what_you')}</p>
       {weak ? <p>{t('edit_conflict.change_check_is_advisory')}</p> : null}
-    </Dialog>
+    </StowDialog>
   )
 }
 
@@ -82,26 +81,26 @@ function LeaveEditorDialog({
     if (change.kind === 'lock') onChoose('stay')
   })
   return (
-    <Dialog
+    <StowDialog
       open={open}
       title={t('editor.unsaved_changes')}
       dismissible={false}
       onClosed={onClosed}
       actions={
         <>
-          <Button variant="text" onClick={() => onChoose('stay')}>
+          <StowButton variant="text" onClick={() => onChoose('stay')}>
             {t('editor.stay')}
-          </Button>
-          <Button variant="outlined" onClick={() => onChoose('discard')}>
+          </StowButton>
+          <StowButton variant="outlined" onClick={() => onChoose('discard')}>
             {t('editor.discard_and_leave')}
-          </Button>
-          <Button disabled={!canSave} onClick={() => onChoose('save')}>
+          </StowButton>
+          <StowButton disabled={!canSave} onClick={() => onChoose('save')}>
             {t('editor.save_and_leave')}
-          </Button>
+          </StowButton>
         </>
       }
     >
       <p>{t('editor.unsaved_changes_prompt', { name })}</p>
-    </Dialog>
+    </StowDialog>
   )
 }

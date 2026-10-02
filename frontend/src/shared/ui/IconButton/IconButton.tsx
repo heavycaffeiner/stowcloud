@@ -16,6 +16,10 @@ export interface StowIconButtonProps extends Omit<ComponentPropsWithRef<'button'
   selected?: boolean
   /** Set when the button opens a menu or panel. A disclosure is never also a toggle. */
   expanded?: boolean
+  /** For an action that destroys something. The label still has to say what. */
+  danger?: boolean
+  /** filled marks the one primary action on a surface, such as creating something. */
+  variant?: 'standard' | 'filled'
   /** Custom content, used when there is no `icon`. */
   children?: ReactNode
 }
@@ -26,6 +30,8 @@ export function StowIconButton({
   selectedIcon,
   selected,
   expanded,
+  danger = false,
+  variant = 'standard',
   type = 'button',
   disabled,
   className,
@@ -37,7 +43,8 @@ export function StowIconButton({
     <StowTooltip label={label} disabled={disabled}>
       <ActionIcon
         type={type}
-        variant={selected ? 'tonal' : 'standard'}
+        variant={selected ? 'tonal' : variant}
+        color={danger ? 'danger' : undefined}
         disabled={disabled}
         aria-label={label}
         aria-expanded={expanded}

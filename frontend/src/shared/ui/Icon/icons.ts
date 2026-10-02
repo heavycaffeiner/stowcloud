@@ -23,6 +23,7 @@ import iconDownload from '@ktibow/iconset-material-symbols/download'
 import iconEditDocument from '@ktibow/iconset-material-symbols/edit-document-outline'
 import iconFile from '@ktibow/iconset-material-symbols/draft-outline'
 import iconFolder from '@ktibow/iconset-material-symbols/folder-outline'
+import iconNewFolder from '@ktibow/iconset-material-symbols/create-new-folder-outline'
 import iconGrid from '@ktibow/iconset-material-symbols/grid-view-outline'
 import iconHome from '@ktibow/iconset-material-symbols/home-outline'
 import iconImage from '@ktibow/iconset-material-symbols/image-outline'
@@ -32,6 +33,7 @@ import iconList from '@ktibow/iconset-material-symbols/format-list-bulleted'
 import iconLock from '@ktibow/iconset-material-symbols/lock-outline'
 import iconMenu from '@ktibow/iconset-material-symbols/menu'
 import iconMore from '@ktibow/iconset-material-symbols/more-vert'
+import iconMoreHoriz from '@ktibow/iconset-material-symbols/more-horiz'
 import iconMove from '@ktibow/iconset-material-symbols/drive-file-move-outline'
 import iconRecent from '@ktibow/iconset-material-symbols/history'
 import iconRefresh from '@ktibow/iconset-material-symbols/refresh'
@@ -142,6 +144,7 @@ export const icons = {
   filter: iconFilter,
   filter_list: iconFilter,
   folder: iconFolder,
+  'new-folder': iconNewFolder,
   'folder-tree': iconAccountTree,
   'account-tree': iconAccountTree,
   account_tree: iconAccountTree,
@@ -156,6 +159,7 @@ export const icons = {
   menu: iconMenu,
   'more-vert': iconMore,
   more_vert: iconMore,
+  'more-horiz': iconMoreHoriz,
   move: iconMove,
   recent: iconRecent,
   history: iconRecent,

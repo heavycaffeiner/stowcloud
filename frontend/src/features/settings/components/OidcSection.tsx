@@ -4,11 +4,10 @@ import { formatDateNs } from '../../../i18n'
 import { useI18n } from '../../../hooks/use-i18n'
 import { useOidcConfig, useSession } from '../../auth/api'
 import { useOidcLinkStart, useOidcUnlink } from '../api'
-import { Button } from '../../../ui/Button'
+import { cx, StowButton } from '@/shared/ui'
 import { askPassword } from './PasswordPrompt'
 import * as styles from './OidcSection.css'
 import * as settingsCardStyles from './SettingsCard.css'
-import { cx } from '../../../ui/cx'
 import { ApiError } from '../../../api/fetcher'
 import { oidcErrorMessage } from '../../auth/oidc-error'
 
@@ -77,11 +76,13 @@ export function OidcSection() {
           {linked ? t('oidc.connected') : t('oidc.not_connected')}
         </span>
         {linked ? (
-          <Button variant="outlined" onClick={disconnect}>
+          <StowButton variant="outlined" onClick={disconnect}>
             {t('oidc.disconnect')}
-          </Button>
+          </StowButton>
         ) : configured ? (
-          <Button onClick={() => void connect()}>{t('oidc.connect_provider', { provider: providerLabel })}</Button>
+          <StowButton onClick={() => void connect()}>
+            {t('oidc.connect_provider', { provider: providerLabel })}
+          </StowButton>
         ) : null}
       </div>
       {linked ? (

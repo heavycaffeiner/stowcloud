@@ -16,10 +16,3 @@ allowBuilds:
 
 minimumReleaseAgeExclude:
   - '@zip.js/zip.js@2.11.1'
-
-# mdui's focus mixin reads its focus element in the first update. React can
-# mount and remove an element inside one task, the element's ref is cleared by
-# then, and the read throws. The patch skips the listeners until the element
-# is connected again.
-patchedDependencies:
-  '@mdui/shared@1.0.9': patches/@mdui__shared@1.0.9.patch

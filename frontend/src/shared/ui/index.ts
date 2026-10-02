@@ -12,11 +12,12 @@ export {
   openMenu,
   StowMenuButton,
   StowMenuItem,
+  StowMenuLabel,
   type MenuAnchor,
   type StowMenuButtonProps,
   type StowMenuItemProps
 } from './Menu'
-export { StowPageTabs, type StowPageTab, type StowPageTabsProps } from './PageTabs'
+export { StowPageTabs, StowTabbedPage, type StowPageTab, type StowPageTabsProps } from './PageTabs'
 export {
   StowProgressCircular,
   StowProgressLinear,
@@ -29,3 +30,12 @@ export { StowSnackbar, type StowSnackbarProps } from './Snackbar'
 export { StowSwitch, type StowSwitchProps } from './Switch'
 export { StowFormTextField, StowTextField, type StowTextFieldProps, type StowTextFieldType } from './TextField'
 export { StowTooltip, type StowTooltipProps } from './Tooltip'
+export { ErrorBoundary, type ErrorBoundaryProps } from './ErrorBoundary'
+export {
+  SecondaryPageShell,
+  SecondaryPageState,
+  secondaryPageStyles,
+  type SecondaryPageShellProps,
+  type SecondaryPageStateProps
+} from './SecondaryPage'
+export { VirtualList, type VirtualListProps } from './VirtualList'

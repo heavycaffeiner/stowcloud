@@ -1,5 +1,5 @@
 // What can be done to a set of rows. The row menu and the selection bar both render this list.
-import type { IconName } from '../../../ui/icons'
+import { type IconName } from '@/shared/ui'
 import { t } from '../../../i18n'
 import { isEditableFileName } from './editable-files'
 import type { Entry } from '../api'

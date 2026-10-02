@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css'
-import { iconButtonSize } from '../../../ui/IconButton.css'
+import { iconButtonSize } from '@/shared/ui/IconButton/IconButton.css'
 import { vars } from '@/shared/theme'
 
 export const root = style({

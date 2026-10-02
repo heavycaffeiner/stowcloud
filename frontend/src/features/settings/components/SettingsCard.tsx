@@ -1,7 +1,5 @@
 import type { ReactNode } from 'react'
 import * as styles from './SettingsCard.css'
-import * as textFieldStyles from '../../../ui/TextField.css'
-import { cx } from '../../../ui/cx'
 
 interface SettingsCardProps {
   title: ReactNode
@@ -13,7 +11,7 @@ interface SettingsCardProps {
 
 export function SettingsCard({ title, description, leading, trailing, children }: SettingsCardProps) {
   return (
-    <article className={cx(styles.card, textFieldStyles.onLowSurface)}>
+    <article className={styles.card}>
       <div className={styles.cardHead}>
         {leading}
         <div className={styles.cardMeta}>

@@ -5,11 +5,11 @@ import { StowThemeProvider } from '@/shared/theme/StowThemeProvider'
 import { queryClient } from '../api/query-client'
 import { theme } from '../features/settings/theme'
 import { i18n } from '../i18n/state'
-import { useMduiLocale } from './use-root-providers'
+import { useDocumentLanguage } from './use-root-providers'
 
 export function RootProviders({ children }: PropsWithChildren) {
   const { i18n: translation } = useTranslation(undefined, { i18n })
-  useMduiLocale(translation.language === 'en' ? 'en' : 'ko')
+  useDocumentLanguage(translation.language === 'en' ? 'en' : 'ko')
 
   return (
     <I18nextProvider i18n={i18n}>

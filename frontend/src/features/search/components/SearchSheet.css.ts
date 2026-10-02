@@ -1,42 +1,25 @@
 import { style } from '@vanilla-extract/css'
 import { vars } from '@/shared/theme'
 
-export const root = style({
-  inset: '48px 0 auto',
-  width: 'min(720px, calc(100% - 32px))',
-  maxHeight: 'calc(100dvh - 80px)',
-  margin: '0 auto',
-  padding: '0',
-  border: `1px solid ${vars.color.border.subtle}`,
-  borderRadius: '16px',
-  background: vars.color.surface.overlay,
-  color: vars.color.text.primary,
-  boxShadow: '0 16px 48px rgba(0, 0, 0, 0.32)',
-  overflow: 'visible',
-  selectors: {
-    '&::backdrop': {
-      background: `color-mix(in srgb, ${vars.color.scrim} 50%, transparent)`,
-      backdropFilter: 'blur(6px)'
-    }
-  },
-  '@media': {
-    '(max-height: 400px)': {
-      inset: '8px 0 auto',
-      maxHeight: 'calc(100dvh - 16px)'
-    }
-  }
-})
+const gap = vars.space.xxl
+const shortGap = vars.space.sm
 
-export const body = style({
-  maxHeight: 'calc(100dvh - 80px)',
+// A floating sheet centered near the top, rather than a panel across the whole edge.
+export const root = style({
+  flex: `0 1 min(45rem, calc(100% - 2 * ${gap}))`,
+  maxBlockSize: `calc(100dvh - 2 * ${gap})`,
+  margin: `${gap} auto 0`,
   display: 'flex',
   flexDirection: 'column',
-  padding: '16px',
-  boxSizing: 'border-box',
-  overflow: 'visible',
+  padding: vars.space.lg,
+  border: `${vars.stroke.thin} solid ${vars.color.border.subtle}`,
+  borderRadius: vars.radius.lg,
+  background: vars.color.surface.overlay,
+  boxShadow: vars.elevation.xl,
   '@media': {
     '(max-height: 400px)': {
-      maxHeight: 'calc(100dvh - 16px)'
+      maxBlockSize: `calc(100dvh - 2 * ${shortGap})`,
+      marginBlockStart: shortGap
     }
   }
 })

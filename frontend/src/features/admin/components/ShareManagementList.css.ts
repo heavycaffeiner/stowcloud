@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css'
-import { trailingJustify, trailingWidth } from '../../../ui/ListItem.css'
+import { trailingJustify, trailingWidth } from '@/shared/ui/ListItem/ListItem.css'
 import { vars } from '@/shared/theme'
 
 export const empty = style({

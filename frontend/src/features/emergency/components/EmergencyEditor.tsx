@@ -5,9 +5,7 @@ import { emergencyRestart, emergencySave, emergencySettings, type EmergencySetti
 import { describeApiError } from '../../../api/error-text'
 import { useBeforeUnload } from '../../../hooks/use-before-unload'
 import { useI18n } from '../../../hooks/use-i18n'
-import { Button } from '../../../ui/Button'
-import { Dialog } from '../../../ui/Dialog'
-import { Select } from '../../../ui/Select'
+import { StowButton, StowDialog, StowSelect } from '@/shared/ui'
 import * as styles from '../routes/EmergencyPage.css'
 
 /* i18n */ ;('settings.would_lock_you_out')
@@ -43,25 +41,25 @@ interface SectionChangeDialogProps {
 function SectionChangeDialog({ open, section, onChoose, onClosed }: SectionChangeDialogProps) {
   const { t } = useI18n()
   return (
-    <Dialog
+    <StowDialog
       open={open}
       title={t('emergency.unsaved_section')}
       onClose={() => onChoose('stay')}
       onClosed={onClosed}
       actions={
         <>
-          <Button variant="text" onClick={() => onChoose('stay')}>
+          <StowButton variant="text" onClick={() => onChoose('stay')}>
             {t('editor.stay')}
-          </Button>
-          <Button variant="outlined" onClick={() => onChoose('discard')}>
+          </StowButton>
+          <StowButton variant="outlined" onClick={() => onChoose('discard')}>
             {t('emergency.discard_and_change')}
-          </Button>
-          <Button onClick={() => onChoose('save')}>{t('emergency.save_and_change')}</Button>
+          </StowButton>
+          <StowButton onClick={() => onChoose('save')}>{t('emergency.save_and_change')}</StowButton>
         </>
       }
     >
       <p>{t('emergency.unsaved_section_prompt', { section })}</p>
-    </Dialog>
+    </StowDialog>
   )
 }
 
@@ -162,13 +160,13 @@ export function EmergencyEditor({ initial }: { initial: EmergencySettings }) {
           void saveSection()
         }}
       >
-        <Select
+        <StowSelect
           id="sc-emergency-section"
           label={t('emergency.section')}
           value={target ?? open.name}
-          options={open.settings.sections.map((name) => ({ value: name, text: name }))}
+          options={open.settings.sections.map((name) => ({ value: name, label: name }))}
           disabled={locked}
-          onValueChange={(name) => void changeSection(name)}
+          onChange={(name) => void changeSection(name)}
         />
         {load.isPending && target ? (
           <p className={styles.hint} role="status">
@@ -189,10 +187,10 @@ export function EmergencyEditor({ initial }: { initial: EmergencySettings }) {
         />
         <p className={styles.hint}>{t('emergency.document_hint')}</p>
         <div className={styles.actions}>
-          <Button className={styles.action} type="submit" loading={save.isPending} disabled={locked}>
+          <StowButton className={styles.action} type="submit" loading={save.isPending} disabled={locked}>
             {t('common.save')}
-          </Button>
-          <Button
+          </StowButton>
+          <StowButton
             className={styles.action}
             variant="outlined"
             onClick={() => restart.mutate()}
@@ -200,7 +198,7 @@ export function EmergencyEditor({ initial }: { initial: EmergencySettings }) {
             disabled={locked}
           >
             {t('emergency.restart_now')}
-          </Button>
+          </StowButton>
         </div>
       </form>
       {outcome ? (

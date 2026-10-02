@@ -2,9 +2,7 @@ import { overlay } from 'overlay-kit'
 import { useForm, useWatch } from 'react-hook-form'
 import { useI18n } from '../../../hooks/use-i18n'
 import { WrongPassphraseError } from '../../../lib/crypto/e2ee'
-import { Button } from '../../../ui/Button'
-import { Dialog } from '../../../ui/Dialog'
-import { FormTextField } from '../../../ui/FormTextField'
+import { StowButton, StowDialog, StowFormTextField } from '@/shared/ui'
 import { unlockShare } from '../e2ee-store'
 
 interface UnlockShareDialogProps {
@@ -47,7 +45,7 @@ function UnlockShareDialog({ open, salt, verifier, onUnlock, onClose, onClosed }
   })
 
   return (
-    <Dialog
+    <StowDialog
       open={open}
       title={t('encryption.unlock_title')}
       role="dialog"
@@ -55,18 +53,18 @@ function UnlockShareDialog({ open, salt, verifier, onUnlock, onClose, onClosed }
       onClosed={onClosed}
       actions={
         <>
-          <Button variant="text" disabled={unlocking} onClick={onClose}>
+          <StowButton variant="text" disabled={unlocking} onClick={onClose}>
             {t('common.cancel')}
-          </Button>
-          <Button loading={unlocking} disabled={!passphrase} onClick={() => void submit()}>
+          </StowButton>
+          <StowButton loading={unlocking} disabled={!passphrase} onClick={() => void submit()}>
             {t('encryption.unlock')}
-          </Button>
+          </StowButton>
         </>
       }
     >
       <p>{t('encryption.unlock_hint')}</p>
       <form onSubmit={(event) => void submit(event)}>
-        <FormTextField
+        <StowFormTextField
           control={control}
           name="passphrase"
           rules={{ required: true }}
@@ -77,6 +75,6 @@ function UnlockShareDialog({ open, salt, verifier, onUnlock, onClose, onClosed }
           disabled={unlocking}
         />
       </form>
-    </Dialog>
+    </StowDialog>
   )
 }

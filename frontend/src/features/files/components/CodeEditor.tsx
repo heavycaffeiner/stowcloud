@@ -5,7 +5,7 @@ import type { EditorView } from '@codemirror/view'
 import type { LanguageSupport } from '@codemirror/language'
 import * as styles from './CodeEditor.css'
 import { codeVars } from './CodeEditor.css'
-import { cx } from '../../../ui/cx'
+import { cx } from '@/shared/ui'
 
 export interface CodeEditorProps {
   value: string

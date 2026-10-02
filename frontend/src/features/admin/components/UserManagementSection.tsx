@@ -3,15 +3,11 @@ import { formatBytes, bytesToMb, BYTES_PER_MB } from '../../../lib/format/bytes'
 import { t } from '../../../i18n'
 import { useI18n } from '../../../hooks/use-i18n'
 import { describeApiError } from '../../../api/error-text'
-import { confirmAction, promptText } from '../../../ui/ActionDialog'
-import { Button } from '../../../ui/Button'
-import { VirtualList } from '../../../ui/VirtualList'
+import { confirmAction, Icon, promptText, StowButton, StowProgressCircular, VirtualList } from '@/shared/ui'
 import { showGrants } from './GrantManagementSection'
 import { askNewUser, askUserPassword } from './UserDialogs'
 import { showUserOidc } from './UserOidcDialog'
 import { UserManagementRow } from './UserManagementRow'
-import { Icon } from '../../../ui/Icon'
-import { ProgressCircular } from '../../../ui/ProgressCircular'
 import * as adminStyles from './admin.css'
 import { ApiError } from '../../../api/fetcher'
 import { useAdminUsers, useDeleteUser, useSetUserDisabled, useSetUserQuota, type AdminUser } from '../api'
@@ -92,9 +88,13 @@ export function UserManagementSection() {
     <section className={adminStyles.section}>
       <div className={adminStyles.sectionHeader}>
         <p className={adminStyles.sectionHint}>{t('user.create_accounts_suspend_or_re')}</p>
-        <Button className={adminStyles.sectionHeaderAction} icon={<Icon name="add" />} onClick={() => void addUser()}>
+        <StowButton
+          className={adminStyles.sectionHeaderAction}
+          icon={<Icon name="add" />}
+          onClick={() => void addUser()}
+        >
           {t('user.add_user')}
-        </Button>
+        </StowButton>
       </div>
       {toggle.error ? (
         <p className={adminStyles.sectionError} role="alert">
@@ -106,7 +106,7 @@ export function UserManagementSection() {
         </p>
       ) : null}
       {usersQuery.isPending ? (
-        <ProgressCircular size={40} />
+        <StowProgressCircular size={40} />
       ) : usersQuery.error ? (
         <p className={adminStyles.sectionError} role="alert">
           {describeApiError(usersQuery.error, t('user.could_not_load_user_list'))}

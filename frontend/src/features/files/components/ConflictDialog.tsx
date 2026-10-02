@@ -1,5 +1,5 @@
 import { overlay } from 'overlay-kit'
-import { Button } from '../../../ui/Button'
+import { StowButton } from '@/shared/ui'
 import { BrowseDialog } from './browse-dialog'
 import { useI18n } from '../../../hooks/use-i18n'
 import type { OnConflict } from '../api'
@@ -33,13 +33,13 @@ function ConflictDialog({
       onClosed={onClosed}
       actions={
         <>
-          <Button variant="text" onClick={() => onChoose('skip')}>
+          <StowButton variant="text" onClick={() => onChoose('skip')}>
             {t('conflict.skip')}
-          </Button>
-          <Button variant="outlined" onClick={() => onChoose('rename')}>
+          </StowButton>
+          <StowButton variant="outlined" onClick={() => onChoose('rename')}>
             {t('conflict.keep_both')}
-          </Button>
-          <Button onClick={() => onChoose('overwrite')}>{t('conflict.overwrite')}</Button>
+          </StowButton>
+          <StowButton onClick={() => onChoose('overwrite')}>{t('conflict.overwrite')}</StowButton>
         </>
       }
     >

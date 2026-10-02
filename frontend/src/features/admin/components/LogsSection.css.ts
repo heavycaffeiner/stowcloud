@@ -94,34 +94,10 @@ export const levelsLegend = style({
   marginBottom: '8px'
 })
 
-export const sourceButton = style({
-  minBlockSize: vars.density.control,
-  paddingInline: '12px',
-  border: 'none',
-  borderRadius: vars.radius.full,
-  background: vars.color.surface.overlay,
-  color: 'inherit',
-  cursor: 'pointer',
-  transition: 'background-color 120ms ease, color 120ms ease',
-  selectors: {
-    '&:hover': {
-      background: vars.color.surface.fill
-    },
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    }
-  },
-  '@container': {
-    [`${logs} (max-width: 599.98px)`]: {
-      minBlockSize: '44px'
-    }
-  }
-})
-
-export const sourceButtonActive = style({
-  background: vars.color.accent.soft,
-  color: vars.color.accent.onSoft
+export const sourceGroup = style({
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: vars.space.xs
 })
 
 export const bar = style({

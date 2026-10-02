@@ -1,7 +1,6 @@
 import { overlay } from 'overlay-kit'
-import { Button } from '../../../ui/Button'
+import { Icon, StowButton } from '@/shared/ui'
 import { BrowseDialog } from './browse-dialog'
-import { Icon } from '../../../ui/Icon'
 import { useI18n } from '../../../hooks/use-i18n'
 import * as styles from './DeleteDialog.css'
 
@@ -47,12 +46,12 @@ function DeleteDialog({
       onClosed={onClosed}
       actions={
         <>
-          <Button variant="text" onClick={onClose}>
+          <StowButton variant="text" onClick={onClose}>
             {t('common.cancel')}
-          </Button>
-          <Button danger onClick={onConfirm}>
+          </StowButton>
+          <StowButton danger onClick={onConfirm}>
             {t('common.delete')}
-          </Button>
+          </StowButton>
         </>
       }
     >

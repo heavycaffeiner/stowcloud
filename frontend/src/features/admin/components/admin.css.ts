@@ -103,42 +103,7 @@ export const rowActions = style({
   }
 })
 
-export const chipAction = style({
-  margin: '0',
-  display: 'inline-flex',
-  alignItems: 'center'
-})
-
 export const chip = style({
-  selectors: {
-    'button&': {
-      minHeight: vars.density.control,
-      border: `1px solid ${vars.color.border.subtle}`,
-      font: 'inherit',
-      cursor: 'pointer',
-      paddingInline: '12px',
-      transition: 'background-color 140ms ease, border-color 140ms ease, opacity 140ms ease, transform 120ms ease'
-    },
-    'button&:hover': {
-      borderColor: vars.color.border.strong,
-      filter: 'brightness(0.92)'
-    },
-    'button&:active': {
-      transform: 'scale(0.95)'
-    },
-    'button&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    },
-    [`&:has(${chipAction})`]: {
-      minHeight: '44px',
-      gap: '4px',
-      padding: '0 0 0 12px',
-      vars: {
-        [vars.density.control]: '44px'
-      }
-    }
-  },
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
@@ -150,16 +115,15 @@ export const chip = style({
   fontSize: vars.typography.caption.size,
   fontWeight: vars.typography.caption.weight,
   lineHeight: vars.typography.caption.lineHeight,
-  whiteSpace: 'nowrap',
-  '@media': {
-    '(max-width: 599.98px)': {
-      selectors: {
-        'button&': {
-          minBlockSize: '44px'
-        }
-      }
-    }
-  }
+  whiteSpace: 'nowrap'
+})
+
+// A chip that ends in its own remove button, which sets the height.
+export const removableChip = style({
+  gap: vars.space.xxs,
+  paddingBlock: 0,
+  paddingInlineStart: vars.space.md,
+  paddingInlineEnd: 0
 })
 
 export const form = style({

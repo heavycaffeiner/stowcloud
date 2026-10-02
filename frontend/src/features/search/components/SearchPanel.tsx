@@ -2,16 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent, ReactNode } from 'react'
 import { useI18n } from '../../../hooks/use-i18n'
 import { useOpenedSearch, useSubmittedQuery } from '../state'
-import { Icon } from '../../../ui/Icon'
+import { Icon, StowButton, StowIconButton, StowMenuButton, StowMenuItem, StowProgressCircular } from '@/shared/ui'
 import { useSearchController } from '../hooks/use-search-controller'
 import { useSearchNavigation } from '../hooks/use-search-navigation'
 import { CATEGORIES, SORT_KEYS } from '../logic/search-state'
 import { SearchResults } from './SearchResults'
-import { ProgressCircular } from '../../../ui/ProgressCircular'
 import * as styles from './SearchPanel.css'
-import * as utilitiesStyles from '../../../ui/utilities.css'
-import * as iconButtonStyles from '../../../ui/IconButton.css'
-import { cx } from '../../../ui/cx'
+import { srOnly } from '@/shared/theme'
 
 export interface SearchPanelProps {
   readonly scope?: string
@@ -78,22 +75,14 @@ export function SearchPanel({ scope = '', autoFocus = false, trailing }: SearchP
           value={state.query}
           placeholder={t('search.placeholder')}
           autoFocus={autoFocus}
+          data-autofocus={autoFocus || undefined}
           onChange={(event) => controller.set('query', event.target.value)}
           onKeyDown={onQueryKeyDown}
         />
-        {state.query.trim() ? (
-          <button
-            type="button"
-            className={cx(styles.clearBtn, iconButtonStyles.root)}
-            aria-label={t('search.clear')}
-            onClick={clear}
-          >
-            <Icon name="close" size={16} />
-          </button>
-        ) : null}
-        <button type="submit" className={styles.submitBtn} aria-label={t('search.run')}>
+        {state.query.trim() ? <StowIconButton label={t('search.clear')} icon="close" onClick={clear} /> : null}
+        <StowButton type="submit" variant="text">
           {t('search.run')}
-        </button>
+        </StowButton>
         {trailing}
       </form>
 
@@ -102,16 +91,16 @@ export function SearchPanel({ scope = '', autoFocus = false, trailing }: SearchP
           {CATEGORIES.map((cat) => {
             const isSelected = controller.activeCategory === cat.id
             return (
-              <button
+              <StowButton
                 key={cat.id}
-                type="button"
-                className={cx(styles.categoryPill, isSelected && styles.categoryPillActive)}
-                aria-pressed={isSelected}
+                variant={isSelected ? 'tonal' : 'outlined'}
+                pressed={isSelected}
+                icon={<Icon name={cat.icon} size={18} />}
+                className={styles.categoryPill}
                 onClick={() => controller.selectCategory(cat.id)}
               >
-                <Icon name={cat.icon} size={15} />
-                <span>{t(cat.labelKey)}</span>
-              </button>
+                {t(cat.labelKey)}
+              </StowButton>
             )
           })}
         </div>
@@ -122,45 +111,39 @@ export function SearchPanel({ scope = '', autoFocus = false, trailing }: SearchP
           <Icon name={scope ? 'folder' : 'search'} size={14} />
           <span>{scope ? (scope.split('/').filter(Boolean).at(-1) ?? scope) : t('search.scope_all_accessible')}</span>
         </div>
-        <div className={styles.sortWrap}>
-          <button
-            type="button"
-            className={styles.sortBtn}
-            aria-expanded={state.sortOpen}
+        <StowMenuButton
+          label={t('search.sort_by', { key: sortLabel })}
+          align="end"
+          menu={(close) =>
+            SORT_KEYS.map(([key, labelKey]) => (
+              <StowMenuItem
+                key={key}
+                checked={state.sortKey === key}
+                onClick={() => {
+                  controller.set('sortKey', key)
+                  close()
+                }}
+              >
+                {t(labelKey)}
+              </StowMenuItem>
+            ))
+          }
+        >
+          <StowButton
+            variant="text"
+            icon={<Icon name="sort" size={18} />}
             aria-label={t('search.sort_by', { key: sortLabel })}
-            onClick={() => controller.set('sortOpen', (open) => !open)}
           >
-            <Icon name="sort" size={15} />
-            <span>{sortLabel}</span>
-          </button>
-          {state.sortOpen ? (
-            <div className={styles.menu} role="menu">
-              {SORT_KEYS.map(([key, labelKey]) => (
-                <button
-                  key={key}
-                  type="button"
-                  role="menuitemradio"
-                  className={styles.menuItem}
-                  aria-checked={state.sortKey === key}
-                  onClick={() => {
-                    controller.set('sortKey', key)
-                    controller.set('sortOpen', false)
-                  }}
-                >
-                  {state.sortKey === key ? <span aria-hidden="true">✓ </span> : null}
-                  {t(labelKey)}
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
+            {sortLabel}
+          </StowButton>
+        </StowMenuButton>
       </div>
 
       <div className={styles.statusBar}>
         <span className={styles.statusInfo} aria-hidden={state.running}>
           {state.running ? (
             <span className={styles.progress} role="img" aria-label={t('search.searching_label')}>
-              <ProgressCircular size={14} />
+              <StowProgressCircular size={14} />
             </span>
           ) : null}
           <span>
@@ -168,7 +151,7 @@ export function SearchPanel({ scope = '', autoFocus = false, trailing }: SearchP
             {state.running && state.scanned ? `, ${t('search.scanning', { dirs: String(state.scanned.dirs) })}` : ''}
           </span>
         </span>
-        <span className={utilitiesStyles.srOnly} role="status" aria-live="polite">
+        <span className={srOnly} role="status" aria-live="polite">
           {spokenStatus}
         </span>
         <span className={styles.statusActions}>
@@ -178,9 +161,9 @@ export function SearchPanel({ scope = '', autoFocus = false, trailing }: SearchP
             </span>
           ) : null}
           {state.running ? (
-            <button type="button" className={styles.stopBtn} onClick={controller.stop}>
+            <StowButton variant="text" danger onClick={controller.stop}>
               {t('search.stop')}
-            </button>
+            </StowButton>
           ) : null}
         </span>
       </div>

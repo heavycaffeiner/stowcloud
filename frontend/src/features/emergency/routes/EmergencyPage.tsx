@@ -4,8 +4,7 @@ import { useForm, useWatch } from 'react-hook-form'
 import { emergencyDoor, emergencyLogin, emergencySettings, type EmergencySettings } from '../api'
 import { describeApiError } from '../../../api/error-text'
 import { useI18n } from '../../../hooks/use-i18n'
-import { Button } from '../../../ui/Button'
-import { FormTextField } from '../../../ui/FormTextField'
+import { StowButton, StowFormTextField } from '@/shared/ui'
 import { useDocumentTitle } from '../../../hooks/use-document-title'
 import { EmergencyEditor } from '../components/EmergencyEditor'
 import * as styles from './EmergencyPage.css'
@@ -43,14 +42,14 @@ export function EmergencyPage() {
           <>
             <p className={styles.hint}>{t('emergency.no_administrator_yet')}</p>
             <div className={styles.actions}>
-              <Button
+              <StowButton
                 className={styles.action}
                 onClick={() => {
                   window.location.href = '/setup'
                 }}
               >
                 {t('emergency.go_to_setup')}
-              </Button>
+              </StowButton>
             </div>
           </>
         ) : settings ? (
@@ -109,7 +108,7 @@ function EmergencySignIn({ onSignedIn }: { onSignedIn: (settings: EmergencySetti
         {needsCode ? (
           <>
             <p className={styles.hint}>{t('emergency.enter_your_code')}</p>
-            <FormTextField
+            <StowFormTextField
               control={control}
               name="code"
               label={t('login.verification_code')}
@@ -119,14 +118,14 @@ function EmergencySignIn({ onSignedIn }: { onSignedIn: (settings: EmergencySetti
           </>
         ) : (
           <>
-            <FormTextField
+            <StowFormTextField
               control={control}
               name="username"
               label={t('login.username')}
               autoFocus
               autoComplete="username"
             />
-            <FormTextField
+            <StowFormTextField
               control={control}
               name="password"
               label={t('common.password')}
@@ -136,14 +135,14 @@ function EmergencySignIn({ onSignedIn }: { onSignedIn: (settings: EmergencySetti
           </>
         )}
         <div className={styles.actions}>
-          <Button
+          <StowButton
             className={styles.action}
             type="submit"
             loading={signIn.isPending}
             disabled={!ready({ username, password, code })}
           >
             {t('login.sign')}
-          </Button>
+          </StowButton>
         </div>
       </form>
     </>

@@ -21,18 +21,21 @@ const color = vars.color
 const stateLayer = (bg: string, fg: string): string => `color-mix(in srgb, ${bg}, ${fg} 8%)`
 
 // The tonal pair for the accent is the quiet selection color, so a tonal button never competes with a filled one.
+// `quiet` colors a standard icon button, which stays neutral unless it destroys something.
 const tones = {
   accent: {
     solid: color.accent.solid,
     onSolid: color.accent.onSolid,
     tonal: color.selection.bg,
-    onTonal: color.selection.fg
+    onTonal: color.selection.fg,
+    quiet: color.text.secondary
   },
   danger: {
     solid: color.danger.solid,
     onSolid: color.danger.onSolid,
     tonal: color.danger.soft,
-    onTonal: color.danger.onSoft
+    onTonal: color.danger.onSoft,
+    quiet: color.danger.solid
   }
 }
 
@@ -65,10 +68,10 @@ const stowVariants: Record<StowVariant, (tone: (typeof tones)['accent']) => Vari
     color: tone.solid,
     border: 'none'
   }),
-  standard: () => ({
+  standard: (tone) => ({
     background: 'transparent',
-    hover: stateLayer('transparent', color.text.secondary),
-    color: color.text.secondary,
+    hover: stateLayer('transparent', tone.quiet),
+    color: tone.quiet,
     border: 'none'
   })
 }

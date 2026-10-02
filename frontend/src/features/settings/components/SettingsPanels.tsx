@@ -8,12 +8,9 @@ import { useSignOut } from '../hooks/use-sign-out'
 import { useUploadConcurrency } from '../hooks/use-upload-concurrency'
 import { theme } from '../theme'
 import { SettingsCard } from './SettingsCard'
-import { Button } from '../../../ui/Button'
-import { Icon } from '../../../ui/Icon'
-import { SegmentedControl } from '../../../ui/SegmentedControl'
+import { cx, Icon, StowButton, StowSegmentedControl } from '@/shared/ui'
 import * as styles from './SettingsPanels.css'
 import * as settingsCardStyles from './SettingsCard.css'
-import { cx } from '../../../ui/cx'
 
 const PasswordSection = lazy(() => import('./PasswordSection').then((m) => ({ default: m.PasswordSection })))
 const TotpSection = lazy(() => import('./TotpSection').then((m) => ({ default: m.TotpSection })))
@@ -53,9 +50,9 @@ export function AccountPanel() {
         }
       >
         <div className={styles.row}>
-          <Button variant="outlined" icon={<Icon name="close" size={18} />} loading={pending} onClick={signOut}>
+          <StowButton variant="outlined" icon={<Icon name="close" size={18} />} loading={pending} onClick={signOut}>
             {t('common.sign_out')}
-          </Button>
+          </StowButton>
         </div>
       </SettingsCard>
     </div>
@@ -187,7 +184,7 @@ export function AppearancePanel() {
         description={<p className={styles.cardHint}>{t('settings.choosing_system_follows_your_device')}</p>}
       >
         <div className={cx(styles.row, styles.rowSegmented)}>
-          <SegmentedControl
+          <StowSegmentedControl
             className={styles.segmented}
             label={t('settings.theme')}
             value={theme.value}
@@ -212,7 +209,7 @@ export function AppearancePanel() {
         description={<p className={styles.cardHint}>{t('settings.language_choice_stays_this_browser')}</p>}
       >
         <div className={cx(styles.row, styles.rowSegmented)}>
-          <SegmentedControl
+          <StowSegmentedControl
             className={styles.segmented}
             label={t('settings.language')}
             value={locale}
@@ -237,7 +234,7 @@ export function AppearancePanel() {
         description={<p className={styles.cardHint}>{t('settings.upload_concurrency_hint')}</p>}
       >
         <div className={cx(styles.row, styles.rowSegmented)}>
-          <SegmentedControl
+          <StowSegmentedControl
             className={styles.segmented}
             label={t('settings.upload_concurrency')}
             value={String(concurrency.concurrency)}

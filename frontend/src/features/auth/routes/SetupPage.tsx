@@ -2,15 +2,12 @@ import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { scorePasswordStrength } from '../password-strength'
 import { useI18n } from '../../../hooks/use-i18n'
-import { Button } from '../../../ui/Button'
+import { cx, StowButton, StowFormTextField, StowProgressLinear } from '@/shared/ui'
 import { pickPath } from '../../files/components/PathPickerDialog'
-import { FormTextField } from '../../../ui/FormTextField'
 import { useDocumentTitle } from '../../../hooks/use-document-title'
 import { MIN_PASSWORD_LENGTH, setupReady, useSetup } from '../hooks/use-setup'
-import { ProgressLinear } from '../../../ui/ProgressLinear'
 import * as authStyles from './auth.css'
-import * as utilitiesStyles from '../../../ui/utilities.css'
-import { cx } from '../../../ui/cx'
+import { focusRing } from '@/shared/theme'
 import type { SetupFinding } from '../api'
 
 const LAST_STEP = 3
@@ -57,23 +54,23 @@ export function SetupPage() {
 
   const shareFields = (
     <>
-      <FormTextField control={control} name="shareName" label={t('common.name')} autoComplete="off" />
+      <StowFormTextField control={control} name="shareName" label={t('common.name')} autoComplete="off" />
       <div className={authStyles.pathRow}>
-        <FormTextField
+        <StowFormTextField
           control={control}
           name="sharePath"
           className={authStyles.pathField}
           label={t('folder_share.server_path')}
           autoComplete="off"
         />
-        <Button
+        <StowButton
           className={authStyles.pathButton}
           variant="outlined"
           disabled={outcome !== null && !signedIn}
           onClick={() => void browseShareFolder()}
         >
           {t('picker.browse_folder')}
-        </Button>
+        </StowButton>
       </div>
     </>
   )
@@ -108,34 +105,30 @@ export function SetupPage() {
                   </p>
                 ) : null}
                 {outcome.shareRetryError && signedIn ? (
-                  <Link
-                    className={cx(authStyles.setupLink, utilitiesStyles.focusRing)}
-                    to="/admin/{-$tab}"
-                    params={{ tab: 'shares' }}
-                  >
+                  <Link className={cx(authStyles.setupLink, focusRing)} to="/admin/{-$tab}" params={{ tab: 'shares' }}>
                     {t('setup.go_to_admin_shares')}
                   </Link>
                 ) : null}
                 <div className={authStyles.actions}>
-                  <Button
+                  <StowButton
                     className={authStyles.action}
                     disabled={retrying || values.shareName.trim().length === 0 || values.sharePath.trim().length === 0}
                     loading={retrying}
                     onClick={() => void continueAfterSetup(outcome)}
                   >
                     {t('setup.retry_first_share')}
-                  </Button>
+                  </StowButton>
                 </div>
               </>
             ) : (
               <div className={authStyles.actions}>
-                <Button
+                <StowButton
                   className={authStyles.action}
                   loading={signingIn}
                   onClick={() => void continueAfterSetup(outcome)}
                 >
                   {t('setup.continue_anyway')}
-                </Button>
+                </StowButton>
               </div>
             )}
           </>
@@ -158,20 +151,20 @@ export function SetupPage() {
             </ol>
             {step === 1 ? (
               <>
-                <FormTextField
+                <StowFormTextField
                   control={control}
                   name="token"
                   label={t('setup.setup_token')}
                   autoFocus
                   autoComplete="off"
                 />
-                <FormTextField
+                <StowFormTextField
                   control={control}
                   name="username"
                   label={t('setup.administrator_username')}
                   autoComplete="username"
                 />
-                <FormTextField
+                <StowFormTextField
                   control={control}
                   name="password"
                   label={t('common.password')}
@@ -181,7 +174,7 @@ export function SetupPage() {
                 />
                 {values.password ? (
                   <div className={authStyles.strength}>
-                    <ProgressLinear
+                    <StowProgressLinear
                       className={authStyles.strengthBar}
                       value={strength.ratio}
                       tone={strength.tier}
@@ -190,7 +183,7 @@ export function SetupPage() {
                     <span className={authStyles.strengthLabel}>{strength.label}</span>
                   </div>
                 ) : null}
-                <FormTextField
+                <StowFormTextField
                   control={control}
                   name="passwordConfirm"
                   label={t('setup.confirm_password')}
@@ -202,14 +195,14 @@ export function SetupPage() {
             ) : null}
             {step === 2 ? (
               <>
-                <FormTextField
+                <StowFormTextField
                   control={control}
                   name="appHosts"
                   label={t('server.app_hosts_comma_separated')}
                   autoComplete="off"
                 />
                 <p className={authStyles.hint}>{t('setup.app_hosts_hint')}</p>
-                <FormTextField
+                <StowFormTextField
                   control={control}
                   name="trustedProxies"
                   label={t('server.trusted_proxies_comma_separated')}
@@ -232,31 +225,31 @@ export function SetupPage() {
             ) : null}
             <div className={authStyles.actions}>
               {step > 1 ? (
-                <Button
+                <StowButton
                   className={authStyles.action}
                   variant="outlined"
                   type="button"
                   onClick={() => setStep(step - 1)}
                 >
                   {t('common.back')}
-                </Button>
+                </StowButton>
               ) : null}
               {step < LAST_STEP ? (
-                <Button className={authStyles.action} type="button" onClick={() => setStep(step + 1)}>
+                <StowButton className={authStyles.action} type="button" onClick={() => setStep(step + 1)}>
                   {t('common.continue')}
-                </Button>
+                </StowButton>
               ) : (
-                <Button
+                <StowButton
                   className={authStyles.action}
                   type="submit"
                   disabled={creating || !setupReady(values)}
                   loading={creating}
                 >
                   {t('setup.create_administrator_account')}
-                </Button>
+                </StowButton>
               )}
             </div>
-            <Link className={cx(authStyles.setupLink, utilitiesStyles.focusRing)} to="/login">
+            <Link className={cx(authStyles.setupLink, focusRing)} to="/login">
               {t('setup.already_have_account_sign')}
             </Link>
           </>

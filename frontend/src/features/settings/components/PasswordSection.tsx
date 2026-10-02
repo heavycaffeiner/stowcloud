@@ -4,9 +4,7 @@ import { scorePasswordStrength } from '../../auth/password-strength'
 import { validatePasswordChange } from '../../../lib/format/password-change'
 import { useChangePassword } from '../api'
 import { useI18n } from '../../../hooks/use-i18n'
-import { Button } from '../../../ui/Button'
-import { FormTextField } from '../../../ui/FormTextField'
-import { ProgressLinear } from '../../../ui/ProgressLinear'
+import { StowButton, StowFormTextField, StowProgressLinear } from '@/shared/ui'
 import * as styles from './PasswordSection.css'
 import { ApiError } from '../../../api/fetcher'
 
@@ -55,14 +53,14 @@ export function PasswordSection() {
 
   return (
     <form className={styles.root} onSubmit={(event) => void submit(event)}>
-      <FormTextField
+      <StowFormTextField
         control={control}
         name="current"
         type="password"
         label={t('common.current_password')}
         autoComplete="current-password"
       />
-      <FormTextField
+      <StowFormTextField
         control={control}
         name="next"
         rules={{ validate: checkNext }}
@@ -72,7 +70,7 @@ export function PasswordSection() {
       />
       {next ? (
         <div className={styles.strength}>
-          <ProgressLinear
+          <StowProgressLinear
             className={styles.strengthBar}
             value={strength.ratio}
             tone={strength.tier}
@@ -81,7 +79,7 @@ export function PasswordSection() {
           <span className={styles.strengthLabel}>{strength.label}</span>
         </div>
       ) : null}
-      <FormTextField
+      <StowFormTextField
         control={control}
         name="confirm"
         rules={{ deps: 'next' }}
@@ -100,9 +98,9 @@ export function PasswordSection() {
         </p>
       ) : null}
       <div className={styles.actions}>
-        <Button type="submit" disabled={!current || !next} loading={save.isPending}>
+        <StowButton type="submit" disabled={!current || !next} loading={save.isPending}>
           {t('password.change_password')}
-        </Button>
+        </StowButton>
       </div>
     </form>
   )

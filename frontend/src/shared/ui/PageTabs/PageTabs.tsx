@@ -1,4 +1,5 @@
 import { UnstyledButton } from '@mantine/core'
+import type { ReactNode } from 'react'
 import { Icon, type IconName } from '../Icon'
 import * as styles from './PageTabs.css'
 
@@ -31,5 +32,15 @@ export function StowPageTabs<T extends string>({ label, items, active, onSelect 
         </UnstyledButton>
       ))}
     </nav>
+  )
+}
+
+/** The frame of a page that splits into tabs: its heading, then the tabs and the current panel. */
+export function StowTabbedPage({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className={styles.page}>
+      <h1 className={styles.title}>{title}</h1>
+      {children}
+    </section>
   )
 }

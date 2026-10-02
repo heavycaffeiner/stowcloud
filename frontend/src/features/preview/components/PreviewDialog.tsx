@@ -19,16 +19,10 @@ import { IMAGE_EXT, VIDEO_EXT, extensionOf, mimeTypeOf } from '../logic/media-ut
 import { registerMediaSource, releaseMediaSource, swReady } from '../../files/download-sw'
 import { decryptDownload, MAX_ENCRYPTABLE_BYTES } from '../../../lib/crypto/e2ee'
 import { useShareUnlocked } from '../../shares/e2ee-store'
-import { Button } from '../../../ui/Button'
-import { Dialog } from '../../../ui/Dialog'
-import { ErrorBoundary } from '../../../ui/ErrorBoundary'
-import { IconButton } from '../../../ui/IconButton'
-import { ProgressCircular } from '../../../ui/ProgressCircular'
+import { cx, ErrorBoundary, Icon, StowButton, StowDialog, StowIconButton, StowProgressCircular } from '@/shared/ui'
 import { askUnlock } from '../../shares/components/UnlockShareDialog'
-import { Icon } from '../../../ui/Icon'
 import { isEditableFileName } from '../../files/logic/editable-files'
 import * as styles from './PreviewDialog.css'
-import { cx } from '../../../ui/cx'
 
 const TEXT_MAX_BYTES = 2 * 1024 * 1024
 const PREVIEW_DIM = 1600
@@ -85,15 +79,15 @@ export function PreviewHost({ entries, folder, entry, onShow, onClose, onDownloa
     <ErrorBoundary
       resetKey={path}
       fallback={
-        <Dialog
+        <StowDialog
           open={open}
           title={t('preview.cannot_preview')}
           onClose={onClose}
           onClosed={onClosed}
-          actions={<Button onClick={onClose}>{t('common.close')}</Button>}
+          actions={<StowButton onClick={onClose}>{t('common.close')}</StowButton>}
         >
           <p>{t('preview.failed')}</p>
-        </Dialog>
+        </StowDialog>
       }
     >
       <PreviewDialog
@@ -337,7 +331,7 @@ function PreviewDialog({
     })
 
   return (
-    <Dialog
+    <StowDialog
       open={open}
       title={entry.name}
       hideTitle
@@ -349,9 +343,7 @@ function PreviewDialog({
     >
       <div ref={previewRef} className={styles.root}>
         <header className={styles.bar}>
-          <IconButton className={styles.iconButton} label={t('common.close')} onClick={onClose}>
-            <Icon name="close" />
-          </IconButton>
+          <StowIconButton className={styles.iconButton} label={t('common.close')} onClick={onClose} icon="close" />
           <div className={styles.meta}>
             <span className={styles.name} title={entry.name}>
               {entry.name}
@@ -359,22 +351,24 @@ function PreviewDialog({
             <span className={styles.size}>{formatEntrySize(entry.size, encryption !== null)}</span>
           </div>
           {body.kind === 'text' || body.kind === 'too-large-text' ? (
-            <IconButton
+            <StowIconButton
               className={styles.iconButton}
               label={t('browse.open_text_editor')}
               onClick={() => onEdit(entry)}
-            >
-              <Icon name="edit_document" />
-            </IconButton>
+              icon="edit_document"
+            />
           ) : null}
-          <IconButton className={styles.iconButton} label={t('common.download')} onClick={() => onDownload(entry)}>
-            <Icon name="download" />
-          </IconButton>
+          <StowIconButton
+            className={styles.iconButton}
+            label={t('common.download')}
+            onClick={() => onDownload(entry)}
+            icon="download"
+          />
         </header>
         <div className={styles.body}>
           <div className={styles.stage}>
             {loading ? (
-              <ProgressCircular size={40} />
+              <StowProgressCircular size={40} />
             ) : videoUrl ? (
               <div className={styles.videoContainer}>
                 <video
@@ -497,14 +491,14 @@ function PreviewDialog({
                 {typeof failedDetail === 'string' ? <p className={styles.cardDetail}>{failedDetail}</p> : null}
                 <div className={styles.cardActions}>
                   {locked ? (
-                    <Button onClick={() => void requestUnlock()}>{t('encryption.unlock')}</Button>
+                    <StowButton onClick={() => void requestUnlock()}>{t('encryption.unlock')}</StowButton>
                   ) : (
                     <>
-                      <Button onClick={() => onDownload(entry)}>{t('common.download')}</Button>
+                      <StowButton onClick={() => onDownload(entry)}>{t('common.download')}</StowButton>
                       {body.kind === 'too-large-text' ? (
-                        <Button variant="outlined" onClick={() => onEdit(entry)}>
+                        <StowButton variant="outlined" onClick={() => onEdit(entry)}>
                           {t('browse.open_text_editor')}
-                        </Button>
+                        </StowButton>
                       ) : null}
                     </>
                   )}
@@ -515,20 +509,23 @@ function PreviewDialog({
         </div>
         {hasPrev || hasNext ? (
           <div className={styles.nav}>
-            <IconButton
+            <StowIconButton
               className={styles.iconButton}
               label={t('preview.previous')}
               disabled={!hasPrev}
               onClick={onPrev}
-            >
-              <Icon name="chevron_left" />
-            </IconButton>
-            <IconButton className={styles.iconButton} label={t('preview.next')} disabled={!hasNext} onClick={onNext}>
-              <Icon name="chevron_right" />
-            </IconButton>
+              icon="chevron_left"
+            />
+            <StowIconButton
+              className={styles.iconButton}
+              label={t('preview.next')}
+              disabled={!hasNext}
+              onClick={onNext}
+              icon="chevron_right"
+            />
           </div>
         ) : null}
       </div>
-    </Dialog>
+    </StowDialog>
   )
 }
