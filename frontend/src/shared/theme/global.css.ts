@@ -1,15 +1,7 @@
 import { globalStyle } from '@vanilla-extract/css'
 import { vars } from './contract.css'
 import { media } from './media'
-
-type Role = keyof typeof vars.typography
-
-const typography = (role: Role) => ({
-  fontSize: vars.typography[role].size,
-  fontWeight: vars.typography[role].weight,
-  lineHeight: vars.typography[role].lineHeight,
-  letterSpacing: vars.typography[role].tracking
-})
+import { typography } from './typography'
 
 globalStyle(':root', {
   colorScheme: 'light dark',

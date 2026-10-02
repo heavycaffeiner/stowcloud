@@ -35,6 +35,7 @@ export const vars = createGlobalThemeContract(
     },
     space: { xxs: null, xs: null, sm: null, md: null, lg: null, xl: null, xxl: null },
     radius: { xs: null, sm: null, md: null, lg: null, xl: null, full: null },
+    stroke: { thin: null, thick: null },
     elevation: { sm: null, md: null, lg: null, xl: null },
     density: { control: null, controlDesktop: null, controlCompact: null, row: null },
     layout: {

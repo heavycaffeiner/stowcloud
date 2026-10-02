@@ -1,14 +1,15 @@
 import { style } from '@vanilla-extract/css'
 import { vars } from './contract.css'
 
+/** The focus outline itself, for a part that shows focus held by another element. */
+export const focusOutline = {
+  outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
+  outlineOffset: vars.focusRing.offset
+}
+
 /** The one keyboard focus indicator. Mantine applies it to its focusable parts through the theme. */
 export const focusRing = style({
-  selectors: {
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    }
-  }
+  selectors: { '&:focus-visible': focusOutline }
 })
 
 /** Press feedback for buttons and other activatable surfaces. */

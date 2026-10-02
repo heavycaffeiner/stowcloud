@@ -9,7 +9,7 @@ import {
 import { vars } from './contract.css'
 import { breakpoints } from './media'
 import { palette } from './palette'
-import { focusRing } from './utilities.css'
+import { focusRing, pressable } from './utilities.css'
 
 // Mantine indexes a ramp from lightest (0) to darkest (9).
 const ramp = (tones: Record<number, string>, steps: readonly number[]): MantineColorsTuple =>
@@ -93,6 +93,8 @@ export const mantineTheme = createTheme({
   primaryShade: { light: 6, dark: 2 },
   variantColorResolver,
   focusClassName: focusRing,
+  activeClassName: pressable,
+  respectReducedMotion: true,
   cursorType: 'pointer',
   fontFamily: vars.font.family,
   fontFamilyMonospace: vars.font.mono,

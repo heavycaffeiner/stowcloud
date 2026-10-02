@@ -77,6 +77,7 @@ createGlobalTheme(':root', vars, {
   },
   space: { xxs: '2px', xs: '4px', sm: '8px', md: '12px', lg: '16px', xl: '24px', xxl: '32px' },
   radius: { xs: '4px', sm: '8px', md: '12px', lg: '16px', xl: '20px', full: '999px' },
+  stroke: { thin: '1px', thick: '2px' },
   elevation: {
     sm: `0 1px 2px color-mix(in srgb, ${vars.color.shadow} 6%, transparent)`,
     md: `0 0.85px 3px 0 color-mix(in srgb, ${vars.color.shadow} 19%, transparent), 0 0.25px 1px 0 color-mix(in srgb, ${vars.color.shadow} 3.9%, transparent)`,
