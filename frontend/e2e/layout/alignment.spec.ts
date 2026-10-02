@@ -142,6 +142,25 @@ async function dragBetween(page: Page, items: Locator): Promise<void> {
   expect(selected, `${items}: drag selection must persist after pointerup`).toBeGreaterThanOrEqual(2)
 }
 
+// The floating selection bar keeps every button inside its own box, and the box on screen.
+async function checkSelectionBar(page: Page, t: Catalogue): Promise<void> {
+  const bar = page.getByRole('button', { name: t['browse.clear_selection'], exact: true }).locator('../..')
+  await checkButtons(page, bar)
+  const geometry = await bar.evaluate((bar) => {
+    const box = bar.getBoundingClientRect()
+    const outside = [...bar.querySelectorAll('button')]
+      .filter((button) => {
+        const rect = button.getBoundingClientRect()
+        return rect.left < box.left - 1 || rect.right > box.right + 1
+      })
+      .map((button) => button.getAttribute('aria-label'))
+    return { outside, left: box.left, right: box.right, width: innerWidth }
+  })
+  expect(geometry.outside, 'selection bar buttons outside the bar').toEqual([])
+  expect(geometry.left, 'selection bar left edge').toBeGreaterThanOrEqual(0)
+  expect(geometry.right, 'selection bar right edge').toBeLessThanOrEqual(geometry.width)
+}
+
 async function clearSelection(page: Page, t: Catalogue): Promise<void> {
   const clear = page.getByRole('button', { name: t['browse.clear_selection'], exact: true })
   await clear.click()
@@ -279,6 +298,12 @@ test.describe('alignment of buttons, groups and the date column', () => {
         await checkGroup(overlay.getByRole('list'), 'x', 'start')
         await page.keyboard.press('Escape')
         await overlay.waitFor({ state: 'hidden' })
+        // One text file draws every action the bar has.
+        await list
+          .getByRole('gridcell', { name: t['common.select'].replace('{name}', 'report.txt'), exact: true })
+          .click()
+        await checkSelectionBar(page, t)
+        await clearSelection(page, t)
       }
       expect(
         await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
