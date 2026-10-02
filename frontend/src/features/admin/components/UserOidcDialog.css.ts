@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const facts = style({
   display: 'flex',
@@ -9,8 +9,8 @@ export const facts = style({
 })
 
 export const factLabel = style({
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.bodySmall.size
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size
 })
 
 export const factValue = style({
@@ -20,15 +20,15 @@ export const factValue = style({
 
 export const hint = style({
   margin: '0 0 8px',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.bodySmall.size,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size,
   lineHeight: '1.45'
 })
 
 export const error = style({
   margin: '0',
-  color: `rgb(${vars.color.error})`,
-  fontSize: vars.typescale.bodySmall.size,
+  color: vars.color.danger.solid,
+  fontSize: vars.typography.bodySmall.size,
   lineHeight: '1.45'
 })
 
@@ -38,7 +38,7 @@ export const warning = style({
   gap: '8px',
   margin: '0 0 16px',
   padding: '12px',
-  borderRadius: vars.shape.cornerExtraSmall,
-  background: `rgb(${vars.color.errorContainer})`,
-  color: `rgb(${vars.color.onErrorContainer})`
+  borderRadius: vars.radius.xs,
+  background: vars.color.danger.soft,
+  color: vars.color.danger.onSoft
 })

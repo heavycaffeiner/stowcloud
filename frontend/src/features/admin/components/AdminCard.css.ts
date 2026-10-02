@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const root = style({
   display: 'flex',
@@ -8,10 +8,10 @@ export const root = style({
   padding: '24px 0',
   minWidth: '0',
   border: '0',
-  borderBottom: `1px solid ${vars.outline.variant}`,
+  borderBottom: `1px solid ${vars.color.border.subtle}`,
   borderRadius: '0',
   background: 'transparent',
-  color: vars.content.primary,
+  color: vars.color.text.primary,
   boxShadow: 'none',
   selectors: {
     '&:last-child': {
@@ -43,11 +43,11 @@ export const head = style({
 
 export const title = style({
   margin: '0 0 2px',
-  color: `rgb(${vars.color.onSurface})`,
-  fontSize: vars.typescale.titleLarge.size,
-  fontWeight: vars.typescale.titleLarge.weight,
-  letterSpacing: vars.typescale.titleLarge.tracking,
-  lineHeight: vars.typescale.titleLarge.lineHeight
+  color: vars.color.text.primary,
+  fontSize: vars.typography.titleLarge.size,
+  fontWeight: vars.typography.titleLarge.weight,
+  letterSpacing: vars.typography.titleLarge.tracking,
+  lineHeight: vars.typography.titleLarge.lineHeight
 })
 
 export const icon = style({
@@ -57,9 +57,9 @@ export const icon = style({
   justifyContent: 'center',
   inlineSize: '40px',
   blockSize: '40px',
-  borderRadius: vars.shape.cornerSmall,
-  background: `rgb(${vars.color.surfaceContainerHighest})`,
-  color: `rgb(${vars.color.primary})`
+  borderRadius: vars.radius.sm,
+  background: vars.color.surface.fill,
+  color: vars.color.accent.solid
 })
 
 export const meta = style({
@@ -70,8 +70,8 @@ export const meta = style({
 
 export const subtitle = style({
   margin: '4px 0 0',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.bodySmall.size,
-  lineHeight: vars.typescale.bodySmall.lineHeight,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size,
+  lineHeight: vars.typography.bodySmall.lineHeight,
   overflowWrap: 'anywhere'
 })

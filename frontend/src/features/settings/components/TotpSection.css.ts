@@ -1,9 +1,9 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const copyFeedback = style({
   margin: '0',
-  color: `rgb(${vars.color.error})`,
+  color: vars.color.danger.solid,
   overflowWrap: 'anywhere'
 })
 
@@ -29,14 +29,14 @@ export const code = style({
   height: '40px',
   lineHeight: '24px',
   border: '0',
-  borderRadius: vars.shape.cornerExtraSmall,
-  background: `rgb(${vars.color.surfaceContainerHighest})`,
-  color: `rgb(${vars.color.onSurface})`,
+  borderRadius: vars.radius.xs,
+  background: vars.color.surface.fill,
+  color: vars.color.text.primary,
   font: 'inherit',
   overflowWrap: 'anywhere',
   selectors: {
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     }
   }
@@ -50,14 +50,14 @@ export const secret = style({
   height: '40px',
   lineHeight: '24px',
   border: '0',
-  borderRadius: vars.shape.cornerExtraSmall,
-  background: `rgb(${vars.color.surfaceContainerHighest})`,
-  color: `rgb(${vars.color.onSurface})`,
+  borderRadius: vars.radius.xs,
+  background: vars.color.surface.fill,
+  color: vars.color.text.primary,
   font: 'inherit',
   overflowWrap: 'anywhere',
   selectors: {
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     }
   }
@@ -101,26 +101,26 @@ export const badge = style({
   alignItems: 'center',
   minBlockSize: '24px',
   paddingInline: '8px',
-  borderRadius: vars.shape.cornerFull,
-  background: `rgb(${vars.color.surfaceContainerHighest})`,
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.labelSmall.size,
-  lineHeight: vars.typescale.labelSmall.lineHeight
+  borderRadius: vars.radius.full,
+  background: vars.color.surface.fill,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.caption.size,
+  lineHeight: vars.typography.caption.lineHeight
 })
 
 export const badgeOn = style({
-  background: `rgb(${vars.color.primaryContainer})`,
-  color: `rgb(${vars.color.onPrimaryContainer})`
+  background: vars.color.accent.soft,
+  color: vars.color.accent.onSoft
 })
 
 export const recoveryCount = style({
   margin: '0',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
+  color: vars.color.text.secondary,
   overflowWrap: 'anywhere'
 })
 
 export const recoveryCountLow = style({
-  color: `rgb(${vars.color.error})`,
+  color: vars.color.danger.solid,
   fontWeight: '500'
 })
 
@@ -130,14 +130,14 @@ export const smbWarning = style({
   gap: '8px',
   margin: '0',
   padding: '12px',
-  borderRadius: vars.shape.cornerExtraSmall,
-  background: `rgb(${vars.color.errorContainer})`,
-  color: `rgb(${vars.color.onErrorContainer})`,
+  borderRadius: vars.radius.xs,
+  background: vars.color.danger.soft,
+  color: vars.color.danger.onSoft,
   overflowWrap: 'anywhere'
 })
 
 export const url = style({
   margin: '0',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
+  color: vars.color.text.secondary,
   overflowWrap: 'anywhere'
 })

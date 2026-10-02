@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const pageGrid = style({
   display: 'grid',
@@ -14,9 +14,9 @@ export const cardIcon = style({
   justifyContent: 'center',
   width: '40px',
   height: '40px',
-  borderRadius: vars.shape.cornerSmall,
-  background: `rgb(${vars.color.surfaceContainerHighest})`,
-  color: `rgb(${vars.color.primary})`
+  borderRadius: vars.radius.sm,
+  background: vars.color.surface.fill,
+  color: vars.color.accent.solid
 })
 
 export const avatar = style({
@@ -26,36 +26,36 @@ export const avatar = style({
   justifyContent: 'center',
   width: '40px',
   height: '40px',
-  borderRadius: vars.shape.cornerFull,
-  background: `rgb(${vars.color.primary})`,
-  color: `rgb(${vars.color.onPrimary})`,
-  fontSize: vars.typescale.titleMedium.size,
+  borderRadius: vars.radius.full,
+  background: vars.color.accent.solid,
+  color: vars.color.accent.onSolid,
+  fontSize: vars.typography.title.size,
   fontWeight: '600'
 })
 
 export const accountName = style({
   margin: '0',
   overflowWrap: 'anywhere',
-  fontSize: vars.typescale.bodyLarge.size,
+  fontSize: vars.typography.bodyLarge.size,
   fontWeight: '500'
 })
 
 export const username = style({
   margin: '0',
   overflowWrap: 'anywhere',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.bodySmall.size
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size
 })
 
 export const cardHint = style({
   overflowWrap: 'anywhere',
   maxWidth: '30rem',
   margin: '0',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.bodySmall.size,
-  fontWeight: vars.typescale.bodySmall.weight,
-  letterSpacing: vars.typescale.bodySmall.tracking,
-  lineHeight: vars.typescale.bodySmall.lineHeight
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size,
+  fontWeight: vars.typography.bodySmall.weight,
+  letterSpacing: vars.typography.bodySmall.tracking,
+  lineHeight: vars.typography.bodySmall.lineHeight
 })
 
 export const row = style({
@@ -87,6 +87,6 @@ export const segmented = style({
 
 export const error = style({
   margin: '0',
-  color: `rgb(${vars.color.error})`,
+  color: vars.color.danger.solid,
   overflowWrap: 'anywhere'
 })

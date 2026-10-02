@@ -1,6 +1,6 @@
 import { style } from '@vanilla-extract/css'
 import { buttonMinHeight } from '../../../ui/Button.css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const root = style({
   width: 'min(100%, 40rem)',
@@ -24,11 +24,11 @@ export const header = style({
   flexWrap: 'wrap',
   gap: '4px 8px',
   marginBottom: '32px',
-  color: vars.content.secondary,
-  fontSize: vars.typescale.bodyMedium.size,
-  fontWeight: vars.typescale.bodyMedium.weight,
-  lineHeight: vars.typescale.bodyMedium.lineHeight,
-  letterSpacing: vars.typescale.bodyMedium.tracking,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.body.size,
+  fontWeight: vars.typography.body.weight,
+  lineHeight: vars.typography.body.lineHeight,
+  letterSpacing: vars.typography.body.tracking,
   '@media': {
     '(max-width: 599.98px)': {
       marginBottom: '24px'
@@ -37,19 +37,19 @@ export const header = style({
 })
 
 export const title = style({
-  fontSize: vars.typescale.headlineSmall.size,
-  fontWeight: vars.typescale.headlineSmall.weight,
-  lineHeight: vars.typescale.headlineSmall.lineHeight,
-  letterSpacing: vars.typescale.headlineSmall.tracking,
+  fontSize: vars.typography.heading.size,
+  fontWeight: vars.typography.heading.weight,
+  lineHeight: vars.typography.heading.lineHeight,
+  letterSpacing: vars.typography.heading.tracking,
   margin: '0 0 16px',
   overflowWrap: 'anywhere'
 })
 
 export const unlockTitle = style({
-  fontSize: vars.typescale.headlineSmall.size,
-  fontWeight: vars.typescale.headlineSmall.weight,
-  lineHeight: vars.typescale.headlineSmall.lineHeight,
-  letterSpacing: vars.typescale.headlineSmall.tracking,
+  fontSize: vars.typography.heading.size,
+  fontWeight: vars.typography.heading.weight,
+  lineHeight: vars.typography.heading.lineHeight,
+  letterSpacing: vars.typography.heading.tracking,
   margin: '0',
   overflowWrap: 'anywhere'
 })
@@ -57,11 +57,11 @@ export const unlockTitle = style({
 export const status = style({
   margin: '0 0 16px',
   overflowWrap: 'anywhere',
-  color: vars.content.secondary
+  color: vars.color.text.secondary
 })
 
 export const statusError = style({
-  color: `rgb(${vars.color.error})`
+  color: vars.color.danger.solid
 })
 
 export const state = style({
@@ -82,9 +82,9 @@ export const unlock = style({
 
 export const stateError = style({
   padding: '16px',
-  borderRadius: vars.radius.medium,
-  background: vars.state.error,
-  color: vars.state.errorContent
+  borderRadius: vars.radius.md,
+  background: vars.color.danger.soft,
+  color: vars.color.danger.onSoft
 })
 
 export const stateText = style({
@@ -116,8 +116,8 @@ export const list = style({
   margin: '0 0 24px',
   padding: '0',
   overflow: 'hidden',
-  border: `1px solid ${vars.outline.variant}`,
-  borderRadius: vars.radius.medium,
+  border: `1px solid ${vars.color.border.subtle}`,
+  borderRadius: vars.radius.md,
   background: 'transparent',
   listStyle: 'none'
 })
@@ -131,11 +131,11 @@ export const row = style({
   padding: '8px 16px',
   borderRadius: '0',
   background: 'transparent',
-  borderBottom: `1px solid ${vars.outline.variant}`,
+  borderBottom: `1px solid ${vars.color.border.subtle}`,
   transition: 'background-color 140ms ease',
   selectors: {
     '&:hover': {
-      background: `rgb(${vars.color.surfaceContainerLow})`
+      background: vars.color.surface.container
     },
     '&:last-child': {
       borderBottom: 'none'
@@ -151,7 +151,7 @@ export const row = style({
 
 export const rowEmpty = style({
   justifyContent: 'center',
-  color: vars.content.secondary,
+  color: vars.color.text.secondary,
   textAlign: 'center'
 })
 
@@ -160,7 +160,7 @@ export const icon = style({
   alignItems: 'center',
   justifyContent: 'center',
   flex: 'none',
-  color: vars.content.icon
+  color: vars.color.text.icon
 })
 
 export const name = style({
@@ -169,8 +169,8 @@ export const name = style({
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
-  fontSize: vars.typescale.bodyMedium.size,
-  color: vars.content.primary,
+  fontSize: vars.typography.body.size,
+  color: vars.color.text.primary,
   textAlign: 'start',
   selectors: {
     'button&': {
@@ -184,8 +184,8 @@ export const name = style({
 
 export const size = style({
   flex: 'none',
-  color: vars.content.secondary,
-  fontSize: vars.typescale.bodySmall.size,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size,
   whiteSpace: 'nowrap',
   fontVariantNumeric: 'tabular-nums',
   '@media': {
@@ -231,9 +231,9 @@ export const crumb = style({
   padding: '4px 8px',
   overflow: 'hidden',
   border: 'none',
-  borderRadius: vars.radius.small,
+  borderRadius: vars.radius.sm,
   background: 'none',
-  color: `rgb(${vars.color.primary})`,
+  color: vars.color.accent.solid,
   font: 'inherit',
   textAlign: 'start',
   textOverflow: 'ellipsis',
@@ -241,7 +241,7 @@ export const crumb = style({
   cursor: 'pointer',
   selectors: {
     '&:hover': {
-      background: vars.surface.raised
+      background: vars.color.surface.raised
     }
   },
   '@media': {
@@ -258,9 +258,9 @@ export const folder = style({
   padding: '4px 8px',
   overflow: 'hidden',
   border: 'none',
-  borderRadius: vars.radius.small,
+  borderRadius: vars.radius.sm,
   background: 'none',
-  color: `rgb(${vars.color.primary})`,
+  color: vars.color.accent.solid,
   font: 'inherit',
   textAlign: 'start',
   textOverflow: 'ellipsis',
@@ -268,7 +268,7 @@ export const folder = style({
   cursor: 'pointer',
   selectors: {
     '&:hover': {
-      background: vars.surface.raised
+      background: vars.color.surface.raised
     }
   },
   '@media': {
@@ -279,14 +279,14 @@ export const folder = style({
 })
 
 export const crumbSep = style({
-  color: vars.content.secondary
+  color: vars.color.text.secondary
 })
 
 export const crumbCurrent = style({
   minWidth: '0',
   maxWidth: '100%',
   overflowWrap: 'anywhere',
-  fontWeight: vars.typescale.labelLarge.weight
+  fontWeight: vars.typography.label.weight
 })
 
 export const stateAction = style({

@@ -1,7 +1,7 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const chipMuted = style({
-  background: `rgb(${vars.color.surfaceContainerHighest})`,
-  color: `rgb(${vars.color.onSurfaceVariant})`
+  background: vars.color.surface.fill,
+  color: vars.color.text.secondary
 })

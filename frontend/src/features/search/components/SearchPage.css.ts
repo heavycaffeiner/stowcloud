@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const root = style({
   display: 'flex',
@@ -27,16 +27,16 @@ export const header = style({
 
 export const title = style({
   margin: '0',
-  fontSize: vars.typescale.headlineSmall.size,
-  fontWeight: vars.typescale.headlineSmall.weight,
-  lineHeight: vars.typescale.headlineSmall.lineHeight,
-  letterSpacing: vars.typescale.headlineSmall.tracking
+  fontSize: vars.typography.heading.size,
+  fontWeight: vars.typography.heading.weight,
+  lineHeight: vars.typography.heading.lineHeight,
+  letterSpacing: vars.typography.heading.tracking
 })
 
 export const routeBack = style({
   selectors: {
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     }
   },

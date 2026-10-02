@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const root = style({
   boxSizing: 'border-box',
@@ -7,9 +7,9 @@ export const root = style({
   width: '340px',
   alignSelf: 'stretch',
   padding: '12px 16px 24px',
-  borderInlineStart: `1px solid ${vars.outline.variant}`,
-  background: vars.surface.container,
-  color: vars.content.primary,
+  borderInlineStart: `1px solid ${vars.color.border.subtle}`,
+  background: vars.color.surface.container,
+  color: vars.color.text.primary,
   overflowY: 'auto'
 })
 
@@ -19,7 +19,7 @@ export const sheet = style({
   zIndex: '30',
   width: 'auto',
   borderInlineStart: '0',
-  background: vars.surface.raised,
+  background: vars.color.surface.raised,
   paddingBottom: 'calc(16px + env(safe-area-inset-bottom, 0px))'
 })
 
@@ -40,8 +40,8 @@ export const title = style({
   flex: '1',
   minWidth: '0',
   margin: '0',
-  fontSize: vars.typescale.titleMedium.size,
-  lineHeight: vars.typescale.titleMedium.lineHeight,
+  fontSize: vars.typography.title.size,
+  lineHeight: vars.typography.title.lineHeight,
   fontWeight: '600',
   overflow: 'hidden',
   textOverflow: 'ellipsis',
@@ -62,16 +62,16 @@ export const summaryIcon = style({
 })
 
 export const summaryTitle = style({
-  fontSize: vars.typescale.titleSmall.size,
-  lineHeight: vars.typescale.titleSmall.lineHeight,
+  fontSize: vars.typography.titleSmall.size,
+  lineHeight: vars.typography.titleSmall.lineHeight,
   fontWeight: '600',
   overflowWrap: 'anywhere'
 })
 
 export const summaryDesc = style({
-  color: vars.content.secondary,
-  fontSize: vars.typescale.bodySmall.size,
-  lineHeight: vars.typescale.bodySmall.lineHeight
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size,
+  lineHeight: vars.typography.bodySmall.lineHeight
 })
 
 export const actions = style({
@@ -86,10 +86,10 @@ export const action = style({
 })
 
 export const sectionHeading = style({
-  fontSize: vars.typescale.titleSmall.size,
-  lineHeight: vars.typescale.titleSmall.lineHeight,
+  fontSize: vars.typography.titleSmall.size,
+  lineHeight: vars.typography.titleSmall.lineHeight,
   fontWeight: '600',
-  color: vars.content.secondary,
+  color: vars.color.text.secondary,
   margin: '12px 0 8px'
 })
 
@@ -108,17 +108,17 @@ export const field = style({
 })
 
 export const fieldLabel = style({
-  color: vars.content.secondary,
-  fontSize: vars.typescale.labelMedium.size,
-  lineHeight: vars.typescale.labelMedium.lineHeight,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.labelSmall.size,
+  lineHeight: vars.typography.labelSmall.lineHeight,
   fontWeight: '500',
   margin: '0'
 })
 
 export const fieldValue = style({
-  color: vars.content.primary,
-  fontSize: vars.typescale.bodyMedium.size,
-  lineHeight: vars.typescale.bodyMedium.lineHeight,
+  color: vars.color.text.primary,
+  fontSize: vars.typography.body.size,
+  lineHeight: vars.typography.body.lineHeight,
   fontWeight: '400',
   margin: '0',
   overflowWrap: 'anywhere'
@@ -126,8 +126,8 @@ export const fieldValue = style({
 
 export const fieldNote = style({
   display: 'block',
-  color: vars.content.secondary,
-  fontSize: vars.typescale.bodySmall.size,
-  lineHeight: vars.typescale.bodySmall.lineHeight,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size,
+  lineHeight: vars.typography.bodySmall.lineHeight,
   marginTop: '2px'
 })

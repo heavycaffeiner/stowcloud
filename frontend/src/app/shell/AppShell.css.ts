@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const root = style({
   width: '100%',
@@ -8,13 +8,13 @@ export const root = style({
   display: 'flex',
   flexDirection: 'column',
   overflow: 'hidden',
-  background: vars.surface.page
+  background: vars.color.surface.page
 })
 
 export const compact = style({
   flexDirection: 'column',
   vars: {
-    [vars.control.min]: vars.control.minCompact
+    [vars.density.control]: vars.density.controlCompact
   }
 })
 
@@ -23,17 +23,17 @@ export const header = style({
   top: '0',
   left: '0',
   right: '0',
-  height: vars.layout.headerHeight,
-  minHeight: vars.layout.headerHeight,
+  height: vars.layout.header,
+  minHeight: vars.layout.header,
   zIndex: '30',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
   padding: '0 20px',
-  background: `color-mix(in srgb, ${vars.surface.page} 96%, transparent)`,
+  background: `color-mix(in srgb, ${vars.color.surface.page} 96%, transparent)`,
   backdropFilter: 'blur(12px)',
-  borderBottom: `1px solid ${vars.outline.variant}`,
-  color: vars.content.primary,
+  borderBottom: `1px solid ${vars.color.border.subtle}`,
+  color: vars.color.text.primary,
   boxSizing: 'border-box',
   selectors: {
     [`${compact} &`]: {
@@ -41,7 +41,7 @@ export const header = style({
       paddingRight: 'max(8px, env(safe-area-inset-right, 0px))',
       paddingLeft: 'max(8px, env(safe-area-inset-left, 0px))',
       gap: '8px',
-      height: `calc(${vars.layout.headerHeight} + env(safe-area-inset-top, 0px))`
+      height: `calc(${vars.layout.header} + env(safe-area-inset-top, 0px))`
     }
   }
 })
@@ -66,7 +66,7 @@ export const headerBrandBtn = style({
       flex: '1 1 auto'
     },
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     }
   },
@@ -89,10 +89,10 @@ export const headerBrand = style({
       whiteSpace: 'nowrap'
     }
   },
-  fontSize: vars.typescale.titleLarge.size,
-  lineHeight: vars.typescale.titleLarge.lineHeight,
+  fontSize: vars.typography.titleLarge.size,
+  lineHeight: vars.typography.titleLarge.lineHeight,
   fontWeight: '700',
-  color: vars.content.primary,
+  color: vars.color.text.primary,
   letterSpacing: '-0.02em'
 })
 
@@ -123,11 +123,11 @@ export const headerSearch = style({
       justifyContent: 'center'
     },
     '&:hover': {
-      background: vars.surface.overlay,
-      borderColor: vars.outline.default
+      background: vars.color.surface.overlay,
+      borderColor: vars.color.border.strong
     },
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     },
     '&:active': {
@@ -140,10 +140,10 @@ export const headerSearch = style({
   alignItems: 'center',
   gap: '10px',
   padding: '0 14px',
-  border: `1px solid ${vars.outline.variant}`,
+  border: `1px solid ${vars.color.border.subtle}`,
   borderRadius: '12px',
-  background: vars.surface.container,
-  color: vars.content.secondary,
+  background: vars.color.surface.container,
+  color: vars.color.text.secondary,
   cursor: 'pointer',
   textAlign: 'left',
   transition: 'background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease'
@@ -160,9 +160,9 @@ export const headerSearchPlaceholder = style({
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
-  fontSize: vars.typescale.labelLarge.size,
-  lineHeight: vars.typescale.labelLarge.lineHeight,
-  color: vars.content.secondary
+  fontSize: vars.typography.label.size,
+  lineHeight: vars.typography.label.lineHeight,
+  color: vars.color.text.secondary
 })
 
 export const headerSearchHints = style({
@@ -197,7 +197,7 @@ export const headerAvatarBtn = style({
       marginLeft: '0'
     },
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     }
   },
@@ -215,23 +215,23 @@ export const headerAvatarBtn = style({
 })
 
 export const headerMenuBtn = style({
-  width: vars.control.min,
-  height: vars.control.min,
+  width: vars.density.control,
+  height: vars.density.control,
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
   borderRadius: '50%',
   border: 'none',
   background: 'transparent',
-  color: vars.content.primary,
+  color: vars.color.text.primary,
   cursor: 'pointer',
   transition: 'background-color 150ms ease',
   selectors: {
     '&:hover': {
-      background: `color-mix(in srgb, ${vars.content.primary} 8%, transparent)`
+      background: `color-mix(in srgb, ${vars.color.text.primary} 8%, transparent)`
     },
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     }
   }
@@ -240,45 +240,45 @@ export const headerMenuBtn = style({
 export const headerSearchIcon = style({
   display: 'inline-flex',
   alignItems: 'center',
-  color: vars.content.secondary,
+  color: vars.color.text.secondary,
   flex: 'none'
 })
 
 export const headerShortcut = style({
   fontFamily: 'inherit',
-  fontSize: vars.typescale.labelMedium.size,
-  lineHeight: vars.typescale.labelMedium.lineHeight,
+  fontSize: vars.typography.labelSmall.size,
+  lineHeight: vars.typography.labelSmall.lineHeight,
   padding: '1px 7px',
   borderRadius: '4px',
-  background: vars.surface.overlay,
-  border: `1px solid ${vars.outline.variant}`,
-  color: vars.content.secondary
+  background: vars.color.surface.overlay,
+  border: `1px solid ${vars.color.border.subtle}`,
+  color: vars.color.text.secondary
 })
 
 export const headerFilterIcon = style({
   display: 'inline-flex',
   alignItems: 'center',
-  color: vars.content.secondary
+  color: vars.color.text.secondary
 })
 
 export const headerIconBtn = style({
-  width: vars.control.min,
-  height: vars.control.min,
+  width: vars.density.control,
+  height: vars.density.control,
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
   borderRadius: '50%',
   border: 'none',
   background: 'transparent',
-  color: vars.content.primary,
+  color: vars.color.text.primary,
   cursor: 'pointer',
   transition: 'background-color 150ms ease',
   selectors: {
     '&:hover': {
-      background: `color-mix(in srgb, ${vars.content.primary} 8%, transparent)`
+      background: `color-mix(in srgb, ${vars.color.text.primary} 8%, transparent)`
     },
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     }
   }
@@ -288,15 +288,15 @@ export const headerAvatar = style({
   width: '32px',
   height: '32px',
   borderRadius: '50%',
-  background: vars.state.selection,
-  color: vars.state.selectionContent,
-  fontSize: vars.typescale.labelMedium.size,
-  lineHeight: vars.typescale.labelMedium.lineHeight,
+  background: vars.color.selection.bg,
+  color: vars.color.selection.fg,
+  fontSize: vars.typography.labelSmall.size,
+  lineHeight: vars.typography.labelSmall.lineHeight,
   fontWeight: '600',
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
-  border: `1px solid ${vars.outline.variant}`,
+  border: `1px solid ${vars.color.border.subtle}`,
   transition: 'transform 120ms ease',
   selectors: {
     [`${headerAvatarBtn}:hover &`]: {
@@ -321,18 +321,18 @@ export const headerAccountMenu = style({
   display: 'flex',
   flexDirection: 'column',
   gap: '2px',
-  border: `1px solid ${vars.outline.variant}`,
+  border: `1px solid ${vars.color.border.subtle}`,
   borderRadius: '12px',
-  background: vars.surface.overlay,
+  background: vars.color.surface.overlay,
   boxShadow: '0 12px 32px rgba(0, 0, 0, 0.28)'
 })
 
 export const headerAccountName = style({
   padding: '8px 10px 6px',
-  fontSize: vars.typescale.labelLarge.size,
-  lineHeight: vars.typescale.labelLarge.lineHeight,
+  fontSize: vars.typography.label.size,
+  lineHeight: vars.typography.label.lineHeight,
   fontWeight: '600',
-  color: vars.content.primary,
+  color: vars.color.text.primary,
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap'
@@ -342,24 +342,24 @@ export const headerAccountItem = style({
   display: 'flex',
   alignItems: 'center',
   gap: '10px',
-  minHeight: vars.control.min,
+  minHeight: vars.density.control,
   padding: '0 10px',
   border: 'none',
   borderRadius: '8px',
   background: 'transparent',
-  color: vars.content.primary,
+  color: vars.color.text.primary,
   font: 'inherit',
-  fontSize: vars.typescale.labelLarge.size,
-  lineHeight: vars.typescale.labelLarge.lineHeight,
+  fontSize: vars.typography.label.size,
+  lineHeight: vars.typography.label.lineHeight,
   textAlign: 'left',
   cursor: 'pointer',
   transition: 'background-color 120ms ease',
   selectors: {
     '&:hover': {
-      background: `color-mix(in srgb, ${vars.content.primary} 8%, transparent)`
+      background: `color-mix(in srgb, ${vars.color.text.primary} 8%, transparent)`
     },
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     }
   }
@@ -380,22 +380,22 @@ export const main = style({
   flexDirection: 'column',
   overflowY: 'auto',
   overflowX: 'hidden',
-  background: vars.surface.page,
+  background: vars.color.surface.page,
   transition: 'padding-left 200ms cubic-bezier(0.2, 0, 0, 1)',
   selectors: {
     [`${compact} &`]: {
       paddingLeft: '0',
-      paddingBottom: `calc(${vars.layout.navBarHeight} + env(safe-area-inset-bottom, 0px))`
+      paddingBottom: `calc(${vars.layout.navBar} + env(safe-area-inset-bottom, 0px))`
     }
   }
 })
 
 export const mainDrawer = style({
-  paddingLeft: vars.layout.navDrawerWidth
+  paddingLeft: vars.layout.navDrawer
 })
 
 export const mainCollapsed = style({
-  paddingLeft: vars.layout.navDrawerCollapsedWidth
+  paddingLeft: vars.layout.navDrawerCollapsed
 })
 
 export const trayStack = style({
@@ -411,5 +411,5 @@ export const trayStack = style({
 
 export const trayStackCompact = style({
   right: 'max(16px, env(safe-area-inset-right, 0px))',
-  bottom: `calc(24px + ${vars.layout.navBarHeight} + env(safe-area-inset-bottom, 0px))`
+  bottom: `calc(24px + ${vars.layout.navBar} + env(safe-area-inset-bottom, 0px))`
 })

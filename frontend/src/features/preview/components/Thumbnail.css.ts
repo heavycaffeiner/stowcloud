@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const wrap = style({
   position: 'relative',
@@ -24,7 +24,7 @@ export const badge = style({
   justifyContent: 'center',
   width: '24px',
   height: '24px',
-  borderRadius: vars.shape.cornerSmall,
+  borderRadius: vars.radius.sm,
   background: 'rgb(0 0 0 / 65%)',
   color: '#fff',
   pointerEvents: 'none'
@@ -36,5 +36,5 @@ export const icon = style({
   justifyContent: 'center',
   width: '100%',
   height: '100%',
-  color: `rgb(${vars.color.onSurfaceVariant})`
+  color: vars.color.text.secondary
 })

@@ -1,6 +1,6 @@
 import { keyframes, style } from '@vanilla-extract/css'
 import * as fileTableStyles from './FileTable.css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 const pulse = keyframes({
   '0%, 100%': {
@@ -14,7 +14,7 @@ const pulse = keyframes({
 export const root = style({
   display: 'flex',
   alignItems: 'center',
-  height: vars.layout.rowHeight,
+  height: vars.density.row,
   paddingInline: '16px',
   borderBottom: 'none',
   '@container': {
@@ -93,8 +93,8 @@ export const cellMtime = style({
 export const bar = style({
   display: 'block',
   height: '16px',
-  borderRadius: vars.shape.cornerExtraSmall,
-  background: `rgb(${vars.color.surfaceContainerHighest})`,
+  borderRadius: vars.radius.xs,
+  background: vars.color.surface.fill,
   animation: `${pulse} 1.2s ease-in-out infinite`,
   '@media': {
     '(prefers-reduced-motion: reduce)': {
@@ -107,7 +107,7 @@ export const bar = style({
 export const barIcon = style({
   flex: '0 0 20px',
   height: '20px',
-  borderRadius: vars.shape.cornerSmall
+  borderRadius: vars.radius.sm
 })
 
 export const barName = style({

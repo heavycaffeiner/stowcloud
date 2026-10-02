@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const inner = style({
   display: 'grid',
@@ -9,12 +9,12 @@ export const inner = style({
 
 export const denied = style({
   margin: '0',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
+  color: vars.color.text.secondary,
   overflowWrap: 'anywhere'
 })
 
 export const pageError = style({
   margin: '0',
-  color: `rgb(${vars.color.error})`,
+  color: vars.color.danger.solid,
   overflowWrap: 'anywhere'
 })

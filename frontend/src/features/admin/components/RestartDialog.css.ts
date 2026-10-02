@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const status = style({
   display: 'inline-flex',
@@ -11,6 +11,6 @@ export const status = style({
 })
 
 export const error = style({
-  color: `rgb(${vars.color.error})`,
+  color: vars.color.danger.solid,
   overflowWrap: 'anywhere'
 })

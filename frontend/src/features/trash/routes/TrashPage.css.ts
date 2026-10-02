@@ -1,10 +1,10 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const noticeClose = style({
   selectors: {
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     }
   },
@@ -35,7 +35,7 @@ export const toolbar = style({
   padding: '8px 16px',
   marginBottom: '8px',
   borderRadius: '12px',
-  background: vars.surface.container,
+  background: vars.color.surface.container,
   '@media': {
     '(max-width: 599.98px)': {
       paddingInline: '12px'
@@ -69,7 +69,7 @@ export const row = style({
   gap: '12px',
   padding: '8px 16px',
   minWidth: '0',
-  borderBottom: `1px solid ${vars.outline.variant}`,
+  borderBottom: `1px solid ${vars.color.border.subtle}`,
   '@media': {
     '(max-width: 599.98px)': {
       gap: '8px',
@@ -87,6 +87,6 @@ export const notice = style({
   padding: '8px 12px 8px 16px',
   overflowWrap: 'anywhere',
   borderRadius: '8px',
-  background: vars.state.warning,
-  color: vars.state.warningContent
+  background: vars.color.highlight.soft,
+  color: vars.color.highlight.onSoft
 })

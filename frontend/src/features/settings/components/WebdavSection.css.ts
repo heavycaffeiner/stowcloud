@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const tokenRow = style({
   display: 'flex',
@@ -28,7 +28,7 @@ export const os = style({
       gap: '12px',
       padding: '16px 0 0',
       border: '0',
-      borderTop: `1px solid ${vars.outline.variant}`,
+      borderTop: `1px solid ${vars.color.border.subtle}`,
       borderRadius: '0',
       background: 'transparent',
       boxShadow: 'none'
@@ -38,16 +38,16 @@ export const os = style({
 
 export const heading = style({
   margin: '0',
-  fontSize: vars.typescale.titleMedium.size,
-  lineHeight: vars.typescale.titleMedium.lineHeight,
-  color: `rgb(${vars.color.primary})`,
+  fontSize: vars.typography.title.size,
+  lineHeight: vars.typography.title.lineHeight,
+  color: vars.color.accent.solid,
   fontWeight: '600'
 })
 
 export const subheading = style({
   margin: '12px 0 4px',
-  fontSize: vars.typescale.titleSmall.size,
-  lineHeight: vars.typescale.titleSmall.lineHeight
+  fontSize: vars.typography.titleSmall.size,
+  lineHeight: vars.typography.titleSmall.lineHeight
 })
 
 export const steps = style({
@@ -56,8 +56,8 @@ export const steps = style({
   display: 'flex',
   flexDirection: 'column',
   gap: '6px',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.bodyMedium.size
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.body.size
 })
 
 export const tokenBlock = style({
@@ -69,26 +69,26 @@ export const tokenBlock = style({
 
 export const credentials = style({
   margin: '0',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
+  color: vars.color.text.secondary,
   overflowWrap: 'anywhere'
 })
 
 export const nfcNote = style({
   margin: '0',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
+  color: vars.color.text.secondary,
   overflowWrap: 'anywhere'
 })
 
 export const announce = style({
   margin: '0',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
+  color: vars.color.text.secondary,
   overflowWrap: 'anywhere'
 })
 
 export const label = style({
   display: 'block',
   marginBottom: '4px',
-  color: `rgb(${vars.color.onSurfaceVariant})`
+  color: vars.color.text.secondary
 })
 
 export const token = style({
@@ -101,9 +101,9 @@ export const token = style({
   padding: '8px 12px',
   boxSizing: 'border-box',
   fontFamily: 'ui-monospace, monospace',
-  fontSize: vars.typescale.bodyMedium.size,
-  borderRadius: vars.shape.cornerExtraSmall,
-  background: `rgb(${vars.color.surfaceContainerHighest})`,
-  color: `rgb(${vars.color.onSurface})`,
+  fontSize: vars.typography.body.size,
+  borderRadius: vars.radius.xs,
+  background: vars.color.surface.fill,
+  color: vars.color.text.primary,
   overflowWrap: 'anywhere'
 })

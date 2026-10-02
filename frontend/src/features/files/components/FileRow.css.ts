@@ -1,24 +1,24 @@
 import { style } from '@vanilla-extract/css'
 import * as fileTableStyles from './FileTable.css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const root = style({
   display: 'flex',
   alignItems: 'center',
-  height: vars.layout.rowHeight,
+  height: vars.density.row,
   paddingInline: vars.layout.contentPad,
   cursor: 'pointer',
   borderBottom: 'none',
-  color: vars.content.primary,
-  fontSize: vars.typescale.bodyLarge.size,
-  fontWeight: vars.typescale.bodyLarge.weight,
-  lineHeight: vars.typescale.bodyLarge.lineHeight,
+  color: vars.color.text.primary,
+  fontSize: vars.typography.bodyLarge.size,
+  fontWeight: vars.typography.bodyLarge.weight,
+  lineHeight: vars.typography.bodyLarge.lineHeight,
   userSelect: 'none',
   WebkitUserSelect: 'none',
   transition: 'background-color 120ms ease, color 120ms ease',
   selectors: {
     '&:hover': {
-      background: `color-mix(in srgb, ${vars.content.primary} 5%, transparent)`
+      background: `color-mix(in srgb, ${vars.color.text.primary} 5%, transparent)`
     },
     [`${fileTableStyles.root}[data-density='compact'] &`]: {
       height: '40px'
@@ -53,11 +53,11 @@ export const root = style({
 })
 
 export const selected = style({
-  background: vars.state.selection,
-  color: vars.state.selectionContent,
+  background: vars.color.selection.bg,
+  color: vars.color.selection.fg,
   selectors: {
     '&:hover': {
-      background: `color-mix(in srgb, ${vars.state.selection} 85%, ${vars.content.primary})`
+      background: `color-mix(in srgb, ${vars.color.selection.bg} 85%, ${vars.color.text.primary})`
     }
   }
 })
@@ -66,7 +66,7 @@ export const focused = style({
   outline: 'none',
   selectors: {
     [`${fileTableStyles.root}:focus-visible &`]: {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.insetOffset
     }
   }
@@ -81,7 +81,7 @@ export const cell = style({
 
 export const cellSelect = style({
   flex: '0 0 40px',
-  minHeight: vars.control.minDesktop,
+  minHeight: vars.density.controlDesktop,
   overflow: 'visible',
   justifyContent: 'center',
   selectors: {
@@ -109,9 +109,9 @@ export const cellName = style({
 export const cellSize = style({
   flex: '0 0 112px',
   justifyContent: 'flex-end',
-  color: vars.content.secondary,
-  fontSize: vars.typescale.bodyMedium.size,
-  lineHeight: vars.typescale.bodyMedium.lineHeight,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.body.size,
+  lineHeight: vars.typography.body.lineHeight,
   '@container': {
     [`${fileTableStyles.container} (max-width: 599.98px)`]: {
       flexBasis: '88px'
@@ -127,9 +127,9 @@ export const cellSize = style({
 export const cellMtime = style({
   flex: `0 0 ${fileTableStyles.modifiedColumnWidth}`,
   justifyContent: 'flex-end',
-  color: vars.content.secondary,
-  fontSize: vars.typescale.bodyMedium.size,
-  lineHeight: vars.typescale.bodyMedium.lineHeight,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.body.size,
+  lineHeight: vars.typography.body.lineHeight,
   fontVariantNumeric: 'tabular-nums',
   whiteSpace: 'nowrap',
   '@container': {
@@ -187,7 +187,7 @@ export const name = style({
   selectors: {
     [`${fileTableStyles.mobileRows} &`]: {
       width: '100%',
-      lineHeight: vars.typescale.bodyLarge.lineHeight
+      lineHeight: vars.typography.bodyLarge.lineHeight
     }
   }
 })
@@ -199,9 +199,9 @@ export const mobileMeta = style({
       display: 'block',
       maxWidth: '100%',
       overflow: 'hidden',
-      color: vars.content.secondary,
-      fontSize: vars.typescale.bodySmall.size,
-      lineHeight: vars.typescale.bodySmall.lineHeight,
+      color: vars.color.text.secondary,
+      fontSize: vars.typography.bodySmall.size,
+      lineHeight: vars.typography.bodySmall.lineHeight,
       textOverflow: 'ellipsis',
       whiteSpace: 'nowrap'
     },
@@ -213,12 +213,12 @@ export const mobileMeta = style({
 })
 
 export const moreBtn = style({
-  width: vars.control.minDesktop,
-  height: vars.control.minDesktop,
+  width: vars.density.controlDesktop,
+  height: vars.density.controlDesktop,
   borderRadius: '50%',
   border: 'none',
   background: 'transparent',
-  color: vars.content.secondary,
+  color: vars.color.text.secondary,
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
@@ -237,12 +237,12 @@ export const moreBtn = style({
       opacity: '1'
     },
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     },
     '&:hover': {
-      background: `color-mix(in srgb, ${vars.content.primary} 10%, transparent)`,
-      color: vars.content.primary
+      background: `color-mix(in srgb, ${vars.color.text.primary} 10%, transparent)`,
+      color: vars.color.text.primary
     },
     [`${fileTableStyles.mobileRows} &`]: {
       width: '44px',
@@ -256,30 +256,30 @@ export const customCheckbox = style({
   width: '18px',
   height: '18px',
   borderRadius: '4px',
-  border: `1.5px solid ${vars.outline.default}`,
+  border: `1.5px solid ${vars.color.border.strong}`,
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
   background: 'transparent',
-  color: `rgb(${vars.color.onPrimary})`,
+  color: vars.color.accent.onSolid,
   boxSizing: 'border-box',
   cursor: 'pointer',
   transition: 'background-color 120ms ease, border-color 120ms ease'
 })
 
 export const customCheckboxChecked = style({
-  background: `rgb(${vars.color.primary})`,
-  borderColor: `rgb(${vars.color.primary})`
+  background: vars.color.accent.solid,
+  borderColor: vars.color.accent.solid
 })
 
 export const customCheckboxIndeterminate = style({
-  background: `rgb(${vars.color.primary})`,
-  borderColor: `rgb(${vars.color.primary})`
+  background: vars.color.accent.solid,
+  borderColor: vars.color.accent.solid
 })
 
 export const customCheckboxBar = style({
   width: '10px',
   height: '2px',
   borderRadius: '1px',
-  background: `rgb(${vars.color.onPrimary})`
+  background: vars.color.accent.onSolid
 })

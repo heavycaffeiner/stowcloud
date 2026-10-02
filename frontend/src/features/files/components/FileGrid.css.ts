@@ -1,5 +1,5 @@
 import { createVar, fallbackVar, keyframes, style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const selectionBarSpace = createVar()
 
@@ -18,12 +18,12 @@ export const root = style({
   minWidth: '0',
   alignSelf: 'flex-start',
   contain: 'content',
-  background: vars.surface.page,
+  background: vars.color.surface.page,
   containerType: 'inline-size',
   paddingBottom: `calc(24px + ${fallbackVar(selectionBarSpace, '0px')})`,
   selectors: {
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.insetOffset
     }
   }
@@ -45,11 +45,11 @@ export const reserveSelection = style({
 export const group = style({
   margin: '0',
   padding: `16px ${vars.layout.contentPad} 8px`,
-  color: vars.content.secondary,
-  fontSize: vars.typescale.titleSmall.size,
-  fontWeight: vars.typescale.titleSmall.weight,
-  lineHeight: vars.typescale.titleSmall.lineHeight,
-  letterSpacing: vars.typescale.titleSmall.tracking
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.titleSmall.size,
+  fontWeight: vars.typography.titleSmall.weight,
+  lineHeight: vars.typography.titleSmall.lineHeight,
+  letterSpacing: vars.typography.titleSmall.tracking
 })
 
 export const section = style({
@@ -73,21 +73,21 @@ export const card = style({
   boxSizing: 'border-box',
   height: '100%',
   border: 'none',
-  borderRadius: vars.radius.card,
-  background: vars.surface.container,
-  color: vars.content.primary,
+  borderRadius: vars.radius.md,
+  background: vars.color.surface.container,
+  color: vars.color.text.primary,
   cursor: 'pointer',
   overflow: 'hidden',
   userSelect: 'none',
   WebkitUserSelect: 'none',
-  boxShadow: vars.shadow.card,
+  boxShadow: vars.elevation.sm,
   transition:
     'transform 160ms cubic-bezier(0.2, 0, 0, 1), background-color 150ms ease, box-shadow 160ms cubic-bezier(0.2, 0, 0, 1)',
   selectors: {
     '&:hover': {
       transform: 'translateY(-1px)',
       boxShadow: '0 3px 10px rgba(0, 0, 0, 0.10)',
-      background: vars.surface.raised
+      background: vars.color.surface.raised
     },
     '&:active': {
       transform: 'scale(0.98)'
@@ -102,13 +102,13 @@ export const card = style({
 })
 
 export const cardSelected = style({
-  background: vars.state.selection,
-  color: vars.state.selectionContent,
+  background: vars.color.selection.bg,
+  color: vars.color.selection.fg,
   border: 'none',
-  boxShadow: vars.shadow.card,
+  boxShadow: vars.elevation.sm,
   selectors: {
     '&:hover': {
-      background: vars.state.selection
+      background: vars.color.selection.bg
     }
   }
 })
@@ -150,7 +150,7 @@ export const cardFile = style({
 export const cardFocused = style({
   selectors: {
     [`${root}:focus-visible &`]: {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.insetOffset
     }
   }
@@ -169,24 +169,24 @@ export const type = style({
   flex: 'none',
   alignItems: 'center',
   justifyContent: 'center',
-  color: vars.content.icon
+  color: vars.color.text.icon
 })
 
 export const name = style({
   flex: '1',
   overflow: 'hidden',
-  fontSize: vars.typescale.bodyMedium.size,
-  fontWeight: vars.typescale.bodyMedium.weight,
-  lineHeight: vars.typescale.bodyMedium.lineHeight,
-  letterSpacing: vars.typescale.bodyMedium.tracking
+  fontSize: vars.typography.body.size,
+  fontWeight: vars.typography.body.weight,
+  lineHeight: vars.typography.body.lineHeight,
+  letterSpacing: vars.typography.body.tracking
 })
 
 export const thumb = style({
   flex: '1',
   minHeight: '0',
   margin: '0 8px',
-  borderRadius: vars.shape.cornerSmall,
-  background: `rgb(${vars.color.surfaceContainerHighest})`,
+  borderRadius: vars.radius.sm,
+  background: vars.color.surface.fill,
   overflow: 'hidden'
 })
 
@@ -204,11 +204,11 @@ export const thumbImg = style({
 
 export const meta = style({
   padding: '4px 8px 8px',
-  color: vars.content.secondary,
-  fontSize: vars.typescale.bodySmall.size,
-  fontWeight: vars.typescale.bodySmall.weight,
-  lineHeight: vars.typescale.bodySmall.lineHeight,
-  letterSpacing: vars.typescale.bodySmall.tracking,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size,
+  fontWeight: vars.typography.bodySmall.weight,
+  lineHeight: vars.typography.bodySmall.lineHeight,
+  letterSpacing: vars.typography.bodySmall.tracking,
   selectors: {
     [`${cardSelected} &`]: {
       color: 'inherit'
@@ -221,8 +221,8 @@ export const check = style({
   flex: 'none',
   alignItems: 'center',
   justifyContent: 'center',
-  width: vars.control.min,
-  height: vars.control.min
+  width: vars.density.control,
+  height: vars.density.control
 })
 
 export const kebab = style({
@@ -230,8 +230,8 @@ export const kebab = style({
   flex: 'none',
   alignItems: 'center',
   justifyContent: 'center',
-  width: vars.control.min,
-  height: vars.control.min,
+  width: vars.density.control,
+  height: vars.density.control,
   padding: '0',
   border: 'none',
   borderRadius: '50%',
@@ -241,7 +241,7 @@ export const kebab = style({
   transition: 'background-color 120ms ease, transform 100ms ease',
   selectors: {
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     },
     '&:hover': {
@@ -263,8 +263,8 @@ export const skeleton = style({
 
 export const skeletonLine = style({
   height: '12px',
-  borderRadius: vars.shape.cornerExtraSmall,
-  background: `rgb(${vars.color.surfaceContainerHighest})`,
+  borderRadius: vars.radius.xs,
+  background: vars.color.surface.fill,
   animation: `${pulse} 1.2s ease-in-out infinite`,
   '@media': {
     '(prefers-reduced-motion: reduce)': {
@@ -276,8 +276,8 @@ export const skeletonLine = style({
 
 export const skeletonBlock = style({
   flex: '1',
-  borderRadius: vars.shape.cornerSmall,
-  background: `rgb(${vars.color.surfaceContainerHighest})`,
+  borderRadius: vars.radius.sm,
+  background: vars.color.surface.fill,
   animation: `${pulse} 1.2s ease-in-out infinite`,
   '@media': {
     '(prefers-reduced-motion: reduce)': {
@@ -292,5 +292,5 @@ export const empty = style({
   alignItems: 'center',
   justifyContent: 'center',
   paddingBlock: '64px',
-  color: vars.content.secondary
+  color: vars.color.text.secondary
 })

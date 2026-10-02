@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css'
-import { fadeInUp, vars } from '../../../ui/theme.css'
+import { fadeInUp, vars } from '@/shared/theme'
 
 export const section = style({
   animation: `${fadeInUp} 220ms cubic-bezier(0.2, 0, 0, 1)`,
@@ -27,29 +27,29 @@ export const sectionHeader = style({
 
 export const sectionHint = style({
   margin: '0',
-  fontWeight: vars.typescale.bodySmall.weight,
-  letterSpacing: vars.typescale.bodySmall.tracking,
+  fontWeight: vars.typography.bodySmall.weight,
+  letterSpacing: vars.typography.bodySmall.tracking,
   maxWidth: '40rem',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.bodySmall.size,
-  lineHeight: vars.typescale.bodySmall.lineHeight,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size,
+  lineHeight: vars.typography.bodySmall.lineHeight,
   overflowWrap: 'anywhere'
 })
 
 export const sectionFieldHint = style({
   margin: '0',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.bodySmall.size,
-  fontWeight: vars.typescale.bodySmall.weight,
-  letterSpacing: vars.typescale.bodySmall.tracking,
-  lineHeight: vars.typescale.bodySmall.lineHeight
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size,
+  fontWeight: vars.typography.bodySmall.weight,
+  letterSpacing: vars.typography.bodySmall.tracking,
+  lineHeight: vars.typography.bodySmall.lineHeight
 })
 
 export const sectionError = style({
-  fontSize: vars.typescale.bodySmall.size,
-  lineHeight: vars.typescale.bodySmall.lineHeight,
+  fontSize: vars.typography.bodySmall.size,
+  lineHeight: vars.typography.bodySmall.lineHeight,
   margin: '8px 0 0',
-  color: `rgb(${vars.color.error})`,
+  color: vars.color.danger.solid,
   overflowWrap: 'anywhere'
 })
 
@@ -58,8 +58,8 @@ export const list = style({
   margin: '0',
   padding: '0',
   overflow: 'hidden',
-  border: `1px solid ${vars.outline.variant}`,
-  borderRadius: vars.radius.medium,
+  border: `1px solid ${vars.color.border.subtle}`,
+  borderRadius: vars.radius.md,
   background: 'transparent',
   display: 'flex',
   flexDirection: 'column',
@@ -70,7 +70,7 @@ export const item = style({
   minWidth: '0',
   selectors: {
     '& + &': {
-      borderTop: `1px solid ${vars.outline.variant}`
+      borderTop: `1px solid ${vars.color.border.subtle}`
     }
   }
 })
@@ -112,22 +112,22 @@ export const chipAction = style({
 export const chip = style({
   selectors: {
     'button&': {
-      minHeight: vars.control.min,
-      border: `1px solid ${vars.outline.variant}`,
+      minHeight: vars.density.control,
+      border: `1px solid ${vars.color.border.subtle}`,
       font: 'inherit',
       cursor: 'pointer',
       paddingInline: '12px',
       transition: 'background-color 140ms ease, border-color 140ms ease, opacity 140ms ease, transform 120ms ease'
     },
     'button&:hover': {
-      borderColor: vars.outline.default,
+      borderColor: vars.color.border.strong,
       filter: 'brightness(0.92)'
     },
     'button&:active': {
       transform: 'scale(0.95)'
     },
     'button&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     },
     [`&:has(${chipAction})`]: {
@@ -135,7 +135,7 @@ export const chip = style({
       gap: '4px',
       padding: '0 0 0 12px',
       vars: {
-        [vars.control.min]: '44px'
+        [vars.density.control]: '44px'
       }
     }
   },
@@ -144,12 +144,12 @@ export const chip = style({
   justifyContent: 'center',
   minBlockSize: '24px',
   padding: '2px 9px',
-  borderRadius: vars.shape.cornerFull,
-  background: `rgb(${vars.color.surfaceContainerHighest})`,
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.labelSmall.size,
-  fontWeight: vars.typescale.labelSmall.weight,
-  lineHeight: vars.typescale.labelSmall.lineHeight,
+  borderRadius: vars.radius.full,
+  background: vars.color.surface.fill,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.caption.size,
+  fontWeight: vars.typography.caption.weight,
+  lineHeight: vars.typography.caption.lineHeight,
   whiteSpace: 'nowrap',
   '@media': {
     '(max-width: 599.98px)': {
@@ -176,10 +176,10 @@ export const empty = style({
   alignItems: 'center',
   gap: '8px',
   padding: '32px 16px',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
+  color: vars.color.text.secondary,
   textAlign: 'center',
-  border: `1px dashed ${vars.outline.variant}`,
-  borderRadius: vars.radius.medium,
+  border: `1px dashed ${vars.color.border.subtle}`,
+  borderRadius: vars.radius.md,
   background: 'transparent'
 })
 
@@ -197,44 +197,44 @@ export const sectionHeaderAction = style({
 
 export const sectionTitle = style({
   margin: '0',
-  color: `rgb(${vars.color.onSurface})`,
-  fontSize: vars.typescale.titleLarge.size,
-  fontWeight: vars.typescale.titleLarge.weight,
-  letterSpacing: vars.typescale.titleLarge.tracking,
-  lineHeight: vars.typescale.titleLarge.lineHeight
+  color: vars.color.text.primary,
+  fontSize: vars.typography.titleLarge.size,
+  fontWeight: vars.typography.titleLarge.weight,
+  letterSpacing: vars.typography.titleLarge.tracking,
+  lineHeight: vars.typography.titleLarge.lineHeight
 })
 
 export const hint = style({
   maxWidth: '40rem',
   margin: '0',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.bodySmall.size,
-  lineHeight: vars.typescale.bodySmall.lineHeight,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size,
+  lineHeight: vars.typography.bodySmall.lineHeight,
   overflowWrap: 'anywhere'
 })
 
 export const note = style({
   maxWidth: '40rem',
   margin: '0',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.bodySmall.size,
-  lineHeight: vars.typescale.bodySmall.lineHeight,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size,
+  lineHeight: vars.typography.bodySmall.lineHeight,
   overflowWrap: 'anywhere'
 })
 
 export const error = style({
   margin: '0',
-  color: `rgb(${vars.color.error})`,
-  fontSize: vars.typescale.bodySmall.size,
+  color: vars.color.danger.solid,
+  fontSize: vars.typography.bodySmall.size,
   overflowWrap: 'anywhere'
 })
 
 export const warning = style({
   margin: '0',
   padding: '12px 16px',
-  borderRadius: vars.shape.cornerExtraSmall,
-  background: `rgb(${vars.color.errorContainer})`,
-  color: `rgb(${vars.color.onErrorContainer})`,
+  borderRadius: vars.radius.xs,
+  background: vars.color.danger.soft,
+  color: vars.color.danger.onSoft,
   overflowWrap: 'anywhere'
 })
 

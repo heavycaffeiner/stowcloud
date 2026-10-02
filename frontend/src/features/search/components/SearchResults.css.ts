@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const results = style({
   position: 'relative',
@@ -7,8 +7,8 @@ export const results = style({
   overflowY: 'auto',
   overflowX: 'hidden',
   borderRadius: '10px',
-  background: vars.surface.page,
-  border: `1px solid ${vars.outline.variant}`,
+  background: vars.color.surface.page,
+  border: `1px solid ${vars.color.border.subtle}`,
   outline: 'none',
   '@media': {
     '(max-width: 599.98px)': {
@@ -21,9 +21,9 @@ export const results = style({
 export const note = style({
   padding: '32px 16px',
   textAlign: 'center',
-  color: vars.content.secondary,
-  fontSize: vars.typescale.bodyMedium.size,
-  lineHeight: vars.typescale.bodyMedium.lineHeight,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.body.size,
+  lineHeight: vars.typography.body.lineHeight,
   margin: '0'
 })
 
@@ -47,18 +47,18 @@ export const row = style({
   padding: '0 16px',
   border: 'none',
   background: 'transparent',
-  color: vars.content.primary,
+  color: vars.color.text.primary,
   cursor: 'pointer',
   textAlign: 'left',
   boxSizing: 'border-box',
   transition: 'background-color 120ms ease',
   selectors: {
     '&:hover': {
-      background: `color-mix(in srgb, ${vars.content.primary} 5%, transparent)`
+      background: `color-mix(in srgb, ${vars.color.text.primary} 5%, transparent)`
     },
     '&:focus-visible': {
-      background: `color-mix(in srgb, ${vars.content.primary} 8%, transparent)`,
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      background: `color-mix(in srgb, ${vars.color.text.primary} 8%, transparent)`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.insetOffset
     }
   },
@@ -79,7 +79,7 @@ export const rowIcon = style({
   width: '32px',
   height: '32px',
   borderRadius: '8px',
-  background: `color-mix(in srgb, ${vars.content.primary} 6%, transparent)`,
+  background: `color-mix(in srgb, ${vars.color.text.primary} 6%, transparent)`,
   flex: 'none'
 })
 
@@ -92,19 +92,19 @@ export const text = style({
 })
 
 export const name = style({
-  fontSize: vars.typescale.bodyLarge.size,
-  lineHeight: vars.typescale.bodyLarge.lineHeight,
+  fontSize: vars.typography.bodyLarge.size,
+  lineHeight: vars.typography.bodyLarge.lineHeight,
   fontWeight: '500',
-  color: vars.content.primary,
+  color: vars.color.text.primary,
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap'
 })
 
 export const folder = style({
-  fontSize: vars.typescale.bodySmall.size,
-  lineHeight: vars.typescale.bodySmall.lineHeight,
-  color: vars.content.secondary,
+  fontSize: vars.typography.bodySmall.size,
+  lineHeight: vars.typography.bodySmall.lineHeight,
+  color: vars.color.text.secondary,
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap'
@@ -124,14 +124,14 @@ export const cell = style({
 })
 
 export const size = style({
-  fontSize: vars.typescale.bodySmall.size,
-  lineHeight: vars.typescale.bodySmall.lineHeight,
+  fontSize: vars.typography.bodySmall.size,
+  lineHeight: vars.typography.bodySmall.lineHeight,
   fontWeight: '500',
-  color: vars.content.primary
+  color: vars.color.text.primary
 })
 
 export const date = style({
-  fontSize: vars.typescale.bodySmall.size,
-  lineHeight: vars.typescale.bodySmall.lineHeight,
-  color: vars.content.secondary
+  fontSize: vars.typography.bodySmall.size,
+  lineHeight: vars.typography.bodySmall.lineHeight,
+  color: vars.color.text.secondary
 })

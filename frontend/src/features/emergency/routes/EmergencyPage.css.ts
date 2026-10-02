@@ -1,6 +1,6 @@
 import { style } from '@vanilla-extract/css'
 import { buttonMinHeight, buttonWidth } from '../../../ui/Button.css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const root = style({
   display: 'flex',
@@ -26,7 +26,7 @@ export const card = style({
   minWidth: '0',
   padding: '24px',
   borderRadius: '24px',
-  background: vars.surface.container,
+  background: vars.color.surface.container,
   boxShadow: '0 8px 24px rgb(0 0 0 / 0.2)',
   '@media': {
     '(max-width: 599.98px)': {
@@ -40,21 +40,21 @@ export const card = style({
 export const title = style({
   margin: '0',
   overflowWrap: 'anywhere',
-  fontSize: vars.typescale.headlineSmall.size,
-  fontWeight: vars.typescale.headlineSmall.weight,
-  lineHeight: vars.typescale.headlineSmall.lineHeight,
-  letterSpacing: vars.typescale.headlineSmall.tracking
+  fontSize: vars.typography.heading.size,
+  fontWeight: vars.typography.heading.weight,
+  lineHeight: vars.typography.heading.lineHeight,
+  letterSpacing: vars.typography.heading.tracking
 })
 
 export const subtitle = style({
   margin: '0',
-  color: vars.content.secondary,
+  color: vars.color.text.secondary,
   overflowWrap: 'anywhere'
 })
 
 export const hint = style({
   margin: '0',
-  color: vars.content.secondary,
+  color: vars.color.text.secondary,
   overflowWrap: 'anywhere'
 })
 
@@ -80,10 +80,10 @@ export const actions = style({
 })
 
 export const label = style({
-  fontSize: vars.typescale.labelLarge.size,
-  fontWeight: vars.typescale.labelLarge.weight,
-  lineHeight: vars.typescale.labelLarge.lineHeight,
-  letterSpacing: vars.typescale.labelLarge.tracking
+  fontSize: vars.typography.label.size,
+  fontWeight: vars.typography.label.weight,
+  lineHeight: vars.typography.label.lineHeight,
+  letterSpacing: vars.typography.label.tracking
 })
 
 export const textarea = style({
@@ -91,13 +91,13 @@ export const textarea = style({
   minWidth: '0',
   padding: '8px 12px',
   border: 'none',
-  borderRadius: vars.shape.cornerSmall,
-  background: `rgb(${vars.color.surfaceContainerHighest})`,
-  color: vars.content.primary,
+  borderRadius: vars.radius.sm,
+  background: vars.color.surface.fill,
+  color: vars.color.text.primary,
   font: 'inherit',
   selectors: {
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     }
   },
@@ -127,7 +127,7 @@ export const factValue = style({
 })
 
 export const factLabel = style({
-  color: vars.content.secondary,
+  color: vars.color.text.secondary,
   '@media': {
     '(max-width: 599.98px)': {
       selectors: {
@@ -144,8 +144,8 @@ export const banner = style({
   padding: '12px 16px',
   borderRadius: '8px',
   overflowWrap: 'anywhere',
-  background: vars.state.warning,
-  color: vars.state.warningContent
+  background: vars.color.highlight.soft,
+  color: vars.color.highlight.onSoft
 })
 
 export const warning = style({
@@ -153,8 +153,8 @@ export const warning = style({
   padding: '12px 16px',
   borderRadius: '8px',
   overflowWrap: 'anywhere',
-  background: vars.state.warning,
-  color: vars.state.warningContent
+  background: vars.color.highlight.soft,
+  color: vars.color.highlight.onSoft
 })
 
 export const error = style({
@@ -162,13 +162,13 @@ export const error = style({
   padding: '12px 16px',
   borderRadius: '8px',
   overflowWrap: 'anywhere',
-  background: vars.state.error,
-  color: vars.state.errorContent
+  background: vars.color.danger.soft,
+  color: vars.color.danger.onSoft
 })
 
 export const ok = style({
   margin: '0',
-  color: `rgb(${vars.color.primary})`,
+  color: vars.color.accent.solid,
   overflowWrap: 'anywhere'
 })
 

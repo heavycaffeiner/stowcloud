@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const actions = style({
   display: 'flex',
@@ -18,9 +18,9 @@ export const state = style({
   margin: '0',
   padding: '0',
   background: 'transparent',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.bodyMedium.size,
-  lineHeight: vars.typescale.bodyMedium.lineHeight,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.body.size,
+  lineHeight: vars.typography.body.lineHeight,
   overflowWrap: 'anywhere'
 })
 
@@ -33,12 +33,12 @@ export const root = style({
 
 export const note = style({
   margin: '0',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
+  color: vars.color.text.secondary,
   overflowWrap: 'anywhere'
 })
 
 export const announce = style({
   margin: '0',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
+  color: vars.color.text.secondary,
   overflowWrap: 'anywhere'
 })

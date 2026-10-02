@@ -1,12 +1,12 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const issued = style({
   padding: '16px',
   marginBottom: '16px',
-  borderRadius: vars.shape.cornerMedium,
-  background: `rgb(${vars.color.secondaryContainer})`,
-  color: `rgb(${vars.color.onSecondaryContainer})`,
+  borderRadius: vars.radius.md,
+  background: vars.color.selection.bg,
+  color: vars.color.selection.fg,
   '@media': {
     '(max-width: 599.98px)': {
       padding: '12px'
@@ -34,9 +34,9 @@ export const url = style({
   boxSizing: 'border-box',
   padding: '8px',
   border: '0',
-  borderRadius: vars.shape.cornerExtraSmall,
-  background: `rgb(${vars.color.surface})`,
-  color: `rgb(${vars.color.onSurface})`,
+  borderRadius: vars.radius.xs,
+  background: vars.color.surface.page,
+  color: vars.color.text.primary,
   font: 'inherit',
   overflowWrap: 'anywhere',
   resize: 'vertical',
@@ -44,7 +44,7 @@ export const url = style({
   whiteSpace: 'pre-wrap',
   selectors: {
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     }
   }
@@ -52,16 +52,16 @@ export const url = style({
 
 export const copyFeedback = style({
   margin: '8px 0 0',
-  fontSize: vars.typescale.bodySmall.size
+  fontSize: vars.typography.bodySmall.size
 })
 
 export const copyFeedbackError = style({
-  color: `rgb(${vars.color.error})`,
+  color: vars.color.danger.solid,
   overflowWrap: 'anywhere'
 })
 
 export const error = style({
-  color: `rgb(${vars.color.error})`,
+  color: vars.color.danger.solid,
   overflowWrap: 'anywhere'
 })
 
@@ -72,7 +72,7 @@ export const loading = style({
 })
 
 export const empty = style({
-  color: `rgb(${vars.color.onSurfaceVariant})`,
+  color: vars.color.text.secondary,
   overflowWrap: 'anywhere'
 })
 
@@ -90,13 +90,13 @@ export const item = style({
   minWidth: '0',
   padding: '12px',
   border: 'none',
-  borderRadius: vars.shape.cornerMedium,
-  background: `rgb(${vars.color.surfaceContainer})`,
+  borderRadius: vars.radius.md,
+  background: vars.color.surface.raised,
   boxShadow: '0 2px 6px rgba(0, 0, 0, .08)',
   transition: 'background-color 140ms ease',
   selectors: {
     '&:hover': {
-      background: `rgb(${vars.color.surfaceContainerHigh})`
+      background: vars.color.surface.overlay
     }
   },
   '@media': {
@@ -131,14 +131,14 @@ export const itemMain = style({
 })
 
 export const itemLabel = style({
-  color: `rgb(${vars.color.onSurface})`,
+  color: vars.color.text.primary,
   fontWeight: '500',
   overflowWrap: 'anywhere'
 })
 
 export const itemMeta = style({
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.bodySmall.size,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size,
   overflowWrap: 'anywhere'
 })
 
@@ -162,8 +162,8 @@ export const createForm = style({
   gap: '12px',
   minWidth: '0',
   padding: '12px',
-  borderRadius: vars.shape.cornerMedium,
-  background: `rgb(${vars.color.surfaceContainerLow})`,
+  borderRadius: vars.radius.md,
+  background: vars.color.surface.container,
   '@media': {
     '(max-width: 599.98px)': {
       padding: '12px'
@@ -177,8 +177,8 @@ export const editForm = style({
   gap: '12px',
   minWidth: '0',
   padding: '12px',
-  borderRadius: vars.shape.cornerMedium,
-  background: `rgb(${vars.color.surfaceContainerLow})`,
+  borderRadius: vars.radius.md,
+  background: vars.color.surface.container,
   '@media': {
     '(max-width: 599.98px)': {
       padding: '12px'
@@ -188,9 +188,9 @@ export const editForm = style({
 
 export const createTitle = style({
   margin: '0',
-  fontSize: vars.typescale.titleMedium.size,
-  fontWeight: vars.typescale.titleMedium.weight,
-  lineHeight: vars.typescale.titleMedium.lineHeight
+  fontSize: vars.typography.title.size,
+  fontWeight: vars.typography.title.weight,
+  lineHeight: vars.typography.title.lineHeight
 })
 
 export const permRow = style({
@@ -202,8 +202,8 @@ export const permRow = style({
 
 export const hint = style({
   margin: '0',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.bodySmall.size,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size,
   overflowWrap: 'anywhere'
 })
 

@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const root = style({
   inset: '48px 0 auto',
@@ -7,15 +7,15 @@ export const root = style({
   maxHeight: 'calc(100dvh - 80px)',
   margin: '0 auto',
   padding: '0',
-  border: `1px solid ${vars.outline.variant}`,
+  border: `1px solid ${vars.color.border.subtle}`,
   borderRadius: '16px',
-  background: vars.surface.overlay,
-  color: vars.content.primary,
+  background: vars.color.surface.overlay,
+  color: vars.color.text.primary,
   boxShadow: '0 16px 48px rgba(0, 0, 0, 0.32)',
   overflow: 'visible',
   selectors: {
     '&::backdrop': {
-      background: `rgba(${vars.color.scrim}, 0.5)`,
+      background: `color-mix(in srgb, ${vars.color.scrim} 50%, transparent)`,
       backdropFilter: 'blur(6px)'
     }
   },

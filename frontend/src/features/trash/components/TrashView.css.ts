@@ -1,10 +1,10 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const operationClose = style({
   selectors: {
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     }
   },
@@ -52,11 +52,11 @@ export const name = style({
 
 export const meta = style({
   flexShrink: '0',
-  color: vars.content.secondary,
-  fontSize: vars.typescale.bodySmall.size,
-  fontWeight: vars.typescale.bodySmall.weight,
-  lineHeight: vars.typescale.bodySmall.lineHeight,
-  letterSpacing: vars.typescale.bodySmall.tracking,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size,
+  fontWeight: vars.typography.bodySmall.weight,
+  lineHeight: vars.typography.bodySmall.lineHeight,
+  letterSpacing: vars.typography.bodySmall.tracking,
   whiteSpace: 'nowrap',
   '@media': {
     '(max-width: 480px)': {
@@ -72,7 +72,7 @@ export const operation = style({
   padding: '12px 16px',
   border: 'none',
   borderRadius: '12px',
-  background: `rgb(${vars.color.surfaceContainer})`,
+  background: vars.color.surface.raised,
   boxShadow: '0 2px 8px rgba(0, 0, 0, 0.12)'
 })
 
@@ -88,10 +88,10 @@ export const operationTitle = style({
   minWidth: '0',
   margin: '0',
   overflowWrap: 'anywhere',
-  fontSize: vars.typescale.titleMedium.size,
-  fontWeight: vars.typescale.titleMedium.weight,
-  lineHeight: vars.typescale.titleMedium.lineHeight,
-  letterSpacing: vars.typescale.titleMedium.tracking
+  fontSize: vars.typography.title.size,
+  fontWeight: vars.typography.title.weight,
+  lineHeight: vars.typography.title.lineHeight,
+  letterSpacing: vars.typography.title.tracking
 })
 
 export const operationList = style({
@@ -107,10 +107,10 @@ export const operationItem = style({
   justifyContent: 'space-between',
   gap: '12px',
   overflowWrap: 'anywhere',
-  fontSize: vars.typescale.bodySmall.size,
-  fontWeight: vars.typescale.bodySmall.weight,
-  lineHeight: vars.typescale.bodySmall.lineHeight,
-  letterSpacing: vars.typescale.bodySmall.tracking
+  fontSize: vars.typography.bodySmall.size,
+  fontWeight: vars.typography.bodySmall.weight,
+  lineHeight: vars.typography.bodySmall.lineHeight,
+  letterSpacing: vars.typography.bodySmall.tracking
 })
 
 export const operationPath = style({
@@ -123,5 +123,5 @@ export const operationResult = style({
 })
 
 export const operationError = style({
-  color: `rgb(${vars.color.error})`
+  color: vars.color.danger.solid
 })

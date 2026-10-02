@@ -1,21 +1,21 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const adminSectionSubhead = style({
   margin: '32px 0 8px',
-  color: `rgb(${vars.color.onSurface})`,
-  fontSize: vars.typescale.titleSmall.size,
-  lineHeight: vars.typescale.titleSmall.lineHeight
+  color: vars.color.text.primary,
+  fontSize: vars.typography.titleSmall.size,
+  lineHeight: vars.typography.titleSmall.lineHeight
 })
 
 export const adminSectionStatus = style({
   margin: '8px 0 0',
-  color: `rgb(${vars.color.primary})`,
+  color: vars.color.accent.solid,
   overflowWrap: 'anywhere'
 })
 
 export const adminSectionStatusError = style({
-  color: `rgb(${vars.color.error})`
+  color: vars.color.danger.solid
 })
 
 export const nav = style({
@@ -24,7 +24,7 @@ export const nav = style({
   zIndex: '2',
   margin: '0 0 20px',
   padding: '8px 0',
-  background: `color-mix(in srgb, ${vars.surface.page} 95%, transparent)`,
+  background: `color-mix(in srgb, ${vars.color.surface.page} 95%, transparent)`,
   backdropFilter: 'blur(12px)'
 })
 
@@ -41,25 +41,25 @@ export const navButton = style({
   alignItems: 'center',
   justifyContent: 'center',
   flex: 'none',
-  minBlockSize: vars.control.min,
+  minBlockSize: vars.density.control,
   padding: '0 16px',
   border: 'none',
-  borderRadius: vars.shape.cornerFull,
-  color: `rgb(${vars.color.onSurface})`,
-  background: `rgb(${vars.color.surfaceContainerHigh})`,
+  borderRadius: vars.radius.full,
+  color: vars.color.text.primary,
+  background: vars.color.surface.overlay,
   cursor: 'pointer',
   whiteSpace: 'nowrap',
-  fontSize: vars.typescale.labelLarge.size,
-  lineHeight: vars.typescale.labelLarge.lineHeight,
+  fontSize: vars.typography.label.size,
+  lineHeight: vars.typography.label.lineHeight,
   fontWeight: '500',
   transition: 'background-color 120ms ease, color 120ms ease',
   selectors: {
     '&:hover': {
-      background: `rgb(${vars.color.surfaceContainerHighest})`,
-      color: `rgb(${vars.color.primary})`
+      background: vars.color.surface.fill,
+      color: vars.color.accent.solid
     },
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     }
   },
@@ -103,9 +103,9 @@ export const other = style({
 })
 
 export const otherLabel = style({
-  color: `rgb(${vars.color.onSurfaceVariant})`,
+  color: vars.color.text.secondary,
   fontFamily: 'ui-monospace, monospace',
-  fontSize: vars.typescale.bodySmall.size
+  fontSize: vars.typography.bodySmall.size
 })
 
 export const otherValue = style({
@@ -114,14 +114,14 @@ export const otherValue = style({
 })
 
 export const reason = style({
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.bodySmall.size,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size,
   overflowWrap: 'anywhere'
 })
 
 export const emptyNote = style({
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.bodySmall.size,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size,
   overflowWrap: 'anywhere',
   margin: '0'
 })
@@ -137,20 +137,20 @@ export const findings = style({
 export const finding = style({
   margin: '0',
   padding: '8px 12px',
-  borderInlineStart: `4px solid rgb(${vars.color.outline})`,
+  borderInlineStart: `4px solid ${vars.color.border.strong}`,
   borderRadius: '0',
   background: 'transparent',
-  color: `rgb(${vars.color.onSurface})`,
-  fontSize: vars.typescale.bodySmall.size,
+  color: vars.color.text.primary,
+  fontSize: vars.typography.bodySmall.size,
   overflowWrap: 'anywhere'
 })
 
 export const findingBlock = style({
-  borderInlineStartColor: `rgb(${vars.color.error})`
+  borderInlineStartColor: vars.color.danger.solid
 })
 
 export const findingOk = style({
-  borderInlineStartColor: `rgb(${vars.color.primary})`
+  borderInlineStartColor: vars.color.accent.solid
 })
 
 export const findingKind = style({
@@ -194,7 +194,7 @@ export const endpointUri = style({
 export const announce = style({
   minBlockSize: '1.25em',
   margin: '0',
-  color: `rgb(${vars.color.primary})`,
+  color: vars.color.accent.solid,
   overflowWrap: 'anywhere'
 })
 
@@ -210,8 +210,8 @@ export const selectLabel = style({
   display: 'flex',
   flexDirection: 'column',
   gap: '6px',
-  fontSize: vars.typescale.bodyMedium.size,
-  color: `rgb(${vars.color.onSurface})`,
+  fontSize: vars.typography.body.size,
+  color: vars.color.text.primary,
   width: '100%'
 })
 
@@ -221,14 +221,14 @@ export const select = style({
   maxWidth: '24rem',
   padding: '10px 16px',
   border: 'none',
-  borderRadius: vars.shape.cornerExtraSmall,
-  background: `rgb(${vars.color.surfaceContainerHighest})`,
-  color: `rgb(${vars.color.onSurface})`,
-  fontSize: vars.typescale.bodyLarge.size,
+  borderRadius: vars.radius.xs,
+  background: vars.color.surface.fill,
+  color: vars.color.text.primary,
+  fontSize: vars.typography.bodyLarge.size,
   cursor: 'pointer',
   selectors: {
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     }
   }

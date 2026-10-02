@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const root = style({
   display: 'flex',
@@ -19,7 +19,7 @@ export const nav = style({
 export const here = style({
   margin: '0',
   overflowWrap: 'anywhere',
-  color: vars.content.secondary
+  color: vars.color.text.secondary
 })
 
 export const body = style({
@@ -28,14 +28,14 @@ export const body = style({
   maxHeight: '40vh',
   overflowY: 'auto',
   border: 'none',
-  background: `rgb(${vars.color.surfaceContainerHigh})`,
+  background: vars.color.surface.overlay,
   borderRadius: '8px'
 })
 
 export const status = style({
   margin: '0',
   padding: '16px',
-  color: vars.content.secondary
+  color: vars.color.text.secondary
 })
 
 export const entries = style({
@@ -49,7 +49,7 @@ export const entry = style({
   alignItems: 'center',
   gap: '8px',
   width: '100%',
-  minHeight: vars.control.min,
+  minHeight: vars.density.control,
   padding: '8px',
   border: 'none',
   borderRadius: '4px',
@@ -61,7 +61,7 @@ export const entry = style({
       cursor: 'pointer'
     },
     'button&:hover': {
-      background: vars.surface.raised
+      background: vars.color.surface.raised
     }
   }
 })
@@ -72,11 +72,11 @@ export const entryName = style({
 })
 
 export const entrySelected = style({
-  background: vars.state.selection,
-  color: vars.state.selectionContent
+  background: vars.color.selection.bg,
+  color: vars.color.selection.fg
 })
 
 export const entryDisabled = style({
-  color: vars.content.secondary,
+  color: vars.color.text.secondary,
   opacity: '0.6'
 })

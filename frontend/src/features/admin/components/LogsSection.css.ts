@@ -1,5 +1,5 @@
 import { createContainer, style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 const logs = createContainer()
 
@@ -11,18 +11,18 @@ export const root = style({
 
 export const title = style({
   margin: '0 0 8px',
-  fontSize: vars.typescale.titleLarge.size,
-  fontWeight: vars.typescale.titleLarge.weight,
-  lineHeight: vars.typescale.titleLarge.lineHeight,
-  color: `rgb(${vars.color.onSurface})`,
-  letterSpacing: vars.typescale.titleLarge.tracking
+  fontSize: vars.typography.titleLarge.size,
+  fontWeight: vars.typography.titleLarge.weight,
+  lineHeight: vars.typography.titleLarge.lineHeight,
+  color: vars.color.text.primary,
+  letterSpacing: vars.typography.titleLarge.tracking
 })
 
 export const timelineTitle = style({
   margin: '0',
-  fontSize: vars.typescale.titleMedium.size,
-  fontWeight: vars.typescale.titleMedium.weight,
-  lineHeight: vars.typescale.titleMedium.lineHeight
+  fontSize: vars.typography.title.size,
+  fontWeight: vars.typography.title.weight,
+  lineHeight: vars.typography.title.lineHeight
 })
 
 export const chartHead = style({
@@ -32,9 +32,9 @@ export const chartHead = style({
 export const hint = style({
   maxWidth: '40rem',
   margin: '0 0 16px',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.bodySmall.size,
-  lineHeight: vars.typescale.bodySmall.lineHeight,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size,
+  lineHeight: vars.typography.bodySmall.lineHeight,
   selectors: {
     [`${chartHead} &`]: {
       margin: '4px 0 0'
@@ -57,15 +57,15 @@ export const figure = style({
 })
 
 export const figureLabel = style({
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.bodySmall.size
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size
 })
 
 export const figureValue = style({
   margin: '0',
-  color: `rgb(${vars.color.onSurface})`,
-  fontSize: vars.typescale.titleMedium.size,
-  lineHeight: vars.typescale.titleMedium.lineHeight
+  color: vars.color.text.primary,
+  fontSize: vars.typography.title.size,
+  lineHeight: vars.typography.title.lineHeight
 })
 
 export const filters = style({
@@ -83,32 +83,32 @@ export const sources = style({
 })
 
 export const groupLabel = style({
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.bodySmall.size
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size
 })
 
 export const levelsLegend = style({
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.bodySmall.size,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size,
   padding: '0',
   marginBottom: '8px'
 })
 
 export const sourceButton = style({
-  minBlockSize: vars.control.min,
+  minBlockSize: vars.density.control,
   paddingInline: '12px',
   border: 'none',
-  borderRadius: vars.shape.cornerFull,
-  background: `rgb(${vars.color.surfaceContainerHigh})`,
+  borderRadius: vars.radius.full,
+  background: vars.color.surface.overlay,
   color: 'inherit',
   cursor: 'pointer',
   transition: 'background-color 120ms ease, color 120ms ease',
   selectors: {
     '&:hover': {
-      background: `rgb(${vars.color.surfaceContainerHighest})`
+      background: vars.color.surface.fill
     },
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     }
   },
@@ -120,14 +120,14 @@ export const sourceButton = style({
 })
 
 export const sourceButtonActive = style({
-  background: `rgb(${vars.color.primaryContainer})`,
-  color: `rgb(${vars.color.onPrimaryContainer})`
+  background: vars.color.accent.soft,
+  color: vars.color.accent.onSoft
 })
 
 export const bar = style({
   selectors: {
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     }
   },
@@ -146,7 +146,7 @@ export const bar = style({
 export const rowButton = style({
   selectors: {
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     }
   },
@@ -159,18 +159,18 @@ export const rowButton = style({
 export const tableSummary = style({
   selectors: {
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     }
   },
   display: 'flex',
   alignItems: 'center',
   width: 'fit-content',
-  minBlockSize: vars.control.min,
+  minBlockSize: vars.density.control,
   padding: '4px 0',
-  color: `rgb(${vars.color.primary})`,
+  color: vars.color.accent.solid,
   cursor: 'pointer',
-  fontSize: vars.typescale.bodySmall.size,
+  fontSize: vars.typography.bodySmall.size,
   '@container': {
     [`${logs} (max-width: 599.98px)`]: {
       minBlockSize: '44px'
@@ -218,14 +218,14 @@ export const field = style({
 
 export const autoNote = style({
   margin: '0',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.bodySmall.size
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size
 })
 
 export const scope = style({
   margin: '0',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.bodySmall.size,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size,
   display: 'flex',
   alignItems: 'flex-start',
   gap: '8px',
@@ -234,15 +234,15 @@ export const scope = style({
 
 export const warn = style({
   margin: '0',
-  fontSize: vars.typescale.bodySmall.size,
+  fontSize: vars.typography.bodySmall.size,
   display: 'flex',
   alignItems: 'flex-start',
   gap: '8px',
   maxWidth: '40rem',
   padding: '8px 12px',
-  borderRadius: vars.shape.cornerExtraSmall,
-  background: `rgb(${vars.color.tertiaryContainer})`,
-  color: `rgb(${vars.color.onTertiaryContainer})`
+  borderRadius: vars.radius.xs,
+  background: vars.color.highlight.soft,
+  color: vars.color.highlight.onSoft
 })
 
 export const chart = style({
@@ -262,8 +262,8 @@ export const legendItem = style({
   display: 'inline-flex',
   alignItems: 'center',
   gap: '4px',
-  color: `rgb(${vars.color.onSurface})`,
-  fontSize: vars.typescale.labelMedium.size
+  color: vars.color.text.primary,
+  fontSize: vars.typography.labelSmall.size
 })
 
 export const swatch = style({
@@ -271,8 +271,8 @@ export const swatch = style({
   inlineSize: '16px',
   blockSize: '16px',
   border: 'none',
-  borderRadius: vars.shape.cornerExtraSmall,
-  background: `rgb(${vars.color.outline})`
+  borderRadius: vars.radius.xs,
+  background: vars.color.border.strong
 })
 
 export const plot = style({
@@ -283,8 +283,8 @@ export const plot = style({
   minWidth: '0',
   padding: '8px',
   border: 'none',
-  borderRadius: vars.shape.cornerMedium,
-  background: `rgb(${vars.color.surfaceContainerLowest})`,
+  borderRadius: vars.radius.md,
+  background: vars.color.surface.sunken,
   boxShadow: 'inset 0 1px 3px rgba(0, 0, 0, 0.2)',
   overflow: 'hidden',
   '@container': {
@@ -295,8 +295,8 @@ export const plot = style({
 })
 
 export const barActive = style({
-  background: `rgb(${vars.color.surfaceContainerHigh})`,
-  outline: `1px solid rgb(${vars.color.outline})`
+  background: vars.color.surface.overlay,
+  outline: `1px solid ${vars.color.border.strong}`
 })
 
 export const stack = style({
@@ -311,42 +311,42 @@ export const seg = style({
   flexShrink: '0',
   inlineSize: '100%',
   minBlockSize: '1px',
-  background: `rgb(${vars.color.outline})`
+  background: vars.color.border.strong
 })
 
 export const baseline = style({
   inlineSize: '100%',
   blockSize: '2px',
-  background: `rgb(${vars.color.outlineVariant})`
+  background: vars.color.border.subtle
 })
 
 export const segServerDebug = style({
-  background: `rgb(${vars.color.surfaceContainerHighest})`
+  background: vars.color.surface.fill
 })
 
 export const segServerInfo = style({
-  background: `rgb(${vars.color.secondaryContainer})`,
-  backgroundImage: `repeating-linear-gradient(45deg, transparent 0 3px, rgb(${vars.color.onSecondaryContainer}) 3px 4px)`
+  background: vars.color.selection.bg,
+  backgroundImage: `repeating-linear-gradient(45deg, transparent 0 3px, ${vars.color.selection.fg} 3px 4px)`
 })
 
 export const segServerWarn = style({
-  background: `rgb(${vars.color.tertiaryContainer})`,
-  backgroundImage: `repeating-linear-gradient(-45deg, transparent 0 3px, rgb(${vars.color.onTertiaryContainer}) 3px 4px)`
+  background: vars.color.highlight.soft,
+  backgroundImage: `repeating-linear-gradient(-45deg, transparent 0 3px, ${vars.color.highlight.onSoft} 3px 4px)`
 })
 
 export const segServerError = style({
-  background: `rgb(${vars.color.errorContainer})`,
-  backgroundImage: `repeating-linear-gradient(90deg, transparent 0 2px, rgb(${vars.color.onErrorContainer}) 2px 4px)`
+  background: vars.color.danger.soft,
+  backgroundImage: `repeating-linear-gradient(90deg, transparent 0 2px, ${vars.color.danger.onSoft} 2px 4px)`
 })
 
 export const segAuditOk = style({
-  background: `rgb(${vars.color.primaryContainer})`,
-  backgroundImage: `repeating-linear-gradient(0deg, transparent 0 3px, rgb(${vars.color.onPrimaryContainer}) 3px 4px)`
+  background: vars.color.accent.soft,
+  backgroundImage: `repeating-linear-gradient(0deg, transparent 0 3px, ${vars.color.accent.onSoft} 3px 4px)`
 })
 
 export const segAuditFailed = style({
-  background: `rgb(${vars.color.errorContainer})`,
-  backgroundImage: `repeating-linear-gradient(45deg, transparent 0 3px, rgb(${vars.color.onErrorContainer}) 3px 4px), repeating-linear-gradient(-45deg, transparent 0 3px, rgb(${vars.color.onErrorContainer}) 3px 4px)`
+  background: vars.color.danger.soft,
+  backgroundImage: `repeating-linear-gradient(45deg, transparent 0 3px, ${vars.color.danger.onSoft} 3px 4px), repeating-linear-gradient(-45deg, transparent 0 3px, ${vars.color.danger.onSoft} 3px 4px)`
 })
 
 export const axis = style({
@@ -354,14 +354,14 @@ export const axis = style({
   justifyContent: 'space-between',
   gap: '8px',
   marginTop: '8px',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.bodySmall.size
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size
 })
 
 export const readout = style({
   margin: '8px 0 0',
-  color: `rgb(${vars.color.onSurface})`,
-  fontSize: vars.typescale.bodySmall.size
+  color: vars.color.text.primary,
+  fontSize: vars.typography.bodySmall.size
 })
 
 export const tableWrap = style({
@@ -375,21 +375,21 @@ export const tableScroll = style({
   overflow: 'auto',
   marginTop: '8px',
   border: 'none',
-  background: `rgb(${vars.color.surfaceContainerLow})`,
-  borderRadius: vars.shape.cornerExtraSmall
+  background: vars.color.surface.container,
+  borderRadius: vars.radius.xs
 })
 
 export const table = style({
   width: '100%',
   minWidth: '28rem',
   borderCollapse: 'collapse',
-  fontSize: vars.typescale.bodySmall.size
+  fontSize: vars.typography.bodySmall.size
 })
 
 export const tableCaption = style({
   padding: '8px',
   textAlign: 'start',
-  color: `rgb(${vars.color.onSurfaceVariant})`
+  color: vars.color.text.secondary
 })
 
 export const tableCell = style({
@@ -402,7 +402,7 @@ export const tableCell = style({
 export const tableCol = style({
   position: 'sticky',
   top: '0',
-  background: `rgb(${vars.color.surfaceContainerLow})`
+  background: vars.color.surface.container
 })
 
 export const tableNum = style({
@@ -411,15 +411,15 @@ export const tableNum = style({
 
 export const error = style({
   margin: '8px 0 0',
-  color: `rgb(${vars.color.error})`,
-  fontSize: vars.typescale.bodySmall.size
+  color: vars.color.danger.solid,
+  fontSize: vars.typography.bodySmall.size
 })
 
 export const note = style({
   margin: '16px 0 0',
   textAlign: 'center',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.bodySmall.size
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size
 })
 
 export const empty = style({
@@ -428,10 +428,10 @@ export const empty = style({
   alignItems: 'center',
   gap: '8px',
   padding: '32px 16px',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
+  color: vars.color.text.secondary,
   textAlign: 'center',
-  border: `1px dashed ${vars.outline.variant}`,
-  borderRadius: vars.radius.medium,
+  border: `1px dashed ${vars.color.border.subtle}`,
+  borderRadius: vars.radius.md,
   background: 'transparent'
 })
 
@@ -440,15 +440,15 @@ export const emptyText = style({
 })
 
 export const emptyHint = style({
-  fontSize: vars.typescale.bodySmall.size
+  fontSize: vars.typography.bodySmall.size
 })
 
 export const list = style({
   listStyle: 'none',
   margin: '0',
   padding: '0',
-  border: `1px solid ${vars.outline.variant}`,
-  borderRadius: vars.radius.medium,
+  border: `1px solid ${vars.color.border.subtle}`,
+  borderRadius: vars.radius.md,
   background: 'transparent',
   display: 'flex',
   flexDirection: 'column',
@@ -462,7 +462,7 @@ export const item = style({
   overflow: 'hidden',
   selectors: {
     '& + &': {
-      borderTop: `1px solid ${vars.outline.variant}`
+      borderTop: `1px solid ${vars.color.border.subtle}`
     }
   }
 })
@@ -474,10 +474,10 @@ export const row = style({
   gap: '16px',
   width: '100%',
   minWidth: '0',
-  minHeight: vars.layout.rowHeight,
+  minHeight: vars.density.row,
   boxSizing: 'border-box',
   padding: '8px 16px',
-  color: `rgb(${vars.color.onSurface})`,
+  color: vars.color.text.primary,
   textAlign: 'start',
   '@container': {
     [`${logs} (max-width: 599.98px)`]: {
@@ -495,35 +495,35 @@ export const level = style({
   gap: '4px',
   minWidth: '88px',
   padding: '4px 8px',
-  borderRadius: vars.shape.cornerExtraSmall,
-  background: `rgb(${vars.color.surfaceContainerHighest})`,
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.labelMedium.size
+  borderRadius: vars.radius.xs,
+  background: vars.color.surface.fill,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.labelSmall.size
 })
 
 export const levelError = style({
-  background: `rgb(${vars.color.errorContainer})`,
-  color: `rgb(${vars.color.onErrorContainer})`
+  background: vars.color.danger.soft,
+  color: vars.color.danger.onSoft
 })
 
 export const levelFailed = style({
-  background: `rgb(${vars.color.errorContainer})`,
-  color: `rgb(${vars.color.onErrorContainer})`
+  background: vars.color.danger.soft,
+  color: vars.color.danger.onSoft
 })
 
 export const levelWarn = style({
-  background: `rgb(${vars.color.tertiaryContainer})`,
-  color: `rgb(${vars.color.onTertiaryContainer})`
+  background: vars.color.highlight.soft,
+  color: vars.color.highlight.onSoft
 })
 
 export const levelInfo = style({
-  background: `rgb(${vars.color.secondaryContainer})`,
-  color: `rgb(${vars.color.onSecondaryContainer})`
+  background: vars.color.selection.bg,
+  color: vars.color.selection.fg
 })
 
 export const levelOk = style({
-  background: `rgb(${vars.color.primaryContainer})`,
-  color: `rgb(${vars.color.onPrimaryContainer})`
+  background: vars.color.accent.soft,
+  color: vars.color.accent.onSoft
 })
 
 export const body = style({
@@ -540,7 +540,7 @@ export const body = style({
 })
 
 export const msg = style({
-  fontSize: vars.typescale.bodyMedium.size,
+  fontSize: vars.typography.body.size,
   overflowWrap: 'anywhere'
 })
 
@@ -548,16 +548,16 @@ export const meta = style({
   display: 'flex',
   flexWrap: 'wrap',
   gap: '8px',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.bodySmall.size,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size,
   overflowWrap: 'anywhere'
 })
 
 export const source = style({
   paddingInline: '4px',
   border: 'none',
-  background: `rgb(${vars.color.surfaceContainerHighest})`,
-  borderRadius: vars.shape.cornerExtraSmall
+  background: vars.color.surface.fill,
+  borderRadius: vars.radius.xs
 })
 
 export const disclose = style({
@@ -566,8 +566,8 @@ export const disclose = style({
   gap: '4px',
   flexShrink: '0',
   marginInlineStart: 'auto',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.bodySmall.size,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size,
   '@container': {
     [`${logs} (max-width: 599.98px)`]: {
       width: '100%',
@@ -582,7 +582,7 @@ export const attrs = style({
   gap: '8px',
   margin: '0',
   padding: '16px',
-  background: `rgb(${vars.color.surfaceContainerLow})`,
+  background: vars.color.surface.container,
   '@container': {
     [`${logs} (max-width: 599.98px)`]: {
       gridTemplateColumns: 'minmax(0, 1fr)'
@@ -598,14 +598,14 @@ export const attr = style({
 })
 
 export const attrLabel = style({
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.bodySmall.size
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size
 })
 
 export const attrValue = style({
   margin: '0',
   overflowWrap: 'anywhere',
-  fontSize: vars.typescale.bodySmall.size
+  fontSize: vars.typography.bodySmall.size
 })
 
 export const more = style({

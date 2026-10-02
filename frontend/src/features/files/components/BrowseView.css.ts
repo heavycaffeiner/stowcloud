@@ -1,7 +1,7 @@
 import { fallbackVar, keyframes, style } from '@vanilla-extract/css'
 import * as appShellStyles from '../../../app/shell/AppShell.css'
 import { hostContainer } from './FileTree.css'
-import { fadeInUp, trayStackTop, vars } from '../../../ui/theme.css'
+import { fadeInUp, trayStackTop, vars } from '@/shared/theme'
 
 const snackbarEnter = keyframes({
   from: {
@@ -17,23 +17,23 @@ const snackbarEnter = keyframes({
 export const filterPill = style({
   selectors: {
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     },
     '&:hover': {
-      background: `color-mix(in srgb, ${vars.content.primary} 10%, transparent)`,
-      color: vars.content.primary
+      background: `color-mix(in srgb, ${vars.color.text.primary} 10%, transparent)`,
+      color: vars.color.text.primary
     }
   },
-  minHeight: vars.control.min,
+  minHeight: vars.density.control,
   padding: '0 12px',
   borderRadius: '10px',
-  background: `color-mix(in srgb, ${vars.content.primary} 5%, transparent)`,
-  border: `1px solid ${vars.outline.variant}`,
-  color: vars.content.secondary,
+  background: `color-mix(in srgb, ${vars.color.text.primary} 5%, transparent)`,
+  border: `1px solid ${vars.color.border.subtle}`,
+  color: vars.color.text.secondary,
   fontFamily: 'inherit',
-  fontSize: vars.typescale.labelLarge.size,
-  lineHeight: vars.typescale.labelLarge.lineHeight,
+  fontSize: vars.typography.label.size,
+  lineHeight: vars.typography.label.lineHeight,
   fontWeight: '500',
   display: 'inline-flex',
   alignItems: 'center',
@@ -45,20 +45,20 @@ export const filterPill = style({
 export const actionBtn = style({
   selectors: {
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     },
     '&:hover': {
-      background: `color-mix(in srgb, ${vars.content.primary} 8%, transparent)`,
-      color: vars.content.primary
+      background: `color-mix(in srgb, ${vars.color.text.primary} 8%, transparent)`,
+      color: vars.color.text.primary
     }
   },
-  width: vars.control.min,
-  height: vars.control.min,
+  width: vars.density.control,
+  height: vars.density.control,
   borderRadius: '10px',
   border: 'none',
   background: 'transparent',
-  color: vars.content.secondary,
+  color: vars.color.text.secondary,
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
@@ -69,41 +69,41 @@ export const actionBtn = style({
 export const fabBtn = style({
   selectors: {
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     },
     '&:hover': {
-      background: `color-mix(in srgb, rgb(${vars.color.primary}) 88%, ${vars.content.primary})`
+      background: `color-mix(in srgb, ${vars.color.accent.solid} 88%, ${vars.color.text.primary})`
     }
   },
-  width: vars.control.min,
-  height: vars.control.min,
+  width: vars.density.control,
+  height: vars.density.control,
   borderRadius: '12px',
   border: 'none',
-  background: `rgb(${vars.color.primary})`,
-  color: `rgb(${vars.color.onPrimary})`,
+  background: vars.color.accent.solid,
+  color: vars.color.accent.onSolid,
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
   cursor: 'pointer',
-  boxShadow: `0 2px 6px rgba(${vars.color.primary}, 0.22)`
+  boxShadow: `0 2px 6px color-mix(in srgb, ${vars.color.accent.solid} 22%, transparent)`
 })
 
 export const operationClose = style({
   selectors: {
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     },
     '&:active': {
       transform: 'scale(0.96)'
     }
   },
-  minHeight: vars.control.min,
+  minHeight: vars.density.control,
   border: '0',
   padding: '4px 12px',
   borderRadius: '20px',
-  color: `rgb(${vars.color.primary})`,
+  color: vars.color.accent.solid,
   background: 'transparent',
   cursor: 'pointer',
   font: 'inherit',
@@ -119,15 +119,15 @@ export const snackbar = style({
   maxWidth: 'calc(100vw - 32px)',
   boxSizing: 'border-box',
   padding: '12px 16px',
-  borderRadius: vars.shape.cornerSmall,
-  background: `rgb(${vars.color.inverseSurface})`,
-  color: `rgb(${vars.color.inverseOnSurface})`,
-  fontSize: vars.typescale.bodyMedium.size,
+  borderRadius: vars.radius.sm,
+  background: vars.color.surface.inverse,
+  color: vars.color.text.inverse,
+  fontSize: vars.typography.body.size,
   boxShadow: '0 4px 16px rgba(0, 0, 0, 0.28)',
   animation: `${snackbarEnter} 200ms cubic-bezier(0.2, 0, 0, 1)`,
   selectors: {
     [`${appShellStyles.compact} &`]: {
-      bottom: `max(calc(16px + ${vars.layout.navBarHeight} + env(safe-area-inset-bottom, 0px)), ${fallbackVar(trayStackTop, '0px')})`
+      bottom: `max(calc(16px + ${vars.layout.navBar} + env(safe-area-inset-bottom, 0px)), ${fallbackVar(trayStackTop, '0px')})`
     }
   }
 })
@@ -182,17 +182,17 @@ export const toolbarActions = style({
 })
 
 export const filterPillActive = style({
-  background: vars.state.selection,
-  borderColor: `color-mix(in srgb, ${vars.state.selectionContent} 35%, transparent)`,
-  color: vars.state.selectionContent,
+  background: vars.color.selection.bg,
+  borderColor: `color-mix(in srgb, ${vars.color.selection.fg} 35%, transparent)`,
+  color: vars.color.selection.fg,
   fontWeight: '600'
 })
 
 export const actionBtnActive = style({
   selectors: {
     [`${actionBtn}&`]: {
-      color: vars.state.selectionContent,
-      background: vars.state.selection
+      color: vars.color.selection.fg,
+      background: vars.color.selection.bg
     }
   }
 })
@@ -201,8 +201,8 @@ export const operation = style({
   margin: `12px ${vars.layout.pagePad}`,
   padding: '16px',
   border: 'none',
-  borderRadius: vars.shape.cornerMedium,
-  background: `rgb(${vars.color.surfaceContainer})`,
+  borderRadius: vars.radius.md,
+  background: vars.color.surface.raised,
   boxShadow: '0 4px 16px rgba(0, 0, 0, 0.12)',
   animation: `${fadeInUp} 200ms cubic-bezier(0.2, 0, 0, 1)`
 })
@@ -216,9 +216,9 @@ export const operationHeading = style({
 
 export const operationTitle = style({
   margin: '0',
-  fontSize: vars.typescale.titleMedium.size,
-  fontWeight: vars.typescale.titleMedium.weight,
-  lineHeight: vars.typescale.titleMedium.lineHeight
+  fontSize: vars.typography.title.size,
+  fontWeight: vars.typography.title.weight,
+  lineHeight: vars.typography.title.lineHeight
 })
 
 export const operationList = style({
@@ -235,12 +235,12 @@ export const operationItem = style({
   gap: '4px 12px',
   justifyContent: 'space-between',
   overflowWrap: 'anywhere',
-  fontSize: vars.typescale.bodySmall.size,
-  lineHeight: vars.typescale.bodySmall.lineHeight
+  fontSize: vars.typography.bodySmall.size,
+  lineHeight: vars.typography.bodySmall.lineHeight
 })
 
 export const operationError = style({
-  color: `rgb(${vars.color.error})`
+  color: vars.color.danger.solid
 })
 
 export const externalBadge = style({
@@ -251,14 +251,14 @@ export const externalBadge = style({
   maxWidth: '100%',
   boxSizing: 'border-box',
   paddingInline: '8px',
-  borderRadius: vars.shape.cornerFull,
-  fontSize: vars.typescale.labelSmall.size,
-  lineHeight: vars.typescale.labelSmall.lineHeight,
+  borderRadius: vars.radius.full,
+  fontSize: vars.typography.caption.size,
+  lineHeight: vars.typography.caption.lineHeight,
   overflowWrap: 'anywhere',
   transition: 'background-color 150ms ease, color 150ms ease, transform 120ms ease',
   flexShrink: '0',
-  background: vars.state.warning,
-  color: vars.state.warningContent
+  background: vars.color.highlight.soft,
+  color: vars.color.highlight.onSoft
 })
 
 export const brokenBadge = style({
@@ -269,14 +269,14 @@ export const brokenBadge = style({
   maxWidth: '100%',
   boxSizing: 'border-box',
   paddingInline: '8px',
-  borderRadius: vars.shape.cornerFull,
-  fontSize: vars.typescale.labelSmall.size,
-  lineHeight: vars.typescale.labelSmall.lineHeight,
+  borderRadius: vars.radius.full,
+  fontSize: vars.typography.caption.size,
+  lineHeight: vars.typography.caption.lineHeight,
   overflowWrap: 'anywhere',
   transition: 'background-color 150ms ease, color 150ms ease, transform 120ms ease',
   flexShrink: '0',
-  background: vars.state.error,
-  color: vars.state.errorContent
+  background: vars.color.danger.soft,
+  color: vars.color.danger.onSoft
 })
 
 export const encryptedBadge = style({
@@ -287,29 +287,29 @@ export const encryptedBadge = style({
   maxWidth: '100%',
   boxSizing: 'border-box',
   paddingInline: '8px',
-  borderRadius: vars.shape.cornerFull,
-  fontSize: vars.typescale.labelSmall.size,
-  lineHeight: vars.typescale.labelSmall.lineHeight,
+  borderRadius: vars.radius.full,
+  fontSize: vars.typography.caption.size,
+  lineHeight: vars.typography.caption.lineHeight,
   overflowWrap: 'anywhere',
   transition: 'background-color 150ms ease, color 150ms ease, transform 120ms ease',
   flexShrink: '0',
-  background: `rgb(${vars.color.surfaceContainerHighest})`,
-  color: vars.content.secondary
+  background: vars.color.surface.fill,
+  color: vars.color.text.secondary
 })
 
 export const encryptedBadgeLocked = style({
-  minHeight: vars.control.min,
+  minHeight: vars.density.control,
   paddingInline: '12px',
   border: 'none',
   cursor: 'pointer',
-  background: `rgb(${vars.color.secondaryContainer})`,
-  color: `rgb(${vars.color.onSecondaryContainer})`,
+  background: vars.color.selection.bg,
+  color: vars.color.selection.fg,
   selectors: {
     '&:active': {
       transform: 'scale(0.95)'
     },
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     }
   }
@@ -324,8 +324,8 @@ export const marquee = style({
   position: 'fixed',
   zIndex: '15',
   pointerEvents: 'none',
-  border: `1px solid ${vars.state.focus}`,
-  background: `rgba(${vars.color.primary}, 0.18)`,
+  border: `1px solid ${vars.color.focus}`,
+  background: `color-mix(in srgb, ${vars.color.accent.solid} 18%, transparent)`,
   borderRadius: '2px'
 })
 
@@ -346,7 +346,7 @@ export const tableWrap = style({
 })
 
 export const tableWrapDragover = style({
-  outline: `2px dashed rgb(${vars.color.primary})`,
+  outline: `2px dashed ${vars.color.accent.solid}`,
   outlineOffset: '-2px'
 })
 
@@ -372,7 +372,7 @@ export const loadingMore = style({
   justifyContent: 'center',
   gap: '8px',
   padding: '12px',
-  color: vars.content.secondary
+  color: vars.color.text.secondary
 })
 
 export const nothing = style({
@@ -394,31 +394,31 @@ export const nothingIcon = style({
   alignItems: 'center',
   justifyContent: 'center',
   borderRadius: '24px',
-  background: vars.state.selection,
-  color: vars.state.selectionContent,
+  background: vars.color.selection.bg,
+  color: vars.color.selection.fg,
   fontSize: '36px',
   lineHeight: '1',
-  boxShadow: vars.shadow.card
+  boxShadow: vars.elevation.sm
 })
 
 export const nothingTitle = style({
   margin: '0',
-  fontSize: vars.typescale.headlineSmall.size,
-  fontWeight: vars.typescale.headlineSmall.weight,
-  lineHeight: vars.typescale.headlineSmall.lineHeight
+  fontSize: vars.typography.heading.size,
+  fontWeight: vars.typography.heading.weight,
+  lineHeight: vars.typography.heading.lineHeight
 })
 
 export const nothingHint = style({
   maxWidth: '360px',
   margin: '0',
-  color: vars.content.secondary,
-  fontSize: vars.typescale.bodyMedium.size,
-  lineHeight: vars.typescale.bodyMedium.lineHeight
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.body.size,
+  lineHeight: vars.typography.body.lineHeight
 })
 
 export const error = style({
   padding: '24px',
-  color: `rgb(${vars.color.error})`
+  color: vars.color.danger.solid
 })
 
 export const dropOverlay = style({
@@ -427,9 +427,9 @@ export const dropOverlay = style({
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  background: `rgba(${vars.color.primary}, 0.12)`,
-  color: `rgb(${vars.color.primary})`,
-  fontSize: vars.typescale.titleMedium.size,
-  fontWeight: vars.typescale.titleMedium.weight,
+  background: `color-mix(in srgb, ${vars.color.accent.solid} 12%, transparent)`,
+  color: vars.color.accent.solid,
+  fontSize: vars.typography.title.size,
+  fontWeight: vars.typography.title.weight,
   pointerEvents: 'none'
 })

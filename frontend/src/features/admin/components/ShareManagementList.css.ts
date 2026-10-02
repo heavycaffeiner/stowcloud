@@ -1,6 +1,6 @@
 import { style } from '@vanilla-extract/css'
 import { trailingJustify, trailingWidth } from '../../../ui/ListItem.css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const empty = style({
   display: 'flex',
@@ -9,10 +9,10 @@ export const empty = style({
   gap: '8px',
   padding: '32px 16px',
   textAlign: 'center',
-  border: `1px dashed ${vars.outline.variant}`,
-  borderRadius: vars.radius.medium,
+  border: `1px dashed ${vars.color.border.subtle}`,
+  borderRadius: vars.radius.md,
   background: 'transparent',
-  color: `rgb(${vars.color.onSurfaceVariant})`
+  color: vars.color.text.secondary
 })
 
 export const emptyText = style({
@@ -25,8 +25,8 @@ export const list = style({
   padding: '0',
   minWidth: '0',
   overflow: 'hidden',
-  border: `1px solid ${vars.outline.variant}`,
-  borderRadius: vars.radius.medium,
+  border: `1px solid ${vars.color.border.subtle}`,
+  borderRadius: vars.radius.md,
   background: 'transparent',
   display: 'flex',
   flexDirection: 'column',
@@ -45,10 +45,10 @@ export const item = style({
   padding: '0',
   selectors: {
     '&:hover': {
-      background: `rgb(${vars.color.surfaceContainerLow})`
+      background: vars.color.surface.container
     },
     '& + &': {
-      borderTop: `1px solid ${vars.outline.variant}`
+      borderTop: `1px solid ${vars.color.border.subtle}`
     }
   }
 })
@@ -96,10 +96,10 @@ export const encSalt = style({
   maxWidth: '100%',
   overflowWrap: 'anywhere',
   fontFamily: 'ui-monospace, monospace',
-  fontSize: vars.typescale.bodySmall.size,
-  background: `rgb(${vars.color.surfaceContainer})`,
+  fontSize: vars.typography.bodySmall.size,
+  background: vars.color.surface.raised,
   padding: '2px 6px',
-  borderRadius: vars.shape.cornerExtraSmall
+  borderRadius: vars.radius.xs
 })
 
 export const trash = style({
@@ -110,23 +110,23 @@ export const trash = style({
 })
 
 export const trashLabel = style({
-  fontSize: vars.typescale.bodyMedium.size,
-  color: `rgb(${vars.color.onSurfaceVariant})`,
+  fontSize: vars.typography.body.size,
+  color: vars.color.text.secondary,
   whiteSpace: 'nowrap'
 })
 
 export const encSaltLabel = style({
-  fontSize: vars.typescale.bodySmall.size,
-  color: `rgb(${vars.color.onSurfaceVariant})`
+  fontSize: vars.typography.bodySmall.size,
+  color: vars.color.text.secondary
 })
 
 export const shareBackend = style({
   maxWidth: '100%',
   marginInlineStart: '8px',
   paddingInline: '8px',
-  borderRadius: vars.shape.cornerExtraSmall,
-  background: `rgb(${vars.color.surfaceContainerHighest})`,
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.labelSmall.size,
+  borderRadius: vars.radius.xs,
+  background: vars.color.surface.fill,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.caption.size,
   overflowWrap: 'anywhere'
 })

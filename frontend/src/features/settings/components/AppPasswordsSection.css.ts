@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const itemActions = style({
   display: 'flex',
@@ -34,8 +34,8 @@ export const list = style({
   padding: '0',
   margin: '0',
   overflow: 'hidden',
-  border: `1px solid ${vars.outline.variant}`,
-  borderRadius: vars.radius.medium,
+  border: `1px solid ${vars.color.border.subtle}`,
+  borderRadius: vars.radius.md,
   background: 'transparent',
   display: 'flex',
   flexDirection: 'column',
@@ -54,10 +54,10 @@ export const item = style({
   transition: 'background-color 140ms ease',
   selectors: {
     '&:hover': {
-      background: `rgb(${vars.color.surfaceContainerLow})`
+      background: vars.color.surface.container
     },
     '& + &': {
-      borderTop: `1px solid ${vars.outline.variant}`
+      borderTop: `1px solid ${vars.color.border.subtle}`
     }
   },
   '@media': {
@@ -75,21 +75,21 @@ export const itemMain = style({
 
 export const detail = style({
   margin: '4px 0 0',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.bodySmall.size,
-  lineHeight: vars.typescale.bodySmall.lineHeight,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size,
+  lineHeight: vars.typography.bodySmall.lineHeight,
   overflowWrap: 'anywhere'
 })
 
 export const error = style({
   margin: '0',
-  color: `rgb(${vars.color.error})`,
+  color: vars.color.danger.solid,
   overflowWrap: 'anywhere'
 })
 
 export const copyFeedback = style({
   margin: '0',
-  color: `rgb(${vars.color.error})`,
+  color: vars.color.danger.solid,
   overflowWrap: 'anywhere'
 })
 
@@ -101,14 +101,14 @@ export const tokenInput = style({
   height: '40px',
   lineHeight: '24px',
   border: '0',
-  borderRadius: vars.shape.cornerExtraSmall,
-  background: `rgb(${vars.color.surfaceContainerHighest})`,
-  color: `rgb(${vars.color.onSurface})`,
+  borderRadius: vars.radius.xs,
+  background: vars.color.surface.fill,
+  color: vars.color.text.primary,
   font: 'inherit',
   overflowWrap: 'anywhere',
   selectors: {
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     }
   }

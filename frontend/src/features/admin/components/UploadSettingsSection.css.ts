@@ -1,10 +1,10 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const adminSaved = style({
   margin: '0',
-  color: `rgb(${vars.color.primary})`,
-  fontSize: vars.typescale.bodySmall.size,
+  color: vars.color.accent.solid,
+  fontSize: vars.typography.bodySmall.size,
   overflowWrap: 'anywhere'
 })
 
@@ -14,22 +14,22 @@ export const estimate = style({
   gap: '16px',
   margin: '0',
   padding: '16px',
-  border: `1px solid ${vars.outline.variant}`,
-  borderRadius: vars.radius.medium,
+  border: `1px solid ${vars.color.border.subtle}`,
+  borderRadius: vars.radius.md,
   background: 'transparent'
 })
 
 export const estimateLabel = style({
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.bodySmall.size,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size,
   marginBottom: '4px'
 })
 
 export const estimateValue = style({
   margin: '0',
-  fontSize: vars.typescale.titleMedium.size,
+  fontSize: vars.typography.title.size,
   fontWeight: '600',
-  color: `rgb(${vars.color.onSurface})`
+  color: vars.color.text.primary
 })
 
 export const form = style({

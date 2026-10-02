@@ -1,9 +1,9 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const error = style({
   margin: '0',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
+  color: vars.color.text.secondary,
   overflowWrap: 'anywhere'
 })
 
@@ -26,16 +26,16 @@ export const badge = style({
   alignItems: 'center',
   minBlockSize: '24px',
   paddingInline: '8px',
-  borderRadius: vars.shape.cornerFull,
-  background: `rgb(${vars.color.surfaceContainerHighest})`,
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.labelSmall.size,
-  lineHeight: vars.typescale.labelSmall.lineHeight
+  borderRadius: vars.radius.full,
+  background: vars.color.surface.fill,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.caption.size,
+  lineHeight: vars.typography.caption.lineHeight
 })
 
 export const badgeOn = style({
-  background: `rgb(${vars.color.primaryContainer})`,
-  color: `rgb(${vars.color.onPrimaryContainer})`
+  background: vars.color.accent.soft,
+  color: vars.color.accent.onSoft
 })
 
 export const warning = style({
@@ -44,14 +44,14 @@ export const warning = style({
   gap: '8px',
   margin: '0',
   padding: '12px',
-  borderRadius: vars.shape.cornerExtraSmall,
-  background: `rgb(${vars.color.errorContainer})`,
-  color: `rgb(${vars.color.onErrorContainer})`,
+  borderRadius: vars.radius.xs,
+  background: vars.color.danger.soft,
+  color: vars.color.danger.onSoft,
   overflowWrap: 'anywhere'
 })
 
 export const detail = style({
   margin: '0',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
+  color: vars.color.text.secondary,
   overflowWrap: 'anywhere'
 })

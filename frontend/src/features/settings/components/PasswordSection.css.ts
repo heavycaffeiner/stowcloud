@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const actions = style({
   display: 'flex',
@@ -17,13 +17,13 @@ export const actions = style({
 
 export const error = style({
   margin: '0',
-  color: `rgb(${vars.color.error})`,
+  color: vars.color.danger.solid,
   overflowWrap: 'anywhere'
 })
 
 export const success = style({
   margin: '0',
-  color: `rgb(${vars.color.primary})`,
+  color: vars.color.accent.solid,
   overflowWrap: 'anywhere'
 })
 
@@ -49,5 +49,5 @@ export const strengthBar = style({
 export const strengthLabel = style({
   flex: '0 0 auto',
   minInlineSize: '48px',
-  color: `rgb(${vars.color.onSurfaceVariant})`
+  color: vars.color.text.secondary
 })

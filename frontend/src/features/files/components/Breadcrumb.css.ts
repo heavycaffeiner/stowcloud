@@ -1,6 +1,6 @@
 import { style } from '@vanilla-extract/css'
 import * as browseViewStyles from './BrowseView.css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const root = style({
   display: 'flex',
@@ -9,10 +9,10 @@ export const root = style({
   minWidth: '0',
   maxWidth: '100%',
   height: '40px',
-  fontSize: vars.typescale.labelLarge.size,
-  fontWeight: vars.typescale.labelLarge.weight,
-  lineHeight: vars.typescale.labelLarge.lineHeight,
-  letterSpacing: vars.typescale.labelLarge.tracking,
+  fontSize: vars.typography.label.size,
+  fontWeight: vars.typography.label.weight,
+  lineHeight: vars.typography.label.lineHeight,
+  letterSpacing: vars.typography.label.tracking,
   '@media': {
     '(max-width: 599.98px)': {
       height: '44px'
@@ -83,7 +83,7 @@ export const link = style({
   boxSizing: 'border-box',
   paddingInline: '8px',
   maxWidth: '100%',
-  borderRadius: vars.shape.cornerSmall,
+  borderRadius: vars.radius.sm,
   font: 'inherit',
   textAlign: 'start',
   flex: '1 1 auto',
@@ -91,18 +91,18 @@ export const link = style({
   width: '100%',
   border: '0',
   background: 'transparent',
-  color: `rgb(${vars.color.primary})`,
+  color: vars.color.accent.solid,
   cursor: 'pointer',
   transition: 'background-color 120ms ease, color 120ms ease',
   selectors: {
     '&:hover': {
-      background: `rgba(${vars.color.primary}, 0.08)`
+      background: `color-mix(in srgb, ${vars.color.accent.solid} 8%, transparent)`
     },
     '&:active': {
-      background: `rgba(${vars.color.primary}, 0.14)`
+      background: `color-mix(in srgb, ${vars.color.accent.solid} 14%, transparent)`
     },
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     }
   },
@@ -123,10 +123,10 @@ export const current = style({
   boxSizing: 'border-box',
   paddingInline: '8px',
   maxWidth: '100%',
-  borderRadius: vars.shape.cornerSmall,
+  borderRadius: vars.radius.sm,
   font: 'inherit',
   textAlign: 'start',
-  color: `rgb(${vars.color.onSurface})`,
+  color: vars.color.text.primary,
   '@media': {
     '(max-width: 599.98px)': {
       height: '44px',
@@ -143,7 +143,7 @@ export const label = style({
   whiteSpace: 'nowrap',
   selectors: {
     [`${itemRoot} &`]: {
-      color: `rgb(${vars.color.primary})`,
+      color: vars.color.accent.solid,
       fontWeight: '600'
     }
   }
@@ -152,12 +152,12 @@ export const label = style({
 export const ellipsisBtn = style({
   selectors: {
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     },
     '&:hover': {
-      background: `rgb(${vars.color.surfaceContainerHighest})`,
-      color: `rgb(${vars.color.onSurface})`
+      background: vars.color.surface.fill,
+      color: vars.color.text.primary
     }
   },
   display: 'inline-flex',
@@ -168,9 +168,9 @@ export const ellipsisBtn = style({
   height: '40px',
   padding: '0',
   border: '0',
-  borderRadius: vars.shape.cornerSmall,
+  borderRadius: vars.radius.sm,
   background: 'transparent',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
+  color: vars.color.text.secondary,
   cursor: 'pointer',
   font: 'inherit',
   fontWeight: '700',
@@ -191,7 +191,7 @@ export const sep = style({
   justifyContent: 'center',
   height: '40px',
   paddingInline: '2px',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
+  color: vars.color.text.secondary,
   font: 'inherit',
   opacity: '.55',
   userSelect: 'none',

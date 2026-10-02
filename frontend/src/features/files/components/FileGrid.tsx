@@ -20,7 +20,7 @@ import * as styles from './FileGrid.css'
 import * as utilitiesStyles from '../../../ui/utilities.css'
 import { cx } from '../../../ui/cx'
 import { cssVarName } from '../../../ui/css-var'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 import type { Entry } from '../api'
 import type { Perms } from '../perms'
 

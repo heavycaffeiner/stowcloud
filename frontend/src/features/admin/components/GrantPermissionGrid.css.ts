@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const root = style({
   display: 'flex',
@@ -7,8 +7,8 @@ export const root = style({
   gap: '0',
   maxWidth: '100%',
   overflow: 'hidden',
-  border: `1px solid ${vars.outline.variant}`,
-  borderRadius: vars.radius.small,
+  border: `1px solid ${vars.color.border.subtle}`,
+  borderRadius: vars.radius.sm,
   background: 'transparent'
 })
 
@@ -18,9 +18,9 @@ export const head = style({
   alignItems: 'center',
   gap: '8px',
   padding: '8px 12px',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  background: `rgb(${vars.color.surfaceContainerLow})`,
-  fontSize: vars.typescale.bodySmall.size,
+  color: vars.color.text.secondary,
+  background: vars.color.surface.container,
+  fontSize: vars.typography.bodySmall.size,
   '@media': {
     '(max-width: 599.98px)': {
       gridTemplateColumns: 'minmax(0, 1fr) 52px 52px',
@@ -38,7 +38,7 @@ export const row = style({
   background: 'transparent',
   selectors: {
     '& + &': {
-      borderTop: `1px solid ${vars.outline.variant}`
+      borderTop: `1px solid ${vars.color.border.subtle}`
     }
   },
   '@media': {

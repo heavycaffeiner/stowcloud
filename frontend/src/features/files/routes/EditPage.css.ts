@@ -1,14 +1,14 @@
 import { fallbackVar, style } from '@vanilla-extract/css'
 import * as appShellStyles from '../../../app/shell/AppShell.css'
-import { trayStackTop, vars } from '../../../ui/theme.css'
+import { trayStackTop, vars } from '@/shared/theme'
 
 export const root = style({
   display: 'flex',
   flexDirection: 'column',
   height: '100%',
   minHeight: '0',
-  background: `rgb(${vars.color.surfaceContainerLow})`,
-  color: `rgb(${vars.color.onSurface})`
+  background: vars.color.surface.container,
+  color: vars.color.text.primary
 })
 
 export const toolbar = style({
@@ -18,8 +18,8 @@ export const toolbar = style({
   gap: '12px',
   minHeight: '76px',
   padding: '10px 20px',
-  background: `rgb(${vars.color.surface})`,
-  boxShadow: `0 1px 0 rgb(${vars.color.outlineVariant})`,
+  background: vars.color.surface.page,
+  boxShadow: `0 1px 0 ${vars.color.border.subtle}`,
   '@media': {
     '(max-width: 600px)': {
       gap: '8px',
@@ -36,9 +36,9 @@ export const fileIcon = style({
   justifyContent: 'center',
   width: '40px',
   height: '40px',
-  borderRadius: vars.shape.cornerMedium,
-  background: `rgb(${vars.color.primaryContainer})`,
-  color: `rgb(${vars.color.onPrimaryContainer})`,
+  borderRadius: vars.radius.md,
+  background: vars.color.accent.soft,
+  color: vars.color.accent.onSoft,
   fontSize: '1.35rem',
   '@media': {
     '(max-width: 600px)': {
@@ -72,15 +72,15 @@ export const details = style({
   alignItems: 'center',
   gap: '8px',
   minWidth: '0',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.bodySmall.size,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size,
   lineHeight: '1.25rem'
 })
 
 export const filename = style({
   overflow: 'hidden',
-  color: `rgb(${vars.color.onSurface})`,
-  fontSize: vars.typescale.titleMedium.size,
+  color: vars.color.text.primary,
+  fontSize: vars.typography.title.size,
   fontWeight: '600',
   lineHeight: '1.35',
   textOverflow: 'ellipsis',
@@ -93,12 +93,12 @@ export const language = style({
   alignItems: 'center',
   minHeight: '22px',
   paddingInline: '8px',
-  borderRadius: vars.shape.cornerFull,
-  fontSize: vars.typescale.labelSmall.size,
+  borderRadius: vars.radius.full,
+  fontSize: vars.typography.caption.size,
   fontWeight: '600',
   lineHeight: '1',
-  background: `rgb(${vars.color.secondaryContainer})`,
-  color: `rgb(${vars.color.onSecondaryContainer})`
+  background: vars.color.selection.bg,
+  color: vars.color.selection.fg
 })
 
 export const badge = style({
@@ -107,15 +107,15 @@ export const badge = style({
   alignItems: 'center',
   minHeight: '22px',
   paddingInline: '8px',
-  borderRadius: vars.shape.cornerFull,
-  fontSize: vars.typescale.labelSmall.size,
+  borderRadius: vars.radius.full,
+  fontSize: vars.typography.caption.size,
   fontWeight: '600',
   lineHeight: '1'
 })
 
 export const badgeDirty = style({
-  background: `rgb(${vars.color.primaryContainer})`,
-  color: `rgb(${vars.color.onPrimaryContainer})`,
+  background: vars.color.accent.soft,
+  color: vars.color.accent.onSoft,
   '@media': {
     '(max-width: 600px)': {
       width: '8px',
@@ -129,8 +129,8 @@ export const badgeDirty = style({
 })
 
 export const badgeReadonly = style({
-  background: `rgb(${vars.color.errorContainer})`,
-  color: `rgb(${vars.color.onErrorContainer})`
+  background: vars.color.danger.soft,
+  color: vars.color.danger.onSoft
 })
 
 export const meta = style({
@@ -182,14 +182,14 @@ export const locked = style({
 export const error = style({
   margin: '0',
   padding: '24px',
-  color: `rgb(${vars.color.error})`
+  color: vars.color.danger.solid
 })
 
 // mdui sets the snackbar's bottom inline, so lifting it above the compact nav bar needs !important.
 export const snackbar = style({
   selectors: {
     [`${appShellStyles.compact} &`]: {
-      bottom: `max(calc(16px + ${vars.layout.navBarHeight} + env(safe-area-inset-bottom, 0px)), ${fallbackVar(trayStackTop, '0px')}) !important`
+      bottom: `max(calc(16px + ${vars.layout.navBar} + env(safe-area-inset-bottom, 0px)), ${fallbackVar(trayStackTop, '0px')}) !important`
     }
   }
 })

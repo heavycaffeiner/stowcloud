@@ -1,5 +1,5 @@
 import { createContainer, style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 // The browse view's content area declares this container; the tree narrows when it is small.
 export const hostContainer = createContainer()
@@ -10,8 +10,8 @@ export const root = style({
   overflowY: 'auto',
   paddingBlock: '8px',
   borderInlineEnd: 'none',
-  background: `rgb(${vars.color.surfaceContainerLow})`,
-  color: vars.content.primary,
+  background: vars.color.surface.container,
+  color: vars.color.text.primary,
   '@container': {
     [`${hostContainer} (max-width: 839.98px)`]: {
       flexBasis: '200px',
@@ -34,7 +34,7 @@ export const list = style({
 export const overlay = style({
   position: 'fixed',
   top: '0',
-  bottom: `calc(${vars.layout.navBarHeight} + env(safe-area-inset-bottom, 0px))`,
+  bottom: `calc(${vars.layout.navBar} + env(safe-area-inset-bottom, 0px))`,
   insetInlineStart: '0',
   margin: '0',
   maxWidth: 'min(320px, 85vw)',
@@ -42,9 +42,9 @@ export const overlay = style({
   height: 'auto',
   padding: '0',
   border: 'none',
-  boxShadow: vars.elevation.level2,
+  boxShadow: vars.elevation.md,
   translate: '0 0',
-  transition: `translate ${vars.motion.easingStandard}, display ${vars.motion.durationMedium2} allow-discrete, overlay ${vars.motion.durationMedium2} allow-discrete`,
+  transition: `translate ${vars.motion.easing}, display ${vars.motion.medium} allow-discrete, overlay ${vars.motion.medium} allow-discrete`,
   selectors: {
     '&:not([open])': {
       translate: '-100% 0'
@@ -55,15 +55,15 @@ export const overlay = style({
       }
     },
     '&::backdrop': {
-      background: `color-mix(in srgb, rgb(${vars.color.scrim}) 32%, transparent)`,
-      transition: `background-color ${vars.motion.easingStandard}, display ${vars.motion.durationMedium2} allow-discrete, overlay ${vars.motion.durationMedium2} allow-discrete`
+      background: `color-mix(in srgb, ${vars.color.scrim} 32%, transparent)`,
+      transition: `background-color ${vars.motion.easing}, display ${vars.motion.medium} allow-discrete, overlay ${vars.motion.medium} allow-discrete`
     },
     '&:not([open])::backdrop': {
-      background: `color-mix(in srgb, rgb(${vars.color.scrim}) 0%, transparent)`
+      background: `color-mix(in srgb, ${vars.color.scrim} 0%, transparent)`
     },
     '&[open]::backdrop': {
       '@starting-style': {
-        background: `color-mix(in srgb, rgb(${vars.color.scrim}) 0%, transparent)`
+        background: `color-mix(in srgb, ${vars.color.scrim} 0%, transparent)`
       }
     }
   }
@@ -75,21 +75,21 @@ export const treeRowMore = style({
       minHeight: '44px'
     },
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     }
   },
   display: 'flex',
   alignItems: 'center',
   width: '100%',
-  minHeight: vars.control.min,
+  minHeight: vars.density.control,
   paddingBlock: '4px',
   border: '0',
   background: 'transparent',
   textAlign: 'start',
   cursor: 'pointer',
-  fontSize: vars.typescale.labelLarge.size,
-  lineHeight: vars.typescale.labelLarge.lineHeight
+  fontSize: vars.typography.label.size,
+  lineHeight: vars.typography.label.lineHeight
 })
 
 export const treeRowStatus = style({
@@ -104,9 +104,9 @@ export const treeRowStatus = style({
   margin: '0',
   paddingBlock: '4px',
   overflowWrap: 'anywhere',
-  color: vars.content.secondary,
-  fontSize: vars.typescale.bodySmall.size,
-  lineHeight: vars.typescale.bodySmall.lineHeight
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size,
+  lineHeight: vars.typography.bodySmall.lineHeight
 })
 
 export const overlayHeader = style({
@@ -118,16 +118,16 @@ export const overlayHeader = style({
   justifyContent: 'flex-end',
   height: '56px',
   paddingInline: '8px',
-  boxShadow: `0 1px 0 rgb(${vars.color.outlineVariant})`,
-  background: vars.surface.page
+  boxShadow: `0 1px 0 ${vars.color.border.subtle}`,
+  background: vars.color.surface.page
 })
 
 export const overlayClose = style({
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
-  width: vars.control.min,
-  height: vars.control.min,
+  width: vars.density.control,
+  height: vars.density.control,
   padding: '0',
   border: '0',
   borderRadius: '50%',
@@ -139,5 +139,5 @@ export const overlayClose = style({
 })
 
 export const treeRowStatusError = style({
-  color: `rgb(${vars.color.error})`
+  color: vars.color.danger.solid
 })

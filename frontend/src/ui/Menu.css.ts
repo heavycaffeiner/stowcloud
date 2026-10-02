@@ -1,5 +1,6 @@
 import { style } from '@vanilla-extract/css'
-import { fadeIn, scaleUp, vars } from './theme.css'
+import { fadeIn, scaleUp } from '@/shared/theme'
+import { vars } from './theme.css'
 
 export const menuShell = style({
   zIndex: '50',

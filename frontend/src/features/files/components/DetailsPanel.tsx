@@ -14,7 +14,7 @@ import { Icon } from '../../../ui/Icon'
 import { getEntryIcon } from './FileRow'
 import * as styles from './DetailsPanel.css'
 import { cx } from '../../../ui/cx'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 import { ApiError } from '../../../api/fetcher'
 import { useFolderSizes, type Entry } from '../api'
 
@@ -166,8 +166,8 @@ export function DetailsPanel({
   const heroIcon = one
     ? getEntryIcon(one)
     : many
-      ? { name: 'check', color: vars.content.icon }
-      : { name: 'folder', color: vars.content.icon }
+      ? { name: 'check', color: vars.color.text.icon }
+      : { name: 'folder', color: vars.color.text.icon }
   const heroDesc = one ? kindDescription(one) : many ? formatBytes(bytes) : t('details.folder')
 
   return (

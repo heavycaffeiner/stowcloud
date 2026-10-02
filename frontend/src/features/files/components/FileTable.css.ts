@@ -1,5 +1,5 @@
 import { createContainer, createVar, fallbackVar, style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const selectionBarSpace = createVar()
 
@@ -13,8 +13,8 @@ export const root = style({
   minWidth: '0',
   alignSelf: 'flex-start',
   contain: 'content',
-  background: vars.surface.page,
-  color: vars.content.primary,
+  background: vars.color.surface.page,
+  color: vars.color.text.primary,
   containerType: 'inline-size',
   containerName: container,
   paddingBottom: `calc(24px + ${fallbackVar(selectionBarSpace, '0px')})`,
@@ -23,7 +23,7 @@ export const root = style({
   },
   selectors: {
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.insetOffset
     }
   }
@@ -53,12 +53,12 @@ export const header = style({
   height: '40px',
   paddingInline: vars.layout.contentPad,
   borderBottom: 'none',
-  background: `color-mix(in srgb, ${vars.surface.container} 70%, ${vars.surface.page})`,
-  color: vars.content.secondary,
-  fontSize: vars.typescale.labelLarge.size,
-  fontWeight: vars.typescale.labelLarge.weight,
-  lineHeight: vars.typescale.labelLarge.lineHeight,
-  letterSpacing: vars.typescale.labelLarge.tracking,
+  background: `color-mix(in srgb, ${vars.color.surface.container} 70%, ${vars.color.surface.page})`,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.label.size,
+  fontWeight: vars.typography.label.weight,
+  lineHeight: vars.typography.label.lineHeight,
+  letterSpacing: vars.typography.label.tracking,
   '@container': {
     [`${container} (max-width: 599.98px)`]: {
       height: '40px',
@@ -144,10 +144,10 @@ export const headerButton = style({
   alignItems: 'center',
   gap: '4px',
   minWidth: '0',
-  minHeight: vars.control.minDesktop,
+  minHeight: vars.density.controlDesktop,
   padding: '6px 4px',
   border: '0',
-  borderRadius: vars.shape.cornerExtraSmall,
+  borderRadius: vars.radius.xs,
   background: 'transparent',
   color: 'inherit',
   font: 'inherit',
@@ -159,17 +159,17 @@ export const headerButton = style({
     },
     '&:hover': {
       background: 'color-mix(in srgb, currentColor 10%, transparent)',
-      color: vars.content.primary
+      color: vars.color.text.primary
     },
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     }
   }
 })
 
 export const headerButtonActive = style({
-  color: `rgb(${vars.color.primary})`,
+  color: vars.color.accent.solid,
   fontWeight: '600'
 })
 
@@ -193,6 +193,6 @@ export const empty = style({
   justifyContent: 'center',
   minHeight: '160px',
   padding: '64px 24px',
-  color: vars.content.secondary,
-  fontSize: vars.typescale.bodyLarge.size
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodyLarge.size
 })

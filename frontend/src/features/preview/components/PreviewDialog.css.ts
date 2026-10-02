@@ -1,6 +1,6 @@
 import { style } from '@vanilla-extract/css'
 import { iconButtonSize } from '../../../ui/IconButton.css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const root = style({
   display: 'flex',
@@ -8,8 +8,8 @@ export const root = style({
   flexDirection: 'column',
   minWidth: '0',
   minHeight: '0',
-  background: `rgb(${vars.color.surfaceContainer})`,
-  color: `rgb(${vars.color.onSurface})`,
+  background: vars.color.surface.raised,
+  color: vars.color.text.primary,
   vars: {
     [iconButtonSize]: '44px'
   }
@@ -21,12 +21,12 @@ export const bar = style({
   alignItems: 'center',
   gap: '8px',
   padding: '16px',
-  background: `rgb(${vars.color.surfaceContainerHigh})`
+  background: vars.color.surface.overlay
 })
 
 export const iconButton = style({
-  borderRadius: vars.shape.cornerFull,
-  background: `rgb(${vars.color.surfaceContainerHighest})`
+  borderRadius: vars.radius.full,
+  background: vars.color.surface.fill
 })
 
 export const meta = style({
@@ -41,13 +41,13 @@ export const name = style({
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
-  fontSize: vars.typescale.titleMedium.size,
+  fontSize: vars.typography.title.size,
   fontWeight: '500'
 })
 
 export const size = style({
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.bodySmall.size
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size
 })
 
 export const body = style({
@@ -74,8 +74,8 @@ export const stage = style({
   minWidth: '0',
   minHeight: '0',
   overflow: 'auto',
-  borderRadius: vars.shape.cornerLarge,
-  background: `rgb(${vars.color.surfaceContainerLow})`
+  borderRadius: vars.radius.lg,
+  background: vars.color.surface.container
 })
 
 export const videoContainer = style({
@@ -110,7 +110,7 @@ export const text = style({
   whiteSpace: 'pre-wrap',
   overflowWrap: 'anywhere',
   color: 'inherit',
-  fontSize: vars.typescale.bodyMedium.size,
+  fontSize: vars.typography.body.size,
   lineHeight: '1.6'
 })
 
@@ -122,27 +122,27 @@ export const card = style({
   width: 'min(480px, 100%)',
   padding: '24px',
   boxSizing: 'border-box',
-  borderRadius: vars.shape.cornerLarge,
-  background: `rgb(${vars.color.surfaceContainer})`,
+  borderRadius: vars.radius.lg,
+  background: vars.color.surface.raised,
   color: 'inherit',
   textAlign: 'center'
 })
 
 export const cardTitle = style({
   margin: '0',
-  fontSize: vars.typescale.titleMedium.size,
-  fontWeight: vars.typescale.titleMedium.weight,
-  lineHeight: vars.typescale.titleMedium.lineHeight
+  fontSize: vars.typography.title.size,
+  fontWeight: vars.typography.title.weight,
+  lineHeight: vars.typography.title.lineHeight
 })
 
 export const cardReason = style({
   margin: '0',
-  color: `rgb(${vars.color.onSurfaceVariant})`
+  color: vars.color.text.secondary
 })
 
 export const cardDetail = style({
   margin: '0',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
+  color: vars.color.text.secondary,
   overflowWrap: 'anywhere',
   fontFamily: 'ui-monospace, monospace',
   fontSize: '.8rem'
@@ -171,14 +171,14 @@ export const archive = style({
 
 export const archiveCount = style({
   margin: '0',
-  fontSize: vars.typescale.bodySmall.size,
-  lineHeight: vars.typescale.bodySmall.lineHeight
+  fontSize: vars.typography.bodySmall.size,
+  lineHeight: vars.typography.bodySmall.lineHeight
 })
 
 export const archiveEmpty = style({
   margin: '0',
-  fontSize: vars.typescale.bodySmall.size,
-  lineHeight: vars.typescale.bodySmall.lineHeight
+  fontSize: vars.typography.bodySmall.size,
+  lineHeight: vars.typography.bodySmall.lineHeight
 })
 
 export const archiveList = style({
@@ -195,7 +195,7 @@ export const archiveRow = style({
   width: '100%',
   padding: '8px 0',
   border: '0',
-  borderBottom: `1px solid rgb(${vars.color.outlineVariant})`,
+  borderBottom: `1px solid ${vars.color.border.subtle}`,
   background: 'none',
   color: 'inherit',
   font: 'inherit',
@@ -205,10 +205,10 @@ export const archiveRow = style({
       cursor: 'pointer'
     },
     '&:hover': {
-      background: `rgb(${vars.color.surfaceContainerHighest})`
+      background: vars.color.surface.fill
     },
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     }
   }
@@ -226,7 +226,7 @@ export const archiveName = style({
 })
 
 export const archiveSkipped = style({
-  color: `rgb(${vars.color.error})`
+  color: vars.color.danger.solid
 })
 
 export const crumbs = style({
@@ -234,8 +234,8 @@ export const crumbs = style({
   flexWrap: 'wrap',
   alignItems: 'center',
   gap: '4px',
-  fontSize: vars.typescale.bodySmall.size,
-  lineHeight: vars.typescale.bodySmall.lineHeight
+  fontSize: vars.typography.bodySmall.size,
+  lineHeight: vars.typography.bodySmall.lineHeight
 })
 
 export const crumb = style({
@@ -252,14 +252,14 @@ export const crumb = style({
   cursor: 'pointer',
   selectors: {
     '&:hover:not(:disabled)': {
-      background: `rgb(${vars.color.surfaceContainerHighest})`
+      background: vars.color.surface.fill
     },
     '&:disabled': {
       cursor: 'default',
       opacity: '.75'
     },
     '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.state.focus}`,
+      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
       outlineOffset: vars.focusRing.offset
     }
   }

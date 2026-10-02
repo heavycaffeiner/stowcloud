@@ -6,7 +6,7 @@ import { extensionOf } from '../logic/filters'
 import { computeWindow, type WindowResult } from '../../../lib/virtual/windowing'
 import { Icon } from '../../../ui/Icon'
 import * as styles from './SearchResults.css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 import type { SearchHit } from '../api'
 
 export interface SearchResultsProps {
@@ -22,17 +22,17 @@ export interface SearchResultsProps {
 }
 
 function getHitIcon(hit: SearchHit): { name: string; color?: string } {
-  if (hit.entry.kind === 'dir') return { name: 'folder', color: vars.content.icon }
+  if (hit.entry.kind === 'dir') return { name: 'folder', color: vars.color.text.icon }
   const ext = extensionOf(hit.entry.name).toLowerCase()
   if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'zst', 'iso'].includes(ext))
-    return { name: 'folder-zip', color: vars.content.icon }
-  if (ext === 'apk') return { name: 'android', color: vars.content.icon }
+    return { name: 'folder-zip', color: vars.color.text.icon }
+  if (ext === 'apk') return { name: 'android', color: vars.color.text.icon }
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'heic', 'avif'].includes(ext))
-    return { name: 'image', color: vars.content.icon }
+    return { name: 'image', color: vars.color.text.icon }
   if (['mp4', 'mkv', 'mov', 'avi', 'webm', 'wmv', 'm4v', 'mpg', 'mpeg', 'flv'].includes(ext))
-    return { name: 'movie', color: vars.content.icon }
+    return { name: 'movie', color: vars.color.text.icon }
   if (['mp3', 'flac', 'wav', 'aac', 'ogg', 'oga', 'm4a', 'opus', 'wma'].includes(ext))
-    return { name: 'audio-file', color: vars.content.icon }
+    return { name: 'audio-file', color: vars.color.text.icon }
   if (
     [
       'js',
@@ -60,7 +60,7 @@ function getHitIcon(hit: SearchHit): { name: string; color?: string } {
       'css'
     ].includes(ext)
   )
-    return { name: 'code', color: vars.content.icon }
+    return { name: 'code', color: vars.color.text.icon }
   if (
     [
       'pdf',
@@ -81,8 +81,8 @@ function getHitIcon(hit: SearchHit): { name: string; color?: string } {
       'csv'
     ].includes(ext)
   )
-    return { name: 'description', color: vars.content.icon }
-  return { name: 'draft', color: vars.content.icon }
+    return { name: 'description', color: vars.color.text.icon }
+  return { name: 'draft', color: vars.color.text.icon }
 }
 
 export function SearchResults({

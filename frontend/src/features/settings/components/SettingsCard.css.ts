@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const card = style({
   display: 'flex',
@@ -8,10 +8,10 @@ export const card = style({
   padding: '24px 0',
   minWidth: '0',
   border: '0',
-  borderBottom: `1px solid ${vars.outline.variant}`,
+  borderBottom: `1px solid ${vars.color.border.subtle}`,
   borderRadius: '0',
   background: 'transparent',
-  color: vars.content.primary,
+  color: vars.color.text.primary,
   boxShadow: 'none',
   selectors: {
     '&:last-child': {
@@ -41,11 +41,11 @@ export const cardHead = style({
 
 export const cardTitle = style({
   margin: '0 0 2px',
-  color: `rgb(${vars.color.onSurface})`,
-  fontSize: vars.typescale.titleLarge.size,
-  fontWeight: vars.typescale.titleLarge.weight,
-  letterSpacing: vars.typescale.titleLarge.tracking,
-  lineHeight: vars.typescale.titleLarge.lineHeight,
+  color: vars.color.text.primary,
+  fontSize: vars.typography.titleLarge.size,
+  fontWeight: vars.typography.titleLarge.weight,
+  letterSpacing: vars.typography.titleLarge.tracking,
+  lineHeight: vars.typography.titleLarge.lineHeight,
   overflowWrap: 'anywhere'
 })
 
@@ -66,12 +66,12 @@ export const badge = style({
   minBlockSize: '24px',
   marginInlineStart: '8px',
   paddingInline: '8px',
-  borderRadius: vars.shape.cornerFull,
-  background: `rgb(${vars.color.surfaceContainerHighest})`,
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.labelSmall.size,
-  fontWeight: vars.typescale.labelSmall.weight,
-  lineHeight: vars.typescale.labelSmall.lineHeight,
+  borderRadius: vars.radius.full,
+  background: vars.color.surface.fill,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.caption.size,
+  fontWeight: vars.typography.caption.weight,
+  lineHeight: vars.typography.caption.lineHeight,
   whiteSpace: 'nowrap',
   verticalAlign: 'middle',
   selectors: {

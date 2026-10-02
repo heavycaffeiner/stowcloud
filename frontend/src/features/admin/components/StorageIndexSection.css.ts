@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const list = style({
   listStyle: 'none',
@@ -7,8 +7,8 @@ export const list = style({
   padding: '0',
   minWidth: '0',
   overflow: 'hidden',
-  border: `1px solid ${vars.outline.variant}`,
-  borderRadius: vars.radius.medium,
+  border: `1px solid ${vars.color.border.subtle}`,
+  borderRadius: vars.radius.md,
   background: 'transparent',
   display: 'flex',
   flexDirection: 'column',
@@ -27,10 +27,10 @@ export const item = style({
   transition: 'background-color 140ms ease',
   selectors: {
     '&:hover': {
-      background: `rgb(${vars.color.surfaceContainerLow})`
+      background: vars.color.surface.container
     },
     '& + &': {
-      borderTop: `1px solid ${vars.outline.variant}`
+      borderTop: `1px solid ${vars.color.border.subtle}`
     }
   },
   '@media': {
@@ -44,9 +44,9 @@ export const item = style({
 
 export const value = style({
   flexShrink: '0',
-  color: `rgb(${vars.color.onSurfaceVariant})`,
+  color: vars.color.text.secondary,
   fontWeight: '500',
-  fontSize: vars.typescale.bodyMedium.size,
+  fontSize: vars.typography.body.size,
   textAlign: 'end',
   overflowWrap: 'anywhere',
   '@media': {
@@ -63,7 +63,7 @@ export const itemLabel = style({
   gap: '10px',
   minWidth: '0',
   fontWeight: '500',
-  color: `rgb(${vars.color.onSurface})`
+  color: vars.color.text.primary
 })
 
 export const itemName = style({
@@ -84,23 +84,23 @@ export const statusBadge = style({
   gap: '6px',
   minHeight: '28px',
   padding: '2px 10px',
-  borderRadius: vars.shape.cornerFull,
-  background: `rgb(${vars.color.surfaceContainerHighest})`,
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.labelMedium.size,
+  borderRadius: vars.radius.full,
+  background: vars.color.surface.fill,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.labelSmall.size,
   fontWeight: '500'
 })
 
 export const statusBadgeOn = style({
-  background: `rgb(${vars.color.surfaceContainerHighest})`,
-  color: `rgb(${vars.color.primary})`
+  background: vars.color.surface.fill,
+  color: vars.color.accent.solid
 })
 
 export const indexCost = style({
   margin: '0',
   padding: '16px',
-  border: `1px solid ${vars.outline.variant}`,
-  borderRadius: vars.radius.medium,
+  border: `1px solid ${vars.color.border.subtle}`,
+  borderRadius: vars.radius.md,
   background: 'transparent',
   display: 'flex',
   flexDirection: 'column',
@@ -115,14 +115,14 @@ export const indexCostList = style({
 })
 
 export const indexCostLabel = style({
-  color: `rgb(${vars.color.onSurfaceVariant})`,
-  fontSize: vars.typescale.bodySmall.size,
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size,
   marginBottom: '4px'
 })
 
 export const indexCostValue = style({
   margin: '0',
-  fontSize: vars.typescale.titleMedium.size,
+  fontSize: vars.typography.title.size,
   fontWeight: '600',
-  color: `rgb(${vars.color.onSurface})`
+  color: vars.color.text.primary
 })

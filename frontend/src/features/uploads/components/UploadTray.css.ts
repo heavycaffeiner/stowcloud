@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '../../../ui/theme.css'
+import { vars } from '@/shared/theme'
 
 export const root = style({
   width: 'min(360px, calc(100vw - 32px))',
@@ -8,10 +8,10 @@ export const root = style({
   flexDirection: 'column',
   overflow: 'hidden',
   borderRadius: '16px',
-  background: vars.surface.overlay,
-  color: vars.content.primary,
+  background: vars.color.surface.overlay,
+  color: vars.color.text.primary,
   boxShadow: '0 8px 24px rgba(0, 0, 0, 0.24)',
-  border: `1px solid ${vars.outline.variant}`
+  border: `1px solid ${vars.color.border.subtle}`
 })
 
 export const header = style({
@@ -31,9 +31,9 @@ export const title = style({
   color: 'inherit',
   cursor: 'pointer',
   font: 'inherit',
-  fontSize: vars.typescale.labelLarge.size,
-  fontWeight: vars.typescale.labelLarge.weight,
-  lineHeight: vars.typescale.labelLarge.lineHeight
+  fontSize: vars.typography.label.size,
+  fontWeight: vars.typography.label.weight,
+  lineHeight: vars.typography.label.lineHeight
 })
 
 export const actions = style({
@@ -61,7 +61,7 @@ export const scroll = style({
 
 export const item = style({
   paddingBlock: '10px',
-  borderBottom: `1px solid ${vars.outline.variant}`
+  borderBottom: `1px solid ${vars.color.border.subtle}`
 })
 
 export const row = style({
@@ -77,13 +77,13 @@ export const name = style({
   alignItems: 'center',
   gap: '4px',
   overflowWrap: 'anywhere',
-  fontSize: vars.typescale.bodyMedium.size,
-  lineHeight: vars.typescale.bodyMedium.lineHeight
+  fontSize: vars.typography.body.size,
+  lineHeight: vars.typography.body.lineHeight
 })
 
 export const meta = style({
   flexShrink: '0',
-  color: vars.content.secondary,
-  fontSize: vars.typescale.bodySmall.size,
-  lineHeight: vars.typescale.bodySmall.lineHeight
+  color: vars.color.text.secondary,
+  fontSize: vars.typography.bodySmall.size,
+  lineHeight: vars.typography.bodySmall.lineHeight
 })
