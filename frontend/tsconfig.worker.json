@@ -5,5 +5,5 @@
     "lib": ["ES2024", "WebWorker"],
     "types": ["vite/client"]
   },
-  "include": ["src/workers/upload.ts"]
+  "include": ["src/workers/upload", "tests/workers/upload"]
 }

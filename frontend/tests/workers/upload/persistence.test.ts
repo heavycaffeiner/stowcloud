@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cleanupKey, resumeKey } from '../../../src/lib/upload/idb'
+import { cleanupKey, resumeKey } from '../../../src/workers/upload/persistence'
 
 describe('upload IDB keys', () => {
   const base = {

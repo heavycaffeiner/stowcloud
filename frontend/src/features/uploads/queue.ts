@@ -20,7 +20,7 @@ import {
   storeConcurrency,
   subscribeUploadPreferences
 } from './preferences'
-import type { AddItem, Cmd, Evt } from '../../lib/upload/protocol'
+import type { AddItem, Cmd, Evt } from '../../workers/upload/protocol'
 
 let worker: Worker | null = null
 
@@ -124,7 +124,7 @@ function syncWorkerPreferences(): void {
 
 function send(cmd: Cmd): void {
   if (worker === null) {
-    worker = new Worker(new URL('../../workers/upload.ts', import.meta.url), { type: 'module' })
+    worker = new Worker(new URL('../../workers/upload/index.ts', import.meta.url), { type: 'module' })
     worker.addEventListener('message', (ev: MessageEvent<Evt>) => handle(ev.data))
     subscribeUploadPreferences(syncWorkerPreferences)
   }

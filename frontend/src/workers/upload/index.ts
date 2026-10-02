@@ -11,7 +11,7 @@ import {
   shrinkChunkSize,
   validChunkSizeOverride,
   type ChunkDescriptor
-} from '../lib/upload/chunk-planner'
+} from '../../lib/upload/chunk-planner'
 import {
   cleanupKey,
   deleteCleanupRecord,
@@ -24,7 +24,7 @@ import {
   type CleanupRecord,
   type ResumeKeyContext,
   type ResumeRecord
-} from '../lib/upload/idb'
+} from './persistence'
 import {
   setCsrfToken,
   UploadHttpError,
@@ -33,9 +33,9 @@ import {
   type CreatedSession,
   type DirectPart,
   type DirectReservation
-} from '../lib/upload/transport'
-import { classifyFailure } from '../lib/upload/retry'
-import type { AddItem, Cmd, Evt } from '../lib/upload/protocol'
+} from './transport'
+import { classifyFailure } from '../../lib/upload/retry'
+import type { AddItem, Cmd, Evt } from './protocol'
 
 const PROGRESS_HZ_MS = 100 // at most 10 Hz
 

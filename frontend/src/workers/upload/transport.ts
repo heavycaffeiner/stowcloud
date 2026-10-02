@@ -1,7 +1,7 @@
 // TUS 1.0.0 + Sc-Random-Access transport.
 // Runs inside the dedicated upload Worker.
 
-import { classifyFailure, retryAfterMs, retryDelay } from './retry'
+import { classifyFailure, retryAfterMs, retryDelay } from '../../lib/upload/retry'
 
 const BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api/v1'
 

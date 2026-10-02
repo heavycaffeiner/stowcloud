@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { HttpTransport } from '../../../src/lib/upload/transport'
-import type { Transport } from '../../../src/lib/upload/transport'
+import { HttpTransport } from '../../../src/workers/upload/transport'
+import type { Transport } from '../../../src/workers/upload/transport'
 
 describe('HttpTransport.patchChunk with XMLHttpRequest', () => {
   const origXHR = globalThis.XMLHttpRequest

@@ -5,5 +5,5 @@
     "lib": ["ES2024", "WebWorker"],
     "types": []
   },
-  "include": ["src/workers/service-worker.ts", "tests/workers"]
+  "include": ["src/workers/service-worker.ts", "tests/workers/service-worker.test.ts"]
 }
