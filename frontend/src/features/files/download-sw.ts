@@ -19,7 +19,7 @@ import {
   RCLONE_CRYPT_MAGIC
 } from '../../lib/crypto/e2ee'
 import { encryptionForLabel, shareLabelOf } from '../shares/encrypted-shares'
-import { isSafeArchiveName } from '../preview/zip-listing'
+import { isSafeArchiveName } from '../../lib/zip/archive-names'
 
 const SERVICE_WORKER_URL = '/service-worker.js'
 // Must match `DOWNLOAD_PREFIX`/`MEDIA_PREFIX` in frontend/src/workers/service-worker.ts.
