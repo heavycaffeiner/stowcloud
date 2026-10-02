@@ -20,6 +20,7 @@ export default defineConfig({
     // Subscribes every component and hook that reads a signal's value to that signal.
     react({ babel: { plugins: [['module:@preact/signals-react-transform']] } })
   ],
+  resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
   build: {
     outDir: '../backend/internal/web/build',
     emptyOutDir: true,

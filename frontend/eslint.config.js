@@ -40,11 +40,16 @@ export default tseslint.config(
   {
     // mdui stays behind the ui layer so a component library swap touches src/ui only.
     files: ['src/**/*.{ts,tsx}'],
-    ignores: ['src/ui/**'],
+    ignores: ['src/ui/**', 'src/shared/**'],
     rules: {
       'no-restricted-imports': [
         'error',
-        { patterns: [{ group: ['mdui', 'mdui/*', '@mdui/*'], message: 'Import mdui only from src/ui.' }] }
+        {
+          patterns: [
+            { group: ['mdui', 'mdui/*', '@mdui/*'], message: 'Import mdui only from src/ui.' },
+            { group: ['@mantine/*'], message: 'Use the Stow components in @/shared/ui instead of Mantine directly.' }
+          ]
+        }
       ],
       'no-restricted-syntax': [
         'error',
