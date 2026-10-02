@@ -1,8 +1,8 @@
 import { overlay } from 'overlay-kit'
-import { useEventListener } from '../../../hooks/use-event-listener'
 import { useI18n } from '../../../hooks/use-i18n'
 import { Button } from '../../../ui/Button'
 import { Dialog } from '../../../ui/Dialog'
+import { useKeyChange } from '../../shares/e2ee-store'
 
 export type ConflictChoice = 'reload' | 'overwrite' | null
 export type LeaveChoice = 'stay' | 'discard' | 'save'
@@ -37,7 +37,9 @@ function EditConflictDialog({
 }: ChoiceDialogProps<ConflictChoice> & { weak: boolean }) {
   const { t } = useI18n()
   // A lock takes away the plaintext both answers act on.
-  useEventListener(window, 'sc:lock', () => onChoose(null))
+  useKeyChange((change) => {
+    if (change.kind === 'lock') onChoose(null)
+  })
   return (
     <Dialog
       open={open}
@@ -76,7 +78,9 @@ function LeaveEditorDialog({
 }: ChoiceDialogProps<LeaveChoice> & { canSave: boolean }) {
   const { t } = useI18n()
   // A lock seals the draft away, so the answer waits until the share is unlocked again.
-  useEventListener(window, 'sc:lock', () => onChoose('stay'))
+  useKeyChange((change) => {
+    if (change.kind === 'lock') onChoose('stay')
+  })
   return (
     <Dialog
       open={open}

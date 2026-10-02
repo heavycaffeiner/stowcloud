@@ -1,10 +1,11 @@
 import { overlay } from 'overlay-kit'
 import { useForm, useWatch } from 'react-hook-form'
 import { useI18n } from '../../../hooks/use-i18n'
-import { unlock, WrongPassphraseError } from '../../../lib/crypto/e2ee'
+import { WrongPassphraseError } from '../../../lib/crypto/e2ee'
 import { Button } from '../../../ui/Button'
 import { Dialog } from '../../../ui/Dialog'
 import { FormTextField } from '../../../ui/FormTextField'
+import { unlockShare } from '../e2ee-store'
 
 interface UnlockShareDialogProps {
   open: boolean
@@ -36,7 +37,7 @@ function UnlockShareDialog({ open, salt, verifier, onUnlock, onClose, onClosed }
   const unlocking = formState.isSubmitting
   const submit = handleSubmit(async ({ passphrase }) => {
     try {
-      await unlock(passphrase, salt, verifier)
+      await unlockShare(passphrase, salt, verifier)
       onUnlock()
     } catch (error) {
       const message =

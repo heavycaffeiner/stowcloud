@@ -4,7 +4,7 @@ import { Controller, FormProvider, useForm, useFormContext, useWatch } from 'rea
 import { clean } from '@noble/ciphers/utils.js'
 import { describeApiError } from '../../../api/error-text'
 import { ApiError } from '../../../api/fetcher'
-import { deriveKeys, generateSalt, makeVerifier, unlock } from '../../../lib/crypto/e2ee'
+import { deriveKeys, generateSalt, makeVerifier } from '../../../lib/crypto/e2ee'
 import { t } from '../../../i18n'
 import { useI18n } from '../../../hooks/use-i18n'
 import { Button } from '../../../ui/Button'
@@ -14,6 +14,7 @@ import { Icon } from '../../../ui/Icon'
 import { Select } from '../../../ui/Select'
 import { Switch } from '../../../ui/Switch'
 import { pickPath } from '../../files/components/PathPickerDialog'
+import { unlockShare } from '../../shares/e2ee-store'
 import { backendLabel } from './ShareManagementList'
 import * as styles from './ShareManagementSection.css'
 import * as adminStyles from './admin.css'
@@ -449,7 +450,7 @@ function EnableEncryptionDialog({ share, open, onDone, onClosed }: DialogControl
       try {
         const verifier = await makeVerifier(keys)
         await enableShare.mutateAsync({ id: share.id, scheme: 'rclone-crypt-v1', salt, verifier })
-        await unlock(passphrase, salt, verifier)
+        await unlockShare(passphrase, salt, verifier)
       } finally {
         clean(keys.dataKey)
       }

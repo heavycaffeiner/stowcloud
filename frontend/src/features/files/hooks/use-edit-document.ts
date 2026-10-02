@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { describeApiError } from '../../../api/error-text'
-import { useEventListener } from '../../../hooks/use-event-listener'
 import { openSessionValue, sealSessionValue } from '../../../lib/crypto/e2ee'
 import { t } from '../../../i18n'
+import { useKeyChange } from '../../shares/e2ee-store'
 import { askEditConflict } from '../components/EditDialogs'
 import { type Entry, useFileCache, useFileContent, useWriteFile } from '../api'
 
@@ -46,9 +46,14 @@ export function useEditDocument({ path, entry, salt, unlocked, enabled, notify, 
 
   // The codec announces a lock before it drops the key, so a draft in an encrypted share is sealed
   // under the session key instead of staying readable, and opened again when the share unlocks.
-  useEventListener(window, 'sc:before-lock', (event) => {
-    const locking = (event as CustomEvent<{ salt?: string }>).detail?.salt
-    if (!dirty || draft === null || !locking || locking !== salt) return
+  useKeyChange((change) => {
+    if (change.kind === 'before-lock') sealDraft(change.salt)
+    else if (change.kind === 'unlock') openDraft(change.salt)
+    else files.forgetContent(entry?.path ?? path)
+  })
+
+  function sealDraft(locking: string): void {
+    if (!dirty || draft === null || locking !== salt) return
     const plaintext = new TextEncoder().encode(draft)
     try {
       setSealedDraft({ salt: locking, bytes: sealSessionValue(plaintext, locking) })
@@ -58,9 +63,9 @@ export function useEditDocument({ path, entry, salt, unlocked, enabled, notify, 
     } finally {
       plaintext.fill(0)
     }
-  })
-  useEventListener(window, 'sc:unlock', (event) => {
-    const unlocking = (event as CustomEvent<{ salt?: string }>).detail?.salt
+  }
+
+  function openDraft(unlocking: string): void {
     if (!sealedDraft || sealedDraft.salt !== unlocking) return
     let plaintext: Uint8Array | null = null
     try {
@@ -72,8 +77,7 @@ export function useEditDocument({ path, entry, salt, unlocked, enabled, notify, 
     } finally {
       plaintext?.fill(0)
     }
-  })
-  useEventListener(window, 'sc:lock', () => files.forgetContent(entry?.path ?? path))
+  }
 
   async function write(text: string, notice: string): Promise<boolean> {
     try {

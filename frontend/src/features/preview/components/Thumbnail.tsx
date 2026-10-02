@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { contentUrl, thumbUrl, type Entry } from '../../files/api'
 import { isVideoFile, mimeTypeOf } from '../logic/media-utils'
 import { registerMediaSource, releaseMediaSource, swReady } from '../../files/download-sw'
-import { decryptDownload, isUnlocked } from '../../../lib/crypto/e2ee'
+import { decryptDownload } from '../../../lib/crypto/e2ee'
+import { useE2eeStore } from '../../shares/e2ee-store'
 import { encryptionForLabel, shareLabelOf } from '../../shares/encrypted-shares'
 import type { IconName } from '../../../ui/icons'
 import { Icon } from '../../../ui/Icon'
@@ -98,6 +99,8 @@ export function Thumbnail({ entry, dim, fallback, iconSize, imageClassName }: Th
   const key = `${entry.name}\x00${entry.etag}`
   const isVid = isVideoFile(entry.name)
   const eligible = entry.kind !== 'dir' && (entry.preview?.available === true || isVid)
+  // A change of key runs the effect again, so a decrypted thumbnail goes away on lock and comes back on unlock.
+  const unlockedSalt = useE2eeStore((state) => state.unlockedSalt)
 
   useEffect(() => {
     let cancelled = false
@@ -138,7 +141,7 @@ export function Thumbnail({ entry, dim, fallback, iconSize, imageClassName }: Th
         }
         return
       }
-      if (!isUnlocked(encryption.salt) || entry.size > ENCRYPTED_THUMB_MAX_BYTES) return
+      if (encryption.salt !== unlockedSalt || entry.size > ENCRYPTED_THUMB_MAX_BYTES) return
       const contentType = mimeTypeOf(entry.name) ?? 'application/octet-stream'
       const registration = await swReady()
       if (cancelled) return
@@ -164,7 +167,7 @@ export function Thumbnail({ entry, dim, fallback, iconSize, imageClassName }: Th
       if (token) releaseMediaSource(token)
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [dim, eligible, entry, isVid, key, setState])
+  }, [dim, eligible, entry, isVid, key, setState, unlockedSalt])
 
   function onError() {
     CACHE.delete(key)
