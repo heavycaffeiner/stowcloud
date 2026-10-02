@@ -18,6 +18,8 @@ export interface StowTextFieldProps extends Omit<
   type?: StowTextFieldType
   /** A decoration at the start of the field, such as an icon. */
   leftSection?: ReactNode
+  /** A control on the input's own line, such as a browse button. A compact screen moves it under the input. */
+  action?: ReactNode
   error?: string | null
   onValueChange?: (value: string) => void
 }
@@ -28,6 +30,7 @@ export function StowTextField({
   helper,
   type = 'text',
   error,
+  action,
   autoFocus,
   className,
   onValueChange,
@@ -48,6 +51,16 @@ export function StowTextField({
       onChange={(event) => onValueChange?.(event.currentTarget.value)}
       className={cx(field.root, className)}
       classNames={field.classNames}
+      inputContainer={
+        action
+          ? (input) => (
+              <div className={field.inputRow}>
+                {input}
+                {action}
+              </div>
+            )
+          : undefined
+      }
     />
   )
 }

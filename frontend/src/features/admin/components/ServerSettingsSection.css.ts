@@ -39,29 +39,8 @@ export const navButton = style({
   flex: 'none'
 })
 
-export const pathRow = style({
-  display: 'flex',
-  gap: vars.space.sm,
-  alignItems: 'center',
-  width: '100%',
-  minWidth: 0,
-  '@media': {
-    [media.compact]: {
-      alignItems: 'stretch',
-      flexDirection: 'column'
-    }
-  }
-})
-
 export const field = style({
-  width: '100%',
-  selectors: {
-    [`${pathRow} > &`]: {
-      width: 'auto',
-      flex: '1 1 auto',
-      minWidth: 0
-    }
-  }
+  width: '100%'
 })
 
 export const other = style({
@@ -165,13 +144,4 @@ export const announce = style({
   margin: 0,
   color: vars.color.accent.solid,
   overflowWrap: 'anywhere'
-})
-
-export const pathButton = style({
-  flex: 'none',
-  '@media': {
-    [media.compact]: {
-      alignSelf: 'flex-start'
-    }
-  }
 })

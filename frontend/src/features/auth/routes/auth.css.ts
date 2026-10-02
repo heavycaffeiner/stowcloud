@@ -189,29 +189,3 @@ export const stepActive = style({
   borderColor: vars.color.accent.solid,
   fontWeight: vars.font.weight.bold
 })
-
-export const pathRow = style({
-  display: 'flex',
-  gap: vars.space.sm,
-  alignItems: 'center',
-  '@media': {
-    [media.compact]: {
-      alignItems: 'stretch',
-      flexDirection: 'column'
-    }
-  }
-})
-
-export const pathField = style({
-  flex: '1 1 auto',
-  minWidth: 0
-})
-
-export const pathButton = style({
-  flex: 'none',
-  '@media': {
-    [media.compact]: {
-      width: '100%'
-    }
-  }
-})

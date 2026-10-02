@@ -1,5 +1,5 @@
-import { style } from '@vanilla-extract/css'
-import { typography, vars } from '@/shared/theme'
+import { globalStyle, style } from '@vanilla-extract/css'
+import { media, typography, vars } from '@/shared/theme'
 
 // The Mantine input family (text fields and selects) shares one look.
 
@@ -17,6 +17,14 @@ export const label = style({
   color: vars.color.text.primary
 })
 
+// An input that shares its line with an action, so the action lines up with the input box and not the label.
+export const inputRow = style({
+  display: 'flex',
+  alignItems: 'center',
+  gap: vars.space.sm,
+  '@media': { [media.compact]: { flexDirection: 'column', alignItems: 'flex-start' } }
+})
+
 // A transparent fill reads the same on every surface the field lands on.
 export const wrapper = style({
   vars: {
@@ -28,9 +36,13 @@ export const wrapper = style({
     '--input-bd-focus': vars.color.accent.solid
   },
   selectors: {
-    '&[data-error]': { vars: { '--input-bd': vars.color.danger.solid, '--input-bd-focus': vars.color.danger.solid } }
-  }
+    '&[data-error]': { vars: { '--input-bd': vars.color.danger.solid, '--input-bd-focus': vars.color.danger.solid } },
+    [`${inputRow} > &`]: { flex: '1 1 auto', minWidth: 0 }
+  },
+  '@media': { [media.compact]: { selectors: { [`${inputRow} > &`]: { alignSelf: 'stretch' } } } }
 })
+
+globalStyle(`${inputRow} > :not(${wrapper})`, { flex: 'none' })
 
 // The focused border doubles in width, so focus never rests on a color change alone.
 export const input = style({

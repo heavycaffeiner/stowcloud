@@ -137,10 +137,12 @@ function ServerUploadCards({ serverMin, serverDefault }: ServerSizes) {
             className={styles.field}
             label={t('upload_settings.default_chunk_size_mb')}
             placeholder={String(bytesToMb(serverDefault))}
+            action={
+              <StowButton type="submit" loading={save.isPending}>
+                {t('common.save')}
+              </StowButton>
+            }
           />
-          <StowButton type="submit" loading={save.isPending}>
-            {t('common.save')}
-          </StowButton>
         </form>
         {error ? (
           <p className={adminStyles.error} role="alert">
@@ -234,13 +236,15 @@ function ChunkOverrideCard({ serverMin, serverDefault }: ServerSizes) {
           className={styles.field}
           label={t('upload_settings.browser_default_chunk_size_mb')}
           placeholder={String(bytesToMb(serverDefault))}
+          action={
+            <div className={styles.actions}>
+              <StowButton type="submit">{t('common.save')}</StowButton>
+              <StowButton variant="text" onClick={resetOverride} disabled={override === null}>
+                {t('upload_settings.reset_server_default')}
+              </StowButton>
+            </div>
+          }
         />
-        <div className={styles.actions}>
-          <StowButton type="submit">{t('common.save')}</StowButton>
-          <StowButton variant="text" onClick={resetOverride} disabled={override === null}>
-            {t('upload_settings.reset_server_default')}
-          </StowButton>
-        </div>
       </form>
       {saved ? (
         <p className={styles.adminSaved} role="status">
@@ -289,13 +293,15 @@ function ConcurrencyCard() {
           className={styles.field}
           label={t('upload_settings.concurrency_limit')}
           placeholder={String(DEFAULT_CONCURRENCY)}
+          action={
+            <div className={styles.actions}>
+              <StowButton type="submit">{t('common.save')}</StowButton>
+              <StowButton variant="text" onClick={resetConcurrency} disabled={active === DEFAULT_CONCURRENCY}>
+                {t('upload_settings.reset_concurrency_default')}
+              </StowButton>
+            </div>
+          }
         />
-        <div className={styles.actions}>
-          <StowButton type="submit">{t('common.save')}</StowButton>
-          <StowButton variant="text" onClick={resetConcurrency} disabled={active === DEFAULT_CONCURRENCY}>
-            {t('upload_settings.reset_concurrency_default')}
-          </StowButton>
-        </div>
       </form>
       {saved ? (
         <p className={styles.adminSaved} role="status">

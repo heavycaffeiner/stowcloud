@@ -375,9 +375,10 @@ interface SettingInputProps {
   label: string
   type?: 'text' | 'number' | 'password'
   placeholder?: string
+  action?: ReactNode
 }
 
-export function SettingInput({ name, label, type, placeholder }: SettingInputProps) {
+export function SettingInput({ name, label, type, placeholder, action }: SettingInputProps) {
   const { control } = useFormContext<Values>()
   return (
     <StowFormTextField
@@ -387,6 +388,7 @@ export function SettingInput({ name, label, type, placeholder }: SettingInputPro
       label={label}
       type={type}
       placeholder={placeholder}
+      action={action}
     />
   )
 }
@@ -410,12 +412,15 @@ export function SettingPath({ name, label, mode }: { name: string; label: string
     if (picked !== null) setValue(name, picked, { shouldDirty: true })
   }
   return (
-    <div className={styles.pathRow}>
-      <SettingInput name={name} label={label} />
-      <StowButton className={styles.pathButton} variant="outlined" onClick={() => void browse()}>
-        {mode === 'folder' ? t('picker.browse_folder') : t('picker.browse_file')}
-      </StowButton>
-    </div>
+    <SettingInput
+      name={name}
+      label={label}
+      action={
+        <StowButton variant="outlined" onClick={() => void browse()}>
+          {mode === 'folder' ? t('picker.browse_folder') : t('picker.browse_file')}
+        </StowButton>
+      }
+    />
   )
 }
 

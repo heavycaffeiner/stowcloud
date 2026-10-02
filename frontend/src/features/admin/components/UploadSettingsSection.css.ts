@@ -19,9 +19,10 @@ export const estimate = style([
   }
 ])
 
+// Top-aligned so a field that shows an error does not shift the one beside it.
 export const form = style({
   display: 'flex',
-  alignItems: 'center',
+  alignItems: 'flex-start',
   flexWrap: 'wrap',
   gap: vars.space.lg,
   maxWidth: vars.layout.form,

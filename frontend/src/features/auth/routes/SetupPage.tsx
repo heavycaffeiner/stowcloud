@@ -54,23 +54,21 @@ export function SetupPage() {
   const shareFields = (
     <>
       <StowFormTextField control={control} name="shareName" label={t('common.name')} autoComplete="off" />
-      <div className={authStyles.pathRow}>
-        <StowFormTextField
-          control={control}
-          name="sharePath"
-          className={authStyles.pathField}
-          label={t('folder_share.server_path')}
-          autoComplete="off"
-        />
-        <StowButton
-          className={authStyles.pathButton}
-          variant="outlined"
-          disabled={outcome !== null && !signedIn}
-          onClick={() => void browseShareFolder()}
-        >
-          {t('picker.browse_folder')}
-        </StowButton>
-      </div>
+      <StowFormTextField
+        control={control}
+        name="sharePath"
+        label={t('folder_share.server_path')}
+        autoComplete="off"
+        action={
+          <StowButton
+            variant="outlined"
+            disabled={outcome !== null && !signedIn}
+            onClick={() => void browseShareFolder()}
+          >
+            {t('picker.browse_folder')}
+          </StowButton>
+        }
+      />
     </>
   )
 

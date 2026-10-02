@@ -293,24 +293,18 @@ function PathField({ name, mode, label, placeholder }: PathFieldProps) {
     if (picked !== null) setValue(name, picked, { shouldDirty: true })
   }
   return (
-    <div className={styles.pathRow}>
-      <StowFormTextField
-        control={control}
-        name={name}
-        className={styles.pathRowField}
-        label={label}
-        placeholder={placeholder}
-        autoComplete="off"
-      />
-      <StowButton
-        className={styles.pathRowButton}
-        variant="outlined"
-        icon={<Icon name={mode} />}
-        onClick={() => void browse()}
-      >
-        {mode === 'folder' ? t('picker.browse_folder') : t('picker.browse_file')}
-      </StowButton>
-    </div>
+    <StowFormTextField
+      control={control}
+      name={name}
+      label={label}
+      placeholder={placeholder}
+      autoComplete="off"
+      action={
+        <StowButton variant="outlined" icon={<Icon name={mode} />} onClick={() => void browse()}>
+          {mode === 'folder' ? t('picker.browse_folder') : t('picker.browse_file')}
+        </StowButton>
+      }
+    />
   )
 }
 
