@@ -59,6 +59,8 @@
     "@codemirror/view": "^6.43.11",
     "@ktibow/iconset-material-symbols": "~0.0.1764827375",
     "@lezer/highlight": "^1.2.3",
+    "@mantine/core": "^9.6.3",
+    "@mantine/hooks": "^9.6.3",
     "@noble/ciphers": "^2.4.0",
     "@noble/hashes": "^2.4.0",
     "@preact/signals-react": "^3.12.0",
