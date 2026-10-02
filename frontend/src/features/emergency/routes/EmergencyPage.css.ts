@@ -121,11 +121,3 @@ export const ok = style({
   color: vars.color.accent.solid,
   overflowWrap: 'anywhere'
 })
-
-export const action = style({
-  '@media': {
-    [media.compact]: {
-      flex: '1 1 12rem'
-    }
-  }
-})

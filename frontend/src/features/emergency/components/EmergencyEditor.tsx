@@ -185,16 +185,10 @@ export function EmergencyEditor({ initial }: { initial: EmergencySettings }) {
           onValueChange={setDraft}
         />
         <div className={styles.actions}>
-          <StowButton className={styles.action} type="submit" loading={save.isPending} disabled={locked}>
+          <StowButton type="submit" loading={save.isPending} disabled={locked}>
             {t('common.save')}
           </StowButton>
-          <StowButton
-            className={styles.action}
-            variant="outlined"
-            onClick={() => restart.mutate()}
-            loading={restart.isPending}
-            disabled={locked}
-          >
+          <StowButton variant="outlined" onClick={() => restart.mutate()} loading={restart.isPending} disabled={locked}>
             {t('emergency.restart_now')}
           </StowButton>
         </div>

@@ -110,7 +110,6 @@ export function SetupPage() {
                 ) : null}
                 <div className={authStyles.actions}>
                   <StowButton
-                    className={authStyles.action}
                     disabled={retrying || values.shareName.trim().length === 0 || values.sharePath.trim().length === 0}
                     loading={retrying}
                     onClick={() => void continueAfterSetup(outcome)}
@@ -121,11 +120,7 @@ export function SetupPage() {
               </>
             ) : (
               <div className={authStyles.actions}>
-                <StowButton
-                  className={authStyles.action}
-                  loading={signingIn}
-                  onClick={() => void continueAfterSetup(outcome)}
-                >
+                <StowButton loading={signingIn} onClick={() => void continueAfterSetup(outcome)}>
                   {t('setup.continue_anyway')}
                 </StowButton>
               </div>
@@ -217,28 +212,17 @@ export function SetupPage() {
             ) : null}
             <div className={authStyles.actions}>
               {step > 1 ? (
-                <StowButton
-                  className={authStyles.action}
-                  variant="outlined"
-                  type="button"
-                  onClick={() => setStep(step - 1)}
-                >
+                <StowButton variant="outlined" type="button" onClick={() => setStep(step - 1)}>
                   {t('common.back')}
                 </StowButton>
               ) : null}
               {/* Distinct keys: reusing one element would make the Continue click that reaches the last step submit. */}
               {step < LAST_STEP ? (
-                <StowButton key="next" className={authStyles.action} type="button" onClick={() => setStep(step + 1)}>
+                <StowButton key="next" type="button" onClick={() => setStep(step + 1)}>
                   {t('common.continue')}
                 </StowButton>
               ) : (
-                <StowButton
-                  key="create"
-                  className={authStyles.action}
-                  type="submit"
-                  disabled={creating || !setupReady(values)}
-                  loading={creating}
-                >
+                <StowButton key="create" type="submit" disabled={creating || !setupReady(values)} loading={creating}>
                   {t('setup.create_administrator_account')}
                 </StowButton>
               )}

@@ -82,12 +82,11 @@ export function LoginPage() {
         ) : null}
         <div className={authStyles.actions}>
           {step === 'totp' ? (
-            <StowButton className={authStyles.action} variant="text" onClick={backToPassword}>
+            <StowButton variant="text" onClick={backToPassword}>
               {t('login.back')}
             </StowButton>
           ) : null}
           <StowButton
-            className={authStyles.action}
             type="submit"
             loading={pending}
             disabled={step === 'credentials' ? !username.trim() || !password : !code.trim()}

@@ -43,7 +43,6 @@ export function EmergencyPage() {
             <p className={styles.hint}>{t('emergency.no_administrator_yet')}</p>
             <div className={styles.actions}>
               <StowButton
-                className={styles.action}
                 onClick={() => {
                   window.location.href = '/setup'
                 }}
@@ -135,12 +134,7 @@ function EmergencySignIn({ onSignedIn }: { onSignedIn: (settings: EmergencySetti
           </>
         )}
         <div className={styles.actions}>
-          <StowButton
-            className={styles.action}
-            type="submit"
-            loading={signIn.isPending}
-            disabled={!ready({ username, password, code })}
-          >
+          <StowButton type="submit" loading={signIn.isPending} disabled={!ready({ username, password, code })}>
             {t('login.sign')}
           </StowButton>
         </div>

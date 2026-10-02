@@ -215,12 +215,3 @@ export const pathButton = style({
     }
   }
 })
-
-export const action = style({
-  '@media': {
-    [media.compact]: {
-      flex: '1 1 8rem',
-      maxWidth: '100%'
-    }
-  }
-})
