@@ -5,9 +5,11 @@ import {
   documentScrollTop,
   effectiveViewportHeight,
   exceedsSafeScrollHeight,
+  measuredRows,
   rowIndexToScrollTop,
   scrollTopToRowIndex,
-  SCALE_MAPPING_THRESHOLD_PX
+  SCALE_MAPPING_THRESHOLD_PX,
+  windowOver
 } from '../../../src/lib/virtual/windowing'
 
 describe('computeWindow', () => {
@@ -25,8 +27,8 @@ describe('computeWindow', () => {
       itemCount: 100_000,
       overscan: 8
     })
-    // visible rows = ceil(800/48) = 17, + overscan*2 = 16 → 33 max
-    expect(w.count).toBeLessThanOrEqual(33)
+    // rows cut by both edges = ceil(800/48) + 1 = 18, + overscan*2 = 16 → 34 max
+    expect(w.count).toBeLessThanOrEqual(34)
     expect(w.count).toBeGreaterThan(0)
   })
 
@@ -243,5 +245,44 @@ describe('effectiveViewportHeight', () => {
     // environment) and no explicit visualViewport.height reading yet.
     expect(effectiveViewportHeight(undefined, 844)).toBe(844)
     expect(effectiveViewportHeight(null, 844)).toBe(844)
+  })
+})
+
+describe('measuredRows', () => {
+  const rows = measuredRows([10, 30, 20, 40], 5)
+
+  it('places each row after the one above it and the gap between them', () => {
+    expect([0, 1, 2, 3].map((index) => rows.top(index))).toEqual([0, 15, 50, 75])
+    expect(rows.height).toBe(115)
+  })
+
+  it('finds the row covering an offset, gaps belonging to the row above', () => {
+    expect(rows.indexAt(-4)).toBe(0)
+    expect(rows.indexAt(14)).toBe(0)
+    expect(rows.indexAt(15)).toBe(1)
+    expect(rows.indexAt(74)).toBe(2)
+    expect(rows.indexAt(1000)).toBe(3)
+  })
+
+  it('handles an empty list', () => {
+    expect(rows.count).toBe(4)
+    expect(measuredRows([], 8)).toMatchObject({ count: 0, height: 0 })
+    expect(windowOver(measuredRows([], 8), 0, 600, 2)).toMatchObject({ count: 0, totalHeight: 0 })
+  })
+})
+
+describe('windowOver', () => {
+  it('covers the rows the viewport cuts, plus overscan on each side', () => {
+    const rows = measuredRows(
+      Array.from({ length: 100 }, (_, index) => (index % 2 === 0 ? 40 : 80)),
+      0
+    )
+    // Rows alternate 40 and 80 px, so each pair spans 120 px: offset 1200 is the top of row 20.
+    const w = windowOver(rows, 1200, 200, 2)
+    expect(w.start).toBe(18)
+    // 1200..1400 cuts rows 20 to 23, then two more.
+    expect(w.end).toBe(26)
+    expect(w.padTop).toBe(rows.top(18))
+    expect(w.totalHeight).toBe(6000)
   })
 })

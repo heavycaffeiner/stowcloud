@@ -1,5 +1,5 @@
-// Pure windowing maths.
-// Kept out of the UI component so it is testable without a DOM and so the
+// Pure windowing maths for every virtualized list, fixed-height and measured rows alike.
+// Kept out of the UI components so it is testable without a DOM and so the
 // maths that must stay bounded at 100k rows can be asserted directly.
 
 export interface WindowResult {
@@ -47,17 +47,61 @@ export interface ScaleMapping {
   scale: number
 }
 
+/** Where each row sits in natural (uncompressed) pixels. */
+export interface RowLayout {
+  readonly count: number
+  /** Natural height of every row and the gaps between them. */
+  readonly height: number
+  top(index: number): number
+  size(index: number): number
+  /** The row covering offset `y`, clamped to the rows that exist. */
+  indexAt(y: number): number
+}
+
+/** `count` rows of one height each. */
+export function fixedRows(count: number, rowHeight: number): RowLayout {
+  const n = Math.max(0, count)
+  const h = Math.max(0, rowHeight)
+  return {
+    count: n,
+    height: n * h,
+    top: (index) => index * h,
+    size: () => h,
+    indexAt: (y) => (h > 0 ? Math.min(Math.max(0, Math.floor(y / h)), Math.max(0, n - 1)) : 0)
+  }
+}
+
+/** Rows of the given heights with `gap` px between neighbours. */
+export function measuredRows(sizes: readonly number[], gap: number): RowLayout {
+  const tops = new Float64Array(sizes.length + 1)
+  for (let index = 0; index < sizes.length; index++) tops[index + 1] = tops[index] + sizes[index] + gap
+  return {
+    count: sizes.length,
+    height: sizes.length > 0 ? tops[sizes.length] - gap : 0,
+    top: (index) => tops[index],
+    size: (index) => sizes[index],
+    indexAt: (y) => {
+      let low = 0
+      let high = sizes.length - 1
+      while (low < high) {
+        const middle = (low + high + 1) >> 1
+        if (tops[middle] <= y) low = middle
+        else high = middle - 1
+      }
+      return Math.max(0, low)
+    }
+  }
+}
+
+function mappingFor(naturalHeight: number): ScaleMapping {
+  const natural = Math.max(0, naturalHeight)
+  if (natural <= SCALE_MAPPING_THRESHOLD_PX) return { active: false, spacerHeight: natural, scale: 1 }
+  return { active: true, spacerHeight: SCALE_MAPPING_THRESHOLD_PX, scale: SCALE_MAPPING_THRESHOLD_PX / natural }
+}
+
 /** Pure function: decides whether/how to compress itemCount rows of rowHeight px into a safe scrollable range. */
 export function computeScaleMapping(itemCount: number, rowHeight: number): ScaleMapping {
-  const natural = Math.max(0, itemCount) * Math.max(0, rowHeight)
-  if (natural <= SCALE_MAPPING_THRESHOLD_PX) {
-    return { active: false, spacerHeight: natural, scale: 1 }
-  }
-  return {
-    active: true,
-    spacerHeight: SCALE_MAPPING_THRESHOLD_PX,
-    scale: SCALE_MAPPING_THRESHOLD_PX / natural
-  }
+  return mappingFor(Math.max(0, itemCount) * Math.max(0, rowHeight))
 }
 
 /** Maps a scrollTop expressed in *compressed* (spacer) coordinates back to the row index it represents. */
@@ -68,15 +112,36 @@ export function scrollTopToRowIndex(
   itemCount: number
 ): number {
   if (itemCount <= 0 || rowHeight <= 0) return 0
-  const virtualScrollTop = mapping.active ? scrollTop / mapping.scale : scrollTop
-  const idx = Math.floor(virtualScrollTop / rowHeight)
-  return Math.min(Math.max(0, idx), Math.max(0, itemCount - 1))
+  return fixedRows(itemCount, rowHeight).indexAt(mapping.active ? scrollTop / mapping.scale : scrollTop)
 }
 
 /** Inverse of scrollTopToRowIndex: compressed-space Y offset (px) for a given row index. */
 export function rowIndexToScrollTop(rowIndex: number, mapping: ScaleMapping, rowHeight: number): number {
   const natural = Math.max(0, rowIndex) * rowHeight
   return mapping.active ? natural * mapping.scale : natural
+}
+
+const EMPTY_WINDOW: WindowResult = { start: 0, count: 0, end: 0, padTop: 0, totalHeight: 0, scaled: false }
+
+/** The rows to render for a viewport `viewportHeight` px tall, scrolled `scrollTop` px into the spacer. */
+export function windowOver(rows: RowLayout, scrollTop: number, viewportHeight: number, overscan = 8): WindowResult {
+  if (rows.count <= 0 || rows.height <= 0) return EMPTY_WINDOW
+  const mapping = mappingFor(rows.height)
+  const top = Math.max(0, mapping.active ? scrollTop / mapping.scale : scrollTop)
+  const first = rows.indexAt(top)
+  const bottom = top + Math.max(0, viewportHeight)
+  // A row that starts exactly at the bottom edge is not visible yet.
+  const below = rows.indexAt(bottom)
+  const last = Math.max(first, below > 0 && rows.top(below) >= bottom ? below - 1 : below)
+  const start = Math.max(0, first - overscan)
+  const end = Math.min(rows.count, last + 1 + overscan)
+
+  // Clamp so the rendered block's bottom edge never sits past the (possibly
+  // compressed) spacer: otherwise the last rows would render beyond the scrollable area.
+  const blockHeight = rows.top(end - 1) + rows.size(end - 1) - rows.top(start)
+  const padTop = Math.min(rows.top(start) * mapping.scale, Math.max(0, mapping.spacerHeight - blockHeight))
+
+  return { start, count: end - start, end, padTop, totalHeight: mapping.spacerHeight, scaled: mapping.active }
 }
 
 export function computeWindow(params: {
@@ -86,38 +151,8 @@ export function computeWindow(params: {
   itemCount: number
   overscan?: number
 }): WindowResult {
-  const { scrollTop, viewportHeight, rowHeight, itemCount, overscan = 8 } = params
-
-  if (itemCount <= 0 || rowHeight <= 0) {
-    return { start: 0, count: 0, end: 0, padTop: 0, totalHeight: 0, scaled: false }
-  }
-
-  const mapping = computeScaleMapping(itemCount, rowHeight)
-
-  const centerIndex = scrollTopToRowIndex(scrollTop, mapping, rowHeight, itemCount)
-  const rawStart = centerIndex - overscan
-  const start = Math.min(Math.max(0, rawStart), Math.max(0, itemCount - 1))
-
-  const visibleRows = Math.ceil(viewportHeight / rowHeight)
-  const rawCount = visibleRows + overscan * 2
-  const count = Math.max(0, Math.min(rawCount, itemCount - start))
-
-  // Clamp so the rendered window's bottom edge never sits past the
-  // (possibly compressed) spacer height: otherwise the last rows would
-  // render beyond the scrollable area once the scale-factor fallback is active.
-  const naturalPadTop = start * rowHeight
-  const rawPadTop = mapping.active ? naturalPadTop * mapping.scale : naturalPadTop
-  const maxPadTop = Math.max(0, mapping.spacerHeight - count * rowHeight)
-  const padTop = Math.min(rawPadTop, maxPadTop)
-
-  return {
-    start,
-    count,
-    end: start + count,
-    padTop,
-    totalHeight: mapping.spacerHeight,
-    scaled: mapping.active
-  }
+  const { scrollTop, viewportHeight, rowHeight, itemCount, overscan } = params
+  return windowOver(fixedRows(itemCount, rowHeight), scrollTop, viewportHeight, overscan)
 }
 
 /** True once itemCount * rowHeight would need the scale-factor fallback (computeScaleMapping(...).active). */

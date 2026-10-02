@@ -1,16 +1,14 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { HTMLAttributes, KeyboardEvent, ReactNode } from 'react'
 import {
-  defaultRangeExtractor,
-  elementScroll,
-  observeElementOffset,
-  observeElementRect,
-  useVirtualizer
-} from '@tanstack/react-virtual'
-import type { Range, Rect, Virtualizer } from '@tanstack/react-virtual'
+  effectiveViewportHeight,
+  measuredRows,
+  type RowLayout,
+  type WindowResult,
+  windowOver
+} from '../lib/virtual/windowing'
 
 type ItemKey = string | number
-type ListVirtualizer = Virtualizer<HTMLElement, HTMLLIElement>
 
 export interface VirtualListProps<T> extends Omit<HTMLAttributes<HTMLUListElement>, 'children'> {
   items: readonly T[]
@@ -22,7 +20,9 @@ export interface VirtualListProps<T> extends Omit<HTMLAttributes<HTMLUListElemen
 }
 
 const SMALL_LIST_LIMIT = 40
+const OVERSCAN = 6
 const EMPTY_KEYS: readonly ItemKey[] = []
+const NO_ROWS = measuredRows([], 0)
 
 function composedParent(element: Element): Element | null {
   return (
@@ -55,61 +55,58 @@ function scrollOwner(list: HTMLUListElement): HTMLElement {
   return (list.ownerDocument.scrollingElement ?? list.ownerDocument.documentElement) as HTMLElement
 }
 
-function observeRect(instance: ListVirtualizer, callback: (rect: Rect) => void): (() => void) | void {
-  const element = instance.scrollElement
-  if (!element || !documentScroller(element)) return observeElementRect(instance, callback)
-  const win = element.ownerDocument.defaultView
-  if (!win) return
-  const update = () => callback({ width: element.clientWidth, height: win.visualViewport?.height ?? win.innerHeight })
-  update()
-  win.addEventListener('resize', update, { passive: true })
-  win.visualViewport?.addEventListener('resize', update, { passive: true })
+interface Viewport {
+  readonly offset: number
+  readonly height: number
+}
+
+function viewportOf(owner: HTMLElement): Viewport {
+  if (!documentScroller(owner)) return { offset: owner.scrollTop, height: owner.clientHeight }
+  const win = owner.ownerDocument.defaultView
+  if (!win) return { offset: 0, height: 0 }
+  return { offset: win.scrollY, height: effectiveViewportHeight(win.visualViewport?.height, win.innerHeight) }
+}
+
+function scrollOwnerTo(owner: HTMLElement, top: number): void {
+  if (Math.abs(scrollOffset(owner) - top) < 1) return
+  if (documentScroller(owner)) owner.ownerDocument.defaultView?.scrollTo({ top })
+  else owner.scrollTop = top
+}
+
+function observeViewport(owner: HTMLElement, onChange: () => void): () => void {
+  const win = owner.ownerDocument.defaultView
+  if (!win) return () => undefined
+  if (!documentScroller(owner)) {
+    const observer = new ResizeObserver(onChange)
+    observer.observe(owner)
+    owner.addEventListener('scroll', onChange, { passive: true })
+    return () => {
+      observer.disconnect()
+      owner.removeEventListener('scroll', onChange)
+    }
+  }
+  win.addEventListener('scroll', onChange, { passive: true })
+  win.addEventListener('resize', onChange, { passive: true })
+  win.visualViewport?.addEventListener('resize', onChange, { passive: true })
   return () => {
-    win.removeEventListener('resize', update)
-    win.visualViewport?.removeEventListener('resize', update)
+    win.removeEventListener('scroll', onChange)
+    win.removeEventListener('resize', onChange)
+    win.visualViewport?.removeEventListener('resize', onChange)
   }
 }
 
-function observeOffset(
-  instance: ListVirtualizer,
-  callback: (offset: number, scrolling: boolean) => void
-): (() => void) | void {
-  const element = instance.scrollElement
-  if (!element) return
-  if (!documentScroller(element)) {
-    callback(element.scrollTop, false)
-    return observeElementOffset(instance, callback)
-  }
-  const win = element.ownerDocument.defaultView
-  if (!win) return
-  let timer: number | undefined
-  const stop = () => {
-    win.clearTimeout(timer)
-    callback(win.scrollY, false)
-  }
-  const update = () => {
-    win.clearTimeout(timer)
-    callback(win.scrollY, true)
-    timer = win.setTimeout(stop, instance.options.isScrollingResetDelay)
-  }
-  callback(win.scrollY, false)
-  win.addEventListener('scroll', update, { passive: true })
-  win.addEventListener('scrollend', stop, { passive: true })
-  return () => {
-    win.clearTimeout(timer)
-    win.removeEventListener('scroll', update)
-    win.removeEventListener('scrollend', stop)
-  }
+/** The indices to mount: the window, plus retained rows outside it, in document order. */
+function mountedIndices(win: WindowResult, retained: ReadonlySet<number>): number[] {
+  const indices: number[] = []
+  for (let index = win.start; index < win.end; index++) indices.push(index)
+  for (const index of retained) if (index >= 0 && (index < win.start || index >= win.end)) indices.push(index)
+  return indices.sort((a, b) => a - b)
 }
 
-const scrollTo: ListVirtualizer['options']['scrollToFn'] = (offset, options, instance) => {
-  const element = instance.scrollElement
-  if (element && documentScroller(element))
-    element.ownerDocument.defaultView?.scrollTo({
-      top: offset + (options.adjustments ?? 0),
-      behavior: options.behavior
-    })
-  else elementScroll(offset, options, instance)
+/** Top of a row inside the list's padding box. Rows outside the window keep their place on the compressed scale. */
+function rowTopIn(rows: RowLayout, win: WindowResult, index: number): number {
+  if (index >= win.start && index < win.end) return win.padTop + rows.top(index) - rows.top(win.start)
+  return win.scaled ? (rows.top(index) * win.totalHeight) / rows.height : rows.top(index)
 }
 
 function activeElement(document: Document): Element | null {
@@ -228,7 +225,6 @@ export function VirtualList<T>({
     return { keys, indices }
   }, [items, itemKey, windowed])
   const activeWindowing = windowed && layout.visible
-  const getItemKey = useCallback((index: number) => keyed.keys[index], [keyed])
   const retained = useMemo(() => {
     const indices = new Set<number>([0, items.length - 1])
     for (const key of pinnedKeys) {
@@ -245,40 +241,77 @@ export function VirtualList<T>({
     }
     return indices
   }, [items.length, keyed, pinnedKeys, focusedKey, focusRequest])
-  const rangeExtractor = useCallback(
-    (range: Range) => Array.from(new Set([...defaultRangeExtractor(range), ...retained])).sort((a, b) => a - b),
-    [retained]
+  const [viewport, setViewport] = useState<Viewport>({ offset: 0, height: 0 })
+  // Measured heights by item key, so a row keeps its height when the list is sorted or filtered.
+  const measured = useRef(new Map<ItemKey, number>())
+  const [measuredVersion, setMeasuredVersion] = useState(0)
+  const estimate = Math.max(1, estimateSize)
+  const rows = useMemo(
+    () =>
+      activeWindowing
+        ? measuredRows(
+            keyed.keys.map((key) => measured.current.get(key) ?? estimate),
+            layout.gap
+          )
+        : NO_ROWS,
+    // measuredVersion stands in for the contents of the measured map.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeWindowing, keyed, estimate, layout.gap, measuredVersion]
   )
-  const getScrollElement = useCallback(() => layout.owner, [layout.owner])
-  const captureAnchor = useRef<(() => void) | null>(null)
-  const observeListOffset = useCallback(
-    (instance: ListVirtualizer, callback: (offset: number, scrolling: boolean) => void) =>
-      observeOffset(instance, (offset, scrolling) => {
-        callback(offset, scrolling)
-        captureAnchor.current?.()
-      }),
-    []
-  )
-  const virtualizer = useVirtualizer<HTMLElement, HTMLLIElement>({
-    count: activeWindowing ? items.length : 0,
-    enabled: activeWindowing,
-    getScrollElement,
-    getItemKey,
-    estimateSize: () => Math.max(1, estimateSize),
-    overscan: 6,
-    rangeExtractor,
-    scrollMargin: layout.margin,
-    gap: layout.gap,
-    paddingStart: layout.top,
-    paddingEnd: layout.bottom,
-    observeElementRect: observeRect,
-    observeElementOffset: observeListOffset,
-    scrollToFn: scrollTo,
-    initialOffset: () => (layout.owner ? scrollOffset(layout.owner) : 0),
-    initialRect: { width: 0, height: 600 },
-    useFlushSync: false
-  })
+  // Owner scroll offset at which the first row's top edge sits.
+  const base = layout.margin + layout.top
+  const win = windowOver(rows, viewport.offset - base, viewport.height, OVERSCAN)
+  const latest = useRef({ owner: layout.owner, keyed, rows, base, win, estimate })
+  const pendingShift = useRef(0)
+  const rowObserver = useRef<ResizeObserver | null>(null)
   const anchor = useRef<{ keys: readonly ItemKey[]; key: ItemKey; offset: number } | null>(null)
+
+  const captureAnchor = useCallback(() => {
+    const { owner, keyed, rows, base, win } = latest.current
+    const offset = owner ? scrollOffset(owner) - base : -1
+    if (!owner || win.scaled || rows.count === 0 || offset < 0) {
+      anchor.current = null
+      return
+    }
+    const index = rows.indexAt(offset)
+    anchor.current = { keys: keyed.keys, key: keyed.keys[index], offset: offset - rows.top(index) }
+  }, [])
+
+  // Renders again only when the scroll position moves the window.
+  const syncViewport = useCallback(() => {
+    const { owner, rows, base, win } = latest.current
+    if (!owner) return
+    const next = viewportOf(owner)
+    const moved = windowOver(rows, next.offset - base, next.height, OVERSCAN)
+    if (moved.start !== win.start || moved.end !== win.end || moved.padTop !== win.padTop) setViewport(next)
+    captureAnchor()
+  }, [captureAnchor])
+
+  const measureRow = useCallback((element: HTMLLIElement | null) => {
+    if (!element) return
+    rowObserver.current ??= new ResizeObserver((entries) => {
+      const { owner, keyed, rows, base, estimate } = latest.current
+      const offset = owner ? scrollOffset(owner) - base : 0
+      let changed = false
+      for (const entry of entries) {
+        const index = Number((entry.target as HTMLElement).dataset.index)
+        const key = keyed.keys[index]
+        if (key === undefined) continue
+        const box = entry.borderBoxSize[0]
+        const size = Math.round(box ? box.blockSize : entry.target.getBoundingClientRect().height)
+        const previous = measured.current.get(key) ?? estimate
+        if (size === previous) continue
+        measured.current.set(key, size)
+        changed = true
+        // A row above the viewport that changes height would push the visible rows; scroll with it instead.
+        if (index < rows.count && rows.top(index) < offset) pendingShift.current += size - previous
+      }
+      if (changed) setMeasuredVersion((version) => version + 1)
+    })
+    const observer = rowObserver.current
+    observer.observe(element)
+    return () => observer.unobserve(element)
+  }, [])
 
   useLayoutEffect(() => {
     const list = listRef.current
@@ -344,28 +377,35 @@ export function VirtualList<T>({
     }
   }, [windowed, style, listProps.className])
 
+  useLayoutEffect(() => {
+    const owner = layout.owner
+    if (!owner || !activeWindowing) return
+    return observeViewport(owner, syncViewport)
+  }, [layout.owner, activeWindowing, syncViewport])
+
+  useLayoutEffect(
+    () => () => {
+      rowObserver.current?.disconnect()
+      rowObserver.current = null
+    },
+    []
+  )
+
   // Key-based anchoring handles insertions, deletions and sorting without
   // changing the reading position. The key index is rebuilt only with data.
   useLayoutEffect(() => {
-    if (!windowed) {
+    latest.current = { owner: layout.owner, keyed, rows, base, win, estimate }
+    const shift = pendingShift.current
+    pendingShift.current = 0
+    if (!activeWindowing || !layout.owner) {
       anchor.current = null
-      captureAnchor.current = null
       return
     }
     const previous = anchor.current
-    if (previous && previous.keys !== keyed.keys && layout.owner) {
-      const index = keyed.indices.get(previous.key)
-      const row = index === undefined ? undefined : virtualizer.measurementsCache[index]
-      if (row) virtualizer.scrollToOffset(row.start + previous.offset)
-    }
-    captureAnchor.current = () => {
-      const offset = layout.owner ? scrollOffset(layout.owner) : (virtualizer.scrollOffset ?? 0)
-      const first = virtualizer.getVirtualItemForOffset(offset)
-      if (first && offset >= layout.margin)
-        anchor.current = { keys: keyed.keys, key: first.key as ItemKey, offset: offset - first.start }
-      else anchor.current = null
-    }
-    captureAnchor.current()
+    const index = previous && previous.keys !== keyed.keys ? keyed.indices.get(previous.key) : undefined
+    if (previous && index !== undefined) scrollOwnerTo(layout.owner, base + rows.top(index) + previous.offset)
+    else if (shift !== 0) scrollOwnerTo(layout.owner, scrollOffset(layout.owner) + shift)
+    syncViewport()
   })
 
   useLayoutEffect(() => {
@@ -380,7 +420,13 @@ export function VirtualList<T>({
     const stops = tabStops(row)
     const target = (focusRequest.backwards ? stops.at(-1) : stops[0]) ?? row
     target.focus({ preventScroll: true })
-    virtualizer.scrollToIndex(index, { align: 'auto' })
+    if (layout.owner && activeWindowing) {
+      const { offset, height } = viewportOf(layout.owner)
+      const top = layout.margin + layout.top + rowTopIn(rows, win, index)
+      const bottom = top + rows.size(index)
+      if (top < offset) scrollOwnerTo(layout.owner, top)
+      else if (bottom > offset + height) scrollOwnerTo(layout.owner, bottom - height)
+    }
     setInteraction((previous) => ({ ...previous, focusRequest: null }))
   })
 
@@ -438,11 +484,11 @@ export function VirtualList<T>({
       }
     }
   }
-  const rows = activeWindowing
-    ? virtualizer.getVirtualItems()
+  const mounted = activeWindowing
+    ? mountedIndices(win, retained).map((index) => ({ index, key: keyed.keys[index] }))
     : windowed
       ? []
-      : items.map((item, index) => ({ index, key: itemKey(item, index), start: 0 }))
+      : items.map((item, index) => ({ index, key: itemKey(item, index) }))
 
   return (
     <ul
@@ -456,7 +502,7 @@ export function VirtualList<T>({
               ...style,
               position: 'relative',
               boxSizing: 'border-box',
-              height: virtualizer.getTotalSize() + layout.borders,
+              height: layout.top + win.totalHeight + layout.bottom + layout.borders,
               flexShrink: 0,
               overflowAnchor: 'none'
             }
@@ -485,7 +531,7 @@ export function VirtualList<T>({
         })
       }}
     >
-      {rows.map((row) => {
+      {mounted.map((row) => {
         const item = items[row.index]
         const suppliedProps = itemProps?.(item, row.index)
         const props = activeWindowing ? positionProps(suppliedProps, row.index, items.length) : (suppliedProps ?? {})
@@ -493,7 +539,7 @@ export function VirtualList<T>({
           <li
             {...props}
             key={row.key}
-            ref={activeWindowing ? virtualizer.measureElement : undefined}
+            ref={activeWindowing ? measureRow : undefined}
             data-index={row.index}
             tabIndex={props.tabIndex ?? (activeWindowing ? -1 : undefined)}
             style={
@@ -501,7 +547,7 @@ export function VirtualList<T>({
                 ? {
                     ...props.style,
                     position: 'absolute',
-                    top: row.start - layout.margin,
+                    top: layout.top + rowTopIn(rows, win, row.index),
                     left: layout.left,
                     right: layout.right,
                     width: 'auto'
