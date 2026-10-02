@@ -17,16 +17,16 @@ export const img = style({
 
 export const badge = style({
   position: 'absolute',
-  bottom: '8px',
-  right: '8px',
+  bottom: vars.space.sm,
+  right: vars.space.sm,
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
-  width: '24px',
-  height: '24px',
+  width: vars.space.xl,
+  height: vars.space.xl,
   borderRadius: vars.radius.sm,
-  background: 'rgb(0 0 0 / 65%)',
-  color: '#fff',
+  background: `color-mix(in srgb, ${vars.color.surface.inverse} 85%, transparent)`,
+  color: vars.color.text.inverse,
   pointerEvents: 'none'
 })
 

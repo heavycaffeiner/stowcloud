@@ -6,6 +6,7 @@ import type { LanguageSupport } from '@codemirror/language'
 import * as styles from './CodeEditor.css'
 import { codeVars } from './CodeEditor.css'
 import { cx } from '@/shared/ui'
+import { vars } from '@/shared/theme'
 
 export interface CodeEditorProps {
   value: string
@@ -205,22 +206,22 @@ export const CodeEditor = forwardRef(function CodeEditor(
               EditorView.theme({
                 '&': {
                   height: '100%',
-                  fontSize: '0.875rem',
+                  fontSize: vars.typography.body.size,
                   backgroundColor: 'transparent',
                   color: codeVars.foreground
                 },
                 '&.cm-focused': { outline: 'none' },
                 '.cm-scroller': {
-                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                  fontFamily: vars.font.mono,
                   lineHeight: '1.65'
                 },
-                '.cm-content': { padding: '12px 0', caretColor: codeVars.caret },
-                '.cm-line': { padding: '0 18px 0 10px' },
+                '.cm-content': { padding: `${vars.space.md} 0`, caretColor: codeVars.caret },
+                '.cm-line': { padding: `0 ${vars.space.lg} 0 ${vars.space.sm}` },
                 '.cm-gutters': {
                   backgroundColor: codeVars.gutter,
                   color: codeVars.gutterText,
                   border: 'none',
-                  paddingLeft: '8px'
+                  paddingLeft: vars.space.sm
                 },
                 '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: codeVars.activeLine },
                 '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {

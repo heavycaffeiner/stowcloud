@@ -1,7 +1,7 @@
 import { style } from '@vanilla-extract/css'
 import * as appShellStyles from '../../../app/shell/AppShell.css'
 import { hostContainer } from './FolderTree/FolderTree.css'
-import { compactFloatBottom, fadeInUp, vars } from '@/shared/theme'
+import { compactFloatBottom, fadeInUp, typography, vars } from '@/shared/theme'
 
 // The notice sits above the compact layout's navigation bar.
 export const snackbar = style({
@@ -14,21 +14,19 @@ export const toolbar = style({
   flex: '0 0 auto',
   alignItems: 'center',
   justifyContent: 'space-between',
-  gap: '8px 16px',
+  gap: `${vars.space.sm} ${vars.space.lg}`,
   width: '100%',
-  minHeight: '52px',
-  padding: `12px ${vars.layout.contentPad}`,
+  padding: `${vars.space.md} ${vars.layout.contentPad}`,
   boxSizing: 'border-box',
   borderBottom: 'none',
   background: 'transparent'
 })
 
+// Applied below the wide breakpoint, which reaches past the compact media query that also narrows the padding.
 export const toolbarCompact = style({
-  padding: '10px 16px',
-  gap: '8px',
-  vars: {
-    [vars.layout.contentPad]: '16px'
-  }
+  paddingBlock: vars.space.sm,
+  gap: vars.space.sm,
+  vars: { [vars.layout.contentPad]: vars.space.lg }
 })
 
 export const folderHeading = style({
@@ -36,8 +34,8 @@ export const folderHeading = style({
   flexWrap: 'wrap',
   flex: '1 1 auto',
   alignItems: 'center',
-  gap: '8px 12px',
-  minWidth: '0',
+  gap: `${vars.space.sm} ${vars.space.md}`,
+  minWidth: 0,
   maxWidth: '100%',
   selectors: {
     [`${toolbarCompact} &`]: {
@@ -50,53 +48,50 @@ export const toolbarActions = style({
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'flex-end',
-  gap: '8px',
-  minWidth: '0',
+  gap: vars.space.sm,
+  minWidth: 0,
   maxWidth: '100%',
   flex: '0 0 auto',
   marginInlineStart: 'auto'
 })
 
 export const operation = style({
-  margin: `12px ${vars.layout.pagePad}`,
-  padding: '16px',
+  margin: `${vars.space.md} ${vars.layout.pagePad}`,
+  padding: vars.space.lg,
   border: 'none',
   borderRadius: vars.radius.md,
   background: vars.color.surface.raised,
-  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.12)',
-  animation: `${fadeInUp} 200ms cubic-bezier(0.2, 0, 0, 1)`
+  boxShadow: vars.elevation.lg,
+  animation: `${fadeInUp} ${vars.motion.medium} ${vars.motion.easing}`
 })
 
 export const operationHeading = style({
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
-  gap: '12px'
+  gap: vars.space.md
 })
 
 export const operationTitle = style({
-  margin: '0',
-  fontSize: vars.typography.title.size,
-  fontWeight: vars.typography.title.weight,
-  lineHeight: vars.typography.title.lineHeight
+  margin: 0,
+  ...typography('title')
 })
 
 export const operationList = style({
   display: 'grid',
-  gap: '8px',
-  margin: '12px 0 0',
-  padding: '0',
+  gap: vars.space.sm,
+  margin: `${vars.space.md} 0 0`,
+  padding: 0,
   listStyle: 'none'
 })
 
 export const operationItem = style({
   display: 'flex',
   flexWrap: 'wrap',
-  gap: '4px 12px',
+  gap: `${vars.space.xs} ${vars.space.md}`,
   justifyContent: 'space-between',
   overflowWrap: 'anywhere',
-  fontSize: vars.typography.bodySmall.size,
-  lineHeight: vars.typography.bodySmall.lineHeight
+  ...typography('bodySmall')
 })
 
 export const operationError = style({
@@ -110,47 +105,47 @@ export const tableWrapMarquee = style({
 
 export const marquee = style({
   position: 'fixed',
-  zIndex: '15',
+  zIndex: 15,
   pointerEvents: 'none',
-  border: `1px solid ${vars.color.focus}`,
+  border: `${vars.stroke.thin} solid ${vars.color.focus}`,
   background: `color-mix(in srgb, ${vars.color.accent.solid} 18%, transparent)`,
-  borderRadius: '2px'
+  borderRadius: vars.radius.xs
 })
 
 export const content = style({
   display: 'flex',
-  flex: '1',
-  minHeight: '0',
+  flex: 1,
+  minHeight: 0,
   containerType: 'inline-size',
   containerName: hostContainer
 })
 
 export const tableWrap = style({
   position: 'relative',
-  flex: '1',
+  flex: 1,
   display: 'flex',
-  minWidth: '0',
-  minHeight: '0'
+  minWidth: 0,
+  minHeight: 0
 })
 
 export const tableWrapDragover = style({
-  outline: `2px dashed ${vars.color.accent.solid}`,
-  outlineOffset: '-2px'
+  outline: `${vars.stroke.thick} dashed ${vars.color.accent.solid}`,
+  outlineOffset: `calc(-1 * ${vars.stroke.thick})`
 })
 
 export const view = style({
   position: 'absolute',
-  inset: '0',
+  inset: 0,
   display: 'flex',
-  minWidth: '0',
-  minHeight: '0'
+  minWidth: 0,
+  minHeight: 0
 })
 
 export const loading = style({
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  flex: '1',
+  flex: 1,
   minHeight: '240px'
 })
 
@@ -158,66 +153,60 @@ export const loadingMore = style({
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  gap: '8px',
-  padding: '12px',
+  gap: vars.space.sm,
+  padding: vars.space.md,
   color: vars.color.text.secondary
 })
 
 export const nothing = style({
   display: 'flex',
-  flex: '1',
+  flex: 1,
   flexDirection: 'column',
   alignItems: 'center',
   justifyContent: 'center',
-  gap: '16px',
-  padding: '48px 24px',
+  gap: vars.space.lg,
+  padding: `${vars.space.xxl} ${vars.space.xl}`,
   textAlign: 'center',
-  animation: `${fadeInUp} 220ms cubic-bezier(0.2,0,0,1)`
+  animation: `${fadeInUp} ${vars.motion.medium} ${vars.motion.easing}`
 })
 
 export const nothingIcon = style({
   width: '72px',
-  height: '72px',
+  aspectRatio: '1',
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
-  borderRadius: '24px',
+  borderRadius: vars.radius.xl,
   background: vars.color.selection.bg,
   color: vars.color.selection.fg,
-  fontSize: '36px',
-  lineHeight: '1',
   boxShadow: vars.elevation.sm
 })
 
 export const nothingTitle = style({
-  margin: '0',
-  fontSize: vars.typography.heading.size,
-  fontWeight: vars.typography.heading.weight,
-  lineHeight: vars.typography.heading.lineHeight
+  margin: 0,
+  ...typography('heading')
 })
 
 export const nothingHint = style({
   maxWidth: '360px',
-  margin: '0',
+  margin: 0,
   color: vars.color.text.secondary,
-  fontSize: vars.typography.body.size,
-  lineHeight: vars.typography.body.lineHeight
+  ...typography('body')
 })
 
 export const error = style({
-  padding: '24px',
+  padding: vars.space.xl,
   color: vars.color.danger.solid
 })
 
 export const dropOverlay = style({
   position: 'absolute',
-  inset: '0',
+  inset: 0,
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
   background: `color-mix(in srgb, ${vars.color.accent.solid} 12%, transparent)`,
   color: vars.color.accent.solid,
-  fontSize: vars.typography.title.size,
-  fontWeight: vars.typography.title.weight,
+  ...typography('title'),
   pointerEvents: 'none'
 })

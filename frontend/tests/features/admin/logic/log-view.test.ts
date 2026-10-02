@@ -1,17 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type {
-  AdminLogPage,
-  AdminLogQuery,
-  AdminLogRecord,
-  AdminLogsTimeline,
-  AdminUser,
-  AuditPage,
-  AuditRow
-} from '../../../../src/features/admin/api'
+import type { AdminLogRecord, AdminLogsTimeline, AdminUser, AuditRow } from '../../../../src/features/admin/api'
 import {
   EMPTY_FILTERS,
   PAGE_SIZE,
-  MAX_RECORDS,
   TARGET_BUCKETS,
   pureActorLabel,
   pureAppendPage,

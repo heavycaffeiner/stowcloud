@@ -2,7 +2,16 @@ import { useEffect, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent, ReactNode } from 'react'
 import { useI18n } from '../../../hooks/use-i18n'
 import { useOpenedSearch, useSubmittedQuery } from '../state'
-import { Icon, StowButton, StowIconButton, StowMenuButton, StowMenuItem, StowProgressCircular } from '@/shared/ui'
+import {
+  Icon,
+  StowBadge,
+  StowButton,
+  StowIconButton,
+  StowMenuButton,
+  StowMenuItem,
+  StowProgressCircular,
+  StowTextField
+} from '@/shared/ui'
 import { useSearchController } from '../hooks/use-search-controller'
 import { useSearchNavigation } from '../hooks/use-search-navigation'
 import { CATEGORIES, SORT_KEYS } from '../logic/search-state'
@@ -61,13 +70,10 @@ export function SearchPanel({ scope = '', autoFocus = false, trailing }: SearchP
   return (
     <div className={styles.root}>
       <form className={styles.queryBar} onSubmit={onSubmit}>
-        <span className={styles.queryIcon} aria-hidden="true">
-          <Icon name="search" size={20} />
-        </span>
-        <input
+        <StowTextField
           ref={controller.inputRef}
-          className={styles.input}
-          type="text"
+          className={styles.queryField}
+          leftSection={<Icon name="search" size={20} />}
           role="searchbox"
           inputMode="search"
           enterKeyHint="search"
@@ -75,8 +81,7 @@ export function SearchPanel({ scope = '', autoFocus = false, trailing }: SearchP
           value={state.query}
           placeholder={t('search.placeholder')}
           autoFocus={autoFocus}
-          data-autofocus={autoFocus || undefined}
-          onChange={(event) => controller.set('query', event.target.value)}
+          onValueChange={(value) => controller.set('query', value)}
           onKeyDown={onQueryKeyDown}
         />
         {state.query.trim() ? <StowIconButton label={t('search.clear')} icon="close" onClick={clear} /> : null}
@@ -104,13 +109,14 @@ export function SearchPanel({ scope = '', autoFocus = false, trailing }: SearchP
             )
           })}
         </div>
-        <div
-          className={styles.scopePill}
+        <StowBadge
+          tone="accent"
+          icon={scope ? 'folder' : 'search'}
+          className={styles.scope}
           title={scope ? t('search.scope_current_prioritized', { folder: scope }) : t('search.scope_explanation')}
         >
-          <Icon name={scope ? 'folder' : 'search'} size={14} />
-          <span>{scope ? (scope.split('/').filter(Boolean).at(-1) ?? scope) : t('search.scope_all_accessible')}</span>
-        </div>
+          {scope ? (scope.split('/').filter(Boolean).at(-1) ?? scope) : t('search.scope_all_accessible')}
+        </StowBadge>
         <StowMenuButton
           label={t('search.sort_by', { key: sortLabel })}
           align="end"

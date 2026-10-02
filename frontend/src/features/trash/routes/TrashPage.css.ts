@@ -1,19 +1,19 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '@/shared/theme'
+import { media, vars } from '@/shared/theme'
 
 export const toolbar = style({
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
   flexWrap: 'wrap',
-  gap: '8px',
-  padding: '8px 16px',
-  marginBottom: '8px',
-  borderRadius: '12px',
+  gap: vars.space.sm,
+  padding: `${vars.space.sm} ${vars.space.lg}`,
+  marginBottom: vars.space.sm,
+  borderRadius: vars.radius.md,
   background: vars.color.surface.container,
   '@media': {
-    '(max-width: 599.98px)': {
-      paddingInline: '12px'
+    [media.compact]: {
+      paddingInline: vars.space.md
     }
   }
 })
@@ -21,17 +21,17 @@ export const toolbar = style({
 export const selectAll = style({
   display: 'inline-flex',
   alignItems: 'center',
-  gap: '8px',
-  minHeight: '40px'
+  gap: vars.space.sm,
+  minHeight: vars.density.controlDesktop
 })
 
 export const toolbarActions = style({
   display: 'flex',
   flex: 'none',
   alignItems: 'center',
-  gap: '4px',
+  gap: vars.space.xs,
   '@media': {
-    '(max-width: 599.98px)': {
+    [media.compact]: {
       width: '100%',
       justifyContent: 'flex-end'
     }
@@ -41,14 +41,14 @@ export const toolbarActions = style({
 export const row = style({
   display: 'flex',
   alignItems: 'center',
-  gap: '12px',
-  padding: '8px 16px',
-  minWidth: '0',
-  borderBottom: `1px solid ${vars.color.border.subtle}`,
+  gap: vars.space.md,
+  padding: `${vars.space.sm} ${vars.space.lg}`,
+  minWidth: 0,
+  borderBottom: `${vars.stroke.thin} solid ${vars.color.border.subtle}`,
   '@media': {
-    '(max-width: 599.98px)': {
-      gap: '8px',
-      paddingInline: '8px'
+    [media.compact]: {
+      gap: vars.space.sm,
+      paddingInline: vars.space.sm
     }
   }
 })
@@ -57,11 +57,11 @@ export const notice = style({
   display: 'grid',
   gridTemplateColumns: 'minmax(0, 1fr) auto',
   alignItems: 'center',
-  gap: '8px',
-  margin: '0 0 8px',
-  padding: '8px 12px 8px 16px',
+  gap: vars.space.sm,
+  margin: `0 0 ${vars.space.sm}`,
+  padding: `${vars.space.sm} ${vars.space.md} ${vars.space.sm} ${vars.space.lg}`,
   overflowWrap: 'anywhere',
-  borderRadius: '8px',
+  borderRadius: vars.radius.sm,
   background: vars.color.highlight.soft,
   color: vars.color.highlight.onSoft
 })

@@ -1,22 +1,19 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '@/shared/theme'
+import { typography, vars } from '@/shared/theme'
 
 export const pageSection = style({
-  minWidth: '0'
+  minWidth: 0
 })
 
 export const pageTitle = style({
-  margin: '0 0 8px',
+  margin: `0 0 ${vars.space.sm}`,
   color: vars.color.text.primary,
-  fontSize: vars.typography.titleLarge.size,
-  fontWeight: vars.typography.titleLarge.weight,
-  letterSpacing: vars.typography.titleLarge.tracking,
-  lineHeight: vars.typography.titleLarge.lineHeight
+  ...typography('titleLarge')
 })
 
 export const loading = style({
   display: 'flex',
   alignItems: 'center',
-  gap: '12px',
+  gap: vars.space.md,
   color: vars.color.text.secondary
 })

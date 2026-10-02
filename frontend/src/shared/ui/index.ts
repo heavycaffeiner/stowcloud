@@ -28,8 +28,10 @@ export { StowSegmentedControl, type StowSegmentedControlProps, type StowSegmente
 export { StowSelect, type StowSelectOption, type StowSelectProps } from './Select'
 export { StowSnackbar, type StowSnackbarProps } from './Snackbar'
 export { StowSwitch, type StowSwitchProps } from './Switch'
+export { StowTextArea, type StowTextAreaProps } from './TextArea'
 export { StowFormTextField, StowTextField, type StowTextFieldProps, type StowTextFieldType } from './TextField'
 export { StowTooltip, type StowTooltipProps } from './Tooltip'
+export { StowTray, trayStyles, type StowTrayProps } from './Tray'
 export { ErrorBoundary, type ErrorBoundaryProps } from './ErrorBoundary'
 export {
   SecondaryPageShell,

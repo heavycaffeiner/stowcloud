@@ -4,8 +4,8 @@ import { vars } from '@/shared/theme'
 export const root = style({
   display: 'flex',
   flexDirection: 'column',
-  gap: '8px',
-  minInlineSize: '0',
+  gap: vars.space.sm,
+  minInlineSize: 0,
   width: 'min(420px, 80vw)',
   maxWidth: '100%'
 })
@@ -13,46 +13,46 @@ export const root = style({
 export const nav = style({
   display: 'flex',
   alignItems: 'center',
-  gap: '8px'
+  gap: vars.space.sm
 })
 
 export const here = style({
-  margin: '0',
+  margin: 0,
   overflowWrap: 'anywhere',
   color: vars.color.text.secondary
 })
 
 export const body = style({
-  minHeight: '0',
-  minWidth: '0',
+  minHeight: 0,
+  minWidth: 0,
   maxHeight: '40vh',
   overflowY: 'auto',
   border: 'none',
   background: vars.color.surface.overlay,
-  borderRadius: '8px'
+  borderRadius: vars.radius.sm
 })
 
 export const status = style({
-  margin: '0',
-  padding: '16px',
+  margin: 0,
+  padding: vars.space.lg,
   color: vars.color.text.secondary
 })
 
 export const entries = style({
   listStyle: 'none',
-  margin: '0',
-  padding: '4px'
+  margin: 0,
+  padding: vars.space.xs
 })
 
 export const entry = style({
   display: 'flex',
   alignItems: 'center',
-  gap: '8px',
+  gap: vars.space.sm,
   width: '100%',
   minHeight: vars.density.control,
-  padding: '8px',
+  padding: vars.space.sm,
   border: 'none',
-  borderRadius: '4px',
+  borderRadius: vars.radius.xs,
   background: 'none',
   color: 'inherit',
   textAlign: 'left',
@@ -67,7 +67,7 @@ export const entry = style({
 })
 
 export const entryName = style({
-  minWidth: '0',
+  minWidth: 0,
   overflowWrap: 'anywhere'
 })
 
@@ -78,5 +78,5 @@ export const entrySelected = style({
 
 export const entryDisabled = style({
   color: vars.color.text.secondary,
-  opacity: '0.6'
+  opacity: 0.6
 })

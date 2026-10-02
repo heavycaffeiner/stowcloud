@@ -6,7 +6,7 @@ import { useCopyText } from '../../../hooks/use-copy-text'
 import { useI18n } from '../../../hooks/use-i18n'
 import { useReissueRecoveryCodes, useRecoveryCodesRemaining, useTotpDisable, useTotpEnroll, useTotpSetup } from '../api'
 import { useSession } from '../../auth/api'
-import { cx, StowButton, StowFormTextField } from '@/shared/ui'
+import { cx, StowBadge, StowButton, StowFormTextField, StowTextField } from '@/shared/ui'
 import { askPassword } from './PasswordPrompt'
 import { SettingsDialog } from './SettingsDialog'
 import * as styles from './TotpSection.css'
@@ -33,7 +33,7 @@ export function TotpSection() {
       body: (
         <>
           <p className={settingsCardStyles.text}>{t('totp.enter_your_current_password_continue')}</p>
-          <p className={styles.smbWarning}>
+          <p className={settingsCardStyles.warning}>
             {smbDedicated ? t('smb.dedicated_will_be_replaced') : t('smb.remove_reverts_to_account')}
           </p>
         </>
@@ -59,9 +59,9 @@ export function TotpSection() {
   }
 
   return (
-    <div className={styles.root}>
-      <div className={styles.status}>
-        <span className={cx(styles.badge, enabled && styles.badgeOn)}>{enabled ? t('totp.on') : t('totp.off')}</span>
+    <div className={settingsCardStyles.section}>
+      <div className={settingsCardStyles.cluster}>
+        <StowBadge tone={enabled ? 'accent' : 'neutral'}>{enabled ? t('totp.on') : t('totp.off')}</StowBadge>
         {enabled ? (
           <StowButton variant="outlined" onClick={turnOff}>
             {t('totp.turn_off_two_factor_authentication')}
@@ -71,7 +71,7 @@ export function TotpSection() {
         )}
       </div>
       {enabled ? (
-        <div className={styles.recovery}>
+        <div className={settingsCardStyles.cluster}>
           {recovery.data !== undefined ? (
             <p className={cx(styles.recoveryCount, recovery.data <= 3 && styles.recoveryCountLow)}>
               {tp('totp.recovery_codes_left', recovery.data)}
@@ -160,27 +160,22 @@ function EnrollDialog({ open, onDone, onClosed }: EnrollDialogProps) {
       {secret ? (
         <>
           <p className={settingsCardStyles.text}>{t('totp.add_key_below_authenticator_app')}</p>
-          <div className={styles.secretRow}>
-            <input
-              className={styles.secret}
-              readOnly
-              value={secret}
-              aria-label={t('totp.add_key_below_authenticator_app')}
-            />
+          <div className={settingsCardStyles.copyRow}>
+            <StowTextField readOnly value={secret} aria-label={t('totp.add_key_below_authenticator_app')} />
             <StowButton variant="text" onClick={() => copy.mutate(secret)}>
               {copy.isSuccess ? t('common.copied') : t('common.copy')}
             </StowButton>
           </div>
           {copy.isError ? (
-            <p className={styles.copyFeedback} role="alert">
+            <p className={settingsCardStyles.error} role="alert">
               {t('totp.copy_secret_failed')}
             </p>
           ) : null}
-          <p className={styles.url}>{setup.data?.uri}</p>
+          <p className={settingsCardStyles.muted}>{setup.data?.uri}</p>
           <StowFormTextField control={control} name="code" label={t('totp.6_digit_code')} error={errorText} />
         </>
       ) : errorText ? (
-        <p className={styles.smbWarning} role="alert">
+        <p className={settingsCardStyles.warning} role="alert">
           {errorText}
         </p>
       ) : null}
@@ -217,7 +212,7 @@ function RecoveryCodesDialog({ open, codes, onDone, onClosed }: RecoveryCodesDia
       <ul className={styles.codes}>
         {codes.map((code) => (
           <li key={code}>
-            <input className={styles.code} readOnly value={code} aria-label={t('totp.recovery_codes')} />
+            <StowTextField readOnly value={code} aria-label={t('totp.recovery_codes')} />
           </li>
         ))}
       </ul>
@@ -225,7 +220,7 @@ function RecoveryCodesDialog({ open, codes, onDone, onClosed }: RecoveryCodesDia
         {copy.isSuccess ? t('common.copied') : t('totp.copy_codes')}
       </StowButton>
       {copy.isError ? (
-        <p className={styles.copyFeedback} role="alert">
+        <p className={settingsCardStyles.error} role="alert">
           {t('totp.copy_codes_failed')}
         </p>
       ) : null}

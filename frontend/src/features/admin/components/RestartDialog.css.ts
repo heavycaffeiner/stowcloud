@@ -5,7 +5,7 @@ export const status = style({
   display: 'inline-flex',
   alignItems: 'center',
   flexWrap: 'wrap',
-  gap: '12px',
+  gap: vars.space.md,
   maxWidth: '100%',
   overflowWrap: 'anywhere'
 })

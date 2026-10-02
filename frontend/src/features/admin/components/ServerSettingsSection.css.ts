@@ -1,15 +1,14 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '@/shared/theme'
+import { media, typography, vars } from '@/shared/theme'
 
 export const adminSectionSubhead = style({
-  margin: '32px 0 8px',
+  margin: `${vars.space.xxl} 0 ${vars.space.sm}`,
   color: vars.color.text.primary,
-  fontSize: vars.typography.titleSmall.size,
-  lineHeight: vars.typography.titleSmall.lineHeight
+  ...typography('titleSmall')
 })
 
 export const adminSectionStatus = style({
-  margin: '8px 0 0',
+  margin: `${vars.space.sm} 0 0`,
   color: vars.color.accent.solid,
   overflowWrap: 'anywhere'
 })
@@ -20,19 +19,19 @@ export const adminSectionStatusError = style({
 
 export const nav = style({
   position: 'sticky',
-  top: '0',
-  zIndex: '2',
-  margin: '0 0 20px',
-  padding: '8px 0',
+  top: 0,
+  zIndex: 2,
+  margin: `0 0 ${vars.space.lg}`,
+  padding: `${vars.space.sm} 0`,
   background: `color-mix(in srgb, ${vars.color.surface.page} 95%, transparent)`,
   backdropFilter: 'blur(12px)'
 })
 
 export const navItems = style({
   display: 'flex',
-  gap: '8px',
+  gap: vars.space.sm,
   overflowX: 'auto',
-  padding: '2px',
+  padding: vars.space.xxs,
   scrollbarWidth: 'none'
 })
 
@@ -42,12 +41,12 @@ export const navButton = style({
 
 export const pathRow = style({
   display: 'flex',
-  gap: '8px',
+  gap: vars.space.sm,
   alignItems: 'center',
   width: '100%',
-  minWidth: '0',
+  minWidth: 0,
   '@media': {
-    '(max-width: 599.98px)': {
+    [media.compact]: {
       alignItems: 'stretch',
       flexDirection: 'column'
     }
@@ -60,7 +59,7 @@ export const field = style({
     [`${pathRow} > &`]: {
       width: 'auto',
       flex: '1 1 auto',
-      minWidth: '0'
+      minWidth: 0
     }
   }
 })
@@ -68,50 +67,50 @@ export const field = style({
 export const other = style({
   display: 'flex',
   flexDirection: 'column',
-  gap: '12px',
-  margin: '0 0 16px'
+  gap: vars.space.md,
+  margin: `0 0 ${vars.space.lg}`
 })
 
 export const otherLabel = style({
   color: vars.color.text.secondary,
-  fontFamily: 'ui-monospace, monospace',
-  fontSize: vars.typography.bodySmall.size
+  fontFamily: vars.font.mono,
+  ...typography('bodySmall')
 })
 
 export const otherValue = style({
-  margin: '0',
+  margin: 0,
   overflowWrap: 'anywhere'
 })
 
 export const reason = style({
   color: vars.color.text.secondary,
-  fontSize: vars.typography.bodySmall.size,
+  ...typography('bodySmall'),
   overflowWrap: 'anywhere'
 })
 
 export const emptyNote = style({
   color: vars.color.text.secondary,
-  fontSize: vars.typography.bodySmall.size,
+  ...typography('bodySmall'),
   overflowWrap: 'anywhere',
-  margin: '0'
+  margin: 0
 })
 
 export const findings = style({
   display: 'grid',
-  gap: '4px',
-  margin: '8px 0 0',
-  padding: '0',
+  gap: vars.space.xs,
+  margin: `${vars.space.sm} 0 0`,
+  padding: 0,
   listStyle: 'none'
 })
 
 export const finding = style({
-  margin: '0',
-  padding: '8px 12px',
-  borderInlineStart: `4px solid ${vars.color.border.strong}`,
-  borderRadius: '0',
+  margin: 0,
+  padding: `${vars.space.sm} ${vars.space.md}`,
+  borderInlineStart: `${vars.space.xs} solid ${vars.color.border.strong}`,
+  borderRadius: 0,
   background: 'transparent',
   color: vars.color.text.primary,
-  fontSize: vars.typography.bodySmall.size,
+  ...typography('bodySmall'),
   overflowWrap: 'anywhere'
 })
 
@@ -124,82 +123,54 @@ export const findingOk = style({
 })
 
 export const findingKind = style({
-  marginInlineEnd: '4px'
+  marginInlineEnd: vars.space.xs
 })
 
 export const findingField = style({
-  marginInlineEnd: '4px',
-  fontFamily: 'ui-monospace, monospace'
+  marginInlineEnd: vars.space.xs,
+  fontFamily: vars.font.mono
 })
 
 export const endpoints = style({
   display: 'flex',
   flexDirection: 'column',
-  gap: '4px',
+  gap: vars.space.xs,
   width: '100%',
-  marginTop: '8px'
+  marginTop: vars.space.sm
 })
 
 export const endpointRow = style({
   display: 'flex',
   alignItems: 'center',
-  gap: '8px',
+  gap: vars.space.sm,
   width: '100%',
-  minWidth: '0',
+  minWidth: 0,
   '@media': {
-    '(max-width: 599.98px)': {
+    [media.compact]: {
       alignItems: 'flex-start'
     }
   }
 })
 
 export const endpointUri = style({
-  flex: '1',
-  minWidth: '0',
-  fontFamily: 'ui-monospace, monospace',
+  flex: 1,
+  minWidth: 0,
+  fontFamily: vars.font.mono,
   overflowWrap: 'anywhere',
   userSelect: 'all'
 })
 
 export const announce = style({
   minBlockSize: '1.25em',
-  margin: '0',
+  margin: 0,
   color: vars.color.accent.solid,
   overflowWrap: 'anywhere'
 })
 
 export const pathButton = style({
   '@media': {
-    '(max-width: 599.98px)': {
+    [media.compact]: {
       alignSelf: 'flex-start'
-    }
-  }
-})
-
-export const selectLabel = style({
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '6px',
-  fontSize: vars.typography.body.size,
-  color: vars.color.text.primary,
-  width: '100%'
-})
-
-export const select = style({
-  minBlockSize: '48px',
-  width: '100%',
-  maxWidth: '24rem',
-  padding: '10px 16px',
-  border: 'none',
-  borderRadius: vars.radius.xs,
-  background: vars.color.surface.fill,
-  color: vars.color.text.primary,
-  fontSize: vars.typography.bodyLarge.size,
-  cursor: 'pointer',
-  selectors: {
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
     }
   }
 })

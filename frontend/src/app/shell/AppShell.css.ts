@@ -1,9 +1,9 @@
 import { style } from '@vanilla-extract/css'
-import { typography, vars } from '@/shared/theme'
+import { focusOutline, typography, vars } from '@/shared/theme'
 
 export const root = style({
   width: '100%',
-  minWidth: '0',
+  minWidth: 0,
   height: ['100vh', '100dvh'],
   display: 'flex',
   flexDirection: 'column',
@@ -20,27 +20,27 @@ export const compact = style({
 
 export const header = style({
   position: 'sticky',
-  top: '0',
-  left: '0',
-  right: '0',
+  top: 0,
+  left: 0,
+  right: 0,
   height: vars.layout.header,
   minHeight: vars.layout.header,
-  zIndex: '30',
+  zIndex: 30,
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
-  padding: '0 20px',
+  padding: `0 ${vars.space.lg}`,
   background: `color-mix(in srgb, ${vars.color.surface.page} 96%, transparent)`,
   backdropFilter: 'blur(12px)',
-  borderBottom: `1px solid ${vars.color.border.subtle}`,
+  borderBottom: `${vars.stroke.thin} solid ${vars.color.border.subtle}`,
   color: vars.color.text.primary,
   boxSizing: 'border-box',
   selectors: {
     [`${compact} &`]: {
       paddingTop: 'env(safe-area-inset-top, 0px)',
-      paddingRight: 'max(8px, env(safe-area-inset-right, 0px))',
-      paddingLeft: 'max(8px, env(safe-area-inset-left, 0px))',
-      gap: '8px',
+      paddingRight: `max(${vars.space.sm}, env(safe-area-inset-right, 0px))`,
+      paddingLeft: `max(${vars.space.sm}, env(safe-area-inset-left, 0px))`,
+      gap: vars.space.sm,
       height: `calc(${vars.layout.header} + env(safe-area-inset-top, 0px))`
     }
   }
@@ -50,29 +50,26 @@ export const headerLeft = style({
   selectors: {
     [`${compact} &`]: {
       flex: '1 1 auto',
-      minWidth: '0'
+      minWidth: 0
     }
   },
   display: 'flex',
   alignItems: 'center',
-  gap: '8px',
+  gap: vars.space.sm,
   flex: 'none'
 })
 
 export const headerBrandBtn = style({
   selectors: {
     [`${compact} &`]: {
-      minWidth: '0',
+      minWidth: 0,
       flex: '1 1 auto'
     },
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    }
+    '&:focus-visible': focusOutline
   },
   background: 'none',
   border: 'none',
-  padding: '0 4px',
+  padding: `0 ${vars.space.xs}`,
   cursor: 'pointer',
   display: 'flex',
   alignItems: 'center',
@@ -83,15 +80,14 @@ export const headerBrand = style({
   selectors: {
     [`${compact} &`]: {
       display: 'block',
-      minWidth: '0',
+      minWidth: 0,
       overflow: 'hidden',
       textOverflow: 'ellipsis',
       whiteSpace: 'nowrap'
     }
   },
-  fontSize: vars.typography.titleLarge.size,
-  lineHeight: vars.typography.titleLarge.lineHeight,
-  fontWeight: '700',
+  ...typography('titleLarge'),
+  fontWeight: vars.font.weight.bold,
   color: vars.color.text.primary,
   letterSpacing: '-0.02em'
 })
@@ -99,15 +95,15 @@ export const headerBrand = style({
 export const headerCenter = style({
   selectors: {
     [`${compact} &`]: {
-      flex: '0 0 44px',
-      width: '44px',
-      minWidth: '44px',
-      margin: '0'
+      flex: `0 0 ${vars.density.controlCompact}`,
+      width: vars.density.controlCompact,
+      minWidth: vars.density.controlCompact,
+      margin: 0
     }
   },
   flex: '1 1 auto',
   maxWidth: '600px',
-  margin: '0 24px',
+  margin: `0 ${vars.space.xl}`,
   display: 'flex',
   justifyContent: 'center'
 })
@@ -115,10 +111,10 @@ export const headerCenter = style({
 export const headerSearch = style({
   selectors: {
     [`${compact} &`]: {
-      width: '44px',
-      height: '44px',
-      minWidth: '44px',
-      padding: '0',
+      width: vars.density.controlCompact,
+      height: vars.density.controlCompact,
+      minWidth: vars.density.controlCompact,
+      padding: 0,
       boxSizing: 'border-box',
       justifyContent: 'center'
     },
@@ -126,27 +122,24 @@ export const headerSearch = style({
       background: vars.color.surface.overlay,
       borderColor: vars.color.border.strong
     },
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    },
+    '&:focus-visible': focusOutline,
     '&:active': {
       transform: 'scale(0.99)'
     }
   },
   width: '100%',
-  height: '40px',
+  height: vars.density.controlDesktop,
   display: 'flex',
   alignItems: 'center',
-  gap: '10px',
-  padding: '0 14px',
-  border: `1px solid ${vars.color.border.subtle}`,
-  borderRadius: '12px',
+  gap: vars.space.sm,
+  padding: `0 ${vars.space.md}`,
+  border: `${vars.stroke.thin} solid ${vars.color.border.subtle}`,
+  borderRadius: vars.radius.md,
   background: vars.color.surface.container,
   color: vars.color.text.secondary,
   cursor: 'pointer',
   textAlign: 'left',
-  transition: 'background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease'
+  transition: `background-color ${vars.motion.short} ${vars.motion.easing}, border-color ${vars.motion.short} ${vars.motion.easing}, box-shadow ${vars.motion.short} ${vars.motion.easing}`
 })
 
 export const headerSearchPlaceholder = style({
@@ -155,13 +148,12 @@ export const headerSearchPlaceholder = style({
       display: 'none'
     }
   },
-  flex: '1',
-  minWidth: '0',
+  flex: 1,
+  minWidth: 0,
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
-  fontSize: vars.typography.label.size,
-  lineHeight: vars.typography.label.lineHeight,
+  ...typography('label'),
   color: vars.color.text.secondary
 })
 
@@ -173,7 +165,7 @@ export const headerSearchHints = style({
   },
   display: 'flex',
   alignItems: 'center',
-  gap: '8px',
+  gap: vars.space.sm,
   flex: 'none'
 })
 
@@ -181,13 +173,13 @@ export const headerRight = style({
   selectors: {
     [`${compact} &`]: {
       flex: 'none',
-      minWidth: '0',
-      gap: '0'
+      minWidth: 0,
+      gap: 0
     }
   },
   display: 'flex',
   alignItems: 'center',
-  gap: '6px',
+  gap: vars.space.xs,
   flex: 'none'
 })
 
@@ -200,12 +192,11 @@ export const headerSearchIcon = style({
 
 export const headerShortcut = style({
   fontFamily: 'inherit',
-  fontSize: vars.typography.labelSmall.size,
-  lineHeight: vars.typography.labelSmall.lineHeight,
-  padding: '1px 7px',
-  borderRadius: '4px',
+  ...typography('labelSmall'),
+  padding: `0 ${vars.space.sm}`,
+  borderRadius: vars.radius.xs,
   background: vars.color.surface.overlay,
-  border: `1px solid ${vars.color.border.subtle}`,
+  border: `${vars.stroke.thin} solid ${vars.color.border.subtle}`,
   color: vars.color.text.secondary
 })
 
@@ -229,25 +220,25 @@ export const avatar = style({
 })
 
 export const body = style({
-  flex: '1',
-  minHeight: '0',
+  flex: 1,
+  minHeight: 0,
   display: 'flex',
   overflow: 'hidden',
   position: 'relative'
 })
 
 export const main = style({
-  flex: '1',
-  minWidth: '0',
+  flex: 1,
+  minWidth: 0,
   display: 'flex',
   flexDirection: 'column',
   overflowY: 'auto',
   overflowX: 'hidden',
   background: vars.color.surface.page,
-  transition: 'padding-left 200ms cubic-bezier(0.2, 0, 0, 1)',
+  transition: `padding-left ${vars.motion.medium} ${vars.motion.easing}`,
   selectors: {
     [`${compact} &`]: {
-      paddingLeft: '0',
+      paddingLeft: 0,
       paddingBottom: `calc(${vars.layout.navBar} + env(safe-area-inset-bottom, 0px))`
     }
   }
@@ -263,16 +254,16 @@ export const mainCollapsed = style({
 
 export const trayStack = style({
   position: 'fixed',
-  right: '24px',
-  bottom: '24px',
-  zIndex: '30',
+  right: vars.space.xl,
+  bottom: vars.space.xl,
+  zIndex: 30,
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'flex-end',
-  gap: '12px'
+  gap: vars.space.md
 })
 
 export const trayStackCompact = style({
-  right: 'max(16px, env(safe-area-inset-right, 0px))',
-  bottom: `calc(24px + ${vars.layout.navBar} + env(safe-area-inset-bottom, 0px))`
+  right: `max(${vars.space.lg}, env(safe-area-inset-right, 0px))`,
+  bottom: `calc(${vars.space.xl} + ${vars.layout.navBar} + env(safe-area-inset-bottom, 0px))`
 })

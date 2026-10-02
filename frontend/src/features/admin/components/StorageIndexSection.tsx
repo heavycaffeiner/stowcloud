@@ -14,7 +14,7 @@ import {
 } from '../api'
 import { useJobStatus } from '../../jobs/api'
 import { jobTray } from '../../jobs/tray-store'
-import { cx, Icon, StowButton, StowProgressCircular, StowSwitch, VirtualList } from '@/shared/ui'
+import { Icon, StowBadge, StowButton, StowProgressCircular, StowSwitch, VirtualList } from '@/shared/ui'
 import { AdminCard } from './AdminCard'
 import * as styles from './StorageIndexSection.css'
 import * as adminStyles from './admin.css'
@@ -122,9 +122,9 @@ export function StorageIndexSection() {
       >
         <div className={styles.statusRow}>
           <span>{t('storage.index_status')}</span>
-          <span className={cx(styles.statusBadge, status.data?.enabled && styles.statusBadgeOn)}>
+          <StowBadge tone={status.data?.enabled ? 'accent' : 'neutral'}>
             {status.isPending ? <StowProgressCircular size={16} /> : statusText}
-          </span>
+          </StowBadge>
         </div>
 
         {status.error ? (
@@ -153,7 +153,7 @@ export function StorageIndexSection() {
                 label={t('storage.enable_name_index')}
                 onChange={(checked) => toggle.mutate(checked)}
               />
-              {toggle.isPending ? <span className={adminStyles.note}>{t('common.saving')}</span> : null}
+              {toggle.isPending ? <span className={adminStyles.hint}>{t('common.saving')}</span> : null}
             </div>
             {toggle.error ? (
               <p className={adminStyles.error}>{describeApiError(toggle.error, t('common.could_not_save_settings'))}</p>
@@ -162,27 +162,27 @@ export function StorageIndexSection() {
             <div className={styles.indexCost}>
               {estimate.data ? (
                 <>
-                  <dl className={styles.indexCostList}>
+                  <dl className={adminStyles.figures}>
                     <div>
-                      <dt className={styles.indexCostLabel}>{t('storage.files_to_index')}</dt>
-                      <dd className={styles.indexCostValue}>{formatNumber(estimate.data.files)}</dd>
+                      <dt className={adminStyles.figureLabel}>{t('storage.files_to_index')}</dt>
+                      <dd className={adminStyles.figureValue}>{formatNumber(estimate.data.files)}</dd>
                     </div>
                     <div>
-                      <dt className={styles.indexCostLabel}>{t('storage.disk_space_needed')}</dt>
-                      <dd className={styles.indexCostValue}>{formatBytes(estimate.data.index_bytes)}</dd>
+                      <dt className={adminStyles.figureLabel}>{t('storage.disk_space_needed')}</dt>
+                      <dd className={adminStyles.figureValue}>{formatBytes(estimate.data.index_bytes)}</dd>
                     </div>
                     <div>
-                      <dt className={styles.indexCostLabel}>{t('storage.time_to_build')}</dt>
-                      <dd className={styles.indexCostValue}>{formatDuration(estimate.data.build_secs)}</dd>
+                      <dt className={adminStyles.figureLabel}>{t('storage.time_to_build')}</dt>
+                      <dd className={adminStyles.figureValue}>{formatDuration(estimate.data.build_secs)}</dd>
                     </div>
                   </dl>
-                  <p className={adminStyles.note}>
+                  <p className={adminStyles.hint}>
                     {ACCURACY[estimate.data.confidence] ? t(ACCURACY[estimate.data.confidence]) : null}{' '}
                     {t('storage.build_only_runs_while_idle')}
                   </p>
                 </>
               ) : (
-                <p className={adminStyles.note}>{t('storage.measure_before_turning_on')}</p>
+                <p className={adminStyles.hint}>{t('storage.measure_before_turning_on')}</p>
               )}
               <div className={adminStyles.row}>
                 <StowButton variant="outlined" loading={estimate.isFetching} onClick={estimateCost}>
@@ -207,11 +207,11 @@ export function StorageIndexSection() {
               </StowButton>
             </div>
             {jobText ? (
-              <p className={adminStyles.note} aria-live="polite">
+              <p className={adminStyles.hint} aria-live="polite">
                 {jobText}
               </p>
             ) : null}
-            <p className={adminStyles.note}>
+            <p className={adminStyles.hint}>
               {nameEnabled ? t('storage.first_build_is_manual') : t('storage.turn_it_on_before_building')}
             </p>
             {build.error ? (

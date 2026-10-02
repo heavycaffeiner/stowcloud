@@ -8,8 +8,8 @@ export const root = style({
   flexDirection: 'column',
   gap: vars.space.xs,
   inlineSize: '100%',
-  minInlineSize: '0',
-  maxInlineSize: '35rem'
+  minInlineSize: 0,
+  maxInlineSize: vars.layout.form
 })
 
 export const label = style({
@@ -22,6 +22,7 @@ export const wrapper = style({
   vars: {
     '--input-height-sm': vars.density.control,
     '--input-radius': vars.radius.sm,
+    '--input-padding': vars.space.md,
     '--input-bg': 'transparent',
     '--input-bd': vars.color.border.strong,
     '--input-bd-focus': vars.color.accent.solid
@@ -35,7 +36,6 @@ export const wrapper = style({
 export const input = style({
   ...typography('bodyLarge'),
   color: vars.color.text.primary,
-  paddingInline: vars.space.md,
   selectors: {
     '&:focus': { boxShadow: `inset 0 0 0 ${vars.stroke.thin} var(--input-bd-focus)` },
     '&::placeholder': { color: vars.color.text.secondary }

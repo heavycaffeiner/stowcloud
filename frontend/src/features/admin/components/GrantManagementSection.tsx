@@ -135,7 +135,7 @@ function GrantManagementSection({ principal, label }: Omit<GrantsTarget, 'title'
 
   return (
     <section className={adminStyles.section}>
-      <p className={adminStyles.sectionHint}>
+      <p className={adminStyles.hint}>
         <strong>{label}</strong>
         {t('grant.sees_only_folders_granted_here')}
       </p>

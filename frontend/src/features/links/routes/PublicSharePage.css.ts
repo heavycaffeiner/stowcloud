@@ -1,16 +1,16 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '@/shared/theme'
+import { media, typography, vars } from '@/shared/theme'
 
 export const root = style({
-  width: 'min(100%, 40rem)',
-  minWidth: '0',
+  width: `min(100%, ${vars.layout.measure})`,
+  minWidth: 0,
   overflowX: 'hidden',
   minHeight: '100dvh',
   marginInline: 'auto',
   padding: vars.layout.pagePad,
   '@media': {
-    '(max-width: 599.98px)': {
-      paddingBlock: '16px'
+    [media.compact]: {
+      paddingBlock: vars.space.lg
     }
   }
 })
@@ -18,40 +18,31 @@ export const root = style({
 export const header = style({
   display: 'flex',
   flexWrap: 'wrap',
-  gap: '4px 8px',
-  marginBottom: '32px',
+  gap: `${vars.space.xs} ${vars.space.sm}`,
+  marginBottom: vars.space.xxl,
   color: vars.color.text.secondary,
-  fontSize: vars.typography.body.size,
-  fontWeight: vars.typography.body.weight,
-  lineHeight: vars.typography.body.lineHeight,
-  letterSpacing: vars.typography.body.tracking,
+  ...typography('body'),
   '@media': {
-    '(max-width: 599.98px)': {
-      marginBottom: '24px'
+    [media.compact]: {
+      marginBottom: vars.space.xl
     }
   }
 })
 
 export const title = style({
-  fontSize: vars.typography.heading.size,
-  fontWeight: vars.typography.heading.weight,
-  lineHeight: vars.typography.heading.lineHeight,
-  letterSpacing: vars.typography.heading.tracking,
-  margin: '0 0 16px',
+  ...typography('heading'),
+  margin: `0 0 ${vars.space.lg}`,
   overflowWrap: 'anywhere'
 })
 
 export const unlockTitle = style({
-  fontSize: vars.typography.heading.size,
-  fontWeight: vars.typography.heading.weight,
-  lineHeight: vars.typography.heading.lineHeight,
-  letterSpacing: vars.typography.heading.tracking,
-  margin: '0',
+  ...typography('heading'),
+  margin: 0,
   overflowWrap: 'anywhere'
 })
 
 export const status = style({
-  margin: '0 0 16px',
+  margin: `0 0 ${vars.space.lg}`,
   overflowWrap: 'anywhere',
   color: vars.color.text.secondary
 })
@@ -63,28 +54,28 @@ export const statusError = style({
 export const state = style({
   display: 'flex',
   flexDirection: 'column',
-  gap: '16px',
-  minWidth: '0'
+  gap: vars.space.lg,
+  minWidth: 0
 })
 
 export const unlock = style({
   display: 'flex',
   flexDirection: 'column',
-  gap: '16px',
-  minWidth: '0',
+  gap: vars.space.lg,
+  minWidth: 0,
   maxWidth: '20rem',
   width: '100%'
 })
 
 export const stateError = style({
-  padding: '16px',
+  padding: vars.space.lg,
   borderRadius: vars.radius.md,
   background: vars.color.danger.soft,
   color: vars.color.danger.onSoft
 })
 
 export const stateText = style({
-  margin: '0',
+  margin: 0,
   overflowWrap: 'anywhere'
 })
 
@@ -96,8 +87,8 @@ export const drop = style({
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'flex-start',
-  gap: '8px',
-  marginBottom: '24px'
+  gap: vars.space.sm,
+  marginBottom: vars.space.xl
 })
 
 export const file = style({
@@ -107,12 +98,12 @@ export const file = style({
 export const list = style({
   display: 'flex',
   flexDirection: 'column',
-  gap: '0',
-  minWidth: '0',
-  margin: '0 0 24px',
-  padding: '0',
+  gap: 0,
+  minWidth: 0,
+  margin: `0 0 ${vars.space.xl}`,
+  padding: 0,
   overflow: 'hidden',
-  border: `1px solid ${vars.color.border.subtle}`,
+  border: `${vars.stroke.thin} solid ${vars.color.border.subtle}`,
   borderRadius: vars.radius.md,
   background: 'transparent',
   listStyle: 'none'
@@ -121,14 +112,14 @@ export const list = style({
 export const row = style({
   display: 'flex',
   alignItems: 'center',
-  gap: '12px',
-  minWidth: '0',
-  minHeight: '52px',
-  padding: '8px 16px',
-  borderRadius: '0',
+  gap: vars.space.md,
+  minWidth: 0,
+  minHeight: vars.density.row,
+  padding: `${vars.space.sm} ${vars.space.lg}`,
+  borderRadius: 0,
   background: 'transparent',
-  borderBottom: `1px solid ${vars.color.border.subtle}`,
-  transition: 'background-color 140ms ease',
+  borderBottom: `${vars.stroke.thin} solid ${vars.color.border.subtle}`,
+  transition: `background-color ${vars.motion.short} ${vars.motion.easing}`,
   selectors: {
     '&:hover': {
       background: vars.color.surface.container
@@ -138,9 +129,9 @@ export const row = style({
     }
   },
   '@media': {
-    '(max-width: 599.98px)': {
+    [media.compact]: {
       gridTemplateColumns: 'minmax(0, 1fr) auto',
-      paddingInline: '8px'
+      paddingInline: vars.space.sm
     }
   }
 })
@@ -160,12 +151,12 @@ export const icon = style({
 })
 
 export const name = style({
-  flex: '1',
-  minWidth: '0',
+  flex: 1,
+  minWidth: 0,
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
-  fontSize: vars.typography.body.size,
+  ...typography('body'),
   color: vars.color.text.primary,
   textAlign: 'start',
   selectors: {
@@ -173,7 +164,7 @@ export const name = style({
       border: 'none',
       background: 'transparent',
       cursor: 'pointer',
-      padding: '0'
+      padding: 0
     }
   }
 })
@@ -181,11 +172,11 @@ export const name = style({
 export const size = style({
   flex: 'none',
   color: vars.color.text.secondary,
-  fontSize: vars.typography.bodySmall.size,
+  ...typography('bodySmall'),
   whiteSpace: 'nowrap',
   fontVariantNumeric: 'tabular-nums',
   '@media': {
-    '(max-width: 599.98px)': {
+    [media.compact]: {
       maxWidth: 'min(42vw, 12rem)'
     }
   }
@@ -196,35 +187,35 @@ export const action = style({
 })
 
 export const crumbs = style({
-  marginBottom: '16px',
-  minWidth: '0'
+  marginBottom: vars.space.lg,
+  minWidth: 0
 })
 
 export const crumbList = style({
   display: 'flex',
   flexWrap: 'wrap',
   alignItems: 'center',
-  gap: '4px',
-  minWidth: '0',
+  gap: vars.space.xs,
+  minWidth: 0,
   maxWidth: '100%',
-  margin: '0',
-  padding: '0',
+  margin: 0,
+  padding: 0,
   listStyle: 'none'
 })
 
 export const crumbItem = style({
   display: 'flex',
   alignItems: 'center',
-  gap: '4px',
-  minWidth: '0',
+  gap: vars.space.xs,
+  minWidth: 0,
   maxWidth: '100%'
 })
 
 export const crumb = style({
-  minWidth: '0',
-  minHeight: '40px',
+  minWidth: 0,
+  minHeight: vars.density.controlDesktop,
   maxWidth: '100%',
-  padding: '4px 8px',
+  padding: `${vars.space.xs} ${vars.space.sm}`,
   overflow: 'hidden',
   border: 'none',
   borderRadius: vars.radius.sm,
@@ -241,17 +232,17 @@ export const crumb = style({
     }
   },
   '@media': {
-    '(max-width: 599.98px)': {
-      minHeight: '44px'
+    [media.compact]: {
+      minHeight: vars.density.controlCompact
     }
   }
 })
 
 export const folder = style({
-  minWidth: '0',
-  minHeight: '40px',
+  minWidth: 0,
+  minHeight: vars.density.controlDesktop,
   maxWidth: '100%',
-  padding: '4px 8px',
+  padding: `${vars.space.xs} ${vars.space.sm}`,
   overflow: 'hidden',
   border: 'none',
   borderRadius: vars.radius.sm,
@@ -268,8 +259,8 @@ export const folder = style({
     }
   },
   '@media': {
-    '(max-width: 599.98px)': {
-      minHeight: '44px'
+    [media.compact]: {
+      minHeight: vars.density.controlCompact
     }
   }
 })
@@ -279,7 +270,7 @@ export const crumbSep = style({
 })
 
 export const crumbCurrent = style({
-  minWidth: '0',
+  minWidth: 0,
   maxWidth: '100%',
   overflowWrap: 'anywhere',
   fontWeight: vars.typography.label.weight
@@ -291,7 +282,7 @@ export const stateAction = style({
 
 export const rowActions = style({
   '@media': {
-    '(max-width: 599.98px)': {
+    [media.compact]: {
       gridColumn: '1 / -1',
       justifySelf: 'end'
     }
@@ -300,7 +291,7 @@ export const rowActions = style({
 
 export const rowAction = style({
   '@media': {
-    '(max-width: 599.98px)': {
+    [media.compact]: {
       maxWidth: '100%'
     }
   }

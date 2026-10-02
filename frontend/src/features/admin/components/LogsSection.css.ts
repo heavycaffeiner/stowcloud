@@ -1,97 +1,69 @@
 import { createContainer, style } from '@vanilla-extract/css'
-import { vars } from '@/shared/theme'
+import { figures as adminFigures } from './admin.css'
+import { focusOutline, media, typography, vars } from '@/shared/theme'
 
 const logs = createContainer()
+const narrow = `${logs} ${media.compact}`
 
 export const root = style({
-  minWidth: '0',
+  minWidth: 0,
   containerName: logs,
   containerType: 'inline-size'
 })
 
 export const title = style({
-  margin: '0 0 8px',
-  fontSize: vars.typography.titleLarge.size,
-  fontWeight: vars.typography.titleLarge.weight,
-  lineHeight: vars.typography.titleLarge.lineHeight,
-  color: vars.color.text.primary,
-  letterSpacing: vars.typography.titleLarge.tracking
+  margin: `0 0 ${vars.space.sm}`,
+  ...typography('titleLarge'),
+  color: vars.color.text.primary
 })
 
 export const timelineTitle = style({
-  margin: '0',
-  fontSize: vars.typography.title.size,
-  fontWeight: vars.typography.title.weight,
-  lineHeight: vars.typography.title.lineHeight
+  margin: 0,
+  ...typography('title')
 })
 
 export const chartHead = style({
-  marginBottom: '16px'
+  marginBottom: vars.space.lg
 })
 
 export const hint = style({
-  maxWidth: '40rem',
-  margin: '0 0 16px',
+  maxWidth: vars.layout.measure,
+  margin: `0 0 ${vars.space.lg}`,
   color: vars.color.text.secondary,
-  fontSize: vars.typography.bodySmall.size,
-  lineHeight: vars.typography.bodySmall.lineHeight,
+  ...typography('bodySmall'),
   selectors: {
     [`${chartHead} &`]: {
-      margin: '4px 0 0'
+      margin: `${vars.space.xs} 0 0`
     }
   }
 })
 
-export const figures = style({
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-  gap: '16px',
-  maxWidth: '30rem',
-  margin: '0 0 24px'
-})
-
-export const figure = style({
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '4px'
-})
-
-export const figureLabel = style({
-  color: vars.color.text.secondary,
-  fontSize: vars.typography.bodySmall.size
-})
-
-export const figureValue = style({
-  margin: '0',
-  color: vars.color.text.primary,
-  fontSize: vars.typography.title.size,
-  lineHeight: vars.typography.title.lineHeight
-})
+export const figures = style([adminFigures, { maxWidth: '30rem', marginBottom: vars.space.xl }])
 
 export const filters = style({
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'flex-start',
-  gap: '16px',
-  marginBottom: '24px'
+  gap: vars.space.lg,
+  marginBottom: vars.space.xl
 })
 
 export const sources = style({
   display: 'flex',
   flexDirection: 'column',
-  gap: '8px'
+  gap: vars.space.sm
 })
 
 export const groupLabel = style({
   color: vars.color.text.secondary,
-  fontSize: vars.typography.bodySmall.size
+  ...typography('bodySmall')
 })
 
 export const levelsLegend = style({
   color: vars.color.text.secondary,
-  fontSize: vars.typography.bodySmall.size,
-  padding: '0',
-  marginBottom: '8px'
+  ...typography('bodySmall'),
+  padding: 0,
+  marginBottom: vars.space.sm
 })
 
 export const sourceGroup = style({
@@ -102,78 +74,69 @@ export const sourceGroup = style({
 
 export const bar = style({
   selectors: {
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    }
+    '&:focus-visible': focusOutline
   },
   display: 'flex',
   alignItems: 'flex-end',
   flex: '1 1 0',
-  minInlineSize: '0',
+  minInlineSize: 0,
   blockSize: '100%',
-  padding: '0',
-  border: '0',
-  borderRadius: '2px',
+  padding: 0,
+  border: 0,
+  borderRadius: vars.radius.xs,
   background: 'none',
   cursor: 'pointer'
 })
 
 export const rowButton = style({
   selectors: {
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    }
+    '&:focus-visible': focusOutline
   },
   background: 'none',
-  border: '0',
+  border: 0,
   font: 'inherit',
   cursor: 'pointer'
 })
 
 export const tableSummary = style({
   selectors: {
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    }
+    '&:focus-visible': focusOutline
   },
   display: 'flex',
   alignItems: 'center',
   width: 'fit-content',
   minBlockSize: vars.density.control,
-  padding: '4px 0',
+  padding: `${vars.space.xs} 0`,
   color: vars.color.accent.solid,
   cursor: 'pointer',
-  fontSize: vars.typography.bodySmall.size,
+  ...typography('bodySmall'),
   '@container': {
-    [`${logs} (max-width: 599.98px)`]: {
-      minBlockSize: '44px'
+    [narrow]: {
+      minBlockSize: vars.density.controlCompact
     }
   }
 })
 
 export const levels = style({
-  margin: '0',
-  padding: '0',
-  border: '0'
+  margin: 0,
+  padding: 0,
+  border: 0
 })
 
 export const levelBoxes = style({
   display: 'flex',
   flexWrap: 'wrap',
-  gap: '16px'
+  gap: vars.space.lg
 })
 
 export const fields = style({
   display: 'flex',
   flexWrap: 'wrap',
   alignItems: 'center',
-  gap: '16px',
+  gap: vars.space.lg,
   width: '100%',
   '@container': {
-    [`${logs} (max-width: 599.98px)`]: {
+    [narrow]: {
       flexDirection: 'column',
       alignItems: 'stretch'
     }
@@ -184,7 +147,7 @@ export const field = style({
   flex: '1 1 180px',
   maxWidth: '280px',
   '@container': {
-    [`${logs} (max-width: 599.98px)`]: {
+    [narrow]: {
       flex: 'none',
       width: '100%',
       maxWidth: 'none'
@@ -193,59 +156,59 @@ export const field = style({
 })
 
 export const autoNote = style({
-  margin: '0',
+  margin: 0,
   color: vars.color.text.secondary,
-  fontSize: vars.typography.bodySmall.size
+  ...typography('bodySmall')
 })
 
 export const scope = style({
-  margin: '0',
+  margin: 0,
   color: vars.color.text.secondary,
-  fontSize: vars.typography.bodySmall.size,
+  ...typography('bodySmall'),
   display: 'flex',
   alignItems: 'flex-start',
-  gap: '8px',
-  maxWidth: '40rem'
+  gap: vars.space.sm,
+  maxWidth: vars.layout.measure
 })
 
 export const warn = style({
-  margin: '0',
-  fontSize: vars.typography.bodySmall.size,
+  margin: 0,
+  ...typography('bodySmall'),
   display: 'flex',
   alignItems: 'flex-start',
-  gap: '8px',
-  maxWidth: '40rem',
-  padding: '8px 12px',
+  gap: vars.space.sm,
+  maxWidth: vars.layout.measure,
+  padding: `${vars.space.sm} ${vars.space.md}`,
   borderRadius: vars.radius.xs,
   background: vars.color.highlight.soft,
   color: vars.color.highlight.onSoft
 })
 
 export const chart = style({
-  marginBottom: '24px'
+  marginBottom: vars.space.xl
 })
 
 export const legend = style({
   display: 'flex',
   flexWrap: 'wrap',
-  gap: '8px 16px',
-  margin: '0 0 12px',
-  padding: '0',
+  gap: `${vars.space.sm} ${vars.space.lg}`,
+  margin: `0 0 ${vars.space.md}`,
+  padding: 0,
   listStyle: 'none'
 })
 
 export const legendItem = style({
   display: 'inline-flex',
   alignItems: 'center',
-  gap: '4px',
+  gap: vars.space.xs,
   color: vars.color.text.primary,
-  fontSize: vars.typography.labelSmall.size
+  ...typography('labelSmall')
 })
 
 export const swatch = style({
   display: 'inline-block',
-  inlineSize: '16px',
-  blockSize: '16px',
+  inlineSize: vars.space.lg,
+  blockSize: vars.space.lg,
   border: 'none',
   borderRadius: vars.radius.xs,
   background: vars.color.border.strong
@@ -254,25 +217,25 @@ export const swatch = style({
 export const plot = style({
   display: 'flex',
   alignItems: 'flex-end',
-  gap: '4px',
+  gap: vars.space.xs,
   blockSize: '160px',
-  minWidth: '0',
-  padding: '8px',
+  minWidth: 0,
+  padding: vars.space.sm,
   border: 'none',
   borderRadius: vars.radius.md,
   background: vars.color.surface.sunken,
-  boxShadow: 'inset 0 1px 3px rgba(0, 0, 0, 0.2)',
+  boxShadow: `inset 0 ${vars.stroke.thin} 3px color-mix(in srgb, ${vars.color.shadow} 20%, transparent)`,
   overflow: 'hidden',
   '@container': {
-    [`${logs} (max-width: 599.98px)`]: {
-      gap: '2px'
+    [narrow]: {
+      gap: vars.space.xxs
     }
   }
 })
 
 export const barActive = style({
   background: vars.color.surface.overlay,
-  outline: `1px solid ${vars.color.border.strong}`
+  outline: `${vars.stroke.thin} solid ${vars.color.border.strong}`
 })
 
 export const stack = style({
@@ -284,15 +247,15 @@ export const stack = style({
 })
 
 export const seg = style({
-  flexShrink: '0',
+  flexShrink: 0,
   inlineSize: '100%',
-  minBlockSize: '1px',
+  minBlockSize: vars.stroke.thin,
   background: vars.color.border.strong
 })
 
 export const baseline = style({
   inlineSize: '100%',
-  blockSize: '2px',
+  blockSize: vars.stroke.thick,
   background: vars.color.border.subtle
 })
 
@@ -328,28 +291,28 @@ export const segAuditFailed = style({
 export const axis = style({
   display: 'flex',
   justifyContent: 'space-between',
-  gap: '8px',
-  marginTop: '8px',
+  gap: vars.space.sm,
+  marginTop: vars.space.sm,
   color: vars.color.text.secondary,
-  fontSize: vars.typography.bodySmall.size
+  ...typography('bodySmall')
 })
 
 export const readout = style({
-  margin: '8px 0 0',
+  margin: `${vars.space.sm} 0 0`,
   color: vars.color.text.primary,
-  fontSize: vars.typography.bodySmall.size
+  ...typography('bodySmall')
 })
 
 export const tableWrap = style({
-  minWidth: '0',
-  marginTop: '12px'
+  minWidth: 0,
+  marginTop: vars.space.md
 })
 
 export const tableScroll = style({
   maxWidth: '100%',
   maxHeight: '320px',
   overflow: 'auto',
-  marginTop: '8px',
+  marginTop: vars.space.sm,
   border: 'none',
   background: vars.color.surface.container,
   borderRadius: vars.radius.xs
@@ -359,17 +322,17 @@ export const table = style({
   width: '100%',
   minWidth: '28rem',
   borderCollapse: 'collapse',
-  fontSize: vars.typography.bodySmall.size
+  ...typography('bodySmall')
 })
 
 export const tableCaption = style({
-  padding: '8px',
+  padding: vars.space.sm,
   textAlign: 'start',
   color: vars.color.text.secondary
 })
 
 export const tableCell = style({
-  padding: '4px 8px',
+  padding: `${vars.space.xs} ${vars.space.sm}`,
   textAlign: 'start',
   whiteSpace: 'nowrap',
   borderTop: 'none'
@@ -377,7 +340,7 @@ export const tableCell = style({
 
 export const tableCol = style({
   position: 'sticky',
-  top: '0',
+  top: 0,
   background: vars.color.surface.container
 })
 
@@ -386,59 +349,59 @@ export const tableNum = style({
 })
 
 export const error = style({
-  margin: '8px 0 0',
+  margin: `${vars.space.sm} 0 0`,
   color: vars.color.danger.solid,
-  fontSize: vars.typography.bodySmall.size
+  ...typography('bodySmall')
 })
 
 export const note = style({
-  margin: '16px 0 0',
+  margin: `${vars.space.lg} 0 0`,
   textAlign: 'center',
   color: vars.color.text.secondary,
-  fontSize: vars.typography.bodySmall.size
+  ...typography('bodySmall')
 })
 
 export const empty = style({
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'center',
-  gap: '8px',
-  padding: '32px 16px',
+  gap: vars.space.sm,
+  padding: `${vars.space.xxl} ${vars.space.lg}`,
   color: vars.color.text.secondary,
   textAlign: 'center',
-  border: `1px dashed ${vars.color.border.subtle}`,
+  border: `${vars.stroke.thin} dashed ${vars.color.border.subtle}`,
   borderRadius: vars.radius.md,
   background: 'transparent'
 })
 
 export const emptyText = style({
-  margin: '0'
+  margin: 0
 })
 
 export const emptyHint = style({
-  fontSize: vars.typography.bodySmall.size
+  ...typography('bodySmall')
 })
 
 export const list = style({
   listStyle: 'none',
-  margin: '0',
-  padding: '0',
-  border: `1px solid ${vars.color.border.subtle}`,
+  margin: 0,
+  padding: 0,
+  border: `${vars.stroke.thin} solid ${vars.color.border.subtle}`,
   borderRadius: vars.radius.md,
   background: 'transparent',
   display: 'flex',
   flexDirection: 'column',
-  gap: '0',
+  gap: 0,
   overflow: 'hidden'
 })
 
 export const item = style({
   background: 'transparent',
-  borderRadius: '0',
+  borderRadius: 0,
   overflow: 'hidden',
   selectors: {
     '& + &': {
-      borderTop: `1px solid ${vars.color.border.subtle}`
+      borderTop: `${vars.stroke.thin} solid ${vars.color.border.subtle}`
     }
   }
 })
@@ -447,90 +410,59 @@ export const row = style({
   display: 'flex',
   flexWrap: 'wrap',
   alignItems: 'center',
-  gap: '16px',
+  gap: vars.space.lg,
   width: '100%',
-  minWidth: '0',
+  minWidth: 0,
   minHeight: vars.density.row,
   boxSizing: 'border-box',
-  padding: '8px 16px',
+  padding: `${vars.space.sm} ${vars.space.lg}`,
   color: vars.color.text.primary,
   textAlign: 'start',
   '@container': {
-    [`${logs} (max-width: 599.98px)`]: {
+    [narrow]: {
       alignItems: 'flex-start',
-      gap: '8px 12px',
-      paddingInline: '12px'
+      gap: `${vars.space.sm} ${vars.space.md}`,
+      paddingInline: vars.space.md
     }
   }
 })
 
+// Wide enough for the longest level label, so the messages line up.
+const levelWidth = '5.5rem'
+
 export const level = style({
-  display: 'inline-flex',
-  alignItems: 'center',
-  flexShrink: '0',
-  gap: '4px',
-  minWidth: '88px',
-  padding: '4px 8px',
-  borderRadius: vars.radius.xs,
-  background: vars.color.surface.fill,
-  color: vars.color.text.secondary,
-  fontSize: vars.typography.labelSmall.size
-})
-
-export const levelError = style({
-  background: vars.color.danger.soft,
-  color: vars.color.danger.onSoft
-})
-
-export const levelFailed = style({
-  background: vars.color.danger.soft,
-  color: vars.color.danger.onSoft
-})
-
-export const levelWarn = style({
-  background: vars.color.highlight.soft,
-  color: vars.color.highlight.onSoft
-})
-
-export const levelInfo = style({
-  background: vars.color.selection.bg,
-  color: vars.color.selection.fg
-})
-
-export const levelOk = style({
-  background: vars.color.accent.soft,
-  color: vars.color.accent.onSoft
+  minInlineSize: levelWidth
 })
 
 export const body = style({
   display: 'flex',
   flexDirection: 'column',
-  gap: '4px',
-  minWidth: '0',
+  gap: vars.space.xs,
+  minWidth: 0,
   flex: '1 0 12rem',
   '@container': {
-    [`${logs} (max-width: 599.98px)`]: {
-      flexBasis: 'calc(100% - 100px)'
+    [narrow]: {
+      flexBasis: `calc(100% - ${levelWidth} - ${vars.space.md})`
     }
   }
 })
 
 export const msg = style({
-  fontSize: vars.typography.body.size,
+  ...typography('body'),
   overflowWrap: 'anywhere'
 })
 
 export const meta = style({
   display: 'flex',
   flexWrap: 'wrap',
-  gap: '8px',
+  gap: vars.space.sm,
   color: vars.color.text.secondary,
-  fontSize: vars.typography.bodySmall.size,
+  ...typography('bodySmall'),
   overflowWrap: 'anywhere'
 })
 
 export const source = style({
-  paddingInline: '4px',
+  paddingInline: vars.space.xs,
   border: 'none',
   background: vars.color.surface.fill,
   borderRadius: vars.radius.xs
@@ -539,13 +471,13 @@ export const source = style({
 export const disclose = style({
   display: 'inline-flex',
   alignItems: 'center',
-  gap: '4px',
-  flexShrink: '0',
+  gap: vars.space.xs,
+  flexShrink: 0,
   marginInlineStart: 'auto',
   color: vars.color.text.secondary,
-  fontSize: vars.typography.bodySmall.size,
+  ...typography('bodySmall'),
   '@container': {
-    [`${logs} (max-width: 599.98px)`]: {
+    [narrow]: {
       width: '100%',
       justifyContent: 'flex-end'
     }
@@ -555,12 +487,12 @@ export const disclose = style({
 export const attrs = style({
   display: 'grid',
   gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-  gap: '8px',
-  margin: '0',
-  padding: '16px',
+  gap: vars.space.sm,
+  margin: 0,
+  padding: vars.space.lg,
   background: vars.color.surface.container,
   '@container': {
-    [`${logs} (max-width: 599.98px)`]: {
+    [narrow]: {
       gridTemplateColumns: 'minmax(0, 1fr)'
     }
   }
@@ -569,23 +501,23 @@ export const attrs = style({
 export const attr = style({
   display: 'flex',
   flexDirection: 'column',
-  gap: '4px',
-  minWidth: '0'
+  gap: vars.space.xs,
+  minWidth: 0
 })
 
 export const attrLabel = style({
   color: vars.color.text.secondary,
-  fontSize: vars.typography.bodySmall.size
+  ...typography('bodySmall')
 })
 
 export const attrValue = style({
-  margin: '0',
+  margin: 0,
   overflowWrap: 'anywhere',
-  fontSize: vars.typography.bodySmall.size
+  ...typography('bodySmall')
 })
 
 export const more = style({
   display: 'flex',
   justifyContent: 'center',
-  marginTop: '16px'
+  marginTop: vars.space.lg
 })

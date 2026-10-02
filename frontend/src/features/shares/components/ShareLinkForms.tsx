@@ -158,7 +158,7 @@ export function NewLinkForm({ path, targetName, targetIsDir, onCreated, onCancel
   ]
 
   return (
-    <form className={styles.createForm} onSubmit={(event) => void submit(event)}>
+    <form className={styles.linkForm} onSubmit={(event) => void submit(event)}>
       <h3 className={styles.createTitle}>{t('share.create_new_link')}</h3>
       <Controller
         control={control}
@@ -242,7 +242,7 @@ export function EditLinkForm({ link, onDone }: EditLinkFormProps) {
   })
 
   return (
-    <form className={styles.editForm} onSubmit={(event) => void submit(event)}>
+    <form className={styles.linkForm} onSubmit={(event) => void submit(event)}>
       <PermSwitches control={control} />
       <ExpiryFields control={control} options={editExpiryOptions()} />
       <StowFormTextField

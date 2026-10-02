@@ -147,9 +147,9 @@ function ServerUploadCards({ serverMin, serverDefault }: ServerSizes) {
             {error}
           </p>
         ) : save.isPending ? (
-          <p className={adminStyles.note}>{t('common.saving')}</p>
+          <p className={adminStyles.hint}>{t('common.saving')}</p>
         ) : formState.isDirty ? (
-          <p className={adminStyles.note}>{t('settings.unsaved_changes')}</p>
+          <p className={adminStyles.hint}>{t('settings.unsaved_changes')}</p>
         ) : save.isSuccess ? (
           <p className={styles.adminSaved} role="status">
             {t('upload_settings.server_wide_setting_saved')}
@@ -157,12 +157,12 @@ function ServerUploadCards({ serverMin, serverDefault }: ServerSizes) {
         ) : null}
         <dl className={styles.estimate}>
           <div>
-            <dt className={styles.estimateLabel}>{t('upload_settings.current_server_minimum')}</dt>
-            <dd className={styles.estimateValue}>{formatBytes(serverMin)}</dd>
+            <dt className={adminStyles.figureLabel}>{t('upload_settings.current_server_minimum')}</dt>
+            <dd className={adminStyles.figureValue}>{formatBytes(serverMin)}</dd>
           </div>
           <div>
-            <dt className={styles.estimateLabel}>{t('upload_settings.current_server_default')}</dt>
-            <dd className={styles.estimateValue}>{formatBytes(serverDefault)}</dd>
+            <dt className={adminStyles.figureLabel}>{t('upload_settings.current_server_default')}</dt>
+            <dd className={adminStyles.figureValue}>{formatBytes(serverDefault)}</dd>
           </div>
         </dl>
       </AdminCard>
@@ -185,7 +185,7 @@ function ServerUploadCards({ serverMin, serverDefault }: ServerSizes) {
               onChange={setCacheDraft}
             />
             {cacheOn === null ? (
-              <p className={adminStyles.note}>{t('upload_settings.cache_spool_state_unknown')}</p>
+              <p className={adminStyles.hint}>{t('upload_settings.cache_spool_state_unknown')}</p>
             ) : null}
           </div>
         )}
@@ -247,9 +247,9 @@ function ChunkOverrideCard({ serverMin, serverDefault }: ServerSizes) {
           {t('upload_settings.saved_uploads_started_from_now', { size: formatBytes(override ?? 0) })}
         </p>
       ) : override !== null ? (
-        <p className={adminStyles.note}>{t('upload_settings.current_override', { size: formatBytes(override) })}</p>
+        <p className={adminStyles.hint}>{t('upload_settings.current_override', { size: formatBytes(override) })}</p>
       ) : (
-        <p className={adminStyles.note}>{t('upload_settings.currently_using_server_default')}</p>
+        <p className={adminStyles.hint}>{t('upload_settings.currently_using_server_default')}</p>
       )}
     </AdminCard>
   )
@@ -302,7 +302,7 @@ function ConcurrencyCard() {
           {t('upload_settings.concurrency_saved')}
         </p>
       ) : (
-        <p className={adminStyles.note}>{t('upload_settings.current_concurrency', { count: active })}</p>
+        <p className={adminStyles.hint}>{t('upload_settings.current_concurrency', { count: active })}</p>
       )}
     </AdminCard>
   )

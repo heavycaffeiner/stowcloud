@@ -45,7 +45,7 @@ export const item = style({
 // The active destination also gets a filled indicator behind its icon, so it never relies on color alone.
 export const itemActive = style({
   color: vars.color.selection.fg,
-  fontWeight: 600
+  fontWeight: vars.font.weight.bold
 })
 
 export const icon = style({

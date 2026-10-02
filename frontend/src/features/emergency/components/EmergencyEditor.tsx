@@ -5,7 +5,7 @@ import { emergencyRestart, emergencySave, emergencySettings, type EmergencySetti
 import { describeApiError } from '../../../api/error-text'
 import { useBeforeUnload } from '../../../hooks/use-before-unload'
 import { useI18n } from '../../../hooks/use-i18n'
-import { StowButton, StowDialog, StowSelect } from '@/shared/ui'
+import { StowButton, StowDialog, StowSelect, StowTextArea } from '@/shared/ui'
 import * as styles from '../routes/EmergencyPage.css'
 
 /* i18n */ ;('settings.would_lock_you_out')
@@ -173,19 +173,17 @@ export function EmergencyEditor({ initial }: { initial: EmergencySettings }) {
             {t('emergency.loading_section', { section: target })}
           </p>
         ) : null}
-        <label className={styles.label} htmlFor="sc-emergency-doc">
-          {t('emergency.stored_document')}
-        </label>
-        <textarea
+        <StowTextArea
           id="sc-emergency-doc"
-          className={styles.textarea}
+          label={t('emergency.stored_document')}
+          helper={t('emergency.document_hint')}
+          monospace
           rows={14}
           spellCheck={false}
           disabled={locked}
           value={draft}
-          onChange={(event) => setDraft(event.target.value)}
+          onValueChange={setDraft}
         />
-        <p className={styles.hint}>{t('emergency.document_hint')}</p>
         <div className={styles.actions}>
           <StowButton className={styles.action} type="submit" loading={save.isPending} disabled={locked}>
             {t('common.save')}

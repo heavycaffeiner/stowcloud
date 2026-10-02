@@ -20,7 +20,7 @@ export const vars = createGlobalThemeContract(
       scrim: null,
       shadow: null
     },
-    font: { family: null, mono: null },
+    font: { family: null, mono: null, weight: { regular: null, medium: null, bold: null } },
     typography: {
       heading: typeRole,
       titleLarge: typeRole,
@@ -44,7 +44,9 @@ export const vars = createGlobalThemeContract(
       header: null,
       navBar: null,
       navDrawer: null,
-      navDrawerCollapsed: null
+      navDrawerCollapsed: null,
+      measure: null,
+      form: null
     },
     focusRing: { width: null, offset: null, insetOffset: null },
     motion: { short: null, medium: null, easing: null }

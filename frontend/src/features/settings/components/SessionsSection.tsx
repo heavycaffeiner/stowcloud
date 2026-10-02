@@ -2,9 +2,8 @@ import { useState } from 'react'
 import { formatDateNs } from '../../../i18n'
 import { useI18n } from '../../../hooks/use-i18n'
 import { useActiveSessions, useRevokeSession } from '../api'
-import { StowButton, VirtualList } from '@/shared/ui'
+import { StowBadge, StowButton, VirtualList } from '@/shared/ui'
 import { SettingsDialog } from './SettingsDialog'
-import * as styles from './SessionsSection.css'
 import * as settingsCardStyles from './SettingsCard.css'
 import { ApiError } from '../../../api/fetcher'
 import type { ActiveSession } from '../api'
@@ -29,24 +28,26 @@ export function SessionsSection() {
   }
 
   return (
-    <div className={styles.root}>
+    <div className={settingsCardStyles.section}>
       {list.isPending ? (
         <p className={settingsCardStyles.text}>{t('common.loading')}</p>
       ) : list.isError ? (
-        <p className={styles.error}>{t('common.could_not_load_list')}</p>
+        <p className={settingsCardStyles.error}>{t('common.could_not_load_list')}</p>
       ) : (
         <VirtualList
-          className={styles.list}
+          className={settingsCardStyles.list}
           items={list.data ?? []}
           itemKey={(session) => session.id_hash}
           estimateSize={88}
-          itemProps={() => ({ className: styles.item })}
+          itemProps={() => ({ className: settingsCardStyles.item })}
           renderItem={(session) => (
             <>
-              <div className={styles.itemMain}>
+              <div className={settingsCardStyles.itemMain}>
                 <strong>{session.ip_first ?? t('session.unknown_location')}</strong>
-                {session.current ? <span className={styles.badge}>{t('session.current_session')}</span> : null}
-                <p className={styles.detail} title={session.ua_first ?? undefined}>
+                {session.current ? (
+                  <StowBadge className={settingsCardStyles.badge}>{t('session.current_session')}</StowBadge>
+                ) : null}
+                <p className={settingsCardStyles.itemDetail} title={session.ua_first ?? undefined}>
                   {session.ua_display ?? t('session.unknown_device')} -{' '}
                   {t('session.last_active', { date: formatDateNs(session.last_seen_ns) })}
                 </p>

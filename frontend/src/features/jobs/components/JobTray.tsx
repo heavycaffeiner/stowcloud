@@ -3,8 +3,7 @@ import { batchErrorKey } from '../../../api/error-text'
 import { useI18n } from '../../../hooks/use-i18n'
 import { t } from '../../../i18n'
 import { jobTray, useJobTrayStore } from '../tray-store'
-import { Icon, StowIconButton, StowProgressLinear, VirtualList } from '@/shared/ui'
-import * as styles from './JobTray.css'
+import { Icon, StowIconButton, StowProgressLinear, StowTray, trayStyles as styles, VirtualList } from '@/shared/ui'
 import { srOnly } from '@/shared/theme'
 import { useInvalidateAllPaths } from '../../file-browser/api'
 import { useJobAction, useJobList, useJobStatuses, type JobKind, type JobState, type JobStatus } from '../api'
@@ -216,154 +215,109 @@ export function JobTray() {
     <>
       <div ref={politeRef} className={srOnly} role="status" aria-live="polite" aria-atomic="true"></div>
       <div ref={assertiveRef} className={srOnly} role="alert" aria-live="assertive" aria-atomic="true"></div>
-      <section className={styles.root} aria-label={t('job.jobs')}>
-        <header className={styles.header}>
-          <button className={styles.title} type="button" onClick={() => jobTray.setOpen(!open)} aria-expanded={open}>
-            <Icon name="refresh" />
-            <span>{t('job.jobs')}</span>
-            <span>{activeCount > 0 ? `(${activeCount})` : t('common.done')}</span>
-          </button>
-          <div className={styles.actions}>
-            <StowIconButton label={t('common.clear_finished_items')} onClick={clearFinished} icon="check" />
-            <StowIconButton
-              label={open ? t('common.collapse') : t('common.expand')}
-              expanded={open}
-              onClick={() => jobTray.setOpen(!open)}
-            >
-              <Icon name={open ? 'chevron_right' : 'chevron_left'} />
-            </StowIconButton>
-          </div>
-        </header>
-        {list.isError ? <p>{t('job.server_unreachable_so_may_not')}</p> : null}
-        {open ? (
-          <div className={styles.scroll}>
-            <VirtualList
-              className={styles.list}
-              items={rows}
-              itemKey={(item) => item.id}
-              estimateSize={128}
-              itemProps={() => ({ className: styles.item })}
-              renderItem={(item) => {
-                const label = kindLabel(item.kind)
-                const outstandingCount = item.attempting.length + item.pending.length
-                return (
+      <StowTray
+        title={t('job.jobs')}
+        icon="refresh"
+        status={activeCount > 0 ? `(${activeCount})` : t('common.done')}
+        open={open}
+        onOpenChange={jobTray.setOpen}
+        onClearFinished={clearFinished}
+        notice={list.isError ? t('job.server_unreachable_so_may_not') : null}
+        items={rows}
+        itemKey={(item) => item.id}
+        estimateSize={128}
+        renderItem={(item) => {
+          const label = kindLabel(item.kind)
+          const outstandingCount = item.attempting.length + item.pending.length
+          return (
+            <>
+              <div className={styles.row}>
+                <span className={styles.name}>
+                  <Icon name={item.kind === 'delete' ? 'delete' : item.kind === 'copy' ? 'content_copy' : 'search'} />
+                  {label}
+                </span>
+                <span className={styles.meta}>
+                  {item.done} / {item.total || '?'}
+                </span>
+              </div>
+              <StowProgressLinear value={jobProgressValue(item)} label={t('job.job', { kind: label })} />
+              {item.status === 'queued' ? <p>{t('job.queued')}</p> : null}
+              {item.status === 'paused' ? <p>{t('job.paused')}</p> : null}
+              {item.status === 'retrying' ? (
+                <p>{t('job.retrying', { attempt: item.attempt, max: item.maxAttempts || '?' })}</p>
+              ) : null}
+              {item.status === 'error' && item.message ? <p>{t(item.message, item.messageParams)}</p> : null}
+              {item.status === 'cancelled' ? <p>{t('job.cancelled_completed', { count: item.done })}</p> : null}
+              {item.status === 'interrupted' ? (
+                <p>{t('job.interrupted_by_server_restart_completed', { count: item.done })}</p>
+              ) : null}
+              {outstandingCount > 0 ? (
+                <details
+                  open={expandedJobs.has(item.id)}
+                  onToggle={(event) => {
+                    const expanded = event.currentTarget.open
+                    setTrayState((state) => {
+                      if (state.expandedJobs.has(item.id) === expanded) return state
+                      const next = new Set(state.expandedJobs)
+                      if (expanded) next.add(item.id)
+                      else next.delete(item.id)
+                      return { expandedJobs: next }
+                    })
+                  }}
+                >
+                  <summary>{t('job.items_left', { count: outstandingCount })}</summary>
+                  {expandedJobs.has(item.id) ? (
+                    <div>
+                      <VirtualList
+                        items={[...item.attempting, ...item.pending]}
+                        itemKey={(path, index) =>
+                          `${index < item.attempting.length ? 'attempting' : 'pending'}-${path}`
+                        }
+                        estimateSize={32}
+                        renderItem={(path, index) => (
+                          <>
+                            {index < item.attempting.length ? (
+                              <span>{t('job.needs_checking')}</span>
+                            ) : (
+                              <span>{t('job.not_started')}</span>
+                            )}
+                            {path}
+                          </>
+                        )}
+                      />
+                    </div>
+                  ) : null}
+                  {item.attempting.length > 0 ? <p>{t('job.server_stopped_mid_item_anything')}</p> : null}
+                  <p>{t('job.anything_marked_not_started_untouched')}</p>
+                </details>
+              ) : null}
+              <div className={styles.controls}>
+                {item.status === 'running' ? (
                   <>
-                    <div className={styles.row}>
-                      <span className={styles.name}>
-                        <Icon
-                          name={item.kind === 'delete' ? 'delete' : item.kind === 'copy' ? 'content_copy' : 'search'}
-                        />
-                        {label}
-                      </span>
-                      <span className={styles.meta}>
-                        {item.done} / {item.total || '?'}
-                      </span>
-                    </div>
-                    <StowProgressLinear value={jobProgressValue(item)} label={t('job.job', { kind: label })} />
-                    {item.status === 'queued' ? <p>{t('job.queued')}</p> : null}
-                    {item.status === 'paused' ? <p>{t('job.paused')}</p> : null}
-                    {item.status === 'retrying' ? (
-                      <p>{t('job.retrying', { attempt: item.attempt, max: item.maxAttempts || '?' })}</p>
-                    ) : null}
-                    {item.status === 'error' && item.message ? <p>{t(item.message, item.messageParams)}</p> : null}
-                    {item.status === 'cancelled' ? <p>{t('job.cancelled_completed', { count: item.done })}</p> : null}
-                    {item.status === 'interrupted' ? (
-                      <p>{t('job.interrupted_by_server_restart_completed', { count: item.done })}</p>
-                    ) : null}
-                    {outstandingCount > 0 ? (
-                      <details
-                        open={expandedJobs.has(item.id)}
-                        onToggle={(event) => {
-                          const expanded = event.currentTarget.open
-                          setTrayState((state) => {
-                            if (state.expandedJobs.has(item.id) === expanded) return state
-                            const next = new Set(state.expandedJobs)
-                            if (expanded) next.add(item.id)
-                            else next.delete(item.id)
-                            return { expandedJobs: next }
-                          })
-                        }}
-                      >
-                        <summary>{t('job.items_left', { count: outstandingCount })}</summary>
-                        {expandedJobs.has(item.id) ? (
-                          <div>
-                            <VirtualList
-                              items={[...item.attempting, ...item.pending]}
-                              itemKey={(path, index) =>
-                                `${index < item.attempting.length ? 'attempting' : 'pending'}-${path}`
-                              }
-                              estimateSize={32}
-                              renderItem={(path, index) => (
-                                <>
-                                  {index < item.attempting.length ? (
-                                    <span>{t('job.needs_checking')}</span>
-                                  ) : (
-                                    <span>{t('job.not_started')}</span>
-                                  )}
-                                  {path}
-                                </>
-                              )}
-                            />
-                          </div>
-                        ) : null}
-                        {item.attempting.length > 0 ? <p>{t('job.server_stopped_mid_item_anything')}</p> : null}
-                        <p>{t('job.anything_marked_not_started_untouched')}</p>
-                      </details>
-                    ) : null}
-                    <div className={styles.controls}>
-                      {item.status === 'running' ? (
-                        <>
-                          <StowIconButton
-                            label={t('job.pause_job')}
-                            onClick={() => pause.mutate(item.id)}
-                            icon="pause"
-                          />
-                          <StowIconButton
-                            label={t('job.cancel_job')}
-                            onClick={() => cancel.mutate(item.id)}
-                            icon="close"
-                          />
-                        </>
-                      ) : item.status === 'queued' || item.status === 'retrying' ? (
-                        <StowIconButton
-                          label={t('job.cancel_job')}
-                          onClick={() => cancel.mutate(item.id)}
-                          icon="close"
-                        />
-                      ) : item.status === 'paused' ? (
-                        <>
-                          <StowIconButton
-                            label={t('job.resume_job')}
-                            onClick={() => resume.mutate(item.id)}
-                            icon="play_arrow"
-                          />
-                          <StowIconButton
-                            label={t('job.cancel_job')}
-                            onClick={() => cancel.mutate(item.id)}
-                            icon="close"
-                          />
-                        </>
-                      ) : item.status === 'error' || item.status === 'interrupted' ? (
-                        <StowIconButton
-                          label={t('job.retry_job')}
-                          onClick={() => retry.mutate(item.id)}
-                          icon="refresh"
-                        />
-                      ) : (
-                        <StowIconButton
-                          label={t('common.clear')}
-                          onClick={() => jobTray.forget(item.id)}
-                          icon="close"
-                        />
-                      )}
-                    </div>
+                    <StowIconButton label={t('job.pause_job')} onClick={() => pause.mutate(item.id)} icon="pause" />
+                    <StowIconButton label={t('job.cancel_job')} onClick={() => cancel.mutate(item.id)} icon="close" />
                   </>
-                )
-              }}
-            />
-          </div>
-        ) : null}
-      </section>
+                ) : item.status === 'queued' || item.status === 'retrying' ? (
+                  <StowIconButton label={t('job.cancel_job')} onClick={() => cancel.mutate(item.id)} icon="close" />
+                ) : item.status === 'paused' ? (
+                  <>
+                    <StowIconButton
+                      label={t('job.resume_job')}
+                      onClick={() => resume.mutate(item.id)}
+                      icon="play_arrow"
+                    />
+                    <StowIconButton label={t('job.cancel_job')} onClick={() => cancel.mutate(item.id)} icon="close" />
+                  </>
+                ) : item.status === 'error' || item.status === 'interrupted' ? (
+                  <StowIconButton label={t('job.retry_job')} onClick={() => retry.mutate(item.id)} icon="refresh" />
+                ) : (
+                  <StowIconButton label={t('common.clear')} onClick={() => jobTray.forget(item.id)} icon="close" />
+                )}
+              </div>
+            </>
+          )
+        }}
+      />
     </>
   )
 }

@@ -3,7 +3,7 @@ import { useMutation } from '@tanstack/react-query'
 import { overlay } from 'overlay-kit'
 import { describeApiError } from '../../../api/error-text'
 import { useI18n } from '../../../hooks/use-i18n'
-import { formatDateNs, t } from '../../../i18n'
+import { formatDateNs } from '../../../i18n'
 import {
   confirmAction,
   cx,
@@ -12,6 +12,7 @@ import {
   StowDialog,
   StowIconButton,
   StowProgressCircular,
+  StowTextArea,
   VirtualList
 } from '@/shared/ui'
 import { useDeleteShareLink, useShareLinks, type ShareLinkInfo } from '../../links/api'
@@ -177,7 +178,14 @@ function IssuedLink({ link, onAcknowledge }: { link: ShareLinkInfo; onAcknowledg
     <div className={styles.issued}>
       <p className={styles.issuedNote}>{t('share.link_shown_only_now_cannot')}</p>
       <div className={styles.urlRow}>
-        <textarea className={styles.url} readOnly rows={3} aria-label={t('share.copy_link')} value={link.url ?? ''} />
+        <StowTextArea
+          className={styles.url}
+          readOnly
+          rows={3}
+          aria-label={t('share.copy_link')}
+          value={link.url ?? ''}
+          onFocus={(event) => event.currentTarget.select()}
+        />
         <StowIconButton label={t('share.copy_link')} onClick={() => copy.mutate(link.url ?? '')} icon="copy" />
       </div>
       {copy.isSuccess ? (

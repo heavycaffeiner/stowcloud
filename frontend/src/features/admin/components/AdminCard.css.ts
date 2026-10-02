@@ -1,53 +1,50 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '@/shared/theme'
+import { media, typography, vars } from '@/shared/theme'
 
 export const root = style({
   display: 'flex',
   flexDirection: 'column',
-  gap: '16px',
-  padding: '24px 0',
-  minWidth: '0',
-  border: '0',
-  borderBottom: `1px solid ${vars.color.border.subtle}`,
-  borderRadius: '0',
+  gap: vars.space.lg,
+  padding: `${vars.space.xl} 0`,
+  minWidth: 0,
+  border: 0,
+  borderBottom: `${vars.stroke.thin} solid ${vars.color.border.subtle}`,
+  borderRadius: 0,
   background: 'transparent',
   color: vars.color.text.primary,
   boxShadow: 'none',
   selectors: {
     '&:last-child': {
-      borderBottom: '0'
+      borderBottom: 0
     }
   },
   '@media': {
-    '(max-width: 599.98px)': {
-      padding: '16px 0',
-      gap: '12px'
+    [media.compact]: {
+      padding: `${vars.space.lg} 0`,
+      gap: vars.space.md
     }
   },
-  scrollMarginTop: '24px',
-  marginBottom: '0'
+  scrollMarginTop: vars.space.xl,
+  marginBottom: 0
 })
 
 export const head = style({
   display: 'flex',
   alignItems: 'flex-start',
-  gap: '16px',
-  minWidth: '0',
-  marginBottom: '4px',
+  gap: vars.space.lg,
+  minWidth: 0,
+  marginBottom: vars.space.xs,
   '@media': {
-    '(max-width: 599.98px)': {
-      gap: '12px'
+    [media.compact]: {
+      gap: vars.space.md
     }
   }
 })
 
 export const title = style({
-  margin: '0 0 2px',
+  margin: `0 0 ${vars.space.xxs}`,
   color: vars.color.text.primary,
-  fontSize: vars.typography.titleLarge.size,
-  fontWeight: vars.typography.titleLarge.weight,
-  letterSpacing: vars.typography.titleLarge.tracking,
-  lineHeight: vars.typography.titleLarge.lineHeight
+  ...typography('titleLarge')
 })
 
 export const icon = style({
@@ -55,8 +52,8 @@ export const icon = style({
   flex: 'none',
   alignItems: 'center',
   justifyContent: 'center',
-  inlineSize: '40px',
-  blockSize: '40px',
+  inlineSize: vars.density.controlDesktop,
+  blockSize: vars.density.controlDesktop,
   borderRadius: vars.radius.sm,
   background: vars.color.surface.fill,
   color: vars.color.accent.solid
@@ -64,14 +61,13 @@ export const icon = style({
 
 export const meta = style({
   flex: '1 1 auto',
-  minWidth: '0',
+  minWidth: 0,
   overflowWrap: 'anywhere'
 })
 
 export const subtitle = style({
-  margin: '4px 0 0',
+  margin: `${vars.space.xs} 0 0`,
   color: vars.color.text.secondary,
-  fontSize: vars.typography.bodySmall.size,
-  lineHeight: vars.typography.bodySmall.lineHeight,
+  ...typography('bodySmall'),
   overflowWrap: 'anywhere'
 })

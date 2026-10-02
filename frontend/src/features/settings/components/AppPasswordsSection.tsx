@@ -6,7 +6,15 @@ import { formatDateNs } from '../../../i18n'
 import { useCopyText } from '../../../hooks/use-copy-text'
 import { useI18n } from '../../../hooks/use-i18n'
 import { useAppPasswords, useCreateAppPassword, useRevokeAppPassword } from '../api'
-import { confirmAction, StowButton, StowFormTextField, StowSwitch, VirtualList } from '@/shared/ui'
+import {
+  confirmAction,
+  StowBadge,
+  StowButton,
+  StowFormTextField,
+  StowSwitch,
+  StowTextField,
+  VirtualList
+} from '@/shared/ui'
 import { SettingsDialog } from './SettingsDialog'
 import * as styles from './AppPasswordsSection.css'
 import * as settingsCardStyles from './SettingsCard.css'
@@ -51,27 +59,29 @@ export function AppPasswordsSection() {
   }
 
   return (
-    <div className={styles.root}>
+    <div className={settingsCardStyles.section}>
       {list.isPending ? (
         <p className={settingsCardStyles.text}>{t('common.loading')}</p>
       ) : list.isError ? (
-        <p className={styles.error}>{t('common.could_not_load_list')}</p>
+        <p className={settingsCardStyles.error}>{t('common.could_not_load_list')}</p>
       ) : list.data.length === 0 ? (
         <p className={settingsCardStyles.text}>{t('app_password.no_app_passwords_issued_yet')}</p>
       ) : (
         <VirtualList
-          className={styles.list}
+          className={settingsCardStyles.list}
           items={list.data}
           itemKey={(item) => item.id}
           pinnedKeys={pinned === null ? undefined : [pinned]}
           estimateSize={96}
-          itemProps={() => ({ className: styles.item })}
+          itemProps={() => ({ className: settingsCardStyles.item })}
           renderItem={(item) => (
             <>
-              <div className={styles.itemMain}>
+              <div className={settingsCardStyles.itemMain}>
                 <strong className={styles.name}>{item.name}</strong>
-                {item.read_only ? <span className={settingsCardStyles.badge}>{t('common.read_only')}</span> : null}
-                <p className={styles.detail}>
+                {item.read_only ? (
+                  <StowBadge className={settingsCardStyles.badge}>{t('common.read_only')}</StowBadge>
+                ) : null}
+                <p className={settingsCardStyles.itemDetail}>
                   {t('app_password.issued', { date: formatDateNs(item.created_ns) })} -{' '}
                   {item.last_used_ns
                     ? t('app_password.last_used', { date: formatDateNs(item.last_used_ns) })
@@ -169,7 +179,7 @@ function NewAppPasswordDialog({ open, onDone, onClosed }: NewAppPasswordDialogPr
       }
     >
       {create.error ? (
-        <p className={styles.error} role="alert">
+        <p className={settingsCardStyles.error} role="alert">
           {create.error instanceof ApiError && create.error.code === 'auth.invalid_credentials'
             ? t('common.incorrect_password')
             : describeApiError(create.error, t('app_password.could_not_create_app_password'))}
@@ -231,19 +241,14 @@ function IssuedTokenDialog({ open, token, onDone, onClosed }: IssuedTokenDialogP
       actions={<StowButton onClick={onDone}>{t('app_password.acknowledge_saved')}</StowButton>}
     >
       <p className={settingsCardStyles.text}>{t('app_password.once_you_close_cannot_shown')}</p>
-      <div className={styles.tokenRow}>
-        <input
-          className={styles.tokenInput}
-          readOnly
-          value={token}
-          aria-label={t('app_password.app_password_issued')}
-        />
+      <div className={settingsCardStyles.copyRow}>
+        <StowTextField readOnly value={token} aria-label={t('app_password.app_password_issued')} />
         <StowButton variant="text" onClick={() => copy.mutate(token)}>
           {copy.isSuccess ? t('common.copied') : t('common.copy')}
         </StowButton>
       </div>
       {copy.isError ? (
-        <p className={styles.copyFeedback} role="alert">
+        <p className={settingsCardStyles.error} role="alert">
           {t('app_password.copy_failed')}
         </p>
       ) : null}

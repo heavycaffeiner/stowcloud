@@ -56,19 +56,19 @@ export const title = style({
 export const body = style({
   ...typography('body'),
   color: vars.color.text.secondary,
-  paddingBlock: '0',
+  paddingBlock: 0,
   paddingInline: vars.space.xl,
   selectors: {
     '&:first-child': { paddingBlockStart: vars.space.xl },
     '&:last-child': { paddingBlockEnd: vars.space.xl },
-    [`${viewer} &`]: { display: 'flex', flex: '1', minBlockSize: '0', padding: '0', overflow: 'hidden' }
+    [`${viewer} &`]: { display: 'flex', flex: 1, minBlockSize: '0', padding: '0', overflow: 'hidden' }
   }
 })
 
 // Sticks to the bottom edge so a long form scrolls under the buttons rather than taking them with it.
 export const actions = style({
   position: 'sticky',
-  insetBlockEnd: '0',
+  insetBlockEnd: 0,
   display: 'flex',
   flexWrap: 'wrap',
   alignItems: 'center',

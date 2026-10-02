@@ -1,10 +1,10 @@
 import { overlay } from 'overlay-kit'
 import { useForm, useWatch } from 'react-hook-form'
 import { describeApiError } from '../../../api/error-text'
-import { scorePasswordStrength } from '../../auth/password-strength'
+import { PasswordStrengthMeter } from '../../auth/components/PasswordStrengthMeter'
 import { t } from '../../../i18n'
 import { useI18n } from '../../../hooks/use-i18n'
-import { StowButton, StowDialog, StowFormTextField, StowProgressLinear } from '@/shared/ui'
+import { StowButton, StowDialog, StowFormTextField } from '@/shared/ui'
 import * as adminStyles from './admin.css'
 import { ApiError } from '../../../api/fetcher'
 import { useCreateUser, useSetUserPassword, type AdminUser } from '../api'
@@ -13,17 +13,6 @@ const MIN_PASSWORD_LEN = 10
 
 const longEnough = (password: string): string | true =>
   password.length >= MIN_PASSWORD_LEN || t('user.password_must_at_least_characters', { min: MIN_PASSWORD_LEN })
-
-function StrengthMeter({ password, label }: { password: string; label: (level: string) => string }) {
-  if (!password) return null
-  const strength = scorePasswordStrength(password)
-  return (
-    <div>
-      <StowProgressLinear value={strength.ratio} tone={strength.tier} label={label(strength.label)} />
-      <span className={adminStyles.sectionFieldHint}>{strength.label}</span>
-    </div>
-  )
-}
 
 interface DialogControls<T> {
   open: boolean
@@ -77,7 +66,7 @@ function NewUserDialog({ open, onDone, onClosed }: DialogControls<AdminUser | nu
           label={t('common.password')}
           autoComplete="new-password"
         />
-        <StrengthMeter password={password} label={(level) => t('common.password_strength', { level })} />
+        <PasswordStrengthMeter password={password} label={(level) => t('common.password_strength', { level })} />
         <p className={adminStyles.sectionFieldHint}>
           {t('user.at_least_characters_turning_smb', { min: MIN_PASSWORD_LEN })}
         </p>
@@ -155,7 +144,7 @@ function UserPasswordDialog({ user, open, onDone, onClosed }: DialogControls<boo
           label={t('password.confirm_new_password')}
           autoComplete="new-password"
         />
-        <StrengthMeter password={password} label={(level) => t('password.new_password_strength', { level })} />
+        <PasswordStrengthMeter password={password} label={(level) => t('password.new_password_strength', { level })} />
         <p className={adminStyles.sectionFieldHint}>
           {t('password.must_at_least_characters', { min: MIN_PASSWORD_LEN })}
         </p>

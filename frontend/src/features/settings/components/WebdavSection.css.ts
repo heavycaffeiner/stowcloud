@@ -1,13 +1,13 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '@/shared/theme'
+import { media, typography, vars } from '@/shared/theme'
 
 export const tokenRow = style({
   display: 'flex',
   alignItems: 'center',
-  gap: '8px',
-  minWidth: '0',
+  gap: vars.space.sm,
+  minWidth: 0,
   '@media': {
-    '(max-width: 599.98px)': {
+    [media.compact]: {
       alignItems: 'stretch'
     }
   }
@@ -16,8 +16,8 @@ export const tokenRow = style({
 export const root = style({
   display: 'flex',
   flexDirection: 'column',
-  gap: '16px',
-  minWidth: '0'
+  gap: vars.space.lg,
+  minWidth: 0
 })
 
 export const os = style({
@@ -25,11 +25,11 @@ export const os = style({
     [`${root} section&`]: {
       display: 'flex',
       flexDirection: 'column',
-      gap: '12px',
-      padding: '16px 0 0',
-      border: '0',
-      borderTop: `1px solid ${vars.color.border.subtle}`,
-      borderRadius: '0',
+      gap: vars.space.md,
+      padding: `${vars.space.lg} 0 0`,
+      border: 0,
+      borderTop: `${vars.stroke.thin} solid ${vars.color.border.subtle}`,
+      borderRadius: 0,
       background: 'transparent',
       boxShadow: 'none'
     }
@@ -37,71 +37,69 @@ export const os = style({
 })
 
 export const heading = style({
-  margin: '0',
-  fontSize: vars.typography.title.size,
-  lineHeight: vars.typography.title.lineHeight,
+  margin: 0,
+  ...typography('title'),
   color: vars.color.accent.solid,
-  fontWeight: '600'
+  fontWeight: vars.font.weight.bold
 })
 
 export const subheading = style({
-  margin: '12px 0 4px',
-  fontSize: vars.typography.titleSmall.size,
-  lineHeight: vars.typography.titleSmall.lineHeight
+  margin: `${vars.space.md} 0 ${vars.space.xs}`,
+  ...typography('titleSmall')
 })
 
 export const steps = style({
-  margin: '0',
-  paddingInlineStart: '20px',
+  margin: 0,
+  paddingInlineStart: vars.space.xl,
   display: 'flex',
   flexDirection: 'column',
-  gap: '6px',
+  gap: vars.space.xs,
   color: vars.color.text.secondary,
-  fontSize: vars.typography.body.size
+  ...typography('body')
 })
 
 export const tokenBlock = style({
   maxWidth: '100%',
-  margin: '0',
+  margin: 0,
   whiteSpace: 'pre-wrap',
   overflowWrap: 'anywhere'
 })
 
 export const credentials = style({
-  margin: '0',
+  margin: 0,
   color: vars.color.text.secondary,
   overflowWrap: 'anywhere'
 })
 
 export const nfcNote = style({
-  margin: '0',
+  margin: 0,
   color: vars.color.text.secondary,
   overflowWrap: 'anywhere'
 })
 
 export const announce = style({
-  margin: '0',
+  margin: 0,
   color: vars.color.text.secondary,
   overflowWrap: 'anywhere'
 })
 
 export const label = style({
   display: 'block',
-  marginBottom: '4px',
+  marginBottom: vars.space.xs,
   color: vars.color.text.secondary
 })
 
 export const token = style({
-  flex: '1',
-  minWidth: '0',
+  flex: 1,
+  minWidth: 0,
   display: 'inline-flex',
   alignItems: 'center',
-  minHeight: '40px',
-  margin: '0',
-  padding: '8px 12px',
+  minHeight: vars.density.controlDesktop,
+  margin: 0,
+  padding: `${vars.space.sm} ${vars.space.md}`,
   boxSizing: 'border-box',
-  fontFamily: 'ui-monospace, monospace',
-  fontSize: vars.typography.body.size,
+  fontFamily: vars.font.mono,
+  ...typography('body'),
   borderRadius: vars.radius.xs,
   background: vars.color.surface.fill,
   color: vars.color.text.primary,

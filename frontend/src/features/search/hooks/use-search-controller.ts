@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { MutableRefObject, RefObject } from 'react'
 import { useEventListener } from '../../../hooks/use-event-listener'
 import { resolveExtensions } from '../logic/filters'

@@ -1,11 +1,12 @@
 import { useForm, useWatch } from 'react-hook-form'
 import { describeApiError } from '../../../api/error-text'
-import { scorePasswordStrength } from '../../auth/password-strength'
+import { PasswordStrengthMeter } from '../../auth/components/PasswordStrengthMeter'
 import { validatePasswordChange } from '../../../lib/format/password-change'
 import { useChangePassword } from '../api'
 import { useI18n } from '../../../hooks/use-i18n'
-import { StowButton, StowFormTextField, StowProgressLinear } from '@/shared/ui'
+import { StowButton, StowFormTextField } from '@/shared/ui'
 import * as styles from './PasswordSection.css'
+import * as settingsCardStyles from './SettingsCard.css'
 import { ApiError } from '../../../api/fetcher'
 
 interface PasswordValues {
@@ -21,7 +22,6 @@ export function PasswordSection() {
     defaultValues: { current: '', next: '', confirm: '' }
   })
   const [current, next] = useWatch({ control, name: ['current', 'next'] })
-  const strength = scorePasswordStrength(next)
 
   const checkNext = (value: string, values: PasswordValues): string | true => {
     const problem = validatePasswordChange(value, values.confirm, 10)
@@ -68,17 +68,7 @@ export function PasswordSection() {
         label={t('password.new_password')}
         autoComplete="new-password"
       />
-      {next ? (
-        <div className={styles.strength}>
-          <StowProgressLinear
-            className={styles.strengthBar}
-            value={strength.ratio}
-            tone={strength.tier}
-            label={t('password.new_password_strength', { level: strength.label })}
-          />
-          <span className={styles.strengthLabel}>{strength.label}</span>
-        </div>
-      ) : null}
+      <PasswordStrengthMeter password={next} label={(level) => t('password.new_password_strength', { level })} />
       <StowFormTextField
         control={control}
         name="confirm"
@@ -88,7 +78,7 @@ export function PasswordSection() {
         autoComplete="new-password"
       />
       {formState.errors.root?.message ? (
-        <p className={styles.error} role="alert">
+        <p className={settingsCardStyles.error} role="alert">
           {formState.errors.root.message}
         </p>
       ) : null}

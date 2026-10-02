@@ -1,24 +1,21 @@
 import { style } from '@vanilla-extract/css'
+import { focusOutline, typography, vars } from '@/shared/theme'
 import * as folderTreeStyles from './FolderTree.css'
-import { vars } from '@/shared/theme'
+
+const ease = `${vars.motion.short} ${vars.motion.easing}`
 
 export const root = style({
   selectors: {
     [`${folderTreeStyles.overlay} &`]: {
-      height: '44px'
+      height: vars.density.controlCompact
     }
   },
   display: 'flex',
   alignItems: 'center',
-  height: '40px',
+  height: vars.density.control,
   borderRadius: vars.radius.full,
   color: vars.color.text.primary,
-  transition: 'background-color 150ms ease, color 150ms ease',
-  '@media': {
-    '(prefers-reduced-motion: reduce)': {
-      transition: 'none'
-    }
-  }
+  transition: `background-color ${ease}, color ${ease}`
 })
 
 export const ancestor = style({
@@ -28,7 +25,7 @@ export const ancestor = style({
 export const active = style({
   background: vars.color.selection.bg,
   color: vars.color.selection.fg,
-  fontWeight: '600'
+  fontWeight: vars.font.weight.bold
 })
 
 export const icon = style({
@@ -42,37 +39,24 @@ export const twisty = style({
   flex: `0 0 ${vars.density.control}`,
   width: vars.density.control,
   height: vars.density.control,
-  padding: '0',
+  padding: 0,
   border: 'none',
   borderRadius: vars.radius.full,
   background: 'transparent',
   color: vars.color.text.secondary,
   cursor: 'pointer',
-  transition: 'background-color 150ms ease',
+  transition: `background-color ${ease}`,
   selectors: {
     '&:hover': {
       background: 'color-mix(in srgb, currentColor 8%, transparent)'
     },
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    }
-  },
-  '@media': {
-    '(prefers-reduced-motion: reduce)': {
-      transition: 'none'
-    }
+    '&:focus-visible': focusOutline
   }
 })
 
 export const twistyIcon = style({
   display: 'inline-flex',
-  transition: 'transform 150ms ease',
-  '@media': {
-    '(prefers-reduced-motion: reduce)': {
-      transition: 'none'
-    }
-  }
+  transition: `transform ${ease}`
 })
 
 export const twistyIconExpanded = style({
@@ -82,25 +66,19 @@ export const twistyIconExpanded = style({
 export const label = style({
   display: 'flex',
   alignItems: 'center',
-  gap: '8px',
-  flex: '1',
-  minWidth: '0',
+  gap: vars.space.sm,
+  flex: 1,
+  minWidth: 0,
   height: '100%',
-  paddingInline: '0 8px',
+  paddingInline: `0 ${vars.space.sm}`,
   border: 'none',
   background: 'transparent',
   color: 'inherit',
-  fontSize: vars.typography.body.size,
-  fontWeight: vars.typography.body.weight,
-  lineHeight: vars.typography.body.lineHeight,
-  letterSpacing: vars.typography.body.tracking,
+  ...typography('body'),
   textAlign: 'start',
   cursor: 'pointer',
   selectors: {
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    }
+    '&:focus-visible': focusOutline
   }
 })
 

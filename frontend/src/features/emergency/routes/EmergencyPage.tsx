@@ -25,9 +25,9 @@ export function EmergencyPage() {
     <main className={styles.root}>
       <div className={styles.card}>
         <h1 className={styles.title}>{t('emergency.emergency_settings')}</h1>
-        <p className={styles.subtitle}>{t('emergency.subtitle')}</p>
+        <p className={styles.hint}>{t('emergency.subtitle')}</p>
         {door.data?.reason ? (
-          <p className={styles.banner} role="alert">
+          <p className={styles.warning} role="alert">
             {t('emergency.the_server_is_degraded', { reason: door.data.reason })}
           </p>
         ) : null}

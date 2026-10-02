@@ -1,7 +1,6 @@
 import { formatBytes } from '../../../lib/format/bytes'
 import { useI18n } from '../../../hooks/use-i18n'
-import { cx, StowButton, StowIconButton, StowListItem, StowSwitch } from '@/shared/ui'
-import * as styles from './UserManagementRow.css'
+import { StowBadge, StowButton, StowIconButton, StowListItem, StowSwitch } from '@/shared/ui'
 import * as adminStyles from './admin.css'
 import type { AdminUser } from '../api'
 
@@ -35,8 +34,8 @@ export function UserManagementRow({
       headline={
         <>
           <span className={adminStyles.rowName}>{user.display_name || user.name}</span>
-          {user.is_admin ? <span className={adminStyles.chip}>{t('common.administrator')}</span> : null}
-          {user.disabled ? <span className={cx(adminStyles.chip, styles.chipMuted)}>{t('user.inactive')}</span> : null}
+          {user.is_admin ? <StowBadge>{t('common.administrator')}</StowBadge> : null}
+          {user.disabled ? <StowBadge>{t('user.inactive')}</StowBadge> : null}
         </>
       }
       supporting={user.name}

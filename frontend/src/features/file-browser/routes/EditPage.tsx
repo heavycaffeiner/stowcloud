@@ -8,7 +8,7 @@ import { formatBytes } from '../../../lib/format/bytes'
 import { useI18n } from '../../../hooks/use-i18n'
 import { useShareEncryption, useStat } from '../api'
 import { splatOf, splatPath } from '../browse-search'
-import { cx, Icon, StowButton, StowIconButton, StowProgressCircular, StowSnackbar } from '@/shared/ui'
+import { Icon, StowBadge, StowButton, StowIconButton, StowProgressCircular, StowSnackbar } from '@/shared/ui'
 import { CodeEditor, type CodeEditorHandle } from '../components/CodeEditor'
 import { useEditDocument } from '../hooks/use-edit-document'
 import { useEditNavigation } from '../hooks/use-edit-navigation'
@@ -103,17 +103,15 @@ function Editor({ path }: { path: string }) {
           <div className={styles.title}>
             <MiddleEllipsis name={filename} className={styles.filename} />
             {edit.dirty ? (
-              <span className={cx(styles.badge, styles.badgeDirty)} title={t('editor.unsaved_changes')}>
+              <StowBadge tone="accent" className={styles.dirty} title={t('editor.unsaved_changes')}>
                 {t('editor.unsaved_changes')}
-              </span>
+              </StowBadge>
             ) : null}
           </div>
           <div className={styles.details}>
-            <span className={styles.language}>{languageName ?? t('editor.plain_text')}</span>
+            <StowBadge tone="accent">{languageName ?? t('editor.plain_text')}</StowBadge>
             {entry ? <span className={styles.meta}>{formatBytes(entry.size)}</span> : null}
-            {readOnly && entry ? (
-              <span className={cx(styles.badge, styles.badgeReadonly)}>{t('common.read_only')}</span>
-            ) : null}
+            {readOnly && entry ? <StowBadge tone="danger">{t('common.read_only')}</StowBadge> : null}
           </div>
         </div>
         <div className={styles.actions}>

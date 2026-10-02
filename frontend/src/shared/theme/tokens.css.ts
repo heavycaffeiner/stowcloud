@@ -50,6 +50,8 @@ const darkColors = {
   shadow: gray[0]
 }
 
+const { regular, medium } = vars.font.weight
+
 const typeRole = (size: string, lineHeight: string, weight: string, tracking: string) => ({
   size,
   lineHeight,
@@ -61,19 +63,20 @@ createGlobalTheme(':root', vars, {
   color: lightColors,
   font: {
     family: "'Google Sans Flex Variable', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-    mono: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
+    mono: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+    weight: { regular: '400', medium: '500', bold: '600' }
   },
   typography: {
-    heading: typeRole('1.5rem', '2rem', '400', '0rem'),
-    titleLarge: typeRole('1.375rem', '1.75rem', '400', '0rem'),
-    title: typeRole('1rem', '1.5rem', '500', '0.009375rem'),
-    titleSmall: typeRole('0.875rem', '1.25rem', '500', '0.00625rem'),
-    bodyLarge: typeRole('1rem', '1.5rem', '400', '0.009375rem'),
-    body: typeRole('0.875rem', '1.25rem', '400', '0.015625rem'),
-    bodySmall: typeRole('0.75rem', '1rem', '400', '0.025rem'),
-    label: typeRole('0.875rem', '1.25rem', '500', '0.00625rem'),
-    labelSmall: typeRole('0.75rem', '1rem', '500', '0.03125rem'),
-    caption: typeRole('0.6875rem', '1rem', '500', '0.03125rem')
+    heading: typeRole('1.5rem', '2rem', regular, '0rem'),
+    titleLarge: typeRole('1.375rem', '1.75rem', regular, '0rem'),
+    title: typeRole('1rem', '1.5rem', medium, '0.009375rem'),
+    titleSmall: typeRole('0.875rem', '1.25rem', medium, '0.00625rem'),
+    bodyLarge: typeRole('1rem', '1.5rem', regular, '0.009375rem'),
+    body: typeRole('0.875rem', '1.25rem', regular, '0.015625rem'),
+    bodySmall: typeRole('0.75rem', '1rem', regular, '0.025rem'),
+    label: typeRole('0.875rem', '1.25rem', medium, '0.00625rem'),
+    labelSmall: typeRole('0.75rem', '1rem', medium, '0.03125rem'),
+    caption: typeRole('0.6875rem', '1rem', medium, '0.03125rem')
   },
   space: { xxs: '2px', xs: '4px', sm: '8px', md: '12px', lg: '16px', xl: '24px', xxl: '32px' },
   radius: { xs: '4px', sm: '8px', md: '12px', lg: '16px', xl: '20px', full: '999px' },
@@ -91,7 +94,10 @@ createGlobalTheme(':root', vars, {
     header: '56px',
     navBar: '4rem',
     navDrawer: '240px',
-    navDrawerCollapsed: '68px'
+    navDrawerCollapsed: '68px',
+    // Line length for running text, and the width of a single-column form.
+    measure: '40rem',
+    form: '36rem'
   },
   focusRing: { width: '3px', offset: '2px', insetOffset: '-3px' },
   motion: { short: '120ms', medium: '300ms', easing: 'cubic-bezier(0.2, 0, 0, 1)' }

@@ -1,5 +1,5 @@
 import { createVar, style } from '@vanilla-extract/css'
-import { vars } from '@/shared/theme'
+import { media, vars } from '@/shared/theme'
 
 export const codeVars = {
   activeLine: createVar(),
@@ -20,14 +20,14 @@ export const codeVars = {
 }
 
 export const root = style({
-  flex: '1',
-  minHeight: '0',
+  flex: 1,
+  minHeight: 0,
   overflow: 'hidden',
-  border: `1px solid ${vars.color.border.subtle}`,
+  border: `${vars.stroke.thin} solid ${vars.color.border.subtle}`,
   borderRadius: vars.radius.lg,
   background: vars.color.surface.page,
-  boxShadow: `0 1px 3px color-mix(in srgb, ${vars.color.shadow} 8%, transparent)`,
-  transition: 'border-color 120ms ease, box-shadow 120ms ease',
+  boxShadow: vars.elevation.sm,
+  transition: `border-color ${vars.motion.short} ${vars.motion.easing}, box-shadow ${vars.motion.short} ${vars.motion.easing}`,
   vars: {
     [codeVars.activeLine]: `color-mix(in srgb, ${vars.color.accent.solid} 6%, transparent)`,
     [codeVars.caret]: vars.color.accent.solid,
@@ -48,29 +48,26 @@ export const root = style({
   selectors: {
     '&:focus-within': {
       borderColor: vars.color.accent.solid,
-      boxShadow: `0 0 0 2px color-mix(in srgb, ${vars.color.accent.solid} 16%, transparent)`
+      boxShadow: `0 0 0 ${vars.stroke.thick} color-mix(in srgb, ${vars.color.accent.solid} 16%, transparent)`
     }
   },
   '@media': {
-    '(max-width: 600px)': {
-      border: '0',
-      borderRadius: '0',
+    [media.compact]: {
+      border: 0,
+      borderRadius: 0,
       boxShadow: 'none',
       selectors: {
         '&:focus-within': {
-          boxShadow: `inset 0 2px 0 ${vars.color.accent.solid}`
+          boxShadow: `inset 0 ${vars.stroke.thick} 0 ${vars.color.accent.solid}`
         }
       }
-    },
-    '(prefers-reduced-motion: reduce)': {
-      transition: 'none'
     }
   }
 })
 
 export const status = style({
-  margin: '0',
-  padding: '24px',
+  margin: 0,
+  padding: vars.space.xl,
   color: vars.color.text.secondary
 })
 

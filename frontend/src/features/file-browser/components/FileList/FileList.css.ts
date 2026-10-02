@@ -54,8 +54,7 @@ export const sortButton = style({
       color: vars.color.text.primary
     },
     '&:focus-visible': { ...focusOutline, outlineOffset: vars.focusRing.insetOffset }
-  },
-  '@media': { [media.reducedMotion]: { transition: 'none' } }
+  }
 })
 
 // The active key is told apart by the arrow and the weight as well as the color.

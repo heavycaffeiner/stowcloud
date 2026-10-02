@@ -1,6 +1,6 @@
 import '@mantine/core/styles/Input.layer.css'
 import { TextInput } from '@mantine/core'
-import type { ComponentPropsWithRef } from 'react'
+import type { ComponentPropsWithRef, ReactNode } from 'react'
 import { type FieldPath, type FieldValues, useController, type UseControllerProps } from 'react-hook-form'
 import { cx } from '../cx'
 import * as field from '../field.css'
@@ -16,6 +16,8 @@ export interface StowTextFieldProps extends Omit<
   /** Hint under the field. The error replaces it while there is one. */
   helper?: string
   type?: StowTextFieldType
+  /** A decoration at the start of the field, such as an icon. */
+  leftSection?: ReactNode
   error?: string | null
   onValueChange?: (value: string) => void
 }

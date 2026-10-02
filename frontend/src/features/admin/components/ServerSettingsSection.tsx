@@ -1,9 +1,9 @@
 import { Fragment, useState } from 'react'
-import { useFormContext } from 'react-hook-form'
+import { useController, useFormContext } from 'react-hook-form'
 import { t } from '../../../i18n'
 import { useI18n } from '../../../hooks/use-i18n'
 import { useCopyText } from '../../../hooks/use-copy-text'
-import { StowButton, StowProgressCircular } from '@/shared/ui'
+import { StowButton, StowProgressCircular, StowSelect } from '@/shared/ui'
 import { ServerSettingsCard } from './ServerSettingsCard'
 import { EmptyNote, SettingInput, SettingPath, SettingSwitch, SettingsGroupCard, split } from './ServerSettingsForm'
 import * as styles from './ServerSettingsSection.css'
@@ -138,7 +138,7 @@ export function ServerSettingsSection() {
   return (
     <section className={adminStyles.section}>
       <h3 className={adminStyles.sectionTitle}>{t('server.server_settings')}</h3>
-      <p className={adminStyles.sectionHint}>{t('server.settings_stored_in_database')}</p>
+      <p className={adminStyles.hint}>{t('server.settings_stored_in_database')}</p>
       <nav className={styles.nav} aria-label={t('admin.server_settings_navigation')}>
         <div className={styles.navItems}>
           {NAV.map(([id, key]) => (
@@ -171,7 +171,7 @@ export function ServerSettingsSection() {
         <TotpPolicySelect />
         <SettingInput name="smb.service_gid" label={t('server.service_account_gid')} type="number" />
         <SettingInput name="smb.interfaces" label={t('settings.smb_interfaces')} />
-        <p className={adminStyles.sectionHint}>{t('settings.smb_interfaces_hint')}</p>
+        <p className={adminStyles.hint}>{t('settings.smb_interfaces_hint')}</p>
       </SettingsGroupCard>
 
       <ServerSettingsCard
@@ -239,7 +239,7 @@ export function ServerSettingsSection() {
         <SettingSwitch name="thumbnail.enabled" label={t('server.thumbnail_enabled')} />
         <SettingPath name="thumbnail.dir" label={t('server.thumbnail_storage_dir')} mode="folder" />
         <EmptyNote name="thumbnail.dir" snapshot={snapshot} />
-        <p className={adminStyles.sectionHint}>{t('server.thumbnail_storage_dir_description')}</p>
+        <p className={adminStyles.hint}>{t('server.thumbnail_storage_dir_description')}</p>
       </SettingsGroupCard>
 
       <SettingsGroupCard
@@ -251,7 +251,7 @@ export function ServerSettingsSection() {
       >
         <SettingInput name="app_hosts" label={t('server.app_hosts_comma_separated')} />
         <EmptyNote name="app_hosts" snapshot={snapshot} />
-        <p className={adminStyles.sectionHint}>{t('server.app_hosts_hint')}</p>
+        <p className={adminStyles.hint}>{t('server.app_hosts_hint')}</p>
         <SettingInput name="trusted_proxies" label={t('server.trusted_proxies_comma_separated')} />
         <EmptyNote name="trusted_proxies" snapshot={snapshot} />
         {snapshot.hop ? <HopHint hop={snapshot.hop} /> : null}
@@ -259,7 +259,7 @@ export function ServerSettingsSection() {
         <SettingInput name="allowed_origins" label={t('server.allowed_origins_cors_comma_separated')} />
         <SettingInput name="compat_canonical_url" label={t('server.compat_canonical_url')} />
         <SettingInput name="bind" label={t('server.bind_address')} />
-        <p className={adminStyles.sectionHint}>{t('server.bind_address_hint')}</p>
+        <p className={adminStyles.hint}>{t('server.bind_address_hint')}</p>
       </SettingsGroupCard>
 
       <SettingsGroupCard
@@ -283,7 +283,7 @@ export function ServerSettingsSection() {
       >
         <SettingInput name="watch.hot_set_max" label={t('server.maximum_folders_watched_at_once')} type="number" />
         <SettingInput name="watch.full_threshold" label={t('server.changes_before_a_full_rescan')} type="number" />
-        <p className={adminStyles.sectionHint}>{t('settings.within_kernel_watch_limit', { limit: watchLimit })}</p>
+        <p className={adminStyles.hint}>{t('settings.within_kernel_watch_limit', { limit: watchLimit })}</p>
       </SettingsGroupCard>
 
       <SettingsGroupCard
@@ -330,7 +330,7 @@ export function ServerSettingsSection() {
         <SettingInput name="oidc.display_name" label={t('settings.oidc_display_name')} />
         <SettingSwitch name="oidc.allow_private_endpoints" label={t('settings.oidc_allow_private_endpoints')} />
         <SettingPath name="oidc.ca_cert_file" label={t('field.oidc_ca_cert_file')} mode="file" />
-        <p className={adminStyles.sectionHint}>{t('server.connected_accounts_cannot_use_smb')}</p>
+        <p className={adminStyles.hint}>{t('server.connected_accounts_cannot_use_smb')}</p>
       </SettingsGroupCard>
     </section>
   )
@@ -338,22 +338,27 @@ export function ServerSettingsSection() {
 
 function TotpPolicySelect() {
   const { t } = useI18n()
-  const { register } = useFormContext()
+  const { field } = useController({ name: 'smb.totp_policy' })
   return (
-    <label className={styles.selectLabel}>
-      {t('server.smb_access_2fa_users')}
-      <select className={styles.select} {...register('smb.totp_policy')}>
-        <option value="require_separate">{t('server.require_separate_smb_password_default')}</option>
-        <option value="block">{t('server.smb_not_allowed')}</option>
-      </select>
-    </label>
+    <StowSelect
+      ref={field.ref}
+      name={field.name}
+      label={t('server.smb_access_2fa_users')}
+      value={String(field.value ?? '')}
+      onChange={field.onChange}
+      onBlur={field.onBlur}
+      options={[
+        { value: 'require_separate', label: t('server.require_separate_smb_password_default') },
+        { value: 'block', label: t('server.smb_not_allowed') }
+      ]}
+    />
   )
 }
 
 function SmbAgentStatus({ report }: { report: SmbAgentReport }) {
   const { t } = useI18n()
   return (
-    <div className={report.ok ? adminStyles.sectionHint : adminStyles.warning} role={report.ok ? 'status' : 'alert'}>
+    <div className={report.ok ? adminStyles.hint : adminStyles.warning} role={report.ok ? 'status' : 'alert'}>
       <p>
         {t(report.key, {
           shares: report.shares?.length ?? 0,
@@ -384,7 +389,7 @@ function HopHint({ hop }: { hop: Hop }) {
   }
   return (
     <>
-      <p className={adminStyles.sectionHint}>
+      <p className={adminStyles.hint}>
         {t('server.requests_arriving_from', { address: address || t('server.unknown_address') })}{' '}
         {hop.peer_trusted ? t('server.peer_trusted') : t('server.peer_not_trusted')}
       </p>
@@ -413,7 +418,7 @@ function OidcEndpoints() {
   ] as const
   return (
     <div className={styles.endpoints}>
-      <p className={adminStyles.sectionHint}>{t('settings.oidc_endpoints_hint')}</p>
+      <p className={adminStyles.hint}>{t('settings.oidc_endpoints_hint')}</p>
       {lists.map(([name, uris]) => (
         <Fragment key={name}>
           <h5 className={styles.adminSectionSubhead}>{name}</h5>

@@ -1,30 +1,28 @@
 import { style } from '@vanilla-extract/css'
 import * as appShellStyles from '../../../app/shell/AppShell.css'
-import { compactFloatBottom, vars } from '@/shared/theme'
+import { compactFloatBottom, media, typography, vars } from '@/shared/theme'
 
 export const root = style({
   display: 'flex',
   flexDirection: 'column',
   height: '100%',
-  minHeight: '0',
+  minHeight: 0,
   background: vars.color.surface.container,
   color: vars.color.text.primary
 })
 
 export const toolbar = style({
-  zIndex: '2',
+  zIndex: 2,
   display: 'flex',
   alignItems: 'center',
-  gap: '12px',
-  minHeight: '76px',
-  padding: '10px 20px',
+  gap: vars.space.md,
+  padding: `${vars.space.md} ${vars.space.xl}`,
   background: vars.color.surface.page,
-  boxShadow: `0 1px 0 ${vars.color.border.subtle}`,
+  boxShadow: `0 ${vars.stroke.thin} 0 ${vars.color.border.subtle}`,
   '@media': {
-    '(max-width: 600px)': {
-      gap: '8px',
-      minHeight: '64px',
-      padding: '8px'
+    [media.compact]: {
+      gap: vars.space.sm,
+      padding: vars.space.sm
     }
   }
 })
@@ -34,14 +32,13 @@ export const fileIcon = style({
   flex: 'none',
   alignItems: 'center',
   justifyContent: 'center',
-  width: '40px',
-  height: '40px',
+  width: vars.density.controlDesktop,
+  height: vars.density.controlDesktop,
   borderRadius: vars.radius.md,
   background: vars.color.accent.soft,
   color: vars.color.accent.onSoft,
-  fontSize: '1.35rem',
   '@media': {
-    '(max-width: 600px)': {
+    [media.compact]: {
       display: 'none'
     }
   }
@@ -49,20 +46,20 @@ export const fileIcon = style({
 
 export const identity = style({
   display: 'flex',
-  flex: '1',
+  flex: 1,
   flexDirection: 'column',
-  gap: '4px',
-  minWidth: '0'
+  gap: vars.space.xs,
+  minWidth: 0
 })
 
 export const title = style({
   display: 'flex',
   alignItems: 'center',
-  gap: '8px',
-  minWidth: '0',
+  gap: vars.space.sm,
+  minWidth: 0,
   '@media': {
-    '(max-width: 600px)': {
-      gap: '6px'
+    [media.compact]: {
+      gap: vars.space.xs
     }
   }
 })
@@ -70,73 +67,43 @@ export const title = style({
 export const details = style({
   display: 'flex',
   alignItems: 'center',
-  gap: '8px',
-  minWidth: '0',
+  gap: vars.space.sm,
+  minWidth: 0,
   color: vars.color.text.secondary,
-  fontSize: vars.typography.bodySmall.size,
-  lineHeight: '1.25rem'
+  ...typography('bodySmall')
 })
 
 export const filename = style({
   overflow: 'hidden',
   color: vars.color.text.primary,
-  fontSize: vars.typography.title.size,
-  fontWeight: '600',
-  lineHeight: '1.35',
+  ...typography('title'),
+  fontWeight: vars.font.weight.bold,
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap'
 })
 
-export const language = style({
-  display: 'inline-flex',
-  flex: 'none',
-  alignItems: 'center',
-  minHeight: '22px',
-  paddingInline: '8px',
-  borderRadius: vars.radius.full,
-  fontSize: vars.typography.caption.size,
-  fontWeight: '600',
-  lineHeight: '1',
-  background: vars.color.selection.bg,
-  color: vars.color.selection.fg
-})
-
-export const badge = style({
-  display: 'inline-flex',
-  flex: 'none',
-  alignItems: 'center',
-  minHeight: '22px',
-  paddingInline: '8px',
-  borderRadius: vars.radius.full,
-  fontSize: vars.typography.caption.size,
-  fontWeight: '600',
-  lineHeight: '1'
-})
-
-export const badgeDirty = style({
-  background: vars.color.accent.soft,
-  color: vars.color.accent.onSoft,
+// On a phone the unsaved badge shrinks to a dot; its text stays for screen readers and the hover title.
+export const dirty = style({
   '@media': {
-    '(max-width: 600px)': {
-      width: '8px',
-      minHeight: '8px',
-      padding: '0',
-      overflow: 'hidden',
-      color: 'transparent',
-      fontSize: '0'
+    [media.compact]: {
+      selectors: {
+        [`${title} &`]: {
+          width: vars.space.sm,
+          minHeight: vars.space.sm,
+          padding: 0,
+          overflow: 'hidden',
+          color: 'transparent',
+          fontSize: 0
+        }
+      }
     }
   }
-})
-
-export const badgeReadonly = style({
-  background: vars.color.danger.soft,
-  color: vars.color.danger.onSoft
 })
 
 export const meta = style({
   flex: 'none',
   '@media': {
-    '(max-width: 600px)': {
+    [media.compact]: {
       display: 'none'
     }
   }
@@ -151,37 +118,37 @@ export const actions = style({
 export const body = style({
   position: 'relative',
   display: 'flex',
-  flex: '1',
-  minHeight: '0',
-  padding: '16px 20px 20px',
+  flex: 1,
+  minHeight: 0,
+  padding: `${vars.space.lg} ${vars.space.xl} ${vars.space.xl}`,
   '@media': {
-    '(max-width: 600px)': {
-      padding: '0'
+    [media.compact]: {
+      padding: 0
     }
   }
 })
 
 export const loading = style({
   display: 'flex',
-  flex: '1',
+  flex: 1,
   alignItems: 'center',
   justifyContent: 'center'
 })
 
 export const locked = style({
   display: 'flex',
-  flex: '1',
+  flex: 1,
   alignItems: 'center',
   justifyContent: 'center',
   flexDirection: 'column',
-  gap: '16px',
-  padding: '24px',
+  gap: vars.space.lg,
+  padding: vars.space.xl,
   textAlign: 'center'
 })
 
 export const error = style({
-  margin: '0',
-  padding: '24px',
+  margin: 0,
+  padding: vars.space.xl,
   color: vars.color.danger.solid
 })
 

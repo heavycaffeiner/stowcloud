@@ -1,13 +1,13 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '@/shared/theme'
+import { typography, vars } from '@/shared/theme'
 
 export const supporting = style({
   display: 'flex',
   flexDirection: 'column',
-  gap: '4px',
-  minWidth: '0',
+  gap: vars.space.xs,
+  minWidth: 0,
   color: vars.color.text.secondary,
-  fontSize: vars.typography.bodySmall.size,
+  ...typography('bodySmall'),
   overflowWrap: 'anywhere'
 })
 
@@ -18,21 +18,21 @@ export const summaryDeny = style({
 export const warning = style({
   display: 'flex',
   alignItems: 'flex-start',
-  gap: '4px',
+  gap: vars.space.xs,
   color: vars.color.danger.solid,
-  fontSize: vars.typography.bodySmall.size,
+  ...typography('bodySmall'),
   overflowWrap: 'anywhere'
 })
 
 export const perms = style({
   display: 'flex',
   flexWrap: 'wrap',
-  gap: '4px'
+  gap: vars.space.xs
 })
 
 export const chevron = style({
   display: 'inline-flex',
-  transition: 'transform 150ms ease'
+  transition: `transform ${vars.motion.short} ${vars.motion.easing}`
 })
 
 export const chevronOpen = style({

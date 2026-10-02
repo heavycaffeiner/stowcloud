@@ -31,7 +31,17 @@ import {
   type AdminUser,
   type AuditRow
 } from '../api'
-import { cx, StowButton, StowCheckbox, StowFormTextField, StowProgressCircular, VirtualList } from '@/shared/ui'
+import {
+  cx,
+  StowBadge,
+  type StowBadgeProps,
+  StowButton,
+  StowCheckbox,
+  StowFormTextField,
+  StowProgressCircular,
+  VirtualList
+} from '@/shared/ui'
+import * as adminStyles from './admin.css'
 import * as styles from './LogsSection.css'
 import { srOnly } from '@/shared/theme'
 
@@ -55,10 +65,10 @@ const SEGMENT_CLASS: Record<string, string> = {
   'audit-ok': styles.segAuditOk,
   'audit-failed': styles.segAuditFailed
 }
-const LEVEL_CLASS: Record<string, string> = {
-  error: styles.levelError,
-  warn: styles.levelWarn,
-  info: styles.levelInfo
+const LEVEL_TONE: Record<string, StowBadgeProps['tone']> = {
+  error: 'danger',
+  warn: 'warning',
+  info: 'accent'
 }
 
 /* i18n */ ;('logs.level_debug')
@@ -150,17 +160,17 @@ export function LogsSection() {
       <h2 className={styles.title}>{t('common.logs')}</h2>
       <p className={styles.hint}>{t('logs.what_the_logs_are')}</p>
       <dl className={styles.figures}>
-        <div className={styles.figure}>
-          <dt className={styles.figureLabel}>{t('logs.stored_size')}</dt>
-          <dd className={styles.figureValue}>
+        <div>
+          <dt className={adminStyles.figureLabel}>{t('logs.stored_size')}</dt>
+          <dd className={adminStyles.figureValue}>
             {storedMegabytes === 0n
               ? t('logs.under_one_mb')
               : t('logs.megabytes', { size: formatNumber(Number(storedMegabytes)) })}
           </dd>
         </div>
-        <div className={styles.figure}>
-          <dt className={styles.figureLabel}>{t('logs.segments')}</dt>
-          <dd className={styles.figureValue}>{formatNumber(newestPage?.segments ?? 0)}</dd>
+        <div>
+          <dt className={adminStyles.figureLabel}>{t('logs.segments')}</dt>
+          <dd className={adminStyles.figureValue}>{formatNumber(newestPage?.segments ?? 0)}</dd>
         </div>
       </dl>
       <FilterForm control={control} knownSubsystems={pureKnownSubsystems(records)} />
@@ -509,9 +519,9 @@ function AuditEntry({ row, users }: { row: AuditRow; users: readonly AdminUser[]
   const { t } = useI18n()
   return (
     <div className={styles.row}>
-      <span className={cx(styles.level, row.ok ? styles.levelOk : styles.levelFailed)}>
+      <StowBadge className={styles.level} tone={row.ok ? 'accent' : 'danger'}>
         {row.ok ? t('audit.success') : t('audit.failure')}
-      </span>
+      </StowBadge>
       <span className={styles.body}>
         <span className={styles.msg}>{row.event}</span>
         <span className={styles.meta}>
@@ -530,7 +540,9 @@ function ServerEntry({ record, open, onToggle }: { record: AdminLogRecord; open:
   const attrs = Object.entries(record.attrs)
   const body = (
     <>
-      <span className={cx(styles.level, LEVEL_CLASS[record.level.toLowerCase()])}>{levelText(record.level)}</span>
+      <StowBadge className={styles.level} tone={LEVEL_TONE[record.level.toLowerCase()]}>
+        {levelText(record.level)}
+      </StowBadge>
       <span className={styles.body}>
         <span className={styles.msg}>{record.msg}</span>
         <span className={styles.meta}>

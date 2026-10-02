@@ -3,6 +3,9 @@ import { computeWindow, type WindowResult } from '../../../lib/virtual/windowing
 import { SORT_KEYS, sortHits, type CategoryId, type SearchPanelState, type SearchStatus } from './search-state'
 import type { SearchHit } from '../api'
 
+/** Every result row is this tall, so the window can be computed without measuring. */
+export const RESULT_ROW_HEIGHT = 56
+
 export function activeCategoryFor(state: SearchPanelState): CategoryId {
   if (state.kind === 'dir') return 'dir'
   if (state.kind === 'file' && state.presets.length === 0) return 'file'
@@ -55,7 +58,7 @@ export function windowFor(state: SearchPanelState, view: readonly SearchHit[], v
   return computeWindow({
     scrollTop: state.scrollTop,
     viewportHeight,
-    rowHeight: 56,
+    rowHeight: RESULT_ROW_HEIGHT,
     itemCount: view.length,
     overscan: 8
   })

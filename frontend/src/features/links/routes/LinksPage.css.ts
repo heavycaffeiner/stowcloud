@@ -1,19 +1,16 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '@/shared/theme'
+import { typography, vars } from '@/shared/theme'
 
 export const item = style({
-  minWidth: '0'
+  minWidth: 0
 })
 
 export const targetError = style({
-  margin: '4px 16px 12px',
-  padding: '8px 12px',
+  margin: `${vars.space.xs} ${vars.space.lg} ${vars.space.md}`,
+  padding: `${vars.space.sm} ${vars.space.md}`,
   overflowWrap: 'anywhere',
-  borderRadius: '8px',
+  borderRadius: vars.radius.sm,
   background: vars.color.danger.soft,
   color: vars.color.danger.onSoft,
-  fontSize: vars.typography.bodySmall.size,
-  fontWeight: vars.typography.bodySmall.weight,
-  lineHeight: vars.typography.bodySmall.lineHeight,
-  letterSpacing: vars.typography.bodySmall.tracking
+  ...typography('bodySmall')
 })

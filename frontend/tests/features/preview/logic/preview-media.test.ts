@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  isVideoFile,
-  isImageFile,
-  extensionOf,
-  VIDEO_EXT,
-  IMAGE_EXT
-} from '../../../../src/features/preview/logic/media-utils'
+import { isVideoFile, extensionOf, VIDEO_EXT, IMAGE_EXT } from '../../../../src/features/preview/logic/media-utils'
 const TEXT_EXT: Record<string, true> = {
   txt: true,
   md: true,

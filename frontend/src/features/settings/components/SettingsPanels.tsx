@@ -8,7 +8,7 @@ import { useSignOut } from '../hooks/use-sign-out'
 import { useUploadConcurrency } from '../hooks/use-upload-concurrency'
 import { theme } from '../theme'
 import { SettingsCard } from './SettingsCard'
-import { cx, Icon, StowButton, StowSegmentedControl } from '@/shared/ui'
+import { cx, Icon, StowBadge, StowButton, StowSegmentedControl } from '@/shared/ui'
 import * as styles from './SettingsPanels.css'
 import * as settingsCardStyles from './SettingsCard.css'
 
@@ -44,9 +44,9 @@ export function AccountPanel() {
           </>
         }
         trailing={
-          <span className={settingsCardStyles.badge}>
+          <StowBadge className={settingsCardStyles.badge}>
             {session?.user.is_admin ? t('common.administrator') : t('common.user_2')}
-          </span>
+          </StowBadge>
         }
       >
         <div className={styles.row}>
@@ -243,7 +243,7 @@ export function AppearancePanel() {
           />
         </div>
         {concurrency.saveFailed ? (
-          <p className={styles.error} role="alert">
+          <p className={settingsCardStyles.error} role="alert">
             {t('common.could_not_save_settings')}
           </p>
         ) : null}

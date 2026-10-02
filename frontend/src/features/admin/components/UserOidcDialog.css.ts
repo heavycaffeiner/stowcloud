@@ -1,43 +1,43 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '@/shared/theme'
+import { typography, vars } from '@/shared/theme'
 
 export const facts = style({
   display: 'flex',
   flexDirection: 'column',
-  gap: '8px',
-  margin: '0 0 16px'
+  gap: vars.space.sm,
+  margin: `0 0 ${vars.space.lg}`
 })
 
 export const factLabel = style({
   color: vars.color.text.secondary,
-  fontSize: vars.typography.bodySmall.size
+  ...typography('bodySmall')
 })
 
 export const factValue = style({
-  margin: '0',
+  margin: 0,
   overflowWrap: 'anywhere'
 })
 
 export const hint = style({
-  margin: '0 0 8px',
+  margin: `0 0 ${vars.space.sm}`,
   color: vars.color.text.secondary,
-  fontSize: vars.typography.bodySmall.size,
+  ...typography('bodySmall'),
   lineHeight: '1.45'
 })
 
 export const error = style({
-  margin: '0',
+  margin: 0,
   color: vars.color.danger.solid,
-  fontSize: vars.typography.bodySmall.size,
+  ...typography('bodySmall'),
   lineHeight: '1.45'
 })
 
 export const warning = style({
   display: 'flex',
   alignItems: 'flex-start',
-  gap: '8px',
-  margin: '0 0 16px',
-  padding: '12px',
+  gap: vars.space.sm,
+  margin: `0 0 ${vars.space.lg}`,
+  padding: vars.space.md,
   borderRadius: vars.radius.xs,
   background: vars.color.danger.soft,
   color: vars.color.danger.onSoft

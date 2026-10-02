@@ -3,8 +3,7 @@ import { useI18n } from '../../../../hooks/use-i18n'
 import { formatBytes, formatEta, formatRate } from '../../../../lib/format/bytes'
 import { pauseUpload, resumeUpload, cancelUpload } from '../../queue'
 import { type UploadItem, uploads, useUploadStore } from '../../store'
-import { Icon, StowIconButton, StowProgressLinear, VirtualList } from '@/shared/ui'
-import * as styles from './UploadQueue.css'
+import { StowIconButton, StowProgressLinear, StowTray, trayStyles as styles } from '@/shared/ui'
 import { srOnly } from '@/shared/theme'
 
 export function UploadQueue() {
@@ -78,82 +77,51 @@ export function UploadQueue() {
       <div ref={politeRef} className={srOnly} role="status" aria-live="polite" aria-atomic="true"></div>
       <div ref={assertiveRef} className={srOnly} role="alert" aria-live="assertive" aria-atomic="true"></div>
       {items.length > 0 ? (
-        <section className={styles.root} aria-label={t('common.upload')}>
-          <header className={styles.header}>
-            <button className={styles.title} type="button" onClick={() => uploads.setOpen(!open)} aria-expanded={open}>
-              <Icon name="upload_file" />
-              <span>{t('common.upload')}</span>
-              <span>
-                {activeCount > 0
-                  ? `(${activeCount})`
-                  : failedCount > 0
-                    ? t('upload.failed_count', { count: failedCount })
-                    : t('common.done')}
-              </span>
-            </button>
-            <div className={styles.actions}>
-              <StowIconButton
-                label={t('common.clear_finished_items')}
-                onClick={() => uploads.clearFinished()}
-                icon="check"
-              />
-              <StowIconButton
-                label={open ? t('common.collapse') : t('common.expand')}
-                expanded={open}
-                onClick={() => uploads.setOpen(!open)}
-              >
-                <Icon name={open ? 'chevron_right' : 'chevron_left'} />
-              </StowIconButton>
-            </div>
-          </header>
-          {open ? (
-            <div className={styles.scroll}>
-              <VirtualList
-                className={styles.list}
-                items={items}
-                itemKey={(item) => item.id}
-                estimateSize={120}
-                itemProps={() => ({ className: styles.item })}
-                renderItem={(item) => (
-                  <>
-                    <div className={styles.row}>
-                      <span className={styles.name}>{item.name}</span>
-                      <span className={styles.meta}>
-                        {formatBytes(item.sent)} / {formatBytes(item.total)}
-                        {item.status === 'uploading' ? ` - ${formatRate(item.rate)} - ${formatEta(item.etaSec)}` : ''}
-                        {item.status === 'canceled' ? ` - ${t('upload.canceled')}` : ''}
-                        {item.status === 'paused' ? ` - ${t('upload.paused')}` : ''}
-                      </span>
-                    </div>
-                    <StowProgressLinear value={item.total > 0 ? item.sent / item.total : 0} label={item.name} />
-                    {item.message ? <p>{t(item.message, item.messageParams)}</p> : null}
-                    <div className={styles.controls}>
-                      {item.status === 'uploading' ? (
-                        <StowIconButton label={t('upload.pause')} onClick={() => pauseUpload(item.id)} icon="pause" />
-                      ) : null}
-                      {item.status === 'paused' ? (
-                        <StowIconButton
-                          label={t('upload.resume')}
-                          onClick={() => resumeUpload(item.id)}
-                          icon="play_arrow"
-                        />
-                      ) : null}
-                      {item.status === 'done' || item.status === 'canceled' || item.status === 'error' ? (
-                        <StowIconButton
-                          label={t('common.clear')}
-                          onClick={() => uploads.dismiss(item.id)}
-                          icon="close"
-                        />
-                      ) : (
-                        <StowIconButton label={t('common.cancel')} onClick={() => cancelUpload(item.id)} icon="close" />
-                      )}
-                    </div>
-                  </>
+        <StowTray
+          title={t('common.upload')}
+          icon="upload_file"
+          status={
+            activeCount > 0
+              ? `(${activeCount})`
+              : failedCount > 0
+                ? t('upload.failed_count', { count: failedCount })
+                : t('common.done')
+          }
+          open={open}
+          onOpenChange={uploads.setOpen}
+          onClearFinished={uploads.clearFinished}
+          items={items}
+          itemKey={(item) => item.id}
+          estimateSize={120}
+          renderItem={(item) => (
+            <>
+              <div className={styles.row}>
+                <span className={styles.name}>{item.name}</span>
+                <span className={styles.meta}>
+                  {formatBytes(item.sent)} / {formatBytes(item.total)}
+                  {item.status === 'uploading' ? ` - ${formatRate(item.rate)} - ${formatEta(item.etaSec)}` : ''}
+                  {item.status === 'canceled' ? ` - ${t('upload.canceled')}` : ''}
+                  {item.status === 'paused' ? ` - ${t('upload.paused')}` : ''}
+                </span>
+              </div>
+              <StowProgressLinear value={item.total > 0 ? item.sent / item.total : 0} label={item.name} />
+              {item.message ? <p>{t(item.message, item.messageParams)}</p> : null}
+              <div className={styles.controls}>
+                {item.status === 'uploading' ? (
+                  <StowIconButton label={t('upload.pause')} onClick={() => pauseUpload(item.id)} icon="pause" />
+                ) : null}
+                {item.status === 'paused' ? (
+                  <StowIconButton label={t('upload.resume')} onClick={() => resumeUpload(item.id)} icon="play_arrow" />
+                ) : null}
+                {item.status === 'done' || item.status === 'canceled' || item.status === 'error' ? (
+                  <StowIconButton label={t('common.clear')} onClick={() => uploads.dismiss(item.id)} icon="close" />
+                ) : (
+                  <StowIconButton label={t('common.cancel')} onClick={() => cancelUpload(item.id)} icon="close" />
                 )}
-              />
-            </div>
-          ) : null}
-        </section>
+              </div>
+            </>
+          )}
+        />
       ) : null}
     </>
   )

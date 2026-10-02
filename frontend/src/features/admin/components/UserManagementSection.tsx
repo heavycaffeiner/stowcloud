@@ -87,7 +87,7 @@ export function UserManagementSection() {
   return (
     <section className={adminStyles.section}>
       <div className={adminStyles.sectionHeader}>
-        <p className={adminStyles.sectionHint}>{t('user.create_accounts_suspend_or_re')}</p>
+        <p className={adminStyles.hint}>{t('user.create_accounts_suspend_or_re')}</p>
         <StowButton
           className={adminStyles.sectionHeaderAction}
           icon={<Icon name="add" />}

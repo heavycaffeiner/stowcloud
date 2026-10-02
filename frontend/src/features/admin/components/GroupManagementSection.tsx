@@ -5,9 +5,9 @@ import { t } from '../../../i18n'
 import { useI18n } from '../../../hooks/use-i18n'
 import {
   confirmAction,
-  cx,
   Icon,
   promptText,
+  StowBadge,
   StowButton,
   StowIconButton,
   StowDialog,
@@ -93,7 +93,7 @@ export function GroupManagementSection() {
   return (
     <section className={adminStyles.section}>
       <div className={adminStyles.sectionHeader}>
-        <p className={adminStyles.sectionHint}>{t('group.create_group_grant_folder_permissions')}</p>
+        <p className={adminStyles.hint}>{t('group.create_group_grant_folder_permissions')}</p>
         <StowButton className={adminStyles.sectionHeaderAction} icon={<Icon name="add" />} onClick={addGroup}>
           {t('group.add_group')}
         </StowButton>
@@ -123,7 +123,7 @@ export function GroupManagementSection() {
               headline={
                 <>
                   <span className={adminStyles.rowName}>{group.name}</span>
-                  <span className={adminStyles.chip}>{tp('group.members', group.members.length)}</span>
+                  <StowBadge>{tp('group.members', group.members.length)}</StowBadge>
                 </>
               }
               trailing={
@@ -237,7 +237,7 @@ function GroupMembersDialog({ groupId, open, onClose, onClosed }: GroupMembersDi
             estimateSize={44}
             pinnedKeys={memberBusyId === null ? undefined : [memberBusyId]}
             renderItem={(id) => (
-              <span className={cx(adminStyles.chip, adminStyles.removableChip)}>
+              <span className={styles.memberChip}>
                 {memberBusyId === id ? t('common.loading') : userName(id)}
                 <StowIconButton
                   label={t('group.remove_member', { name: userName(id) })}

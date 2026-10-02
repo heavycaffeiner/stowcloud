@@ -55,8 +55,7 @@ export const row = style({
       paddingInline: vars.space.md
     }
   },
-  '@container': { [narrow]: { paddingInline: vars.space.lg } },
-  '@media': { [media.reducedMotion]: { transition: 'none' } }
+  '@container': { [narrow]: { paddingInline: vars.space.lg } }
 })
 
 export const card = style({
@@ -81,8 +80,7 @@ export const card = style({
       boxShadow: vars.elevation.md
     },
     '&:active': { transform: 'scale(0.98)' }
-  },
-  '@media': { [media.reducedMotion]: { transition: 'none' } }
+  }
 })
 
 // A folder card is a single line: check, icon, name and menu.
@@ -229,8 +227,7 @@ export const thumb = style({
 })
 
 globalStyle(`${thumb} img`, {
-  transition: `transform ${vars.motion.medium} ${vars.motion.easing}`,
-  '@media': { [media.reducedMotion]: { transition: 'none' } }
+  transition: `transform ${vars.motion.medium} ${vars.motion.easing}`
 })
 
 globalStyle(`${card}:hover ${thumb} img`, {

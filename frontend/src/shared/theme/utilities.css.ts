@@ -39,10 +39,10 @@ export const srOnly = style({
   position: 'absolute',
   width: '1px',
   height: '1px',
-  padding: '0',
+  padding: 0,
   margin: '-1px',
   overflow: 'hidden',
   clipPath: 'inset(50%)',
   whiteSpace: 'nowrap',
-  border: '0'
+  border: 0
 })

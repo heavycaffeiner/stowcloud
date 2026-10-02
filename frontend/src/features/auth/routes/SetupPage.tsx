@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { scorePasswordStrength } from '../password-strength'
+import { PasswordStrengthMeter } from '../components/PasswordStrengthMeter'
 import { useI18n } from '../../../hooks/use-i18n'
-import { cx, StowButton, StowFormTextField, StowProgressLinear } from '@/shared/ui'
+import { cx, StowButton, StowFormTextField } from '@/shared/ui'
 import { pickPath } from '../../file-browser/components/PathPickerDialog'
 import { useDocumentTitle } from '../../../hooks/use-document-title'
 import { MIN_PASSWORD_LENGTH, setupReady, useSetup } from '../hooks/use-setup'
@@ -32,7 +32,6 @@ export function SetupPage() {
   const { control, formState, setValue } = form
   const values = form.watch()
   const [step, setStep] = useState(1)
-  const strength = scorePasswordStrength(values.password)
   const passwordError =
     values.password && values.password.length < MIN_PASSWORD_LENGTH
       ? t('setup.password_must_at_least_characters', { min: MIN_PASSWORD_LENGTH })
@@ -172,17 +171,10 @@ export function SetupPage() {
                   error={passwordError}
                   autoComplete="new-password"
                 />
-                {values.password ? (
-                  <div className={authStyles.strength}>
-                    <StowProgressLinear
-                      className={authStyles.strengthBar}
-                      value={strength.ratio}
-                      tone={strength.tier}
-                      label={t('common.password_strength', { level: strength.label })}
-                    />
-                    <span className={authStyles.strengthLabel}>{strength.label}</span>
-                  </div>
-                ) : null}
+                <PasswordStrengthMeter
+                  password={values.password}
+                  label={(level) => t('common.password_strength', { level })}
+                />
                 <StowFormTextField
                   control={control}
                   name="passwordConfirm"

@@ -1,58 +1,38 @@
 import { style } from '@vanilla-extract/css'
-import { vars } from '@/shared/theme'
+import { media, typography, vars } from '@/shared/theme'
 
 export const issued = style({
-  padding: '16px',
-  marginBottom: '16px',
+  padding: vars.space.lg,
+  marginBottom: vars.space.lg,
   borderRadius: vars.radius.md,
   background: vars.color.selection.bg,
   color: vars.color.selection.fg,
   '@media': {
-    '(max-width: 599.98px)': {
-      padding: '12px'
+    [media.compact]: {
+      padding: vars.space.md
     }
   }
 })
 
 export const issuedNote = style({
-  margin: '0 0 8px',
+  margin: `0 0 ${vars.space.sm}`,
   overflowWrap: 'anywhere'
 })
 
 export const urlRow = style({
   display: 'flex',
   alignItems: 'center',
-  gap: '8px',
-  minWidth: '0'
+  gap: vars.space.sm,
+  minWidth: 0
 })
 
 export const url = style({
-  display: 'block',
-  flex: '1 1 auto',
-  minWidth: '0',
-  maxWidth: '100%',
-  boxSizing: 'border-box',
-  padding: '8px',
-  border: '0',
-  borderRadius: vars.radius.xs,
-  background: vars.color.surface.page,
-  color: vars.color.text.primary,
-  font: 'inherit',
-  overflowWrap: 'anywhere',
-  resize: 'vertical',
-  userSelect: 'all',
-  whiteSpace: 'pre-wrap',
-  selectors: {
-    '&:focus-visible': {
-      outline: `${vars.focusRing.width} solid ${vars.color.focus}`,
-      outlineOffset: vars.focusRing.offset
-    }
-  }
+  selectors: { [`${urlRow} &`]: { flex: 1 } }
 })
 
 export const copyFeedback = style({
-  margin: '8px 0 0',
-  fontSize: vars.typography.bodySmall.size
+  margin: `${vars.space.sm} 0 0`,
+  ...typography('bodySmall')
 })
 
 export const copyFeedbackError = style({
@@ -68,7 +48,7 @@ export const error = style({
 export const loading = style({
   display: 'flex',
   justifyContent: 'center',
-  padding: '24px'
+  padding: vars.space.xl
 })
 
 export const empty = style({
@@ -79,29 +59,24 @@ export const empty = style({
 export const list = style({
   display: 'flex',
   flexDirection: 'column',
-  gap: '8px',
-  minWidth: '0',
-  margin: '0 0 16px',
-  padding: '0',
+  gap: vars.space.sm,
+  minWidth: 0,
+  margin: `0 0 ${vars.space.lg}`,
+  padding: 0,
   listStyle: 'none'
 })
 
 export const item = style({
-  minWidth: '0',
-  padding: '12px',
+  minWidth: 0,
+  padding: vars.space.md,
   border: 'none',
   borderRadius: vars.radius.md,
   background: vars.color.surface.raised,
-  boxShadow: '0 2px 6px rgba(0, 0, 0, .08)',
-  transition: 'background-color 140ms ease',
+  boxShadow: vars.elevation.sm,
+  transition: `background-color ${vars.motion.short} ${vars.motion.easing}`,
   selectors: {
     '&:hover': {
       background: vars.color.surface.overlay
-    }
-  },
-  '@media': {
-    '(max-width: 599.98px)': {
-      padding: '12px'
     }
   }
 })
@@ -109,10 +84,10 @@ export const item = style({
 export const itemRow = style({
   display: 'flex',
   alignItems: 'flex-start',
-  gap: '12px',
-  minWidth: '0',
+  gap: vars.space.md,
+  minWidth: 0,
   '@media': {
-    '(max-width: 599.98px)': {
+    [media.compact]: {
       flexWrap: 'wrap'
     }
   }
@@ -122,23 +97,18 @@ export const itemMain = style({
   display: 'flex',
   flex: '1 1 auto',
   flexDirection: 'column',
-  minWidth: '0',
-  '@media': {
-    '(max-width: 599.98px)': {
-      flexBasis: 'calc(100% - 36px)'
-    }
-  }
+  minWidth: 0
 })
 
 export const itemLabel = style({
   color: vars.color.text.primary,
-  fontWeight: '500',
+  fontWeight: vars.font.weight.medium,
   overflowWrap: 'anywhere'
 })
 
 export const itemMeta = style({
   color: vars.color.text.secondary,
-  fontSize: vars.typography.bodySmall.size,
+  ...typography('bodySmall'),
   overflowWrap: 'anywhere'
 })
 
@@ -149,61 +119,38 @@ export const itemActions = style({
   flexWrap: 'wrap',
   justifyContent: 'flex-end',
   '@media': {
-    '(max-width: 599.98px)': {
-      width: '100%',
-      justifyContent: 'flex-end'
+    [media.compact]: {
+      width: '100%'
     }
   }
 })
 
-export const createForm = style({
+export const linkForm = style({
   display: 'flex',
   flexDirection: 'column',
-  gap: '12px',
-  minWidth: '0',
-  padding: '12px',
+  gap: vars.space.md,
+  minWidth: 0,
+  padding: vars.space.md,
   borderRadius: vars.radius.md,
-  background: vars.color.surface.container,
-  '@media': {
-    '(max-width: 599.98px)': {
-      padding: '12px'
-    }
-  }
-})
-
-export const editForm = style({
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '12px',
-  minWidth: '0',
-  padding: '12px',
-  borderRadius: vars.radius.md,
-  background: vars.color.surface.container,
-  '@media': {
-    '(max-width: 599.98px)': {
-      padding: '12px'
-    }
-  }
+  background: vars.color.surface.container
 })
 
 export const createTitle = style({
-  margin: '0',
-  fontSize: vars.typography.title.size,
-  fontWeight: vars.typography.title.weight,
-  lineHeight: vars.typography.title.lineHeight
+  margin: 0,
+  ...typography('title')
 })
 
 export const permRow = style({
   display: 'flex',
   alignItems: 'center',
   flexWrap: 'wrap',
-  gap: '12px 16px'
+  gap: `${vars.space.md} ${vars.space.lg}`
 })
 
 export const hint = style({
-  margin: '0',
+  margin: 0,
   color: vars.color.text.secondary,
-  fontSize: vars.typography.bodySmall.size,
+  ...typography('bodySmall'),
   overflowWrap: 'anywhere'
 })
 
@@ -212,5 +159,5 @@ export const editActions = style({
   alignItems: 'center',
   justifyContent: 'flex-end',
   flexWrap: 'wrap',
-  gap: '8px'
+  gap: vars.space.sm
 })

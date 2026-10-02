@@ -400,7 +400,7 @@ function PreviewDialog({
               <pre className={styles.text}>{textQuery.data.content}</pre>
             ) : archiveListing ? (
               <div className={styles.archive}>
-                <p className={styles.archiveCount}>
+                <p className={styles.archiveNote}>
                   {tp('preview.archive_entries', level.length)}{' '}
                   {archiveListing.skipped ? (
                     <span className={styles.archiveSkipped}>
@@ -439,7 +439,7 @@ function PreviewDialog({
                   ))}
                 </nav>
                 {level.length === 0 ? (
-                  <p className={styles.archiveEmpty}>{t('preview.archive_empty')}</p>
+                  <p className={styles.archiveNote}>{t('preview.archive_empty')}</p>
                 ) : (
                   <ul className={styles.archiveList}>
                     {cwd ? (
