@@ -226,12 +226,14 @@ export function SetupPage() {
                   {t('common.back')}
                 </StowButton>
               ) : null}
+              {/* Distinct keys: reusing one element would make the Continue click that reaches the last step submit. */}
               {step < LAST_STEP ? (
-                <StowButton className={authStyles.action} type="button" onClick={() => setStep(step + 1)}>
+                <StowButton key="next" className={authStyles.action} type="button" onClick={() => setStep(step + 1)}>
                   {t('common.continue')}
                 </StowButton>
               ) : (
                 <StowButton
+                  key="create"
                   className={authStyles.action}
                   type="submit"
                   disabled={creating || !setupReady(values)}
