@@ -112,7 +112,7 @@ export function SearchPanel({ scope = '', autoFocus = false, trailing }: SearchP
         <StowBadge
           tone="accent"
           icon={scope ? 'folder' : 'search'}
-          className={styles.scope}
+          className={styles.fixed}
           title={scope ? t('search.scope_current_prioritized', { folder: scope }) : t('search.scope_explanation')}
         >
           {scope ? (scope.split('/').filter(Boolean).at(-1) ?? scope) : t('search.scope_all_accessible')}
@@ -137,7 +137,7 @@ export function SearchPanel({ scope = '', autoFocus = false, trailing }: SearchP
         >
           <StowButton
             variant="text"
-            className={styles.sort}
+            className={styles.fixed}
             icon={<Icon name="sort" size={18} />}
             aria-label={t('search.sort_by', { key: sortLabel })}
           >
