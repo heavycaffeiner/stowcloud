@@ -5,6 +5,7 @@ import { useHostListing } from '../../admin/api'
 import { cx, Icon, StowButton, StowDialog, VirtualList } from '@/shared/ui'
 import * as styles from './PathPickerDialog.css'
 import { focusRing } from '@/shared/theme'
+import { ParentFolderItem } from './ParentFolderItem'
 
 export interface PathPickerOptions {
   mode: 'folder' | 'file'
@@ -113,46 +114,51 @@ export function PathPickerDialog({ open, mode, start, token, onClose, onPick, on
             </p>
           ) : null}
           {!listing.isPending && !showError && listing.data ? (
-            listing.data.entries.length === 0 ? (
-              <p className={styles.status}>{t('picker.empty')}</p>
-            ) : (
-              <VirtualList
-                key={listing.data.path}
-                className={styles.entries}
-                aria-label={atRoot ? t('picker.roots') : t('picker.here')}
-                items={listing.data.entries}
-                itemKey={(entry) => entry.path}
-                estimateSize={40}
-                renderItem={(entry) =>
-                  entry.is_dir ? (
-                    <button
-                      type="button"
-                      className={cx(styles.entry, focusRing)}
-                      aria-label={t('picker.open_folder', { name: entry.name })}
-                      onClick={() => navigate(entry.path)}
-                    >
-                      <Icon name="folder" />
-                      <span className={styles.entryName}>{entry.name}</span>
-                    </button>
-                  ) : mode === 'file' ? (
-                    <button
-                      type="button"
-                      className={cx(styles.entry, focusRing, selected === entry.path && styles.entrySelected)}
-                      aria-pressed={selected === entry.path}
-                      onClick={() => setSelected(entry.path)}
-                    >
-                      <Icon name="draft" />
-                      <span className={styles.entryName}>{entry.name}</span>
-                    </button>
-                  ) : (
-                    <span className={cx(styles.entry, styles.entryDisabled)} aria-disabled="true">
-                      <Icon name="draft" />
-                      <span className={styles.entryName}>{entry.name}</span>
-                    </span>
-                  )
-                }
-              />
-            )
+            <>
+              {listing.data.parent !== '' ? (
+                <ParentFolderItem onNavigate={() => navigate(listing.data.parent)} />
+              ) : null}
+              {listing.data.entries.length === 0 ? (
+                <p className={styles.status}>{t('picker.empty')}</p>
+              ) : (
+                <VirtualList
+                  key={listing.data.path}
+                  className={styles.entries}
+                  aria-label={atRoot ? t('picker.roots') : t('picker.here')}
+                  items={listing.data.entries}
+                  itemKey={(entry) => entry.path}
+                  estimateSize={40}
+                  renderItem={(entry) =>
+                    entry.is_dir ? (
+                      <button
+                        type="button"
+                        className={cx(styles.entry, focusRing)}
+                        aria-label={t('picker.open_folder', { name: entry.name })}
+                        onClick={() => navigate(entry.path)}
+                      >
+                        <Icon name="folder" />
+                        <span className={styles.entryName}>{entry.name}</span>
+                      </button>
+                    ) : mode === 'file' ? (
+                      <button
+                        type="button"
+                        className={cx(styles.entry, focusRing, selected === entry.path && styles.entrySelected)}
+                        aria-pressed={selected === entry.path}
+                        onClick={() => setSelected(entry.path)}
+                      >
+                        <Icon name="draft" />
+                        <span className={styles.entryName}>{entry.name}</span>
+                      </button>
+                    ) : (
+                      <span className={cx(styles.entry, styles.entryDisabled)} aria-disabled="true">
+                        <Icon name="draft" />
+                        <span className={styles.entryName}>{entry.name}</span>
+                      </span>
+                    )
+                  }
+                />
+              )}
+            </>
           ) : null}
           {listing.data?.truncated ? (
             <p className={styles.status} role="status">

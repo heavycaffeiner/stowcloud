@@ -88,7 +88,7 @@ func (s *Service) DeleteGroup(ctx context.Context, id int64) error {
 	if err := s.store.DeleteGroup(ctx, id); err != nil {
 		return mapGroupErr(err)
 	}
-	s.membershipChanged()
+	s.membershipChanged(ctx)
 	return nil
 }
 
@@ -97,7 +97,7 @@ func (s *Service) AddToGroup(ctx context.Context, userID, groupID int64) error {
 	if err := s.store.AddMembership(ctx, userID, groupID); err != nil {
 		return err
 	}
-	s.membershipChanged()
+	s.membershipChanged(ctx)
 	return nil
 }
 
@@ -106,7 +106,7 @@ func (s *Service) RemoveFromGroup(ctx context.Context, userID, groupID int64) er
 	if err := s.store.RemoveMembership(ctx, userID, groupID); err != nil {
 		return err
 	}
-	s.membershipChanged()
+	s.membershipChanged(ctx)
 	return nil
 }
 
@@ -115,7 +115,7 @@ func (s *Service) SetMembership(ctx context.Context, userID int64, groupIDs []in
 	if err := s.store.SetMemberships(ctx, userID, groupIDs); err != nil {
 		return err
 	}
-	s.membershipChanged()
+	s.membershipChanged(ctx)
 	return nil
 }
 
@@ -126,10 +126,13 @@ func (s *Service) GroupIDsOf(ctx context.Context, userID int64) ([]int64, error)
 
 // membershipChanged bumps the generation and tells whoever holds an
 // evaluator that the grants it resolved against have moved.
-func (s *Service) membershipChanged() {
+func (s *Service) membershipChanged(ctx context.Context) {
 	s.bumpGeneration()
 	if s.onMembership != nil {
 		s.onMembership()
+	}
+	if sink := s.accessSink(); sink != nil {
+		sink.AccessChanged(ctx)
 	}
 }
 

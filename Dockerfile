@@ -134,7 +134,7 @@ COPY --from=frontend /src/backend/internal/web/build ./internal/web/build
 # directories bind-mounts them and this goes unused.
 ARG PUID
 ARG PGID
-RUN mkdir -p /staged/var/lib/stowcloud /staged/shares/files /staged/config/smb && \
+RUN mkdir -p /staged/var/lib/stowcloud/homes /staged/shares/files /staged/config/smb && \
     chown -R "${PUID}:${PGID}" /staged
 
 # embed_ui puts the frontend in the binary. compat_nc compiles the Nextcloud

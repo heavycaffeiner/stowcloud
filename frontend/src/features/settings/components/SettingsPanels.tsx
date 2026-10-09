@@ -136,7 +136,7 @@ export function ConnectionsPanel() {
   return (
     <Suspense fallback={<p>{t('common.loading')}</p>}>
       <div className={styles.pageGrid}>
-        {session?.features.smb ? (
+        {session?.features.smb || session?.home?.enabled ? (
           <SettingsCard
             leading={
               <div className={styles.cardIcon}>

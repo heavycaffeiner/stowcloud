@@ -36,6 +36,11 @@ export function UserManagementRow({
           <span className={adminStyles.rowName}>{user.display_name || user.name}</span>
           {user.is_admin ? <StowBadge>{t('common.administrator')}</StowBadge> : null}
           {user.disabled ? <StowBadge>{t('user.inactive')}</StowBadge> : null}
+          {user.home?.enabled ? (
+            <StowBadge tone={user.home.ready ? undefined : 'warning'}>
+              {user.home.ready ? t('user.home_ready') : t('user.home_not_ready')}
+            </StowBadge>
+          ) : null}
         </>
       }
       supporting={user.name}

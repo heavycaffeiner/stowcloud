@@ -109,6 +109,10 @@ type Deps struct {
 	// of on everything the core can do.
 	Shares func() []Share
 
+	// Homes are separate, owner-only exports of validated personal directories.
+	// They never pass through the whole-share grant mapper.
+	Homes func(context.Context) ([]smb.ShareDef, error)
+
 	// Credentials opens and returns eligible credential facts. Auth owns the
 	// sealed hashes and eligibility; this package owns serialization and writes.
 	Credentials func(ctx context.Context) ([]smb.Credential, error)
@@ -146,11 +150,12 @@ type Deps struct {
 // settings callback keeps enable and disable changes effective without a
 // process restart.
 type Settings struct {
-	Config     smb.Config
-	ConfigDir  string
-	Socket     string
-	ServiceGID uint32
-	Configured bool
+	Config       smb.Config
+	ConfigDir    string
+	Socket       string
+	ServiceGID   uint32
+	Configured   bool
+	HomesEnabled bool
 }
 
 // PublisherDeps are the narrow feature dependencies needed to adapt server
@@ -199,9 +204,14 @@ func (p *Publisher) recordReport(r agent.Report) {
 }
 
 // Publish renders and applies the current live settings.
-func (p *Publisher) Publish(ctx context.Context) (agent.Report, error) {
+func (p *Publisher) Publish(ctx context.Context) (published agent.Report, publishErr error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	defer func() {
+		if publishErr != nil {
+			p.recordReport(agent.FailedReport(publishErr.Error()))
+		}
+	}()
 	settings := Settings{}
 	if p.deps.Settings != nil {
 		settings = p.deps.Settings(ctx)
@@ -217,16 +227,29 @@ func (p *Publisher) Publish(ctx context.Context) (agent.Report, error) {
 		}
 		return report, err
 	}
+	d, err := p.exportDeps(ctx, settings)
+	if err != nil {
+		return agent.Report{}, err
+	}
+	report, err := Publish(ctx, d, settings.Config)
+	if err == nil {
+		p.recordReport(report)
+	}
+	return report, err
+}
+
+func (p *Publisher) exportDeps(ctx context.Context, settings Settings) (Deps, error) {
 	encryptedIDs, err := p.deps.Core.EncryptedShares(ctx)
 	if err != nil {
-		return agent.Report{}, fmt.Errorf("smb publish: reading the encrypted share set: %w", err)
+		return Deps{}, fmt.Errorf("smb publish: reading the encrypted share set: %w", err)
 	}
 	encrypted := make(map[files.ShareID]bool, len(encryptedIDs))
 	for _, id := range encryptedIDs {
 		encrypted[id] = true
 	}
-	d := base
+	d := Deps{ConfigDir: settings.ConfigDir, Socket: settings.Socket, ServiceGID: settings.ServiceGID, Log: p.deps.Logger}
 	d.Shares = func() []Share { return publishShares(p.deps.Core.Shares(), encrypted, p.deps.Logger) }
+	d.Homes = p.homeShares
 	d.Credentials = func(c context.Context) ([]smb.Credential, error) {
 		creds, credErr := p.deps.Auth.SMBCredentials(c)
 		if credErr != nil {
@@ -237,11 +260,7 @@ func (p *Publisher) Publish(ctx context.Context) (agent.Report, error) {
 	d.NowUnix = func() int64 { return p.deps.Clock.Nanos() / int64(time.Second) }
 	d.Grants = func(c context.Context) ([]Grant, error) { return p.grants(c) }
 	d.Names = p.deps.Auth.NameOf
-	report, err := Publish(ctx, d, settings.Config)
-	if err == nil {
-		p.recordReport(report)
-	}
-	return report, err
+	return d, nil
 }
 
 // AccessChanged republishes synchronously after a committed auth change.
@@ -271,6 +290,9 @@ func (p *Publisher) grants(ctx context.Context) ([]Grant, error) {
 func publishShares(defs []files.ShareDef, encrypted map[files.ShareID]bool, logger *slog.Logger) []Share {
 	out := make([]Share, 0, len(defs))
 	for _, d := range defs {
+		if files.IsHomeShare(d.ID) {
+			continue
+		}
 		if d.BrokenReason != "" {
 			continue
 		}
@@ -558,6 +580,13 @@ func shareDefs(ctx context.Context, d Deps) ([]smb.ShareDef, error) {
 			SharedExternally: s.SharedExternally,
 		})
 	}
+	if d.Homes != nil {
+		homes, err := d.Homes(ctx)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, homes...)
+	}
 	// Sorted, so identical state renders an identical file and the agent's
 	// unchanged case actually occurs.
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
@@ -593,7 +622,7 @@ func accountLists(ctx context.Context, d Deps, grants []Grant) (map[int64]*lists
 	var admits []allowed
 
 	for _, g := range grants {
-		if !g.WholeShare || g.User == 0 {
+		if g.User == 0 {
 			continue
 		}
 		// Accounts whose names do not resolve are skipped rather than written
@@ -609,7 +638,7 @@ func accountLists(ctx context.Context, d Deps, grants []Grant) (map[int64]*lists
 			denied[key] = true
 			continue
 		}
-		if !g.AllowRead {
+		if !g.WholeShare || !g.AllowRead {
 			continue
 		}
 		admits = append(admits, allowed{key: key, write: g.AllowWrite})

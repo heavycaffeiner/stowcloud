@@ -59,6 +59,13 @@ type RootView struct {
 	BrokenReason string `json:"broken_reason,omitempty"`
 }
 
+// HomeView reports the system-managed personal folder without its disk path.
+type HomeView struct {
+	Enabled bool   `json:"enabled"`
+	Ready   bool   `json:"ready"`
+	Reason  string `json:"reason,omitempty"`
+}
+
 // LimitsView is what a client needs in order to plan an upload before it
 // starts one: the chunk size to use, and the floor it may not shrink below
 // when the server refuses a chunk as too large.
@@ -124,6 +131,7 @@ type WhoAmIView struct {
 	// Roots is never null: an account with no grants gets an empty list, which
 	// is the state the interface reports as "no folders yet".
 	Roots []RootView `json:"roots"`
+	Home  HomeView   `json:"home"`
 
 	// Oidc is the caller's own provider link, never absent: an account with
 	// none reports {"linked": false} rather than omitting the key, so a

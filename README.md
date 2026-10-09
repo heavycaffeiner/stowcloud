@@ -7,7 +7,7 @@
 
 ## Installation
 
-Stowcloud runs on Linux with Docker 20.10 or newer. The host needs Linux kernel 5.6 or newer.
+Stowcloud runs on Linux. The included Compose deployment requires Docker Engine 26.0 or newer and a current Docker Compose release for Home volume subpaths. The host needs Linux kernel 5.6 or newer.
 
 ### 1. Download the Compose file
 
@@ -122,7 +122,11 @@ Recipients get a focused page for the shared folder. They do not need a Stowclou
 
 ## Give each person the right folders
 
-Accounts start without folder access. An administrator can grant a whole share or a selected subtree, then choose the allowed actions. Each account can arrange its own sidebar order.
+Enable Home folders in Administration → Server to give every account its own private folder automatically, including existing accounts and accounts that have never signed in. Adding shared folder permissions is optional when Home is enabled. Administrators can also grant a whole share or a selected subtree and choose the allowed actions; group permissions apply too. Each account can arrange its own sidebar order.
+
+When SMB is enabled, Settings → Connections shows each account’s private address, such as `\\nas\Home-alice`, alongside authentication and folder availability. Each address opens only its owner’s Home. Ordinary subfolder permissions remain available through the web and WebDAV; SMB requires a whole-share grant and omits accounts with denials anywhere in that share.
+
+The included Compose file mounts only the `homes` subdirectory of the existing data volume into the SMB container, preserving existing Home data while keeping the database and master key separate. This mount needs Docker Engine with volume subpath support and a current Docker Compose release. If you configure another Home storage root, mount it at the same path in both containers. Keep Home storage separate from ordinary shared folder paths. Turning Home off preserves its files; changing its root does not move them. Credential or share changes disconnect existing SMB sessions so that the new access rules take effect.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/folder-grants-dark.png">

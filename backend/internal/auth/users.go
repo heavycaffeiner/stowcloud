@@ -69,6 +69,9 @@ func (s *Service) createAccount(
 	if err != nil {
 		return 0, err
 	}
+	if s.onAccountCreated != nil {
+		s.onAccountCreated(ctx, id)
+	}
 	if perr := s.republishCredentials(ctx); perr != nil {
 		return id, perr
 	}
@@ -153,10 +156,11 @@ func (s *Service) DeleteUser(ctx context.Context, userID int64) error {
 	if err := s.store.DeleteAccount(ctx, userID); err != nil {
 		return mapAccountErr(err)
 	}
-	s.bumpGeneration()
-	// The credential has to leave the published file too, or the deleted
-	// account keeps working over the older protocol.
-	return s.republishCredentials(ctx)
+	// Cascading deletion removes grants and memberships too. Reload the live
+	// evaluator before a reused database id can inherit the old authority, and
+	// withdraw the credential through the same post-commit notification.
+	s.membershipChanged(ctx)
+	return nil
 }
 
 // mapAccountErr turns the store's account sentinels into this package's.

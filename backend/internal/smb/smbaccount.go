@@ -13,7 +13,8 @@ import (
 
 // Deps supplies the account service used by SMB routes.
 type AccountHandler struct {
-	Auth *auth.Service
+	Auth        *auth.Service
+	Connections func(context.Context, int64) (SMBConnectionsView, error)
 }
 
 type accessRequest struct {
@@ -36,6 +37,20 @@ type passwordInput struct{ Body passwordRequest }
 type reconfirmInput struct{ Body reconfirmRequest }
 type stateOutput struct{ Body SMBStateView }
 type clearedOutput struct{ Body SMBClearedView }
+
+type connectionsOutput struct{ Body SMBConnectionsView }
+
+func (h *AccountHandler) Get(ctx context.Context, _ *struct{}) (*connectionsOutput, error) {
+	owner, err := accountOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	view, err := h.Connections(ctx, owner)
+	if err != nil {
+		return nil, err
+	}
+	return &connectionsOutput{Body: view}, nil
+}
 
 func accountOf(ctx context.Context) (int64, error) {
 	owner, err := files.OwnerFrom(ctx)

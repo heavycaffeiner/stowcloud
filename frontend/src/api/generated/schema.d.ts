@@ -155,7 +155,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        get: operations["account.smb.get"];
         put?: never;
         post: operations["account.smb.create"];
         delete?: never;
@@ -658,6 +658,22 @@ export interface paths {
         options?: never;
         head?: never;
         patch: operations["admin.users.update"];
+        trace?: never;
+    };
+    "/api/v1/admin/users/{id}/home/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["admin.users.home.retry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/admin/users/{id}/oidc": {
@@ -1619,6 +1635,7 @@ export interface components {
             id: string;
             inherit: boolean;
             label?: string;
+            managed: boolean;
             principal?: components["schemas"]["GrantPrincipalView"];
             share: string;
             subpath?: string;
@@ -1636,6 +1653,19 @@ export interface components {
             reasons: string[] | null;
             revision?: string;
             status: string;
+        };
+        HomeSummaryView: {
+            enabled: boolean;
+            /** Format: int64 */
+            pending: number;
+            ready: boolean;
+            /** Format: int64 */
+            smb_missing: number;
+        };
+        HomeView: {
+            enabled: boolean;
+            ready: boolean;
+            reason?: string;
         };
         HopView: {
             client: string;
@@ -1943,6 +1973,18 @@ export interface components {
             revertible: boolean;
             state: components["schemas"]["SMBStateView"];
         };
+        SMBConnectionsView: {
+            enabled: boolean;
+            folders: components["schemas"]["SMBFolderView"][] | null;
+            server?: string;
+        };
+        SMBFolderView: {
+            available: boolean;
+            label: string;
+            personal: boolean;
+            reason?: string;
+            share?: string;
+        };
         SMBReportView: {
             action: string;
             hosts_allow: string;
@@ -1983,6 +2025,7 @@ export interface components {
         };
         SettingsView: {
             fields: components["schemas"]["Field"][] | null;
+            homes?: components["schemas"]["HomeSummaryView"];
             hop: components["schemas"]["HopView"];
             smb_agent?: components["schemas"]["SMBAgentView"];
         };
@@ -2137,6 +2180,7 @@ export interface components {
             created_ns: string;
             disabled: boolean;
             display?: string;
+            home: components["schemas"]["HomeView"];
             id: string;
             login: string;
             quota_bytes?: string;
@@ -2149,6 +2193,7 @@ export interface components {
             csrf: string;
             display?: string;
             features: components["schemas"]["FeaturesView"];
+            home: components["schemas"]["HomeView"];
             id: string;
             limits: components["schemas"]["LimitsView"];
             login: string;
@@ -2472,6 +2517,35 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "account.smb.get": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SMBConnectionsView"];
+                };
             };
             /** @description Error */
             default: {
@@ -3798,6 +3872,37 @@ export interface operations {
                 "application/json": components["schemas"]["AdminUpdateUserRequest"];
             };
         };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "admin.users.home.retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description OK */
             200: {

@@ -5,8 +5,9 @@ import { describeApiError } from '../../../api/error-text'
 import { t } from '../../../i18n'
 import { useI18n } from '../../../hooks/use-i18n'
 import { useSession } from '../../auth/api'
-import { useClearSmbPassword, useSetSmbPassword, useSmbSettings } from '../api'
-import { StowButton, StowFormTextField, StowSwitch } from '@/shared/ui'
+import { useClearSmbPassword, useSetSmbPassword, useSmbSettings, useSmbConnections } from '../api'
+import { Icon, StowBadge, StowButton, StowFormTextField, StowSwitch, StowTextField } from '@/shared/ui'
+import { useCopyText } from '../../../hooks/use-copy-text'
 import { askPassword } from './PasswordPrompt'
 import { SettingsDialog } from './SettingsDialog'
 import * as styles from './SmbSection.css'
@@ -28,6 +29,9 @@ export function SmbSection() {
   const clearPassword = useClearSmbPassword()
   const [announcement, setAnnouncement] = useState('')
   const user = session.data?.user
+  const connections = useSmbConnections(session.data)
+  const [serverAddress, setServerAddress] = useState<string | null>(null)
+  const server = (serverAddress ?? connections.data?.server ?? window.location.hostname).trim()
   const credential = user?.smb_credential ?? 'none'
   const optOut = user?.smb_opt_out ?? false
   const enabled = user?.smb_enabled ?? false
@@ -89,7 +93,54 @@ export function SmbSection() {
   return (
     <div className={styles.root}>
       <p className={styles.note}>{t('smb.smb_reachable_only_from_local')}</p>
-      <p className={styles.state}>{stateLine}</p>
+      <p className={styles.state}>
+        {t('smb.authentication')}: {stateLine}
+      </p>
+      <StowTextField
+        label={t('smb.server_address')}
+        value={serverAddress ?? connections.data?.server ?? window.location.hostname}
+        helper={t('smb.server_address_hint')}
+        onValueChange={setServerAddress}
+        autoComplete="off"
+      />
+      <div className={styles.actions}>
+        <StowButton
+          variant="text"
+          icon={<Icon name="refresh" />}
+          loading={connections.isFetching}
+          onClick={() => void connections.refetch()}
+        >
+          {t('common.refresh')}
+        </StowButton>
+      </div>
+      {connections.error ? (
+        <p role="alert" className={settingsCardStyles.warning}>
+          {describeApiError(connections.error, t('smb.could_not_load_connections'))}
+        </p>
+      ) : null}
+      {connections.data?.folders.map((folder) => (
+        <div key={`${folder.personal}:${folder.label}`} className={styles.folder}>
+          <div className={styles.folderHeading}>
+            <strong>{folder.label}</strong>
+            {folder.personal ? <StowBadge>{t('smb.personal_folder')}</StowBadge> : null}
+            <StowBadge tone={folder.available ? undefined : 'warning'}>
+              {folder.available ? t('smb.folder_available') : folderReason(folder.reason)}
+            </StowBadge>
+          </div>
+          {folder.personal ? <p className={styles.note}>{t('smb.home_private_hint')}</p> : null}
+          {folder.share && server ? (
+            <>
+              <ConnectionAddress key={`windows:${server}`} label="Windows" address={`\\\\${server}\\${folder.share}`} />
+              <ConnectionAddress
+                key={`smb:${server}`}
+                label="macOS / Linux"
+                address={`smb://${server}/${encodeURIComponent(folder.share)}`}
+              />
+            </>
+          ) : null}
+        </div>
+      ))}
+      {connections.data?.folders.length === 0 ? <p className={styles.note}>{t('smb.no_folders')}</p> : null}
       <div>
         <StowSwitch
           checked={enabled}
@@ -117,6 +168,37 @@ export function SmbSection() {
       <p className={styles.announce} aria-live="polite">
         {announcement}
       </p>
+    </div>
+  )
+}
+
+function folderReason(reason: string | undefined): string {
+  const labels: Record<string, string> = {
+    server_disabled: t('smb.folder_server_disabled'),
+    server_unavailable: t('smb.folder_server_unavailable'),
+    account_unavailable: t('smb.folder_account_unavailable'),
+    credential_not_applied: t('smb.folder_credential_not_applied'),
+    folder_unavailable: t('smb.folder_unavailable'),
+    home_not_ready: t('smb.folder_home_not_ready'),
+    subpath_permissions: t('smb.folder_subpath_permissions'),
+    not_supported: t('smb.folder_not_supported'),
+    not_applied: t('smb.folder_not_applied'),
+    path_not_mounted: t('smb.folder_path_not_mounted')
+  }
+  return labels[reason ?? ''] ?? t('smb.folder_unavailable')
+}
+
+function ConnectionAddress({ label, address }: { label: string; address: string }) {
+  const { t } = useI18n()
+  const copy = useCopyText()
+  return (
+    <div className={styles.address}>
+      <span>{label}</span>
+      <code className={styles.addressValue}>{address}</code>
+      <StowButton variant="text" icon={<Icon name="copy" size={18} />} onClick={() => copy.mutate(address)}>
+        {copy.isSuccess ? t('common.copied') : t('common.copy')}
+      </StowButton>
+      {copy.error ? <span role="alert">{t('common.could_not_copy')}</span> : null}
     </div>
   )
 }

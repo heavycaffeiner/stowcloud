@@ -16,6 +16,7 @@ import (
 // that mapping happens once, in the protocol layer, where the caller's
 // grants are known and the existence rule can be applied to the response.
 var (
+	ErrHomePathOverlap = errors.New("private Home storage overlaps a shared folder")
 	// ErrNotFound is missing, or outside every grant. The two are one
 	// answer by design: returning a denial tells a stranger the path
 	// exists.

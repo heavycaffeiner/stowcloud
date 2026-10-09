@@ -129,6 +129,21 @@ func TestADenyGrantRemovesTheUserFromTheShare(t *testing.T) {
 	}
 }
 
+func TestASubpathDenialAlsoRemovesWholeShareSMBAccess(t *testing.T) {
+	d, _ := deps(t, oneShare(), []Grant{
+		{User: 1, Share: 7, WholeShare: true, AllowRead: true},
+		{User: 1, Share: 7, WholeShare: false, Denies: true},
+		{User: 2, Share: 7, WholeShare: true, AllowRead: true},
+	})
+	if _, err := Publish(t.Context(), d, enabled()); err != nil {
+		t.Fatal(err)
+	}
+	conf := read(t, d.ConfigDir, fileConf)
+	if strings.Contains(conf, "alice") || !strings.Contains(conf, "bob") {
+		t.Fatal("a subtree denial was widened into whole-share SMB access")
+	}
+}
+
 // The order the grants arrive in must not decide the answer. A deny read after
 // an allow has to remove the name that allow already added.
 func TestTheDenyRuleIsOrderIndependent(t *testing.T) {

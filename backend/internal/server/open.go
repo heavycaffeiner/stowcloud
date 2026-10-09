@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"runtime"
 	"sync"
@@ -356,6 +357,11 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	}
 
 	e.ACL = acl.NewEvaluator()
+	// The SMB container mounts just this existing subtree of the data volume.
+	// Create it before health becomes ready, including while Home is switched off.
+	if err := os.MkdirAll(filepath.Join(opt.DataDir, "homes"), 0o750); err != nil {
+		logger.Warn("preparing the default home storage directory failed", "error", err)
+	}
 
 	// Auth owns durable credential facts. SMB publication is composed after
 	// the core and settings are ready, then receives a neutral post-commit hook.
@@ -370,6 +376,13 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 		// rather than inside auth, so that package holds no dependency on
 		// the evaluator it is telling about.
 		OnMembership: func() { reloadMemberships(ctx, e, logger) },
+		OnAccountCreated: func(ctx context.Context, id int64) {
+			if e.Core != nil {
+				if err := e.Core.PrepareHome(ctx, files.UserID(id)); err != nil {
+					logger.Warn("preparing the new account's home failed", "user", id, "error", err)
+				}
+			}
+		},
 	})
 
 	coreSvc, kerr := files.New(ctx, files.Options{
@@ -620,17 +633,13 @@ func csrfKeyFrom(master [32]byte) []byte {
 // something that succeeded. The stale evaluator is corrected at the next
 // successful reload or at restart.
 func reloadMemberships(ctx context.Context, e *Engine, logger *slog.Logger) {
-	rows, err := e.State.Memberships(ctx)
-	if err != nil {
-		logger.Warn("reloading group memberships", "error", err)
-		return
+	// Deleting an account or group cascades its grants. Refresh both halves;
+	// membership-only updates would leave old grants attached to a reused id.
+	if e.Core != nil {
+		if err := e.Core.ReloadGrants(ctx); err != nil {
+			logger.Warn("reloading grants and group memberships", "error", err)
+		}
 	}
-
-	byUser := make(map[int64][]int64, len(rows))
-	for _, row := range rows {
-		byUser[row.User] = append(byUser[row.User], row.Group)
-	}
-	e.ACL.SetMemberships(byUser)
 }
 
 // jobDrainTimeout bounds how long a close waits for detached work to finish
@@ -753,13 +762,26 @@ func (e *Engine) Close() (err error) {
 // several, and a homes root that cannot be created must not stop a deployment
 // from serving the shares it already had.
 func (e *Engine) applyHomes(ctx context.Context, values config.Values) {
-	if !values.HomesEnabled || values.HomesRoot == "" {
+	if !values.HomesEnabled {
 		e.Core.DisableHomes()
 		return
 	}
-	if err := e.Core.EnableHomes(ctx, values.HomesRoot); err != nil {
+	root := e.homesRoot(values.HomesRoot)
+	if err := e.Core.EnableHomes(ctx, root); err != nil {
+		e.Core.DisableHomes()
 		e.logger.Error("home folders are configured and could not be opened",
-			"root", values.HomesRoot, "error", err)
+			"root", root, "error", err)
+		return
+	}
+	users, err := e.Auth.ListUsers(ctx)
+	if err != nil {
+		e.logger.Error("accounts could not be read while preparing home folders", "error", err)
+		return
+	}
+	for _, user := range users {
+		if err := e.Core.PrepareHome(ctx, files.UserID(user.ID)); err != nil {
+			e.logger.Warn("preparing an account's home failed", "user", user.ID, "error", err)
+		}
 	}
 }
 func (e *Engine) applyThumbnailSettings(_ context.Context, values config.Values) {

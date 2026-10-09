@@ -72,6 +72,7 @@ func Prune(ctx context.Context, desired []Entry) ([]string, error) {
 	}
 
 	var removed []string
+	var failures []string
 	for _, name := range names {
 		if keep[name] {
 			continue
@@ -82,12 +83,15 @@ func Prune(ctx context.Context, desired []Entry) ([]string, error) {
 			continue
 		}
 		if rerr := exec.CommandContext(ctx, "pdbedit", "-x", "-u", name).Run(); rerr != nil { //nolint:gosec // G204: the name passed the portable rule on the line above.
-			// A credential that will not delete is reported rather than failing
-			// the pass, since the rest still need pruning and a survivor shows
-			// up in the next check.
+			// Continue pruning the rest, but report every survivor so the caller
+			// can stop serving credentials that should have been revoked.
+			failures = append(failures, name)
 			continue
 		}
 		removed = append(removed, name)
+	}
+	if len(failures) > 0 {
+		return removed, fmt.Errorf("could not revoke credentials for %s", strings.Join(failures, ", "))
 	}
 	return removed, nil
 }

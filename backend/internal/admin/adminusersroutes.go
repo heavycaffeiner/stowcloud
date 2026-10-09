@@ -23,6 +23,9 @@ type AdminUsersDeps struct {
 	Auth        *auth.Service
 	CleanupHome func(ctx context.Context, user files.UserID) error
 	Logger      *slog.Logger
+	Home        func(context.Context, int64) auth.HomeView
+	PrepareHome func(context.Context, files.UserID) error
+	PublishSMB  func(context.Context)
 }
 
 // NewAdminUsersHandlers builds administrator account, group and audit routes.
@@ -94,7 +97,13 @@ func (h *AdminUsersHandlers) UsersList(ctx context.Context, _ *struct{}) (*users
 	if err != nil {
 		return nil, adminErr(err)
 	}
-	return &usersOutput{Body: UsersOf(rows)}, nil
+	out := UsersOf(rows)
+	for i, row := range rows {
+		if h.d.Home != nil {
+			out[i].Home = h.d.Home(ctx, row.ID)
+		}
+	}
+	return &usersOutput{Body: out}, nil
 }
 
 func (h *AdminUsersHandlers) UsersCreate(ctx context.Context, in *userCreateInput) (*userOutput, error) {
@@ -107,7 +116,7 @@ func (h *AdminUsersHandlers) UsersCreate(ctx context.Context, in *userCreateInpu
 	if err != nil {
 		return nil, adminErr(err)
 	}
-	return &userOutput{Status: http.StatusCreated, Body: UserOf(row)}, nil
+	return &userOutput{Status: http.StatusCreated, Body: h.userView(ctx, row)}, nil
 }
 
 func (h *AdminUsersHandlers) UsersUpdate(ctx context.Context, in *userUpdateInput) (*userOutput, error) {
@@ -150,7 +159,34 @@ func (h *AdminUsersHandlers) UsersUpdate(ctx context.Context, in *userUpdateInpu
 	if err != nil {
 		return nil, adminErr(err)
 	}
-	return &userOutput{Status: http.StatusOK, Body: UserOf(row)}, nil
+	return &userOutput{Status: http.StatusOK, Body: h.userView(ctx, row)}, nil
+}
+
+func (h *AdminUsersHandlers) userView(ctx context.Context, row auth.UserRow) UserView {
+	view := UserOf(row)
+	if h.d.Home != nil {
+		view.Home = h.d.Home(ctx, row.ID)
+	}
+	return view
+}
+
+// UsersHomeRetry retries preparation without requiring the account's first login.
+func (h *AdminUsersHandlers) UsersHomeRetry(ctx context.Context, in *userPathInput) (*userOutput, error) {
+	target, ok := positiveID(in.ID)
+	if !ok || h.d.PrepareHome == nil || h.d.Home == nil || !h.d.Home(ctx, target).Enabled {
+		return nil, errNotFound()
+	}
+	row, err := h.d.Auth.UserByID(ctx, target)
+	if err != nil {
+		return nil, adminErr(err)
+	}
+	if err := h.d.PrepareHome(ctx, files.UserID(target)); err != nil {
+		return nil, err
+	}
+	if h.d.PublishSMB != nil {
+		h.d.PublishSMB(ctx)
+	}
+	return &userOutput{Status: http.StatusOK, Body: h.userView(ctx, row)}, nil
 }
 
 func (h *AdminUsersHandlers) UsersDelete(ctx context.Context, in *userPathInput) (*noContentOutput, error) {

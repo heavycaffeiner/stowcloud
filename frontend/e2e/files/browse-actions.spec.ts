@@ -2,6 +2,7 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { test, expect } from '../fixtures'
 import { assertNoUnexpectedErrors } from '../helpers/ux-invariants'
+import { fileEntries, fileEntry } from '../helpers/browse'
 
 test.describe('browse actions reach the server', () => {
   test.beforeEach(async ({ page, filesystem, workerApp, grants }) => {
@@ -18,6 +19,42 @@ test.describe('browse actions reach the server', () => {
         allow: ['read', 'write', 'create', 'delete', 'download', 'rename', 'move', 'share']
       })
     }
+  })
+
+  test('parent navigation works in empty lists and grids and stops at each share root', async ({
+    authedPage: page,
+    workerApp,
+    namespace,
+    artifacts
+  }) => {
+    const folder = namespace('parent')
+    const child = 'empty # 폴더'
+    fs.mkdirSync(path.join(workerApp.shareDir, folder, child), { recursive: true })
+    await page.goto(`${workerApp.baseURL}/b/docs`)
+    const parent = page.getByRole('button', { name: 'Go to parent folder', exact: true })
+    await expect(parent).toHaveCount(0)
+    for (const mode of ['list', 'grid']) {
+      if (mode === 'grid') {
+        const toggle = page.getByRole('button', { name: 'Grid view', exact: true })
+        if (await toggle.isVisible()) {
+          await toggle.click()
+        } else {
+          await page.getByRole('button', { name: 'More', exact: true }).first().click()
+          await page.getByRole('menuitem', { name: 'Grid view', exact: true }).click()
+        }
+      }
+      await fileEntry(page, folder).dblclick()
+      await fileEntry(page, child).dblclick()
+      await expect(fileEntries(page)).toHaveCount(0)
+      await expect(parent).toBeVisible()
+      await parent.click()
+      await expect(page).toHaveURL(`${workerApp.baseURL}/b/docs/${folder}`)
+      await parent.focus()
+      await page.keyboard.press('Enter')
+      await expect(page).toHaveURL(`${workerApp.baseURL}/b/docs`)
+      await expect(parent).toHaveCount(0)
+    }
+    await assertNoUnexpectedErrors(artifacts)
   })
 
   test('a file moved through the destination picker lands in the chosen folder', async ({
@@ -94,11 +131,18 @@ test.describe('browse actions reach the server', () => {
 
     await page.goto(`${workerApp.baseURL}/b/docs/${folder}`, { waitUntil: 'domcontentloaded' })
     await page.getByRole('grid', { name: 'File list' }).getByRole('row').filter({ hasText: 'd.txt' }).click()
-    // The toolbar and the selection bar both offer it; either opens the panel.
-    await page.getByRole('button', { name: 'Show details' }).first().click()
+    const details = page.getByRole('button', { name: 'Show details' }).first()
+    if (await details.isVisible()) {
+      await details.click()
+    } else {
+      // Compact layouts put details in the overflow menu.
+      await page.getByRole('button', { name: 'More', exact: true }).first().click()
+      await page.getByRole('menuitem', { name: 'Show details', exact: true }).click()
+    }
 
     const download = page.waitForEvent('download')
-    await page.getByRole('complementary', { name: 'Details' }).getByRole('button', { name: 'Download' }).click()
+    const panel = page.getByRole('complementary', { name: 'Details' }).or(page.getByRole('dialog', { name: 'Details' }))
+    await panel.getByRole('button', { name: 'Download' }).click()
     expect((await download).suggestedFilename()).toBe('d.txt')
 
     await assertNoUnexpectedErrors(artifacts)

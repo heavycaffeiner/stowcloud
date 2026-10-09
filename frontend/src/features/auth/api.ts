@@ -87,6 +87,7 @@ export interface SessionInfo {
   limits: ClientLimits
   features: Features
   oidc: SessionOidc
+  home?: { enabled: boolean; ready: boolean; reason?: string }
 }
 
 /** All an anonymous caller learns about SSO: whether to draw the button and
@@ -172,6 +173,7 @@ function sessionFromWire(w: Schemas['WhoAmIView']): SessionInfo {
       broken_reason: r.broken_reason
     })),
     csrf: w.csrf,
+    home: w.home,
     limits: w.limits,
     features: { ...w.features, search: oneOf(w.features.search, SEARCH_MODES, 'search mode', 'walk') },
     oidc: w.oidc

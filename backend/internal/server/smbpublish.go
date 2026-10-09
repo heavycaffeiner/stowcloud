@@ -17,22 +17,27 @@ import (
 const publishTimeout = agent.DefaultTimeout + 5*time.Second
 
 type smbSettings struct {
-	Config     smb.Config
-	ConfigDir  string
-	Socket     string
-	GID        uint32
-	Configured bool
+	Config       smb.Config
+	ConfigDir    string
+	Socket       string
+	GID          uint32
+	Configured   bool
+	HomesEnabled bool
 }
 
 func smbSettingsOf(ctx context.Context, e *Engine) smbSettings {
 	values := config.Load(ctx, e.State, config.Defaults(), e.logger)
-	return smbSettings{Config: values.SMB, ConfigDir: values.SMBConfigDir, Socket: values.SMBSocket, GID: values.SMBServiceGID, Configured: values.SMBConfigured}
+	return smbSettings{Config: values.SMB, ConfigDir: values.SMBConfigDir, Socket: values.SMBSocket, GID: values.SMBServiceGID, Configured: values.SMBConfigured, HomesEnabled: values.HomesEnabled}
 }
 
 func newSMBPublisher(e *Engine, s smbSettings) *publish.Publisher {
 	if !s.Configured || s.ConfigDir == "" {
 		return nil
 	}
+	return smbPublisherFor(e)
+}
+
+func smbPublisherFor(e *Engine) *publish.Publisher {
 	return publish.New(publish.PublisherDeps{
 		Core:   e.Core,
 		Auth:   e.Auth,
@@ -41,9 +46,17 @@ func newSMBPublisher(e *Engine, s smbSettings) *publish.Publisher {
 		Logger: e.logger,
 		Settings: func(ctx context.Context) publish.Settings {
 			current := smbSettingsOf(ctx, e)
-			return publish.Settings{Config: current.Config, ConfigDir: current.ConfigDir, Socket: current.Socket, ServiceGID: current.GID, Configured: current.Configured}
+			return publish.Settings{Config: current.Config, ConfigDir: current.ConfigDir, Socket: current.Socket, ServiceGID: current.GID, Configured: current.Configured, HomesEnabled: current.HomesEnabled}
 		},
 	})
+}
+
+func (e *Engine) smbConnections(ctx context.Context, id int64) (smb.SMBConnectionsView, error) {
+	p := e.smbPublisherOf()
+	if p == nil {
+		p = smbPublisherFor(e)
+	}
+	return p.Connections(ctx, id)
 }
 
 func (e *Engine) publishSMBAtBoot(ctx context.Context) {

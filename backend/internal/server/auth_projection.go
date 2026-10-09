@@ -21,6 +21,7 @@ type SessionDetailsDeps struct {
 	Core     *files.Core
 	Upload   *uploads.Engine
 	Features FeaturesInputs
+	Home     func(context.Context, int64) auth.HomeView
 }
 
 // FeaturesInputs are the live capabilities that determine which UI surfaces
@@ -50,6 +51,12 @@ func SessionDetailsOf(ctx context.Context, id int64, d SessionDetailsDeps) (auth
 	} else if !errors.Is(linkErr, auth.ErrNoOIDCLink) {
 		return auth.SessionDetails{}, linkErr
 	}
+	roots := RootViews(d.Core, files.UserID(id))
+	status := d.Core.HomeStatusOf(ctx, files.UserID(id))
+	home := auth.HomeView{Enabled: status.Enabled, Ready: status.Ready, Reason: status.Reason}
+	if d.Home != nil {
+		home = d.Home(ctx, id)
+	}
 	return auth.SessionDetails{
 		TOTPEnabled:          row.TOTPEnabled,
 		SMBOptOut:            smb.OptOut,
@@ -57,7 +64,8 @@ func SessionDetailsOf(ctx context.Context, id int64, d SessionDetailsDeps) (auth
 		SMBCredential:        string(smb.Credential),
 		SMBUnavailableReason: smbUnavailableReason(smb),
 		Oidc:                 oidc,
-		Roots:                RootViews(d.Core, files.UserID(id)),
+		Roots:                roots,
+		Home:                 home,
 		Limits:               LimitsViewOf(d.Upload),
 		Features:             FeaturesViewOf(d.Core, d.Features),
 	}, nil

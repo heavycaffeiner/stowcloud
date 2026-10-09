@@ -10,6 +10,7 @@ import { invalidateEncryptedShares } from '../shares/encrypted-shares'
 import { keys } from '../../api/query-keys'
 import { resetUploadQueue } from '../upload/queue'
 import { isProviderUrl, logout } from '../auth/api'
+import type { SessionInfo } from '../auth/api'
 
 type Schemas = components['schemas']
 
@@ -214,6 +215,24 @@ export function useSmbSettings() {
       await unwrap(client.POST('/api/v1/account/smb', { body: { current: currentPassword, opt_out: optOut, enabled } }))
     },
     onSuccess: () => invalidate(keys.session())
+  })
+}
+
+export function useSmbConnections(session: SessionInfo | undefined) {
+  return useQuery({
+    queryKey: [
+      ...keys.smbConnections(),
+      session?.user.id,
+      session?.user.smb_credential,
+      session?.user.smb_enabled,
+      session?.user.smb_opt_out,
+      session?.roots
+    ],
+    queryFn: async () => {
+      const data = await unwrap(client.GET('/api/v1/account/smb'))
+      return { ...data, folders: data.folders ?? [] }
+    },
+    enabled: session !== undefined
   })
 }
 

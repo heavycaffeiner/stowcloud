@@ -29,6 +29,7 @@ type SharesHandler struct {
 	WatchShare           func(files.ShareDef)
 	UnwatchShare         func(files.ShareDef)
 	Logger               *slog.Logger
+	PublishSMB           func(context.Context)
 }
 
 // Typed Huma request and response models preserve native JSON shapes. IDs and
@@ -132,6 +133,7 @@ func (h *SharesHandler) CreateShare(ctx context.Context, in *sharesCreateInput) 
 	if err := h.grantShareToContext(ctx, admin, share); err != nil {
 		h.Logger.Warn("the new share was registered without a grant for its creator", "share", int64(share.ID), "error", err)
 	}
+	h.publishSMB(ctx)
 	return &shareCreatedOutput{Body: ShareOf(share), Status: http.StatusCreated}, nil
 }
 
@@ -177,6 +179,7 @@ func (h *SharesHandler) UpdateShare(ctx context.Context, in *shareUpdateInput) (
 	if h.WatchShare != nil {
 		h.WatchShare(share)
 	}
+	h.publishSMB(ctx)
 	return &shareOutput{Body: ShareOf(share)}, nil
 }
 
@@ -190,6 +193,7 @@ func (h *SharesHandler) RetryShare(ctx context.Context, in *sharePathInput) (*sh
 	if err != nil {
 		return nil, err
 	}
+	h.publishSMB(ctx)
 	return &shareOutput{Body: ShareOf(share)}, nil
 }
 
@@ -209,6 +213,7 @@ func (h *SharesHandler) DeleteShare(ctx context.Context, in *sharePathInput) (*n
 	if h.UnwatchShare != nil {
 		h.UnwatchShare(share)
 	}
+	h.publishSMB(ctx)
 	return &noContentOutput{Status: http.StatusNoContent}, nil
 }
 
@@ -238,6 +243,7 @@ func (h *SharesHandler) CreateGrant(ctx context.Context, in *grantCreateInput) (
 	if err != nil {
 		return nil, err
 	}
+	h.publishSMB(ctx)
 	return &grantCreatedOutput{Body: GrantOf(grant), Status: http.StatusCreated}, nil
 }
 
@@ -259,6 +265,7 @@ func (h *SharesHandler) UpdateGrant(ctx context.Context, in *grantUpdateInput) (
 	if err != nil {
 		return nil, err
 	}
+	h.publishSMB(ctx)
 	return &grantOutput{Body: GrantOf(grant)}, nil
 }
 
@@ -271,7 +278,14 @@ func (h *SharesHandler) DeleteGrant(ctx context.Context, in *grantPathInput) (*n
 	if err := h.Core.DeleteGrant(ctx, id); err != nil {
 		return nil, err
 	}
+	h.publishSMB(ctx)
 	return &noContentOutput{Status: http.StatusNoContent}, nil
+}
+
+func (h *SharesHandler) publishSMB(ctx context.Context) {
+	if h.PublishSMB != nil {
+		h.PublishSMB(ctx)
+	}
 }
 
 func queryInt(raw string) int64 {

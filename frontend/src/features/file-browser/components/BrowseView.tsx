@@ -18,6 +18,7 @@ import {
   type IconName
 } from '@/shared/ui'
 import { useCompact } from '@/hooks/use-compact'
+import { parentOf } from '../../../lib/path-utils'
 import { useOpenSearch } from '../../search/state'
 import { BreadcrumbPath } from './BreadcrumbPath'
 import { DetailsPanel } from './DetailsPanel'
@@ -25,6 +26,7 @@ import { FileGrid } from './FileGrid'
 import { fileIcon } from './FileItem'
 import { FileList } from './FileList'
 import { FolderTree } from './FolderTree'
+import { ParentFolderItem } from './ParentFolderItem'
 import { notice, operation, treeOpen } from '../browse-page'
 import { splatOf } from '../browse-search'
 import type { BrowseFilterDate, BrowseFilterType } from '../model/filtering'
@@ -265,6 +267,7 @@ export function BrowseContent({ path, listing, actions, dragOver }: BrowseSectio
   useFocusParam(view, query)
   const all = !listing.filtered
   const isAdmin = Boolean(session.data?.user.is_admin)
+  const parent = parentOf(path)
 
   // A filter has to see the whole folder, so every page loads while one is on.
   useEffect(() => {
@@ -313,6 +316,12 @@ export function BrowseContent({ path, listing, actions, dragOver }: BrowseSectio
           actions.openCreateMenu({ x: event.clientX, y: event.clientY, trigger: event.currentTarget })
         }}
       >
+        {parent !== '/' ? (
+          <ParentFolderItem
+            className={styles.parentFolder}
+            onNavigate={() => void navigate({ to: '/b/$', params: splatOf(parent) })}
+          />
+        ) : null}
         {noShares ? (
           <div className={styles.nothing}>
             <div className={styles.nothingIcon} aria-hidden="true">

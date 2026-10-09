@@ -49,6 +49,10 @@ type Config struct {
 	// free of a dependency on it.
 	OnMembership func()
 
+	// OnAccountCreated prepares account-owned storage after the account commits
+	// and before SMB credentials are published. Failure does not undo the account.
+	OnAccountCreated func(context.Context, int64)
+
 	// Params sets the Argon2id parameters new password hashes are written
 	// with. The zero value means CurrentParams(). Outside a test binary,
 	// anything weaker than CurrentParams() in memory cost or iterations is
@@ -106,7 +110,8 @@ type Service struct {
 	stamped  map[int64]int64
 	auditOps atomic.Int64
 
-	onMembership func()
+	onMembership     func()
+	onAccountCreated func(context.Context, int64)
 
 	// decoy is the hash a login against an unknown account verifies against,
 	// computed once per process so the cost and the timing of that answer
@@ -129,15 +134,16 @@ func New(cfg Config) *Service {
 	}
 	log := cfg.Logger
 	return &Service{
-		store:        cfg.Store,
-		dir:          cfg.StoreDir,
-		clk:          clk,
-		log:          log,
-		params:       resolvePasswordParams(cfg.Params),
-		gate:         newGate(),
-		cache:        newCaches(clk),
-		limit:        newLimiter(loginWindow, loginMaxAttempts, clk.Nanos),
-		onMembership: cfg.OnMembership,
+		store:            cfg.Store,
+		dir:              cfg.StoreDir,
+		clk:              clk,
+		log:              log,
+		params:           resolvePasswordParams(cfg.Params),
+		gate:             newGate(),
+		cache:            newCaches(clk),
+		limit:            newLimiter(loginWindow, loginMaxAttempts, clk.Nanos),
+		onMembership:     cfg.OnMembership,
+		onAccountCreated: cfg.OnAccountCreated,
 	}
 }
 

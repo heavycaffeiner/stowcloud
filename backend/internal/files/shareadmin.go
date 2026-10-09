@@ -73,6 +73,9 @@ func rowOf(def ShareDef) state.ShareRow {
 
 // CreateShare mints a share, both durably and in the live registry.
 func (c *Core) CreateShare(ctx context.Context, spec ShareSpec) (Share, error) {
+	if IsHomeName(spec.Name) {
+		return Share{}, errf(ErrDenied, "Home names are reserved for personal folders")
+	}
 	// A linear scan, because the registry is small and already sorted.
 	for _, existing := range c.Shares() {
 		if existing.Name == spec.Name {
@@ -83,6 +86,11 @@ func (c *Core) CreateShare(ctx context.Context, spec ShareSpec) (Share, error) {
 	backend, berr := ParseBackend(spec.Backend)
 	if berr != nil {
 		return Share{}, errf(ErrUnprocessable, "%v", berr)
+	}
+	if backend == BackendLocal {
+		if err := c.validateShareOutsideHomes(spec.Host); err != nil {
+			return Share{}, err
+		}
 	}
 
 	policy := vfs.DefaultSharePolicy()
@@ -157,6 +165,9 @@ func (c *Core) rollbackShareRow(ctx context.Context, rowid, shareID int64) {
 // data that is no longer there. A patch naming the backend the share
 // already has is not a change and passes through.
 func (c *Core) UpdateShare(ctx context.Context, id ShareID, patch SharePatch) (Share, error) {
+	if IsHomeShare(id) || (patch.Name != nil && IsHomeName(*patch.Name)) {
+		return Share{}, errf(ErrDenied, "Home folders are managed by the server")
+	}
 	def, ok := c.Share(id)
 	if !ok {
 		return Share{}, ErrNotFound
@@ -179,6 +190,11 @@ func (c *Core) UpdateShare(ctx context.Context, id ShareID, patch SharePatch) (S
 		def.Name = *patch.Name
 	}
 	if patch.Host != nil {
+		if def.Backend == "" || def.Backend == BackendLocal {
+			if err := c.validateShareOutsideHomes(*patch.Host); err != nil {
+				return Share{}, err
+			}
+		}
 		def.Host = *patch.Host
 	}
 	if patch.TrashEnabled != nil {
@@ -269,6 +285,9 @@ func (c *Core) restoreShare(ctx context.Context, id ShareID, before ShareDef) bo
 // verdict, so the screen said "internal error" about the very condition it
 // was showing.
 func (c *Core) RetryShare(ctx context.Context, id ShareID) (Share, error) {
+	if IsHomeShare(id) {
+		return Share{}, errf(ErrDenied, "Home folders are managed by the server")
+	}
 	def, ok := c.Share(id)
 	if !ok {
 		return Share{}, ErrNotFound
@@ -294,6 +313,9 @@ func (c *Core) RetryShare(ctx context.Context, id ShareID) (Share, error) {
 // failing the caller over an orphaned row that names an id nothing serves
 // would report a completed delete as a failure.
 func (c *Core) DeleteShare(ctx context.Context, id ShareID) error {
+	if IsHomeShare(id) {
+		return errf(ErrDenied, "Home folders are managed by the server")
+	}
 	if _, ok := c.Share(id); !ok {
 		return ErrNotFound
 	}

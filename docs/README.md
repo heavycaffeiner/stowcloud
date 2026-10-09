@@ -3,6 +3,7 @@
 | Document | What it covers |
 |---|---|
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | current server and browser layout, and durable contracts |
+| [`design/home-folders.md`](design/home-folders.md) | automatic Home provisioning, account creation flow, private SMB access, and parent navigation |
 | [`refactor/2026-09-large-refactor-plan.md`](refactor/2026-09-large-refactor-plan.md) | proposed backend, frontend, and repository restructure |
 | [`releases/`](releases/) | release notes, one file per version |
 

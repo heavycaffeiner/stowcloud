@@ -120,6 +120,7 @@ hand_over() {
 # The data directory is this server's alone. The SMB render directory is
 # written here and read by the sidecar.
 hand_over /var/lib/stowcloud
+hand_over /var/lib/stowcloud/homes
 hand_over /config/smb
 
 # exec, so the server is PID 1 and receives the stop signal directly rather

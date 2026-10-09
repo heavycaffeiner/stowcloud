@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/netip"
+	"path/filepath"
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
@@ -37,15 +38,17 @@ type Settings interface {
 
 // SettingsDeps contains only services and callbacks needed by these routes.
 type SettingsDeps struct {
-	State        *state.DB
-	Auth         *auth.Service
-	Settings     Settings
-	DataDir      string
-	Hardening    jail.Policy
-	SMBAgentView func() *SMBAgentView
-	PublishSMB   func(context.Context)
-	OnRestart    func()
-	Logger       *slog.Logger
+	State         *state.DB
+	Auth          *auth.Service
+	Settings      Settings
+	DataDir       string
+	Hardening     jail.Policy
+	SMBAgentView  func() *SMBAgentView
+	PublishSMB    func(context.Context)
+	OnRestart     func()
+	Logger        *slog.Logger
+	Homes         func(context.Context) HomeSummaryView
+	ValidateHomes func(context.Context, map[string]any) error
 }
 
 // NewSettingsHandlers builds the administrator settings handlers.
@@ -72,8 +75,16 @@ func (h *SettingsHandlers) Get(ctx context.Context, in *settingsGetInput) (*sett
 	}
 	values := h.d.Settings.Values(ctx)
 	values.DataDir = h.d.DataDir
+	if values.HomesRoot == "" {
+		values.HomesRoot = filepath.Join(h.d.DataDir, "homes")
+	}
 	hop := h.hopOf(ctx, in.CFConnectingIP != "" || in.XForwardedFor != "")
-	return &settingsOutput{Body: SettingsOf(config.Of(values, stored), hop, h.d.SMBAgentView())}, nil
+	view := SettingsOf(config.Of(values, stored), hop, h.d.SMBAgentView())
+	if h.d.Homes != nil {
+		homes := h.d.Homes(ctx)
+		view.Homes = &homes
+	}
+	return &settingsOutput{Body: view}, nil
 }
 
 type settingsPatchInput struct {
@@ -111,6 +122,11 @@ func (h *SettingsHandlers) Patch(ctx context.Context, in *settingsPatchInput) (*
 	if Blocking(findings) {
 		return &applyOutput{Status: http.StatusUnprocessableEntity, Body: ApplyOutcomeOf(false, false, false, findings)}, nil
 	}
+	if section == "homes" && h.d.ValidateHomes != nil {
+		if err := h.d.ValidateHomes(ctx, body); err != nil {
+			return nil, err
+		}
+	}
 	if err := h.d.State.MergeSettings(ctx, section, body); err != nil {
 		return nil, err
 	}
@@ -118,7 +134,7 @@ func (h *SettingsHandlers) Patch(ctx context.Context, in *settingsPatchInput) (*
 	if !restart {
 		h.d.Settings.Load(ctx)
 	}
-	if section == "smb" && h.d.PublishSMB != nil {
+	if (section == "smb" || section == "homes") && h.d.PublishSMB != nil {
 		h.d.PublishSMB(ctx)
 	}
 	applied := !restart

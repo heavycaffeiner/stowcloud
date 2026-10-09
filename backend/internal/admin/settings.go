@@ -63,7 +63,15 @@ type SettingsView struct {
 	// sharing is off or nothing has been pushed. Without it the screen shows
 	// SMB as simply on, which it did while the daemon was failing to bind on
 	// every start.
-	SMBAgent *SMBAgentView `json:"smb_agent,omitempty"`
+	SMBAgent *SMBAgentView    `json:"smb_agent,omitempty"`
+	Homes    *HomeSummaryView `json:"homes,omitempty"`
+}
+
+type HomeSummaryView struct {
+	Enabled    bool `json:"enabled"`
+	Ready      bool `json:"ready"`
+	Pending    int  `json:"pending"`
+	SMBMissing int  `json:"smb_missing"`
 }
 
 // SMBAgentView is the sidecar's own answer, projected for the screen.

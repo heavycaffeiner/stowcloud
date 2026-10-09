@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import { overlay } from 'overlay-kit'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import { describeApiError } from '../../../api/error-text'
@@ -20,11 +21,13 @@ import {
   VirtualList
 } from '@/shared/ui'
 import { GrantPermissionGrid, usePermLabels } from './GrantPermissionGrid'
+import { ManagedHome } from './ManagedHome'
 import * as styles from './GrantManagementSection.css'
 import * as adminStyles from './admin.css'
 import {
   ALL_GRANT_PERMS,
   useAdminGrants,
+  useAdminUsers,
   useAdminShares,
   useCreateGrant,
   useDeleteGrant,
@@ -72,7 +75,7 @@ function GrantsDialog({
         </StowButton>
       }
     >
-      <GrantManagementSection principal={principal} label={label} />
+      <GrantManagementSection principal={principal} label={label} onClose={onClose} />
     </StowDialog>
   )
 }
@@ -81,14 +84,17 @@ function shareNameOf(shares: readonly AdminShare[], id: number): string {
   return shares.find((share) => share.id === id)?.name ?? t('grant.share', { id })
 }
 
-function GrantManagementSection({ principal, label }: Omit<GrantsTarget, 'title'>) {
+function GrantManagementSection({ principal, label, onClose }: Omit<GrantsTarget, 'title'> & { onClose: () => void }) {
   const { t } = useI18n()
   const permLabel = usePermLabels()
   const sharesQuery = useAdminShares()
   const grantsQuery = useAdminGrants(principal.kind === 'user' ? { userId: principal.id } : { groupId: principal.id })
   const deleteGrant = useDeleteGrant()
+  const navigate = useNavigate()
+  const users = useAdminUsers(principal.kind === 'user')
+  const user = principal.kind === 'user' ? users.data?.find((user) => user.id === principal.id) : undefined
   const shares = sharesQuery.data ?? []
-  const grants = grantsQuery.data ?? []
+  const grants = (grantsQuery.data ?? []).filter((grant) => !grant.managed)
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<number>>(new Set())
   // Keeps the row that opened a dialog mounted so focus can return to it.
   const [pinned, setPinned] = useState<number | null>(null)
@@ -139,6 +145,15 @@ function GrantManagementSection({ principal, label }: Omit<GrantsTarget, 'title'
         <strong>{label}</strong>
         {t('grant.sees_only_folders_granted_here')}
       </p>
+      {user ? (
+        <ManagedHome
+          user={user}
+          onSettings={() => {
+            onClose()
+            void navigate({ to: '/admin/{-$tab}', params: { tab: 'server' }, hash: 'server-homes' })
+          }}
+        />
+      ) : null}
       {sharesQuery.isPending || grantsQuery.isPending ? (
         <StowProgressCircular />
       ) : loadError ? (

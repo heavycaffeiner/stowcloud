@@ -83,7 +83,7 @@ func (e *Engine) routes(router *gin.Engine) error {
 		Service: e.Auth, Clock: e.clock, CSRFKey: e.csrfKey,
 		TOTPAllow: e.totpLimiter, SessionDetails: func(ctx context.Context, id int64) (auth.SessionDetails, error) {
 			return SessionDetailsOf(ctx, id, SessionDetailsDeps{
-				Auth: e.Auth, Core: e.Core, Upload: e.Upload,
+				Auth: e.Auth, Core: e.Core, Upload: e.Upload, Home: e.homeView,
 				Features: FeaturesInputs{
 					SMBEnabled:     func() bool { return e.smbPublisherOf() != nil },
 					PreviewEnabled: e.thumbnailEnabled, SearchHasIndex: e.Search.HasIndex,
@@ -113,7 +113,8 @@ func (e *Engine) routes(router *gin.Engine) error {
 	op(sessionAPI, http.MethodPost, "/api/v1/account/totp/disable", "account.totp.disable", account.TOTPDisable)
 	op(sessionAPI, http.MethodGet, "/api/v1/account/totp/recovery-codes", "account.recovery_codes.count", account.RecoveryList)
 	op(sessionAPI, http.MethodPost, "/api/v1/account/totp/recovery-codes", "account.recovery_codes.create", account.RecoveryCreate)
-	smb := &adminsmb.AccountHandler{Auth: e.Auth}
+	smb := &adminsmb.AccountHandler{Auth: e.Auth, Connections: e.smbConnections}
+	op(sessionAPI, http.MethodGet, "/api/v1/account/smb", "account.smb.get", smb.Get)
 	op(sessionAPI, http.MethodPost, "/api/v1/account/smb", "account.smb.create", smb.Access)
 	op(sessionAPI, http.MethodPost, "/api/v1/account/smb/password", "account.smb.password.set", smb.SetPassword)
 	op(sessionAPI, http.MethodDelete, "/api/v1/account/smb/password", "account.smb.password.delete", smb.DeletePassword)
@@ -207,12 +208,13 @@ func (e *Engine) routes(router *gin.Engine) error {
 
 	session.GET("/api/v1/search/stream", e.searchHTTP.SearchStream)
 
-	enc := &files.EncryptionHandler{Core: e.Core}
+	enc := &files.EncryptionHandler{Core: e.Core, PublishSMB: e.publishSMBSettings}
 	op(sessionAPI, http.MethodGet, "/api/v1/encryption", "encryption.list", enc.List)
 	op(adminAPI, http.MethodPost, "/api/v1/encryption/{id}", "admin.encryption.enable", enc.Enable)
 	op(adminAPI, http.MethodDelete, "/api/v1/encryption/{id}", "admin.encryption.disable", enc.Disable)
 
-	users := adminhttp.NewAdminUsersHandlers(adminhttp.AdminUsersDeps{Auth: e.Auth, CleanupHome: e.Core.CleanupHome, Logger: e.logger})
+	users := adminhttp.NewAdminUsersHandlers(adminhttp.AdminUsersDeps{Auth: e.Auth, CleanupHome: e.Core.CleanupHome, Logger: e.logger, Home: e.homeView, PrepareHome: e.retryHome, PublishSMB: e.publishSMBSettings})
+	op(adminAPI, http.MethodPost, "/api/v1/admin/users/{id}/home/retry", "admin.users.home.retry", users.UsersHomeRetry)
 	op(adminAPI, http.MethodGet, "/api/v1/admin/users", "admin.users.list", users.UsersList)
 	op(adminAPI, http.MethodPost, "/api/v1/admin/users", "admin.users.create", users.UsersCreate)
 	op(adminAPI, http.MethodPatch, "/api/v1/admin/users/{id}", "admin.users.update", users.UsersUpdate)
@@ -230,6 +232,7 @@ func (e *Engine) routes(router *gin.Engine) error {
 	shares := &adminhttp.SharesHandler{
 		Core: e.Core, MarkSearchIncomplete: e.searchController.MarkIncomplete,
 		WatchShare: e.watchShare, UnwatchShare: e.unwatchShare, Logger: e.logger,
+		PublishSMB: e.publishSMBSettings,
 	}
 	op(adminAPI, http.MethodGet, "/api/v1/admin/grants", "admin.grants.list", shares.ListGrants)
 	op(adminAPI, http.MethodPost, "/api/v1/admin/grants", "admin.grants.create", shares.CreateGrant)
@@ -269,7 +272,7 @@ func (e *Engine) routes(router *gin.Engine) error {
 				return nil
 			}
 			return adminhttp.SMBAgentOf(p.LastReport())
-		}, PublishSMB: e.publishSMBSettings,
+		}, PublishSMB: e.publishSMBSettings, Homes: e.homesSummary, ValidateHomes: e.validateHomes,
 		OnRestart: e.Restart.Request, Logger: e.logger,
 	})
 	op(adminAPI, http.MethodGet, "/api/v1/admin/settings", "admin.settings.get", settings.Get)

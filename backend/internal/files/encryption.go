@@ -117,6 +117,9 @@ func (c *Core) EncryptedShares(ctx context.Context) ([]ShareID, error) {
 // share that must be empty to turn encryption on is empty when it is turned
 // off, so nothing is ever stranded as bytes nobody can read.
 func (c *Core) EnableEncryption(ctx context.Context, id ShareID, e Encryption) error {
+	if _, exists := c.Share(id); exists && IsHomeShare(id) {
+		return ErrDenied
+	}
 	if err := validEncryption(e); err != nil {
 		return err
 	}
@@ -138,6 +141,9 @@ func (c *Core) EnableEncryption(ctx context.Context, id ShareID, e Encryption) e
 // enable: this server cannot decrypt what is stored, so dropping the salt the
 // passphrase derives with would leave the content unreadable by anyone.
 func (c *Core) DisableEncryption(ctx context.Context, id ShareID) error {
+	if _, exists := c.Share(id); exists && IsHomeShare(id) {
+		return ErrDenied
+	}
 	if _, ok, err := c.EncryptionOf(ctx, id); err != nil {
 		return err
 	} else if !ok {

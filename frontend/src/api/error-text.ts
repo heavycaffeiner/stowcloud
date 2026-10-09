@@ -86,6 +86,7 @@ const SERVER_KEYS = new Set<string>([
   /* i18n */ 'settings.path_is_not_a_directory',
   /* i18n */ 'settings.gid_zero_is_root',
   /* i18n */ 'settings.smb_render_failed',
+  /* i18n */ 'settings.homes_overlaps_share',
   /* i18n */ 'settings.smb_config_dir_unavailable',
   /* i18n */ 'settings.above_kernel_watch_limit'
 ])

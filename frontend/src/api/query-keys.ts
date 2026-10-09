@@ -21,6 +21,7 @@ export interface GrantScope {
 export const keys = {
   // ── session and account ──
   session: () => ['session'] as const,
+  smbConnections: () => ['smb-connections'] as const,
   setupRequired: () => ['setup-required'] as const,
   oidcConfig: () => ['oidc-config'] as const,
   appPasswords: () => ['app-passwords'] as const,

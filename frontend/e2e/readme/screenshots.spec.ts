@@ -114,14 +114,14 @@ test.describe('README screenshots', () => {
     const root = path.join(workerApp.shareDir, 'home')
     fs.mkdirSync(path.join(root, 'Photos'), { recursive: true })
     fs.mkdirSync(path.join(root, 'Documents'), { recursive: true })
-    const home = await filesystem.setTrash((await filesystem.createShare('home', root)).id, true)
+    const shared = await filesystem.setTrash((await filesystem.createShare('files', root)).id, true)
     // Creating a share may already grant it to the admin who made it.
-    if (!(await grants.listGrants()).some((grant) => grant.share === String(home.id))) {
+    if (!(await grants.listGrants()).some((grant) => grant.share === String(shared.id))) {
       const allow = ['read', 'write', 'create', 'delete', 'download', 'rename', 'move', 'share']
-      await grants.createGrant({ user: workerApp.adminUser.id, share: String(home.id), label: 'home', allow })
+      await grants.createGrant({ user: workerApp.adminUser.id, share: String(shared.id), label: 'files', allow })
     }
     const sujin = await accounts.createUser('sujin')
-    await grants.createGrant({ user: sujin.id, share: String(home.id), label: 'home', allow: ['read', 'download'] })
+    await grants.createGrant({ user: sujin.id, share: String(shared.id), label: 'files', allow: ['read', 'download'] })
 
     // Trashed before the seed dates its folders, so both themes show the same bin and the same dates.
     for (const name of ['Photos/휴가-2026-06-30.png', 'Documents/2025-예산안.xlsx']) {
@@ -129,11 +129,11 @@ test.describe('README screenshots', () => {
         path.join(root, name),
         name.endsWith('.png') ? png(640, 480, [180, 120, 200]) : Buffer.alloc(41_032)
       )
-      const res = await api.post('/api/v1/files/delete', { path: `/home/${name}` })
+      const res = await api.post('/api/v1/files/delete', { path: `/files/${name}` })
       expect(res.status, res.rawText).toBeLessThan(300)
     }
     const link = await api.post<{ link?: { token: string }; token?: string }>('/api/v1/links', {
-      path: '/home/Photos',
+      path: '/files/Photos',
       perms: ['read', 'download']
     })
     expect(link.status, link.rawText).toBeLessThan(300)
@@ -159,12 +159,12 @@ test.describe('README screenshots', () => {
       await page.context().addCookies(api.getPlaywrightCookies(workerApp.baseURL))
       await page.setViewportSize({ width: 1440, height: 900 })
 
-      await page.goto(`${workerApp.baseURL}/b/home`)
+      await page.goto(`${workerApp.baseURL}/b/files`)
       await fileRows.first().waitFor()
       await settle(page)
       await shot(page, 'browse', theme)
 
-      await page.goto(`${workerApp.baseURL}/b/home/Documents`)
+      await page.goto(`${workerApp.baseURL}/b/files/Documents`)
       await fileRows.first().waitFor()
       await settle(page)
       await shot(page, 'tree', theme)
@@ -178,7 +178,7 @@ test.describe('README screenshots', () => {
       await shot(page, 'search', theme)
       await page.keyboard.press('Escape')
 
-      await page.goto(`${workerApp.baseURL}/b/home/Documents`)
+      await page.goto(`${workerApp.baseURL}/b/files/Documents`)
       const meetingRow = fileRows.filter({ has: page.getByTitle('meeting-notes.txt', { exact: true }) })
       await meetingRow.getByRole('gridcell', { name: 'Select meeting-notes.txt', exact: true }).click()
       await page.getByRole('button', { name: 'Manage share links', exact: true }).click()
@@ -210,7 +210,7 @@ test.describe('README screenshots', () => {
       // Last, because the edit below leaves unsaved changes that would hold up a navigation.
       const demo = path.join(root, 'stowcloud-editor-demo.ts')
       fs.writeFileSync(demo, DEMO_CODE)
-      await page.goto(`${workerApp.baseURL}/edit/home/stowcloud-editor-demo.ts`)
+      await page.goto(`${workerApp.baseURL}/edit/files/stowcloud-editor-demo.ts`)
       const editor = page.getByRole('textbox', { name: 'stowcloud-editor-demo.ts', exact: true })
       await editor.waitFor()
       await editor.focus()

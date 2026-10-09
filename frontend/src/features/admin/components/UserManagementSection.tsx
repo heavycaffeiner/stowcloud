@@ -37,6 +37,8 @@ export function UserManagementSection() {
   const quota = useSetUserQuota()
   // Keeps the row that opened a dialog mounted so focus can return to it.
   const [pinned, setPinned] = useState<number | null>(null)
+  const [createdAccount, setCreatedUser] = useState<AdminUser | null>(null)
+  const createdUser = users.find((user) => user.id === createdAccount?.id) ?? createdAccount
   const activeAdminCount = users.filter((user) => user.is_admin && !user.disabled).length
   const togglingId = toggle.isPending && toggle.variables ? toggle.variables.id : null
 
@@ -47,7 +49,9 @@ export function UserManagementSection() {
   }
   async function addUser(): Promise<void> {
     const created = await askNewUser()
-    if (created) await userGrants(created)
+    if (!created) return
+    setCreatedUser(created)
+    if (!created.home?.enabled) await userGrants(created)
   }
   function editQuota(user: AdminUser): Promise<void> {
     return withPinned(user, () =>
@@ -96,6 +100,24 @@ export function UserManagementSection() {
           {t('user.add_user')}
         </StowButton>
       </div>
+      {createdUser ? (
+        <div className={adminStyles.hint}>
+          <p role="status">
+            {t('user.created_with_home', { name: createdUser.name })}{' '}
+            {createdUser.home?.enabled
+              ? createdUser.home.ready
+                ? t('user.home_auto_provided')
+                : t('user.home_not_ready')
+              : t('user.home_disabled_hint')}
+          </p>
+          <StowButton variant="text" onClick={() => void userGrants(createdUser)}>
+            {t('user.add_shared_permissions')}
+          </StowButton>
+          <StowButton variant="text" onClick={() => setCreatedUser(null)}>
+            {t('common.close')}
+          </StowButton>
+        </div>
+      ) : null}
       {toggle.error ? (
         <p className={adminStyles.sectionError} role="alert">
           {lastAdminText(

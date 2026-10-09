@@ -7,7 +7,9 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/db/state"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/fs/vfs"
@@ -31,6 +33,124 @@ const (
 	templateName = ".template"
 )
 
+// IsHomeShare identifies the system-managed private folder tree.
+func IsHomeShare(id ShareID) bool  { return id == homeShareID }
+func IsHomeGrant(grant Grant) bool { return grant.Share == homeShareID }
+
+// Home names are reserved for automatic private folders and their SMB exports.
+func IsHomeName(name string) bool {
+	name = strings.ToLower(strings.TrimSpace(name))
+	return name == "home" || strings.HasPrefix(name, "home-")
+}
+
+// HomeStatus contains no host path and is safe to project for the account owner.
+type HomeStatus struct {
+	Enabled bool
+	Ready   bool
+	Reason  string
+}
+
+// HomeStatusOf describes preparation without creating storage as a read side effect.
+func (c *Core) HomeStatusOf(ctx context.Context, user UserID) HomeStatus {
+	if _, ok := c.Share(homeShareID); !ok {
+		return HomeStatus{}
+	}
+	_, err := c.HomeDirectory(ctx, user)
+	if err != nil {
+		return HomeStatus{Enabled: true, Reason: "not_ready"}
+	}
+	return HomeStatus{Enabled: true, Ready: true}
+}
+
+// PrepareHome provisions or repairs a home before a client uses any protocol.
+func (c *Core) PrepareHome(ctx context.Context, user UserID) error {
+	if _, ok := c.Share(homeShareID); !ok {
+		return nil
+	}
+	if c.userHasHome(user) {
+		if _, err := c.HomeDirectory(ctx, user); err == nil {
+			return nil
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		// Recreate the existing directory under its persisted name. A root
+		// change or removed directory must not mint a second, differently named home.
+		grant, err := c.homeGrant(ctx, user)
+		if err != nil {
+			return err
+		}
+		root, ok := c.ShareRoot(homeShareID)
+		if !ok {
+			return ErrShareBroken
+		}
+		subpath, err := vfs.ParseSafePath(grant.Subpath)
+		if err != nil {
+			return err
+		}
+		if err = root.Mkdir(subpath); err != nil && !errors.Is(err, vfs.ErrExists) {
+			return err
+		}
+		_, err = c.HomeDirectory(ctx, user)
+		return err
+	}
+	return c.ensureHome(ctx, user)
+}
+
+// HomeDirectory returns only an account's validated, existing private directory.
+// SMB publishes this directory as a separate share, never the common homes root.
+func (c *Core) HomeDirectory(ctx context.Context, user UserID) (string, error) {
+	def, ok := c.Share(homeShareID)
+	if !ok || def.BrokenReason != "" {
+		return "", ErrShareBroken
+	}
+	grant, err := c.homeGrant(ctx, user)
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(def.Host, grant.Subpath)
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return "", ErrDenied
+	}
+	return dir, nil
+}
+
+func (c *Core) validHomeGrant(ctx context.Context, grant state.GrantRow) (bool, error) {
+	if grant.User == nil || grant.Group != nil || *grant.User <= 0 ||
+		grant.Allow != uint16(homePerms) || grant.Deny != 0 || !grant.Inherit || grant.Label != homeLabel {
+		return false, nil
+	}
+	account, err := c.state.AccountByID(ctx, *grant.User)
+	if errors.Is(err, state.ErrNoSuchAccount) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return grant.Subpath == strconv.FormatInt(*grant.User, 10) ||
+		(grant.Subpath == account.Name && account.Name != "" && !strings.ContainsAny(account.Name, "/\\") && !strings.HasPrefix(account.Name, ".")), nil
+}
+
+func (c *Core) homeGrant(ctx context.Context, user UserID) (state.GrantRow, error) {
+	rows, err := c.state.ListGrants(ctx, state.GrantFilter{Share: homeShareID, User: int64(user)})
+	if err != nil {
+		return state.GrantRow{}, err
+	}
+	for _, grant := range rows {
+		valid, err := c.validHomeGrant(ctx, grant)
+		if err != nil {
+			return state.GrantRow{}, err
+		}
+		if valid {
+			return grant, nil
+		}
+	}
+	return state.GrantRow{}, fs.ErrNotExist
+}
+
 // homePerms enumerates every permission a home grant confers.
 const homePerms = acl.Read | acl.Write | acl.Create | acl.Delete |
 	acl.Rename | acl.Move | acl.Share | acl.Download
@@ -52,7 +172,40 @@ const homeHostMode = 0o750
 // created under a previous root keep their grants and stop resolving, which is
 // the same thing that happens to an admin share whose host moves.
 func (c *Core) EnableHomes(ctx context.Context, host string) error {
+	c.homeOnce.Lock()
+	defer c.homeOnce.Unlock()
+	if err := c.ValidateHomesRoot(host); err != nil {
+		return err
+	}
+	for _, def := range c.Shares() {
+		if !IsHomeShare(def.ID) && strings.EqualFold(strings.TrimSpace(def.Name), homeLabel) {
+			return errf(ErrConflict, "a shared folder already uses the reserved Home name")
+		}
+	}
 	if err := ensureHostDir(host); err != nil {
+		return err
+	}
+	// Older bootstrap and administrator grants could admit the entire homes
+	// tree. Retain only one automatic, owner-scoped grant for each account.
+	rows, err := c.state.ListGrants(ctx, state.GrantFilter{Share: homeShareID})
+	if err != nil {
+		return err
+	}
+	seen := make(map[int64]bool)
+	for _, grant := range rows {
+		valid, err := c.validHomeGrant(ctx, grant)
+		if err != nil {
+			return err
+		}
+		if valid && !seen[*grant.User] {
+			seen[*grant.User] = true
+			continue
+		}
+		if err := c.state.DeleteGrant(ctx, grant.ID); err != nil && !errors.Is(err, state.ErrNoSuchGrant) {
+			return err
+		}
+	}
+	if err := c.ReloadGrants(ctx); err != nil {
 		return err
 	}
 	return c.RegisterShare(ctx, ShareDef{
@@ -69,6 +222,8 @@ func (c *Core) EnableHomes(ctx context.Context, host string) error {
 // a home through them, and turning homes back on restores exactly what each
 // account had rather than handing everybody a fresh empty directory.
 func (c *Core) DisableHomes() {
+	c.homeOnce.Lock()
+	defer c.homeOnce.Unlock()
 	c.UnregisterShare(homeShareID)
 }
 
@@ -112,6 +267,9 @@ func (c *Core) homeDirName(ctx context.Context, user UserID) string {
 	if _, perr := vfs.ParseSafePath(name); perr != nil {
 		return fallback
 	}
+	if strings.ContainsAny(name, "/\\") || strings.HasPrefix(name, ".") {
+		return fallback
+	}
 	return name
 }
 
@@ -123,8 +281,7 @@ func (c *Core) homeDirName(ctx context.Context, user UserID) string {
 // warn-and-continue: the failure domain of home creation (a full disk, a
 // broken template) must not take down every other share the user can reach.
 func (c *Core) ensureHome(ctx context.Context, user UserID) error {
-	root, ok := c.ShareRoot(homeShareID)
-	if !ok {
+	if _, ok := c.ShareRoot(homeShareID); !ok {
 		return nil // homes are disabled
 	}
 	// The grant is the existence marker: it is already durable, already
@@ -139,6 +296,10 @@ func (c *Core) ensureHome(ctx context.Context, user UserID) error {
 	// serialized, never the steady state.
 	c.homeOnce.Lock()
 	defer c.homeOnce.Unlock()
+	root, ok := c.ShareRoot(homeShareID)
+	if !ok {
+		return nil
+	}
 	if c.userHasHome(user) {
 		return nil
 	}
@@ -147,6 +308,22 @@ func (c *Core) ensureHome(ctx context.Context, user UserID) error {
 	subpath, err := vfs.ParseSafePath(name)
 	if err != nil {
 		return err
+	}
+	// A login or numeric id can be reused after deletion while Home is off or
+	// cleanup fails. An unclaimed directory must not hand old files to the new
+	// account. Empty directories left by interrupted creation are safe to adopt.
+	if info, statErr := root.Stat(subpath); statErr == nil && info.Kind.IsDir() {
+		occupied := false
+		err = root.ReadDirFunc(subpath, vfs.IncludeReserved, func(vfs.DirEntry) bool {
+			occupied = true
+			return false
+		})
+		if err != nil {
+			return mapVFSErr(err)
+		}
+		if occupied {
+			return errf(ErrConflict, "an unclaimed Home directory contains existing files; move it aside before retrying")
+		}
 	}
 	home := Resolved{user: user, share: homeShareID, root: root, path: subpath, perms: homePerms}
 
@@ -183,7 +360,11 @@ func (c *Core) ensureHome(ctx context.Context, user UserID) error {
 	// leaves a directory with no grant. The next call finds no grant, re-runs
 	// this path, tolerates the existing directory, and persists the grant. A
 	// grant is never left pointing at a home that was not created.
-	return c.createHomeGrant(ctx, user, name)
+	if err = c.createHomeGrant(ctx, user, name); err != nil {
+		return err
+	}
+	_, err = c.HomeDirectory(ctx, user)
+	return err
 }
 
 // userHasHome reports the once-per-user gate: a grant on the homes share
@@ -225,8 +406,14 @@ func (c *Core) CleanupHome(ctx context.Context, user UserID) error {
 	if !ok {
 		return nil
 	}
-	name := c.homeDirName(ctx, user)
-	subpath, err := vfs.ParseSafePath(name)
+	grant, err := c.homeGrant(ctx, user)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	subpath, err := vfs.ParseSafePath(grant.Subpath)
 	if err != nil {
 		return err
 	}

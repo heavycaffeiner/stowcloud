@@ -984,6 +984,9 @@
           "label": {
             "type": "string"
           },
+          "managed": {
+            "type": "boolean"
+          },
           "principal": {
             "$ref": "#/components/schemas/GrantPrincipalView"
           },
@@ -999,6 +1002,7 @@
         },
         "required": [
           "id",
+          "managed",
           "share",
           "allow",
           "deny",
@@ -1064,6 +1068,51 @@
         "required": [
           "status",
           "reasons"
+        ],
+        "type": "object"
+      },
+      "HomeSummaryView": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "pending": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "smb_missing": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "ready",
+          "pending",
+          "smb_missing"
+        ],
+        "type": "object"
+      },
+      "HomeView": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "ready"
         ],
         "type": "object"
       },
@@ -2265,6 +2314,57 @@
         ],
         "type": "object"
       },
+      "SMBConnectionsView": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "folders": {
+            "items": {
+              "$ref": "#/components/schemas/SMBFolderView"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "server": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "folders"
+        ],
+        "type": "object"
+      },
+      "SMBFolderView": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
+          },
+          "personal": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "share": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "personal",
+          "available"
+        ],
+        "type": "object"
+      },
       "SMBReportView": {
         "additionalProperties": false,
         "properties": {
@@ -2437,6 +2537,9 @@
               "array",
               "null"
             ]
+          },
+          "homes": {
+            "$ref": "#/components/schemas/HomeSummaryView"
           },
           "hop": {
             "$ref": "#/components/schemas/HopView"
@@ -3043,6 +3146,9 @@
           "display": {
             "type": "string"
           },
+          "home": {
+            "$ref": "#/components/schemas/HomeView"
+          },
           "id": {
             "type": "string"
           },
@@ -3070,7 +3176,8 @@
           "totp",
           "smb",
           "created_ns",
-          "usage_bytes"
+          "usage_bytes",
+          "home"
         ],
         "type": "object"
       },
@@ -3088,6 +3195,9 @@
           },
           "features": {
             "$ref": "#/components/schemas/FeaturesView"
+          },
+          "home": {
+            "$ref": "#/components/schemas/HomeView"
           },
           "id": {
             "type": "string"
@@ -3131,6 +3241,7 @@
           "smb_opt_out",
           "smb_enabled",
           "roots",
+          "home",
           "oidc",
           "limits",
           "features",
@@ -3518,6 +3629,31 @@
       }
     },
     "/api/v1/account/smb": {
+      "get": {
+        "operationId": "account.smb.get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SMBConnectionsView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      },
       "post": {
         "operationId": "account.smb.create",
         "requestBody": {
@@ -5115,6 +5251,43 @@
           },
           "required": true
         },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users/{id}/home/retry": {
+      "post": {
+        "operationId": "admin.users.home.retry",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {

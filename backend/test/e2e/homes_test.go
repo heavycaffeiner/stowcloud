@@ -27,9 +27,11 @@ func TestTurningHomeFoldersOnCreatesThem(t *testing.T) {
 		t.Fatalf("turning home folders on answered %d: %v", status, body)
 	}
 
-	// The ordinary account's own listing is what runs the per-account
-	// creation: the projected root is built from grants, and the home hook
-	// fills one in on the way past.
+	// Activation prepares existing accounts before they browse or use SMB.
+	if _, err := os.Stat(filepath.Join(root, loginName)); err != nil {
+		t.Fatalf("activation did not prepare %q: %v", loginName, err)
+	}
+	// The ordinary account's root list includes its newly prepared Home.
 	if status, body := withCookie(t, http.MethodGet,
 		base+"/api/v1/files/list?path=/", plainCookie); status != http.StatusOK {
 		t.Fatalf("listing the root answered %d: %s", status, body)

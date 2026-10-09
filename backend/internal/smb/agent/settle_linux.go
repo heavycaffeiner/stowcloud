@@ -3,19 +3,18 @@
 package agent
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Telling the daemon as little as will do.
 //
-// Everything hangs on one distinction: the daemon binds its sockets once, at
-// startup. A reload rereads shares and users in place and never revisits the
-// sockets, so a changed bind line needs the process replaced rather than
-// reloaded. The sidecar that preceded this agent reloaded either way and stayed
-// bound to loopback for as long as it ran, which is the history this decision
-// exists to prevent repeating.
+// A reload cannot rebind sockets or revoke an authenticated tree connection.
+// Changed interfaces, credentials, or share permissions therefore restart the
+// daemon. Repeated publication of identical authority leaves sessions intact.
 
 // Daemon is the process this agent controls. An interface so the decision above
 // can be tested without one.
@@ -41,15 +40,19 @@ type SettleInput struct {
 	Promoted string
 	// Candidate is what was just promoted.
 	Candidate string
+	// Existing sessions retain authentication and tree connections after a
+	// reload. Authority changes must terminate those connections immediately.
+	RevokeConnections bool
 }
 
 // Settle decides what the daemon has to be told.
 //
-// A pure function over the four inputs, so the table below is testable without
+// A pure function over its inputs, so the table below is testable without
 // a daemon to drive:
 //
 //	not running                  -> start
 //	the bind line moved          -> restart
+//	authority changed            -> restart
 //	the configuration is the same -> nothing
 //	anything else                -> reload
 //
@@ -62,13 +65,29 @@ func Settle(in SettleInput) SmbdAction {
 	switch {
 	case !in.Running:
 		return ActionStarted
-	case in.Bound != in.Wanted:
+	case in.Bound != in.Wanted || in.RevokeConnections:
 		return ActionRestarted
 	case in.Promoted == in.Candidate:
 		return ActionUnchanged
 	default:
 		return ActionReloaded
 	}
+}
+
+// Publication timestamps are not authority. Repeated publication of unchanged
+// hashes leaves sessions alone; credentials or share changes disconnect them.
+func authorityFingerprint(conf, credentials string) [sha256.Size]byte {
+	stable := append([]byte(conf), 0)
+	for _, line := range strings.Split(credentials, "\n") {
+		fields := strings.Split(line, ":")
+		if len(fields) >= 5 {
+			stable = append(stable, strings.Join(fields[:5], ":")...)
+		} else {
+			stable = append(stable, line...)
+		}
+		stable = append(stable, '\n')
+	}
+	return sha256.Sum256(stable)
 }
 
 // Tell carries out what Settle decided.

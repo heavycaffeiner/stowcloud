@@ -68,6 +68,24 @@ func TestAMovedBindLineOutranksAnUnchangedConfiguration(t *testing.T) {
 	}
 }
 
+func TestRevokingAuthorityTerminatesExistingConnections(t *testing.T) {
+	action := Settle(SettleInput{Running: true, Bound: "lo", Wanted: "lo", Promoted: "same", Candidate: "same", RevokeConnections: true})
+	if action != ActionRestarted {
+		t.Fatalf("existing connections survived revocation: %s", action)
+	}
+	first := "alice:1001:LM:HASH:[U]:LCT-00000001:\n"
+	republished := "alice:1001:LM:HASH:[U]:LCT-00000002:\n"
+	if authorityFingerprint("conf", first) != authorityFingerprint("conf", republished) {
+		t.Fatal("publication time disconnected an unchanged account")
+	}
+	if authorityFingerprint("conf", first) == authorityFingerprint("conf", "alice:1001:LM:NEW:[U]:LCT-00000002:\n") {
+		t.Fatal("a password change kept the previous connections")
+	}
+	if authorityFingerprint("conf", first) == authorityFingerprint("conf", "") {
+		t.Fatal("a removed account kept the previous connections")
+	}
+}
+
 // A daemon that is not running cannot be reloaded, whatever else changed.
 func TestAStoppedDaemonIsStartedRatherThanReloaded(t *testing.T) {
 	got := Settle(SettleInput{

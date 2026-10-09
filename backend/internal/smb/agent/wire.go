@@ -54,13 +54,14 @@ const (
 	// about.
 	ActionUnchanged SmbdAction = "unchanged"
 
-	// ActionReloaded means the configuration was reread in place, which
-	// suffices for shares, users and permissions.
+	// ActionReloaded means the configuration was reread in place. Established
+	// authentication and tree connections survive; authority changes restart.
 	ActionReloaded SmbdAction = "reloaded"
 
 	// ActionRestarted means the process was replaced. Only a restart moves the
 	// listening sockets: the daemon binds them once at startup and a reload
-	// never revisits them, so a changed bind line requires this.
+	// never revisits them. It also terminates existing authenticated connections
+	// when credentials or share authority change.
 	ActionRestarted SmbdAction = "restarted"
 
 	// ActionStarted means the daemon was not running and now is.

@@ -31,6 +31,7 @@ export interface AdminUser {
   quota_bytes: string | null
   /** The charged ledger, not a recount of the disk. */
   usage_bytes: string
+  home?: Schemas['HomeView']
 }
 
 /** The full subject, unlike the session's hint: an administrator comparing it
@@ -111,6 +112,7 @@ export interface GrantPrincipal {
 /** A same-depth `deny` beats an `allow`. */
 export interface AdminGrant {
   id: number
+  managed?: boolean
   principal: GrantPrincipal
   share: number
   /** Share-relative; empty is the share's root. */
@@ -272,6 +274,7 @@ export interface SettingsSnapshot {
   fields: SettingsField[]
   hop: Hop
   smb_agent?: SmbAgentReport
+  homes?: Schemas['HomeSummaryView']
 }
 
 /** `reason` is a catalogue key and `args` its placeholders. A blocking
@@ -360,7 +363,8 @@ function userFromWire(w: Schemas['UserView']): AdminUser {
     smb_enabled: w.smb,
     created_ns: w.created_ns,
     quota_bytes: w.quota_bytes ?? null,
-    usage_bytes: w.usage_bytes
+    usage_bytes: w.usage_bytes,
+    home: w.home
   }
 }
 
@@ -404,6 +408,7 @@ function permsFromWire(names: string[] | null): GrantPermName[] {
 function grantFromWire(w: Schemas['GrantView']): AdminGrant {
   return {
     id: decimal(w.id, 'grant id'),
+    managed: w.managed,
     principal:
       w.group !== undefined
         ? { kind: 'group', id: decimal(w.group, 'grant group id') }
@@ -471,6 +476,7 @@ function settingsFromWire(w: Schemas['SettingsView']): SettingsSnapshot {
       empty_means_key: f.empty_means_key
     })),
     hop: w.hop,
+    homes: w.homes,
     smb_agent: agent && {
       key: agent.key,
       ok: agent.ok,
@@ -606,6 +612,20 @@ export function useCreateUser() {
       userFromWire(await unwrap(client.POST('/api/v1/admin/users', { body: { login: name, password } }))),
     [keys.adminUsers()],
     true
+  )
+}
+
+export function useRetryUserHome() {
+  return useWrite(
+    async (userId: number) =>
+      userFromWire(
+        await unwrap(
+          client.POST('/api/v1/admin/users/{id}/home/retry', {
+            params: { path: id(userId) }
+          })
+        )
+      ),
+    [keys.adminUsers(), keys.adminSettings(), keys.adminGrantsPrefix(), keys.session(), keys.smbConnections()]
   )
 }
 
@@ -879,7 +899,18 @@ export function useOidcEndpoints() {
 /** Resolves even when a blocking finding refused the save; callers read
  *  `stored` and `applied`. A refusal refetches so the switches snap back. */
 export function useSaveSettings() {
-  return useWrite(saveSettings, [keys.adminSettings(), keys.adminOidcEndpoints()], true)
+  return useWrite(
+    saveSettings,
+    [
+      keys.adminSettings(),
+      keys.adminOidcEndpoints(),
+      keys.adminUsers(),
+      keys.adminGrantsPrefix(),
+      keys.session(),
+      keys.smbConnections()
+    ],
+    true
+  )
 }
 
 /** The upload planner reads its chunk bounds from the session. */

@@ -89,6 +89,9 @@ func ShareOf(s files.Share) ShareView {
 func SharesOf(shares []files.ShareDef, empty func(files.ShareID) bool) []ShareView {
 	out := make([]ShareView, 0, len(shares))
 	for _, s := range shares {
+		if files.IsHomeShare(s.ID) {
+			continue
+		}
 		v := ShareOf(s)
 		v.Empty = empty(s.ID)
 		out = append(out, v)
@@ -98,7 +101,8 @@ func SharesOf(shares []files.ShareDef, empty func(files.ShareID) bool) []ShareVi
 
 // GrantView is one permission assignment.
 type GrantView struct {
-	ID string `json:"id"`
+	ID      string `json:"id"`
+	Managed bool   `json:"managed"`
 
 	// Exactly one of these is set, naming who the grant is for.
 	User  string `json:"user,omitempty"`
@@ -127,6 +131,7 @@ type GrantView struct {
 func GrantOf(g files.Grant) GrantView {
 	v := GrantView{
 		ID:        strconv.FormatInt(g.ID, 10),
+		Managed:   files.IsHomeGrant(g),
 		Share:     strconv.FormatInt(g.Share, 10),
 		Subpath:   g.Subpath,
 		Allow:     permNames(acl.Perms(g.Allow)),

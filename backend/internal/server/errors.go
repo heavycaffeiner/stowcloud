@@ -83,6 +83,7 @@ func storeSentinels() []apierr.Sentinel {
 // the caller reached legitimately.
 func coreSentinels() []apierr.Sentinel {
 	return []apierr.Sentinel{
+		{Err: files.ErrHomePathOverlap, Class: apierr.Unprocessable, Key: "settings.homes_overlaps_share"},
 		{Err: files.ErrDenied, Class: apierr.Denied, Key: "fs.denied"},
 		{Err: files.ErrNotFound, Class: apierr.NotFound, Key: "fs.not_found"},
 

@@ -53,6 +53,9 @@ services:
   sc-smb:
     image: ghcr.io/heavycaffeiner/stowcloud-smb-daemon:stable
     restart: unless-stopped
+    depends_on:
+      sc:
+        condition: service_healthy
 
     # Name service is broadcast and does not cross a bridge, so \\NAME resolves
     # only on the host's network. Another SMB server on port 445 wins.
@@ -72,6 +75,13 @@ services:
       # Every share has to exist here under the same path, or the client is
       # told the network name is invalid. Mount whatever sc mounts.
       - sc-files:/shares/files
+      # Mount only the existing homes subtree, preserving data on upgrades
+      # and keeping the server database and master keys out of this container.
+      - type: volume
+        source: sc-data
+        target: /var/lib/stowcloud/homes
+        volume:
+          subpath: homes
 
     healthcheck:
       test: [CMD-SHELL, "smbd -b >/dev/null 2>&1 && pgrep -f /sc-smb-agent >/dev/null"]

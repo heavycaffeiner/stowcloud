@@ -38,8 +38,9 @@ type UserView struct {
 	// Quota is absent when the account has no limit, which is different from
 	// a limit of zero: one means unrestricted and the other means nothing may
 	// be written.
-	Quota string `json:"quota_bytes,omitempty"`
-	Usage string `json:"usage_bytes"`
+	Quota string        `json:"quota_bytes,omitempty"`
+	Usage string        `json:"usage_bytes"`
+	Home  auth.HomeView `json:"home"`
 }
 
 // UserOf projects one account.

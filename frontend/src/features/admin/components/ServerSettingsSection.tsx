@@ -295,6 +295,25 @@ export function ServerSettingsSection() {
       >
         <SettingSwitch name="homes.enabled" label={t('server.enable_home_folders')} />
         <SettingPath name="homes.root" label={t('server.homes_root_path')} mode="folder" />
+        <p className={adminStyles.hint}>{t('server.homes_smb_hint')}</p>
+        <p className={adminStyles.hint}>{t('server.homes_root_change_hint')}</p>
+        {snapshot.homes?.enabled && !snapshot.homes.ready ? (
+          <p role="alert" className={adminStyles.error}>
+            {t('server.homes_root_unavailable')}
+          </p>
+        ) : null}
+        {snapshot.homes?.pending ? (
+          <p role="status" className={adminStyles.hint}>
+            {snapshot.homes.pending === 1
+              ? t('server.homes_pending_one', { count: snapshot.homes.pending })
+              : t('server.homes_pending_other', { count: snapshot.homes.pending })}
+          </p>
+        ) : null}
+        {snapshot.homes?.smb_missing ? (
+          <p role="alert" className={adminStyles.error}>
+            {t('server.homes_smb_mount_missing')}
+          </p>
+        ) : null}
       </SettingsGroupCard>
 
       <SettingsGroupCard

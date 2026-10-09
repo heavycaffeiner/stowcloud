@@ -85,6 +85,10 @@ type ShareDef struct {
 	// SharedExternally indicates a share with other writers, disabling the
 	// client-side caching that would otherwise present stale contents.
 	SharedExternally bool
+
+	// Private shares expose an account's personal directory. They are hidden
+	// from enumeration and never follow links, including links within the share.
+	Private bool
 }
 
 // Fallback mode pair for shares whose policy specifies none. It mirrors the
@@ -441,6 +445,11 @@ func renderShare(s ShareDef) (string, []DroppedName, string) {
 		out += "  oplocks = no\n"
 		out += "  level2 oplocks = no\n"
 		out += "  kernel oplocks = no\n"
+	}
+	if s.Private {
+		out += "  browseable = no\n"
+		out += "  follow symlinks = no\n"
+		out += "  wide links = no\n"
 	}
 	return out, dropped, ""
 }

@@ -7,7 +7,7 @@ import { useI18n } from '../../../hooks/use-i18n'
 import { StowButton, StowDialog, StowFormTextField } from '@/shared/ui'
 import * as adminStyles from './admin.css'
 import { ApiError } from '../../../api/fetcher'
-import { useCreateUser, useSetUserPassword, type AdminUser } from '../api'
+import { useAdminSettings, useCreateUser, useSetUserPassword, type AdminUser } from '../api'
 
 const MIN_PASSWORD_LEN = 10
 
@@ -30,6 +30,8 @@ export function askNewUser(): Promise<AdminUser | null> {
 function NewUserDialog({ open, onDone, onClosed }: DialogControls<AdminUser | null>) {
   const { t } = useI18n()
   const create = useCreateUser()
+  const settings = useAdminSettings()
+  const homesEnabled = settings.data?.fields.find((field) => field.key === 'homes.enabled')?.value === true
   const { control, handleSubmit } = useForm({ defaultValues: { name: '', password: '' } })
   const password = useWatch({ control, name: 'password' })
   const submit = handleSubmit((values) => {
@@ -57,6 +59,15 @@ function NewUserDialog({ open, onDone, onClosed }: DialogControls<AdminUser | nu
       }
     >
       <form className={adminStyles.form} onSubmit={(event) => void submit(event)}>
+        <p className={adminStyles.sectionFieldHint}>
+          {settings.isPending
+            ? t('common.loading')
+            : settings.error
+              ? t('user.home_status_unknown')
+              : homesEnabled
+                ? t('user.home_auto_provided')
+                : t('user.home_disabled_hint')}
+        </p>
         <StowFormTextField control={control} name="name" label={t('user.username')} autoComplete="off" autoFocus />
         <StowFormTextField
           control={control}

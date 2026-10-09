@@ -124,6 +124,7 @@ export const tableWrap = style({
   position: 'relative',
   flex: 1,
   display: 'flex',
+  flexDirection: 'column',
   minWidth: 0,
   minHeight: 0
 })
@@ -134,11 +135,15 @@ export const tableWrapDragover = style({
 })
 
 export const view = style({
-  position: 'absolute',
-  inset: 0,
   display: 'flex',
+  flex: 1,
   minWidth: 0,
   minHeight: 0
+})
+
+export const parentFolder = style({
+  paddingInline: vars.layout.contentPad,
+  borderBottom: `${vars.stroke.thin} solid ${vars.color.border.subtle}`
 })
 
 export const loading = style({

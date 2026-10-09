@@ -4,6 +4,7 @@ package agent
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"log/slog"
 	"os"
@@ -18,10 +19,12 @@ import (
 // validity, install the configuration, sync user accounts, and signal the
 // daemon only when required.
 //
-// Failures preserve the active configuration. When a proposed configuration is
+// Validation failures preserve the active configuration. When a proposed configuration is
 // invalid, when an account name conflicts with the system, or when interfaces
 // cannot be enumerated, the daemon continues serving its existing state. The
 // error becomes a report sent to the server, not a line buried in logs.
+// Credential synchronization failures stop SMB so revoked credentials cannot
+// keep working against the old database.
 
 // Paths holds every filesystem location the agent touches, allowing tests to
 // use temporary directories and allowing production deployments to override
@@ -72,8 +75,9 @@ type Agent struct {
 	bound string
 	// promoted holds the previously installed configuration text. When content
 	// matches, no work is needed.
-	promoted string
-	last     Report
+	promoted  string
+	authority [sha256.Size]byte
+	last      Report
 }
 
 // NewAgent makes one.
@@ -174,6 +178,10 @@ func (a *Agent) apply(ctx context.Context) Report {
 	if m := MissingGroups(desired, string(groupFile)); len(m) > 0 {
 		return FailedReport("refusing to sync: no group exists for " + strings.Join(m, ", "))
 	}
+	credentialBody, credentialErr := os.ReadFile(a.paths.smbpasswd())
+	if credentialErr != nil && (!os.IsNotExist(credentialErr) || len(desired) > 0) {
+		return a.refuseAuthority("reading SMB credentials: " + credentialErr.Error())
+	}
 
 	// Installation phase begins. Steps above could reject, steps below commit.
 	if werr := Promote(a.paths.SmbConf, candidate); werr != nil {
@@ -181,17 +189,20 @@ func (a *Agent) apply(ctx context.Context) Report {
 	}
 
 	if werr := WritePasswd(a.paths.Passwd, Rebuild(string(currentPasswd), desired)); werr != nil {
-		warnings = append(warnings, fmt.Sprintf("rebuilding %s: %v", a.paths.Passwd, werr))
+		return a.refuseAuthority(fmt.Sprintf("rebuilding %s: %v", a.paths.Passwd, werr))
 	}
-	if _, serr := os.Stat(a.paths.smbpasswd()); serr == nil {
+	if credentialErr == nil {
 		if ierr := Import(ctx, a.paths.smbpasswd(), a.paths.Passdb); ierr != nil {
-			warnings = append(warnings, ierr.Error())
+			return a.refuseAuthority(ierr.Error())
 		}
 	}
 	if _, perr := Prune(ctx, desired); perr != nil {
-		warnings = append(warnings, fmt.Sprintf("pruning the credential database: %v", perr))
+		return a.refuseAuthority(fmt.Sprintf("pruning the credential database: %v", perr))
 	}
-	missingPassdb, _ := MissingPassdb(ctx, desired) //nolint:errcheck // a database that cannot be listed is already reported by the prune above.
+	missingPassdb, merr := MissingPassdb(ctx, desired)
+	if merr != nil {
+		return a.refuseAuthority(merr.Error())
+	}
 	if len(missingPassdb) > 0 {
 		warnings = append(warnings, "no credential exists for "+strings.Join(missingPassdb, ", ")+": they cannot authenticate over SMB")
 	}
@@ -215,7 +226,8 @@ func (a *Agent) apply(ctx context.Context) Report {
 	}
 
 	wanted := BoundInterfaces(candidate)
-	action, aerr := a.settle(candidate, wanted)
+	authority := authorityFingerprint(candidate, string(credentialBody))
+	action, aerr := a.settle(candidate, wanted, authority)
 	if aerr != nil {
 		warnings = append(warnings, "the daemon: "+aerr.Error())
 	}
@@ -241,18 +253,30 @@ func (a *Agent) apply(ctx context.Context) Report {
 	return report
 }
 
+// Credential synchronization failures must not leave old passwords or revoked
+// accounts usable. The supervisor retries the failed apply until it succeeds.
+func (a *Agent) refuseAuthority(reason string) Report {
+	if err := a.smbd.Stop(); err != nil {
+		reason += "; stopping the daemon: " + err.Error()
+	}
+	a.bound, a.promoted = "", ""
+	a.authority = [sha256.Size]byte{}
+	return FailedReport(reason + "; SMB stopped until account synchronization succeeds")
+}
+
 // settle signals the daemon with the minimum necessary action.
 //
 // Settle chooses the action and Tell executes it. This method contributes
 // state known only to the agent: the interface binding used by the running
 // daemon and the content of the last installed configuration.
-func (a *Agent) settle(candidate, wanted string) (SmbdAction, error) {
+func (a *Agent) settle(candidate, wanted string, authority [sha256.Size]byte) (SmbdAction, error) {
 	action := Settle(SettleInput{
-		Running:   a.smbd.Running(),
-		Bound:     a.bound,
-		Wanted:    wanted,
-		Promoted:  a.promoted,
-		Candidate: candidate,
+		Running:           a.smbd.Running(),
+		Bound:             a.bound,
+		Wanted:            wanted,
+		Promoted:          a.promoted,
+		Candidate:         candidate,
+		RevokeConnections: a.promoted != "" && a.authority != authority,
 	})
 
 	done, err := Tell(a.smbd, action)
@@ -261,6 +285,7 @@ func (a *Agent) settle(candidate, wanted string) (SmbdAction, error) {
 	}
 
 	a.promoted = candidate
+	a.authority = authority
 	if action == ActionStarted || action == ActionRestarted {
 		a.bound = wanted
 	}
@@ -278,6 +303,7 @@ func (a *Agent) teardown(ctx context.Context) Report {
 	}
 	a.bound = ""
 	a.promoted = ""
+	a.authority = [sha256.Size]byte{}
 	if _, err := Prune(ctx, nil); err != nil {
 		a.log.Warn("the credentials could not be pruned, so a revoked one may still work", "error", err)
 	}

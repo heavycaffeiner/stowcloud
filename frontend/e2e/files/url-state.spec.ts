@@ -63,15 +63,23 @@ test.describe('the URL holds the view', () => {
 
     await page.goto(`${workerApp.baseURL}/b/docs/${folder}`, { waitUntil: 'domcontentloaded' })
     await expect(fileEntry(page, 'f.txt')).toBeVisible()
-    await page.getByRole('button', { name: 'Type', exact: true }).click()
-    await page.getByRole('menuitemradio', { name: 'Folders' }).click()
+    const typeFilter = page.getByRole('button', { name: 'Type', exact: true })
+    if (await typeFilter.isVisible()) {
+      await typeFilter.click()
+      await page.getByRole('menuitemradio', { name: 'Folders' }).click()
+    } else {
+      // Compact layouts keep this filter in the URL without a toolbar pill.
+      await page.goto(`${workerApp.baseURL}/b/docs/${folder}?type=folders`)
+    }
     await expect(fileEntry(page, 'f.txt')).toBeHidden()
     expect(new URL(page.url()).searchParams.get('type')).toBe('folders')
 
     await page.reload({ waitUntil: 'domcontentloaded' })
     await expect(fileEntry(page, 'sub')).toBeVisible()
     await expect(fileEntry(page, 'f.txt')).toBeHidden()
-    await expect(page.getByRole('button', { name: 'Type: Folders', exact: true })).toContainText('Folders')
+    expect(new URL(page.url()).searchParams.get('type')).toBe('folders')
+    const activeFilter = page.getByRole('button', { name: 'Type: Folders', exact: true })
+    if (await activeFilter.isVisible()) await expect(activeFilter).toContainText('Folders')
 
     await assertNoUnexpectedErrors(artifacts)
   })
@@ -100,7 +108,13 @@ test.describe('the URL holds the view', () => {
     await expect(page.getByRole('grid', { name: 'File list' })).toBeVisible()
 
     await context.clearCookies()
-    await page.getByRole('button', { name: 'Refresh' }).click()
+    const refresh = page.getByRole('button', { name: 'Refresh', exact: true })
+    if (await refresh.isVisible()) {
+      await refresh.click()
+    } else {
+      await page.getByRole('button', { name: 'More', exact: true }).first().click()
+      await page.getByRole('menuitem', { name: 'Refresh', exact: true }).click()
+    }
 
     await expect(page).toHaveURL(/\/login$/, { timeout: 10000 })
     await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible()

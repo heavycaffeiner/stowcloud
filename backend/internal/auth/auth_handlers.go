@@ -35,6 +35,7 @@ type SessionDetails struct {
 	SMBUnavailableReason string
 	Oidc                 SessionOidcView
 	Roots                []RootView
+	Home                 HomeView
 	Limits               LimitsView
 	Features             FeaturesView
 }
@@ -222,7 +223,7 @@ func (h *AuthHandlers) Session(ctx context.Context, in *sessionCookieInput) (*wh
 	if err != nil {
 		return nil, err
 	}
-	view := WhoAmIView{IdentityView: IdentityViewOf(owner, info.LoginName, info.DisplayName, admin, csrf), TOTPEnabled: details.TOTPEnabled, SMBOptOut: details.SMBOptOut, SMBEnabled: details.SMBEnabled, SMBCredential: details.SMBCredential, SMBUnavailableReason: details.SMBUnavailableReason, Oidc: details.Oidc, Roots: details.Roots, Limits: details.Limits, Features: details.Features}
+	view := WhoAmIView{IdentityView: IdentityViewOf(owner, info.LoginName, info.DisplayName, admin, csrf), TOTPEnabled: details.TOTPEnabled, SMBOptOut: details.SMBOptOut, SMBEnabled: details.SMBEnabled, SMBCredential: details.SMBCredential, SMBUnavailableReason: details.SMBUnavailableReason, Oidc: details.Oidc, Roots: details.Roots, Home: details.Home, Limits: details.Limits, Features: details.Features}
 	return &whoAmIOutput{Body: view}, nil
 }
 

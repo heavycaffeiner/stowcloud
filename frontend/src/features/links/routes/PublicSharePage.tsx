@@ -4,6 +4,8 @@ import { useForm, useWatch } from 'react-hook-form'
 import { useLocation, useNavigate, useParams, useSearch, type HistoryState } from '@tanstack/react-router'
 import { cx, Icon, StowButton, StowFormTextField, VirtualList } from '@/shared/ui'
 import { formatBytes } from '../../../lib/format/bytes'
+import { parentOf } from '../../../lib/path-utils'
+import { ParentFolderItem } from '../../file-browser/components/ParentFolderItem'
 import { useDocumentTitle } from '../../../hooks/use-document-title'
 import { useI18n } from '../../../hooks/use-i18n'
 import {
@@ -257,6 +259,7 @@ function FolderListing({ token, path, info, onOpen }: FolderListingProps) {
   const entries = info.entries ?? []
   return (
     <>
+      {path ? <ParentFolderItem onNavigate={() => onOpen(parentOf(path).slice(1))} /> : null}
       {entries.length > 0 ? (
         <VirtualList
           key={path}

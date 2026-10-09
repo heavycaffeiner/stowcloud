@@ -20,7 +20,8 @@ const verifierMagic = "RCLONE\x00\x00"
 const verifierLen = 67
 
 type EncryptionHandler struct {
-	Core *Core
+	Core       *Core
+	PublishSMB func(context.Context)
 }
 
 type listView struct {
@@ -132,6 +133,9 @@ func (h *EncryptionHandler) Enable(ctx context.Context, in *enableInput) (*noCon
 		}
 		return nil, err
 	}
+	if h.PublishSMB != nil {
+		h.PublishSMB(ctx)
+	}
 	return &noContentOutput{Status: http.StatusNoContent}, nil
 }
 
@@ -146,6 +150,9 @@ func (h *EncryptionHandler) Disable(ctx context.Context, in *shareInput) (*noCon
 			return nil, &apierr.ClassifiedError{Classified: apierr.Classified{Class: apierr.Unprocessable, Key: "encryption.share_not_empty"}}
 		}
 		return nil, err
+	}
+	if h.PublishSMB != nil {
+		h.PublishSMB(ctx)
 	}
 	return &noContentOutput{Status: http.StatusNoContent}, nil
 }

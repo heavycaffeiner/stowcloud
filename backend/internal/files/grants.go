@@ -43,6 +43,9 @@ type Grant = state.GrantRow
 // are missing. Reading them back would be a second query for values this
 // already holds.
 func (c *Core) CreateGrant(ctx context.Context, spec GrantSpec) (Grant, error) {
+	if IsHomeShare(spec.Share) {
+		return Grant{}, errf(ErrDenied, "Home permissions are managed by the server")
+	}
 	row := state.GrantRow{
 		User:    spec.User,
 		Group:   spec.Group,
@@ -87,6 +90,13 @@ func (c *Core) GrantByID(ctx context.Context, id int64) (Grant, error) {
 func (c *Core) UpdateGrant(
 	ctx context.Context, id int64, allow, deny acl.Perms, inherit bool, label string,
 ) (Grant, error) {
+	current, err := c.state.GrantByID(ctx, id)
+	if err != nil {
+		return Grant{}, err
+	}
+	if current.Share == homeShareID {
+		return Grant{}, errf(ErrDenied, "Home permissions are managed by the server")
+	}
 	if err := c.state.UpdateGrant(ctx, id, uint16(allow), uint16(deny), inherit, label); err != nil {
 		return Grant{}, err
 	}
@@ -120,6 +130,9 @@ func (c *Core) GrantEveryShare(ctx context.Context, user int64) error {
 		acl.Rename | acl.Move | acl.Share | acl.Download
 
 	for _, def := range c.Shares() {
+		if IsHomeShare(def.ID) {
+			continue
+		}
 		_, err := c.state.PersistGrant(ctx, state.GrantRow{
 			User:    &user,
 			Share:   int64(def.ID),
@@ -142,6 +155,13 @@ func (c *Core) GrantEveryShare(ctx context.Context, user int64) error {
 // Without it the row is gone and the evaluator keeps answering from the set
 // it loaded at startup, so a revoked user keeps their access until a restart.
 func (c *Core) DeleteGrant(ctx context.Context, id int64) error {
+	current, err := c.state.GrantByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if current.Share == homeShareID {
+		return errf(ErrDenied, "Home permissions are managed by the server")
+	}
 	if err := c.state.DeleteGrant(ctx, id); err != nil {
 		return err
 	}

@@ -30,6 +30,38 @@ export const root = style({
   minWidth: 0
 })
 
+export const folder = style({
+  display: 'flex',
+  flexDirection: 'column',
+  gap: vars.space.sm,
+  padding: vars.space.md,
+  borderRadius: vars.radius.md,
+  border: `${vars.stroke.thin} solid ${vars.color.border.subtle}`
+})
+
+export const folderHeading = style({
+  display: 'flex',
+  flexWrap: 'wrap',
+  alignItems: 'center',
+  gap: vars.space.sm
+})
+
+export const address = style({
+  display: 'flex',
+  flexWrap: 'wrap',
+  alignItems: 'center',
+  gap: vars.space.sm,
+  minWidth: 0,
+  ...typography('bodySmall')
+})
+
+export const addressValue = style({
+  flex: 1,
+  minWidth: 0,
+  overflowWrap: 'anywhere',
+  userSelect: 'all'
+})
+
 export const note = style({
   margin: 0,
   color: vars.color.text.secondary,

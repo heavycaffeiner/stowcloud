@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"testing"
 
@@ -14,6 +15,157 @@ import (
 	"github.com/heavycaffeiner/stowcloud/backend/internal/platform/concurrency"
 	"github.com/heavycaffeiner/stowcloud/backend/internal/shares/acl"
 )
+
+func TestHomeActivationRemovesLegacyAuthorityOverOtherAccounts(t *testing.T) {
+	c, st, host := homed(t)
+	ctx := context.Background()
+	seedUser(t, st, 2, "bob")
+	if err := c.PrepareHome(ctx, 1); err != nil {
+		t.Fatal(err)
+	}
+	alice, bob := int64(1), int64(2)
+	for _, row := range []state.GrantRow{
+		{User: &alice, Share: homeShareID, Allow: uint16(homePerms), Inherit: true, Label: "all homes"},
+		{User: &bob, Share: homeShareID, Subpath: "1", Allow: uint16(homePerms), Inherit: true, Label: homeLabel},
+	} {
+		if _, err := st.PersistGrant(ctx, row, 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := c.EnableHomes(ctx, host); err != nil {
+		t.Fatal(err)
+	}
+	grants := homeGrants(t, st)
+	if len(grants) != 1 || grants[0].User == nil || *grants[0].User != alice || grants[0].Subpath != "1" {
+		t.Fatalf("unsafe Home authority survived: %+v", grants)
+	}
+	if err := c.GrantEveryShare(ctx, bob); err != nil {
+		t.Fatal(err)
+	}
+	if len(homeGrants(t, st)) != 1 {
+		t.Fatal("bootstrap granted the common Home root")
+	}
+	if err := c.PrepareHome(ctx, 2); err != nil {
+		t.Fatal(err)
+	}
+	roots := c.Roots(2)
+	if len(roots) != 1 || roots[0].Subpath.String() != "/2" {
+		t.Fatalf("Bob's scope widened beyond his own Home: %+v", roots)
+	}
+}
+
+func TestHomePermissionsCannotBeEditedAsSharedFolderPermissions(t *testing.T) {
+	c, st, _ := homed(t)
+	ctx := context.Background()
+	if err := c.PrepareHome(ctx, 1); err != nil {
+		t.Fatal(err)
+	}
+	grant := homeGrants(t, st)[0]
+	owner := int64(1)
+	if _, err := c.CreateGrant(ctx, GrantSpec{User: &owner, Share: homeShareID, Allow: homePerms, Inherit: true}); !errors.Is(err, ErrDenied) {
+		t.Fatalf("manual grant: %v", err)
+	}
+	if _, err := c.UpdateGrant(ctx, grant.ID, homePerms, 0, true, "all homes"); !errors.Is(err, ErrDenied) {
+		t.Fatalf("edit: %v", err)
+	}
+	if err := c.DeleteGrant(ctx, grant.ID); !errors.Is(err, ErrDenied) {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := c.UpdateShare(ctx, homeShareID, SharePatch{}); !errors.Is(err, ErrDenied) {
+		t.Fatalf("share edit: %v", err)
+	}
+	if err := c.DeleteShare(ctx, homeShareID); !errors.Is(err, ErrDenied) {
+		t.Fatalf("share delete: %v", err)
+	}
+}
+
+func TestHomeStorageCannotOverlapAnOrdinaryShareThroughASymlink(t *testing.T) {
+	c, _, host := homed(t)
+	ctx := context.Background()
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(host, alias); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{host, filepath.Dir(host), filepath.Join(host, "1"), alias} {
+		if _, err := c.CreateShare(ctx, ShareSpec{Name: "shared", Host: path}); !errors.Is(err, ErrHomePathOverlap) {
+			t.Fatalf("shared path %q: %v", path, err)
+		}
+	}
+	shared := t.TempDir()
+	if _, err := c.CreateShare(ctx, ShareSpec{Name: "docs", Host: shared}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.EnableHomes(ctx, filepath.Join(shared, "private")); !errors.Is(err, ErrHomePathOverlap) {
+		t.Fatalf("Home under a share: %v", err)
+	}
+}
+
+func TestExistingNumericHomesRemainOwnedAndCleanupUsesTheirStoredPath(t *testing.T) {
+	c, _, host := homed(t)
+	ctx := context.Background()
+	if err := c.PrepareHome(ctx, 1); err != nil {
+		t.Fatal(err)
+	}
+	stored := filepath.Join(host, strconv.Itoa(1))
+	if err := os.WriteFile(filepath.Join(stored, "keep.txt"), []byte("old data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.AttachHomeNames(func(context.Context, int64) (string, error) { return "ada", nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.PrepareHome(ctx, 1); err != nil {
+		t.Fatal(err)
+	}
+	path, err := c.HomeDirectory(ctx, 1)
+	if err != nil || path != stored {
+		t.Fatalf("legacy home: %q %v", path, err)
+	}
+	if err := c.CleanupHome(ctx, 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(stored); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("legacy home was not cleaned: %v", err)
+	}
+}
+
+func TestASymlinkCannotBecomeAnAccountsHomeDirectory(t *testing.T) {
+	c, st, host := homed(t)
+	ctx := context.Background()
+	seedUser(t, st, 2, "bob")
+	if err := c.PrepareHome(ctx, 2); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(host, "2"), filepath.Join(host, "1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.PrepareHome(ctx, 1); err == nil {
+		t.Fatal("a symlink was accepted as a private home")
+	}
+	if _, err := c.HomeDirectory(ctx, 1); err == nil {
+		t.Fatal("a foreign directory was eligible for publication")
+	}
+}
+
+func TestAnUnclaimedHomeCannotGiveOldFilesToAReusedAccount(t *testing.T) {
+	c, _, host := homed(t)
+	ctx := context.Background()
+	dir := filepath.Join(host, "1")
+	if err := os.Mkdir(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "old-owner.txt"), []byte("private"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.PrepareHome(ctx, 1); !errors.Is(err, ErrConflict) {
+		t.Fatalf("old files were adopted without ownership: %v", err)
+	}
+	if _, err := c.HomeDirectory(ctx, 1); err == nil {
+		t.Fatal("unclaimed storage became publishable")
+	}
+	if len(c.Roots(1)) != 0 {
+		t.Fatal("old files became accessible over the web")
+	}
+}
 
 // homed is a core with homes enabled over a fresh host directory.
 func homed(t *testing.T) (c *Core, st *state.DB, host string) {
