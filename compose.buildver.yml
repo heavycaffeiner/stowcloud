@@ -55,6 +55,9 @@ services:
       dockerfile: Dockerfile.smb
     image: stowcloud-smb-daemon:dev
     restart: unless-stopped
+    depends_on:
+      sc:
+        condition: service_healthy
 
     # Bridged rather than host networking: a development stack should not claim
     # the host's port 445. Only \\NAME resolution is given up. Set
@@ -71,6 +74,11 @@ services:
       - sc-smb-config:/config/smb:ro
       - sc-smb-control:/run/sc-smb
       - sc-files:/shares/files
+      - type: volume
+        source: sc-data
+        target: /var/lib/stowcloud/homes
+        volume:
+          subpath: homes
 
     healthcheck:
       test: [CMD-SHELL, "smbd -b >/dev/null 2>&1 && pgrep -f /sc-smb-agent >/dev/null"]
