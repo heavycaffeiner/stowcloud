@@ -1,6 +1,6 @@
 module github.com/stowcloud/go-consumers
 
-go 1.27.1
+go 1.27.2
 
 require (
 	github.com/stowcloud/durablefs v0.1.0

@@ -138,7 +138,7 @@ echo
 GO_TOOLS="$PWD/backend/.tools/bin"
 # Pinned, because a linter that changes its rule set between two runs of this
 # script is a gate that means something different each time.
-GOLANGCI="github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1"
+GOLANGCI="github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0"
 # Not pinned, and deliberately: its whole job is to know about advisories
 # published after this line was written.
 GOVULN="golang.org/x/vuln/cmd/govulncheck@latest"

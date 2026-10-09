@@ -1,3 +1,5 @@
+import * as fs from 'node:fs'
+import * as path from 'node:path'
 import { test, expect } from '../fixtures'
 import { createTempFixtureFile } from '../helpers/files'
 import { captureAndVerifyDownload } from '../helpers/downloads'
@@ -10,6 +12,7 @@ test.describe('Core File Journey Smoke', () => {
     workerApp,
     filesystem,
     grants,
+    namespace,
     artifacts
   }) => {
     // 1. Setup share 'docs' for the worker
@@ -30,8 +33,15 @@ test.describe('Core File Journey Smoke', () => {
       })
     }
 
+    // Keep the blank area available even when earlier tests filled the worker's share.
+    const journey = namespace('journey')
+    const root = path.join(workerApp.shareDir, journey)
+    fs.mkdirSync(path.join(root, 'sub'), { recursive: true })
+    fs.writeFileSync(path.join(root, 'a.txt'), 'hello\n')
+    fs.writeFileSync(path.join(root, 'sub', 'b.txt'), 'world\n')
+
     // 2. Open browse view
-    await page.goto(`${workerApp.baseURL}/b/docs`, { waitUntil: 'domcontentloaded' })
+    await page.goto(`${workerApp.baseURL}/b/docs/${journey}`, { waitUntil: 'domcontentloaded' })
     const list = page.getByRole('grid', { name: 'File list' })
     await expect(fileEntry(page, 'a.txt')).toBeVisible({ timeout: 10000 })
 

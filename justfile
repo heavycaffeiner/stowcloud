@@ -20,7 +20,7 @@ e2e:
 
 lint:
     cd frontend && pnpm format:check && pnpm lint && pnpm lint:i18n
-    cd backend && CGO_ENABLED=0 go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1 run ./...
+    cd backend && CGO_ENABLED=0 go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 run ./...
 
 clean:
     python3 scripts/clean.py

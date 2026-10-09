@@ -33,7 +33,7 @@
 # version label 3.24.1:
 ARG ALPINE_DIGEST=sha256:79ff19e9084a00eece421b2523fb93e22d730e2c0e525905de047e848e56d95f
 # Same toolchain image and same reasoning as the core Dockerfile's builder.
-ARG GO_IMAGE=golang:1.27.1-bookworm
+ARG GO_IMAGE=golang:1.27.2-bookworm@sha256:5cf287a799e6b94384bad13d16b14904c531f51ba65792237e122ce42b392f61
 
 # The service account every SMB connection is forced to, named as the core
 # image names the same pair and settable the same way: the agent reconciles the
