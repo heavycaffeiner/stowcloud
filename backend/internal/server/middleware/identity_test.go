@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -317,6 +318,29 @@ func TestLimitJSONRefusesByDeclaredLength(t *testing.T) {
 	r = httptest.NewRequest("POST", "http://app.example.test/thing", strings.NewReader(`{}`))
 	if got := send(t, jsonApp, r).status; got != http.StatusOK {
 		t.Errorf("a body within the bound answered %d", got)
+	}
+}
+
+func TestLimitJSONBoundsRejectedBodyDraining(t *testing.T) {
+	for _, size := range []int{drainCap - 1, drainCap + 1024} {
+		t.Run(strconv.Itoa(size), func(t *testing.T) {
+			body := strings.NewReader(strings.Repeat("x", size))
+			app := chainWith(t, Public, Principal{Kind: CredentialNone}, nil, LimitJSON)
+			req := httptest.NewRequest("POST", "http://app.example.test/thing", body)
+			resp := send(t, app, req)
+			if resp.status != http.StatusRequestEntityTooLarge {
+				t.Fatalf("answered %d, want 413", resp.status)
+			}
+			if consumed := size - body.Len(); consumed > drainCap+1 {
+				t.Fatalf("read %d bytes from a rejected body, cap is %d", consumed, drainCap+1)
+			}
+			if size < drainCap && body.Len() != 0 {
+				t.Fatal("left an unread body within the drain cap")
+			}
+			if size > drainCap && !resp.close {
+				t.Fatal("did not close a connection with an unread oversized body")
+			}
+		})
 	}
 }
 

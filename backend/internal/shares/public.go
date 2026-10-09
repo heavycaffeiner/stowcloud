@@ -385,11 +385,10 @@ func (p *Public) Drop(c *gin.Context) {
 		httpx.Refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "fs.link_no_name"})
 		return
 	}
-	if cl := c.GetHeader("Content-Length"); cl != "" {
-		if n, e := strconv.ParseInt(cl, 10, 64); e == nil && n > limits.RequestBody {
-			httpx.Refuse(c, apierr.Classified{Class: apierr.BodyTooLarge, Key: "http.body_too_large"})
-			return
-		}
+	if c.Request.ContentLength > limits.RequestBody {
+		middleware.DrainRejectedBody(c)
+		httpx.Refuse(c, apierr.Classified{Class: apierr.BodyTooLarge, Key: "http.body_too_large"})
+		return
 	}
 	body, e := io.ReadAll(io.LimitReader(c.Request.Body, limits.RequestBody+1))
 	if e != nil {
@@ -397,6 +396,7 @@ func (p *Public) Drop(c *gin.Context) {
 		return
 	}
 	if len(body) > limits.RequestBody {
+		middleware.DrainRejectedBody(c)
 		httpx.Refuse(c, apierr.Classified{Class: apierr.BodyTooLarge, Key: "http.body_too_large"})
 		return
 	}

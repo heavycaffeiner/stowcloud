@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/backend/internal/auth"
@@ -408,28 +407,38 @@ func TestRegressionTrashSubfolderIsolation(t *testing.T) {
 // SEC-UPL-03: Public drop link must enforce RequestBody limit and refuse oversized bodies.
 func TestRegressionPublicDropLinkEnforcesRequestBodyLimit(t *testing.T) {
 	t.Parallel()
-	base, token, _ := linkEngineOverFolderAt(t, acl.Create)
+	base, token, host := linkEngineOverFolderAt(t, acl.Create)
 
-	// Body exceeding limits.RequestBody (1 MiB)
-	oversized := bytes.Repeat([]byte("A"), 1<<20+100)
-	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/s/%s/drop?name=big.txt", base, token), bytes.NewReader(oversized))
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.Header.Set("Content-Length", strconv.Itoa(len(oversized)))
-	resp, err := testClient().Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	bodyBytes, rerr := io.ReadAll(resp.Body)
-	if rerr != nil {
-		t.Fatal(rerr)
-	}
-	if cerr := resp.Body.Close(); cerr != nil {
-		t.Error(cerr)
-	}
-	if resp.StatusCode != http.StatusRequestEntityTooLarge {
-		t.Fatalf("oversized drop returned %d (%s), want 413", resp.StatusCode, string(bodyBytes))
+	// Leave more than net/http's automatic drain allowance unread. Both the
+	// declared and chunked refusals must reach the client without saving a file.
+	oversized := bytes.Repeat([]byte("A"), 6<<20)
+	for _, prefix := range []string{"", "/index.php"} {
+		for _, chunked := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/chunked=%t", prefix, chunked), func(t *testing.T) {
+				var body io.Reader = bytes.NewReader(oversized)
+				if chunked {
+					body = io.MultiReader(body)
+				}
+				req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s%s/s/%s/drop?name=big.txt", base, prefix, token), body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				resp, err := testClient().Do(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				bodyBytes := readAll(t, resp)
+				if cerr := resp.Body.Close(); cerr != nil {
+					t.Error(cerr)
+				}
+				if resp.StatusCode != http.StatusRequestEntityTooLarge {
+					t.Fatalf("oversized drop returned %d (%s), want 413", resp.StatusCode, string(bodyBytes))
+				}
+				if _, err := os.Stat(filepath.Join(host, "big.txt")); !os.IsNotExist(err) {
+					t.Fatalf("rejected upload left a file: %v", err)
+				}
+			})
+		}
 	}
 }
 

@@ -284,16 +284,23 @@ func causeOf(c *gin.Context) error {
 
 const drainCap = 8 << 20
 
+// DrainRejectedBody consumes a bounded remainder so a client can read the
+// rejection instead of losing it to a TCP reset. Larger or broken bodies
+// require a closed connection rather than unbounded draining.
+func DrainRejectedBody(c *gin.Context) {
+	if stream := c.Request.Body; stream != nil {
+		drained, drainErr := io.Copy(io.Discard, io.LimitReader(stream, drainCap+1))
+		if drainErr != nil || drained > drainCap {
+			c.Header("Connection", "close")
+		}
+	}
+}
+
 // LimitJSON refuses a declared body past the JSON bound before the handler
 // reads it. The body is drained first so the connection can be reused.
 func LimitJSON(c *gin.Context) {
 	if c.Request.ContentLength > limits.RequestBody {
-		if stream := c.Request.Body; stream != nil {
-			drained, drainErr := io.Copy(io.Discard, io.LimitReader(stream, drainCap+1))
-			if drainErr != nil || drained > drainCap {
-				c.Header("Connection", "close")
-			}
-		}
+		DrainRejectedBody(c)
 		abortClassified(c, apierr.Classified{Class: apierr.BodyTooLarge})
 		return
 	}
