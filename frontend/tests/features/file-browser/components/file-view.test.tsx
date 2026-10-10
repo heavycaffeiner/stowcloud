@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createRef } from 'react'
 import type { FileEntry } from '../../../../src/features/file-browser/model/file-entry'
 import { selection, useSelectionStore } from '../../../../src/features/file-browser/model/selection'
 import { act, cleanup, fireEvent, render, within } from '../../../../src/test/test-utils'
 import { FileGrid } from '../../../../src/features/file-browser/components/FileGrid'
 import { FileList } from '../../../../src/features/file-browser/components/FileList'
+import type { FileViewHandle } from '../../../../src/features/file-browser/hooks/use-file-view'
+import { density } from '../../../../src/features/file-browser/model/view-prefs'
 
 const documents: FileEntry = { id: '/home/Documents', name: 'Documents', type: 'folder', size: 0, modifiedAt: 0 }
 const pictures: FileEntry = { ...documents, id: '/home/Pictures', name: 'Pictures' }
@@ -29,7 +32,11 @@ beforeEach(() => {
   // jsdom has no layout, and the virtualizers draw nothing in a viewport with no height.
   vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(600)
   vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(800)
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600)
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(800)
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 800, 600))
   selection.reset()
+  density.value = 'comfortable'
   vi.useFakeTimers()
   vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
 })
@@ -37,6 +44,7 @@ afterEach(async () => {
   await act(async () => {})
   cleanup()
   selection.reset()
+  density.value = 'comfortable'
   vi.useRealTimers()
   vi.restoreAllMocks()
 })
@@ -45,7 +53,9 @@ describe.each([
   ['list', FileList],
   ['grid', FileGrid]
 ] as const)('%s file activation', (_name, View) => {
-  function renderView(initialItems: FileEntry[] = [documents, pictures]) {
+  function renderView(initialItems: FileEntry[] = [documents, pictures], withParent = false) {
+    const ref = createRef<FileViewHandle>()
+    const onNavigateParent = withParent ? vi.fn() : undefined
     const opened: { path: string; selected: string[] }[] = []
     const onOpen = vi.fn((item: FileEntry) => {
       opened.push({ path: item.id, selected: [...useSelectionStore.getState().names] })
@@ -54,20 +64,36 @@ describe.each([
     })
     const onContextMenu = vi.fn()
     const requestMore = vi.fn()
-    const props = { loading: false, loadingMore: false, requestMore, onOpen, onContextMenu }
+    const props = { loading: false, loadingMore: false, requestMore, onOpen, onContextMenu, onNavigateParent }
     const result = render(
-      <View {...props} items={initialItems} total={initialItems.length} dirs={initialItems.length} />
+      <View
+        ref={ref}
+        {...props}
+        items={initialItems}
+        total={initialItems.length}
+        dirs={initialItems.filter((item) => item.type === 'folder').length}
+      />
     )
     return {
       ...result,
       opened,
       onOpen,
       onContextMenu,
+      onNavigateParent,
+      ref,
       // Rows and cards are the only elements that carry aria-selected.
       entries: () => Array.from(result.container.querySelectorAll<HTMLElement>('[aria-selected]')),
       async replaceEntries(items: FileEntry[]) {
         await act(async () => {})
-        result.rerender(<View {...props} items={items} total={items.length} dirs={items.length} />)
+        result.rerender(
+          <View
+            ref={ref}
+            {...props}
+            items={items}
+            total={items.length}
+            dirs={items.filter((item) => item.type === 'folder').length}
+          />
+        )
         await act(async () => {})
       }
     }
@@ -175,5 +201,121 @@ describe.each([
 
     expect(view.opened).toEqual([])
     expect(row.getAttribute('aria-selected')).toBe('false')
+  })
+
+  it.each(['compact', 'comfortable', 'spacious'] as const)(
+    'matches folder dimensions and styles at %s density without selection or menu controls',
+    (value) => {
+      density.value = value
+      const view = renderView(undefined, true)
+      const button = view.getByRole('button', { name: 'Go to parent folder' })
+      const parent = button.closest<HTMLElement>(_name === 'list' ? '[role="row"]' : '[role="gridcell"]')!
+      const [folder] = view.entries()
+
+      expect(parent.getAttribute('style')).toBe(folder.getAttribute('style'))
+      for (const className of folder.classList) expect(parent.classList.contains(className)).toBe(true)
+      expect(parent.querySelector('svg[width]')?.getAttribute('width')).toBe(
+        folder.querySelector('svg[width]')?.getAttribute('width')
+      )
+      expect(parent.hasAttribute('aria-selected')).toBe(false)
+      expect(within(parent).queryByRole('checkbox')).toBeNull()
+      expect(within(parent).getAllByRole('button')).toEqual([button])
+      expect(parent.compareDocumentPosition(folder) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+      if (_name === 'list') {
+        expect(parent.getAttribute('aria-rowindex')).toBe('2')
+        expect(folder.getAttribute('aria-rowindex')).toBe('3')
+        expect(within(parent).getAllByRole('gridcell')).toHaveLength(5)
+      } else {
+        expect(parent.getAttribute('aria-colindex')).toBe('1')
+        expect(folder.getAttribute('aria-colindex')).toBe('2')
+      }
+    }
+  )
+
+  it('navigates directly without selecting the parent or changing file selection', () => {
+    const view = renderView(undefined, true)
+    selection.only(documents.name, 0)
+    const button = view.getByRole('button', { name: 'Go to parent folder' })
+
+    fireEvent.click(button)
+    expect(view.onNavigateParent).toHaveBeenCalledTimes(1)
+    expect(view.onOpen).not.toHaveBeenCalled()
+    expect([...useSelectionStore.getState().names]).toEqual([documents.name])
+
+    fireEvent.keyDown(button, { key: 'Enter' })
+    fireEvent.keyDown(button, { key: ' ', ctrlKey: true })
+    fireEvent.keyDown(button, { key: 'ContextMenu' })
+    expect(view.onOpen).not.toHaveBeenCalled()
+    expect(view.onContextMenu).not.toHaveBeenCalled()
+    expect([...useSelectionStore.getState().names]).toEqual([documents.name])
+  })
+
+  it('excludes parent navigation from select-all and marquee hit testing', () => {
+    const view = renderView(undefined, true)
+    fireEvent.keyDown(view.getByRole('grid'), { key: 'a', ctrlKey: true })
+    expect([...useSelectionStore.getState().names]).toEqual([documents.name, pictures.name])
+    expect(view.ref.current?.itemsInRect({ left: 0, top: 0, right: 224, bottom: _name === 'list' ? 88 : 52 })).toEqual(
+      []
+    )
+    expect(view.ref.current?.itemsInRect({ left: 0, top: 0, right: 1000, bottom: 1000 })).toEqual([documents, pictures])
+  })
+
+  it('keeps file indices intact when parent navigation wraps the folder section', () => {
+    const folders = Array.from({ length: 3 }, (_, index) => ({
+      ...documents,
+      id: `/home/folder-${index}`,
+      name: `folder-${index}`
+    }))
+    const files = Array.from({ length: 3 }, (_, index) => ({
+      ...documents,
+      id: `/home/file-${index}.txt`,
+      name: `file-${index}.txt`,
+      type: 'file' as const
+    }))
+    const view = renderView([...folders, ...files], true)
+    expect(view.entries().map((entry) => entry.querySelector('[title]')?.getAttribute('title'))).toEqual(
+      [...folders, ...files].map((item) => item.name)
+    )
+    const grid = view.getByRole('grid')
+    fireEvent.keyDown(grid, { key: 'ArrowDown' })
+    fireEvent.keyDown(grid, { key: 'ArrowDown' })
+    const focused = _name === 'grid' ? 2 : 1
+    expect(useSelectionStore.getState().focused).toBe(focused)
+    if (_name === 'grid') {
+      fireEvent.keyDown(grid, { key: 'ArrowDown' })
+      expect(useSelectionStore.getState().focused).toBe(3)
+      fireEvent.keyDown(grid, { key: 'ArrowUp' })
+      expect(useSelectionStore.getState().focused).toBe(2)
+    }
+    fireEvent.keyDown(grid, { key: 'Enter' })
+    expect(view.opened[0].path).toBe(folders[focused].id)
+    expect(view.ref.current?.itemsInRect({ left: 0, top: 0, right: 1000, bottom: 1000 })).toEqual([
+      ...folders,
+      ...files
+    ])
+  })
+
+  it('keeps files in their own section when the only folder card is parent navigation', () => {
+    const file = { ...documents, id: '/home/report.txt', name: 'report.txt', type: 'file' as const }
+    const view = renderView([file], true)
+    expect(view.entries()).toHaveLength(1)
+    expect(view.entries()[0].querySelector('[title]')?.getAttribute('title')).toBe(file.name)
+    if (_name === 'grid') {
+      expect(within(view.getByRole('rowgroup', { name: 'Folders' })).queryByText(file.name)).toBeNull()
+      expect(within(view.getByRole('rowgroup', { name: 'Files' })).getByTitle(file.name)).toBeTruthy()
+    }
+    fireEvent.keyDown(view.getByRole('grid'), { key: 'ArrowDown' })
+    fireEvent.keyDown(view.getByRole('grid'), { key: 'ArrowUp' })
+    expect(useSelectionStore.getState().focused).toBe(0)
+    fireEvent.keyDown(view.getByRole('grid'), { key: 'Enter' })
+    expect(view.opened[0].path).toBe(file.id)
+  })
+
+  it('keeps parent navigation available alongside the empty-folder message', () => {
+    const view = renderView([], true)
+    expect(view.getByText('This folder is empty')).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: 'Go to parent folder' }))
+    expect(view.onNavigateParent).toHaveBeenCalledTimes(1)
+    expect(view.entries()).toEqual([])
   })
 })

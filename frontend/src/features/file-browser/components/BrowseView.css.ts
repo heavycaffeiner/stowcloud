@@ -141,11 +141,6 @@ export const view = style({
   minHeight: 0
 })
 
-export const parentFolder = style({
-  paddingInline: vars.layout.contentPad,
-  borderBottom: `${vars.stroke.thin} solid ${vars.color.border.subtle}`
-})
-
 export const loading = style({
   display: 'flex',
   alignItems: 'center',

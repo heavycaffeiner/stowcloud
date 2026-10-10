@@ -32,6 +32,7 @@ export interface FileViewProps {
   onDelete?: () => void
   onSearchFocus?: () => void
   encrypted?: boolean
+  onNavigateParent?: () => void
 }
 
 /** Where a view draws its items, worked out each render from its own measurements. */

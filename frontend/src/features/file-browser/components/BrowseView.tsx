@@ -294,6 +294,7 @@ export function BrowseContent({ path, listing, actions, dragOver }: BrowseSectio
     onRename: () => actions.runOnSelection('rename'),
     onDelete: () => actions.runOnSelection('delete'),
     onSearchFocus: () => openSearch(path === '/' ? '' : path),
+    onNavigateParent: parent !== '/' ? () => void navigate({ to: '/b/$', params: splatOf(parent) }) : undefined,
     encrypted
   }
   return (
@@ -316,11 +317,8 @@ export function BrowseContent({ path, listing, actions, dragOver }: BrowseSectio
           actions.openCreateMenu({ x: event.clientX, y: event.clientY, trigger: event.currentTarget })
         }}
       >
-        {parent !== '/' ? (
-          <ParentFolderItem
-            className={styles.parentFolder}
-            onNavigate={() => void navigate({ to: '/b/$', params: splatOf(parent) })}
-          />
+        {parent !== '/' && (query.isPending || query.error) ? (
+          <ParentFolderItem onNavigate={() => void navigate({ to: '/b/$', params: splatOf(parent) })} />
         ) : null}
         {noShares ? (
           <div className={styles.nothing}>

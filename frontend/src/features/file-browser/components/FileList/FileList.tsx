@@ -10,6 +10,7 @@ import { chooseSort, SORT_LABEL_KEYS, sortKey, sortOrder } from '../../model/sor
 import { density as densityPref } from '../../model/view-prefs'
 import { useFileView, useViewportMetrics, type FileViewHandle, type FileViewProps } from '../../hooks/use-file-view'
 import { FileItem, FileItemSkeleton } from '../FileItem'
+import { ParentFolderItem } from '../ParentFolderItem'
 import * as itemStyles from '../FileItem/FileItem.css'
 import * as viewStyles from '../file-view.css'
 import * as styles from './FileList.css'
@@ -26,19 +27,21 @@ const measure = (element: HTMLDivElement) => ({ width: element.clientWidth })
 
 /** The folder as rows under sortable column headings. Only the rows in view are drawn. */
 export const FileList = forwardRef<FileViewHandle, FileViewProps>(function FileList(props, ref) {
-  const { items, total, loading } = props
+  const { items, total, loading, onNavigateParent } = props
   const { t } = useI18n()
   const compact = useCompact()
   const { viewport, metrics } = useViewportMetrics(measure, { width: 0 })
   const mobile = compact && metrics.width > 0 && metrics.width < MOBILE_MAX_WIDTH
   const rowHeight = mobile ? MOBILE_ROW_HEIGHT : ROW_HEIGHT[densityPref.value]
-  // The sticky header sits above the first row and covers the top of the view.
+  const parentRows = onNavigateParent ? 1 : 0
+  const rowsTop = HEADER_HEIGHT + parentRows * rowHeight
+  // The sticky header covers the top of the view; parent navigation precedes the virtual file rows.
   const virtualizer = useVirtualizer({
     count: total,
     getScrollElement: () => viewport.current,
     estimateSize: () => rowHeight,
     overscan: 8,
-    scrollMargin: HEADER_HEIGHT,
+    scrollMargin: rowsTop,
     scrollPaddingStart: HEADER_HEIGHT
   })
   // The virtualizer keeps its row offsets until told the estimate changed.
@@ -60,7 +63,7 @@ export const FileList = forwardRef<FileViewHandle, FileViewProps>(function FileL
         if (!element) return []
         const box = element.getBoundingClientRect()
         return indicesInRect(rect, {
-          top: box.top + window.scrollY + HEADER_HEIGHT - element.scrollTop,
+          top: box.top + window.scrollY + rowsTop - element.scrollTop,
           left: box.left + window.scrollX,
           rowHeight,
           cellHeight: rowHeight,
@@ -86,10 +89,10 @@ export const FileList = forwardRef<FileViewHandle, FileViewProps>(function FileL
     <div
       {...view.rootProps}
       className={cx(viewStyles.root, mobile && itemStyles.mobile, view.names.size > 0 && viewStyles.reserveSelection)}
-      aria-rowcount={total + 1}
+      aria-rowcount={total + 1 + parentRows}
       aria-label={t('table.file_list')}
     >
-      {total === 0 && !loading ? (
+      {total === 0 && !loading && !onNavigateParent ? (
         <p className={viewStyles.empty}>{t('common.folder_empty')}</p>
       ) : (
         <>
@@ -133,10 +136,14 @@ export const FileList = forwardRef<FileViewHandle, FileViewProps>(function FileL
             })}
             <span className={cx(itemStyles.cell, itemStyles.colActions)} role="columnheader" />
           </div>
+          {onNavigateParent ? (
+            <ParentFolderItem view="list" position={2} style={{ blockSize: rowHeight }} onNavigate={onNavigateParent} />
+          ) : null}
+          {total === 0 && !loading ? <p className={viewStyles.empty}>{t('common.folder_empty')}</p> : null}
           <div className={viewStyles.spacer} style={{ blockSize: virtualizer.getTotalSize() }}>
             <div
               className={viewStyles.window}
-              style={{ transform: `translate3d(0, ${(rows[0]?.start ?? HEADER_HEIGHT) - HEADER_HEIGHT}px, 0)` }}
+              style={{ transform: `translate3d(0, ${(rows[0]?.start ?? rowsTop) - rowsTop}px, 0)` }}
             >
               {rows.map(({ index }) => {
                 const item = items[index]
@@ -145,12 +152,17 @@ export const FileList = forwardRef<FileViewHandle, FileViewProps>(function FileL
                   <FileItem
                     key={item.id}
                     view="list"
-                    position={index + 2}
+                    position={index + 2 + parentRows}
                     style={style}
                     {...view.itemProps(item, index)}
                   />
                 ) : (
-                  <FileItemSkeleton key={`skeleton-${index}`} view="list" position={index + 2} style={style} />
+                  <FileItemSkeleton
+                    key={`skeleton-${index}`}
+                    view="list"
+                    position={index + 2 + parentRows}
+                    style={style}
+                  />
                 )
               })}
             </div>

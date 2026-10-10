@@ -10,6 +10,7 @@ import type { FileEntry } from '../../model/file-entry'
 import { density as densityPref, type Density } from '../../model/view-prefs'
 import { useFileView, useViewportMetrics, type FileViewHandle, type FileViewProps } from '../../hooks/use-file-view'
 import { FileItem, FileItemSkeleton } from '../FileItem'
+import { ParentFolderItem } from '../ParentFolderItem'
 import * as viewStyles from '../file-view.css'
 import * as styles from './FileGrid.css'
 
@@ -29,7 +30,7 @@ export interface FileGridProps extends FileViewProps {
 
 /** The folder as cards: folders in one section, files with previews in the next. Only the rows in view are drawn. */
 export const FileGrid = forwardRef<FileViewHandle, FileGridProps>(function FileGrid({ thumbnail, ...props }, ref) {
-  const { items, total, dirs, loading } = props
+  const { items, total, dirs, loading, onNavigateParent } = props
   const { t } = useI18n()
   const folderEl = useRef<HTMLDivElement>(null)
   const fileEl = useRef<HTMLDivElement>(null)
@@ -53,9 +54,11 @@ export const FileGrid = forwardRef<FileViewHandle, FileGridProps>(function FileG
   const available = Math.max(card.width, metrics.width - metrics.inlinePad * 2)
   const columns = Math.max(1, Math.floor((available + card.columnGap) / (card.width + card.columnGap)))
   const cardWidth = Math.max(MIN_CARD_WIDTH, Math.floor((available - (columns - 1) * card.columnGap) / columns))
+  const parentCells = onNavigateParent ? 1 : 0
   const folderCount = Math.min(dirs, total)
+  const folderCells = folderCount + parentCells
   const fileCount = Math.max(0, total - folderCount)
-  const folderRows = sectionRows(folderCount, columns)
+  const folderRows = sectionRows(folderCells, columns)
   const fileRows = sectionRows(fileCount, columns)
   const folderRowHeight = card.folder + card.rowGap
   const fileRowHeight = card.file + card.rowGap
@@ -82,7 +85,7 @@ export const FileGrid = forwardRef<FileViewHandle, FileGridProps>(function FileG
   const sections = [
     {
       start: 0,
-      count: folderCount,
+      count: folderCells,
       cardHeight: card.folder,
       top: metrics.foldersTop,
       rows: folderRows,
@@ -114,8 +117,17 @@ export const FileGrid = forwardRef<FileViewHandle, FileGridProps>(function FileG
     viewport,
     {
       step(key, from) {
-        if (key === 'ArrowDown' || key === 'ArrowUp')
-          return from === null ? 0 : verticalTarget(from, key === 'ArrowDown' ? 1 : -1, folderCount, total, columns)
+        if (key === 'ArrowDown' || key === 'ArrowUp') {
+          if (from === null) return 0
+          const target = verticalTarget(
+            from + parentCells,
+            key === 'ArrowDown' ? 1 : -1,
+            folderCells,
+            total + parentCells,
+            columns
+          )
+          return target < parentCells ? from : target - parentCells
+        }
         if (key === 'ArrowLeft' || key === 'ArrowRight')
           return from === null ? 0 : from + (key === 'ArrowRight' ? 1 : -1)
         return null
@@ -124,7 +136,7 @@ export const FileGrid = forwardRef<FileViewHandle, FileGridProps>(function FileG
       reveal(index) {
         const element = viewport.current
         if (!element) return
-        const position = cellPos(index, folderCount, columns)
+        const position = cellPos(index + parentCells, folderCells, columns)
         const section = sections[position.section]
         const top = section.top + position.row * section.rowHeight
         const bottom = top + section.rowHeight
@@ -143,17 +155,17 @@ export const FileGrid = forwardRef<FileViewHandle, FileGridProps>(function FileG
             columns,
             rowHeight: section.rowHeight,
             cellHeight: section.cardHeight,
-            startIndex: section.start,
+            startIndex: section.start - (section === folders ? parentCells : 0),
             count: section.count
-          })
+          }).filter((index) => index >= 0)
         )
       },
       rendered(index) {
-        const position = cellPos(index, folderCount, columns)
+        const position = cellPos(index + parentCells, folderCells, columns)
         const { first, end } = sections[position.section]
         return position.row >= first && position.row < end
       },
-      needed: Math.min(total, Math.max(folders.end * columns, folderCount + files.end * columns))
+      needed: Math.min(total, Math.max(folders.end * columns - parentCells, folderCount + files.end * columns))
     },
     'sc-grid-cell'
   )
@@ -186,9 +198,19 @@ export const FileGrid = forwardRef<FileViewHandle, FileGridProps>(function FileG
                 style={{ blockSize: section.rowHeight, columnGap: card.columnGap }}
               >
                 {Array.from({ length: cells }, (_, column) => {
-                  const index = first + column
+                  const index = first + column - (section === folders ? parentCells : 0)
                   const item = items[index]
                   const style = { inlineSize: cardWidth, blockSize: section.cardHeight }
+                  if (index === -1 && onNavigateParent)
+                    return (
+                      <ParentFolderItem
+                        key="parent-folder"
+                        view="grid"
+                        position={column + 1}
+                        style={style}
+                        onNavigate={onNavigateParent}
+                      />
+                    )
                   return item ? (
                     <FileItem
                       key={item.id}
@@ -224,12 +246,13 @@ export const FileGrid = forwardRef<FileViewHandle, FileGridProps>(function FileG
       aria-colcount={columns}
       aria-label={t('grid.file_grid')}
     >
-      {total === 0 && !loading ? (
+      {total === 0 && !loading && !onNavigateParent ? (
         <p className={viewStyles.empty}>{t('common.folder_empty')}</p>
       ) : (
         <>
-          {folderCount > 0 ? renderSection(folders, t('grid.folders'), 0) : null}
+          {folderCells > 0 ? renderSection(folders, t('grid.folders'), 0) : null}
           {fileCount > 0 ? renderSection(files, t('grid.files'), folders.rows) : null}
+          {total === 0 && !loading ? <p className={viewStyles.empty}>{t('common.folder_empty')}</p> : null}
         </>
       )}
     </div>
