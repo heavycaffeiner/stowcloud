@@ -106,7 +106,8 @@ test.describe('browse actions reach the server', () => {
     await page.goto(`${workerApp.baseURL}/b/docs/${folder}`, { waitUntil: 'domcontentloaded' })
     const grid = page.getByRole('grid', { name: 'File list' })
     await expect(grid.getByRole('row').filter({ hasText: 'f000.txt' })).toBeVisible()
-    await expect(grid).toHaveAttribute('aria-rowcount', String(count + 1))
+    await expect(grid.getByRole('button', { name: 'Go to parent folder', exact: true })).toBeVisible()
+    await expect(grid).toHaveAttribute('aria-rowcount', String(count + 2))
 
     const last = grid.getByRole('row').filter({ hasText: `f${count - 1}.txt` })
     await expect(async () => {
