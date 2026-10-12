@@ -23,8 +23,7 @@ function userGrants(user: AdminUser): Promise<void> {
   const name = user.display_name || user.name
   return showGrants({
     title: t('user.folders_visible', { name }),
-    principal: { kind: 'user', id: user.id },
-    label: name
+    principal: { kind: 'user', id: user.id }
   })
 }
 
@@ -64,7 +63,6 @@ export function UserManagementSection() {
         hint: (
           <p className={adminStyles.sectionFieldHint}>
             {t('user.currently_using', { used: formatBytes(Number(BigInt(user.usage_bytes))) })}
-            {t('user.empty_means_unlimited_uploads_copies')}
           </p>
         ),
         validate: validQuota,
@@ -91,7 +89,6 @@ export function UserManagementSection() {
   return (
     <section className={adminStyles.section}>
       <div className={adminStyles.sectionHeader}>
-        <p className={adminStyles.hint}>{t('user.create_accounts_suspend_or_re')}</p>
         <StowButton
           className={adminStyles.sectionHeaderAction}
           icon={<Icon name="add" />}

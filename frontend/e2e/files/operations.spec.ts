@@ -47,13 +47,16 @@ test.describe('File Operations Journeys', () => {
   }) => {
     await page.goto(`${workerApp.baseURL}/b/docs`, { waitUntil: 'domcontentloaded' })
     const folderName = namespace('folder')
-    await page.getByRole('navigation', { name: 'Main menu' }).getByRole('button', { name: 'New', exact: true }).click()
-    await page.getByRole('menuitem', { name: 'New folder' }).click()
+    await page
+      .getByRole('navigation', { name: 'Main menu' })
+      .getByRole('button', { name: 'Add files', exact: true })
+      .click()
+    await page.getByRole('menuitem', { name: 'Create folder' }).click()
 
-    const dialog = page.getByRole('alertdialog', { name: 'New folder' })
+    const dialog = page.getByRole('alertdialog', { name: 'Create folder' })
     await expect(dialog).toBeVisible()
     await dialog.getByRole('textbox', { name: 'Folder name' }).fill(folderName)
-    await dialog.getByRole('button', { name: 'Create' }).click()
+    await dialog.getByRole('button', { name: 'Create folder' }).click()
     await expect(dialog).toBeHidden({ timeout: 5000 })
 
     await expect(fileEntry(page, folderName)).toBeVisible({ timeout: 5000 })
@@ -82,7 +85,7 @@ test.describe('File Operations Journeys', () => {
     await expect(renameDialog).toBeVisible({ timeout: 5000 })
     const newName = namespace('renamed') + '.txt'
     await renameDialog.getByRole('textbox', { name: 'New name' }).fill(newName)
-    await renameDialog.getByRole('button', { name: 'OK' }).click()
+    await renameDialog.getByRole('button', { name: 'Rename' }).click()
 
     await expect(renameDialog).toBeHidden({ timeout: 5000 })
     await expect(fileEntry(page, newName)).toBeVisible({ timeout: 5000 })

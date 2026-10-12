@@ -49,9 +49,9 @@ test.describe('Interaction and UX Invariants E2E', () => {
 
     const newButton = page
       .getByRole('navigation', { name: 'Main menu' })
-      .getByRole('button', { name: 'New', exact: true })
-    const newFolderItem = page.getByRole('menuitem', { name: 'New folder' })
-    const dialog = page.getByRole('alertdialog', { name: 'New folder' })
+      .getByRole('button', { name: 'Add files', exact: true })
+    const newFolderItem = page.getByRole('menuitem', { name: 'Create folder' })
+    const dialog = page.getByRole('alertdialog', { name: 'Create folder' })
     const input = dialog.getByRole('textbox', { name: 'Folder name' })
     const cancel = dialog.getByRole('button', { name: 'Cancel' })
 

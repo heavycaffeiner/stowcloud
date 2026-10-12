@@ -81,7 +81,6 @@ function DestinationPickerDialog({
       }
     >
       <div className={styles.root}>
-        <p className={styles.prompt}>{t('dest.choose_destination_folder', { count: sources.length })}</p>
         <div className={styles.tree}>
           <FolderTreeList
             roots={roots}
@@ -97,7 +96,7 @@ function DestinationPickerDialog({
               ? t('dest.already_in_this_folder')
               : selected !== null && stat.data && !writable
                 ? t('dest.cannot_write_into_folder')
-                : (selected ?? t('dest.no_folder_chosen'))}
+                : selected}
         </p>
       </div>
     </BrowseDialog>

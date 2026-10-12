@@ -192,7 +192,7 @@ function FilterPill<T extends string>({
       <StowButton
         variant={idle ? 'outlined' : 'tonal'}
         endIcon={<Icon name="arrow-drop-down" size={18} />}
-        aria-label={label === name ? name : `${name}: ${label}`}
+        aria-label={label === name ? name : `${name} (${label})`}
       >
         {label}
       </StowButton>
@@ -325,12 +325,7 @@ export function BrowseContent({ path, listing, actions, dragOver }: BrowseSectio
             <div className={styles.nothingIcon} aria-hidden="true">
               <Icon name="folder" size={40} />
             </div>
-            <h2 className={styles.nothingTitle}>{t('browse.nothing_here')}</h2>
-            <p className={styles.nothingHint}>
-              {isAdmin
-                ? t('browse.press_this_button_to_set_up_your_first_folder')
-                : t('browse.ask_an_administrator_for_a_folder')}
-            </p>
+            {!isAdmin ? <p className={styles.nothingHint}>{t('browse.ask_an_administrator_for_a_folder')}</p> : null}
             {isAdmin ? (
               <StowButton onClick={() => void navigate({ to: '/admin/{-$tab}', params: { tab: 'shares' } })}>
                 {t('common.add_folder')}

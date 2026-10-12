@@ -25,7 +25,6 @@ export function EmergencyPage() {
     <main className={styles.root}>
       <div className={styles.card}>
         <h1 className={styles.title}>{t('emergency.emergency_settings')}</h1>
-        <p className={styles.hint}>{t('emergency.subtitle')}</p>
         {door.data?.reason ? (
           <p className={styles.warning} role="alert">
             {t('emergency.the_server_is_degraded', { reason: door.data.reason })}
@@ -40,7 +39,6 @@ export function EmergencyPage() {
           <p className={styles.hint}>{t('common.loading')}</p>
         ) : door.data?.setup_required ? (
           <>
-            <p className={styles.hint}>{t('emergency.no_administrator_yet')}</p>
             <div className={styles.actions}>
               <StowButton
                 onClick={() => {
@@ -106,7 +104,6 @@ function EmergencySignIn({ onSignedIn }: { onSignedIn: (settings: EmergencySetti
       <form className={styles.form} onSubmit={(event) => void submit(event)}>
         {needsCode ? (
           <>
-            <p className={styles.hint}>{t('emergency.enter_your_code')}</p>
             <StowFormTextField
               control={control}
               name="code"

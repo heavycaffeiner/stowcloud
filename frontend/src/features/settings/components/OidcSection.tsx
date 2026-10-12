@@ -4,7 +4,7 @@ import { formatDateNs } from '../../../i18n'
 import { useI18n } from '../../../hooks/use-i18n'
 import { useOidcConfig, useSession } from '../../auth/api'
 import { useOidcLinkStart, useOidcUnlink } from '../api'
-import { StowBadge, StowButton } from '@/shared/ui'
+import { Icon, StowBadge, StowButton } from '@/shared/ui'
 import { askPassword } from './PasswordPrompt'
 import * as settingsCardStyles from './SettingsCard.css'
 import { ApiError } from '../../../api/fetcher'
@@ -35,11 +35,12 @@ export function OidcSection() {
   async function connect(): Promise<void> {
     const url = await askPassword({
       title: t('oidc.connect_provider', { provider: providerLabel }),
-      action: t('common.continue'),
+      action: t('oidc.connect_provider', { provider: providerLabel }),
       body: (
         <>
-          <p className={settingsCardStyles.text}>{t('oidc.after_you_confirm_password_taken')}</p>
-          <p className={settingsCardStyles.warning}>{t('oidc.connecting_closes_smb_access_account')}</p>
+          <p className={settingsCardStyles.warning}>
+            <Icon name="warning" size={16} /> {t('oidc.connecting_closes_smb_access_account')}
+          </p>
         </>
       ),
       run: (password) => link.mutateAsync({ password, returnTo: window.location.pathname }),
@@ -53,8 +54,9 @@ export function OidcSection() {
       action: t('oidc.disconnect'),
       body: (
         <>
-          <p className={settingsCardStyles.text}>{t('oidc.you_sign_your_account_password')}</p>
-          <p className={settingsCardStyles.warning}>{t('oidc.every_session_opened_through_signed')}</p>
+          <p className={settingsCardStyles.warning}>
+            <Icon name="warning" size={16} /> {t('oidc.every_session_opened_through_signed')}
+          </p>
           {smbDedicated ? <p className={settingsCardStyles.muted}>{t('smb.dedicated_will_be_replaced')}</p> : null}
         </>
       ),
@@ -96,10 +98,6 @@ export function OidcSection() {
             <p className={settingsCardStyles.muted}>{t('oidc.single_sign_currently_switched_off')}</p>
           ) : null}
         </>
-      ) : configured ? (
-        <p className={settingsCardStyles.muted}>
-          {t('oidc.connect_sign_instead_your_account', { provider: providerLabel })}
-        </p>
       ) : null}
     </div>
   )

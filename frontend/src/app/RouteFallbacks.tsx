@@ -29,7 +29,6 @@ export function RouteProblem({ notFound = false, embedded = false }: { notFound?
   return (
     <Card embedded={embedded}>
       <h1>{notFound ? t('error.page_not_found') : t('error.page_failed')}</h1>
-      <p>{notFound ? t('error.page_not_found_hint') : t('error.page_failed_hint')}</p>
       <div>
         {notFound ? null : <StowButton onClick={() => window.location.reload()}>{t('common.retry')}</StowButton>}
         <StowButton
@@ -50,7 +49,6 @@ function SessionError() {
   return (
     <Card embedded={false}>
       <h1>{t('session.connection_error')}</h1>
-      <p>{t('session.connection_error_hint')}</p>
       <div>
         <StowButton onClick={() => void router.invalidate()}>{t('common.retry')}</StowButton>
       </div>

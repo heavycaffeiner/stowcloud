@@ -76,7 +76,6 @@ export function ShareManagementSection() {
   return (
     <section className={adminStyles.section}>
       <h2 className={adminStyles.sectionTitle}>{t('folder_share.folder_shares')}</h2>
-      <p className={adminStyles.hint}>{t('folder_share.registers_real_folder_on_server')}</p>
       {sharesQuery.isPending ? (
         <StowProgressCircular />
       ) : sharesQuery.error ? (

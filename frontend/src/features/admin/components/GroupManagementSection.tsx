@@ -93,7 +93,6 @@ export function GroupManagementSection() {
   return (
     <section className={adminStyles.section}>
       <div className={adminStyles.sectionHeader}>
-        <p className={adminStyles.hint}>{t('group.create_group_grant_folder_permissions')}</p>
         <StowButton className={adminStyles.sectionHeaderAction} icon={<Icon name="add" />} onClick={addGroup}>
           {t('group.add_group')}
         </StowButton>
@@ -105,12 +104,7 @@ export function GroupManagementSection() {
         <p className={adminStyles.sectionError} role="alert">
           {describeApiError(groupsQuery.error ?? usersQuery.error, t('group.could_not_load_group_list'))}
         </p>
-      ) : groups.length === 0 ? (
-        <div className={adminStyles.empty}>
-          <Icon name="account_tree" />
-          <p className={adminStyles.emptyText}>{t('group.no_groups_yet')}</p>
-        </div>
-      ) : (
+      ) : groups.length === 0 ? null : (
         <VirtualList
           className={adminStyles.list}
           items={groups}
@@ -139,8 +133,7 @@ export function GroupManagementSection() {
                       void withPinned(group, () =>
                         showGrants({
                           title: t('group.folders_visible_group', { name: group.name }),
-                          principal: { kind: 'group', id: group.id },
-                          label: t('group.group', { name: group.name })
+                          principal: { kind: 'group', id: group.id }
                         })
                       )
                     }
@@ -248,9 +241,7 @@ function GroupMembersDialog({ groupId, open, onClose, onClosed }: GroupMembersDi
               </span>
             )}
           />
-        ) : (
-          <p className={adminStyles.sectionFieldHint}>{t('group.no_members_yet')}</p>
-        )}
+        ) : null}
         {availableUsers.length ? (
           <div className={styles.formRow}>
             <StowSelect

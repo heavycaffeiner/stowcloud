@@ -101,9 +101,7 @@ export function SearchResults({ ran, running, view, activeFilters, onOpen, onScr
       onScroll={(event) => onScroll(event.currentTarget.scrollTop)}
       tabIndex={-1}
     >
-      {!ran ? (
-        <p className={styles.note}>{t('search.type_and_press_enter')}</p>
-      ) : view.length === 0 && !running ? (
+      {!ran ? null : view.length === 0 && !running ? (
         <p className={styles.note}>
           {t('search.no_results')}{' '}
           {activeFilters ? <span>{t('search.filtered_by', { filters: activeFilters })}</span> : null}

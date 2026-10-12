@@ -8,6 +8,7 @@ import { useI18n } from '../../../hooks/use-i18n'
 import { useAppPasswords, useCreateAppPassword, useRevokeAppPassword } from '../api'
 import {
   confirmAction,
+  Icon,
   StowBadge,
   StowButton,
   StowFormTextField,
@@ -64,9 +65,7 @@ export function AppPasswordsSection() {
         <p className={settingsCardStyles.text}>{t('common.loading')}</p>
       ) : list.isError ? (
         <p className={settingsCardStyles.error}>{t('common.could_not_load_list')}</p>
-      ) : list.data.length === 0 ? (
-        <p className={settingsCardStyles.text}>{t('app_password.no_app_passwords_issued_yet')}</p>
-      ) : (
+      ) : list.data.length === 0 ? null : (
         <VirtualList
           className={settingsCardStyles.list}
           items={list.data}
@@ -173,7 +172,7 @@ function NewAppPasswordDialog({ open, onDone, onClosed }: NewAppPasswordDialogPr
             loading={create.isPending}
             onClick={() => void submit()}
           >
-            {t('common.create')}
+            {t('app_password.new_app_password')}
           </StowButton>
         </>
       }
@@ -185,7 +184,6 @@ function NewAppPasswordDialog({ open, onDone, onClosed }: NewAppPasswordDialogPr
             : describeApiError(create.error, t('app_password.could_not_create_app_password'))}
         </p>
       ) : null}
-      <p className={settingsCardStyles.text}>{t('app_password.use_one_where_your_account')}</p>
       <StowFormTextField
         control={control}
         name="name"
@@ -210,7 +208,6 @@ function NewAppPasswordDialog({ open, onDone, onClosed }: NewAppPasswordDialogPr
           />
         )}
       />
-      <p className={settingsCardStyles.text}>{t('app_password.read_only_recommended_anywhere_only')}</p>
     </SettingsDialog>
   )
 }
@@ -240,7 +237,9 @@ function IssuedTokenDialog({ open, token, onDone, onClosed }: IssuedTokenDialogP
       dismissible={false}
       actions={<StowButton onClick={onDone}>{t('app_password.acknowledge_saved')}</StowButton>}
     >
-      <p className={settingsCardStyles.text}>{t('app_password.once_you_close_cannot_shown')}</p>
+      <p className={settingsCardStyles.warning}>
+        <Icon name="warning" size={16} /> {t('app_password.once_you_close_cannot_shown')}
+      </p>
       <div className={settingsCardStyles.copyRow}>
         <StowTextField readOnly value={token} aria-label={t('app_password.app_password_issued')} />
         <StowButton variant="text" onClick={() => copy.mutate(token)}>

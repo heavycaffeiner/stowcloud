@@ -158,7 +158,6 @@ export function LogsSection() {
   return (
     <section className={styles.root}>
       <h2 className={styles.title}>{t('common.logs')}</h2>
-      <p className={styles.hint}>{t('logs.what_the_logs_are')}</p>
       <dl className={styles.figures}>
         <div>
           <dt className={adminStyles.figureLabel}>{t('logs.stored_size')}</dt>
@@ -193,7 +192,6 @@ export function LogsSection() {
       ) : items.length === 0 ? (
         <div className={styles.empty}>
           <p className={styles.emptyText}>{t('logs.no_records_match')}</p>
-          <p className={cx(styles.emptyText, styles.emptyHint)}>{t('logs.widen_the_filters')}</p>
         </div>
       ) : (
         <>
@@ -325,9 +323,6 @@ function FilterForm({
           {t('logs.server_only_filters_note')}
         </p>
       ) : null}
-      <p className={styles.autoNote} role="status">
-        {t('logs.filters_update_automatically')}
-      </p>
     </form>
   )
 }
@@ -361,7 +356,6 @@ function LogTimeline({ filters }: { filters: LogFilters }) {
         <h3 id="sc-logs-chart-title" className={styles.timelineTitle}>
           {t('logs.timeline')}
         </h3>
-        <p className={styles.hint}>{t('logs.timeline_description')}</p>
       </div>
       {timeline.isPending && !view ? (
         <StowProgressCircular label={t('logs.loading_timeline')} />
@@ -379,7 +373,6 @@ function LogTimeline({ filters }: { filters: LogFilters }) {
           {view.total === 0 ? (
             <div className={styles.empty}>
               <p className={styles.emptyText}>{t('logs.no_events_in_window')}</p>
-              <p className={cx(styles.emptyText, styles.emptyHint)}>{t('logs.widen_the_filters')}</p>
             </div>
           ) : (
             <>

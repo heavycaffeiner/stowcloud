@@ -258,9 +258,6 @@ function ShareDialog({ share, open, onDone, onClosed }: DialogControls<AdminShar
                 label={t('folder_share.server_path')}
                 placeholder={creating ? t('folder_share.e_g_srv_photos') : undefined}
               />
-              {creating ? (
-                <p className={adminStyles.hint}>{t('folder_share.enter_path_folder_already_exists')}</p>
-              ) : null}
             </>
           ) : backend === 's3' ? (
             <S3Fields creating={creating} />
@@ -320,7 +317,6 @@ function S3Fields({ creating }: { creating: boolean }) {
         placeholder={t('folder_share.e_g_s3_endpoint')}
         autoComplete="off"
       />
-      <p className={adminStyles.hint}>{t('folder_share.s3_endpoint_scheme_hint')}</p>
       <StowFormTextField
         control={control}
         name="s3Bucket"
@@ -364,7 +360,6 @@ function S3Fields({ creating }: { creating: boolean }) {
           />
         )}
       />
-      <p className={adminStyles.hint}>{t('folder_share.s3_hint')}</p>
     </>
   )
 }
@@ -420,7 +415,6 @@ function VaultFields({ creating }: { creating: boolean }) {
       ) : (
         <p className={adminStyles.hint}>{t('folder_share.keep_stored_credential')}</p>
       )}
-      <p className={adminStyles.hint}>{t('folder_share.vault_hint')}</p>
     </>
   )
 }
@@ -481,9 +475,12 @@ function EnableEncryptionDialog({ share, open, onDone, onClosed }: DialogControl
       }
     >
       <form className={adminStyles.form} onSubmit={(event) => void submit(event)}>
-        <p>{t('encryption.enable_hint')}</p>
-        <p className={adminStyles.warning}>{t('encryption.passphrase_warning')}</p>
-        <p className={adminStyles.hint}>{t('encryption.verifier_note')}</p>
+        <p className={adminStyles.warning}>
+          <Icon name="warning" size={16} /> {t('encryption.passphrase_warning')}
+        </p>
+        <p className={adminStyles.warning}>
+          <Icon name="warning" size={16} /> {t('encryption.verifier_note')}
+        </p>
         <StowFormTextField
           control={control}
           name="passphrase"

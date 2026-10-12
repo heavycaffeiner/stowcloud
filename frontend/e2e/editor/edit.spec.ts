@@ -76,13 +76,13 @@ test.describe('Editor Workflow E2E', () => {
     expect(page.isClosed()).toBe(false)
 
     const leave = page.getByRole('alertdialog', { name: 'Unsaved changes' })
-    await page.getByRole('button', { name: 'Go back' }).click()
+    await page.getByRole('button', { name: 'Open containing folder' }).click()
     await expect(leave).toBeVisible()
-    await leave.getByRole('button', { name: 'Stay' }).click()
+    await leave.getByRole('button', { name: 'Keep editing' }).click()
     await expect(leave).toBeHidden()
     expect(new URL(page.url()).pathname).toBe(`/edit/docs/${fileName}`)
 
-    await page.getByRole('button', { name: 'Go back' }).click()
+    await page.getByRole('button', { name: 'Open containing folder' }).click()
     await leave.getByRole('button', { name: 'Discard and leave' }).click()
     await expect(page).toHaveURL(/\/b\/docs$/)
     expect(fs.readFileSync(fullPath, 'utf8')).toBe('kept\n')

@@ -415,7 +415,7 @@ export function FolderTreeList({
                 directory.fetchNextPage()
               }}
             >
-              {row.fetching ? t('common.loading') : t('common.continue')}
+              {row.fetching ? t('common.loading') : t('logs.load_more')}
             </button>
           ) : (
             <p

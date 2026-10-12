@@ -61,7 +61,7 @@ export function PathPickerDialog({ open, mode, start, token, onClose, onPick, on
 
   const atRoot = listing.data?.path === ''
   const showError = Boolean(listing.error) && (currentPath !== initialGuess || initialGuess === '')
-  const hereText = !listing.data ? '' : atRoot ? t('picker.roots') : `${t('picker.here')}: ${listing.data.path}`
+  const hereText = !listing.data ? '' : atRoot ? t('picker.roots') : `${t('picker.here')} ${listing.data.path}`
   const title = mode === 'folder' ? t('picker.title_folder') : t('picker.title_file')
   const canConfirm = mode === 'folder' ? Boolean(listing.data && !listing.isError && !atRoot) : selected !== null
 

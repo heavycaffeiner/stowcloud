@@ -75,7 +75,6 @@ export function SecurityPanel() {
             </div>
           }
           title={t('common.password')}
-          description={<p className={styles.cardHint}>{t('settings.at_least_10_characters_changing')}</p>}
         >
           <PasswordSection />
         </SettingsCard>
@@ -86,7 +85,6 @@ export function SecurityPanel() {
             </div>
           }
           title={t('settings.two_factor_authentication')}
-          description={<p className={styles.cardHint}>{t('settings.asks_6_digit_code_from')}</p>}
         >
           <TotpSection />
         </SettingsCard>
@@ -98,7 +96,6 @@ export function SecurityPanel() {
               </div>
             }
             title={t('settings.single_sign_on')}
-            description={<p className={styles.cardHint}>{t('settings.sign_your_organisations_identity_provider')}</p>}
           >
             <OidcSection />
           </SettingsCard>
@@ -110,7 +107,6 @@ export function SecurityPanel() {
             </div>
           }
           title={t('settings.app_passwords')}
-          description={<p className={styles.cardHint}>{t('settings.use_one_where_your_account')}</p>}
         >
           <AppPasswordsSection />
         </SettingsCard>
@@ -121,7 +117,6 @@ export function SecurityPanel() {
             </div>
           }
           title={t('settings.active_sessions')}
-          description={<p className={styles.cardHint}>{t('settings.devices_currently_signed_account_sign')}</p>}
         >
           <SessionsSection />
         </SettingsCard>
@@ -144,7 +139,6 @@ export function ConnectionsPanel() {
               </div>
             }
             title={t('admin.server_smb')}
-            description={<p className={styles.cardHint}>{t('settings.mount_as_network_drive_file')}</p>}
           >
             <SmbSection />
           </SettingsCard>
@@ -156,8 +150,7 @@ export function ConnectionsPanel() {
                 <Icon name="link" size={20} />
               </div>
             }
-            title={t('settings.connections')}
-            description={<p className={styles.cardHint}>{t('webdav.connect_from_your_os_file_manager')}</p>}
+            title="WebDAV"
           >
             <WebdavSection />
           </SettingsCard>
@@ -181,7 +174,6 @@ export function AppearancePanel() {
           </div>
         }
         title={t('settings.theme')}
-        description={<p className={styles.cardHint}>{t('settings.choosing_system_follows_your_device')}</p>}
       >
         <div className={cx(styles.row, styles.rowSegmented)}>
           <StowSegmentedControl
@@ -206,7 +198,6 @@ export function AppearancePanel() {
           </div>
         }
         title={t('settings.language')}
-        description={<p className={styles.cardHint}>{t('settings.language_choice_stays_this_browser')}</p>}
       >
         <div className={cx(styles.row, styles.rowSegmented)}>
           <StowSegmentedControl
@@ -231,7 +222,6 @@ export function AppearancePanel() {
           </div>
         }
         title={t('settings.upload_concurrency')}
-        description={<p className={styles.cardHint}>{t('settings.upload_concurrency_hint')}</p>}
       >
         <div className={cx(styles.row, styles.rowSegmented)}>
           <StowSegmentedControl

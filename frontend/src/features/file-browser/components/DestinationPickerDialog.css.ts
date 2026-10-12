@@ -5,11 +5,6 @@ export const root = style({
   minWidth: 'min(360px, 72vw)'
 })
 
-export const prompt = style({
-  margin: `0 0 ${vars.space.sm}`,
-  ...typography('body')
-})
-
 export const tree = style({
   maxHeight: '40vh',
   overflowY: 'auto',

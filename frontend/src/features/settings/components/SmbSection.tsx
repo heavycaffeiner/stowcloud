@@ -92,9 +92,8 @@ export function SmbSection() {
 
   return (
     <div className={styles.root}>
-      <p className={styles.note}>{t('smb.smb_reachable_only_from_local')}</p>
       <p className={styles.state}>
-        {t('smb.authentication')}: {stateLine}
+        <Icon name="lock" size={16} /> {stateLine}
       </p>
       <StowTextField
         label={t('smb.server_address')}
@@ -127,7 +126,6 @@ export function SmbSection() {
               {folder.available ? t('smb.folder_available') : folderReason(folder.reason)}
             </StowBadge>
           </div>
-          {folder.personal ? <p className={styles.note}>{t('smb.home_private_hint')}</p> : null}
           {folder.share && server ? (
             <>
               <ConnectionAddress key={`windows:${server}`} label="Windows" address={`\\\\${server}\\${folder.share}`} />
@@ -250,7 +248,9 @@ function SmbPasswordDialog({ open, onDone, onClosed }: SmbPasswordDialogProps) {
         </>
       }
     >
-      <p className={settingsCardStyles.text}>{t('smb.set_password_hint')}</p>
+      <p className={settingsCardStyles.text}>
+        <Icon name="warning" size={16} /> {t('smb.set_password_hint')}
+      </p>
       <StowFormTextField
         control={control}
         name="currentPassword"

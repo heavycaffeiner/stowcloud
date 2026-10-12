@@ -176,7 +176,6 @@ export function EmergencyEditor({ initial }: { initial: EmergencySettings }) {
         <StowTextArea
           id="sc-emergency-doc"
           label={t('emergency.stored_document')}
-          helper={t('emergency.document_hint')}
           monospace
           rows={14}
           spellCheck={false}

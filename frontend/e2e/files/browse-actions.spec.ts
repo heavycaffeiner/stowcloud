@@ -31,7 +31,7 @@ test.describe('browse actions reach the server', () => {
     const child = 'empty # 폴더'
     fs.mkdirSync(path.join(workerApp.shareDir, folder, child), { recursive: true })
     await page.goto(`${workerApp.baseURL}/b/docs`)
-    const parent = page.getByRole('button', { name: 'Go to parent folder', exact: true })
+    const parent = page.getByRole('button', { name: 'Open parent folder', exact: true })
     await expect(parent).toHaveCount(0)
     for (const mode of ['list', 'grid']) {
       if (mode === 'grid') {
@@ -106,7 +106,7 @@ test.describe('browse actions reach the server', () => {
     await page.goto(`${workerApp.baseURL}/b/docs/${folder}`, { waitUntil: 'domcontentloaded' })
     const grid = page.getByRole('grid', { name: 'File list' })
     await expect(grid.getByRole('row').filter({ hasText: 'f000.txt' })).toBeVisible()
-    await expect(grid.getByRole('button', { name: 'Go to parent folder', exact: true })).toBeVisible()
+    await expect(grid.getByRole('button', { name: 'Open parent folder', exact: true })).toBeVisible()
     await expect(grid).toHaveAttribute('aria-rowcount', String(count + 2))
 
     const last = grid.getByRole('row').filter({ hasText: `f${count - 1}.txt` })

@@ -66,6 +66,6 @@ describe('RouteProblem', () => {
     expect(await screen.findByRole('heading', { name: 'This page does not exist' })).toBeTruthy()
     expect(screen.getByRole('main')).toBeTruthy()
     expect(screen.queryByText('Retry')).toBeNull()
-    expect(screen.getByText('Go to files')).toBeTruthy()
+    expect(screen.getByText('Open files')).toBeTruthy()
   })
 })

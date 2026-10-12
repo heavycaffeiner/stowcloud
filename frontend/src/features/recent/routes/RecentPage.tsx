@@ -11,7 +11,6 @@ import { useRecent, type RecentHit } from '../api'
 import { splatOf } from '../../file-browser/browse-search'
 
 const RECENT_LIMIT = 100
-const RECENT_RETENTION_DAYS = 14
 
 function parentOfVpath(vpath: string): string {
   return parentOf(normalizePath(vpath))
@@ -45,7 +44,6 @@ export function RecentPage() {
       refreshLabel={t('common.refresh')}
       onRefresh={() => void recent.refetch()}
     >
-      <p className={styles.coverage}>{t('recent.coverage', { limit: RECENT_LIMIT, days: RECENT_RETENTION_DAYS })}</p>
       <SecondaryPageState
         loading={recent.isPending}
         loadingLabel={t('common.loading')}

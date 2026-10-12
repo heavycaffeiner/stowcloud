@@ -61,7 +61,7 @@ export function useLinkManagement(userId: number | undefined) {
       !mutating && capabilities.length > 0
         ? `${t('links.read_only')} (${capabilities.join(', ')})`
         : capabilities.join(', ') || t('links.target_unknown')
-    return `${target.kind === 'dir' ? t('links.target_folder') : t('links.target_file')} - ${t('links.capabilities')}: ${permissionSummary}`
+    return `${target.kind === 'dir' ? t('links.target_folder') : t('links.target_file')}, ${permissionSummary}`
   }
 
   /** Looks the link's target up, then opens the share manager on it. */

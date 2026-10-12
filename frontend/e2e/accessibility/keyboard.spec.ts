@@ -62,7 +62,7 @@ test.describe('keyboard use of the file views', () => {
     await expect(grid).toBeFocused()
 
     await page.keyboard.press('Delete')
-    const deleteDialog = page.getByRole('alertdialog', { name: 'Delete?' })
+    const deleteDialog = page.getByRole('alertdialog', { name: 'Delete items?' })
     await expect(deleteDialog).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(deleteDialog).toBeHidden()

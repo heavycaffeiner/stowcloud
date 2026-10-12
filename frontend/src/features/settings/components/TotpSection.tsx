@@ -6,7 +6,7 @@ import { useCopyText } from '../../../hooks/use-copy-text'
 import { useI18n } from '../../../hooks/use-i18n'
 import { useReissueRecoveryCodes, useRecoveryCodesRemaining, useTotpDisable, useTotpEnroll, useTotpSetup } from '../api'
 import { useSession } from '../../auth/api'
-import { cx, StowBadge, StowButton, StowFormTextField, StowTextField } from '@/shared/ui'
+import { cx, Icon, StowBadge, StowButton, StowFormTextField, StowTextField } from '@/shared/ui'
 import { askPassword } from './PasswordPrompt'
 import { SettingsDialog } from './SettingsDialog'
 import * as styles from './TotpSection.css'
@@ -32,7 +32,9 @@ export function TotpSection() {
       action: t('totp.turn_off'),
       body: (
         <>
-          <p className={settingsCardStyles.text}>{t('totp.enter_your_current_password_continue')}</p>
+          <p className={settingsCardStyles.warning}>
+            <Icon name="warning" size={16} /> {t('totp.enter_your_current_password_continue')}
+          </p>
           <p className={settingsCardStyles.warning}>
             {smbDedicated ? t('smb.dedicated_will_be_replaced') : t('smb.remove_reverts_to_account')}
           </p>
@@ -47,9 +49,8 @@ export function TotpSection() {
       title: t('totp.reissue_recovery_codes_2'),
       action: t('totp.reissue'),
       body: (
-        <p className={settingsCardStyles.text}>
-          {t('totp.reissuing_invalidates_all_10_recovery')} <strong>{t('totp.at_once')}</strong>
-          {t('totp.cannot_undone_new_codes_shown')}
+        <p className={settingsCardStyles.warning}>
+          <Icon name="warning" size={16} /> {t('totp.reissue_warning')}
         </p>
       ),
       run: (password) => reissue.mutateAsync(password),
@@ -74,8 +75,8 @@ export function TotpSection() {
         <div className={settingsCardStyles.cluster}>
           {recovery.data !== undefined ? (
             <p className={cx(styles.recoveryCount, recovery.data <= 3 && styles.recoveryCountLow)}>
+              {recovery.data <= 3 ? <Icon name="warning" size={16} /> : null}
               {tp('totp.recovery_codes_left', recovery.data)}
-              {recovery.data <= 3 ? ` ${t('totp.running_low_reissue_them_now')}` : ''}
             </p>
           ) : null}
           <StowButton variant="outlined" onClick={() => void reissueCodes()}>
@@ -144,7 +145,7 @@ function EnrollDialog({ open, onDone, onClosed }: EnrollDialogProps) {
             {t('common.cancel')}
           </StowButton>
           <StowButton onClick={() => void submit()} disabled={secret ? code.length !== 6 : !password} loading={busy}>
-            {secret ? t('totp.enable') : t('common.continue')}
+            {secret ? t('totp.enable') : t('totp.generate_key')}
           </StowButton>
         </>
       }
@@ -208,7 +209,9 @@ function RecoveryCodesDialog({ open, codes, onDone, onClosed }: RecoveryCodesDia
       dismissible={false}
       actions={<StowButton onClick={onDone}>{t('totp.acknowledge_codes_saved')}</StowButton>}
     >
-      <p className={settingsCardStyles.text}>{t('totp.each_code_works_once_save')}</p>
+      <p className={settingsCardStyles.warning}>
+        <Icon name="warning" size={16} /> {t('totp.each_code_works_once_save')}
+      </p>
       <ul className={styles.codes}>
         {codes.map((code) => (
           <li key={code}>

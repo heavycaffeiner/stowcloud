@@ -55,16 +55,15 @@ function DeleteDialog({
         </>
       }
     >
-      <p>
-        {tp('delete.deletes_items', count)}{' '}
+      <p>{tp('delete.deletes_items', count)}</p>
+      <p className={styles.externalWarning}>
+        <Icon name={trashEnabled ? 'trash' : 'warning'} size={16} />
         {trashEnabled ? t('delete.they_moved_trash') : t('delete.folder_does_not_use_trash')}
       </p>
       {externalShare ? (
         <p className={styles.externalWarning}>
           <Icon name="warning" size={16} />
-          <span>
-            {t('common.shared_with_other_services')}: {t('delete.another_service_may_reading_folder')}
-          </span>
+          <span>{t('common.shared_with_other_services')}</span>
         </p>
       ) : null}
     </BrowseDialog>

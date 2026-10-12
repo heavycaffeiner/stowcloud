@@ -21,13 +21,13 @@ test('selecting a share keeps permission dialogs open and creates the grant', as
   const user = await accounts.createUser(namespace('grant-user'), 'Password123!', { admin: false })
 
   await page.goto(`${workerApp.baseURL}/admin/users`, { waitUntil: 'domcontentloaded' })
-  await page.getByRole('button', { name: `Manage folders visible to ${user.name}` }).click()
+  await page.getByRole('button', { name: `Edit folder access for ${user.name}` }).click()
 
   const grantsDialog = page.getByRole('alertdialog', { name: `Folders visible to ${user.name}` })
   await expect(grantsDialog).toBeVisible()
-  await grantsDialog.getByRole('button', { name: 'Add folder' }).click()
+  await grantsDialog.getByRole('button', { name: 'Add shared folder permissions' }).click()
 
-  const addDialog = page.getByRole('alertdialog', { name: 'Add folder' })
+  const addDialog = page.getByRole('alertdialog', { name: 'Add shared folder permissions' })
   const shareSelect = addDialog.getByRole('combobox', { name: 'Share', exact: true })
   await shareSelect.selectOption({ label: archive.name })
 
@@ -35,7 +35,7 @@ test('selecting a share keeps permission dialogs open and creates the grant', as
   await expect(addDialog).toBeVisible()
   await expect(shareSelect).toHaveValue(String(archive.id))
 
-  await addDialog.getByRole('button', { name: 'Add', exact: true }).click()
+  await addDialog.getByRole('button', { name: 'Add shared folder permissions', exact: true }).click()
   await expect(addDialog).toBeHidden()
   await expect(grantsDialog.getByRole('listitem').filter({ hasText: archive.name })).toBeVisible()
   await assertNoUnexpectedErrors(artifacts)

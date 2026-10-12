@@ -182,11 +182,6 @@ export const nothingIcon = style({
   boxShadow: vars.elevation.sm
 })
 
-export const nothingTitle = style({
-  margin: 0,
-  ...typography('heading')
-})
-
 export const nothingHint = style({
   maxWidth: '360px',
   margin: 0,

@@ -172,7 +172,7 @@ export function NewLinkForm({ path, targetName, targetIsDir, onCreated, onCancel
           />
         )}
       />
-      {kind === 'drop' ? <p className={styles.hint}>{t('share.drop_hint')}</p> : <PermSwitches control={control} />}
+      {kind === 'drop' ? null : <PermSwitches control={control} />}
       <ExpiryFields control={control} options={newExpiryOptions()} />
       <StowFormTextField control={control} name="password" type="password" label={t('share.password_optional')} />
       {kind !== 'drop' ? (
@@ -195,7 +195,7 @@ export function NewLinkForm({ path, targetName, targetIsDir, onCreated, onCancel
           {t('common.cancel')}
         </StowButton>
         <StowButton type="submit" disabled={create.isPending || (kind !== 'drop' && !read && !download)}>
-          {t('common.create')}
+          {t('share.create_new_link')}
         </StowButton>
       </div>
     </form>

@@ -17,7 +17,7 @@ function isOwned(link: LinkRow): link is OwnedShareLinkInfo {
 
 export function LinkListRow({ link, mine, resolving, targetSummary, onOpen }: LinkRowProps) {
   const { t } = useI18n()
-  const meta = isOwned(link) ? `${t('links.owner')}: ${link.owner_name || t('common.user', { id: link.owner })} - ` : ''
+  const meta = isOwned(link) ? `${t('links.owner')} ${link.owner_name || t('common.user', { id: link.owner })}, ` : ''
   const usage = isDropLink(link)
     ? t('share.kind_drop')
     : t('share.used_times', { count: link.max_downloads ? `${link.downloads}/${link.max_downloads}` : link.downloads })
@@ -44,7 +44,7 @@ export function LinkListRow({ link, mine, resolving, targetSummary, onOpen }: Li
           {mine ? <span className={secondaryPageStyles.path}>{targetSummary}</span> : null}
           <span className={styles.meta}>
             {meta}
-            {usage} - {link.has_password ? t('links.password_protected') : t('links.no_password')}
+            {usage}, {link.has_password ? t('links.password_protected') : t('links.no_password')}
           </span>
         </span>
         {resolving && mine ? <StowProgressCircular className={styles.progress} /> : null}

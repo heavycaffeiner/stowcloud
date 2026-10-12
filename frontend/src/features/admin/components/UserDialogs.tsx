@@ -53,7 +53,7 @@ function NewUserDialog({ open, onDone, onClosed }: DialogControls<AdminUser | nu
             {t('common.cancel')}
           </StowButton>
           <StowButton loading={create.isPending} onClick={() => void submit()}>
-            {t('common.add')}
+            {t('user.add_user')}
           </StowButton>
         </>
       }
@@ -78,9 +78,6 @@ function NewUserDialog({ open, onDone, onClosed }: DialogControls<AdminUser | nu
           autoComplete="new-password"
         />
         <PasswordStrengthMeter password={password} label={(level) => t('common.password_strength', { level })} />
-        <p className={adminStyles.sectionFieldHint}>
-          {t('user.at_least_characters_turning_smb', { min: MIN_PASSWORD_LEN })}
-        </p>
         {create.error ? (
           <p className={adminStyles.sectionError} role="alert">
             {createErrorText(create.error)}
@@ -156,9 +153,6 @@ function UserPasswordDialog({ user, open, onDone, onClosed }: DialogControls<boo
           autoComplete="new-password"
         />
         <PasswordStrengthMeter password={password} label={(level) => t('password.new_password_strength', { level })} />
-        <p className={adminStyles.sectionFieldHint}>
-          {t('password.must_at_least_characters', { min: MIN_PASSWORD_LEN })}
-        </p>
         {save.error ? (
           <p className={adminStyles.sectionError} role="alert">
             {describeApiError(save.error, t('password.could_not_change_password_try'))}

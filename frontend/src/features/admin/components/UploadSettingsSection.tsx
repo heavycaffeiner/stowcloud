@@ -115,12 +115,7 @@ function ServerUploadCards({ serverMin, serverDefault }: ServerSizes) {
       <AdminCard
         id="upload-chunk-size"
         title={t('upload_settings.upload_chunk_size')}
-        subtitle={
-          <>
-            <strong>{t('upload_settings.server_wide_setting')}</strong>:{' '}
-            {t('upload_settings.two_values_below_apply_server')}
-          </>
-        }
+        subtitle={t('upload_settings.server_wide_setting')}
         icon={<Icon name="upload" />}
       >
         <form className={styles.form} onSubmit={(event) => void submit(event)}>
@@ -169,12 +164,7 @@ function ServerUploadCards({ serverMin, serverDefault }: ServerSizes) {
         </dl>
       </AdminCard>
 
-      <AdminCard
-        id="upload-cache-spool"
-        title={t('upload_settings.cache_spool')}
-        subtitle={t('upload_settings.cache_spool_hint')}
-        icon={<Icon name="history" />}
-      >
+      <AdminCard id="upload-cache-spool" title={t('upload_settings.cache_spool')} icon={<Icon name="history" />}>
         {cache?.available === false ? (
           <p className={adminStyles.error} role="alert">
             {t('upload_settings.cache_spool_unavailable')}
@@ -225,7 +215,6 @@ function ChunkOverrideCard({ serverMin, serverDefault }: ServerSizes) {
     <AdminCard
       id="upload-browser-override"
       title={t('upload_settings.override_browser_only')}
-      subtitle={t('upload_settings.unlike_server_wide_setting_above')}
       icon={<Icon name="settings" />}
     >
       <form className={styles.form} onSubmit={(event) => void submit(event)}>
@@ -250,11 +239,7 @@ function ChunkOverrideCard({ serverMin, serverDefault }: ServerSizes) {
         <p className={styles.adminSaved} role="status">
           {t('upload_settings.saved_uploads_started_from_now', { size: formatBytes(override ?? 0) })}
         </p>
-      ) : override !== null ? (
-        <p className={adminStyles.hint}>{t('upload_settings.current_override', { size: formatBytes(override) })}</p>
-      ) : (
-        <p className={adminStyles.hint}>{t('upload_settings.currently_using_server_default')}</p>
-      )}
+      ) : null}
     </AdminCard>
   )
 }
@@ -279,12 +264,7 @@ function ConcurrencyCard() {
   }
 
   return (
-    <AdminCard
-      id="upload-concurrency"
-      title={t('upload_settings.concurrency_limit')}
-      subtitle={t('upload_settings.concurrency_limit_hint')}
-      icon={<Icon name="speed" />}
-    >
+    <AdminCard id="upload-concurrency" title={t('upload_settings.concurrency_limit')} icon={<Icon name="speed" />}>
       <form className={styles.form} onSubmit={(event) => void submit(event)}>
         <StowFormTextField
           control={control}
@@ -307,9 +287,7 @@ function ConcurrencyCard() {
         <p className={styles.adminSaved} role="status">
           {t('upload_settings.concurrency_saved')}
         </p>
-      ) : (
-        <p className={adminStyles.hint}>{t('upload_settings.current_concurrency', { count: active })}</p>
-      )}
+      ) : null}
     </AdminCard>
   )
 }

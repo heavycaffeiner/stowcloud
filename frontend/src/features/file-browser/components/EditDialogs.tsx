@@ -1,6 +1,6 @@
 import { overlay } from 'overlay-kit'
 import { useI18n } from '../../../hooks/use-i18n'
-import { StowButton, StowDialog } from '@/shared/ui'
+import { Icon, StowButton, StowDialog } from '@/shared/ui'
 import { useKeyChange } from '../../shares/e2ee-store'
 
 export type ConflictChoice = 'reload' | 'overwrite' | null
@@ -58,12 +58,14 @@ function EditConflictDialog({
       }
     >
       <p>
+        <Icon name="warning" size={16} />
         {weak
           ? t('edit_conflict.may_have_been_modified_elsewhere', { name })
           : t('edit_conflict.was_modified_elsewhere_after_you', { name })}
       </p>
-      <p>{t('edit_conflict.choose_whether_keep_what_you')}</p>
-      {weak ? <p>{t('edit_conflict.change_check_is_advisory')}</p> : null}
+      <p>
+        <Icon name="warning" size={16} /> {t('edit_conflict.reload_discards_changes')}
+      </p>
     </StowDialog>
   )
 }

@@ -70,12 +70,7 @@ export function StorageIndexSection() {
     : null
   return (
     <>
-      <AdminCard
-        id="storage"
-        title={t('common.storage')}
-        subtitle={t('admin.server_storage_paths')}
-        icon={<Icon name="storage" />}
-      >
+      <AdminCard id="storage" title={t('common.storage')} icon={<Icon name="storage" />}>
         {storage.isPending ? (
           <StowProgressCircular />
         ) : storage.error ? (
@@ -114,12 +109,7 @@ export function StorageIndexSection() {
         ) : null}
       </AdminCard>
 
-      <AdminCard
-        id="storage-index"
-        title={t('storage.search_index')}
-        subtitle={t('storage.what_the_index_is_for')}
-        icon={<Icon name="search" />}
-      >
+      <AdminCard id="storage-index" title={t('storage.search_index')} icon={<Icon name="search" />}>
         <div className={styles.statusRow}>
           <span>{t('storage.index_status')}</span>
           <StowBadge tone={status.data?.enabled ? 'accent' : 'neutral'}>
@@ -177,13 +167,10 @@ export function StorageIndexSection() {
                     </div>
                   </dl>
                   <p className={adminStyles.hint}>
-                    {ACCURACY[estimate.data.confidence] ? t(ACCURACY[estimate.data.confidence]) : null}{' '}
-                    {t('storage.build_only_runs_while_idle')}
+                    {ACCURACY[estimate.data.confidence] ? t(ACCURACY[estimate.data.confidence]) : null}
                   </p>
                 </>
-              ) : (
-                <p className={adminStyles.hint}>{t('storage.measure_before_turning_on')}</p>
-              )}
+              ) : null}
               <div className={adminStyles.row}>
                 <StowButton variant="outlined" loading={estimate.isFetching} onClick={estimateCost}>
                   {estimate.data ? t('storage.measure_again') : t('storage.measure_the_cost')}
@@ -211,17 +198,13 @@ export function StorageIndexSection() {
                 {jobText}
               </p>
             ) : null}
-            <p className={adminStyles.hint}>
-              {nameEnabled ? t('storage.first_build_is_manual') : t('storage.turn_it_on_before_building')}
-            </p>
             {build.error ? (
               <p className={adminStyles.error}>
                 {describeApiError(build.error, t('storage.could_not_start_index_build'))}
               </p>
             ) : null}
             <p className={adminStyles.hint}>
-              {t('storage.turning_it_off_keeps_the_existing_index')} {t('storage.to_free_the_space_delete')}{' '}
-              <code>.scindex</code> {t('storage.in_each_shared_folder')}
+              <Icon name="info" size={16} /> {t('storage.turning_it_off_keeps_the_existing_index')}
             </p>
           </>
         )}

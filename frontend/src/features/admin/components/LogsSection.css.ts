@@ -155,12 +155,6 @@ export const field = style({
   }
 })
 
-export const autoNote = style({
-  margin: 0,
-  color: vars.color.text.secondary,
-  ...typography('bodySmall')
-})
-
 export const scope = style({
   margin: 0,
   color: vars.color.text.secondary,
@@ -376,10 +370,6 @@ export const empty = style({
 
 export const emptyText = style({
   margin: 0
-})
-
-export const emptyHint = style({
-  ...typography('bodySmall')
 })
 
 export const list = style({

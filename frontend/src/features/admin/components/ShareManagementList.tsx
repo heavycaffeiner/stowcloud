@@ -63,12 +63,7 @@ export function ShareManagementList({
   onDelete
 }: ShareManagementListProps) {
   const { t } = useI18n()
-  return shares.length === 0 ? (
-    <div className={styles.empty}>
-      <Icon name="folder-tree" size={28} />
-      <p className={styles.emptyText}>{t('folder_share.no_shares_registered_add_folder')}</p>
-    </div>
-  ) : (
+  return shares.length === 0 ? null : (
     <VirtualList
       className={styles.list}
       items={shares}

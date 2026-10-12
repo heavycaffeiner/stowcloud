@@ -32,7 +32,7 @@ test.describe('Permission Matrix and Enforcement E2E', () => {
     // 1. UI: docs share should not be visible
     await page.goto(`${workerApp.baseURL}/b/docs`, { waitUntil: 'domcontentloaded' })
     // Wait for the page to settle, or the hidden check passes before the listing could have loaded.
-    await expect(page.getByRole('heading', { name: 'Nothing Here!' })).toBeVisible()
+    await expect(page.getByText('Ask an administrator for folder access', { exact: true })).toBeVisible()
     await expect(fileEntry(page, 'a.txt')).toBeHidden()
 
     // 2. Server API: direct access should return 404 (indistinguishable from missing)

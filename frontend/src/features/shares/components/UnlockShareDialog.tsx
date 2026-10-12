@@ -62,7 +62,6 @@ function UnlockShareDialog({ open, salt, verifier, onUnlock, onClose, onClosed }
         </>
       }
     >
-      <p>{t('encryption.unlock_hint')}</p>
       <form onSubmit={(event) => void submit(event)}>
         <StowFormTextField
           control={control}

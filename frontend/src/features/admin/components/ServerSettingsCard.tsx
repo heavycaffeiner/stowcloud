@@ -6,7 +6,7 @@ import * as styles from './ServerSettingsCard.css'
 export interface ServerSettingsCardProps {
   id: string
   title: ReactNode
-  subtitle: ReactNode
+  subtitle?: ReactNode
   children: ReactNode
   /** Makes the card body a form. */
   onSubmit?: (event: FormEvent<HTMLFormElement>) => void

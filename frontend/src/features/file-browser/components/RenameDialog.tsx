@@ -48,7 +48,7 @@ function RenameDialog({
           <StowButton variant="text" onClick={onClose}>
             {t('common.cancel')}
           </StowButton>
-          <StowButton onClick={() => void submit()}>{t('common.ok')}</StowButton>
+          <StowButton onClick={() => void submit()}>{t('common.rename')}</StowButton>
         </>
       }
     >

@@ -43,8 +43,6 @@ interface GrantsTarget {
   title: string
   /** Who these grants belong to: a user id or a group id, never both. */
   principal: GrantPrincipal
-  /** Display name used in the hint and delete confirmation copy. */
-  label: string
 }
 
 /** Shows the folders a user or group can see. Settles once it has closed. */
@@ -57,7 +55,6 @@ export function showGrants(target: GrantsTarget): Promise<void> {
 function GrantsDialog({
   title,
   principal,
-  label,
   open,
   onClose,
   onClosed
@@ -75,7 +72,7 @@ function GrantsDialog({
         </StowButton>
       }
     >
-      <GrantManagementSection principal={principal} label={label} onClose={onClose} />
+      <GrantManagementSection principal={principal} onClose={onClose} />
     </StowDialog>
   )
 }
@@ -84,7 +81,7 @@ function shareNameOf(shares: readonly AdminShare[], id: number): string {
   return shares.find((share) => share.id === id)?.name ?? t('grant.share', { id })
 }
 
-function GrantManagementSection({ principal, label, onClose }: Omit<GrantsTarget, 'title'> & { onClose: () => void }) {
+function GrantManagementSection({ principal, onClose }: Omit<GrantsTarget, 'title'> & { onClose: () => void }) {
   const { t } = useI18n()
   const permLabel = usePermLabels()
   const sharesQuery = useAdminShares()
@@ -129,8 +126,8 @@ function GrantManagementSection({ principal, label, onClose }: Omit<GrantsTarget
         danger: true,
         body: (
           <p>
-            {t('grant.access_removed_immediately', { name: grant.label || shareNameOf(shares, grant.share) })}{' '}
-            {t('grant.will_not_see_folder_from', { principal: label })}
+            <Icon name="warning" size={16} />
+            {t('grant.access_removed_immediately', { name: grant.label || shareNameOf(shares, grant.share) })}
           </p>
         ),
         run: () => deleteGrant.mutateAsync(grant.id),
@@ -141,10 +138,6 @@ function GrantManagementSection({ principal, label, onClose }: Omit<GrantsTarget
 
   return (
     <section className={adminStyles.section}>
-      <p className={adminStyles.hint}>
-        <strong>{label}</strong>
-        {t('grant.sees_only_folders_granted_here')}
-      </p>
       {user ? (
         <ManagedHome
           user={user}
@@ -162,12 +155,7 @@ function GrantManagementSection({ principal, label, onClose }: Omit<GrantsTarget
         </p>
       ) : (
         <>
-          {grants.length === 0 ? (
-            <div className={adminStyles.empty}>
-              <Icon name="account_tree" />
-              <p className={adminStyles.emptyText}>{t('grant.no_folders_granted_yet_signing')}</p>
-            </div>
-          ) : (
+          {grants.length === 0 ? null : (
             <VirtualList
               className={adminStyles.list}
               items={grants}
@@ -261,7 +249,7 @@ function GrantManagementSection({ principal, label, onClose }: Omit<GrantsTarget
             />
           )}
           <StowButton variant="tonal" icon={<Icon name="add" />} onClick={() => void askGrant(principal)}>
-            {t('common.add_folder')}
+            {t('user.add_shared_permissions')}
           </StowButton>
         </>
       )}
@@ -360,7 +348,7 @@ function GrantDialog({ principal, grant, open, onDone, onClosed }: GrantDialogPr
   return (
     <StowDialog
       open={open}
-      title={grant ? t('grant.edit_folder_permission') : t('common.add_folder')}
+      title={grant ? t('grant.edit_folder_permission') : t('user.add_shared_permissions')}
       onClose={cancel}
       onClosed={onClosed}
       actions={
@@ -369,7 +357,7 @@ function GrantDialog({ principal, grant, open, onDone, onClosed }: GrantDialogPr
             {t('common.cancel')}
           </StowButton>
           <StowButton loading={save.isPending} onClick={() => void submit()}>
-            {grant ? t('common.save') : t('common.add')}
+            {grant ? t('common.save') : t('user.add_shared_permissions')}
           </StowButton>
         </>
       }
@@ -406,7 +394,6 @@ function GrantDialog({ principal, grant, open, onDone, onClosed }: GrantDialogPr
               placeholder={t('grant.e_g_vacation')}
               autoComplete="off"
             />
-            <p className={adminStyles.sectionFieldHint}>{t('grant.left_empty_whole_share_appears')}</p>
           </>
         )}
         <GrantPermissionGrid

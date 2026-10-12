@@ -51,7 +51,7 @@ export function BreadcrumbPath({ path, onNavigate }: BreadcrumbPathProps) {
                   }
                 >
                   <StowIconButton
-                    label={`${t('browse.more')}: ${collapsedLabel}`}
+                    label={`${t('browse.more')} (${collapsedLabel})`}
                     icon="more-horiz"
                     onClick={(event) => event.stopPropagation()}
                   />

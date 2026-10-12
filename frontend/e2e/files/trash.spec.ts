@@ -44,7 +44,7 @@ test.describe('File Trash and Restore E2E Journeys', () => {
 
     await fileItem.click({ button: 'right' })
     await page.getByRole('menuitem', { name: 'Delete' }).click()
-    const deleteDialog = page.getByRole('alertdialog', { name: 'Delete?' })
+    const deleteDialog = page.getByRole('alertdialog', { name: 'Delete items?' })
     await deleteDialog.getByRole('button', { name: 'Delete' }).click()
     await expect(deleteDialog).toBeHidden({ timeout: 5000 })
     await expect(fileItem).toBeHidden({ timeout: 5000 })

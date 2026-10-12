@@ -96,23 +96,6 @@ export const form = style({
   minWidth: 0
 })
 
-export const empty = style({
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  gap: vars.space.sm,
-  padding: `${vars.space.xxl} ${vars.space.lg}`,
-  color: vars.color.text.secondary,
-  textAlign: 'center',
-  border: `${vars.stroke.thin} dashed ${vars.color.border.subtle}`,
-  borderRadius: vars.radius.md,
-  background: 'transparent'
-})
-
-export const emptyText = style({
-  margin: 0
-})
-
 export const sectionHeaderAction = style({
   '@media': {
     [media.compact]: {

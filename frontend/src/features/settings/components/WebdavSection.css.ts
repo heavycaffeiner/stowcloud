@@ -66,12 +66,9 @@ export const tokenBlock = style({
 })
 
 export const credentials = style({
-  margin: 0,
-  color: vars.color.text.secondary,
-  overflowWrap: 'anywhere'
-})
-
-export const nfcNote = style({
+  display: 'flex',
+  alignItems: 'center',
+  gap: vars.space.sm,
   margin: 0,
   color: vars.color.text.secondary,
   overflowWrap: 'anywhere'

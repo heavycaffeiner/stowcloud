@@ -39,7 +39,7 @@ function NewFolderDialog({
           <StowButton variant="text" onClick={onClose}>
             {t('common.cancel')}
           </StowButton>
-          <StowButton onClick={() => void submit()}>{t('common.create')}</StowButton>
+          <StowButton onClick={() => void submit()}>{t('common.new_folder')}</StowButton>
         </>
       }
     >

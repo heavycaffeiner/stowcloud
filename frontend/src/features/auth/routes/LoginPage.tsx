@@ -32,9 +32,7 @@ export function LoginPage() {
     <main className={authStyles.page}>
       <form className={cx(authStyles.card, authStyles.login)} onSubmit={(event) => void submit(event)}>
         <h1 className={authStyles.title}>Stowcloud</h1>
-        <p className={authStyles.subtitle}>
-          {returnTo ? t('login.sign_first_authorise_app') : t('login.sign_your_account')}
-        </p>
+        {returnTo ? <p className={authStyles.subtitle}>{t('login.sign_first_authorise_app')}</p> : null}
         {step === 'credentials' ? (
           <>
             <StowFormTextField
@@ -54,9 +52,6 @@ export function LoginPage() {
           </>
         ) : (
           <>
-            <p className={authStyles.subtitle}>
-              {factorMode === 'totp' ? t('login.enter_your_two_factor_code') : t('login.recovery_code_hint')}
-            </p>
             <StowFormTextField
               control={control}
               name="code"
@@ -91,7 +86,7 @@ export function LoginPage() {
             loading={pending}
             disabled={step === 'credentials' ? !username.trim() || !password : !code.trim()}
           >
-            {step === 'credentials' ? t('login.sign') : t('common.ok')}
+            {t('login.sign')}
           </StowButton>
         </div>
         {step === 'credentials' && ssoName !== null ? (

@@ -56,10 +56,10 @@ test.describe('Core File Journey Smoke', () => {
     const listBox = await list.boundingBox()
     expect(listBox).not.toBeNull()
     await list.click({ button: 'right', position: { x: 20, y: listBox!.height - 20 } })
-    await page.getByRole('menuitem', { name: 'New folder' }).click()
-    const newFolderDialog = page.getByRole('alertdialog', { name: 'New folder' })
+    await page.getByRole('menuitem', { name: 'Create folder' }).click()
+    const newFolderDialog = page.getByRole('alertdialog', { name: 'Create folder' })
     await newFolderDialog.getByRole('textbox', { name: 'Folder name' }).fill(folderName)
-    await newFolderDialog.getByRole('button', { name: 'Create' }).click()
+    await newFolderDialog.getByRole('button', { name: 'Create folder' }).click()
     await expect(newFolderDialog).toBeHidden({ timeout: 5000 })
     await expect(fileEntry(page, folderName)).toBeVisible({ timeout: 5000 })
 
@@ -87,7 +87,7 @@ test.describe('Core File Journey Smoke', () => {
       await expect(renameDialog).toBeVisible({ timeout: 5000 })
       const newName = `renamed-${Date.now().toString().slice(-4)}.txt`
       await renameDialog.getByRole('textbox', { name: 'New name' }).fill(newName)
-      await renameDialog.getByRole('button', { name: 'OK' }).click()
+      await renameDialog.getByRole('button', { name: 'Rename' }).click()
       await expect(renameDialog).toBeHidden({ timeout: 5000 })
       const renamedRow = fileEntry(page, newName)
       await expect(renamedRow).toBeVisible({ timeout: 5000 })
@@ -95,7 +95,7 @@ test.describe('Core File Journey Smoke', () => {
       // 8. Delete file through UI context menu
       await renamedRow.click({ button: 'right' })
       await page.getByRole('menuitem', { name: 'Delete' }).click()
-      const deleteDialog = page.getByRole('alertdialog', { name: 'Delete?' })
+      const deleteDialog = page.getByRole('alertdialog', { name: 'Delete items?' })
       await expect(deleteDialog).toBeVisible({ timeout: 5000 })
       await deleteDialog.getByRole('button', { name: 'Delete' }).click()
       await expect(deleteDialog).toBeHidden({ timeout: 5000 })

@@ -208,7 +208,7 @@ describe.each([
     (value) => {
       density.value = value
       const view = renderView(undefined, true)
-      const button = view.getByRole('button', { name: 'Go to parent folder' })
+      const button = view.getByRole('button', { name: 'Open parent folder' })
       const parent = button.closest<HTMLElement>(_name === 'list' ? '[role="row"]' : '[role="gridcell"]')!
       const [folder] = view.entries()
 
@@ -235,7 +235,7 @@ describe.each([
   it('navigates directly without selecting the parent or changing file selection', () => {
     const view = renderView(undefined, true)
     selection.only(documents.name, 0)
-    const button = view.getByRole('button', { name: 'Go to parent folder' })
+    const button = view.getByRole('button', { name: 'Open parent folder' })
 
     fireEvent.click(button)
     expect(view.onNavigateParent).toHaveBeenCalledTimes(1)
@@ -313,8 +313,8 @@ describe.each([
 
   it('keeps parent navigation available alongside the empty-folder message', () => {
     const view = renderView([], true)
-    expect(view.getByText('This folder is empty')).toBeTruthy()
-    fireEvent.click(view.getByRole('button', { name: 'Go to parent folder' }))
+    expect(view.getByText('Empty folder')).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: 'Open parent folder' }))
     expect(view.onNavigateParent).toHaveBeenCalledTimes(1)
     expect(view.entries()).toEqual([])
   })

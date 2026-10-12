@@ -76,9 +76,6 @@ export function SetupPage() {
     <main className={authStyles.page}>
       <form className={authStyles.card} onSubmit={(event) => void submit(event)}>
         <h1 className={authStyles.title}>{t('setup.create_administrator_account')}</h1>
-        <p className={authStyles.subtitle}>
-          {t('setup.on_server_s_first_start')} <code>setup-token</code> {t('setup.file_data_directory')}
-        </p>
         {outcome ? (
           <>
             <p className={authStyles.success} role="status">
@@ -86,7 +83,7 @@ export function SetupPage() {
             </p>
             {outcome.loginFailed ? (
               <p className={authStyles.error} role="alert">
-                <Link to="/login">{t('setup.go_sign_page')}</Link> {t('setup.sign')}
+                <Link to="/login">{t('setup.go_sign_page')}</Link>
               </p>
             ) : null}
             <Findings findings={outcome.warnings} role="status" />
@@ -149,6 +146,7 @@ export function SetupPage() {
                   label={t('setup.setup_token')}
                   autoFocus
                   autoComplete="off"
+                  helper={t('setup.token_location')}
                 />
                 <StowFormTextField
                   control={control}
@@ -186,22 +184,15 @@ export function SetupPage() {
                   label={t('server.app_hosts_comma_separated')}
                   autoComplete="off"
                 />
-                <p className={authStyles.hint}>{t('setup.app_hosts_hint')}</p>
                 <StowFormTextField
                   control={control}
                   name="trustedProxies"
                   label={t('server.trusted_proxies_comma_separated')}
                   autoComplete="off"
                 />
-                <p className={authStyles.hint}>{t('setup.trusted_proxies_hint')}</p>
               </>
             ) : null}
-            {step === 3 ? (
-              <>
-                <p className={authStyles.hint}>{t('setup.first_share_hint')}</p>
-                {shareFields}
-              </>
-            ) : null}
+            {step === 3 ? <>{shareFields}</> : null}
             <Findings findings={findings} role="alert" />
             {formState.errors.root?.message ? (
               <p className={authStyles.error} role="alert">

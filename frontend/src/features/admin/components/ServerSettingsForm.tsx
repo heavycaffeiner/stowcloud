@@ -283,7 +283,7 @@ interface SettingsGroupCardProps {
   group: Group
   id: string
   title: ReactNode
-  subtitle: ReactNode
+  subtitle?: ReactNode
   snapshot: SettingsSnapshot
   children: ReactNode
   /** Shown below the save button and its findings. */

@@ -47,14 +47,6 @@ export const username = style({
   ...typography('bodySmall')
 })
 
-export const cardHint = style({
-  overflowWrap: 'anywhere',
-  maxWidth: vars.layout.measure,
-  margin: 0,
-  color: vars.color.text.secondary,
-  ...typography('bodySmall')
-})
-
 export const row = style({
   display: 'flex',
   alignItems: 'center',

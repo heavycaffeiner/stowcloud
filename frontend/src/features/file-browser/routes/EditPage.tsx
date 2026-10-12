@@ -123,7 +123,6 @@ function Editor({ path }: { path: string }) {
       <div className={styles.body}>
         {locked ? (
           <div className={styles.locked} role="status">
-            <p>{t('encryption.unlock_hint')}</p>
             <StowButton onClick={() => void requestUnlock()}>{t('encryption.unlock')}</StowButton>
           </div>
         ) : loading ? (

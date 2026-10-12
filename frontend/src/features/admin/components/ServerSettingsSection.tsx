@@ -3,7 +3,7 @@ import { useController, useFormContext } from 'react-hook-form'
 import { t } from '../../../i18n'
 import { useI18n } from '../../../hooks/use-i18n'
 import { useCopyText } from '../../../hooks/use-copy-text'
-import { StowButton, StowProgressCircular, StowSelect } from '@/shared/ui'
+import { Icon, StowButton, StowProgressCircular, StowSelect } from '@/shared/ui'
 import { ServerSettingsCard } from './ServerSettingsCard'
 import { EmptyNote, SettingInput, SettingPath, SettingSwitch, SettingsGroupCard, split } from './ServerSettingsForm'
 import * as styles from './ServerSettingsSection.css'
@@ -134,11 +134,9 @@ export function ServerSettingsSection() {
   const otherFields = snapshot.fields.filter(
     (item) => !EDITABLE_KEYS.has(item.key) && !PATH_KEYS.includes(item.key) && item.key !== 'symlink_policy'
   )
-  const watchLimit = snapshot.fields.find((field) => field.key === 'watch.hot_set_max')?.range?.max ?? ''
   return (
     <section className={adminStyles.section}>
       <h3 className={adminStyles.sectionTitle}>{t('server.server_settings')}</h3>
-      <p className={adminStyles.hint}>{t('server.settings_stored_in_database')}</p>
       <nav className={styles.nav} aria-label={t('admin.server_settings_navigation')}>
         <div className={styles.navItems}>
           {NAV.map(([id, key]) => (
@@ -158,7 +156,6 @@ export function ServerSettingsSection() {
         group="smb"
         id="server-smb"
         title="SMB"
-        subtitle={t('server.all_apply_immediately_no_restart')}
         snapshot={snapshot}
         footer={snapshot.smb_agent ? <SmbAgentStatus report={snapshot.smb_agent} /> : null}
       >
@@ -208,24 +205,12 @@ export function ServerSettingsSection() {
         ) : null}
       </ServerSettingsCard>
 
-      <SettingsGroupCard
-        group="search"
-        id="server-search"
-        title={t('common.search')}
-        subtitle={t('server.all_apply_immediately_no_restart')}
-        snapshot={snapshot}
-      >
+      <SettingsGroupCard group="search" id="server-search" title={t('common.search')} snapshot={snapshot}>
         <SettingInput name="search.max_concurrent_fast" label={t('server.concurrent_fast_searches')} type="number" />
         <SettingInput name="search.walk_deadline_fast_ms" label={t('server.fast_search_timeout_ms')} type="number" />
       </SettingsGroupCard>
 
-      <SettingsGroupCard
-        group="archive"
-        id="server-transfers"
-        title={t('server.zip_download')}
-        subtitle={t('server.applies_immediately_no_restart_needed')}
-        snapshot={snapshot}
-      >
+      <SettingsGroupCard group="archive" id="server-transfers" title={t('server.zip_download')} snapshot={snapshot}>
         <SettingInput name="archive.max_concurrent" label={t('server.concurrent_zip_streams')} type="number" />
       </SettingsGroupCard>
 
@@ -233,7 +218,6 @@ export function ServerSettingsSection() {
         group="thumbnail"
         id="server-thumbnail"
         title={t('server.thumbnail_settings')}
-        subtitle={t('server.thumbnail_enabled_description')}
         snapshot={snapshot}
       >
         <SettingSwitch name="thumbnail.enabled" label={t('server.thumbnail_enabled')} />
@@ -242,16 +226,12 @@ export function ServerSettingsSection() {
         <p className={adminStyles.hint}>{t('server.thumbnail_storage_dir_description')}</p>
       </SettingsGroupCard>
 
-      <SettingsGroupCard
-        group="network"
-        id="server-network"
-        title={t('server.network')}
-        subtitle={t('server.applies_immediately_no_restart_needed')}
-        snapshot={snapshot}
-      >
+      <SettingsGroupCard group="network" id="server-network" title={t('server.network')} snapshot={snapshot}>
         <SettingInput name="app_hosts" label={t('server.app_hosts_comma_separated')} />
         <EmptyNote name="app_hosts" snapshot={snapshot} />
-        <p className={adminStyles.hint}>{t('server.app_hosts_hint')}</p>
+        <p className={adminStyles.warning}>
+          <Icon name="warning" size={16} /> {t('server.app_hosts_hint')}
+        </p>
         <SettingInput name="trusted_proxies" label={t('server.trusted_proxies_comma_separated')} />
         <EmptyNote name="trusted_proxies" snapshot={snapshot} />
         {snapshot.hop ? <HopHint hop={snapshot.hop} /> : null}
@@ -274,29 +254,17 @@ export function ServerSettingsSection() {
         <SettingInput name="db.min_free_bytes" label={t('settings.db_min_free_bytes')} type="number" />
       </SettingsGroupCard>
 
-      <SettingsGroupCard
-        group="watch"
-        id="server-watch"
-        title={t('server.file_watching')}
-        subtitle={t('server.what_file_watching_is_for')}
-        snapshot={snapshot}
-      >
+      <SettingsGroupCard group="watch" id="server-watch" title={t('server.file_watching')} snapshot={snapshot}>
         <SettingInput name="watch.hot_set_max" label={t('server.maximum_folders_watched_at_once')} type="number" />
         <SettingInput name="watch.full_threshold" label={t('server.changes_before_a_full_rescan')} type="number" />
-        <p className={adminStyles.hint}>{t('settings.within_kernel_watch_limit', { limit: watchLimit })}</p>
       </SettingsGroupCard>
 
-      <SettingsGroupCard
-        group="homes"
-        id="server-homes"
-        title={t('server.home_folders')}
-        subtitle={t('server.home_folders_hint')}
-        snapshot={snapshot}
-      >
+      <SettingsGroupCard group="homes" id="server-homes" title={t('server.home_folders')} snapshot={snapshot}>
         <SettingSwitch name="homes.enabled" label={t('server.enable_home_folders')} />
         <SettingPath name="homes.root" label={t('server.homes_root_path')} mode="folder" />
-        <p className={adminStyles.hint}>{t('server.homes_smb_hint')}</p>
-        <p className={adminStyles.hint}>{t('server.homes_root_change_hint')}</p>
+        <p className={adminStyles.warning}>
+          <Icon name="warning" size={16} /> {t('server.homes_root_change_hint')}
+        </p>
         {snapshot.homes?.enabled && !snapshot.homes.ready ? (
           <p role="alert" className={adminStyles.error}>
             {t('server.homes_root_unavailable')}
@@ -316,13 +284,7 @@ export function ServerSettingsSection() {
         ) : null}
       </SettingsGroupCard>
 
-      <SettingsGroupCard
-        group="rate"
-        id="server-rate"
-        title={t('server.request_rate')}
-        subtitle={t('server.what_the_request_rate_is_for')}
-        snapshot={snapshot}
-      >
+      <SettingsGroupCard group="rate" id="server-rate" title={t('server.request_rate')} snapshot={snapshot}>
         <SettingInput name="rate.per_sec" label={t('server.requests_per_second')} type="number" />
         <SettingInput name="rate.burst" label={t('server.burst_allowance')} type="number" />
       </SettingsGroupCard>
@@ -331,7 +293,6 @@ export function ServerSettingsSection() {
         group="oidc"
         id="server-security"
         title={t('settings.single_sign_on')}
-        subtitle={t('server.single_sign_on_hint')}
         snapshot={snapshot}
         footer={<OidcEndpoints />}
       >
@@ -349,7 +310,6 @@ export function ServerSettingsSection() {
         <SettingInput name="oidc.display_name" label={t('settings.oidc_display_name')} />
         <SettingSwitch name="oidc.allow_private_endpoints" label={t('settings.oidc_allow_private_endpoints')} />
         <SettingPath name="oidc.ca_cert_file" label={t('field.oidc_ca_cert_file')} mode="file" />
-        <p className={adminStyles.hint}>{t('server.connected_accounts_cannot_use_smb')}</p>
       </SettingsGroupCard>
     </section>
   )
@@ -437,7 +397,6 @@ function OidcEndpoints() {
   ] as const
   return (
     <div className={styles.endpoints}>
-      <p className={adminStyles.hint}>{t('settings.oidc_endpoints_hint')}</p>
       {lists.map(([name, uris]) => (
         <Fragment key={name}>
           <h5 className={styles.adminSectionSubhead}>{name}</h5>

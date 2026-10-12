@@ -59,7 +59,7 @@ for (const view of ['list', 'grid'] as const) {
       )
       await page.goto(`${workerApp.baseURL}/b/docs/${FOLDER}`)
       const grid = page.getByRole('grid', { name: view === 'list' ? 'File list' : 'File grid', exact: true })
-      const button = grid.getByRole('button', { name: 'Go to parent folder', exact: true })
+      const button = grid.getByRole('button', { name: 'Open parent folder', exact: true })
       await button.waitFor()
       await grid.locator('[aria-selected]').last().waitFor()
       await page.evaluate(async () => {
@@ -93,12 +93,12 @@ for (const view of ['list', 'grid'] as const) {
       await button.focus()
       await page.keyboard.press('Enter')
       await expect(page).toHaveURL(`${workerApp.baseURL}/b/docs`)
-      await expect(page.getByRole('button', { name: 'Go to parent folder', exact: true })).toHaveCount(0)
+      await expect(page.getByRole('button', { name: 'Open parent folder', exact: true })).toHaveCount(0)
 
       await page.goto(`${workerApp.baseURL}/b/docs/${FOLDER}/folder-0`)
-      const emptyParent = page.getByRole('button', { name: 'Go to parent folder', exact: true })
+      const emptyParent = page.getByRole('button', { name: 'Open parent folder', exact: true })
       await expect(emptyParent).toBeVisible()
-      await expect(page.getByText('This folder is empty', { exact: true })).toBeVisible()
+      await expect(page.getByText('Empty folder', { exact: true })).toBeVisible()
       const emptyEntry = emptyParent.locator(
         view === 'list' ? 'xpath=ancestor::*[@role="row"]' : 'xpath=ancestor::*[@role="gridcell"]'
       )

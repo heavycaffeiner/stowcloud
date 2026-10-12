@@ -59,7 +59,7 @@ export function PublicSharePage() {
     <main className={styles.root}>
       <header className={styles.header}>
         <strong>Stowcloud</strong>
-        {t('public_share.public_share_link')}
+        <span>{t('public_share.public_share_link')}</span>
       </header>
       {share.isPending ? <p className={styles.status}>{t('common.loading')}</p> : null}
       {loadError ? (
@@ -82,7 +82,11 @@ export function PublicSharePage() {
         <section>
           <h1 className={styles.title}>{info.label || info.name}</h1>
           {path ? <Breadcrumbs path={path} onOpen={openFolder} /> : null}
-          {pathGone ? <p className={cx(styles.status, styles.statusError)}>{t('public_share.folder_gone')}</p> : null}
+          {pathGone ? (
+            <p className={cx(styles.status, styles.statusError)}>
+              <Icon name="warning" size={16} /> {t('public_share.folder_gone')}
+            </p>
+          ) : null}
           {info.isDrop ? (
             <DropZone key={token} token={token} maxUploadBytes={info.maxUploadBytes} />
           ) : !info.isDir ? (
@@ -195,7 +199,6 @@ function DropZone({ token, maxUploadBytes }: { token: string; maxUploadBytes: nu
   }
   return (
     <>
-      <p className={styles.status}>{t('public_share.link_upload_only_nothing_can')}</p>
       <div className={styles.drop}>
         <input ref={fileInput} className={styles.file} type="file" multiple onChange={pickFiles} />
         <StowButton disabled={state.uploading} onClick={() => fileInput.current?.click()}>

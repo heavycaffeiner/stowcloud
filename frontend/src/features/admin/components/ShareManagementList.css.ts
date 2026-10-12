@@ -2,23 +2,6 @@ import { style } from '@vanilla-extract/css'
 import { trailingJustify, trailingWidth } from '@/shared/ui/ListItem/ListItem.css'
 import { media, typography, vars } from '@/shared/theme'
 
-export const empty = style({
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  gap: vars.space.sm,
-  padding: `${vars.space.xxl} ${vars.space.lg}`,
-  textAlign: 'center',
-  border: `${vars.stroke.thin} dashed ${vars.color.border.subtle}`,
-  borderRadius: vars.radius.md,
-  background: 'transparent',
-  color: vars.color.text.secondary
-})
-
-export const emptyText = style({
-  margin: 0
-})
-
 export const list = style({
   listStyle: 'none',
   margin: 0,
