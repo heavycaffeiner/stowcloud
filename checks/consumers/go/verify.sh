@@ -24,7 +24,7 @@ for module in "${expected[@]}"; do
   fi
 done
 
-if grep -Eq '^[[:space:]]*replace([[:space:]]|\()' go.mod; then
+if [ -n "$(go list -m -mod=readonly -f '{{if .Replace}}{{if not .Replace.Version}}{{.Path}} => {{.Replace.Path}}{{end}}{{end}}' all)" ]; then
   echo 'consumer module must not use local replacements' >&2
   exit 1
 fi
