@@ -88,6 +88,33 @@ env:
     org.opencontainers.image.licenses=AGPL-3.0-or-later
 
 jobs:
+  audit:
+    name: release dependency advisories
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.actor == github.repository_owner
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: "1.27.3"
+          cache-dependency-path: backend/go.sum
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.22.1"
+
+      - name: Check reachable Go vulnerabilities
+        working-directory: backend
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest -tags compat_nc ./...
+
+      - name: Audit browser dependencies
+        run: |
+          corepack enable
+          (cd frontend && pnpm audit)
+          (cd checks/consumers/web && pnpm audit)
+
   build-core:
     name: build sc:core (${{ matrix.arch }}) + run + smoke test
     runs-on: ${{ matrix.runner }}
@@ -101,15 +128,15 @@ jobs:
         include:
           - arch: amd64
             runner: ubuntu-latest
-            # alpine:3.24.1, amd64 manifest. Same value as the Dockerfile's own
+            # alpine:3.24.3, amd64 manifest. Same value as the Dockerfile's own
             # default, passed explicitly so both legs read the same way and
             # neither depends on which arch the default favours.
-            alpine: sha256:79ff19e9084a00eece421b2523fb93e22d730e2c0e525905de047e848e56d95f
+            alpine: sha256:c26612752c78b18faacd63c7d50f4592c2e7b0f25e0e20e82bd74e465c57ab0d
           - arch: arm64
             runner: ubuntu-24.04-arm
             # The arm64 manifest of the same image, read off the 3.24 index the
             # same way and the same day as the amd64 one.
-            alpine: sha256:e7a1a92a5bfeee40966aea60f0796b0e7917cc35591542701834f03a68fa3d18
+            alpine: sha256:e311ae748be7f56ae5cba304bc488f0786df68ee507513f654a5cc8597cffb42
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -131,6 +158,13 @@ jobs:
           # other's entries on every run.
           cache-from: type=gha,scope=core-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=core-${{ matrix.arch }}
+
+      - name: Reject vulnerable core image dependencies
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c \
+            image --scanners vuln --pkg-types os --exit-code 1 sc:core-ci
 
       - name: Report image size against the < 30 MB target
         run: |
@@ -414,16 +448,16 @@ jobs:
         include:
           - arch: amd64
             runner: ubuntu-latest
-            # alpine:3.24.1, amd64 manifest. The Dockerfile.smb default.
-            alpine: sha256:79ff19e9084a00eece421b2523fb93e22d730e2c0e525905de047e848e56d95f
+            # alpine:3.24.3, amd64 manifest. The Dockerfile.smb default.
+            alpine: sha256:c26612752c78b18faacd63c7d50f4592c2e7b0f25e0e20e82bd74e465c57ab0d
           - arch: arm64
             runner: ubuntu-24.04-arm
-            # alpine:3.24.1, arm64/v8 manifest, read off the `3.24` index in the
+            # alpine:3.24.3, arm64/v8 manifest, read off the `3.24` index in the
             # real registry. Passing the amd64 digest here would not have failed
             # loudly: it would have produced an amd64 image on an arm64 runner,
             # which is exactly the kind of quiet wrong answer the architecture
             # assertion below exists to catch.
-            alpine: sha256:e7a1a92a5bfeee40966aea60f0796b0e7917cc35591542701834f03a68fa3d18
+            alpine: sha256:e311ae748be7f56ae5cba304bc488f0786df68ee507513f654a5cc8597cffb42
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -442,6 +476,20 @@ jobs:
           tags: sc:smb-ci
           cache-from: type=gha,scope=smb-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=smb-${{ matrix.arch }}
+
+      - name: Verify the installed Brotli security fix
+        run: |
+          docker run --rm --entrypoint /bin/sh sc:smb-ci -ec '
+            apk info -v brotli-libs
+            apk info --exists "brotli-libs>=1.2.1-r0"
+          '
+
+      - name: Reject vulnerable SMB image dependencies
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c \
+            image --scanners vuln --pkg-types os --exit-code 1 sc:smb-ci
 
       - name: The image really is the architecture this job claims
         run: |
@@ -788,7 +836,7 @@ jobs:
 
   publish-core:
     name: publish sc:core (${{ matrix.arch }}, by digest)
-    needs: [build-core]
+    needs: [audit, build-core]
     if: github.event_name != 'pull_request'
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -797,10 +845,10 @@ jobs:
         include:
           - arch: amd64
             runner: ubuntu-latest
-            alpine: sha256:79ff19e9084a00eece421b2523fb93e22d730e2c0e525905de047e848e56d95f
+            alpine: sha256:c26612752c78b18faacd63c7d50f4592c2e7b0f25e0e20e82bd74e465c57ab0d
           - arch: arm64
             runner: ubuntu-24.04-arm
-            alpine: sha256:e7a1a92a5bfeee40966aea60f0796b0e7917cc35591542701834f03a68fa3d18
+            alpine: sha256:e311ae748be7f56ae5cba304bc488f0786df68ee507513f654a5cc8597cffb42
     permissions:
       contents: read
       packages: write
@@ -897,7 +945,7 @@ jobs:
 
   publish-smb:
     name: publish sc:smb (${{ matrix.arch }}, by digest)
-    needs: [build-smb]
+    needs: [audit, build-smb]
     if: github.event_name != 'pull_request'
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -906,10 +954,10 @@ jobs:
         include:
           - arch: amd64
             runner: ubuntu-latest
-            alpine: sha256:79ff19e9084a00eece421b2523fb93e22d730e2c0e525905de047e848e56d95f
+            alpine: sha256:c26612752c78b18faacd63c7d50f4592c2e7b0f25e0e20e82bd74e465c57ab0d
           - arch: arm64
             runner: ubuntu-24.04-arm
-            alpine: sha256:e7a1a92a5bfeee40966aea60f0796b0e7917cc35591542701834f03a68fa3d18
+            alpine: sha256:e311ae748be7f56ae5cba304bc488f0786df68ee507513f654a5cc8597cffb42
     permissions:
       contents: read
       packages: write

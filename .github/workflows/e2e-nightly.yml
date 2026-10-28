@@ -13,8 +13,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  NODE_VERSION: "24"
-  GO_VERSION: "1.27.2"
+  NODE_VERSION: "24.22.1"
+  GO_VERSION: "1.27.3"
 
 jobs:
   deterministic-matrix:

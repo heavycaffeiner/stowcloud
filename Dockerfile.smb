@@ -28,12 +28,10 @@
 # 4.19 -> 4.23.8 and is now in `main` rather than community, which lengthens
 # its support window as well.
 #
-# Digests verified 2026-07-31 the same way as the previous base's own digest
-# (anonymous registry-token pull against registry-1.docker.io), image
-# version label 3.24.1:
-ARG ALPINE_DIGEST=sha256:79ff19e9084a00eece421b2523fb93e22d730e2c0e525905de047e848e56d95f
+# Alpine 3.24.3, pinned to the platform manifest used by release CI.
+ARG ALPINE_DIGEST=sha256:c26612752c78b18faacd63c7d50f4592c2e7b0f25e0e20e82bd74e465c57ab0d
 # Same toolchain image and same reasoning as the core Dockerfile's builder.
-ARG GO_IMAGE=golang:1.27.2-bookworm@sha256:5cf287a799e6b94384bad13d16b14904c531f51ba65792237e122ce42b392f61
+ARG GO_IMAGE=golang:1.27.3-bookworm@sha256:05237276236793ebedaf0b87dab86add9ec9adc66ebef2dbc3107c18254cde1c
 
 # The service account every SMB connection is forced to, named as the core
 # image names the same pair and settable the same way: the agent reconciles the
@@ -99,9 +97,9 @@ FROM alpine:3.24@${ALPINE_DIGEST}
 # builds both platforms and passes the matching digest per architecture, because
 # a manifest digest names one platform and passing the wrong one yields an image
 # of the wrong architecture rather than an error:
-#   index: sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
-#   amd64: sha256:79ff19e9084a00eece421b2523fb93e22d730e2c0e525905de047e848e56d95f
-#   arm64: sha256:e7a1a92a5bfeee40966aea60f0796b0e7917cc35591542701834f03a68fa3d18
+#   index: sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
+#   amd64: sha256:c26612752c78b18faacd63c7d50f4592c2e7b0f25e0e20e82bd74e465c57ab0d
+#   arm64: sha256:e311ae748be7f56ae5cba304bc488f0786df68ee507513f654a5cc8597cffb42
 
 # `samba-server` (smbd/nmbd) + `samba-common-tools` (testparm/pdbedit/
 # smbcontrol) + `samba-client` (smbclient, used only by operators debugging
@@ -122,8 +120,10 @@ FROM alpine:3.24@${ALPINE_DIGEST}
 # `bash` and `inotify-tools` are gone with the shell entrypoint they existed
 # for. Nothing here now depends on a shell at all: the agent is the entrypoint
 # and execs nothing but samba's own binaries.
-RUN apk add --no-cache \
+RUN apk upgrade --no-cache \
+    && apk add --no-cache \
        samba-server samba-common-tools samba-client \
+       'brotli-libs>=1.2.1-r0' \
        fail2ban tini iptables shadow \
     && rm -rf /var/cache/apk/*
 

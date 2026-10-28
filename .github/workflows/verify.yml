@@ -40,17 +40,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # 24, not 22: jsdom 30 declares 24.15.0 as a floor, and corepack ships the
-  # pnpm this lockfile was written by.
-  NODE_VERSION: "24"
-  # The toolchain CI compiles with and the module floor are both 1.27.2.
-  # The release-time Go security patches require this minimum, so local, CI,
-  # and Docker builds use the same patched release.
-  #
-  # The Dockerfiles track this value rather than the floor. An image building
-  # with a different compiler from the one the gate ran means the binary that
-  # ships is not the binary that was verified.
-  GO_VERSION: "1.27.2"
+  # Match the patched toolchains used by the container builds.
+  NODE_VERSION: "24.22.1"
+  GO_VERSION: "1.27.3"
 
 jobs:
   linux:

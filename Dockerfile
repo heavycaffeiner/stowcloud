@@ -40,15 +40,10 @@
 # is the dependency floor and the two move independently, but the image and CI
 # building with different compilers means the binary an image ships is not the
 # one the gate ran against.
-ARG GO_IMAGE=golang:1.27.2-bookworm@sha256:5cf287a799e6b94384bad13d16b14904c531f51ba65792237e122ce42b392f61
+ARG GO_IMAGE=golang:1.27.3-bookworm@sha256:05237276236793ebedaf0b87dab86add9ec9adc66ebef2dbc3107c18254cde1c
 
-# node 24, not 22, for the npm major it bundles. The lockfile in frontend/ was
-# written by npm 11, and npm 10 reads the same file as out of sync and fails on
-# a nested transitive entry. The lockfile is not corrupt: the same install
-# succeeds under npm 11 and fails only under 10, so the image moves rather than
-# the lockfile, which would silently downgrade what every developer here has
-# installed.
-ARG NODE_IMAGE=node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1
+# Node 24.22.1 includes the Brotli decoder and October security fixes.
+ARG NODE_IMAGE=node:24.22.1-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53
 
 # The runtime base. Alpine rather than distroless, and the same 3.24 the SMB
 # sidecar pins, so both images track one base and one support window.
@@ -58,10 +53,10 @@ ARG NODE_IMAGE=node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0
 # amd64 manifest, which is what a bare `docker build` on the usual laptop
 # wants; passing the index digest instead yields an image of whichever
 # architecture buildx resolved.
-#   index: sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
-#   amd64: sha256:79ff19e9084a00eece421b2523fb93e22d730e2c0e525905de047e848e56d95f
-#   arm64: sha256:e7a1a92a5bfeee40966aea60f0796b0e7917cc35591542701834f03a68fa3d18
-ARG ALPINE_DIGEST=sha256:79ff19e9084a00eece421b2523fb93e22d730e2c0e525905de047e848e56d95f
+#   index: sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
+#   amd64: sha256:c26612752c78b18faacd63c7d50f4592c2e7b0f25e0e20e82bd74e465c57ab0d
+#   arm64: sha256:e311ae748be7f56ae5cba304bc488f0786df68ee507513f654a5cc8597cffb42
+ARG ALPINE_DIGEST=sha256:c26612752c78b18faacd63c7d50f4592c2e7b0f25e0e20e82bd74e465c57ab0d
 
 # The uid and gid the server runs as, and the ones the shipped directories are
 # owned by. Named as the wider self-hosting ecosystem names them, because an
@@ -179,7 +174,8 @@ ARG PGID
 # bring: it execs, so the server is PID 1 and gets the stop signal directly.
 # 13 KiB, and the only package this image adds; the entrypoint rewrites the two
 # account files itself rather than pulling in shadow for usermod.
-RUN apk add --no-cache su-exec \
+RUN apk upgrade --no-cache \
+    && apk add --no-cache su-exec \
     && rm -rf /var/cache/apk/*
 
 # The account the server runs as. Alpine ships no uid 1000, so it is created

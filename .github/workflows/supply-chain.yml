@@ -36,7 +36,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GO_VERSION: "1.27.2"
+  GO_VERSION: "1.27.3"
+  NODE_VERSION: "24.22.1"
 
 jobs:
   audit:
@@ -69,6 +70,29 @@ jobs:
           go list -m -f '{{if and (not .Main) (not .Indirect)}}{{.Path}}{{end}}' all | grep -v '^$' | sort > /tmp/have
           grep -vE '^[[:space:]]*(#|$)' deps.allow | sort > /tmp/want
           diff -u /tmp/want /tmp/have
+
+  frontend-audit:
+    name: frontend and browser consumer advisories
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.actor == github.repository_owner
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Enable pnpm
+        run: corepack enable
+
+      - name: Audit frontend lockfile
+        working-directory: frontend
+        run: pnpm audit
+
+      - name: Audit browser consumer lockfile
+        working-directory: checks/consumers/web
+        run: pnpm audit
 
   secrets:
     name: gitleaks
